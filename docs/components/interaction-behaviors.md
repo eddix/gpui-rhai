@@ -104,7 +104,7 @@ space nor changes SplitPane state.
 | `contain` | Constrain to the component boundary; true by default |
 | `keyboard_step` | Arrow-key logical-pixel step; default 8, Shift multiplies by four |
 | `disabled` | Suppress pointer and keyboard manipulation |
-| `on_resize` / `resize(rect+handle)` | One final controlled rectangle proposal |
+| `on_resize` / `resize({x,y,width,height})` | One final proposal, shaped exactly like `rect` |
 
 Dragging west/north changes the origin so the opposite edge remains fixed;
 east/south preserves the origin. Corner aspect locking selects the closer

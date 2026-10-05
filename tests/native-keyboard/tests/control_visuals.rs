@@ -827,11 +827,11 @@ fn state_schema(){{#{{fields:#{{
         height:#{{schema:#{{type:"number",exclusive_min:0.0}},required:true,sensitive:false}}
     }}}},"default":#{{type:"map",value:#{{x:#{{type:"float",value:100.0}},y:#{{type:"float",value:80.0}},
         width:#{{type:"float",value:200.0}},height:#{{type:"float",value:120.0}}}}}}}},
-    handle:#{{schema:#{{type:"string"}},"default":#{{type:"string",value:"none"}}}}
+    proposals:#{{schema:#{{type:"integer"}},"default":#{{type:"integer",value:0}}}}
 }}}}}}
-fn resized(ctx,value){{ctx.set_state("rect",#{{x:value.x,y:value.y,width:value.width,height:value.height}});ctx.set_state("handle",value.handle);}}
+fn resized(ctx,value){{ctx.set_state("rect",value);ctx.set_state("proposals",ctx.get_state("proposals")+1);}}
 fn view(ctx){{let rect=ctx.get_state("rect");column([
-    text(`${{rect.x}},${{rect.y}},${{rect.width}},${{rect.height}},${{ctx.get_state("handle")}}`).accessibility_role("status"),
+    text(`${{rect.x}},${{rect.y}},${{rect.width}},${{rect.height}},${{ctx.get_state("proposals")}}`).accessibility_role("status"),
     resizable::Resizable(#{{key:"card",label:"Demo",rect:rect,handles:{handles},
         min_width:80.0,min_height:60.0,max_width:360.0,max_height:260.0,
         content:text("Card"),on_resize:Fn("resized")}})
@@ -1791,7 +1791,7 @@ fn resizable_drag_previews_natively_and_commits_opposite_corner_geometry(cx: &mu
     visual.run_until_parked();
     assert_eq!(
         status(&mut visual),
-        "100.0,80.0,200.0,120.0,none",
+        "100.0,80.0,200.0,120.0,0",
         "pointer preview must not rerun Rhai"
     );
     let preview = visual.update(|_, cx| {
@@ -1808,7 +1808,7 @@ fn resizable_drag_previews_natively_and_commits_opposite_corner_geometry(cx: &mu
     assert!((preview.y - (bounds.y - 20.0)).abs() < 0.01, "{preview:?}");
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "70.0,60.0,230.0,140.0,nw");
+    assert_eq!(status(&mut visual), "70.0,60.0,230.0,140.0,1");
 }
 
 #[gpui::test]
@@ -1836,16 +1836,13 @@ fn resizable_keyboard_handle_uses_the_same_controlled_proposal(cx: &mut TestAppC
             .name
             .clone()
     });
-    assert_eq!(status, "100.0,80.0,208.0,120.0,e");
+    assert_eq!(status, "100.0,80.0,208.0,120.0,1");
 }
 
 #[gpui::test]
 fn resizable_rejected_proposal_restores_the_controlled_rectangle(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let script = resizable_script(r#"["se"]"#).replace(
-        r#"ctx.set_state("rect",#{x:value.x,y:value.y,width:value.width,height:value.height});"#,
-        "",
-    );
+    let script = resizable_script(r#"["se"]"#).replace(r#"ctx.set_state("rect",value);"#, "");
     let (window, view) = mount(cx, &script, "resizable-rejection");
     let mut visual = VisualTestContext::from_window(*window, cx);
     let before = visual.update(|_, cx| {
@@ -1882,6 +1879,6 @@ fn resizable_rejected_proposal_restores_the_controlled_rectangle(cx: &mut TestAp
             .find(|node| node.role == "status")
             .unwrap()
             .name,
-        "100.0,80.0,200.0,120.0,se"
+        "100.0,80.0,200.0,120.0,1"
     );
 }

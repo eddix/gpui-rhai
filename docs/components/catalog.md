@@ -53,7 +53,7 @@ remaining space. The caller owns the accepted `{x,y,width,height}` rectangle.
 
 The component supports any unique subset of `n/s/e/w/ne/nw/se/sw`, min/max
 dimensions, optional boundary containment, optional aspect ratio, a keyboard
-step, disabled state, and one `resize({x,y,width,height,handle})` proposal.
+step, disabled state, and one `resize({x,y,width,height})` proposal shaped exactly like `rect`.
 Pointer moves update four optional-float native signals; Rhai runs only for the
 final proposal. Style parts are `root`, `surface`, `content`, and `handle`.
 

@@ -269,7 +269,7 @@ fn set_specimen_accordion(ctx, value) { ctx.set_state("specimen_accordion", valu
 fn set_specimen_collapsible(ctx, value) { ctx.set_state("specimen_collapsible", value); record_value("Release details", ctx, value); }
 fn set_specimen_split_size(ctx, value) { ctx.set_state("specimen_split_size", value); record_action("Split resized", ctx, ()); }
 fn set_specimen_resizable(ctx, value) {
-    ctx.set_state("specimen_resizable_rect", #{ x:value.x, y:value.y, width:value.width, height:value.height });
+    ctx.set_state("specimen_resizable_rect", value);
     record_action("Rectangle resized", ctx, ());
 }
 fn set_specimen_draggable(ctx, value) {

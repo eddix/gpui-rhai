@@ -12,7 +12,7 @@
 */
 // Controlled single-element rectangle resizing inside one local boundary.
 // Props: key, label, rect, content, handles, constraints, aspect_ratio, contain, disabled.
-// Events: resize({x,y,width,height,handle}) proposes one complete controlled rectangle.
+// Events: resize({x,y,width,height}) proposes the next controlled rect; store it as is.
 // State: only native pointer preview; application rectangle remains controlled.
 // Parts: root, surface, content, handle.
 // Example: Resizable(#{ key:"card", label:"Resize card",
@@ -69,8 +69,6 @@ define_component(#{
             y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
             width: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: true, sensitive: false },
             height: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: true, sensitive: false },
-            handle: #{ schema: #{ type: "string", allowed: ["n", "s", "e", "w", "ne", "nw", "se", "sw"] },
-                required: true, sensitive: false },
         } } } },
         slots: #{}, parts: ["root", "surface", "content", "handle"],
     },

@@ -333,6 +333,13 @@ The runtime validates the emitted payload and invokes the caller's `on_change`
 in the caller context. Use the same forwarding action for pointer and keyboard
 paths so their semantics cannot diverge.
 
+A controlled component's change event carries exactly the next value of the
+prop it controls: `move` sends a `position`, `transform_change` a `transform`,
+`resize` a `rect`. Callers store the payload as is (`ctx.set_state("rect",
+value)`); an extra field such as the dragged handle fails the prop schema on
+the next render and rolls the change back. Put extra information in a separate
+event.
+
 `on(event, handler)`, `on_capture(event, handler)`, and
 `on_bubble(event, handler)` append ordered handlers; they do not replace a prior
 binding. A handler may return `event_response()` refined with

@@ -64,19 +64,6 @@ impl ResizeHandle {
         }
     }
 
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::North => "n",
-            Self::South => "s",
-            Self::East => "e",
-            Self::West => "w",
-            Self::NorthEast => "ne",
-            Self::NorthWest => "nw",
-            Self::SouthEast => "se",
-            Self::SouthWest => "sw",
-        }
-    }
-
     const fn moves_west(self) -> bool {
         matches!(self, Self::West | Self::NorthWest | Self::SouthWest)
     }
@@ -406,12 +393,7 @@ fn register_pointer_listeners(
                     finish_config.constraints,
                     boundary_size,
                 );
-                finish_events.propose(
-                    "resize",
-                    resize_payload(rect, finish_config.handle),
-                    window,
-                    cx,
-                );
+                finish_events.propose("resize", resize_payload(rect), window, cx);
             };
         let cancel_config = down_config.clone();
         let cancel_events = down_events.clone();
@@ -643,16 +625,13 @@ fn rect_within_boundary(rect: ResizeRect, boundary: (f64, f64)) -> bool {
         && rect.bottom() <= boundary.1 + 0.5
 }
 
-fn resize_payload(rect: ResizeRect, handle: ResizeHandle) -> UiValue {
+/// The proposal is exactly the next `rect`, so a caller can store it as is.
+fn resize_payload(rect: ResizeRect) -> UiValue {
     UiValue::Map(BTreeMap::from([
         ("x".to_owned(), UiValue::Float(rect.x)),
         ("y".to_owned(), UiValue::Float(rect.y)),
         ("width".to_owned(), UiValue::Float(rect.width)),
         ("height".to_owned(), UiValue::Float(rect.height)),
-        (
-            "handle".to_owned(),
-            UiValue::String(handle.as_str().to_owned()),
-        ),
     ]))
 }
 
@@ -683,7 +662,7 @@ fn keyboard_resize_payload(config: &ResizableConfig, key: &str, shift: bool) -> 
         config.constraints,
         boundary,
     );
-    Some(resize_payload(rect, config.handle))
+    Some(resize_payload(rect))
 }
 
 impl PrimitiveHandler for ResizablePrimitiveHandler {
@@ -888,21 +867,6 @@ fn rect_schema() -> ValueSchema {
         (
             "height".to_owned(),
             ObjectField::required(ValueSchema::positive_number()),
-        ),
-        (
-            "handle".to_owned(),
-            ObjectField::required(ValueSchema::String {
-                allowed: vec![
-                    "n".to_owned(),
-                    "s".to_owned(),
-                    "e".to_owned(),
-                    "w".to_owned(),
-                    "ne".to_owned(),
-                    "nw".to_owned(),
-                    "se".to_owned(),
-                    "sw".to_owned(),
-                ],
-            }),
         ),
     ]))
 }
