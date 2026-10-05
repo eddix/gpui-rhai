@@ -1492,18 +1492,18 @@ struct RenderEnvironment<'a, C> {
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
     semantics: Option<&'a crate::CommittedSemanticFrame>,
     a11y_active: bool,
-    /// The parent stacks its children vertically and stretches them in an RTL
-    /// view: a child with a definite width must sit on the start (right) edge,
-    /// which flex layout without a direction would put on the left.
-    rtl_stretch_parent: bool,
+    /// The parent stacks its children vertically and stretches them: a child
+    /// without a width of its own is as wide as the parent, and in an RTL view a
+    /// child with a definite width sits on the start (right) edge.
+    stretch_parent: bool,
 }
 
 impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
     /// The environment of a node's own content: its resolved text color, and
-    /// no start-edge hint (a Box sets that again for its own children).
+    /// no stretch hint (a Box sets that again for its own children).
     fn below(&self, style: &StyleProperties) -> Self {
         Self {
-            rtl_stretch_parent: false,
+            stretch_parent: false,
             ..self.with_resolved_text_color(style)
         }
     }
@@ -1672,7 +1672,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: None,
             a11y_active: false,
-            rtl_stretch_parent: false,
+            stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1753,7 +1753,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(semantics),
             a11y_active,
-            rtl_stretch_parent: false,
+            stretch_parent: false,
         };
         tree.root().map_or_else(
             || {
@@ -1827,7 +1827,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(&semantics),
             a11y_active: false,
-            rtl_stretch_parent: false,
+            stretch_parent: false,
         };
         tree.root().map_or_else(
             || {
@@ -1893,7 +1893,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: None,
             a11y_active: false,
-            rtl_stretch_parent: false,
+            stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -2015,7 +2015,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
-            rtl_stretch_parent: false,
+            stretch_parent: false,
         };
         tree.root().map_or_else(
             || {
@@ -2081,7 +2081,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
-            rtl_stretch_parent: false,
+            stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -2133,7 +2133,7 @@ impl GpuiNodeRenderer {
             retained_links: Some(retained.links),
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
-            rtl_stretch_parent: false,
+            stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
     }
@@ -2178,9 +2178,12 @@ impl GpuiNodeRenderer {
                     .update_canvas_transform(retained_id, animation.canvas_transform());
             }
         }
-        let mut resolved_style = rtl_start_edge(
-            node.style().resolve(&local_interaction),
-            environment.rtl_stretch_parent,
+        let mut resolved_style = definite_stretch(
+            rtl_start_edge(
+                node.style().resolve(&local_interaction),
+                environment.stretch_parent && environment.direction == TextDirection::RightToLeft,
+            ),
+            environment.stretch_parent,
         );
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
@@ -2513,10 +2516,10 @@ impl GpuiNodeRenderer {
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 let style = &node.style().base;
+                let stretching = style.direction != Some(FlexDirection::Row)
+                    && matches!(style.align, None | Some(Align::Stretch));
                 let child_environment = RenderEnvironment {
-                    rtl_stretch_parent: environment.direction == TextDirection::RightToLeft
-                        && style.direction != Some(FlexDirection::Row)
-                        && matches!(style.align, None | Some(Align::Stretch)),
+                    stretch_parent: stretching,
                     ..*environment
                 };
                 let children = render_flattened_children(
@@ -3846,6 +3849,23 @@ fn native_overlay_element<C: ColorResolver>(
 fn rtl_start_edge(mut style: StyleProperties, rtl_stretch_parent: bool) -> StyleProperties {
     if rtl_stretch_parent && style.align_self.is_none() && style.width.is_some() {
         style.align_self = Some(Align::Start);
+    }
+    style
+}
+
+/// A stretched child takes its stretched width as a definite width.
+///
+/// Stretching is a property of the parent; without a definite width Taffy
+/// first measures such a child at its content width and then lays it out again
+/// at the stretched width, and the two passes compound at every nesting level
+/// (a 28 ms frame for a `ListDetail` inside an `AppShell` became 0.4 ms).
+fn definite_stretch(mut style: StyleProperties, stretch_parent: bool) -> StyleProperties {
+    if stretch_parent
+        && style.width.is_none()
+        && style.align_self.is_none()
+        && style.position != Some(PositionMode::Absolute)
+    {
+        style.width = Some(Length::Relative(1.0).into());
     }
     style
 }

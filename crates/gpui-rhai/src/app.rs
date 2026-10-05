@@ -51,6 +51,30 @@ struct ScriptRuntimeInstallation {
 
 impl Global for ScriptRuntimeInstallation {}
 
+thread_local! {
+    static FONT_NAMES: RefCell<Option<(usize, Rc<BTreeSet<String>>)>> =
+        const { RefCell::new(None) };
+}
+
+/// The font families the text system can resolve, cached per set of fonts
+/// loaded through the runtime.
+fn available_font_names(cx: &App) -> Rc<BTreeSet<String>> {
+    let loaded = cx
+        .try_global::<ScriptRuntimeInstallation>()
+        .map_or(0, |installation| installation.loaded_fonts.len());
+    FONT_NAMES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((key, names)) = cache.as_ref()
+            && *key == loaded
+        {
+            return Rc::clone(names);
+        }
+        let names = Rc::new(cx.text_system().all_font_names().into_iter().collect());
+        *cache = Some((loaded, Rc::clone(&names)));
+        names
+    })
+}
+
 /// Install GPUI Rhai's application-wide input actions once.
 pub fn install(cx: &mut App) {
     if cx.has_global::<ScriptRuntimeInstallation>() {
@@ -882,6 +906,18 @@ impl ScriptViewHandle {
         Ok(self.0.entity.read(cx).lifecycle.root().cloned())
     }
 
+    /// The revision of the view's committed tree. It advances whenever a render
+    /// commits, so Host work that depends only on the committed composition
+    /// (an audit, a snapshot) can skip frames that merely repaint.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn committed_revision(&self, cx: &App) -> Result<u64, ScriptViewError> {
+        self.require_not_disposed()?;
+        Ok(self.0.entity.read(cx).lifecycle.revision())
+    }
+
     /// Return the latest mounted-view render, callback, delivery, or reload error.
     ///
     /// Errors remain available while the last-good tree continues to render.
@@ -1252,18 +1288,18 @@ impl ScriptViewHandle {
                 .and_then(|locale| locale.direction(Some(&view.window_id), Some(root)).ok())
                 .unwrap_or(TextDirection::LeftToRight)
         };
-        let fonts = cx
-            .text_system()
-            .all_font_names()
-            .into_iter()
-            .collect::<std::collections::BTreeSet<_>>();
+        // Enumerating system fonts costs about 100 ms, so it happens only when
+        // the font rule is on, and once per set of loaded fonts.
+        let fonts = rules
+            .contains(crate::AuditRule::UnresolvedFont)
+            .then(|| available_font_names(cx));
         Ok(crate::composition_audit::audit(
             &crate::composition_audit::AuditInputs {
                 tree: view.lifecycle.retained(),
                 geometry: &geometry,
                 theme: &theme,
                 rules,
-                available_fonts: Some(&fonts),
+                available_fonts: fonts.as_deref(),
                 direction,
             },
         ))

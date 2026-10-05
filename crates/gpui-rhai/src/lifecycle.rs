@@ -33,6 +33,8 @@ pub struct ScriptLifecycle {
     retained: crate::RetainedUiTree,
     semantics: crate::CommittedSemanticFrame,
     suspended_at: Option<std::time::Instant>,
+    /// Advances whenever a new retained tree is committed (or restored).
+    revision: u64,
 }
 
 #[derive(Clone)]
@@ -71,6 +73,7 @@ impl ScriptLifecycle {
         self.root = checkpoint.root;
         self.retained = checkpoint.retained;
         self.semantics = checkpoint.semantics;
+        self.revision = self.revision.wrapping_add(1);
         self.suspended_at = checkpoint.suspended_at;
     }
 
@@ -111,7 +114,15 @@ impl ScriptLifecycle {
             retained: crate::RetainedUiTree::new(),
             semantics: crate::CommittedSemanticFrame::default(),
             suspended_at: None,
+            revision: 0,
         })
+    }
+
+    /// The revision of the committed retained tree; it advances on every
+    /// commit, so observers can skip work when nothing new was rendered.
+    #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
     }
 
     #[must_use]
@@ -258,6 +269,7 @@ impl ScriptLifecycle {
                 self.trace_reconcile("full", retained.last_report());
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
                 self.commit_runtime_transaction()?;
@@ -354,6 +366,7 @@ impl ScriptLifecycle {
                 self.root = Some(Rc::new(root));
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.commit_runtime_transaction()?;
                 Ok(true)
@@ -505,6 +518,7 @@ impl ScriptLifecycle {
                     self.root = Some(Rc::new(root));
                     self.retained = retained;
                     self.semantics = semantics;
+                    self.revision = self.revision.wrapping_add(1);
                 }
                 self.commit_runtime_transaction()?;
                 Ok(changed)
@@ -935,6 +949,7 @@ impl ScriptLifecycle {
                 self.compiled = candidate;
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
                 self.commit_runtime_transaction()?;
@@ -1040,6 +1055,7 @@ impl ScriptLifecycle {
                 self.compiled = candidate;
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.root = Some(Rc::new(root));
                 self.suspended_at = None;
                 self.state = LifecycleState::Running;

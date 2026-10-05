@@ -62,6 +62,11 @@ and [docs/design/](docs/design/) for the specification.
   Popover, Tooltip, DatePicker, ToggleGroup and closed Dialogs had phantom stops).
 - RTL: definite-width children of stretching columns sit on the start edge; the
   audit compares right edges in RTL views.
+- Performance: a stretched child of a column renders with a definite width, so
+  Taffy no longer lays out nested columns twice per level (Gallery frames went
+  from 20-52 ms to about 2 ms, pixel-identical); `ScriptViewHandle::committed_revision`
+  lets Hosts skip work on repaint-only frames, and the composition audit caches
+  system font names (the Gallery no longer runs a 100 ms audit per frame).
 - The five visual examples are rewritten with the 0.2 layouts and patterns and
   pass the productivity audit; their 38 baselines are recaptured offscreen
   (`scripts/capture-macos-example-baselines.sh`).

@@ -305,6 +305,9 @@ struct GalleryRoot {
     view: Option<ScriptViewHandle>,
     error: Option<String>,
     audit: Option<usize>,
+    /// The committed revision last audited: frames that only repaint (hover,
+    /// scrolling, a caret) are not audited again.
+    audited_revision: Option<u64>,
 }
 
 impl Render for GalleryRoot {
@@ -316,17 +319,22 @@ impl Render for GalleryRoot {
                 .unwrap_or_else(|| "Mounting the Gallery".to_owned());
             return self.host.container(gpui_rhai::gpui::div().child(message));
         };
-        // The audit reads committed geometry, so it runs after this frame paints.
-        let entity = cx.entity();
-        window.on_next_frame(move |window, cx| {
-            entity.update(cx, |root, cx| {
-                if let Some(view) = root.view.clone()
-                    && let Err(error) = report_audit(&view, &mut root.audit, window, cx)
-                {
-                    eprintln!("gpui-rhai gallery: audit failed: {error}");
-                }
+        // The audit reads committed geometry, so it runs after a frame that
+        // follows a new render, and only then.
+        let revision = view.committed_revision(cx).ok();
+        if revision != self.audited_revision {
+            self.audited_revision = revision;
+            let entity = cx.entity();
+            window.on_next_frame(move |window, cx| {
+                entity.update(cx, |root, cx| {
+                    if let Some(view) = root.view.clone()
+                        && let Err(error) = report_audit(&view, &mut root.audit, window, cx)
+                    {
+                        eprintln!("gpui-rhai gallery: audit failed: {error}");
+                    }
+                });
             });
-        });
+        }
         match view.element() {
             Ok(element) => self.host.container(element),
             Err(error) => self
@@ -378,6 +386,7 @@ pub fn run(launch: &AcceptanceLaunch) -> Result<(), String> {
                     view: None,
                     error: None,
                     audit: None,
+                    audited_revision: None,
                 });
                 let weak = root.downgrade();
                 window.defer(cx, move |window, cx| {
