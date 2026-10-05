@@ -82,6 +82,22 @@ and [docs/design/](docs/design/) for the specification.
   used to fail validation and roll the drag back.
 - Gallery: PanZoom shows a plane larger than the viewport, the transform and a
   Reset view button; Rotatable takes the drag anywhere in its area.
+- Corners are an environment axis (`corners`: `square` default, `subtle`,
+  `round`) and radius roles depend on it; a new `radius.xs` role keeps
+  Checkbox and Kbd boxes. `round` makes controls and markers capsules and
+  square controls circles; panels stay at 8px. Square output is unchanged.
+  Style gains logical `radius_start` / `radius_end`, and joined groups
+  (ToggleGroup, ButtonGroup, a Tag facet) round only their outer corners.
+  **Breaking** for copied token bases: components that read radius tokens
+  declare the `corners` environment value.
+- `.window_drag_area()` and TitleBar/AppShell `window_drag` let a Rhai title
+  bar replace the platform one: its background moves the window, a double press
+  runs the platform title-bar action. Drag areas are inert unless the Host
+  allows them (`ScriptViewConfig::window_drag_areas`,
+  `ScriptApplication::window_drag_areas`). On macOS the Gallery uses it.
+- `ctx.theme_variants()` lists the loaded theme variants. The Gallery title bar
+  picks any of them and launches with any bundled theme slug; it also switches
+  the corner style.
 - `gpui-rhai check` warns (`builtin-shadow`) about entry functions that take
   over a built-in: `fn f(a, b)` captures method calls `x.f(a, b)` and direct
   calls `f(a, b)`, also inside imported components

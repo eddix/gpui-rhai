@@ -185,3 +185,25 @@ bash scripts/audit-visual-baselines.sh
   native-keyboard 230 / 0（此前 227，新增 3 个）；performance 2 / 0；57 张基线重新离屏渲染后与
   仓库逐像素一致（gallery 19、dashboard_layout 14、form_showcase 9、settings_panel 9、
   data_table 5、embedded_views 1）。
+
+### 2026-10-05 标题栏、主题切换与圆角风格
+
+- 主题切换：新增 `ctx.theme_variants()`；Gallery 标题栏用一个主题 Select 列出全部 15 个内置主题，
+  `--theme` 接受任何内置主题 slug。原来的明暗按钮改成命令面板里的"切换明暗"：同族有另一种明暗
+  才切（只有 Default 与 Catppuccin 两族同时有明暗）。（D47）
+- 自研标题栏：新增节点 API `.window_drag_area()`，按在节点空白处移动窗口（macOS/Linux 的平台拖动），
+  双击执行系统标题栏动作；被可聚焦控件接走的按下（GPUI 获得焦点时会 `prevent_default`）不移动窗口。
+  默认无效，宿主需对该视图打开 `ScriptViewConfig::window_drag_areas` / `ScriptApplication::window_drag_areas`，
+  保留"嵌入视图不能把内容变成窗口控制区"的既有约束。TitleBar / AppShell 增加 `window_drag`。
+  Gallery 在 macOS 上隐藏系统标题栏（透明 titlebar、`app_owns_titlebar_drag`），红绿灯在 (12, 11)，
+  标题栏起始留 72pt。用 Swift 发送真实 CGEvent 验证：拖标题栏空白处窗口移动（rift 平铺管理器
+  随后把窗口复位），从控件上起拖窗口不动。紧凑密度下红绿灯比文字低约 1pt。（D48）
+- 圆角风格：`corners` 环境轴（square 默认 / subtle / round），圆角角色随之取值，新增 `radius.xs`。
+  round 下控件与标记为胶囊、方形控件为圆、面板 8px；Checkbox 保持带圆角的方框（否则与 Radio
+  混淆），状态灯保持方形，Slider 推子与 Progress 保持矩形，表格/列表/树的选中行保持直角。
+  新增逻辑圆角 `radius_start` / `radius_end`（RTL 镜像），ToggleGroup、ButtonGroup 只圆外侧两端，
+  Tag 分面段承担起始圆角；竖排 ToggleGroup/ButtonGroup/Tabs 用面板圆角。Gallery 标题栏可切换。（D49）
+- 排查：标题栏改动后 `form_scene` 在调试构建的测试线程（2MB 栈）上栈溢出，16MB 时通过，属于递归
+  渲染栈帧累积而非死循环。把 `populate_with_interactions` 中挂交互的部分拆到 `#[inline(never)]` 的
+  `wrap_interactions`，递归前出栈；该场景所需栈从 >2MB 降到 1.5–1.66MB。
+- 证据见本节提交说明与回复。

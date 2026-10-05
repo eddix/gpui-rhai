@@ -23,7 +23,7 @@ read or write the launch directory, use the network or run commands.
 |---|---|---|
 | `--page` | a page ID from `--list` | `button` |
 | `--density` | `comfortable`, `compact` | `comfortable` |
-| `--theme` | `default-dark`, `default-light` | `default-dark` |
+| `--theme` | a bundled theme slug: `default-dark`, `default-light`, `catppuccin-latte`, `tokyo-storm`, ... (the theme file name with dashes) | `default-dark` |
 | `--locale` | `en`, `zh-CN`, `ar` | `en` |
 | `--motion` | `normal`, `reduced`, `none` | `normal` |
 | `--story`, `--case` | a development story, see below | — |
@@ -36,7 +36,7 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ GPUI RHAI  Button        [Comfortable|Compact] Light [English▾] Commands ⌘K │
+│ ●●● GPUI RHAI  Button  [Comfortable|Compact] [Square|Subtle|Round] [Default · Dark▾] [English▾] Commands ⌘K │
 ├──────────────┬──────────────────────────────────────────────────────┤
 │ ⌄ Foundations│ Button                                        Source │
 │ ⌄ Markers    │ One solid button per group.                          │
@@ -44,12 +44,17 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
 │   IconButton │ [Deploy] [Export] [Duplicate] Cancel                 │
 │   …          │ …                                                    │
 ├──────────────┴──────────────────────────────────────────────────────┤
-│ DENSITY comfortable  THEME Default Dark  LOCALE en       AUDIT 0  ⌘K │
+│ DENSITY comfortable  THEME Default Dark  CORNERS square  LOCALE en   AUDIT 0  ⌘K │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Title bar**: density (ToggleGroup), light/dark, locale (Select) and the
-  command palette.
+- **Title bar**: density and corner style (ToggleGroups), the theme (a Select
+  of every loaded theme, from `ctx.theme_variants()`), locale (Select) and the
+  command palette. On macOS it replaces the platform title bar: the window
+  buttons sit at its start and dragging its background moves the window
+  (`window_drag`, allowed by the Host). Corner styles are described in
+  [design/atoms.md](design/atoms.md#radius-roles-and-the-corner-style); square
+  is the design language and the baselines' style.
 - **Sidebar**: a Tree of 83 pages in 11 groups: Foundations 4, Markers 8,
   Fields 14, Lists 9, Overlays 6, Containers 11, Display 7, Interaction 7,
   Layouts and patterns 12, Scenes 4, Effects 1.
@@ -62,7 +67,8 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
 
 Keyboard: F6 / Shift+F6 move between sidebar, main and inspector; Tab moves
 inside a region; Cmd+K (Ctrl+K) opens the palette, which lists every page and
-the Gallery actions (toggle density, mode and source).
+the Gallery actions (toggle density, light/dark within the theme family, corner
+style and source).
 
 The four scenes are small complete tasks rather than specimens:
 
