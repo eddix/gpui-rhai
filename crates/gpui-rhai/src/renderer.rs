@@ -1523,6 +1523,9 @@ struct RenderEnvironment<'a, C> {
     /// without a width of its own is as wide as the parent, and in an RTL view a
     /// child with a definite width sits on the start (right) edge.
     stretch_parent: bool,
+    /// This node stretches its own children, by its resolved style (interaction
+    /// states included), so the hint follows what is actually laid out.
+    stretch_children: bool,
 }
 
 impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
@@ -1531,6 +1534,8 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
     fn below(&self, style: &StyleProperties) -> Self {
         Self {
             stretch_parent: false,
+            stretch_children: style.direction != Some(FlexDirection::Row)
+                && matches!(style.align, None | Some(Align::Stretch)),
             ..self.with_resolved_text_color(style)
         }
     }
@@ -1705,6 +1710,7 @@ impl GpuiNodeRenderer {
             a11y_active: false,
             window_drag: false,
             stretch_parent: false,
+            stretch_children: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1787,6 +1793,7 @@ impl GpuiNodeRenderer {
             a11y_active,
             window_drag: false,
             stretch_parent: false,
+            stretch_children: false,
         };
         tree.root().map_or_else(
             || {
@@ -1862,6 +1869,7 @@ impl GpuiNodeRenderer {
             a11y_active: false,
             window_drag: false,
             stretch_parent: false,
+            stretch_children: false,
         };
         tree.root().map_or_else(
             || {
@@ -1929,6 +1937,7 @@ impl GpuiNodeRenderer {
             a11y_active: false,
             window_drag: false,
             stretch_parent: false,
+            stretch_children: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -2053,6 +2062,7 @@ impl GpuiNodeRenderer {
             a11y_active: resources.a11y_active,
             window_drag: resources.window_drag,
             stretch_parent: false,
+            stretch_children: false,
         };
         tree.root().map_or_else(
             || {
@@ -2120,6 +2130,7 @@ impl GpuiNodeRenderer {
             a11y_active: resources.a11y_active,
             window_drag: resources.window_drag,
             stretch_parent: false,
+            stretch_children: false,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -2173,6 +2184,7 @@ impl GpuiNodeRenderer {
             a11y_active: resources.a11y_active,
             window_drag: resources.window_drag,
             stretch_parent: false,
+            stretch_children: false,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
     }
@@ -2562,11 +2574,8 @@ impl GpuiNodeRenderer {
             ),
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-                let style = &node.style().base;
-                let stretching = style.direction != Some(FlexDirection::Row)
-                    && matches!(style.align, None | Some(Align::Stretch));
                 let child_environment = RenderEnvironment {
-                    stretch_parent: stretching,
+                    stretch_parent: environment.stretch_children,
                     ..*environment
                 };
                 let children = render_flattened_children(
@@ -3937,8 +3946,17 @@ fn rtl_start_edge(mut style: StyleProperties, rtl_stretch_parent: bool) -> Style
 /// first measures such a child at its content width and then lays it out again
 /// at the stretched width, and the two passes compound at every nesting level
 /// (a 28 ms frame for a `ListDetail` inside an `AppShell` became 0.4 ms).
+///
+/// Only where the two are the same box: a horizontal margin (auto or not)
+/// takes its share out of the stretched width, which `width: 100%` would not.
 fn definite_stretch(mut style: StyleProperties, stretch_parent: bool) -> StyleProperties {
+    let margin = &style.margin;
+    let horizontal_margin = [margin.left, margin.right, margin.start, margin.end]
+        .into_iter()
+        .flatten()
+        .any(|value| !is_zero_length(value));
     if stretch_parent
+        && !horizontal_margin
         && style.width.is_none()
         && style.align_self.is_none()
         && style.position != Some(PositionMode::Absolute)
@@ -3946,6 +3964,16 @@ fn definite_stretch(mut style: StyleProperties, stretch_parent: bool) -> StylePr
         style.width = Some(Length::Relative(1.0).into());
     }
     style
+}
+
+fn is_zero_length(value: crate::LayoutLength) -> bool {
+    match value {
+        crate::LayoutLength::Definite(Length::Pixels(pixels) | Length::Rems(pixels))
+        | crate::LayoutLength::Signed(
+            crate::SignedLength::Pixels(pixels) | crate::SignedLength::Rems(pixels),
+        ) => pixels.abs() <= f64::EPSILON,
+        _ => false,
+    }
 }
 
 fn children_take_focus(node: &UiNode, disabled: bool) -> bool {
