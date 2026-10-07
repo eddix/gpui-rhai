@@ -104,12 +104,23 @@ define_component(#{
         },
         parts: ["root", "trigger", "value", "placeholder", "indicator", "clear",
             "panel", "search", "list", "group", "option", "option_selected",
-            "option_active", "option_disabled", "empty", "check", "indicator_bar"],
+            "option_active", "option_disabled", "empty", "check", "indicator_bar",
+            "focus_frame"],
     },
     render: Fn("render_Combobox")
 });
 
 fn Combobox(props) { render_component("components/combobox", props) }
+
+// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
+// panel's hairline (painted over its children) turns the focus color and this frame adds
+// the inner pixel. A control inside shows its own frame instead.
+fn panel_focus_frame(ctx) {
+    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
+        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
+        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
+        .group_focus(style().border_color(theme_color("focus_ring")))))
+}
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn option_disabled(option) { prop_or(option, "disabled", false) }
 fn option_group(option) {
@@ -467,9 +478,10 @@ fn render_Combobox(ctx, props) {
                 .height(theme_length("metrics.row") * visible))));
     }
     if "footer" in props && props.footer != () { content.push(props.footer); }
+    content.push(panel_focus_frame(ctx));
     let panel = column(content).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().width(if custom_trigger { width } else { relative(1.0) })
+            style().relative().width(if custom_trigger { width } else { relative(1.0) })
             .min_width(px(0)).gap(theme_spacing("xs")).padding_y(theme_spacing("xs"))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("lg")).background(theme_color("surface_raised"))

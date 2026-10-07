@@ -7,8 +7,8 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "surface_raised", "border", "text_primary", "spacing.xl", "space.group", "space.related",
-    "typography.title"
+    "surface_raised", "border", "text_primary", "focus_ring", "spacing.xl", "space.group",
+    "space.related", "typography.title"
   ],
   "environment": ["density"]
 }
@@ -17,15 +17,15 @@
 // Props: key, open, side, title, content/actions, size, dismissal policy, and on_open_change.
 // Events: open_change(bool).
 // State: caller owns open state.
-// Parts: root, backdrop, panel, title, content, actions.
+// Parts: root, backdrop, panel, title, content, actions, focus_frame.
 // Example: Sheet(#{ key: "inspector", open: true, side: "end", title: "Inspector", content: panel, on_open_change: Fn("opened") })
 
 define_component(#{
     metadata: #{ id: "components/sheet", "export": "Sheet", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
-            "surface_raised", "border", "text_primary", "spacing.xl", "space.group",
-            "space.related", "typography.title"
+            "surface_raised", "border", "text_primary", "focus_ring", "spacing.xl",
+            "space.group", "space.related", "typography.title"
         ],
         environment: ["density"] },
     schema: #{
@@ -50,7 +50,7 @@ define_component(#{
         },
         state: #{ fields: #{} }, events: #{ open_change: #{ payload: #{ type: "bool" } } },
         slots: #{ content: #{ required: true, multiple: false }, actions: #{ required: false, multiple: true } },
-        parts: ["root", "backdrop", "panel", "title", "content", "actions"],
+        parts: ["root", "backdrop", "panel", "title", "content", "actions", "focus_frame"],
     },
     render: Fn("render_Sheet")
 });
@@ -82,6 +82,17 @@ fn render_Sheet(ctx, props) {
     } else {
         panel_style = panel_style.width(relative(1.0)).height(px(size));
     }
+    // The 2px focus frame while the panel itself holds focus, over the hairline too.
+    let frame = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0));
+    frame = if side == "start" { frame.inset_end(offset_px(-1)) }
+        else if side == "end" { frame.inset_start(offset_px(-1)) }
+        else if side == "top" { frame.bottom(offset_px(-1)) }
+        else { frame.top(offset_px(-1)) };
+    children.push(row([]).with_style(ctx.component_style("focus_frame", frame
+        .border(px(2)).border_color(rgba(0x00000000))
+        .group_focus(style().border_color(theme_color("focus_ring"))))));
+    panel_style = panel_style.relative()
+        .group_focus(style().border_color(theme_color("focus_ring")));
     let panel = column(children).with_style(ctx.component_style("panel", panel_style))
         .accessibility_role("dialog").accessibility_label(props.title);
     let node = overlay(row([]), panel, #{

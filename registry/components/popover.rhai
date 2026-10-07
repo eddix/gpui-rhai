@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["surface_raised", "border", "metrics.inset", "space.related", "radius.lg", "typography.body"],
+  "tokens": ["surface_raised", "border", "focus_ring", "metrics.inset", "space.related", "radius.lg", "typography.body"],
   "environment": ["density", "corners"]
 }
 */
@@ -15,7 +15,7 @@
 // Props: key, label, trigger/content slots, open, placement, align (start|center|end,
 //        default start), gap, dismissal policy, on_open_change.
 // Events: open_change(bool). State: controlled by the caller.
-// Parts: root, trigger, content.
+// Parts: root, trigger, content, focus_frame.
 // Example: Popover(#{ key: "profile", label: "Profile", trigger: text("Open"), content: text("Profile"), open: true })
 
 define_component(#{
@@ -27,7 +27,7 @@ define_component(#{
         dependencies: [],
         capabilities: #{},
         tokens: [
-            "surface_raised", "border", "metrics.inset", "space.related", "radius.lg",
+            "surface_raised", "border", "focus_ring", "metrics.inset", "space.related", "radius.lg",
             "typography.body"
         ],
         environment: ["density", "corners"],
@@ -86,7 +86,7 @@ define_component(#{
             trigger: #{ required: true, multiple: false },
             content: #{ required: true, multiple: false },
         },
-        parts: ["root", "trigger", "content"],
+        parts: ["root", "trigger", "content", "focus_frame"],
     },
     render: Fn("render_Popover")
 });
@@ -96,12 +96,23 @@ fn optional_bool(props, name, fallback) {
 }
 
 fn Popover(props) { render_component("components/popover", props) }
+
+// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
+// panel's hairline (painted over its children) turns the focus color and this frame adds
+// the inner pixel. A control inside shows its own frame instead.
+fn panel_focus_frame(ctx) {
+    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
+        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
+        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
+        .group_focus(style().border_color(theme_color("focus_ring")))))
+}
 fn render_Popover(ctx, props) {
     let placement = if "placement" in props { props.placement } else { "bottom" };
     let gap = if "gap" in props { props.gap } else { 8.0 };
-    let content = column([props.content])
+    let content = column([props.content, panel_focus_frame(ctx)])
         .with_style(ctx.component_style("content",
             style()
+                .relative()
                 .min_width(px(240))
                 .max_width(px(400))
                 .padding(theme_length("metrics.inset"))
@@ -109,6 +120,7 @@ fn render_Popover(ctx, props) {
                 .radius(theme_radius("lg"))
                 .border(px(1))
                 .border_color(theme_color("border"))
+                .group_focus(style().border_color(theme_color("focus_ring")))
                 .background(theme_color("surface_raised"))
                 .typography("body")
         ))

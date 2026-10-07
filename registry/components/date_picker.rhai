@@ -82,13 +82,23 @@ define_component(#{
         parts: ["root", "trigger", "trigger_value", "trigger_icon", "panel", "header",
             "month_title", "previous", "next", "weekdays", "weekday", "grid", "week",
             "day", "day_outside", "day_today", "day_selected", "day_focused",
-            "day_disabled", "footer", "preset", "clear"],
+            "day_disabled", "footer", "preset", "clear", "focus_frame"],
         effects: ["controlled_anchor"],
     },
     render: Fn("render_DatePicker")
 });
 
 fn DatePicker(props) { render_component("components/date_picker", props) }
+
+// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
+// panel's hairline (painted over its children) turns the focus color and this frame adds
+// the inner pixel. A control inside shows its own frame instead.
+fn panel_focus_frame(ctx) {
+    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
+        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
+        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
+        .group_focus(style().border_color(theme_color("focus_ring")))))
+}
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn optional_prop(props, name) { if name in props && props[name] != () { props[name] } else { () } }
 fn weekday_index(name) {
@@ -402,9 +412,10 @@ fn render_DatePicker(ctx, props) {
                 .padding_top(theme_spacing("sm")).border_top(px(1)).border_color(theme_color("border"))))
             .env(#{ size: "xs" }));
     }
+    panel_children.push(panel_focus_frame(ctx));
     let panel = column(panel_children).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().gap(theme_spacing("xs")).padding(theme_length("metrics.inset"))
+            style().relative().gap(theme_spacing("xs")).padding(theme_length("metrics.inset"))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("lg")).background(theme_color("surface_raised"))
                 .typography("body")

@@ -231,12 +231,13 @@ fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
             .with_style(ctx.component_style("group_indicator", style()
                 .width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
                 .text_color(theme_color("text_muted"))));
-        let label = text(item.group).with_key(`${payload.key}-label`)
+        // A group header is structure, not data: the label voice, like the column headers.
+        let label = text(item.group.to_upper()).with_key(`${payload.key}-label`)
             .with_style(ctx.component_style("group_label",
-                style().flex_grow().typography("body").font_weight(600)));
+                style().flex_grow().typography("label").text_color(theme_color("text_muted"))));
         let count = text(`${item.count}`).with_key(`${payload.key}-count`)
-            .with_style(ctx.component_style("group_count", style().typography("body")
-                .font_feature("tnum", 1).text_color(theme_color("text_muted"))));
+            .with_style(ctx.component_style("group_count", style().typography("label")
+                .text_color(theme_color("text_muted"))));
         let node = row([indicator, label, count])
             .with_key(payload.key)
             .with_style(ctx.component_style("group_header",

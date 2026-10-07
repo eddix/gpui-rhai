@@ -7,8 +7,8 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "surface_raised", "border", "text_primary", "spacing.xl", "space.group", "space.related",
-    "radius.lg", "typography.title", "typography.body"
+    "surface_raised", "border", "text_primary", "focus_ring", "spacing.xl", "space.group",
+    "space.related", "radius.lg", "typography.title", "typography.body"
   ],
   "environment": ["density", "corners"]
 }
@@ -18,7 +18,7 @@
 // Props: key, open, title, content/actions slots, dismissal policy,
 //        on_open_change.
 // Events: open_change(bool). State: controlled by the caller.
-// Parts: root, backdrop, panel, title, content, actions.
+// Parts: root, backdrop, panel, title, content, actions, focus_frame.
 // Example: Dialog(#{ key: "confirm", open: true, title: "Confirm", content: text("Continue?") })
 
 define_component(#{
@@ -30,8 +30,8 @@ define_component(#{
         dependencies: [],
         capabilities: #{},
         tokens: [
-            "surface_raised", "border", "text_primary", "spacing.xl", "space.group",
-            "space.related", "radius.lg", "typography.title", "typography.body"
+            "surface_raised", "border", "text_primary", "focus_ring", "spacing.xl",
+            "space.group", "space.related", "radius.lg", "typography.title", "typography.body"
         ],
         environment: ["density", "corners"],
     },
@@ -77,7 +77,7 @@ define_component(#{
             content: #{ required: true, multiple: false },
             actions: #{ required: false, multiple: true },
         },
-        parts: ["root", "backdrop", "panel", "title", "content", "actions"],
+        parts: ["root", "backdrop", "panel", "title", "content", "actions", "focus_frame"],
     },
     render: Fn("render_Dialog")
 });
@@ -87,6 +87,16 @@ fn optional_bool(props, name, fallback) {
 }
 
 fn Dialog(props) { render_component("components/dialog", props) }
+
+// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
+// panel's hairline (painted over its children) turns the focus color and this frame adds
+// the inner pixel. A control inside shows its own frame instead.
+fn panel_focus_frame(ctx) {
+    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
+        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
+        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
+        .group_focus(style().border_color(theme_color("focus_ring")))))
+}
 
 fn forward_open_change(ctx, open) {
     ctx.emit("open_change", open);
@@ -108,10 +118,12 @@ fn render_Dialog(ctx, props) {
                 style().gap(theme_length("space.related")).justify_end()))
         );
     }
+    children.push(panel_focus_frame(ctx));
     let panel = column(children)
         .with_style(ctx.component_style("panel",
             // Overlays are raised blocks with a hairline; no shadow.
             style()
+                .relative()
                 .width(px(420))
                 .max_width(relative(0.9))
                 .padding(theme_spacing("xl"))
@@ -119,6 +131,7 @@ fn render_Dialog(ctx, props) {
                 .radius(theme_radius("lg"))
                 .border(px(1))
                 .border_color(theme_color("border"))
+                .group_focus(style().border_color(theme_color("focus_ring")))
                 .background(theme_color("surface_raised"))
         ))
         .accessibility_role("dialog")

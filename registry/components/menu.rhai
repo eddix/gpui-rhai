@@ -91,7 +91,7 @@ define_component(#{
         },
         slots: #{ trigger: #{ required: true, multiple: false } },
         parts: ["root", "trigger", "content", "item", "separator", "shortcut", "submenu",
-            "label", "check", "indicator_bar"],
+            "label", "check", "indicator_bar", "focus_frame"],
     },
     render: Fn("render_Menu")
 });
@@ -139,6 +139,16 @@ fn next_typeahead(items, value, key) {
 }
 
 fn Menu(props) { render_component("components/menu", props) }
+
+// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
+// panel's hairline (painted over its children) turns the focus color and this frame adds
+// the inner pixel. A control inside shows its own frame instead.
+fn panel_focus_frame(ctx) {
+    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
+        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
+        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
+        .group_focus(style().border_color(theme_color("focus_ring")))))
+}
 fn context_request(ctx, event) {
     if event.button != "right" { return propagate(); }
     ctx.emit("context_request", event);
@@ -236,11 +246,12 @@ fn render_Menu(ctx, props) {
         }
     }
     let activation = if props.active_value != "" { menu_activation(props, props.active_value) } else { () };
+    children.push(panel_focus_frame(ctx));
     let content = column(children)
         .with_key(`${props.key}-content`)
         .with_style(ctx.component_style("content",
         // Overlays are raised blocks with a hairline; rows carry their own inset.
-        style().min_width(px(240)).padding_y(theme_spacing("xs")).radius(theme_radius("lg"))
+        style().relative().min_width(px(240)).padding_y(theme_spacing("xs")).radius(theme_radius("lg"))
                 .border(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface_raised"))
                 .focus(style().border_color(theme_color("focus_ring")))

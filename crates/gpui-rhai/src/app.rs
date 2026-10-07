@@ -4936,7 +4936,13 @@ impl ScriptHostView {
             .lifecycle
             .retained()
             .nodes()
-            .filter(|node| node.element_ref().is_some() || node.focus_styled())
+            // An overlay's handle is its panel's: the view owns it so the panel
+            // holding focus is part of the focus path seen by `group_focus`.
+            .filter(|node| {
+                node.element_ref().is_some()
+                    || node.focus_styled()
+                    || node.kind() == crate::UiNodeKindTag::Overlay
+            })
             .map(crate::RetainedNode::id)
             .collect::<BTreeSet<_>>();
         self.focus_handles.retain(|node, _| active.contains(node));

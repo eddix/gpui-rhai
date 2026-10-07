@@ -128,6 +128,14 @@ and [docs/design/](docs/design/) for the specification.
   `toolbar.size` through and takes Region's `inset`.
 - Region gains `scroll` (the body scrolls, header and footer stay) and
   `external_title` (the title is drawn elsewhere; exclusive with `title`).
+- Table group headers use the label voice (mono, uppercase, muted), like the
+  column headers.
+- Overlay panels that hold focus themselves show the 2px focus frame over their
+  edge (part `focus_frame`; the hairline turns the focus color and the frame
+  adds the inner pixel): Dialog, Sheet and Popover, which showed nothing, and
+  Menu, DatePicker and Combobox, which showed a 1px border. The view owns an
+  overlay's panel focus handle, so `group_focus` styles in the panel content
+  see the panel holding focus.
 
 ## 0.1.8 - 2026-10-04
 

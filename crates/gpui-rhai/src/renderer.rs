@@ -2266,8 +2266,10 @@ impl GpuiNodeRenderer {
         ) {
             element = element.flex_1().min_h(px(0.0));
         }
-        let focus_handle =
-            retained_id.and_then(|node| environment.focus_handles.get(&node).cloned());
+        // An overlay's handle is its panel's, tracked by the overlay element.
+        let focus_handle = retained_id
+            .filter(|_| !matches!(node.kind(), UiNodeKind::Overlay { .. }))
+            .and_then(|node| environment.focus_handles.get(&node).cloned());
         element =
             apply_node_focus_tracking(element, node, focus_handle.as_ref(), environment.primitives);
         if let Some(opacity) = signals.opacity.or(animation.opacity) {
@@ -2449,7 +2451,8 @@ impl GpuiNodeRenderer {
         let persistent_focus = retained_id
             .and_then(|id| environment.focus_handles.get(&id))
             .filter(|_| {
-                !matches!(node.kind(), UiNodeKind::Custom { primitive }
+                !matches!(node.kind(), UiNodeKind::Overlay { .. })
+                    && !matches!(node.kind(), UiNodeKind::Custom { primitive }
                     if environment.primitives.uses_primary_focus(&primitive.primitive))
             });
         // Key handlers on a container that holds focusable children route keys
@@ -3879,9 +3882,19 @@ fn native_overlay_element<C: ColorResolver>(
             0,
         ),
     );
+    // The panel holding focus itself is seen by `group_focus` styles in its
+    // content (a panel's focus frame), as a focusable node's is in its subtree.
+    let panel_focus = retained_id.and_then(|id| environment.focus_handles.get(&id).cloned());
+    let content_environment = RenderEnvironment {
+        focus: NodeFocus {
+            owner: retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref(),
+            ..environment.focus
+        },
+        ..*environment
+    };
     let content = GpuiNodeRenderer::render_internal(
         content,
-        environment,
+        &content_environment,
         boundary_fallback,
         &format!("{path}/content"),
         retained_child_id(
@@ -3947,6 +3960,7 @@ fn native_overlay_element<C: ColorResolver>(
         ))
         .restore_focus_on_close(restore_focus_on_close)
         .with_trigger_focusable(trigger_focusable)
+        .with_panel_focus(panel_focus)
 }
 
 /// In an RTL stretching column, a child with a definite width belongs on the

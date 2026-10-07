@@ -223,6 +223,18 @@ AppShell defines regions (sidebar, main, inspector, status bar).
 - Show shortcuts where the action is offered: menus, palette, tooltips, and
   buttons where space allows.
 
+### What AppShell covers
+
+AppShell is the shell of a single-window tool: a title bar, one sidebar, the
+main area, one inspector, a status bar, the command palette and F6 regions,
+with fixed side widths (`sidebar_width`, `inspector_width`). It does not
+resize or collapse side bars, stack several panels on one side, or place
+floating tool windows. An application that needs those keeps its own shell
+and reuses the parts: Region and DataView for the panes, TitleBar and
+StatusBar for the bars, F6 through its own key handlers (a Host can mount a
+view per pane with `host_slot`). Its regions should still show the 2px ink
+frame while they hold focus themselves.
+
 ## 9. Page patterns
 
 ```

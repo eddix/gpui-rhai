@@ -452,6 +452,9 @@ pub(crate) struct ScriptOverlayElement {
     /// The trigger content holds its own tab stop (a Button, a field), so the
     /// trigger wrapper must not add a second one.
     trigger_focusable: bool,
+    /// The panel's focus handle when the view owns it (a retained overlay);
+    /// otherwise the element keeps its own.
+    panel_focus: Option<FocusHandle>,
     coordinator: WindowOverlayCoordinator,
 }
 
@@ -478,8 +481,14 @@ impl ScriptOverlayElement {
             focus_surface: Rgba8::from_rgb_hex(0x0018_181b),
             restore_focus_on_close,
             trigger_focusable: false,
+            panel_focus: None,
             coordinator,
         }
+    }
+
+    pub(crate) fn with_panel_focus(mut self, handle: Option<FocusHandle>) -> Self {
+        self.panel_focus = handle;
+        self
     }
 
     pub(crate) fn with_trigger_focusable(mut self, focusable: bool) -> Self {
@@ -863,6 +872,11 @@ impl Element for ScriptOverlayElement {
                     .trigger_focus
                     .clone()
                     .tab_stop(self.trigger_tab_stop());
+                if let Some(handle) = &self.panel_focus {
+                    state.panel_focus = handle
+                        .clone()
+                        .tab_stop(self.spec.kind != OverlayKind::Tooltip);
+                }
                 if state.was_open && !self.spec.open {
                     let _ = self.coordinator.dismiss(&self.spec.id, window, cx);
                 }

@@ -354,6 +354,19 @@ layout shift:
 
 A focus owner that needs no visual of its own declares `.focus(style())`.
 
+**Containers that hold focus.** A container that can hold focus itself (an
+overlay panel of Dialog, Sheet, Popover, Menu, DatePicker or Combobox; an
+AppShell region) shows the same 2px `focus_ring` frame over its edge (part
+`focus_frame`; a panel's hairline takes the focus color and the frame adds the
+inner pixel, since a border paints over its children), only while it holds
+focus itself. Once a
+control inside has focus, that control shows its frame and the container shows
+none. Where keys move a cursor (Table and Tree rows, a Menu's active item, a
+DatePicker's focused day), the cursor shows where they act; a Menu opened from
+the keyboard shows its active item, not a frame. An overlay panel's own focus
+is visible to `group_focus` styles in its content, so the frame is an ordinary
+node.
+
 **One tab stop per control.** Tab reaches every interactive component exactly
 once (sets of independent targets such as Accordion headers, Pagination or a
 closable Tag's close button excepted). The runtime keeps wrappers out of the
