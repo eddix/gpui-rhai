@@ -319,7 +319,10 @@ fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
         .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
         .accessibility_table_row(item.label, item.selected,
             payload.index + 2, payload.index + 1, total_rows);
+    // A row is a pointer target only: the table is the one tab stop, and its keys move
+    // the selection.
     node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
+        .tab_stop(false)
 }
 
 fn table_row_item(source, source_index, columns, row_key, label, selected,
@@ -546,18 +549,27 @@ fn table_shell(ctx,props,columns,signals,header,body,row_count) {
 }
 
 // One tab stop for the rows: arrows move the selection, Enter activates the row.
-fn with_row_keys(table, keys, selected) {
-    if keys.len == 0 { return table; }
+// Keyboard targets of displayed array rows, by the rule native_table_neighbors applies to
+// a NativeCollection: the current row is the first displayed selected row; Up and Down
+// move one row and stop at the ends, and go to the first row when none is current.
+fn row_neighbors(keys, selected) {
+    if keys.len == 0 { return #{ first: (), last: (), previous: (), next: (), current: () }; }
     let current = -1;
     for index in 0..keys.len { if current < 0 && keys[index] in selected { current = index; } }
     let previous = if current <= 0 { 0 } else { current - 1 };
     let next = if current < 0 { 0 } else if current + 1 < keys.len { current + 1 } else { current };
+    #{ first: keys[0], last: keys[keys.len - 1], previous: keys[previous], next: keys[next],
+        current: if current >= 0 { keys[current] } else { () } }
+}
+
+fn with_row_keys(table, neighbors) {
+    if neighbors == () || neighbors.first == () { return table; }
     let node = table.tab_stop(true)
-        .on_key_value("up", Fn("keyboard_select"), keys[previous])
-        .on_key_value("down", Fn("keyboard_select"), keys[next])
-        .on_key_value("home", Fn("keyboard_select"), keys[0])
-        .on_key_value("end", Fn("keyboard_select"), keys[keys.len - 1]);
-    if current >= 0 { node.on_key_value("enter", Fn("keyboard_activate"), keys[current]) } else { node }
+        .on_key_value("up", Fn("keyboard_select"), neighbors.previous)
+        .on_key_value("down", Fn("keyboard_select"), neighbors.next)
+        .on_key_value("home", Fn("keyboard_select"), neighbors.first)
+        .on_key_value("end", Fn("keyboard_select"), neighbors.last);
+    if neighbors.current != () { node.on_key_value("enter", Fn("keyboard_activate"), neighbors.current) } else { node }
 }
 
 fn table_state_body(ctx,props,part,content) {
@@ -693,11 +705,18 @@ fn render_Table(ctx, props) {
         overdraw_pixels: row_height * 4.0,
         alignment: "top", follow_tail: false
     };
-    // Array rows support keyboard navigation; the selected row stays revealed.
-    let row_keys = [];
-    if !native_data && selection_mode != "none" {
-        for item in data { if item.kind == "row" { row_keys.push(item.key); } }
-        for key in row_keys { if key in selected { collection.reveal_key = key; break; } }
+    // Both data sources are keyboard operable; the current row stays revealed. A native
+    // collection finds its targets in native code, without enumerating rows in Rhai.
+    let neighbors = ();
+    if selection_mode != "none" {
+        if native_data {
+            neighbors = native_table_neighbors(data, selected);
+        } else {
+            let row_keys = [];
+            for item in data { if item.kind == "row" { row_keys.push(item.key); } }
+            neighbors = row_neighbors(row_keys, selected);
+        }
+        if neighbors.current != () { collection.reveal_key = neighbors.current; }
     }
     if !native_data || !sticky_groups { collection.sticky_headers = if sticky_groups { sticky_headers } else { [] }; }
     if fill_height { collection.fill_height = true; }
@@ -708,5 +727,5 @@ fn render_Table(ctx, props) {
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns)).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
-    with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1), row_keys, selected)
+    with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1), neighbors)
 }

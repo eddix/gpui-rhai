@@ -1494,6 +1494,11 @@ struct RenderEnvironment<'a, C> {
     geometry: &'a crate::GeometryRegistry,
     pointer_capture: &'a crate::PointerCaptureRegistry,
     focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
+    /// For slot content rendered without its retained tree: the focus owner of
+    /// each node (its nearest focus-styled ancestor), consulted only by native
+    /// controls that share their owner's focus. Other nodes track only their
+    /// own handle.
+    focus_owners: &'a BTreeMap<NodeId, FocusHandle>,
     scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     virtual_requests: &'a crate::VirtualRequestRegistry,
@@ -1607,6 +1612,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub geometry: &'a crate::GeometryRegistry,
     pub pointer_capture: &'a crate::PointerCaptureRegistry,
     pub focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
+    pub focus_owners: &'a BTreeMap<NodeId, FocusHandle>,
     pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     pub scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     pub virtual_requests: &'a crate::VirtualRequestRegistry,
@@ -1690,6 +1696,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1773,6 +1780,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1849,6 +1857,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1917,6 +1926,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1976,6 +1986,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -2039,6 +2050,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
@@ -2107,6 +2119,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
@@ -2161,6 +2174,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
@@ -2618,6 +2632,10 @@ impl GpuiNodeRenderer {
                                     retained_id,
                                     environment.focus_handles,
                                 )
+                                .or_else(|| {
+                                    retained_id
+                                        .and_then(|id| environment.focus_owners.get(&id).cloned())
+                                })
                             })
                             .flatten(),
                         boundary_fallback.cloned(),
@@ -4093,7 +4111,11 @@ fn owned_slot_runtime<C: ColorResolver>(
         environment.retained_links,
         retained_roots.values().copied(),
     );
-    let mut focus_handles = environment.focus_handles.clone();
+    // Owners go to their own map: in `focus_handles` every slot node would
+    // track its owner's handle, and the owner's focus would resolve to the
+    // last of them (a Table row took the table's keys).
+    let focus_handles = environment.focus_handles.clone();
+    let mut focus_owners = environment.focus_owners.clone();
     if let Some(tree) = environment.retained {
         let nodes = retained_links
             .iter()
@@ -4105,7 +4127,7 @@ fn owned_slot_runtime<C: ColorResolver>(
             if let Some(focus) =
                 primitive_focus_owner(Some(tree), Some(node), environment.focus_handles)
             {
-                focus_handles.insert(node, focus);
+                focus_owners.insert(node, focus);
             }
         }
     }
@@ -4128,6 +4150,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles,
+        focus_owners,
         scroll_handles: environment.scroll_handles.clone(),
         scroll_anchors: environment.scroll_anchors.clone(),
         virtual_requests: environment.virtual_requests.clone(),

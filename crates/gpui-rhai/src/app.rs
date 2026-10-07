@@ -4319,6 +4319,9 @@ impl Render for ScriptHostView {
             geometry: &snapshot.geometry,
             pointer_capture: &snapshot.pointer_capture,
             focus_handles: &self.focus_handles,
+            // The view renders its retained tree, where owners are found by
+            // walking ancestors; only slot content carries an owner map.
+            focus_owners: &BTreeMap::new(),
             scroll_handles: &self.scroll_handles,
             scroll_anchors: &self.scroll_anchors,
             virtual_requests: &snapshot.virtual_requests,

@@ -69,8 +69,11 @@ fn tab_stops(cx: &mut TestAppContext, imports: &str, body: &str) -> usize {
     });
     cx.run_until_parked();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
+    // Frames realize virtual rows and overlay content, so stops inside them count.
+    for _ in 0..2 {
+        visual.update(|window, cx| window.simulate_next_frame(cx));
+        visual.run_until_parked();
+    }
     let mut seen: Vec<gpui::FocusHandle> = Vec::new();
     for _ in 0..32 {
         visual.update(|window, cx| window.focus_next(cx));
