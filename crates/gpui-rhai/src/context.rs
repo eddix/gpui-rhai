@@ -1710,6 +1710,33 @@ impl UiContext {
         self.element_bounds(&reference)
     }
 
+    /// The window bounds of a laid-out item of one of this component's virtual
+    /// collections, by its display index; `null` when it is not laid out. An
+    /// event-time read: it establishes no render dependency.
+    ///
+    /// # Errors
+    ///
+    /// Returns for runtime borrow conflicts.
+    pub fn virtual_item_bounds(
+        &self,
+        collection: &str,
+        index: usize,
+    ) -> Result<UiValue, UiContextError> {
+        let id = crate::VirtualCollectionId {
+            component: self.component.clone(),
+            key: collection.to_owned(),
+        };
+        let registry = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .virtual_requests
+            .clone();
+        Ok(registry
+            .item_bounds(&id, index)
+            .map_or(UiValue::Null, crate::GeometryBounds::into_value))
+    }
+
     /// Read the current handler node's committed visual bounds without
     /// establishing a render dependency.
     ///
@@ -3860,6 +3887,21 @@ fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
                 .map(UiValue::into_dynamic)
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         })
+        .with_fn(
+            "virtual_item_bounds",
+            |context: &mut UiContext, collection: ImmutableString, index: rhai::INT| {
+                let index = usize::try_from(index).map_err(|_| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        "virtual item index must be non-negative".into(),
+                        Position::NONE,
+                    ))
+                })?;
+                context
+                    .virtual_item_bounds(collection.as_str(), index)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
         .with_fn(
             "focus",
             |context: &mut UiContext, reference: crate::ElementRef| {

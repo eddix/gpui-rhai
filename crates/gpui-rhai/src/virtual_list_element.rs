@@ -203,6 +203,18 @@ struct VirtualListView {
     /// A fill-height list cannot judge visibility before its viewport is
     /// measured; the reveal waits for the first measured frame.
     pending_reveal: bool,
+    /// The item-bounds reader this list installed in the runtime registry.
+    bounds_reader: Option<crate::virtual_list::ItemBoundsReader>,
+}
+
+impl Drop for VirtualListView {
+    fn drop(&mut self) {
+        if let Some(reader) = self.bounds_reader.take() {
+            self.runtime
+                .virtual_requests
+                .remove_item_bounds_reader(&self.content.id, &reader);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -221,6 +233,7 @@ impl VirtualListView {
             scroll,
             frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
             pending_reveal: false,
+            bounds_reader: None,
         };
         this.reveal_controlled_target();
         this.install_metrics_handler();
@@ -298,9 +311,20 @@ impl VirtualListView {
         }
     }
 
-    fn install_metrics_handler(&self) {
+    fn install_metrics_handler(&mut self) {
         let metrics = self.runtime.virtual_requests.clone();
         let id = self.content.id.clone();
+        let scroll = self.scroll.clone();
+        self.bounds_reader = Some(metrics.set_item_bounds_reader(id.clone(), move |index| {
+            scroll
+                .bounds_for_item(index)
+                .map(|bounds| crate::GeometryBounds {
+                    x: f64::from(bounds.origin.x),
+                    y: f64::from(bounds.origin.y),
+                    width: f64::from(bounds.size.width),
+                    height: f64::from(bounds.size.height),
+                })
+        }));
         self.scroll.set_scroll_handler(move |event, _, _| {
             metrics.report_scroll(&id, event.visible_range.clone(), event.is_scrolled);
         });

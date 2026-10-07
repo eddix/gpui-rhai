@@ -330,16 +330,23 @@ impl NativeCollection {
     /// first. Group headers are skipped. One scan in native code, so a key
     /// press does not enumerate the collection in Rhai.
     pub(crate) fn table_neighbors(&self, selected: &BTreeSet<String>) -> TableNeighbors {
+        // (display index, key) of each displayed row; group headers take display
+        // indices too.
         let rows = self
             .order
             .iter()
-            .filter_map(|entry| match entry {
-                NativeCollectionEntry::Row(index) => self.source.keys.get(*index),
+            .enumerate()
+            .filter_map(|(display, entry)| match entry {
+                NativeCollectionEntry::Row(index) => {
+                    self.source.keys.get(*index).map(|key| (display, key))
+                }
                 NativeCollectionEntry::Group(_) => None,
             })
             .collect::<Vec<_>>();
-        let current = rows.iter().position(|key| selected.contains(key.as_str()));
-        let at = |index: usize| rows.get(index).map(|key| (*key).clone());
+        let current = rows
+            .iter()
+            .position(|(_, key)| selected.contains(key.as_str()));
+        let at = |index: usize| rows.get(index).map(|(_, key)| (*key).clone());
         let last = rows.len().saturating_sub(1);
         TableNeighbors {
             first: at(0),
@@ -347,6 +354,8 @@ impl NativeCollection {
             previous: at(current.map_or(0, |current| current.saturating_sub(1))),
             next: at(current.map_or(0, |current| (current + 1).min(last))),
             current: current.and_then(at),
+            current_index: current
+                .and_then(|current| rows.get(current).map(|(display, _)| *display)),
         }
     }
 
@@ -561,6 +570,8 @@ pub(crate) struct TableNeighbors {
     pub previous: Option<String>,
     pub next: Option<String>,
     pub current: Option<String>,
+    /// The current row's index among the displayed items.
+    pub current_index: Option<usize>,
 }
 
 impl TableNeighbors {
@@ -572,6 +583,12 @@ impl TableNeighbors {
             ("previous".into(), key(self.previous)),
             ("next".into(), key(self.next)),
             ("current".into(), key(self.current)),
+            (
+                "current_index".into(),
+                self.current_index
+                    .and_then(|index| rhai::INT::try_from(index).ok())
+                    .map_or(Dynamic::UNIT, Dynamic::from),
+            ),
         ])
     }
 }

@@ -17,7 +17,10 @@
 // height, loading/empty, sort, search/page projection, selection, optional grouping,
 // and native resize/auto-fit. A column's `typography` sets its cells' role, such as
 // "code" for identifiers that must tell 0 from O.
-// Events: sort_change, selection_change, row_click, group_toggle, and column_resize.
+// Events: sort_change, selection_change, row_click, group_toggle, column_resize, and
+// context_request #{ key, column, anchor, source }: a right press on a cell (after selecting
+// its row unless the selection already holds it), or Shift+F10 / the menu key on the current
+// row. Show a Menu with that `anchor` (window coordinates).
 // State: application values are controlled; keyed native width overrides retain drag previews.
 // Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 //     columns: columns, height: 420 })
@@ -117,6 +120,7 @@ define_component(#{
             on_row_click: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_group_toggle: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_column_resize: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_context_request: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{} },
         events: #{
@@ -126,6 +130,17 @@ define_component(#{
             } } } },
             selection_change: #{ payload: #{ type: "array", max_items: 100000, items: #{ type: "string" } } },
             row_click: #{ payload: #{ type: "string" } },
+            context_request: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
+                key: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: true, sensitive: false },
+                column: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: true, sensitive: false },
+                anchor: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
+                    x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+                    y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+                    width: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+                    height: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+                } }, required: true, sensitive: false },
+                source: #{ schema: #{ type: "string", allowed: ["pointer", "keyboard"] }, required: true, sensitive: false },
+            } } },
             group_toggle: #{ payload: #{ type: "string" } },
             column_resize: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -205,6 +220,26 @@ fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
 // Keyboard row navigation moves the selection and keeps the row revealed.
 fn keyboard_select(ctx, key) { ctx.emit("selection_change", [key]); handled() }
 fn keyboard_activate(ctx, key) { ctx.emit("row_click", key); handled() }
+// A right press asks for a context menu for the cell's row; the row is selected first unless
+// the selection already holds it.
+fn cell_context(target, ctx, event) {
+    if event.button != "right" { return propagate(); }
+    if target.select != () { ctx.emit("selection_change", target.select); }
+    ctx.emit("context_request", #{ key: target.key, column: target.column, source: "pointer",
+        anchor: #{ x: event.window.x, y: event.window.y, width: 0.0, height: 0.0 } });
+    event_response().prevent_default().stop()
+}
+// Shift+F10 or the menu key: the current row's bounds are the anchor, the table's when the
+// row is not laid out or there is none.
+fn keyboard_context(ctx, target) {
+    let bounds = if target.index != () { ctx.virtual_item_bounds(target.collection, target.index) }
+        else { () };
+    if bounds == () { bounds = ctx.event_target_bounds(); }
+    let anchor = if bounds == () { #{ x: 0.0, y: 0.0, width: 0.0, height: 0.0 } }
+        else { #{ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } };
+    ctx.emit("context_request", #{ key: target.key, column: (), anchor: anchor, source: "keyboard" });
+    handled()
+}
 fn column_resize_action(ctx, payload) { ctx.emit("column_resize", payload); }
 
 fn intrinsic_column_measure(key, text_value, signal, extra_width) {
@@ -233,7 +268,7 @@ fn column_resize_key(ctx, payload) {
     if payload.controlled { ctx.set_signal(payload.signal_key, ()); }
 }
 
-fn render_table_row(resize_signals, numeric, roles, total_rows, ctx, payload) {
+fn render_table_row(resize_signals, numeric, roles, context, total_rows, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         let indicator = image_source(asset(if item.collapsed {
@@ -301,6 +336,11 @@ fn render_table_row(resize_signals, numeric, roles, total_rows, ctx, payload) {
         if cell.key in roles { cell_style = cell_style.typography(roles[cell.key]); }
         let node = row(content).with_key(cell.key).with_style(
             ctx.component_style(if item.selected { "row_selected" } else { "row" }, cell_style));
+        if context {
+            let select = if item.selection == () || item.selected { () } else { [payload.key] };
+            node = node.on("pointer_down", Fn("cell_context")
+                .curry(#{ key: payload.key, column: cell.key, select: select }));
+        }
         node = node.with_table_column(cell_index - 1);
         node = node.accessibility_table_cell(cell_label, cell_index);
         cells.push(node);
@@ -579,6 +619,13 @@ fn row_neighbors(keys, selected) {
         current: if current >= 0 { keys[current] } else { () } }
 }
 
+// The display index of the row with this key, for its bounds.
+fn row_index(data, key) {
+    if key == () { return (); }
+    for index in 0..data.len { if data[index].kind == "row" && data[index].key == key { return index; } }
+    ()
+}
+
 fn with_row_keys(table, neighbors) {
     if neighbors == () || neighbors.first == () { return table; }
     let node = table.tab_stop(true)
@@ -637,6 +684,7 @@ fn render_Table(ctx, props) {
         if !found { throw `Table group_by ${group_by} is not a declared column`; }
     }
     let group_toggle = "on_group_toggle" in props && props.on_group_toggle != ();
+    let context = "on_context_request" in props && props.on_context_request != ();
     let sticky_groups = prop_or(props, "sticky_group_headers", true);
     let native_data = is_native_collection(props.rows);
     let query = prop_or(props, "query", "").to_lower();
@@ -743,7 +791,14 @@ fn render_Table(ctx, props) {
     } else { style().min_width(px(0)) };
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns))
-            .curry(column_typography(columns)).curry(data.len))
+            .curry(column_typography(columns)).curry(context).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
-    with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1), neighbors)
+    let table = with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1), neighbors);
+    if context && neighbors != () && neighbors.first != () {
+        let target = #{ key: neighbors.current, collection: collection.key,
+            index: if native_data { neighbors.current_index } else { row_index(data, neighbors.current) } };
+        table = table.on_key_value("shift+f10", Fn("keyboard_context"), target)
+            .on_key_value("menu", Fn("keyboard_context"), target);
+    }
+    table
 }

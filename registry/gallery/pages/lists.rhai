@@ -149,12 +149,25 @@ fn pods() {
     ]
 }
 
+// The row menu a right press or Shift+F10 asks for, at the request's anchor.
+fn host_menu(h, v) {
+    let request = kit::val(v, "table.context", ());
+    menu::Menu(#{ key: "table-host-menu", label: "Host actions", trigger: row([]),
+        open: request != (), anchor: if request != () { request.anchor } else { () },
+        activate_on_trigger: false, active_value: kit::val(v, "table.context_active", "open"),
+        items: [#{ kind: "item", value: "open", label: "Open" },
+            #{ kind: "item", value: "copy", label: "Copy host name" }],
+        on_open_change: kit::put(h, "table.context", ()), on_action: kit::put(h, "table.context", ()),
+        on_active_change: kit::store(h, "table.context_active") })
+}
+
 fn table_page(h, v) {
     kit::page(h, v, "table", "Table", "Label-voice header, numeric columns end-aligned, no zebra. Arrows move the selection.", [
-        kit::sec("Hosts", table::Table(#{ key: "table-hosts", label: "Hosts", row_key: "id", height: 200.0,
+        kit::sec("Hosts", column([table::Table(#{ key: "table-hosts", label: "Hosts", row_key: "id", height: 200.0,
             columns: host_columns(), rows: hosts(), sort: kit::val(v, "table.sort", ()),
             selected_keys: kit::val(v, "table.selected", ["c"]), selection_mode: "single",
-            on_selection_change: kit::store(h, "table.selected"), on_sort_change: kit::store(h, "table.sort") })),
+            on_selection_change: kit::store(h, "table.selected"), on_sort_change: kit::store(h, "table.sort"),
+            on_context_request: kit::store(h, "table.context") }), host_menu(h, v)])),
         kit::sec("Grouped, identifiers in the code role", table::Table(#{ key: "table-pods", label: "Pods",
             row_key: "id", height: 200.0, group_by: "region", rows: pods(),
             columns: [#{ key: "pod", title: "Pod", width: #{ kind: "flex", value: 2.0 }, typography: "code" },

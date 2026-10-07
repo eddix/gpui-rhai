@@ -165,6 +165,12 @@ and [docs/design/](docs/design/) for the specification.
   origin that started them; `is_user_input()` follows it.
   `CapabilityRegistry::call_with` passes a context; `AsyncDelivery` gains
   `origin` (**breaking** for code that builds deliveries).
+- Table `on_context_request` (#89): a right press on a cell selects its row
+  (unless the selection holds it) and emits `#{ key, column, anchor, source }`
+  with the pointer as anchor; Shift+F10 or the menu key emits it for the
+  current row with the row's bounds. The caller shows a Menu at `anchor`.
+  `ctx.virtual_item_bounds(collection_key, index)` reads a laid-out virtual
+  item's window bounds at event time.
 
 ## 0.1.8 - 2026-10-04
 

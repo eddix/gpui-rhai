@@ -42,7 +42,18 @@ pub struct VirtualCollectionNodeSpec {
 pub struct VirtualRequestRegistry {
     requests: Rc<RefCell<BTreeMap<VirtualCollectionId, BTreeSet<usize>>>>,
     metrics: Rc<RefCell<BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>>>,
+    item_bounds: Rc<RefCell<BTreeMap<VirtualCollectionId, ItemBoundsReader>>>,
     wake: crate::async_runtime::AsyncWake,
+}
+
+/// Reads a mounted list's item bounds, in window coordinates, at call time.
+#[derive(Clone)]
+pub(crate) struct ItemBoundsReader(Rc<dyn Fn(usize) -> Option<crate::GeometryBounds>>);
+
+impl std::fmt::Debug for ItemBoundsReader {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ItemBoundsReader")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -198,6 +209,45 @@ impl VirtualRequestRegistry {
         self.metrics
             .borrow_mut()
             .retain(|id, _| active.contains(id));
+        self.item_bounds
+            .borrow_mut()
+            .retain(|id, _| active.contains(id));
+    }
+
+    /// Install the reader of a mounted list; the list removes it when it is
+    /// dropped (the reader holds the list's state).
+    pub(crate) fn set_item_bounds_reader(
+        &self,
+        id: VirtualCollectionId,
+        read: impl Fn(usize) -> Option<crate::GeometryBounds> + 'static,
+    ) -> ItemBoundsReader {
+        let reader = ItemBoundsReader(Rc::new(read));
+        self.item_bounds.borrow_mut().insert(id, reader.clone());
+        reader
+    }
+
+    pub(crate) fn remove_item_bounds_reader(
+        &self,
+        id: &VirtualCollectionId,
+        reader: &ItemBoundsReader,
+    ) {
+        let mut readers = self.item_bounds.borrow_mut();
+        if readers
+            .get(id)
+            .is_some_and(|current| Rc::ptr_eq(&current.0, &reader.0))
+        {
+            readers.remove(id);
+        }
+    }
+
+    /// The window bounds of a laid-out item of a mounted collection.
+    pub(crate) fn item_bounds(
+        &self,
+        id: &VirtualCollectionId,
+        index: usize,
+    ) -> Option<crate::GeometryBounds> {
+        let reader = self.item_bounds.borrow().get(id).cloned()?;
+        (reader.0)(index)
     }
 
     pub(crate) fn report_frame(
