@@ -112,7 +112,18 @@ fn split_pane_page(h, v) {
         kit::sec("Panes", column([split_pane::SplitPane(#{ key: "split-main", label: "Resize panes",
             size: kit::val(v, "split.size", 0.35), start: text("Navigation"), end: text("Content"),
             on_resize: kit::store(h, "split.size") })]).with_style(style().height(px(160)).width(px(520)))),
+        kit::sec("Grip", column([split_pane::SplitPane(#{ key: "split-grip", label: "Resize panes with grip",
+            size: kit::val(v, "split.grip_size", 0.5), start: text("Source"), end: text("Preview"),
+            handle: grip_dots(), on_resize: kit::store(h, "split.grip_size") })])
+            .with_style(style().height(px(160)).width(px(520)))),
     ])
+}
+
+// Two columns of three dots: a grip wider than the 8px lane, drawn above both panes.
+fn grip_dot() { box([]).with_style(style().width(px(2)).height(px(2)).background(theme_color("text_muted"))) }
+fn grip_column() { column([grip_dot(), grip_dot(), grip_dot()]).with_style(style().gap(px(3))) }
+fn grip_dots() {
+    row([grip_column(), grip_column()]).with_style(style().gap(px(3)).padding_x(px(3)).padding_y(px(6)))
 }
 
 fn resizable_page(h, v) {

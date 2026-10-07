@@ -236,6 +236,21 @@ ineligible for automatic bailout, because signal reads intentionally create no
 dirty edge. Prefer `bind_signal` for visual properties; reserve `get_signal`
 for event handlers.
 
+`.signal_style(signal, #{ state: style(), ... })` picks a whole style variant by
+the current value of a string signal and merges it over the node's style, as a
+state style does. A native primitive that writes such a signal drives the look
+of a node it does not own without a Rhai render: SplitPane's and Resizable's
+resize handles publish `idle`, `hover`, `drag`, `focus` or `disabled`, and their
+grips take the matching `grip_<state>` part:
+
+```rhai
+let state = signal("handle-state", "idle");
+box([node]).signal_style(state, #{
+    hover: style().border_color(theme_color("accent")),
+    drag: style().border_color(theme_color("accent")),
+})
+```
+
 ## Styling
 
 Use semantic theme tokens and the typed `Style` builder. Merge order is:

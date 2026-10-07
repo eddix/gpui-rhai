@@ -804,6 +804,8 @@ pub struct PrimitiveContext {
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
     retained_node: Option<crate::NodeId>,
+    /// The focus handle of the node that hosts the primitive, if it has one.
+    focus_handle: Option<gpui::FocusHandle>,
 }
 
 /// A schema-checked semantic proposal produced by a native primitive policy.
@@ -1085,6 +1087,14 @@ impl PrimitiveContext {
 
     pub(crate) fn ancestor_scroll_handles(&self) -> Vec<gpui::ScrollHandle> {
         self.scroll_handles.clone()
+    }
+
+    /// Whether the node hosting the primitive has keyboard focus.
+    #[must_use]
+    pub fn is_focused(&self, window: &Window) -> bool {
+        self.focus_handle
+            .as_ref()
+            .is_some_and(|handle| handle.is_focused(window))
     }
 
     /// Read the last committed layout bounds for a primitive-owned element ref.
@@ -1918,6 +1928,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             view_id: self.runtime.view_id,
             instance: None,
             retained_node: self.retained.as_ref().map(|(node, _)| *node),
+            focus_handle: self.focus_handle.clone(),
         };
         match registry.render_instance(
             self.node,
@@ -2563,6 +2574,7 @@ mod tests {
             view_id: "test".to_owned(),
             instance: None,
             retained_node: None,
+            focus_handle: None,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

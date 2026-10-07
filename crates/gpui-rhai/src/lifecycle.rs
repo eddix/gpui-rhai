@@ -1548,6 +1548,9 @@ impl ScriptLifecycle {
             for (_, signal) in node.signal_bindings() {
                 let _ = runtime.signals.read(signal)?;
             }
+            if let Some(style) = node.signal_style() {
+                let _ = runtime.signals.read(&style.signal)?;
+            }
             for (_, children) in node.retained_child_groups() {
                 pending.extend(children);
             }

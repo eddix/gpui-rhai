@@ -2308,6 +2308,7 @@ impl GpuiNodeRenderer {
         );
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
+        apply_signal_state_style(&mut resolved_style, environment.signals, node);
         normalize_text_content_layout(node, &mut resolved_style);
         let local_environment = environment.below(&resolved_style);
         let mut element = apply_style(
@@ -4535,6 +4536,22 @@ fn apply_canvas_signal_transform(
     motion.scale_x = signals.scale_x.or(motion.scale_x);
     motion.scale_y = signals.scale_y.or(motion.scale_y);
     motion
+}
+
+/// Merge the variant a node's string signal currently selects.
+fn apply_signal_state_style(
+    style: &mut StyleProperties,
+    registry: &crate::SignalRegistry,
+    node: &UiNode,
+) {
+    let Some(signal_style) = node.signal_style() else {
+        return;
+    };
+    if let Ok(crate::SignalValue::String(state)) = registry.read(&signal_style.signal)
+        && let Some(variant) = signal_style.states.get(&state)
+    {
+        style.merge(&variant.base);
+    }
 }
 
 fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {

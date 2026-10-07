@@ -171,6 +171,16 @@ and [docs/design/](docs/design/) for the specification.
   current row with the row's bounds. The caller shows a Menu at `anchor`.
   `ctx.virtual_item_bounds(collection_key, index)` reads a laid-out virtual
   item's window bounds at event time.
+- Resize handles take a decorative grip (#83): SplitPane `handle` and Resizable
+  `grips` (one node per handle) sit in a `grip` box centred on the handle and
+  painted above the panes or content; pressing anywhere on it, overhang
+  included, starts the drag, while keyboard steps, the separator role and the
+  tab stop stay on the native handle. The grip takes `grip_hover`, `grip_drag`,
+  `grip_focus` or `grip_disabled` from a native state signal. `line: false`
+  drops the native line and `line_inset` sets its end inset. The general
+  `.signal_style(signal, #{ state: style() })` picks a style variant by a
+  string signal without a Rhai render; primitives can ask whether their host
+  node has focus (`PrimitiveContext::is_focused`).
 
 ## 0.1.8 - 2026-10-04
 

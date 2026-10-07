@@ -372,6 +372,15 @@ impl From<UiNodeData> for UiNode {
     }
 }
 
+/// Style variants chosen by the value of a native string signal, such as the
+/// `idle`/`hover`/`drag`/`focus`/`disabled` state a resize primitive writes.
+/// Pointer moves change the signal, never the Rhai tree.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SignalStyle {
+    pub signal: crate::NativeSignal,
+    pub states: BTreeMap<String, Style>,
+}
+
 /// The contents of a [`UiNode`]; reached only through the node's methods.
 #[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
@@ -390,6 +399,7 @@ pub struct UiNodeData {
     progress_motions: Vec<crate::MotionProgressBinding>,
     timelines: Vec<crate::MotionTimeline>,
     signal_bindings: BTreeMap<crate::SignalProperty, crate::NativeSignal>,
+    signal_style: Option<Rc<SignalStyle>>,
     table_layout: Option<Rc<crate::table_layout::TableLayout>>,
     table_column: Option<usize>,
     element_ref: Option<crate::ElementRef>,
@@ -489,6 +499,7 @@ enum NodePresentationMutation {
     Style(Rc<Style>),
     PartStyles(Rc<BTreeMap<String, Style>>),
     Signal(crate::SignalProperty, crate::NativeSignal),
+    SignalStyle(Rc<SignalStyle>),
     TableTrack(Rc<crate::table_layout::TableLayout>),
     TableColumn(usize),
     ElementRef(crate::ElementRef),
@@ -513,6 +524,7 @@ impl NodePresentationMutation {
             Self::Signal(property, signal) => {
                 node.signal_bindings.insert(*property, signal.clone());
             }
+            Self::SignalStyle(style) => node.signal_style = Some(Rc::clone(style)),
             Self::TableTrack(layout) => node.table_layout = Some(Rc::clone(layout)),
             Self::TableColumn(index) => node.table_column = Some(*index),
             Self::ElementRef(reference) => node.element_ref = Some(reference.clone()),
@@ -766,6 +778,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -793,6 +806,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -840,6 +854,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -884,6 +899,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -913,6 +929,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -948,6 +965,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -995,6 +1013,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -1025,6 +1044,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -1055,6 +1075,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -1082,6 +1103,7 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
@@ -1143,6 +1165,35 @@ impl UiNode {
         }
         self.apply_presentation_mutation(NodePresentationMutation::Signal(property, signal));
         Ok(self)
+    }
+
+    /// Merge `states[value]` into this node's style, where `value` is the
+    /// current value of a string signal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::SignalError::TypeMismatch`] for a signal that is not a
+    /// string signal.
+    pub fn with_signal_style(
+        mut self,
+        signal: crate::NativeSignal,
+        states: BTreeMap<String, Style>,
+    ) -> Result<Self, crate::SignalError> {
+        if signal.id().kind() != crate::SignalKind::String {
+            return Err(crate::SignalError::TypeMismatch {
+                expected: crate::SignalKind::String,
+                actual: signal.id().kind(),
+            });
+        }
+        self.apply_presentation_mutation(NodePresentationMutation::SignalStyle(Rc::new(
+            SignalStyle { signal, states },
+        )));
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn signal_style(&self) -> Option<&SignalStyle> {
+        self.signal_style.as_deref()
     }
 
     #[must_use]
@@ -2076,6 +2127,31 @@ fn replace_in_nodes<'a>(
     false
 }
 
+/// `node.signal_style(signal, #{ state: style() })`.
+fn node_signal_style(
+    node: &mut UiNode,
+    signal: crate::NativeSignal,
+    states: Map,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    let states = states
+        .into_iter()
+        .map(|(state, style)| {
+            style
+                .try_cast::<Style>()
+                .map(|style| (state.to_string(), style))
+                .ok_or_else(|| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        format!("signal_style state `{state}` must be a style()").into(),
+                        Position::NONE,
+                    ))
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    node.clone()
+        .with_signal_style(signal, states)
+        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
+}
+
 impl CustomType for UiNode {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
@@ -2135,6 +2211,7 @@ impl CustomType for UiNode {
                         .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
                 },
             )
+            .with_fn("signal_style", node_signal_style)
             .with_fn(
                 "bind_parent_signal",
                 |node: &mut Self,

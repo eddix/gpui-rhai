@@ -1882,3 +1882,152 @@ fn resizable_rejected_proposal_restores_the_controlled_rectangle(cx: &mut TestAp
         "100.0,80.0,200.0,120.0,1"
     );
 }
+
+fn split_grip_script(handle: bool) -> String {
+    let handle = if handle {
+        r#"handle:box([]).accessibility_role("group").test_id("grip").with_style(style().width(px(16)).height(px(40))),"#
+    } else {
+        ""
+    };
+    format!(
+        r#"
+import "components/split_pane" as split_pane;
+fn state_schema(){{#{{fields:#{{size:#{{schema:#{{type:"number",min:0.0,max:1.0}},
+    "default":#{{type:"float",value:0.5}}}}}}}}}}
+fn resized(ctx,value){{ctx.set_state("size",value);}}
+fn view(ctx){{column([
+    text(ctx.get_state("size").to_string()).accessibility_role("status"),
+    split_pane::SplitPane(#{{key:"layout",label:"Resize panels",size:ctx.get_state("size"),{handle}
+        min_start:80.0,min_end:80.0,start:text("Start"),end:text("End"),on_resize:Fn("resized")}})
+        .with_style(style().width(px(420)).height(px(180)))
+])}}
+"#
+    )
+}
+
+/// Press at `x` (beside the separator, over a grip's overhang when there is one) and drag
+/// 72px; returns the committed ratio.
+fn drag_beside_separator(cx: &mut TestAppContext, handle: bool) -> (f64, Vec<(f32, f32)>) {
+    let overrides = ThemeTokenOverrides {
+        colors: BTreeMap::from([("accent".to_owned(), Rgba8::from_rgba_hex(0x00ff00ff))]),
+        ..Default::default()
+    };
+    let (window, view) =
+        mount_with_overrides(cx, &split_grip_script(handle), "split-grip", overrides);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let separator = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("separator", "Resize panels")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    // 7px left of the separator's centre: outside its 8px lane, inside an 18px grip.
+    #[allow(clippy::cast_possible_truncation)]
+    let start = point(
+        px((separator.x + separator.width / 2.0 - 7.0) as f32),
+        px((separator.y + separator.height / 2.0) as f32),
+    );
+    visual.simulate_mouse_move(start, None, Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let hovered = bordered_quads(&mut visual, 0x00ff00ff);
+    let end = point(start.x + px(72.0), start.y);
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let ratio = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .parse::<f64>()
+            .unwrap()
+    });
+    (ratio, hovered)
+}
+
+#[gpui::test]
+fn split_pane_grip_overhang_starts_a_drag_and_shows_hover(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (ratio, hovered) = drag_beside_separator(cx, true);
+    println!("grip: ratio {ratio}, hover frames {hovered:?}");
+    assert!(ratio > 0.5, "pressing the grip's overhang drags: {ratio}");
+    let scale = 2.0;
+    assert!(
+        hovered
+            .iter()
+            .any(|(width, _)| (*width - 18.0 * scale).abs() < 0.5),
+        "the hovered grip takes the grip_hover border: {hovered:?}"
+    );
+    // The positive control: without a grip the same press misses the separator.
+    let (ratio, _) = drag_beside_separator(cx, false);
+    assert!(
+        (ratio - 0.5).abs() < f64::EPSILON,
+        "no grip, no drag: {ratio}"
+    );
+}
+
+#[gpui::test]
+fn resizable_grip_overhang_starts_its_handle_drag(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    for with_grip in [true, false] {
+        let grips = if with_grip {
+            r#"handles:["se"],grips:#{se:box([]).with_style(style().width(px(20)).height(px(20)))}"#
+        } else {
+            r#"handles:["se"]"#
+        };
+        let script = resizable_script("[]").replace("handles:[]", grips);
+        let (window, view) = mount(cx, &script, "resizable-grip");
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.run_until_parked();
+        let handle = visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("separator", "Demo: se resize handle")
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual
+        });
+        // 9px right of the 14px handle's centre: past the handle, inside a 22px grip.
+        #[allow(clippy::cast_possible_truncation)]
+        let start = point(
+            px((handle.x + handle.width / 2.0 + 9.0) as f32),
+            px((handle.y + handle.height / 2.0) as f32),
+        );
+        let end = point(start.x + px(40.0), start.y + px(30.0));
+        visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+        visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+        visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+        visual.run_until_parked();
+        let status = visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        });
+        println!("grip {with_grip}: {status}");
+        if with_grip {
+            assert_eq!(
+                status, "100.0,80.0,240.0,150.0,1",
+                "the grip drags the corner"
+            );
+        } else {
+            assert!(status.ends_with(",0"), "no grip, no drag: {status}");
+        }
+    }
+}

@@ -1176,7 +1176,7 @@ pub struct StyleProperties {
 }
 
 impl StyleProperties {
-    fn merge(&mut self, overlay: &Self) {
+    pub(crate) fn merge(&mut self, overlay: &Self) {
         merge_option(&mut self.display, overlay.display);
         merge_option(&mut self.direction, overlay.direction);
         merge_option(&mut self.flex_wrap, overlay.flex_wrap);

@@ -39,6 +39,16 @@ struct SplitResizeConfig {
     direction: TextDirection,
     idle_color: Rgba8,
     active_color: Rgba8,
+    /// Paint the native line; off when a handle node draws its own.
+    line: bool,
+    /// How far the line stops short of each end of the handle.
+    line_inset: f64,
+    /// A string signal that receives `idle`, `hover`, `drag`, `focus` or
+    /// `disabled`, for a handle node's `signal_style`.
+    state_signal: Option<crate::NativeSignal>,
+    /// A handle node whose bounds (an overhang past the handle included) also
+    /// start a drag.
+    handle_ref: Option<crate::ElementRef>,
 }
 
 #[derive(Clone)]
@@ -49,6 +59,8 @@ struct SplitResizeStateInner {
     source_ratio: f64,
     signal: crate::SignalId,
     constraint_preview: Option<f64>,
+    /// The state last written to the state signal.
+    written_state: Option<&'static str>,
 }
 
 impl SplitResizeState {
@@ -57,12 +69,14 @@ impl SplitResizeState {
             source_ratio: config.source_ratio,
             signal: config.signal.id().clone(),
             constraint_preview: None,
+            written_state: None,
         })))
     }
 }
 
 struct SplitResizePrepaint {
     hitbox: Hitbox,
+    state: SplitResizeState,
 }
 
 struct SplitResizeHandle {
@@ -165,6 +179,7 @@ impl Element for SplitResizeHandle {
         }
         SplitResizePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::BlockMouseExceptScroll),
+            state,
         }
     }
 
@@ -176,35 +191,57 @@ impl Element for SplitResizeHandle {
         (): &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
         window: &mut Window,
-        _: &mut App,
+        cx: &mut App,
     ) {
         let owner = self.events.interaction_owner(&self.config.id);
         self.events.present_interaction(owner.clone());
         let dragged = self.events.interaction_is_active(&owner);
-        let hovered = !self.config.disabled && prepaint.hitbox.is_hovered(window);
-        let color = if dragged || hovered {
-            self.config.active_color
-        } else {
-            self.config.idle_color
-        };
-        let thickness = if dragged { px(2.0) } else { px(1.0) };
-        let line = match self.config.orientation {
-            SplitOrientation::Horizontal => Bounds::new(
-                point(
-                    bounds.origin.x + (bounds.size.width - thickness) / 2.0,
-                    bounds.origin.y + px(4.0),
-                ),
-                size(thickness, (bounds.size.height - px(8.0)).max(px(1.0))),
-            ),
-            SplitOrientation::Vertical => Bounds::new(
-                point(
-                    bounds.origin.x + px(4.0),
-                    bounds.origin.y + (bounds.size.height - thickness) / 2.0,
-                ),
-                size((bounds.size.width - px(8.0)).max(px(1.0)), thickness),
-            ),
-        };
-        window.paint_quad(fill(line, rgba(color.as_rgba_hex())));
+        let handle = self
+            .config
+            .handle_ref
+            .as_ref()
+            .and_then(|reference| self.events.element_bounds(reference, cx));
+        let hovered = !self.config.disabled
+            && crate::handle_state::over_handle(
+                &prepaint.hitbox,
+                handle,
+                window.mouse_position(),
+                window,
+            );
+        if self.config.line {
+            let color = if dragged || hovered {
+                self.config.active_color
+            } else {
+                self.config.idle_color
+            };
+            paint_line(bounds, &self.config, dragged, color, window);
+        }
+        if let Some(signal) = &self.config.state_signal {
+            let state = crate::handle_state::handle_state(
+                self.config.disabled,
+                dragged,
+                hovered,
+                self.events.is_focused(window),
+            );
+            let mut inner = prepaint.state.0.borrow_mut();
+            crate::handle_state::publish_state(
+                &self.events,
+                signal,
+                &mut inner.written_state,
+                state,
+                window,
+                cx,
+            );
+        }
+        if !self.config.disabled {
+            crate::handle_state::track_hover(
+                &prepaint.hitbox,
+                self.config.handle_ref.as_ref(),
+                &self.events,
+                hovered,
+                window,
+            );
+        }
         if !self.config.disabled {
             window.set_cursor_style(
                 match self.config.orientation {
@@ -216,6 +253,35 @@ impl Element for SplitResizeHandle {
         }
         register_pointer_listeners(prepaint, bounds, &self.config, &self.events, window);
     }
+}
+
+fn paint_line(
+    bounds: Bounds<Pixels>,
+    config: &SplitResizeConfig,
+    dragged: bool,
+    color: Rgba8,
+    window: &mut Window,
+) {
+    let thickness = if dragged { px(2.0) } else { px(1.0) };
+    #[allow(clippy::cast_possible_truncation)]
+    let inset = px(config.line_inset as f32);
+    let line = match config.orientation {
+        SplitOrientation::Horizontal => Bounds::new(
+            point(
+                bounds.origin.x + (bounds.size.width - thickness) / 2.0,
+                bounds.origin.y + inset,
+            ),
+            size(thickness, (bounds.size.height - inset * 2.0).max(px(1.0))),
+        ),
+        SplitOrientation::Vertical => Bounds::new(
+            point(
+                bounds.origin.x + inset,
+                bounds.origin.y + (bounds.size.height - thickness) / 2.0,
+            ),
+            size((bounds.size.width - inset * 2.0).max(px(1.0)), thickness),
+        ),
+    };
+    window.paint_quad(fill(line, rgba(color.as_rgba_hex())));
 }
 
 #[allow(clippy::too_many_lines)]
@@ -234,8 +300,14 @@ fn register_pointer_listeners(
         if phase != DispatchPhase::Bubble
             || event.button != MouseButton::Left
             || down_config.disabled
-            || !hitbox.is_hovered(window)
         {
+            return;
+        }
+        let handle = down_config
+            .handle_ref
+            .as_ref()
+            .and_then(|reference| down_events.element_bounds(reference, cx));
+        if !crate::handle_state::over_handle(&hitbox, handle, event.position, window) {
             return;
         }
         let Some(group) = down_events.element_bounds(&down_config.group_ref, cx) else {
@@ -469,6 +541,17 @@ fn parse_config(
         .element_ref("start_ref")
         .cloned()
         .ok_or_else(|| "split resize requires start_ref".to_owned())?;
+    let state_signal = props.signal("state_signal").cloned();
+    if state_signal
+        .as_ref()
+        .is_some_and(|signal| signal.id().kind() != SignalKind::String)
+    {
+        return Err("split resize state_signal must be a string signal".to_owned());
+    }
+    let line_inset = props.number("line_inset").unwrap_or(4.0);
+    if !line_inset.is_finite() || line_inset < 0.0 {
+        return Err("split resize line_inset must be finite and non-negative".to_owned());
+    }
     Ok(SplitResizeConfig {
         id: format!(
             "gpui-rhai-split-resize:{}:{}",
@@ -491,6 +574,10 @@ fn parse_config(
         active_color: theme
             .color("accent")
             .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
+        line: props.boolean("line").unwrap_or(true),
+        line_inset,
+        state_signal,
+        handle_ref: props.element_ref("handle_ref").cloned(),
     })
 }
 
@@ -513,55 +600,59 @@ pub fn split_resize_primitive_descriptor() -> PrimitiveDescriptor {
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.split_resize").expect("static primitive ID"),
         export: "SplitResizePrimitive".to_owned(),
-        props: BTreeMap::from([
-            (
-                "orientation".to_owned(),
-                ObjectField::required(ValueSchema::String {
-                    allowed: vec!["horizontal".to_owned(), "vertical".to_owned()],
-                }),
-            ),
-            (
-                "source_ratio".to_owned(),
-                ObjectField::required(ValueSchema::Number {
-                    min: Some(0.0),
-                    max: Some(1.0),
-                    exclusive_min: None,
-                    exclusive_max: None,
-                }),
-            ),
-            (
-                "min_start".to_owned(),
-                ObjectField::optional(panel_bound_schema()),
-            ),
-            (
-                "min_end".to_owned(),
-                ObjectField::optional(panel_bound_schema()),
-            ),
-            (
-                "max_start".to_owned(),
-                ObjectField::optional(panel_bound_schema()),
-            ),
-            (
-                "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
-            ),
-            (
-                "signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
-            ),
-            (
-                "group_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
-            ),
-            (
-                "start_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
-            ),
-            (
-                "on_resize".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
-            ),
-        ]),
+        props: {
+            let mut props = BTreeMap::from([
+                (
+                    "orientation".to_owned(),
+                    ObjectField::required(ValueSchema::String {
+                        allowed: vec!["horizontal".to_owned(), "vertical".to_owned()],
+                    }),
+                ),
+                (
+                    "source_ratio".to_owned(),
+                    ObjectField::required(ValueSchema::Number {
+                        min: Some(0.0),
+                        max: Some(1.0),
+                        exclusive_min: None,
+                        exclusive_max: None,
+                    }),
+                ),
+                (
+                    "min_start".to_owned(),
+                    ObjectField::optional(panel_bound_schema()),
+                ),
+                (
+                    "min_end".to_owned(),
+                    ObjectField::optional(panel_bound_schema()),
+                ),
+                (
+                    "max_start".to_owned(),
+                    ObjectField::optional(panel_bound_schema()),
+                ),
+                (
+                    "disabled".to_owned(),
+                    ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ),
+                (
+                    "signal".to_owned(),
+                    ObjectField::required(ValueSchema::Signal),
+                ),
+                (
+                    "group_ref".to_owned(),
+                    ObjectField::required(ValueSchema::Ref),
+                ),
+                (
+                    "start_ref".to_owned(),
+                    ObjectField::required(ValueSchema::Ref),
+                ),
+                (
+                    "on_resize".to_owned(),
+                    ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ),
+            ]);
+            props.extend(crate::handle_state::decoration_props());
+            props
+        },
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
