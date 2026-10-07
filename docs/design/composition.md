@@ -96,7 +96,11 @@ with three refinements that match how proximity is read:
   relationship.
 - A heading leads its content: the gap under a heading is typographic, so the
   content inside answers to the next gap out. This is why a Region (`group`
-  between its parts) can hold sections separated by `section`.
+  between its parts) can hold sections separated by `section`. A view
+  switcher (Tabs with `panel: false`) leading the content it switches plays
+  the same part, and so does a heading drawn outside the container (a host's
+  panel header): mark that container with `.heading_elsewhere()`, which Region
+  does for `external_title`.
 
 Patterns choose these relationships for you; when writing a Stack yourself,
 prefer the aliases over raw steps so the intent is readable.
@@ -268,8 +272,14 @@ How the rules read a screen:
   by the text inside them.
 - Label-voice text (section labels, table headers) and children that contain
   controls are not counted as data sizes in `mixed-type-in-row`.
-- Overlay content (menus, dialogs, tooltips) is checked as its own layer, not
-  against the gaps of the page under it.
+- Overlay and Layer content (menus, dialogs, tooltips) is checked as its own
+  layer, not against the gaps of the page under it.
+- What renders is checked wherever it sits: the child of an `error_boundary`
+  (or its fallback once the child failed) and the realized rows of a virtual
+  list.
+- Only a wrapper that holds a single control stands for that control in its
+  parent's row: panes side by side are not one row of controls. A Badge's or
+  Tag's own lamp-to-text gap is the marker's business, like a control's.
 - A container that opts out of `spacing-not-nested` (a grid-like row whose
   label column is a track) also does not impose its gap on its children.
 - `unresolved-font` accepts a family when any entry of its fallback chain

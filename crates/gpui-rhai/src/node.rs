@@ -2200,6 +2200,12 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
             node.clone()
                 .with_attribute("tab_stop", UiValue::Bool(tab_stop))
         })
+        // The container's heading is drawn elsewhere (a host's panel header):
+        // composition checks treat it like a container that starts with one.
+        .with_fn("heading_elsewhere", |node: &mut UiNode| {
+            node.clone()
+                .with_attribute("heading_elsewhere", UiValue::Bool(true))
+        })
         // Pressing the node itself (not a focusable control inside it) moves
         // the window, and a double press runs the platform title-bar action.
         .with_fn("window_drag_area", |node: &mut UiNode| {

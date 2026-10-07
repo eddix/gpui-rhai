@@ -180,8 +180,12 @@ struct Scope {
 struct NodeSummary {
     role: Option<String>,
     bounds: Option<GeometryBounds>,
-    /// Height of the first control in this subtree.
+    /// Height of the control this subtree stands for: a control, or a wrapper
+    /// that holds just one.
     control_height: Option<f64>,
+    /// Whether the subtree holds a control anywhere; such a child carries the
+    /// control type scale and stays out of a row's type mix.
+    contains_control: bool,
     /// Font size of the first text in this subtree, unless inside a marker.
     text_size: Option<f64>,
     /// Start x of the first text in this subtree.
@@ -330,9 +334,14 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
         let is_control = role
             .as_deref()
             .is_some_and(|role| CONTROL_ROLES.contains(&role));
+        // A marker (Badge, Tag) lays out its own lamp and text, like a control.
+        let is_marker = role
+            .as_deref()
+            .is_some_and(|role| MARKER_ROLES.contains(&role));
         if let Some(role) = &role
             && CONTROL_ROLES.contains(&role.as_str())
         {
+            summary.contains_control = true;
             summary.control_height = bounds.map(|bounds| bounds.height);
             summary.solid_action = role == "button"
                 && style
@@ -362,9 +371,10 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 let gap = self.pixels(style.gap, &scope.environment);
                 // Distributed rows treat the gap as a floor, not a relationship.
                 let distributed = matches!(style.justify, Some(Justify::Between | Justify::Around));
-                // A control's internal layout is the component's business.
+                // A control's or marker's internal layout is the component's business.
                 let counted = !scope.inside_control
                     && !is_control
+                    && !is_marker
                     && !distributed
                     && children.len() >= 2
                     && gap.is_some_and(|gap| gap > 0.0);
@@ -392,9 +402,12 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 let opted_out = self
                     .allowed
                     .contains(&(path.to_owned(), AuditRule::SpacingNotNested));
-                let sets_limit = counted && !opted_out && !leads_with_heading(children);
+                let sets_limit = counted
+                    && !opted_out
+                    && !leads_with_heading(children)
+                    && !introduced_elsewhere(node);
                 let mut child_scope = Scope {
-                    inside_control: scope.inside_control || is_control,
+                    inside_control: scope.inside_control || is_control || is_marker,
                     ..scope
                 };
                 if sets_limit {
@@ -415,11 +428,18 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                         self.visit(child, child_id, child_scope, &child_path)
                     })
                     .collect::<Vec<_>>();
-                if !scope.inside_control && !is_control {
-                    let heading_led = leads_with_heading(children);
+                if !scope.inside_control && !is_control && !is_marker {
+                    let heading_led = leads_with_heading(children) || introduced_elsewhere(node);
                     self.check_container(direction, &summaries, heading_led, id, path);
                 }
                 inherit_first(&mut summary, &summaries, role.as_deref());
+                // Only a wrapper that hugs one control stands in for it; a container
+                // of several (a pane with a toolbar and a body) is not a control in
+                // its parent's row.
+                if children.len() > 1 && !is_control {
+                    summary.control_height = None;
+                    summary.solid_action = false;
+                }
             }
             UiNodeKind::Overlay {
                 trigger, content, ..
@@ -436,6 +456,43 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 };
                 self.visit(content, content_id, layer, &format!("{path}/content"));
                 inherit_first(&mut summary, &[trigger], role.as_deref());
+            }
+            UiNodeKind::Layer { content, .. } => {
+                // A layer floats like overlay content.
+                let content_id = child_link(self.inputs.tree, id, "content", 0);
+                let layer = Scope {
+                    enclosing_row_gap: None,
+                    enclosing_column_gap: None,
+                    ..scope
+                };
+                self.visit(content, content_id, layer, &format!("{path}/content"));
+            }
+            UiNodeKind::ErrorBoundary { child, fallback } => {
+                // Audit what renders: the child, or the fallback once the child
+                // failed (only the rendered one has geometry).
+                let child_id = child_link(self.inputs.tree, id, "child", 0);
+                let fallback_id = child_link(self.inputs.tree, id, "fallback", 0);
+                let fallback_rendered = child_id
+                    .is_none_or(|id| self.inputs.geometry.get(id).is_none())
+                    && fallback_id.is_some_and(|id| self.inputs.geometry.get(id).is_some());
+                let rendered = if fallback_rendered {
+                    self.visit(fallback, fallback_id, scope, &format!("{path}/fallback"))
+                } else {
+                    self.visit(child, child_id, scope, &format!("{path}/child"))
+                };
+                inherit_first(&mut summary, &[rendered], role.as_deref());
+            }
+            UiNodeKind::VirtualCollection { spec } => {
+                // The realized items: what a virtual list shows is audited like any
+                // other content; unrealized items have no geometry yet.
+                for (index, item) in spec.realized.values().enumerate() {
+                    let item_id = child_link(self.inputs.tree, id, "items", index);
+                    let item_path = item.key().map_or_else(
+                        || format!("{path}/item/{index}"),
+                        |key| format!("{path}/item/{}", key.as_str()),
+                    );
+                    self.visit(item, item_id, scope, &item_path);
+                }
             }
             _ => {}
         }
@@ -607,7 +664,7 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 let sizes = children
                     .iter()
                     .filter(|child| {
-                        child.control_height.is_none()
+                        !child.contains_control
                             && !child
                                 .role
                                 .as_deref()
@@ -682,10 +739,15 @@ fn opaque(color: Rgba8) -> Rgba8 {
 }
 
 /// Whether the first child subtree starts with a heading.
+/// The content starts with a heading, or with a view switcher (a tab list
+/// without a panel) that plays the heading's part.
 fn leads_with_heading(children: &[UiNode]) -> bool {
     let mut cursor = children.first();
     while let Some(node) = cursor {
-        if node.attributes().get("role") == Some(&UiValue::String("heading".to_owned())) {
+        if matches!(
+            node.attributes().get("role"),
+            Some(UiValue::String(role)) if role == "heading" || role == "tablist"
+        ) {
             return true;
         }
         cursor = match node.kind() {
@@ -696,10 +758,17 @@ fn leads_with_heading(children: &[UiNode]) -> bool {
     false
 }
 
+/// A container whose heading the application draws elsewhere (a Region with
+/// `external_title`, set through `.heading_elsewhere()`).
+fn introduced_elsewhere(node: &UiNode) -> bool {
+    node.attributes().get("heading_elsewhere") == Some(&UiValue::Bool(true))
+}
+
 /// Carry the first control and text of a subtree up to the parent.
 fn inherit_first(summary: &mut NodeSummary, children: &[NodeSummary], role: Option<&str>) {
     let inside_marker = role.is_some_and(|role| MARKER_ROLES.contains(&role));
     for child in children {
+        summary.contains_control |= child.contains_control;
         if summary.control_height.is_none() && child.control_height.is_some() {
             summary.control_height = child.control_height;
             summary.solid_action = child.solid_action;
