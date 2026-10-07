@@ -207,3 +207,18 @@ bash scripts/audit-visual-baselines.sh
   渲染栈帧累积而非死循环。把 `populate_with_interactions` 中挂交互的部分拆到 `#[inline(never)]` 的
   `wrap_interactions`，递归前出栈；该场景所需栈从 >2MB 降到 1.5–1.66MB。
 - 证据见本节提交说明与回复。
+
+### 2026-10-07 PR #111 收尾共识（grill 结论）
+
+审查（#111 review，R1–R5）与 13 个 open issue 全部在 #111 内处理，按主题分批提交、每批验证后推送；全部完成后发 0.2.0。
+
+- 发布门槛：去掉 120Hz 物理验证，改为 release 构建 `gallery_profile` 的 `Window::draw` p95 ≤ 8.3ms（Rhai 交互耗时只记录）。真机检查：键盘、焦点、剪贴板、多窗口、标题栏拖动与双击用 CGEvent 自动化取证；IME 预编辑与 VoiceOver 由维护者手动。
+- R1 stretch 快速路径只在可证明等价时生效（无横向 margin/auto margin 等），父级 stretch 判断改读实际生效样式；R2 token 热更新按候选整体校验后原子提交，失败保留上一版；R3 Table 键盘两种数据源同一逻辑，Native 从原生投影取相邻/首末 key；R4 三个 phase 共用 qualified 优先、plain 回退的匹配；R5 拒绝不完整 by_env 表并报缺失组合。审查探针修复后全部通过。
+- #112 审计进入 error_boundary、Layer 与虚拟列表已实现行；#113 吸顶分组头裁剪到视口；#114 三处误报；#116 shortcut 用平台图例和 Kbd；#117 迁移指南 1–4。
+- #115 Toolbar `fill` 槽占起始组与结束组之间的剩余宽度（有最小宽度），DataView 同步 `fill`/`size` 并透传 `inset`。
+- #118 Table 分组头用标签字阶；能持有焦点的容器统一 2px 墨色框；AppShell 写清边界不扩展。Region 新增 `scroll`（默认关）与 `external_title`。
+- #110 虚拟列表每行一个路径段 `Item[<行 key>]`（不兼容）；#109 overlay 身份为"组件实例路径 + key"，`parent_overlay` 解析最近祖先，`overlay_placement(view_id, key)` 保留且歧义时报错并新增按实例路径查询，shared layout 同样按实例隔离（不兼容）。
+- #95 (a) 按 0.2 模型重定义验收（等宽字体由 token base 的 code 角色与宿主覆盖决定，调色板不改字体）；(b) Table 列 `typography: "code"`，两种数据源；(c) span `.typography(role)`（字体族与字重）与 `.background(color)`。
+- #89 Table `on_context_request` → `#{ key, column, anchor, source }`，右键先选中该行，支持 Shift+F10 与菜单键，菜单由调用方用 Menu `anchor` 弹出。
+- #91 `call_with(&InvocationContext, …)` 默认转发 `call`；上下文含来源（UserInput、Automation、Timer、TaskCompletion、Subscription、Effect、Lifecycle）、view_id 与组件路径；异步来源带最初发起来源。
+- #83 SplitPane 与 Resizable 支持装饰性手柄节点（画在面板之上，伸出部分可开始拖动，键盘与无障碍留在原生手柄），新增通用 `.signal_style(state, #{…})`，以及 `line` 与 `line_inset`。
