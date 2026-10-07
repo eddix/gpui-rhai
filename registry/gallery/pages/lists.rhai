@@ -141,12 +141,26 @@ fn host_columns() {
     ]
 }
 
+fn pods() {
+    [
+        #{ id: "p1", pod: "dp-09aa6aec4c-55d96c7899-kbzgl", ip: "10.0.12.40", region: "us-east", state: "Running" },
+        #{ id: "p2", pod: "dp-09aa6aec4c-55d96c7899-0lO1I", ip: "10.0.12.41", region: "us-east", state: "Running" },
+        #{ id: "p3", pod: "dp-7f3c21b0de-6b8d9f4c2a-xq7pz", ip: "10.8.3.102", region: "eu-west", state: "Pending" },
+    ]
+}
+
 fn table_page(h, v) {
     kit::page(h, v, "table", "Table", "Label-voice header, numeric columns end-aligned, no zebra. Arrows move the selection.", [
         kit::sec("Hosts", table::Table(#{ key: "table-hosts", label: "Hosts", row_key: "id", height: 200.0,
             columns: host_columns(), rows: hosts(), sort: kit::val(v, "table.sort", ()),
             selected_keys: kit::val(v, "table.selected", ["c"]), selection_mode: "single",
             on_selection_change: kit::store(h, "table.selected"), on_sort_change: kit::store(h, "table.sort") })),
+        kit::sec("Grouped, identifiers in the code role", table::Table(#{ key: "table-pods", label: "Pods",
+            row_key: "id", height: 200.0, group_by: "region", rows: pods(),
+            columns: [#{ key: "pod", title: "Pod", width: #{ kind: "flex", value: 2.0 }, typography: "code" },
+                #{ key: "ip", title: "IP", width: #{ kind: "fixed", value: 140.0 }, typography: "code" },
+                #{ key: "region", title: "Region", width: #{ kind: "fixed", value: 120.0 } },
+                #{ key: "state", title: "State", width: #{ kind: "fixed", value: 120.0 } }] })),
     ])
 }
 

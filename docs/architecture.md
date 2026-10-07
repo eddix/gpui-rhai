@@ -44,8 +44,9 @@ drag surfaces.
 
 `text("plain")` keeps the cheap uniform path. `text([span(...), ...])` retains
 typed inline runs and renders one GPUI `StyledText` with byte-correct highlight
-ranges; Span currently exposes color, bold, and italic without splitting text
-into layout boxes or invoking Rhai during text layout.
+ranges; Span exposes color, background, a typography role's face (family and
+weight; size and line height stay the paragraph's), bold, and italic without
+splitting text into layout boxes or invoking Rhai during text layout.
 
 `canvas(canvas_scene([...]))` retains a keyed vector command list. Rect, circle,
 line, and arbitrary move/line/quadratic/cubic/close paths validate finite

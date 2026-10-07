@@ -42,12 +42,18 @@ style().flex_basis(relative(0)).flex_grow(2).min_width(px(0))
 `relative(2)` is not a grow weight; relative lengths are fractions of the
 containing size and remain bounded to their own length contract.
 
-`style().typography("body")` applies one of the theme's eight validated semantic
-roles (`caption`, `body_small`, `body`, `subtitle`, `title`, `heading`,
-`display`, `display_large`). Resolution happens against the active theme during
-render, so a live theme switch updates text without recompiling Rhai. Explicit
-family, fallbacks, size, line height, or weight chained onto the style override
-that field while retaining the rest of the role.
+`style().typography("body")` applies a typography role from the token base
+(`caption`, `body_small`, `body`, `subtitle`, `title`, `heading`, `display`,
+`display_large`, the mono `label` voice and `code`, the `control` roles) or one
+an application adds; components declare the roles they read. A role may carry
+its own family and fallbacks: `code` is the monospace face for identifiers,
+paths and commands (`Menlo`, then `DejaVu Sans Mono`, `Liberation Mono`). A Host
+changes it with `ThemeTokenOverrides` or an application with `ui/tokens.rhai`;
+palette themes contain colors only, so switching palette never changes a face.
+Resolution happens during render, so a live change updates text without
+recompiling Rhai. Explicit family, fallbacks, size, line height, or weight
+chained onto the style override that field while retaining the rest of the
+role.
 
 ```rhai
 style()

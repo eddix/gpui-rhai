@@ -15,7 +15,8 @@
 // Use either a positive logical-pixel height or fill_height for flex layouts.
 // Props: key, label, row_key, Array-or-NativeCollection rows, columns,
 // height, loading/empty, sort, search/page projection, selection, optional grouping,
-// and native resize/auto-fit.
+// and native resize/auto-fit. A column's `typography` sets its cells' role, such as
+// "code" for identifiers that must tell 0 from O.
 // Events: sort_change, selection_change, row_click, group_toggle, and column_resize.
 // State: application values are controlled; keyed native width overrides retain drag previews.
 // Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
@@ -58,6 +59,8 @@ define_component(#{
                     align: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["start", "center", "end"] } }, required: false, sensitive: false },
                     numeric: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                         "default": #{ type: "bool", value: false } },
+                    typography: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+                        required: false, sensitive: false },
                     sortable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                         "default": #{ type: "bool", value: false } },
                     resizable: #{ schema: #{ type: "optional", value: #{ type: "bool" } },
@@ -176,6 +179,15 @@ fn numeric_keys(columns) {
     for column in columns { if prop_or(column, "numeric", false) { keys[column.key] = true; } }
     keys
 }
+// Column key -> typography role, for columns that set one (`code` for identifiers).
+fn column_typography(columns) {
+    let roles = #{};
+    for column in columns {
+        let role = optional_or(column, "typography", ());
+        if role != () { roles[column.key] = role; }
+    }
+    roles
+}
 
 fn next_sort(current, key) {
     if current != () && current.key == key {
@@ -221,7 +233,7 @@ fn column_resize_key(ctx, payload) {
     if payload.controlled { ctx.set_signal(payload.signal_key, ()); }
 }
 
-fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
+fn render_table_row(resize_signals, numeric, roles, total_rows, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         let indicator = image_source(asset(if item.collapsed {
@@ -286,6 +298,7 @@ fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
             .overflow_hidden().items_center().gap(theme_spacing("sm"))
             .whitespace_nowrap().text_ellipsis().typography("body");
         if cell.key in numeric { cell_style = cell_style.font_feature("tnum", 1); }
+        if cell.key in roles { cell_style = cell_style.typography(roles[cell.key]); }
         let node = row(content).with_key(cell.key).with_style(
             ctx.component_style(if item.selected { "row_selected" } else { "row" }, cell_style));
         node = node.with_table_column(cell_index - 1);
@@ -320,6 +333,9 @@ fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
         .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
         .accessibility_table_row(item.label, item.selected,
             payload.index + 2, payload.index + 1, total_rows);
+    // A column in its own role (mono identifiers at the code size) is sized to sit with
+    // the body text on purpose.
+    if roles.len() > 0 { node = node.audit_allow(["mixed-type-in-row"]); }
     // A row is a pointer target only: the table is the one tab stop, and its keys move
     // the selection.
     node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
@@ -726,7 +742,8 @@ fn render_Table(ctx, props) {
         style().flex_grow().min_width(px(0)).min_height(px(0))
     } else { style().min_width(px(0)) };
     let body = virtual_collection(collection,
-        Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns)).curry(data.len))
+        Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns))
+            .curry(column_typography(columns)).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
     with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1), neighbors)
 }

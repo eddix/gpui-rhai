@@ -1388,6 +1388,7 @@ impl TableColumn {
         for normalized_only in [
             "title",
             "numeric",
+            "typography",
             "sortable",
             "resize_enabled",
             "resize_ref_key",

@@ -136,6 +136,11 @@ and [docs/design/](docs/design/) for the specification.
   Menu, DatePicker and Combobox, which showed a 1px border. The view owns an
   overlay's panel focus handle, so `group_focus` styles in the panel content
   see the panel holding focus.
+- Identifiers (#95): a Table column's `typography` (`"code"`) sets its cells'
+  role, for array rows and NativeCollection data; spans take
+  `typography(role)` (the role's family and weight, the paragraph's size) and
+  `background(color)` for inline code. The monospace face is the token base's
+  `code` role; Hosts and `ui/tokens.rhai` change it, palettes do not.
 
 ## 0.1.8 - 2026-10-04
 

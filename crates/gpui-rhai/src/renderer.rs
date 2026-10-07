@@ -3431,15 +3431,31 @@ fn styled_text(
     path: &str,
 ) -> StyledText {
     let mut offset = 0usize;
+    let mut families = Vec::new();
     let highlights = spans.iter().filter_map(|span| {
         let start = offset;
         offset = offset.saturating_add(span.text().len());
+        // A span role changes the face only: size and line height stay the paragraph's.
+        let role = span
+            .typography_role()
+            .and_then(|role| colors.resolve_typography(role));
+        if let Some(family) = role.as_ref().and_then(|role| role.family.clone()) {
+            families.push((start..offset, SharedString::from(family)));
+        }
         let style = HighlightStyle {
             color: span
                 .color_value()
                 .and_then(|color| colors.resolve(color))
                 .map(|color| rgba(color.as_rgba_hex()).into()),
-            font_weight: span.is_bold().then_some(FontWeight::BOLD),
+            background_color: span
+                .background_value()
+                .and_then(|color| colors.resolve(color))
+                .map(|color| rgba(color.as_rgba_hex()).into()),
+            font_weight: if span.is_bold() {
+                Some(FontWeight::BOLD)
+            } else {
+                role.as_ref().map(|role| FontWeight(f32::from(role.weight)))
+            },
             font_style: span.is_italic().then_some(FontStyle::Italic),
             fade_out: span.key().and_then(|key| {
                 motions
@@ -3453,7 +3469,13 @@ fn styled_text(
         };
         (style != HighlightStyle::default()).then_some((start..offset, style))
     });
-    StyledText::new(text.to_owned()).with_highlights(highlights)
+    let highlights = highlights.collect::<Vec<_>>();
+    let styled = StyledText::new(text.to_owned()).with_highlights(highlights);
+    if families.is_empty() {
+        styled
+    } else {
+        styled.with_font_family_overrides(families)
+    }
 }
 
 fn render_canvas(

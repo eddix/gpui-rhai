@@ -73,6 +73,11 @@ fn typography_page(h, v) {
             sample("code", "cargo run --example byod_treemap"),
             sample("control_regular", "Control text 控件文字"),
         ])),
+        kit::sec("Inline code", text([span("Run "),
+            span("cargo run --example byod_treemap").typography("code").background(theme_color("surface_raised")),
+            span(" to open the treemap; pods such as "), span("dp-09aa6aec4c-0lO1I").typography("code"),
+            span(" keep 0, O, 1, l and I apart.")])
+            .with_style(style().typography("body").text_color(theme_color("text_primary")))),
     ])
 }
 

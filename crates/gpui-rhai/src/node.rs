@@ -125,6 +125,8 @@ pub struct Span {
     text: ImmutableString,
     key: Option<ImmutableString>,
     color: Option<crate::ColorValue>,
+    background: Option<crate::ColorValue>,
+    typography: Option<ImmutableString>,
     bold: bool,
     italic: bool,
     motions: Vec<MotionSource>,
@@ -137,10 +139,27 @@ impl Span {
             text: text.into(),
             key: None,
             color: None,
+            background: None,
+            typography: None,
             bold: false,
             italic: false,
             motions: Vec::new(),
         }
+    }
+
+    /// A background behind the span's text (inline code).
+    #[must_use]
+    pub fn background(mut self, color: crate::ColorValue) -> Self {
+        self.background = Some(color);
+        self
+    }
+
+    /// The family and weight of a typography role; the size and line height
+    /// stay the paragraph's, so the span sits on its line.
+    #[must_use]
+    pub fn typography(mut self, role: impl Into<ImmutableString>) -> Self {
+        self.typography = Some(role.into());
+        self
     }
 
     #[must_use]
@@ -196,6 +215,16 @@ impl Span {
     }
 
     #[must_use]
+    pub const fn background_value(&self) -> Option<&crate::ColorValue> {
+        self.background.as_ref()
+    }
+
+    #[must_use]
+    pub fn typography_role(&self) -> Option<&str> {
+        self.typography.as_deref()
+    }
+
+    #[must_use]
     pub const fn is_bold(&self) -> bool {
         self.bold
     }
@@ -215,6 +244,12 @@ impl CustomType for Span {
             })
             .with_fn("color", |span: &mut Self, color: crate::ColorValue| {
                 span.clone().color(color)
+            })
+            .with_fn("background", |span: &mut Self, color: crate::ColorValue| {
+                span.clone().background(color)
+            })
+            .with_fn("typography", |span: &mut Self, role: ImmutableString| {
+                span.clone().typography(role)
             })
             .with_fn("motion", |span: &mut Self, source: MotionSource| {
                 span.clone().motion(source)

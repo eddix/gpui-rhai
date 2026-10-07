@@ -278,9 +278,12 @@ signals, attributes, motion, or refs. `row`, `column`, and `stack` are Box
 helpers, not distinct privileged node kinds.
 
 Use `text([span("Label ").bold(), span(value).color(theme_color("accent"))])`
-for inline runs. Span is an immutable inline value, not a child node; current
-run refinements are color, bold, and italic and render through one GPUI
-`StyledText`.
+for inline runs. Span is an immutable inline value, not a child node; run
+refinements are color, `background(color)`, `typography(role)`, bold, and
+italic, and render through one GPUI `StyledText`. A span's `typography` takes
+the role's family and weight only: inline code is
+`span("cargo run").typography("code").background(theme_color("surface_raised"))`
+and stays on the paragraph's line.
 
 Use `canvas(canvas_scene([...]))` for retained vector drawing. Commands currently
 include rect/circle/line plus typed fill/stroke paths with quadratic/cubic
