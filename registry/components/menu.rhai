@@ -154,7 +154,7 @@ fn menu_item(ctx, props, item) {
     let checked = "checked" in item && item.checked;
     let action = item_action(item);
     let disabled = item_disabled(item) || (action != () && !ctx.action_enabled(action));
-    let shortcut = if "shortcut" in item && item.shortcut != () { item.shortcut }
+    let shortcut = if "shortcut" in item && item.shortcut != () { key_shortcut(item.shortcut).label }
         else if action != () {
             let bound = ctx.action_shortcut(action);
             if bound == () { "" } else { bound.label }

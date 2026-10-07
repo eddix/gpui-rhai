@@ -10,7 +10,7 @@
     "surface_hover", "text_primary", "accent", "accent_hover", "on_accent", "danger",
     "on_danger", "warning", "on_warning", "success", "on_success", "border",
     "focus_ring", "disabled", "control.hover", "metrics.control", "metrics.control_pad",
-    "spacing.xs", "radius.md", "typography.control", "typography.code"
+    "spacing.xs", "radius.md", "typography.control", "typography.label"
   ],
   "environment": ["size", "density", "corners"]
 }
@@ -39,7 +39,7 @@ define_component(#{
             "surface_hover", "text_primary", "accent", "accent_hover", "on_accent", "danger",
             "on_danger", "warning", "on_warning", "success", "on_success", "border",
             "focus_ring", "disabled", "control.hover", "metrics.control", "metrics.control_pad",
-            "spacing.xs", "radius.md", "typography.control", "typography.code"
+            "spacing.xs", "radius.md", "typography.control", "typography.label"
         ],
         environment: ["size", "density", "corners"],
     },
@@ -180,8 +180,9 @@ fn render_Button(ctx, props) {
     } else {
         props.text
     };
+    // A caller-written shortcut gets the same platform legend as a bound action.
     let shortcut = if "shortcut" in props && props.shortcut != () {
-        #{ label: props.shortcut, keystrokes: props.shortcut }
+        key_shortcut(props.shortcut)
     } else if action != () {
         ctx.action_shortcut(action)
     } else { () };
@@ -229,8 +230,10 @@ fn render_Button(ctx, props) {
             style().text_color(foreground))));
     }
     if shortcut != () {
+        // The inline key legend of Menu and Command (the label voice), in the
+        // button's own color.
         children.push(text(shortcut.label).with_style(ctx.component_style("shortcut",
-            style().typography("code").opacity(0.7))));
+            style().typography("label").opacity(0.7))));
     }
     let button = row(children)
         .with_style(ctx.component_style("root", base))

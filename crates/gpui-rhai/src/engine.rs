@@ -2281,6 +2281,15 @@ fn validate_literal_imports(ast: &AST) -> Result<(), RuntimeError> {
 }
 
 fn register_node_apis(engine: &mut Engine) {
+    // A caller-written shortcut as `#{ label, keystrokes, chords }`, formatted
+    // like a bound action's (`cmd-p` is `⌘P` on macOS); a legend stays as is.
+    FuncRegistration::new("key_shortcut")
+        .in_global_namespace()
+        .register_into_engine(engine, |text: ImmutableString| {
+            crate::ActionShortcut::from_text(text.as_str())
+                .to_ui_value()
+                .into_dynamic()
+        });
     FuncRegistration::new("text")
         .in_global_namespace()
         .register_into_engine(engine, text_node);

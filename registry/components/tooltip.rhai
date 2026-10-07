@@ -61,7 +61,7 @@ fn render_Tooltip(ctx, props) {
     if "disabled" in props && props.disabled { return props.trigger; }
     let show_delay = if "show_delay_ms" in props && props.show_delay_ms > 0 { props.show_delay_ms } else { 0 };
     let hide_delay = if "hide_delay_ms" in props && props.hide_delay_ms > 0 { props.hide_delay_ms } else { 0 };
-    let shortcut = if "shortcut" in props && props.shortcut != () { props.shortcut }
+    let shortcut = if "shortcut" in props && props.shortcut != () { key_shortcut(props.shortcut).label }
         else if "action" in props && props.action != () {
             let bound = ctx.action_shortcut(props.action);
             if bound == () { "" } else { bound.label }

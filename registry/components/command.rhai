@@ -201,7 +201,7 @@ fn render_command_row(content, total_rows, ctx, payload) {
     }
     let action = if "action" in item { item.action } else { () };
     let disabled = item.disabled || (action != () && !ctx.action_enabled(action));
-    let shortcut = if item.shortcut != "" { item.shortcut }
+    let shortcut = if item.shortcut != "" { key_shortcut(item.shortcut).label }
         else if action != () {
             let bound = ctx.action_shortcut(action);
             if bound == () { "" } else { bound.label }

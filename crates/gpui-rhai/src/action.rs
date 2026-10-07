@@ -297,6 +297,30 @@ impl ActionShortcut {
         }
     }
 
+    /// A shortcut a caller wrote: GPUI keystrokes (`cmd-p`, `ctrl-shift-k`,
+    /// `f6`) get the platform legend, like a bound action's shortcut; any
+    /// other text (`⌘K`, `Ctrl+K`) is already a legend and is kept.
+    #[must_use]
+    pub fn from_text(text: &str) -> Self {
+        let keystrokes = !text.trim().is_empty()
+            && text.split_whitespace().all(|chord| {
+                let spelled = chord.contains('-') && !chord.ends_with('-')
+                    || chord.chars().all(|character| {
+                        character.is_ascii_lowercase() || character.is_ascii_digit()
+                    });
+                spelled && gpui::Keystroke::parse(chord).is_ok()
+            });
+        if keystrokes {
+            Self::from_keystrokes(text, cfg!(target_os = "macos"))
+        } else {
+            Self {
+                label: text.to_owned(),
+                chords: Vec::new(),
+                keystrokes: text.to_owned(),
+            }
+        }
+    }
+
     /// The shortcut as a script value: `#{ label, keystrokes, chords }`.
     #[must_use]
     pub fn to_ui_value(&self) -> UiValue {
@@ -438,6 +462,26 @@ mod shortcut_tests {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn caller_written_shortcuts_are_formatted_only_when_they_are_keystrokes() {
+        for text in ["cmd-p", "ctrl-shift-k", "f6", "escape", "cmd-k cmd-s"] {
+            let shortcut = ActionShortcut::from_text(text);
+            assert!(!shortcut.chords.is_empty(), "{text} is keystrokes");
+            assert_eq!(shortcut.keystrokes, text);
+            assert_ne!(shortcut.label, text, "{text} gets a platform legend");
+        }
+        for legend in ["⌘K", "Ctrl+K", "⌘⇧P", ""] {
+            let shortcut = ActionShortcut::from_text(legend);
+            assert!(shortcut.chords.is_empty(), "{legend:?} is already a legend");
+            assert_eq!(shortcut.label, legend);
+        }
+        assert_eq!(ActionShortcut::from_keystrokes("cmd-p", true).label, "⌘P");
+        assert_eq!(
+            ActionShortcut::from_keystrokes("cmd-p", false).label,
+            "Super+P"
+        );
+    }
     use super::*;
     use crate::RuntimeEngine;
 
