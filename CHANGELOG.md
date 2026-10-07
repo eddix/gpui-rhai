@@ -147,6 +147,16 @@ and [docs/design/](docs/design/) for the specification.
   need to be unique within it, and a keyless component in a newly realized row
   can no longer take a retained row's path (#110). Component state inside
   virtual rows resets once on upgrade.
+- **Breaking:** an overlay's identity is (declaring component instance, key)
+  (#109). Two instances of one component with a Select of the same key each
+  open and close their own; before, every dismissal went to the instance
+  rendered last. `parent_overlay` names the nearest enclosing overlay with that
+  key. `ScriptViewHost::overlay_placement` returns
+  `Result<Option<PlacementResult>, OverlayLookupError>` and reports an
+  ambiguous key; `overlay_placement_in(view_id, instance_path, key)` names the
+  instance. Layers are scoped the same way, and a shared-layout group belongs
+  to the instance that named it. `OverlayNodeSpec` and `LayerNodeSpec` gain
+  `owner`, `VirtualCollectionNodeSpec` gains `inherited_motion_scope`.
 
 ## 0.1.8 - 2026-10-04
 

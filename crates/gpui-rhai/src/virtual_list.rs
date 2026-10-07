@@ -34,6 +34,8 @@ pub struct VirtualCollectionNodeSpec {
     /// Presentation-only motion group inherited from a surrounding
     /// `motion_group`; applied to items realized after the initial render.
     pub inherited_motion_group: Option<String>,
+    /// The component instance that declared the inherited group.
+    pub inherited_motion_scope: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -570,6 +572,7 @@ mod tests {
             reveal_key: None,
             sticky_headers: Arc::new(BTreeSet::new()),
             inherited_motion_group: None,
+            inherited_motion_scope: None,
         };
         let registry = VirtualRequestRegistry::new();
         registry.report_frame(&spec, 120.0, 1, 3.5, Some(1..3));

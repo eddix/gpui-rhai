@@ -219,9 +219,19 @@ flip/clamp against window edges. `ScriptViewHost::set_overlay_viewport` may set
 an explicit absolute rectangle for an intentionally isolated domain.
 
 Every local Overlay, Tooltip, Layer, and focus ID is internally namespaced by
-`view_id`. Rhai callbacks continue to receive their original local IDs. Toast
-items remain owned and limited by their source component; only their generic
+`view_id` and by the component instance that declared it, so two instances of
+one component may use the same overlay key. Rhai callbacks continue to receive
+their original local IDs. An overlay's `parent` (`parent_overlay`) names the
+nearest enclosing overlay with that key, so a submenu or a Combobox inside a
+Popover finds its parent even when another component declared it. Toast items
+remain owned and limited by their source component; only their generic
 positioned Layer elements share the Host portal.
+
+`ScriptViewHost::overlay_placement(view_id, key)` returns the placement of the
+overlay a view rendered with that key in the last frame. When several instances
+declare the key it returns `OverlayLookupError::Ambiguous` with their instance
+paths; `overlay_placement_in(view_id, instance_path, key)` names one
+(`/View[main]/Filter[eu]/Select[region]/Combobox[region-combobox]`).
 
 Non-modal outside clicks dismiss the topmost Host overlay during native capture
 and continue to the clicked sibling control. Modal backdrops consume the click.

@@ -3494,6 +3494,7 @@ impl DecodedVirtualCollection {
             reveal_key: self.reveal_key,
             sticky_headers: self.sticky_headers,
             inherited_motion_group: None,
+            inherited_motion_scope: None,
         }
     }
 }

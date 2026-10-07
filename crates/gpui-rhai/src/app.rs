@@ -258,16 +258,54 @@ impl ScriptViewHost {
         self.inner.borrow_mut().overlay_viewport = None;
     }
 
-    #[must_use]
+    /// The placement of the overlay a view rendered with this script key, as
+    /// of the last frame; `None` while it is closed or not rendered.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::OverlayLookupError::Ambiguous`] when several component
+    /// instances in the view declare an overlay with this key; name one with
+    /// [`Self::overlay_placement_in`].
     pub fn overlay_placement(
         &self,
         view_id: &str,
+        local_id: &str,
+    ) -> Result<Option<crate::PlacementResult>, crate::OverlayLookupError> {
+        let found = self.inner.borrow().overlays.placements(
+            view_id,
+            None,
+            &crate::OverlayId::new(local_id),
+        );
+        match found.as_slice() {
+            [] => Ok(None),
+            [(_, placement)] => Ok(*placement),
+            _ => Err(crate::OverlayLookupError::Ambiguous {
+                view_id: view_id.to_owned(),
+                key: local_id.to_owned(),
+                instances: found
+                    .iter()
+                    .map(|(owner, _)| owner.clone().unwrap_or_default())
+                    .collect(),
+            }),
+        }
+    }
+
+    /// The placement of the overlay that one component instance declared with
+    /// this key, as of the last frame. `component` is the instance path as
+    /// diagnostics print it (`/View[main]/Filter[eu]/Select[region]`).
+    #[must_use]
+    pub fn overlay_placement_in(
+        &self,
+        view_id: &str,
+        component: &str,
         local_id: &str,
     ) -> Option<crate::PlacementResult> {
         self.inner
             .borrow()
             .overlays
-            .placement(view_id, &crate::OverlayId::new(local_id))
+            .placements(view_id, Some(component), &crate::OverlayId::new(local_id))
+            .into_iter()
+            .find_map(|(_, placement)| placement)
     }
 
     /// Bind host-approved script actions once at App scope.

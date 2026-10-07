@@ -221,8 +221,8 @@ pub use node::{
 };
 pub use overlay::{
     DismissReport, FocusToken, OverlayAlign, OverlayBounds, OverlayError, OverlayId, OverlayKind,
-    OverlayManager, OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler,
-    TooltipTransition,
+    OverlayLookupError, OverlayManager, OverlayPlacement, OverlaySpec, PlacementResult,
+    TooltipScheduler, TooltipTransition,
 };
 pub use pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 pub use primitive::{

@@ -716,6 +716,7 @@ mod tests {
             keyed_text("shared", "content"),
             crate::OverlayNodeSpec {
                 id: crate::OverlayId::new("overlay"),
+                owner: None,
                 parent: None,
                 kind: crate::OverlayKind::Popover,
                 initial_focus: crate::OverlayInitialFocus::Panel,

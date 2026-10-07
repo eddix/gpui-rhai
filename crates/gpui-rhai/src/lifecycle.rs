@@ -475,13 +475,15 @@ impl ScriptLifecycle {
                 if previous_indices == indices {
                     continue;
                 }
-                let inherited_motion_group = root
-                    .virtual_collection_spec(&id)
-                    .and_then(|spec| spec.inherited_motion_group.clone());
+                let inherited_motion_group = root.virtual_collection_spec(&id).and_then(|spec| {
+                    spec.inherited_motion_group
+                        .clone()
+                        .map(|group| (group, spec.inherited_motion_scope.clone()))
+                });
                 items = engine.realize_virtual_collection(&id, &indices, &items)?;
-                if let Some(group) = inherited_motion_group {
+                if let Some((group, scope)) = inherited_motion_group {
                     for node in items.values_mut() {
-                        crate::node::apply_motion_group(node, &group);
+                        crate::node::apply_motion_group(node, &group, scope.as_deref());
                     }
                 }
                 if !root.replace_virtual_collection_items(&id, items.clone()) {

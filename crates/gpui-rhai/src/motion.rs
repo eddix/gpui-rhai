@@ -2543,6 +2543,18 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
     Ok(values)
 }
 
+/// A node's shared-layout group as one window-wide name: the group scoped by
+/// the component instance that declared it, when it has one.
+pub(crate) fn scoped_shared_layout_group(node: &UiNode) -> Option<String> {
+    let crate::UiValue::String(group) = node.attributes().get("shared_layout_group")? else {
+        return None;
+    };
+    Some(match node.attributes().get("shared_layout_scope") {
+        Some(crate::UiValue::String(scope)) => format!("{scope}::{group}"),
+        _ => group.clone(),
+    })
+}
+
 fn validate_shared_layout_ids(root: &UiNode) -> Result<(), MotionError> {
     shared_layout_ids(root).map(|_| ())
 }
@@ -2558,9 +2570,10 @@ pub(crate) fn shared_layout_ids(root: &UiNode) -> Result<BTreeSet<(String, Strin
                         "shared layout group and id must be non-empty".to_owned(),
                     ));
                 }
-                if !seen.insert((group.clone(), id.clone())) {
+                let scoped = scoped_shared_layout_group(node).unwrap_or_else(|| group.clone());
+                if !seen.insert((scoped.clone(), id.clone())) {
                     return Err(MotionError::DuplicateSharedLayout {
-                        group: group.clone(),
+                        group: scoped,
                         id: id.clone(),
                     });
                 }

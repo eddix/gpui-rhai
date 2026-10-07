@@ -24,6 +24,10 @@ pub enum ImageSourceSpec {
 #[derive(Clone, Debug, PartialEq)]
 pub struct OverlayNodeSpec {
     pub id: OverlayId,
+    /// The component instance that declared the overlay, set when its render
+    /// binds the node. With `id` it is the overlay's identity, so two
+    /// instances of one component do not share an overlay.
+    pub owner: Option<crate::ComponentInstancePath>,
     pub parent: Option<OverlayId>,
     pub kind: OverlayKind,
     pub placement: OverlayPlacement,
@@ -80,6 +84,8 @@ pub enum LayerPlacement {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayerNodeSpec {
     pub id: OverlayId,
+    /// The declaring component instance, as for overlays.
+    pub owner: Option<crate::ComponentInstancePath>,
     pub placement: LayerPlacement,
     pub inset: f64,
     pub priority: usize,
@@ -493,7 +499,9 @@ enum NodePresentationMutation {
     ExitMotion(MotionSource),
     ProgressMotion(crate::MotionProgressBinding),
     Timeline(Box<crate::MotionTimeline>),
-    MotionGroup(String),
+    /// A surrounding `motion_group`: its name and, once bound, the component
+    /// instance that declared it.
+    MotionGroup(String, Option<String>),
 }
 
 impl NodePresentationMutation {
@@ -540,7 +548,9 @@ impl NodePresentationMutation {
                     .retain(|existing| existing.name != timeline.name);
                 node.timelines.push(timeline.as_ref().clone());
             }
-            Self::MotionGroup(group) => apply_motion_group_contents(node, group),
+            Self::MotionGroup(group, scope) => {
+                apply_motion_group_contents(node, group, scope.as_deref());
+            }
         }
     }
 
@@ -574,6 +584,10 @@ impl NodePresentationMutation {
             }
             Self::Timeline(timeline) => {
                 timeline.bind_component_scope(component, incarnation, events, native_context);
+            }
+            // Replays after the declaring component's render keep its scope.
+            Self::MotionGroup(_, scope) => {
+                scope.get_or_insert_with(|| component.to_string());
             }
             _ => {}
         }
@@ -1794,6 +1808,16 @@ impl UiNode {
         events: &BTreeMap<String, crate::EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
+        // A shared-layout group belongs to the instance that named it, so two
+        // instances of one component do not share an identity.
+        if self.attributes.contains_key("shared_layout_group")
+            && !self.attributes.contains_key("shared_layout_scope")
+        {
+            self.attributes.insert(
+                "shared_layout_scope".to_owned(),
+                UiValue::String(component.to_string()),
+            );
+        }
         for bindings in self.handlers.values_mut() {
             for binding in bindings {
                 if let Some(callback) = binding.handler_mut().as_script_mut() {
@@ -1829,15 +1853,22 @@ impl UiNode {
                 fallback.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::Overlay {
-                trigger, content, ..
+                trigger,
+                content,
+                spec,
             } => {
+                spec.owner.get_or_insert_with(|| component.clone());
                 trigger.bind_component_scope(component, incarnation, events, native_context);
                 content.bind_component_scope(component, incarnation, events, native_context);
             }
-            UiNodeKind::Layer { content, .. } => {
+            UiNodeKind::Layer { content, spec } => {
+                spec.owner.get_or_insert_with(|| component.clone());
                 content.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::VirtualCollection { spec } => {
+                if spec.inherited_motion_group.is_some() && spec.inherited_motion_scope.is_none() {
+                    spec.inherited_motion_scope = Some(component.to_string());
+                }
                 for item in spec.realized.values_mut() {
                     item.bind_component_scope(component, incarnation, events, native_context);
                 }
@@ -3083,19 +3114,25 @@ pub(crate) fn motion_group_node(
         )));
     }
     let mut node = fragment_node(call, children)?;
-    apply_motion_group(&mut node, &id);
+    apply_motion_group(&mut node, &id, None);
     Ok(node)
 }
 
-pub(crate) fn apply_motion_group(node: &mut UiNode, group: &str) {
+/// Give the nodes that declare only a shared-layout id this group. `scope` is
+/// the declaring instance when known; otherwise the next component binding
+/// supplies it.
+pub(crate) fn apply_motion_group(node: &mut UiNode, group: &str, scope: Option<&str>) {
     if node.component_root.is_some() {
-        node.apply_presentation_mutation(NodePresentationMutation::MotionGroup(group.to_owned()));
+        node.apply_presentation_mutation(NodePresentationMutation::MotionGroup(
+            group.to_owned(),
+            scope.map(str::to_owned),
+        ));
     } else {
-        apply_motion_group_contents(node, group);
+        apply_motion_group_contents(node, group, scope);
     }
 }
 
-fn apply_motion_group_contents(node: &mut UiNode, group: &str) {
+fn apply_motion_group_contents(node: &mut UiNode, group: &str, scope: Option<&str>) {
     if node.attributes.contains_key("shared_layout_id")
         && !node.attributes.contains_key("shared_layout_group")
     {
@@ -3103,30 +3140,37 @@ fn apply_motion_group_contents(node: &mut UiNode, group: &str) {
             "shared_layout_group".to_owned(),
             UiValue::String(group.to_owned()),
         );
+        if let Some(scope) = scope {
+            node.attributes.insert(
+                "shared_layout_scope".to_owned(),
+                UiValue::String(scope.to_owned()),
+            );
+        }
     }
     match &mut node.kind {
         UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
             for child in children {
-                apply_motion_group(child, group);
+                apply_motion_group(child, group, scope);
             }
         }
         UiNodeKind::Overlay {
             trigger, content, ..
         } => {
-            apply_motion_group(trigger, group);
-            apply_motion_group(content, group);
+            apply_motion_group(trigger, group, scope);
+            apply_motion_group(content, group, scope);
         }
-        UiNodeKind::Layer { content, .. } => apply_motion_group(content, group),
+        UiNodeKind::Layer { content, .. } => apply_motion_group(content, group, scope),
         UiNodeKind::ErrorBoundary { child, fallback } => {
-            apply_motion_group(child, group);
-            apply_motion_group(fallback, group);
+            apply_motion_group(child, group, scope);
+            apply_motion_group(fallback, group, scope);
         }
         UiNodeKind::VirtualCollection { spec } => {
             if spec.inherited_motion_group.is_none() {
                 spec.inherited_motion_group = Some(group.to_owned());
+                spec.inherited_motion_scope = scope.map(str::to_owned);
             }
             for child in spec.realized.values_mut() {
-                apply_motion_group(child, group);
+                apply_motion_group(child, group, scope);
             }
         }
         UiNodeKind::Text { .. }
@@ -3360,6 +3404,7 @@ pub(crate) fn overlay_node(
             overlay_content,
             OverlayNodeSpec {
                 id: OverlayId::new(id),
+                owner: None,
                 parent: parent.map(OverlayId::new),
                 kind,
                 placement,
@@ -3416,6 +3461,7 @@ pub(crate) fn layer_node(
             content,
             LayerNodeSpec {
                 id: OverlayId::new(id),
+                owner: None,
                 placement,
                 inset,
                 priority,
@@ -3752,7 +3798,7 @@ mod tests {
             .with_component_root(inner.clone());
         let mut root = UiNode::column(vec![inner_node]).with_component_root(outer);
 
-        apply_motion_group(&mut root, "outer-group");
+        apply_motion_group(&mut root, "outer-group", None);
         let UiNodeKind::Box { children } = root.kind() else {
             panic!("expected component column");
         };
@@ -3806,6 +3852,7 @@ mod tests {
                 reveal_key: None,
                 sticky_headers: std::sync::Arc::new(std::collections::BTreeSet::new()),
                 inherited_motion_group: None,
+                inherited_motion_scope: None,
             })
         };
         let siblings = || {

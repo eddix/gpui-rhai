@@ -672,6 +672,7 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
             OverlayNodeSpec {
                 initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
                 id: OverlayId::new("keyboard-overlay"),
+                owner: None,
                 parent: None,
                 kind: OverlayKind::Popover,
                 placement: OverlayPlacement::Bottom,
@@ -988,6 +989,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         OverlayNodeSpec {
             initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("child-popover"),
+            owner: None,
             parent: Some(OverlayId::new("parent-dialog")),
             kind: OverlayKind::Popover,
             placement: OverlayPlacement::Right,
@@ -1012,6 +1014,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         OverlayNodeSpec {
             initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("parent-dialog"),
+            owner: None,
             parent: None,
             kind: OverlayKind::Dialog,
             placement: OverlayPlacement::Bottom,
@@ -1612,7 +1615,10 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
         Modifiers::default(),
     );
     visual.run_until_parked();
-    let placement = host.overlay_placement("combobox-view", "theme").unwrap();
+    let placement = host
+        .overlay_placement("combobox-view", "theme")
+        .unwrap()
+        .unwrap();
     visual.simulate_click(
         point(
             px((placement.bounds.x + placement.bounds.width / 2.0) as f32),
@@ -1733,6 +1739,7 @@ fn combobox_relative_width_tracks_flex_space_and_sizes_its_panel(cx: &mut TestAp
         let fixed = query(visual, "Fixed");
         let panel = host
             .overlay_placement("adaptive-width-view", "adaptive")
+            .unwrap()
             .expect("open adaptive panel has placement");
         (adaptive, fixed, panel.bounds)
     };
@@ -3452,7 +3459,10 @@ fn multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state(cx: &m
     assert!(first_text.contains(&"View: first".to_owned()));
     assert!(first_text.contains(&"Responsive: compact".to_owned()));
 
-    let first_placement = host.overlay_placement("first", "shared-overlay").unwrap();
+    let first_placement = host
+        .overlay_placement("first", "shared-overlay")
+        .unwrap()
+        .unwrap();
     assert!(first_placement.bounds.width > 200.0);
     let toast_count = [&first, &second, &third]
         .into_iter()
@@ -3518,8 +3528,14 @@ fn duplicate_local_overlay_ids_are_namespaced_per_embedded_view(cx: &mut TestApp
     cx.run_until_parked();
 
     let host = captured.borrow().as_ref().unwrap().clone();
-    let first = host.overlay_placement("first", "shared-overlay").unwrap();
-    let second = host.overlay_placement("second", "shared-overlay").unwrap();
+    let first = host
+        .overlay_placement("first", "shared-overlay")
+        .unwrap()
+        .unwrap();
+    let second = host
+        .overlay_placement("second", "shared-overlay")
+        .unwrap()
+        .unwrap();
     assert!(first.bounds.width > 200.0);
     assert!(second.bounds.width > 200.0);
     assert_ne!(first.bounds.x, second.bounds.x);

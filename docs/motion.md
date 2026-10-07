@@ -115,8 +115,11 @@ motion_group("cards", [
 ])
 ```
 
-`motion_group` is a layout-transparent fragment. Shared IDs are unique inside
-one view/window presentation domain. Direct window, splitter, Table-column,
+`motion_group` is a layout-transparent fragment. A shared-layout group belongs
+to the component instance that named it (the one calling `motion_group` or
+`.shared_layout(group, id)`), so two instances of a component keep separate
+identities; within one instance a group and id are unique in the view/window
+presentation domain. Direct window, splitter, Table-column,
 and other pointer-following resize remains immediate. The generic GPUI 0.2.2
 FLIP layer guarantees positional transforms; typed Canvas/path primitives own
 scale and rotation.

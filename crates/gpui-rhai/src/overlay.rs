@@ -562,6 +562,23 @@ pub struct DismissReport {
     pub restore_focus: Option<FocusToken>,
 }
 
+/// A Host lookup of a view's overlay by its script key.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum OverlayLookupError {
+    /// Several component instances in the view declare an overlay with this
+    /// key; name one with `overlay_placement_in`.
+    #[error(
+        "overlay `{key}` in view `{view_id}` is declared by {} component instances ({}); name one with overlay_placement_in",
+        instances.len(),
+        instances.join(", ")
+    )]
+    Ambiguous {
+        view_id: String,
+        key: String,
+        instances: Vec<String>,
+    },
+}
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum OverlayError {
     #[error("overlay geometry must be finite and non-negative")]

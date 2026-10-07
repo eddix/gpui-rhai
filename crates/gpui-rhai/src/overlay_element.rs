@@ -33,7 +33,18 @@ struct OverlayCoordinatorState {
     viewport: OverlayBounds,
     tooltip_owners: BTreeMap<String, BTreeSet<OverlayId>>,
     layer_elements: BTreeMap<OverlayId, (usize, AnyElement)>,
+    /// Who declared each overlay rendered this frame, for Host lookups by key.
+    identities: BTreeMap<OverlayId, OverlayIdentity>,
     host_managed: bool,
+}
+
+/// An overlay's identity: the view, the declaring component instance and the
+/// script key. The window-wide id is derived from it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OverlayIdentity {
+    pub(crate) view_id: String,
+    pub(crate) owner: Option<String>,
+    pub(crate) local: OverlayId,
 }
 
 impl Default for WindowOverlayCoordinator {
@@ -47,6 +58,7 @@ impl Default for WindowOverlayCoordinator {
             outside_listener_claimed: false,
             viewport: OverlayBounds::default(),
             tooltip_owners: BTreeMap::new(),
+            identities: BTreeMap::new(),
             layer_elements: BTreeMap::new(),
             host_managed: false,
         })))
@@ -72,6 +84,7 @@ impl WindowOverlayCoordinator {
         state.viewport = viewport;
         state.callbacks.clear();
         state.priorities.clear();
+        state.identities.clear();
         state.next_priority = 1;
         state.outside_listener_claimed = false;
         state.layer_elements.clear();
@@ -123,13 +136,42 @@ impl WindowOverlayCoordinator {
         }
     }
 
-    pub(crate) fn scoped_id(view_id: &str, local: &OverlayId) -> OverlayId {
-        OverlayId::new(format!("{view_id}::{}", local.as_str()))
+    /// The window-wide id of a view's overlay: scoped by the view and by the
+    /// component instance that declared it.
+    pub(crate) fn scoped_id(
+        view_id: &str,
+        owner: Option<&crate::ComponentInstancePath>,
+        local: &OverlayId,
+    ) -> OverlayId {
+        match owner {
+            Some(owner) => OverlayId::new(format!("{view_id}::{owner}::{}", local.as_str())),
+            None => OverlayId::new(format!("{view_id}::{}", local.as_str())),
+        }
     }
 
-    pub(crate) fn placement(&self, view_id: &str, local: &OverlayId) -> Option<PlacementResult> {
-        let id = Self::scoped_id(view_id, local);
-        self.0.borrow().manager.placement(&id)
+    pub(crate) fn record_identity(&self, id: OverlayId, identity: OverlayIdentity) {
+        self.0.borrow_mut().identities.insert(id, identity);
+    }
+
+    /// Placements of the overlays a view rendered with this key in the last
+    /// frame, by declaring instance; `owner` narrows them to one instance.
+    pub(crate) fn placements(
+        &self,
+        view_id: &str,
+        owner: Option<&str>,
+        local: &OverlayId,
+    ) -> Vec<(Option<String>, Option<PlacementResult>)> {
+        let state = self.0.borrow();
+        state
+            .identities
+            .iter()
+            .filter(|(_, identity)| {
+                identity.view_id == view_id
+                    && identity.local == *local
+                    && owner.is_none_or(|owner| identity.owner.as_deref() == Some(owner))
+            })
+            .map(|(id, identity)| (identity.owner.clone(), state.manager.placement(id)))
+            .collect()
     }
 
     pub(crate) fn remove_view(&self, view_id: &str) {
@@ -145,6 +187,9 @@ impl WindowOverlayCoordinator {
         state
             .layer_elements
             .retain(|id, _| !id.as_str().starts_with(&prefix));
+        state
+            .identities
+            .retain(|_, identity| identity.view_id != view_id);
         if let Some(tooltips) = state.tooltip_owners.remove(view_id) {
             for id in tooltips {
                 state.manager.tooltips_mut().remove(&id);
@@ -379,7 +424,11 @@ impl Element for ScriptLayerElement {
         let content = self.content.take().expect("layer content rendered once");
         let positioned = self.positioned(content);
         let mut layer = if self.coordinator.host_managed() {
-            let id = WindowOverlayCoordinator::scoped_id(&self.view_id, &self.spec.id);
+            let id = WindowOverlayCoordinator::scoped_id(
+                &self.view_id,
+                self.spec.owner.as_ref(),
+                &self.spec.id,
+            );
             self.coordinator.register_layer_element(
                 id,
                 self.spec.priority,
@@ -455,6 +504,7 @@ pub(crate) struct ScriptOverlayElement {
     /// The panel's focus handle when the view owns it (a retained overlay);
     /// otherwise the element keeps its own.
     panel_focus: Option<FocusHandle>,
+    identity: Option<OverlayIdentity>,
     coordinator: WindowOverlayCoordinator,
 }
 
@@ -482,8 +532,14 @@ impl ScriptOverlayElement {
             restore_focus_on_close,
             trigger_focusable: false,
             panel_focus: None,
+            identity: None,
             coordinator,
         }
+    }
+
+    pub(crate) fn with_identity(mut self, identity: OverlayIdentity) -> Self {
+        self.identity = Some(identity);
+        self
     }
 
     pub(crate) fn with_panel_focus(mut self, handle: Option<FocusHandle>) -> Self {
@@ -888,6 +944,10 @@ impl Element for ScriptOverlayElement {
                     self.spec.kind,
                     self.open_change.clone(),
                 );
+                if let Some(identity) = &self.identity {
+                    self.coordinator
+                        .record_identity(self.spec.id.clone(), identity.clone());
+                }
                 let mut overlay = self.build_overlay(
                     &state.panel_focus,
                     self.coordinator.viewport_or_window(window.viewport_size()),
@@ -1126,7 +1186,7 @@ mod tests {
         let coordinator = WindowOverlayCoordinator::default();
         coordinator.begin_frame(overlay_viewport(size(px(800.0), px(600.0))));
         let local = OverlayId::new("menu");
-        let scoped = WindowOverlayCoordinator::scoped_id("left", &local);
+        let scoped = WindowOverlayCoordinator::scoped_id("left", None, &local);
         let mut overlay = spec(scoped.as_str(), None);
         overlay.id = scoped.clone();
         coordinator.register(overlay).unwrap();

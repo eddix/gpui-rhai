@@ -1531,6 +1531,30 @@ struct RenderEnvironment<'a, C> {
     /// This node stretches its own children, by its resolved style (interaction
     /// states included), so the hint follows what is actually laid out.
     stretch_children: bool,
+    /// The overlays whose content this node is in, innermost first, so a
+    /// `parent` key names the nearest enclosing overlay with that key.
+    overlay_scope: Option<&'a OverlayScope<'a>>,
+}
+
+/// An overlay whose content is being rendered: its script key and its
+/// window-wide id, linked to the overlay around it.
+struct OverlayScope<'a> {
+    local: &'a crate::OverlayId,
+    id: crate::OverlayId,
+    outer: Option<&'a OverlayScope<'a>>,
+}
+
+impl OverlayScope<'_> {
+    fn find(&self, local: &crate::OverlayId) -> Option<&crate::OverlayId> {
+        let mut cursor = Some(self);
+        while let Some(scope) = cursor {
+            if scope.local == local {
+                return Some(&scope.id);
+            }
+            cursor = scope.outer;
+        }
+        None
+    }
 }
 
 impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
@@ -1718,6 +1742,7 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            overlay_scope: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1802,6 +1827,7 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            overlay_scope: None,
         };
         tree.root().map_or_else(
             || {
@@ -1879,6 +1905,7 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            overlay_scope: None,
         };
         tree.root().map_or_else(
             || {
@@ -1948,6 +1975,7 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            overlay_scope: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -2075,6 +2103,7 @@ impl GpuiNodeRenderer {
             window_drag: resources.window_drag,
             stretch_parent: false,
             stretch_children: false,
+            overlay_scope: None,
         };
         tree.root().map_or_else(
             || {
@@ -2144,6 +2173,7 @@ impl GpuiNodeRenderer {
             window_drag: resources.window_drag,
             stretch_parent: false,
             stretch_children: false,
+            overlay_scope: None,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -2199,6 +2229,7 @@ impl GpuiNodeRenderer {
             window_drag: resources.window_drag,
             stretch_parent: false,
             stretch_children: false,
+            overlay_scope: None,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
     }
@@ -3838,17 +3869,24 @@ fn inline_svg_image(source: impl Into<gpui::ImageSource>, fills_styled_box: bool
     }
 }
 
+/// The rendered spec: window-wide ids and physical edges. The overlay is
+/// scoped by the instance that declared it; a `parent` key names the nearest
+/// enclosing overlay with that key, else one the same instance declared.
 fn scoped_overlay_spec(
     spec: &OverlayNodeSpec,
     view_id: &str,
     direction: TextDirection,
+    enclosing: Option<&OverlayScope<'_>>,
 ) -> OverlayNodeSpec {
     let mut rendered = spec.clone();
-    rendered.id = WindowOverlayCoordinator::scoped_id(view_id, &rendered.id);
-    rendered.parent = rendered
-        .parent
-        .as_ref()
-        .map(|parent| WindowOverlayCoordinator::scoped_id(view_id, parent));
+    let owner = spec.owner.as_ref();
+    rendered.id = WindowOverlayCoordinator::scoped_id(view_id, owner, &rendered.id);
+    rendered.parent = rendered.parent.as_ref().map(|parent| {
+        enclosing
+            .and_then(|scope| scope.find(parent))
+            .cloned()
+            .unwrap_or_else(|| WindowOverlayCoordinator::scoped_id(view_id, owner, parent))
+    });
     rendered.placement = match (rendered.placement, direction) {
         (crate::OverlayPlacement::Start, TextDirection::LeftToRight)
         | (crate::OverlayPlacement::End, TextDirection::RightToLeft) => {
@@ -3885,7 +3923,12 @@ fn native_overlay_element<C: ColorResolver>(
     (path, retained_id): (&str, Option<NodeId>),
 ) -> ScriptOverlayElement {
     let trigger_focusable = subtree_takes_focus(trigger, environment.inherited_disabled);
-    let mut rendered_spec = scoped_overlay_spec(spec, environment.view_id, environment.direction);
+    let mut rendered_spec = scoped_overlay_spec(
+        spec,
+        environment.view_id,
+        environment.direction,
+        environment.overlay_scope,
+    );
     if rendered_spec.kind == crate::OverlayKind::Tooltip {
         rendered_spec.open = environment
             .overlays
@@ -3907,11 +3950,17 @@ fn native_overlay_element<C: ColorResolver>(
     // The panel holding focus itself is seen by `group_focus` styles in its
     // content (a panel's focus frame), as a focusable node's is in its subtree.
     let panel_focus = retained_id.and_then(|id| environment.focus_handles.get(&id).cloned());
+    let scope = OverlayScope {
+        local: &spec.id,
+        id: rendered_spec.id.clone(),
+        outer: environment.overlay_scope,
+    };
     let content_environment = RenderEnvironment {
         focus: NodeFocus {
             owner: retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref(),
             ..environment.focus
         },
+        overlay_scope: Some(&scope),
         ..*environment
     };
     let content = GpuiNodeRenderer::render_internal(
@@ -3983,6 +4032,11 @@ fn native_overlay_element<C: ColorResolver>(
         .restore_focus_on_close(restore_focus_on_close)
         .with_trigger_focusable(trigger_focusable)
         .with_panel_focus(panel_focus)
+        .with_identity(crate::overlay_element::OverlayIdentity {
+            view_id: environment.view_id.to_owned(),
+            owner: spec.owner.as_ref().map(ToString::to_string),
+            local: spec.id.clone(),
+        })
 }
 
 /// In an RTL stretching column, a child with a definite width belongs on the
@@ -4851,12 +4905,10 @@ fn layout_motion_spec(node: &UiNode, now: Instant) -> Option<LayoutMotionRenderS
         _ => crate::MotionEasing::EaseOut,
     };
     let shared = match (
-        node.attributes().get("shared_layout_group"),
+        crate::motion::scoped_shared_layout_group(node),
         node.attributes().get("shared_layout_id"),
     ) {
-        (Some(UiValue::String(group)), Some(UiValue::String(id))) => {
-            Some((group.clone(), id.clone()))
-        }
+        (Some(group), Some(UiValue::String(id))) => Some((group, id.clone())),
         _ => None,
     };
     Some(LayoutMotionRenderSpec {
@@ -6587,6 +6639,7 @@ mod tests {
     fn logical_overlay_edges_resolve_against_text_direction() {
         let spec = |placement| crate::OverlayNodeSpec {
             id: crate::OverlayId::new("logical-sheet"),
+            owner: None,
             parent: None,
             kind: crate::OverlayKind::Sheet,
             placement,
@@ -6609,6 +6662,7 @@ mod tests {
                 &spec(crate::OverlayPlacement::Start),
                 "view",
                 TextDirection::RightToLeft,
+                None,
             )
             .placement,
             crate::OverlayPlacement::Right
@@ -6618,6 +6672,7 @@ mod tests {
                 &spec(crate::OverlayPlacement::End),
                 "view",
                 TextDirection::RightToLeft,
+                None,
             )
             .placement,
             crate::OverlayPlacement::Left
