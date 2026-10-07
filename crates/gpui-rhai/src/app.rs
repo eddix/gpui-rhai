@@ -2609,6 +2609,15 @@ fn load_theme_directory(
     theme_manager(variants.into_values(), primary)
 }
 
+/// A reloaded token base and themes, checked before they become visible.
+#[cfg(feature = "dev-reload")]
+struct ThemeCandidate {
+    /// The new token base, when the application has a token file.
+    base: Option<crate::TokenLayer>,
+    themes: ThemeManager,
+    theme: ThemeVariant,
+}
+
 /// The token layers beneath and above every palette theme of one view.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ThemeLayers {
@@ -3125,6 +3134,8 @@ impl PreparedScriptView {
                 _reload_task: reload_task,
                 #[cfg(feature = "dev-reload")]
                 pending_reload_paths: BTreeSet::new(),
+                #[cfg(feature = "dev-reload")]
+                failed_reload_paths: BTreeSet::new(),
             }
         });
         install_window_lifecycle_hooks(&entity, window, cx);
@@ -3508,6 +3519,8 @@ fn open_secondary_window(
                 _reload_task: None,
                 #[cfg(feature = "dev-reload")]
                 pending_reload_paths: BTreeSet::new(),
+                #[cfg(feature = "dev-reload")]
+                failed_reload_paths: BTreeSet::new(),
             }
         });
         install_window_lifecycle_hooks(&entity, window, cx);
@@ -3820,6 +3833,8 @@ struct ScriptHostView {
     _reload_task: Option<Task<()>>,
     #[cfg(feature = "dev-reload")]
     pending_reload_paths: BTreeSet<PathBuf>,
+    #[cfg(feature = "dev-reload")]
+    failed_reload_paths: BTreeSet<PathBuf>,
 }
 
 fn install_window_lifecycle_hooks(
@@ -6020,14 +6035,21 @@ impl ScriptHostView {
         if batch.paths.is_empty() {
             return;
         }
+        // A rejected batch is tried again with the next edit, so fixing one file
+        // also applies the other files of the batch that failed.
+        let mut paths = batch.paths;
+        paths.append(&mut self.failed_reload_paths);
         if self.state.get() == ScriptViewState::Suspended {
-            self.pending_reload_paths.extend(batch.paths);
+            self.pending_reload_paths.extend(paths);
             return;
         }
-        let result = self.reload_changed_paths(&batch.paths);
+        let result = self.reload_changed_paths(&paths);
         match result {
             Ok(()) => self.clear_failure(),
-            Err(error) => self.set_failure(error),
+            Err(error) => {
+                self.failed_reload_paths = paths;
+                self.set_failure(error);
+            }
         }
         self.collect_timings();
         cx.notify();
@@ -6090,17 +6112,26 @@ impl ScriptHostView {
                     .is_some_and(|themes_root| path.starts_with(themes_root))
         });
 
+        // A theme edit is a candidate until it passes the components' token
+        // requirements, together with any scripts edited in the same batch.
+        let theme = if theme_changed {
+            Some(self.theme_candidate().map_err(ScriptFailure::from)?)
+        } else {
+            None
+        };
         if script_changed {
-            self.reload_scripts(paths)
+            self.reload_scripts(paths, theme.as_ref().map(|candidate| &candidate.themes))
         } else {
             Ok(())
         }
         .and_then(|()| {
-            if theme_changed {
-                self.reload_theme().map_err(ScriptFailure::from)
-            } else {
-                Ok(())
-            }
+            let Some(candidate) = theme else {
+                return Ok(());
+            };
+            validate_component_tokens(&candidate.themes, &self.factory.program().component_exports)
+                .map_err(|error| ScriptFailure::plain(error.to_string()))?;
+            self.commit_theme(candidate);
+            Ok(())
         })
         .and_then(|()| {
             if style_changed {
@@ -6133,7 +6164,11 @@ impl ScriptHostView {
     }
 
     #[cfg(feature = "dev-reload")]
-    fn reload_scripts(&mut self, changed_paths: &BTreeSet<PathBuf>) -> Result<(), ScriptFailure> {
+    fn reload_scripts(
+        &mut self,
+        changed_paths: &BTreeSet<PathBuf>,
+        candidate_themes: Option<&ThemeManager>,
+    ) -> Result<(), ScriptFailure> {
         let source = fs::read_to_string(&self.entry)
             .map_err(|error| ScriptFailure::plain(error.to_string()))?;
         let modules = discover_modules(
@@ -6191,6 +6226,16 @@ impl ScriptHostView {
                     &program_exports,
                 )
                 .map_err(|error| ScriptFailure::plain(error.to_string()))?;
+                // Components may declare tokens the themes must provide, as at
+                // preparation.
+                {
+                    let runtime = self.lifecycle.runtime();
+                    let runtime = runtime.borrow();
+                    if let Some(themes) = candidate_themes.or(runtime.theme.as_ref()) {
+                        validate_component_tokens(themes, &program_exports)
+                            .map_err(|error| ScriptFailure::plain(error.to_string()))?;
+                    }
+                }
                 if self.state.get() != ScriptViewState::Suspended {
                     if let Err(error) =
                         self.lifecycle
@@ -6231,10 +6276,13 @@ impl ScriptHostView {
         );
     }
 
+    /// Build the reloaded token base and themes without making them visible:
+    /// the caller checks them against the components and then commits.
     #[cfg(feature = "dev-reload")]
-    fn reload_theme(&mut self) -> Result<(), String> {
+    fn theme_candidate(&self) -> Result<ThemeCandidate, String> {
         let tokens_path = self.ui_root.join(TOKEN_BASE_FILE);
-        if tokens_path.exists() {
+        let mut layers = self.factory.theme_layers.borrow().clone();
+        let base = if tokens_path.exists() {
             let source = fs::read_to_string(&tokens_path).map_err(|error| error.to_string())?;
             let base = crate::load_token_base(
                 self.engine.engine(),
@@ -6242,9 +6290,11 @@ impl ScriptHostView {
                 &source,
             )
             .map_err(|error| error.to_string())?;
-            self.factory.theme_layers.borrow_mut().base = Some(base);
-        }
-        let layers = self.factory.theme_layers.borrow().clone();
+            layers.base = Some(base.clone());
+            Some(base)
+        } else {
+            None
+        };
         let source = fs::read_to_string(&self.theme_path).map_err(|error| error.to_string())?;
         let primary = crate::load_theme_with_layers(
             self.engine.engine(),
@@ -6254,8 +6304,9 @@ impl ScriptHostView {
             &layers.overrides,
         )
         .map_err(|error| error.to_string())?;
-        let runtime = self.lifecycle.runtime();
-        let previous = runtime
+        let previous = self
+            .lifecycle
+            .runtime()
             .borrow()
             .theme
             .as_ref()
@@ -6272,7 +6323,7 @@ impl ScriptHostView {
                 .set_app(previous)
                 .map_err(|error| error.to_string())?;
         }
-        self.theme = themes
+        let theme = themes
             .resolve(
                 Some(&self.window_id),
                 Some(&ComponentInstancePath::root("App", &self.window_id)),
@@ -6281,9 +6332,22 @@ impl ScriptHostView {
             .map_err(|error| error.to_string())?
             .variant()
             .clone();
-        runtime.borrow_mut().theme = Some(themes);
+        Ok(ThemeCandidate {
+            base,
+            themes,
+            theme,
+        })
+    }
+
+    #[cfg(feature = "dev-reload")]
+    fn commit_theme(&mut self, candidate: ThemeCandidate) {
+        if let Some(base) = candidate.base {
+            self.factory.theme_layers.borrow_mut().base = Some(base);
+        }
+        self.theme = candidate.theme;
+        let runtime = self.lifecycle.runtime();
+        runtime.borrow_mut().theme = Some(candidate.themes);
         runtime.borrow_mut().mark_all_windows_dirty();
-        Ok(())
     }
 
     #[cfg(feature = "dev-reload")]

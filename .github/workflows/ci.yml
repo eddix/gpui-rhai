@@ -62,6 +62,8 @@ jobs:
         run: cargo test --manifest-path tests/performance/Cargo.toml --locked
       - name: Native keyboard test support
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+      - name: Mounted hot reload
+        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --features dev-reload --test token_reload
       - name: Audit visual baselines
         run: bash scripts/audit-visual-baselines.sh
       - name: Public documentation
