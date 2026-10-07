@@ -103,6 +103,25 @@ and [docs/design/](docs/design/) for the specification.
   calls `f(a, b)`, also inside imported components
   (`RuntimeEngine::lint_shadowed_builtins`, `ShadowedBuiltin`). The Gallery's
   locale callback, two stories and two examples were renamed.
+- Review fixes before release: a stretched child with a horizontal margin lays
+  out like an explicit stretch; hot-reloaded tokens and scripts are checked
+  against component token requirements like preparation and commit together
+  or not at all; Table keyboard navigation works for NativeCollection data
+  (`native_table_neighbors`) and Table rows are no longer tab stops; key
+  handlers match `key:shift+f6` in the capture phase too; a `by_env` table
+  must cover every declared combination (**breaking** for incomplete tables).
+- Slot content (virtual list rows) no longer tracks its focus owner's handle,
+  which made the last realized row receive a Table's keys.
+- A caller-written `shortcut` (`cmd-p`) shows the platform legend (`⌘P`) on
+  Button, Menu, Command and Tooltip, like an action's; text that is already a
+  legend stays. `key_shortcut(text)` exposes the formatting. Button draws the
+  legend in the label voice of Menu and Command's inline Kbd.
+- A sticky group header that the next one pushes out no longer paints over or
+  takes clicks from the column header (virtual lists clip to their viewport).
+- The composition audit covers content behind `error_boundary`, Layer content
+  and realized virtual rows. It no longer compares controls across unrelated
+  panes, checks a Badge's own gap, or limits content led by a view switcher;
+  `.heading_elsewhere()` marks a container whose heading is drawn outside.
 
 ## 0.1.8 - 2026-10-04
 
