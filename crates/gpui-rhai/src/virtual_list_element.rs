@@ -359,10 +359,14 @@ impl Render for VirtualListView {
         });
         let root_selector = format!("virtual-list:{}", self.content.id.key);
         let sticky_selector = format!("virtual-list-sticky:{}", self.content.id.key);
+        // Clipped to the list: a sticky header the next one pushes out slides
+        // above the top edge and must not paint over (or take clicks from) what
+        // sits above the list, such as a table's column header.
         div()
             .relative()
             .flex()
             .flex_col()
+            .overflow_hidden()
             .id(SharedString::from(format!(
                 "virtual-list-root-{}",
                 self.content.id.key
