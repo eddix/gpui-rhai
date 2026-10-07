@@ -223,6 +223,7 @@ fn delayed(ctx,payload){let n=0;for i in 0..100000{n+=1;}n}
                     callback: callback.clone(),
                     payload: UiValue::Null,
                     scope: AsyncScope::App,
+                    origin: gpui_rhai::InvocationOrigin::Subscription,
                 },
             )
             .unwrap();

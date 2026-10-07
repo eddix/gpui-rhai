@@ -821,6 +821,7 @@ impl ScriptLifecycle {
             .unwrap_or_else(|| self.root_path.clone());
         let events = delivery.callback.events().clone();
         let scope = delivery.scope.clone();
+        let origin = delivery.origin.clone();
         let context = UiContext::new(
             Rc::clone(&self.runtime),
             component,
@@ -832,11 +833,33 @@ impl ScriptLifecycle {
         .with_generation(self.compiled.generation())
         .with_native_context(delivery.callback.native_context().cloned())
         .with_async_scope(scope);
-        Ok(engine.invoke_callback(
-            &self.compiled,
-            &delivery.callback,
-            (context, delivery.payload.into_dynamic()),
-        )?)
+        self.with_origin(origin, || {
+            Ok(engine.invoke_callback(
+                &self.compiled,
+                &delivery.callback,
+                (context, delivery.payload.into_dynamic()),
+            )?)
+        })
+    }
+
+    /// Run `invoke` with `origin` as the running invocation's origin, then
+    /// restore the previous one.
+    pub(crate) fn with_origin<T>(
+        &self,
+        origin: crate::InvocationOrigin,
+        invoke: impl FnOnce() -> Result<T, LifecycleError>,
+    ) -> Result<T, LifecycleError> {
+        let previous = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .replace_origin(origin);
+        let result = invoke();
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .replace_origin(previous);
+        result
     }
 
     /// Deliver async work with the same UI-state rollback as foreground events.
@@ -1484,12 +1507,14 @@ impl ScriptLifecycle {
             })
             .with_native_context(callback.native_context().cloned())
             .with_async_scope(scope);
-        let _ = engine.invoke_callback_for_generation(
-            compiled,
-            callback,
-            (context, dependencies.into_dynamic()),
-        )?;
-        Ok(())
+        self.with_origin(crate::InvocationOrigin::Effect, || {
+            let _ = engine.invoke_callback_for_generation(
+                compiled,
+                callback,
+                (context, dependencies.into_dynamic()),
+            )?;
+            Ok(())
+        })
     }
 
     fn validate_callback_owner(&self, callback: &ScriptCallback) -> Result<(), LifecycleError> {

@@ -4138,10 +4138,13 @@ fn script_node_dispatcher(
     };
     let canvas_geometry_reader = geometry_reader.clone();
     let canvas_bounds_reader = geometry_reader.clone();
-    NodeEventDispatcher::new(move |callback, payload, target, window, app| {
+    NodeEventDispatcher::with_event_names(move |callback, event, payload, target, window, app| {
+        let origin = crate::InvocationOrigin::UserInput {
+            event: event.to_owned(),
+        };
         script_entity
             .update(app, |view, cx| {
-                view.handle_node_event(&callback, payload, target, window, cx)
+                view.handle_node_event(&callback, payload, target, origin, window, cx)
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
     })
@@ -4691,6 +4694,7 @@ impl ScriptHostView {
                     &invocation.callback,
                     invocation.payload,
                     None,
+                    crate::InvocationOrigin::Automation,
                     window,
                     cx,
                 );
@@ -4766,9 +4770,14 @@ impl ScriptHostView {
             }
             let event_target = geometry.get(step.node).map(|geometry| geometry.visual);
             let current = match &step.handler {
-                crate::UiEventHandler::Script(callback) => {
-                    self.handle_node_event(callback, payload.clone(), event_target, window, cx)
-                }
+                crate::UiEventHandler::Script(callback) => self.handle_node_event(
+                    callback,
+                    payload.clone(),
+                    event_target,
+                    crate::InvocationOrigin::Automation,
+                    window,
+                    cx,
+                ),
                 crate::UiEventHandler::Host(callback) => {
                     callback.invoke(payload.clone(), window, cx)
                 }
@@ -4822,9 +4831,14 @@ impl ScriptHostView {
                 visited.push(target);
                 invoked = 1;
                 let current = match proposal.handler {
-                    Some(crate::UiEventHandler::Script(callback)) => {
-                        self.handle_node_event(&callback, proposal.payload, None, window, cx)
-                    }
+                    Some(crate::UiEventHandler::Script(callback)) => self.handle_node_event(
+                        &callback,
+                        proposal.payload,
+                        None,
+                        crate::InvocationOrigin::Automation,
+                        window,
+                        cx,
+                    ),
                     Some(crate::UiEventHandler::Host(callback)) => {
                         callback.invoke(proposal.payload, window, cx)
                     }
@@ -5139,7 +5153,17 @@ impl ScriptHostView {
                         false,
                     );
                 }
-                self.handle_node_event(&invocation.callback, invocation.payload, None, window, cx);
+                // A Host key binding is user input.
+                self.handle_node_event(
+                    &invocation.callback,
+                    invocation.payload,
+                    None,
+                    crate::InvocationOrigin::UserInput {
+                        event: "action".to_owned(),
+                    },
+                    window,
+                    cx,
+                );
             }
             Err(error) => {
                 self.set_plain_failure(error.to_string());
@@ -5217,6 +5241,11 @@ impl ScriptHostView {
             return Ok(false);
         }
         let component = callback.component().cloned();
+        let previous_origin = self
+            .lifecycle
+            .runtime()
+            .borrow_mut()
+            .replace_origin(crate::InvocationOrigin::Effect);
         let payload = UiValue::Map(BTreeMap::from([
             (
                 "name".to_owned(),
@@ -5233,10 +5262,14 @@ impl ScriptHostView {
                 ),
             ),
         ]));
-        let _ = self
+        let result = self
             .lifecycle
-            .invoke_callback(&self.engine, &callback, payload)
-            .map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
+            .invoke_callback(&self.engine, &callback, payload);
+        self.lifecycle
+            .runtime()
+            .borrow_mut()
+            .replace_origin(previous_origin);
+        let _ = result.map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
         Ok(true)
     }
 
@@ -5289,6 +5322,12 @@ impl ScriptHostView {
             return true;
         };
         let component = handler.component().cloned();
+        // Closing a window is user input.
+        let previous_origin = self.lifecycle.runtime().borrow_mut().replace_origin(
+            crate::InvocationOrigin::UserInput {
+                event: "window_close".to_owned(),
+            },
+        );
         let result = self.run_script_transaction(|view| {
             let result = view
                 .lifecycle
@@ -5299,6 +5338,10 @@ impl ScriptHostView {
             result.map_err(|error| view.lifecycle_failure(&error, None))?;
             Ok(())
         });
+        self.lifecycle
+            .runtime()
+            .borrow_mut()
+            .replace_origin(previous_origin);
         match result {
             Ok(()) => {
                 self.process_window_commands(cx);
@@ -5694,6 +5737,7 @@ impl ScriptHostView {
         callback: &ScriptCallback,
         payload: UiValue,
         event_target: Option<crate::GeometryBounds>,
+        origin: crate::InvocationOrigin,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> crate::EventResponse {
@@ -5709,6 +5753,7 @@ impl ScriptHostView {
                 true,
             );
         }
+        let previous_origin = self.lifecycle.runtime().borrow_mut().replace_origin(origin);
         let callback_result = self.run_script_transaction(|view| {
             let result = view.lifecycle.invoke_callback_with_event_target(
                 &view.engine,
@@ -5723,6 +5768,10 @@ impl ScriptHostView {
             let rendered = result.map_err(|error| view.lifecycle_failure(&error, None))?;
             Ok((value, rendered))
         });
+        self.lifecycle
+            .runtime()
+            .borrow_mut()
+            .replace_origin(previous_origin);
         let response = callback_result.as_ref().map_or_else(
             |_| crate::EventResponse::new().stop(),
             |(value, _)| event_response_from_dynamic(value),

@@ -121,8 +121,8 @@ pub use canvas::{
 };
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,
-    CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,
-    SubscriptionWork, TaskWork,
+    CapabilityId, CapabilityMethod, CapabilityRegistry, InvocationContext, InvocationOrigin,
+    SubscriptionCapabilityHandler, SubscriptionWork, TaskWork,
 };
 #[cfg(feature = "charts")]
 pub use chart::*;

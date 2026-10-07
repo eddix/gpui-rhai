@@ -137,9 +137,28 @@ pub struct UiRuntimeState {
     pending_element_commands: Vec<crate::element_ref::ElementCommand>,
     repaint_windows: BTreeSet<String>,
     component_style_generation: u64,
+    /// What the running script invocation responds to.
+    origin: crate::InvocationOrigin,
 }
 
 impl UiRuntimeState {
+    /// What the running script invocation responds to.
+    #[must_use]
+    pub fn invocation_origin(&self) -> &crate::InvocationOrigin {
+        &self.origin
+    }
+
+    /// Set the origin of the invocation about to run; returns the previous one
+    /// for the caller to restore.
+    pub(crate) fn replace_origin(
+        &mut self,
+        origin: crate::InvocationOrigin,
+    ) -> crate::InvocationOrigin {
+        self.tasks.set_origin_root(&origin);
+        self.timers.set_origin_root(&origin);
+        std::mem::replace(&mut self.origin, origin)
+    }
+
     pub(crate) fn update_window_appearance(
         &mut self,
         window: &str,
@@ -2284,7 +2303,14 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        let output = runtime.capabilities.call(&id, method, input)?;
+        let context = crate::InvocationContext {
+            origin: runtime.origin.clone(),
+            view_id: self.view.clone(),
+            component: self.component.clone(),
+        };
+        let output = runtime
+            .capabilities
+            .call_with(&context, &id, method, input)?;
         runtime.traces.push(
             crate::RuntimeTraceKind::Capability,
             self.component.to_string(),

@@ -969,10 +969,15 @@ impl AssetRegistry {
                 }
                 Err(message) => (pending.error, UiValue::String(message)),
             };
+            // Image decodes are requested by render; they count as started by
+            // the lifecycle.
             deliveries.push(AsyncDelivery {
                 callback,
                 payload,
                 scope: pending.scope,
+                origin: crate::InvocationOrigin::TaskCompletion {
+                    started_by: Box::new(crate::InvocationOrigin::Lifecycle),
+                },
             });
         }
         Ok(deliveries)

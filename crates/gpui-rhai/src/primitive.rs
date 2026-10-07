@@ -878,7 +878,7 @@ impl PrimitiveContext {
             match handler {
                 UiEventHandler::Script(callback) => {
                     if let Some(dispatcher) = self.dispatcher.as_ref() {
-                        dispatcher.dispatch(callback.clone(), payload, None, window, cx);
+                        dispatcher.dispatch(callback.clone(), event, payload, None, window, cx);
                     }
                 }
                 UiEventHandler::Host(callback) => {

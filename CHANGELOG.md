@@ -157,6 +157,14 @@ and [docs/design/](docs/design/) for the specification.
   instance. Layers are scoped the same way, and a shared-layout group belongs
   to the instance that named it. `OverlayNodeSpec` and `LayerNodeSpec` gain
   `owner`, `VirtualCollectionNodeSpec` gains `inherited_motion_scope`.
+- Capability handlers can see what a call responds to (#91):
+  `CapabilityHandler::call_with(&InvocationContext, method, input)` (default:
+  `call`) receives the `InvocationOrigin` (user input with the event name,
+  automation, timer, task completion, subscription, effect, lifecycle), the
+  view and the calling component. Timers and task completions carry the root
+  origin that started them; `is_user_input()` follows it.
+  `CapabilityRegistry::call_with` passes a context; `AsyncDelivery` gains
+  `origin` (**breaking** for code that builds deliveries).
 
 ## 0.1.8 - 2026-10-04
 

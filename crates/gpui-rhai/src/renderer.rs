@@ -27,8 +27,11 @@ use crate::{
     UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
 };
 
+/// A script callback for one UI event: the callback, the event name, the
+/// payload and the target's bounds.
 type DispatchFn = dyn Fn(
     ScriptCallback,
+    &str,
     UiValue,
     Option<crate::GeometryBounds>,
     &mut Window,
@@ -77,9 +80,30 @@ impl NodeEventDispatcher {
     where
         R: Into<EventResponse>,
     {
+        Self::with_event_names(move |callback, _, payload, target, window, app| {
+            dispatch(callback, payload, target, window, app)
+        })
+    }
+
+    /// A dispatcher whose script callback also receives the UI event name.
+    #[must_use]
+    pub(crate) fn with_event_names<R>(
+        dispatch: impl Fn(
+            ScriptCallback,
+            &str,
+            UiValue,
+            Option<crate::GeometryBounds>,
+            &mut Window,
+            &mut App,
+        ) -> R
+        + 'static,
+    ) -> Self
+    where
+        R: Into<EventResponse>,
+    {
         Self {
-            script: Rc::new(move |callback, payload, target, window, app| {
-                dispatch(callback, payload, target, window, app).into()
+            script: Rc::new(move |callback, event, payload, target, window, app| {
+                dispatch(callback, event, payload, target, window, app).into()
             }),
             native: Rc::new(|_, _, _, _, _, _| EventResponse::new().stop()),
             signal_write: Rc::new(|updates, _| {
@@ -172,12 +196,13 @@ impl NodeEventDispatcher {
     pub(crate) fn dispatch(
         &self,
         callback: ScriptCallback,
+        event: &str,
         payload: UiValue,
         target: Option<crate::GeometryBounds>,
         window: &mut Window,
         cx: &mut App,
     ) -> EventResponse {
-        (self.script)(callback, payload, target, window, cx)
+        (self.script)(callback, event, payload, target, window, cx)
     }
 
     pub(crate) fn dispatch_native(
@@ -250,7 +275,7 @@ fn dispatch_ui_event(
     match handler {
         UiEventHandler::Script(callback) => script_dispatcher.map_or_else(
             || EventResponse::new().stop(),
-            |dispatcher| dispatcher.dispatch(callback.clone(), payload, target, window, app),
+            |dispatcher| dispatcher.dispatch(callback.clone(), event, payload, target, window, app),
         ),
         UiEventHandler::Host(callback) => callback.invoke(payload, window, app),
         UiEventHandler::Native(reference) => script_dispatcher.map_or_else(
