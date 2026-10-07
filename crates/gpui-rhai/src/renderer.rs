@@ -373,6 +373,30 @@ fn apply_pointer_response(
     apply_event_response(response, window, app);
 }
 
+/// The handler a key press reaches, in every phase: a modifier-qualified name
+/// (`shift+f6`) wins, and a plain handler still fires whatever modifiers are
+/// held.
+fn key_handler_for<'a, V>(
+    handlers: &'a BTreeMap<String, V>,
+    event: &gpui::KeyDownEvent,
+    direction: TextDirection,
+) -> Option<&'a V> {
+    let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
+    let modifiers = &event.keystroke.modifiers;
+    let qualified = crate::node::canonical_key_name(
+        [
+            modifiers.control,
+            modifiers.alt,
+            modifiers.shift,
+            modifiers.platform,
+        ],
+        key,
+    );
+    handlers
+        .get(qualified.as_str())
+        .or_else(|| handlers.get(key))
+}
+
 fn key_handler_bindings(
     node: &UiNode,
     disabled: bool,
@@ -2450,8 +2474,8 @@ impl GpuiNodeRenderer {
             let dispatcher = keyboard_dispatcher.clone();
             let target = keyboard_target.clone();
             element.capture_key_down(move |event, window, cx| {
-                let key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-                if let Some((bindings, payload)) = handlers.get(key) {
+                if let Some((bindings, payload)) = key_handler_for(&handlers, event, text_direction)
+                {
                     let response = dispatch_ui_handler_phases(
                         bindings,
                         "key",
@@ -2468,22 +2492,7 @@ impl GpuiNodeRenderer {
             element
         };
         let element = element.on_key_down(move |event, window, cx| {
-            let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-            // A modifier-qualified handler (`shift+f6`) wins; a plain handler
-            // still fires whatever modifiers are held.
-            let modifiers = &event.keystroke.modifiers;
-            let qualified = crate::node::canonical_key_name(
-                [
-                    modifiers.control,
-                    modifiers.alt,
-                    modifiers.shift,
-                    modifiers.platform,
-                ],
-                semantic_key,
-            );
-            let explicit = key_handlers
-                .get(qualified.as_str())
-                .or_else(|| key_handlers.get(semantic_key));
+            let explicit = key_handler_for(&key_handlers, event, text_direction);
             let semantic = explicit.or_else(|| {
                 matches!(event.keystroke.key.as_str(), "enter" | "space")
                     .then_some(())
