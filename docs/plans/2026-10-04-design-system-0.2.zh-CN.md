@@ -222,3 +222,14 @@ bash scripts/audit-visual-baselines.sh
 - #89 Table `on_context_request` → `#{ key, column, anchor, source }`，右键先选中该行，支持 Shift+F10 与菜单键，菜单由调用方用 Menu `anchor` 弹出。
 - #91 `call_with(&InvocationContext, …)` 默认转发 `call`；上下文含来源（UserInput、Automation、Timer、TaskCompletion、Subscription、Effect、Lifecycle）、view_id 与组件路径；异步来源带最初发起来源。
 - #83 SplitPane 与 Resizable 支持装饰性手柄节点（画在面板之上，伸出部分可开始拖动，键盘与无障碍留在原生手柄），新增通用 `.signal_style(state, #{…})`，以及 `line` 与 `line_inset`。
+
+### 2026-10-07 PR #111 收尾实施记录
+
+按共识全部落地并推送到 `feat/design-system-0.2`，每批都在验证通过后推送：
+
+- B1：Toolbar `fill` 与 DataView 透传、Region `scroll`/`external_title`（3fcf7ff）；容器焦点框与 Table 分组头标签字阶、AppShell 边界（50ed896）；Table 列 `typography` 与 span `typography`/`background`（396b9c1）。
+- B2：虚拟项路径段 `Item[<key>]`（5525644）；overlay 与 Layer 身份按声明实例，`parent` 走渲染祖先，宿主查询报歧义并可按实例查，shared layout 组归命名它的实例（3684937；2b9b784 补了 clippy 行数）。
+- C：调用来源 `InvocationContext`（28d208a）；Table 右键与 Shift+F10 上下文请求、`ctx.virtual_item_bounds`（b867100）；SplitPane/Resizable 装饰把手与通用 `.signal_style`（7fedfce）。
+- 发布门槛文档（8371a50）：帧预算替代 120Hz，0.2.0 门槛清单（RGB 比较并带正对照）。
+- 真机检查（`docs/audits/2026-10-07-0.2.0-candidate/real-window.md`）：标题栏拖动/双击/控件上按下、Tab 焦点、命令面板、剪贴板、多窗口共享与窗口级状态、Table 右键与 Shift+F10 都通过；发现模态面板在布局中获得焦点时 GPUI 不重绘、焦点框不出现，已修（3b30144，附回归测试）。Input 失焦后选区仍高亮，记录未改。IME 与 VoiceOver 留给维护者。
+- 像素比较一律转 RGB：Pillow 对 RGBA 差图的 `getbbox()` 只看 alpha，之前一轮"415 张整页一致"的结论因此无效，已在 PR 说明里更正。
