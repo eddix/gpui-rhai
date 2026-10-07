@@ -554,20 +554,20 @@ impl ThemeTokens {
                     missing,
                 });
             }
-            // Advance the last axis first, like an odometer.
-            let mut axis = axes.len();
+            // Advance the last key first, like an odometer.
+            let mut key = axes.len();
             loop {
-                if axis == 0 {
+                if key == 0 {
                     return Ok(());
                 }
-                axis -= 1;
-                indices[axis] += 1;
-                if indices[axis] < axes[axis].len() {
-                    path[axis] = axes[axis][indices[axis]];
+                key -= 1;
+                indices[key] += 1;
+                if indices[key] < axes[key].len() {
+                    path[key] = axes[key][indices[key]];
                     break;
                 }
-                indices[axis] = 0;
-                path[axis] = axes[axis][0];
+                indices[key] = 0;
+                path[key] = axes[key][0];
             }
         }
     }
