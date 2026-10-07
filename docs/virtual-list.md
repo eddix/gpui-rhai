@@ -138,8 +138,11 @@ also request a disconnected offscreen item through its own list layout state.
 
 The next foreground runtime turn invokes the retained named renderer only for
 missing target indices in its original module/component context, renders formal
-item components inside a stable `VirtualCollection[key]` state scope, prunes
-items outside the target, reconciles once, runs effects, and notifies GPUI.
+item components inside a stable per-item scope, `VirtualCollection[key]/Item[<item
+key>]`, prunes items outside the target, reconciles once, runs effects, and
+notifies GPUI. A component key inside an item only has to be unique within that
+item, and a keyless component is named by its item, not by how many items the
+batch rendered before it.
 Every commit uses the complete target, including a prune-only change. Retained
 rows preserve state, incarnation, dependencies, effects, timers, signals and
 refs; removed rows release those resources together. A failed candidate restores

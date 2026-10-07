@@ -1588,14 +1588,15 @@ impl RuntimeEngine {
                 let invocation = &recipe.renderer_context;
                 self.align_execution_session_to(invocation.operation_base());
                 let started = self.begin_timing();
+                let item_context = virtual_item_context(&context, id, &key);
+                enter_virtual_collection_scope(&self.component_render, item_context.clone())
+                    .map_err(RuntimeError::Evaluate)?;
                 let item = invocation.call::<UiNode>(
                     self.engine(),
                     &recipe.renderer,
-                    (
-                        context.for_virtual_item(id, &key),
-                        Dynamic::from_map(payload),
-                    ),
+                    (item_context, Dynamic::from_map(payload)),
                 );
+                leave_component_render(&self.component_render).map_err(RuntimeError::Evaluate)?;
                 self.record_timing(
                     ExecutionOperation::VirtualCollection(id.key.clone()),
                     id.key.as_str(),
@@ -3700,10 +3701,24 @@ fn validate_virtual_renderer_curry(value: &Dynamic) -> Result<(), crate::UiValue
     UiValue::from_dynamic(value.clone()).map(|_| ())
 }
 
+/// The context an item renderer runs in: a structural `Item[<key>]` scope under
+/// the collection, so components inside an item are named by the item, not by
+/// how many items the batch rendered before it.
+fn virtual_item_context(
+    context: &UiContext,
+    id: &crate::VirtualCollectionId,
+    key: &str,
+) -> UiContext {
+    context
+        .for_structural_scope(context.component_path().child("Item", key), BTreeMap::new())
+        .for_virtual_item(id, key)
+}
+
 fn realize_initial_collection(
     call: &rhai::NativeCallContext<'_>,
     renderer: &FnPtr,
     context: &UiContext,
+    active: &ActiveComponentRenderState,
     id: &crate::VirtualCollectionId,
     data: &crate::VirtualCollectionData,
     indices: &BTreeSet<usize>,
@@ -3720,13 +3735,11 @@ fn realize_initial_collection(
             })?;
         let (item_key, mut payload) = collection_payload(&item, index)?;
         add_collection_neighbors(data, index, &mut payload);
-        let node = renderer
-            .call_within_context::<UiNode>(
-                call,
-                (context.for_virtual_item(id, &item_key), payload),
-            )?
-            .with_key(item_key);
-        realized.insert(index, node);
+        let item_context = virtual_item_context(context, id, &item_key);
+        enter_virtual_collection_scope(active, item_context.clone())?;
+        let node = renderer.call_within_context::<UiNode>(call, (item_context, payload));
+        leave_component_render(active)?;
+        realized.insert(index, node?.with_key(item_key));
     }
     Ok(realized)
 }
@@ -3767,7 +3780,8 @@ fn realize_seeded_virtual_collection(
     let indices =
         virtual_collection_seed_indices(active, id, decoded, count, previous_metrics.as_ref())?;
     enter_virtual_collection_scope(active, context.clone())?;
-    let realized = realize_initial_collection(call, renderer, context, id, &decoded.data, &indices);
+    let realized =
+        realize_initial_collection(call, renderer, context, active, id, &decoded.data, &indices);
     leave_component_render(active)?;
     realized
 }

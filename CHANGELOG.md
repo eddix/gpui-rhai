@@ -141,6 +141,12 @@ and [docs/design/](docs/design/) for the specification.
   `typography(role)` (the role's family and weight, the paragraph's size) and
   `background(color)` for inline code. The monospace face is the token base's
   `code` role; Hosts and `ui/tokens.rhai` change it, palettes do not.
+- **Breaking:** components rendered inside a virtual item get an
+  `Item[<item key>]` path segment
+  (`.../VirtualCollection[rows]/Item[r5]/Badge[...]`). Keys inside an item only
+  need to be unique within it, and a keyless component in a newly realized row
+  can no longer take a retained row's path (#110). Component state inside
+  virtual rows resets once on upgrade.
 
 ## 0.1.8 - 2026-10-04
 

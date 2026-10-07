@@ -98,6 +98,7 @@ fn disjoint_scope_targets_are_equivalent_for_both_orders_and_one_batch() {
         let old = callback(&life, "a", 0);
         let old_owner = path
             .child("VirtualCollection", "a")
+            .child("Item", "row-0")
             .child("Counter", "row-0");
         runtime
             .borrow_mut()
@@ -191,7 +192,9 @@ fn overlapping_targets_keep_new_formal_callbacks_and_resources_live() {
         );
         let owner = ComponentInstancePath::root("App", "nested")
             .child("VirtualCollection", "outer")
+            .child("Item", "row-0")
             .child("VirtualCollection", "inner-row-0")
+            .child("Item", "row-10")
             .child("Counter", "row-10");
         let signal = runtime.borrow().signals.resolve(&owner, "opacity").unwrap();
         assert!(runtime.borrow().signals.read(&signal).is_ok());
@@ -212,6 +215,7 @@ fn batch_failure_restores_all_prior_scope_state_and_callbacks() {
     let old = callback(&life, "a", 0);
     let owner = path
         .child("VirtualCollection", "a")
+        .child("Item", "row-0")
         .child("Counter", "row-0");
     runtime
         .borrow_mut()
