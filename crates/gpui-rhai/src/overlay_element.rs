@@ -584,7 +584,7 @@ impl ScriptOverlayElement {
                 state.previous_focus = window.focused(cx).map(|focus| focus.downgrade());
             }
             if self.spec.modal || self.spec.kind == OverlayKind::Menu {
-                state.panel_focus.focus(window, cx);
+                focus_during_layout(&state.panel_focus, window, cx);
                 if self.spec.initial_focus == OverlayInitialFocus::First {
                     // Initial focus is bound to the closed -> open presentation
                     // cycle, never to render: controlled contents re-render on
@@ -631,7 +631,7 @@ impl ScriptOverlayElement {
             // very frame instead of relying on a focus-out listener (whose old
             // path is not observable for every programmatic focus transfer in
             // GPUI 0.2.x).
-            state.panel_focus.focus(window, cx);
+            focus_during_layout(&state.panel_focus, window, cx);
         }
         state.was_open = self.spec.open;
     }
@@ -871,6 +871,18 @@ fn overlay_focus_shadow(
             inset: false,
         },
     ])
+}
+
+/// Focus a handle from inside layout. GPUI ignores the refresh `focus()` asks
+/// for while a frame is being drawn, so the view would keep showing the old
+/// focus (a panel's focus frame, `group_focus` styles) until something else
+/// redraws; ask for the next frame once this one is done.
+fn focus_during_layout(handle: &FocusHandle, window: &mut Window, cx: &mut App) {
+    if handle.is_focused(window) {
+        return;
+    }
+    handle.focus(window, cx);
+    window.defer(cx, |window, _| window.refresh());
 }
 
 struct OverlayElementState {

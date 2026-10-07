@@ -37,6 +37,9 @@ import "components/dialog" as dialog;
 import "components/menu" as menu;
 import "components/sheet" as sheet;
 fn noop(ctx, payload) {{ () }}
+fn state_schema() {{ #{{ fields: #{{ open: #{{ schema: #{{ type: "bool" }},
+    "default": #{{ type: "bool", value: false }} }} }} }} }}
+fn open(ctx, payload) {{ ctx.set_state("open", true); }}
 fn view(ctx) {{ column([{view_body}]).with_style(style().width(px(800)).height(px(600))) }}"#
     );
     let entry = ModuleId::parse("main").unwrap();
@@ -172,5 +175,45 @@ fn a_sheet_panel_holding_focus_shows_the_frame(cx: &mut TestAppContext) {
             .any(|(border, w, _)| (*border - 2.0 * scale).abs() < 0.01
                 && (*w - width * scale).abs() < 0.5),
         "the sheet holds focus: a 2px frame the panel's width, got {found:?}"
+    );
+}
+
+#[gpui::test]
+fn a_dialog_opened_by_a_click_shows_the_frame_without_another_input(cx: &mut TestAppContext) {
+    // The panel takes focus while its first frame is laid out, when GPUI ignores the
+    // refresh `focus()` asks for; the overlay must ask for the next frame itself.
+    let (mut visual, view) = mount(
+        cx,
+        r#"button::Button(#{ key: "open", text: "Open", on_click: Fn("open") }),
+        dialog::Dialog(#{ key: "confirm", open: ctx.get_state("open"), title: "Confirm",
+            content: text("Continue?"), on_open_change: Fn("noop") })"#,
+    );
+    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let open = tree
+        .find_by_role_and_name("button", "Open")
+        .next()
+        .and_then(|node| node.geometry)
+        .unwrap()
+        .visual;
+    #[allow(clippy::cast_possible_truncation)]
+    visual.simulate_click(
+        gpui::point(
+            gpui::px((open.x + open.width / 2.0) as f32),
+            gpui::px((open.y + open.height / 2.0) as f32),
+        ),
+        gpui::Modifiers::none(),
+    );
+    // No forced frames: only what the window asked for.
+    visual.run_until_parked();
+    let width = panel_width(&mut visual, &view, "dialog");
+    let scale = visual.update(|window, _| window.scale_factor());
+    let found = frames(&mut visual);
+    println!("panel {width}, frames {found:?}");
+    assert!(
+        found
+            .iter()
+            .any(|(border, w, _)| (*border - 2.0 * scale).abs() < 0.01
+                && (*w - width * scale).abs() < 0.5),
+        "the frame shows on the frame after the dialog opened: {found:?}"
     );
 }
