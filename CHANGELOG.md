@@ -122,6 +122,12 @@ and [docs/design/](docs/design/) for the specification.
   and realized virtual rows. It no longer compares controls across unrelated
   panes, checks a Badge's own gap, or limits content led by a view switcher;
   `.heading_elsewhere()` marks a container whose heading is drawn outside.
+- Toolbar gains a `fill` slot: one field that takes the width between the
+  start and end groups, at least `metrics.label_column` wide, so the bar wraps
+  only when that minimum does not fit. DataView passes `toolbar.fill` and
+  `toolbar.size` through and takes Region's `inset`.
+- Region gains `scroll` (the body scrolls, header and footer stay) and
+  `external_title` (the title is drawn elsewhere; exclusive with `title`).
 
 ## 0.1.8 - 2026-10-04
 

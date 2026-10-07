@@ -6,27 +6,30 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["space.related", "space.group", "metrics.control"],
+  "tokens": ["space.related", "space.group", "metrics.control", "metrics.label_column"],
   "environment": ["size"]
 }
 */
 // Toolbar arranges a region's controls by role: context and filters at the start,
 // secondary actions and the one primary action at the end.
 //
-// Props: label (required), context, filters, actions, primary, size.
-// Events/state: none. Parts: root, start, end.
+// Props: label (required), context, filters, fill, actions, primary, size.
+// Events/state: none. Parts: root, start, fill, end.
 // Example: Toolbar(#{ label: "Hosts", filters: [filter_input], actions: [export_button],
 //              primary: deploy_button })
 //
 // Items in a group are `related`; the two groups are at least `group` apart. The single
 // `primary` slot encodes "one solid action per group". `size` reaches every control.
+// `fill` is one node that takes the width the groups leave, between them: a search field,
+// a query input, a path bar. It is at least `metrics.label_column` wide; the bar wraps only
+// when the groups and that minimum do not fit.
 
 define_component(#{
     metadata: #{
         id: "layouts/toolbar", "export": "Toolbar", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
-        tokens: ["space.related", "space.group", "metrics.control"],
+        tokens: ["space.related", "space.group", "metrics.control", "metrics.label_column"],
         environment: ["size"],
     },
     schema: #{
@@ -39,6 +42,7 @@ define_component(#{
             actions: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
                 required: false, sensitive: false, "default": #{ type: "array", value: [] } },
             primary: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+            fill: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false },
         },
@@ -46,8 +50,9 @@ define_component(#{
         slots: #{
             context: #{ required: false, multiple: true }, filters: #{ required: false, multiple: true },
             actions: #{ required: false, multiple: true }, primary: #{ required: false, multiple: false },
+            fill: #{ required: false, multiple: false },
         },
-        parts: ["root", "start", "end"],
+        parts: ["root", "start", "fill", "end"],
     },
     render: Fn("render_Toolbar")
 });
@@ -65,10 +70,20 @@ fn render_Toolbar(ctx, props) {
     let group = style().flex_row().flex_wrap().items_center().gap(theme_length("space.related"));
     let bar = style().flex_row().flex_wrap().items_center().justify_between();
     bar = bar.gap(theme_length("space.group")).min_height(theme_length("metrics.control"));
-    let root = row([
-        row(start).with_style(ctx.component_style("start", group)),
-        row(end).with_style(ctx.component_style("end", group)),
-    ]).with_style(ctx.component_style("root", bar))
+    let children = [];
+    if "fill" in props && props.fill != () {
+        // The fill takes the free width between the groups; empty groups add no gap.
+        let minimum = theme_length("metrics.label_column");
+        if start.len > 0 { children.push(row(start).with_style(ctx.component_style("start", group))); }
+        children.push(box([props.fill.with_style(style().width(relative(1.0)))])
+            .with_style(ctx.component_style("fill", style().flex_row().items_center()
+                .flex_grow().flex_basis(minimum).min_width(minimum))));
+        if end.len > 0 { children.push(row(end).with_style(ctx.component_style("end", group))); }
+    } else {
+        children.push(row(start).with_style(ctx.component_style("start", group)));
+        children.push(row(end).with_style(ctx.component_style("end", group)));
+    }
+    let root = row(children).with_style(ctx.component_style("root", bar))
         .accessibility_role("toolbar")
         .accessibility_label(props.label);
     if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }

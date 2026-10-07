@@ -18,7 +18,8 @@
 // toolbar, a body that fills the remaining height, and a footer pinned to the bottom.
 //
 // Props: label (required), body (required), title (string or node), actions, toolbar,
-//        footer (status items), fill (default true), inset (default true), bleed.
+//        footer (status items), fill (default true), inset (default true), bleed,
+//        scroll (default false), external_title (default false).
 // Events/state: none. Parts: root, header, title, actions, body, footer.
 // Example: Region(#{ label: "Hosts", title: "Hosts", toolbar: toolbar_node, body: table_node,
 //              footer: [text("128 hosts")] })
@@ -27,6 +28,11 @@
 // anything nested inside them must use a smaller relationship. `bleed` lets the body
 // reach the region's sides, for tables and lists whose rows carry their own inset: their
 // text then starts on the same edge as the title.
+//
+// `scroll` makes the body scroll vertically when it is taller than the region; the header,
+// toolbar and footer stay put. Leave it off for bodies that scroll themselves (Table,
+// VirtualList). `external_title` says the region's title is drawn elsewhere, in a TitleBar
+// or a tab: the region takes no `title`, and its parts are not held to a missing title.
 
 define_component(#{
     metadata: #{
@@ -56,6 +62,10 @@ define_component(#{
             inset: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
             bleed: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false } },
+            scroll: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false } },
+            external_title: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
         },
         state: #{ fields: #{} }, events: #{},
@@ -97,6 +107,8 @@ fn render_Region(ctx, props) {
     let bleed = "bleed" in props && props.bleed;
     let actions = if "actions" in props { props.actions } else { [] };
     let has_title = "title" in props && props.title != ();
+    let external_title = "external_title" in props && props.external_title;
+    if external_title && has_title { throw "Region takes title or external_title, not both"; }
     // Horizontal inset is applied per part, so a bled body can reach the sides.
     let side = if inset { theme_length("metrics.inset") } else { px(0) };
     let children = [];
@@ -112,6 +124,7 @@ fn render_Region(ctx, props) {
     }
     let body_style = style().flex_col().flex_grow().min_height(px(0)).min_width(px(0));
     if !bleed { body_style = body_style.padding_x(side); }
+    if "scroll" in props && props.scroll { body_style = body_style.overflow_y_scroll(); }
     children.push(column([props.body]).with_style(ctx.component_style("body", body_style)));
     let footer = if "footer" in props { props.footer } else { [] };
     if footer.len > 0 {
@@ -121,6 +134,7 @@ fn render_Region(ctx, props) {
     let root = style().flex_col().gap(theme_length("space.group")).min_width(px(0));
     if inset { root = root.padding_y(theme_length("metrics.inset")); }
     if fill { root = root.flex_grow().min_height(px(0)); }
-    column(children).with_style(ctx.component_style("root", root))
-        .accessibility_role("region").accessibility_label(props.label)
+    let node = column(children).with_style(ctx.component_style("root", root))
+        .accessibility_role("region").accessibility_label(props.label);
+    if external_title { node.heading_elsewhere() } else { node }
 }

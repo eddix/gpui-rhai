@@ -92,6 +92,11 @@ fn hosts_toolbar(h, v, key) {
 fn toolbar_page(h, v) {
     kit::page(h, v, "toolbar", "Toolbar", "Context and filters at the start, actions and one primary at the end.", [
         kit::sec("Hosts", hosts_toolbar(h, v, "toolbar")),
+        kit::sec("Search fills the bar", toolbar::Toolbar(#{ label: "Logs toolbar",
+            context: [tag::Tag(#{ facet: "psm", text: "api.gateway" })],
+            fill: input::Input(#{ key: "toolbar-query", label: "Query logs", value: kit::val(v, "toolbar.query", ""),
+                placeholder: "Query: level, trace id, message", on_change: kit::store(h, "toolbar.query") }),
+            actions: [button::Button(#{ key: "toolbar-run", text: "Run", on_click: h.noop })] })),
     ])
 }
 
@@ -99,8 +104,13 @@ fn region_page(h, v) {
     let sample = region::Region(#{ label: "Example region", title: "Deployments",
         actions: [button::Button(#{ key: "region-new", text: "New", size: "sm", on_click: h.noop })],
         body: kit::note("The body fills the remaining height."), footer: [text("3 deployments")], fill: false });
+    let lines = [];
+    for index in 1..=12 { lines.push(text(`Event ${index}: replica restarted`)); }
+    let scrolling = region::Region(#{ label: "Events", title: "Events", scroll: true,
+        body: column(lines).with_style(style().gap(theme_length("space.related"))), footer: [text("12 events")] });
     kit::page(h, v, "region", "Region", "Title and actions, toolbar, a body that fills, a footer pinned to the bottom.", [
         kit::sec("Example", column([sample]).with_style(style().height(px(200)).background(theme_color("surface_raised")))),
+        kit::sec("Scrolling body", column([scrolling]).with_style(style().height(px(200)).background(theme_color("surface_raised")))),
     ])
 }
 

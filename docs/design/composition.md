@@ -39,8 +39,8 @@ breaks a rule, the audit reports it.
 |---|---|---|
 | `layouts/stack` | `Stack` | a column with one relationship (`gap: "related"` by default) |
 | `layouts/inline` | `Inline` | a row with one relationship and one control `size` |
-| `layouts/toolbar` | `Toolbar` | context, filters, actions, one primary; wraps when narrow |
-| `layouts/region` | `Region` | title and actions, toolbar, filling body, footer; `bleed` for rows |
+| `layouts/toolbar` | `Toolbar` | context, filters, one `fill` field, actions, one primary; wraps when narrow |
+| `layouts/region` | `Region` | title and actions, toolbar, filling body, footer; `bleed` for rows, `scroll` for long bodies |
 | `patterns/section` | `Section` | a subtitle (or label voice), description, end actions, content |
 | `patterns/description_list` | `DescriptionList` | label and value pairs on one label column |
 | `patterns/stat` | `Stat`, `stats(items)` | a figure with unit and delta |
@@ -122,6 +122,16 @@ prefer the aliases over raw steps so the intent is readable.
   baseline: `881 GiB`.
 - **Fill, do not fix.** Main content fills the remaining height of its region;
   give fixed heights only to lists stacked above a detail view.
+- **One field takes the rest of the bar.** A search or query field that should
+  take whatever the other controls leave goes in Toolbar's `fill` slot
+  (DataView: `toolbar.fill`). It sits between the start and end groups, at
+  least `metrics.label_column` wide, and the bar wraps only when that minimum
+  does not fit. In `filters`, `width: relative(1.0)` has nothing to resolve
+  against: the filter group is as wide as its content.
+- **A long body scrolls only when asked.** A Region's body fills the region
+  and clips; `scroll: true` makes it scroll while the header, toolbar and
+  footer stay put. Tables and virtual lists scroll themselves; leave it off
+  for them.
 
 ## 4. Hierarchy
 

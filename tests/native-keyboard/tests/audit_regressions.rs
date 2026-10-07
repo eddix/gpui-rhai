@@ -10,7 +10,10 @@ use std::rc::Rc;
 
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
 use gpui_rhai::*;
-use gpui_rhai_registry::{BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME};
+use gpui_rhai_registry::{
+    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID,
+    DEFAULT_THEME,
+};
 
 const PROFILE: &str = r#"fn profile() { #{ name: "test",
     audit: ["row-height-mismatch", "text-edge-misaligned", "spacing-not-nested", "mixed-type-in-row"] } }"#;
@@ -29,13 +32,17 @@ impl Render for Host {
 fn audit(cx: &mut TestAppContext, view_body: &str) -> Vec<String> {
     cx.update(gpui_rhai::install);
     let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
+    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+        .iter()
+        .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
+    {
         modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
     }
     let main = format!(
         r#"import "components/badge" as badge;
 import "components/button" as button;
 import "components/tabs" as tabs;
+import "layouts/region" as region;
 fn noop(ctx, payload) {{ () }}
 fn item(ctx, payload) {{
     row([text(payload.item.label).with_style(style().typography("caption")),
@@ -198,6 +205,21 @@ fn content_led_by_a_heading_or_a_view_switcher_is_not_reported(cx: &mut TestAppC
     // A container whose heading is drawn elsewhere (a host's panel header).
     let elsewhere = audit(cx, &led_by(r#"text("Body")"#, ".heading_elsewhere()"));
     assert!(elsewhere.is_empty(), "{elsewhere:?}");
+    // A Region whose title is in a TitleBar or a tab says so with `external_title`.
+    let region = |external: bool| {
+        format!(
+            r#"region::Region(#{{ label: "Hosts", fill: false, external_title: {external},
+                body: column([text("Section one"), text("Section two")]).with_style(style().gap(px(48))),
+                footer: [text("3 hosts")] }})"#
+        )
+    };
+    let external = audit(cx, &region(true));
+    assert!(external.is_empty(), "{external:?}");
+    let untitled = audit(cx, &region(false));
+    assert!(
+        untitled.iter().any(|f| f.starts_with("spacing-not-nested")),
+        "{untitled:?}"
+    );
     // The positive control: plain text leading the same content is reported.
     let plain = audit(cx, &led_by(r#"text("Body")"#, ""));
     assert!(

@@ -14,8 +14,8 @@
 // with status, selection, count and data time.
 //
 // Props: key and label (required), body (required), title, toolbar (Toolbar slot map:
-//        context, filters, actions, primary), state (InlineState props without key),
-//        footer (status, selection, count, updated).
+//        context, filters, fill, actions, primary, size), state (InlineState props without
+//        key), footer (status, selection, count, updated), inset (Region's; default true).
 // Events/state: none. Parts: root.
 // Example: DataView(#{ key: "hosts", label: "Hosts", title: "Hosts", body: table_node,
 //              toolbar: #{ filters: [filter_input], primary: add_button },
@@ -49,7 +49,12 @@ define_component(#{
                 actions: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
                     required: false, sensitive: false, "default": #{ type: "array", value: [] } },
                 primary: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+                fill: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+                size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                    required: false, sensitive: false },
             } } }, required: false, sensitive: false },
+            inset: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true } },
             body: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             state: #{ schema: #{ type: "optional", value: #{ type: "object", allow_unknown: false, fields: #{
                 state: #{ schema: #{ type: "string", allowed: ["loading", "empty", "error", "stale", "refreshing"] },
@@ -80,7 +85,8 @@ fn has(map, name) { name in map && map[name] != () }
 fn render_DataView(ctx, props) {
     // Rows carry their own inset, so the body bleeds to the region sides and row text
     // starts on the title's edge.
-    let config = #{ label: props.label, body: props.body, bleed: true };
+    let config = #{ label: props.label, body: props.body, bleed: true,
+        inset: if "inset" in props { props.inset } else { true } };
     if has(props, "title") { config.title = props.title; }
     if has(props, "toolbar") {
         let slots = props.toolbar;
