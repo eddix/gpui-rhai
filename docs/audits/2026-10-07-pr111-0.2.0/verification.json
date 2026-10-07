@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-07",
+  "recorded_at": "2026-10-07T05:14:18.443567+00:00",
+  "head": "c28849a139e34a2ed25fc8e27b63633383dcd48d",
+  "base": "d87ebb9f781ecaaa53e265d39b9cacc7ded07f25",
+  "verdict": "request_changes_not_release_ready",
+  "findings": [
+    {
+      "id": "R1",
+      "priority": "P1",
+      "probe": "stretch_width_preserves_horizontal_margins",
+      "status": "confirmed"
+    },
+    {
+      "id": "R2",
+      "priority": "P1",
+      "probe": "file_token_reload_keeps_requirement_validation",
+      "status": "confirmed"
+    },
+    {
+      "id": "R3",
+      "priority": "P1",
+      "probe": "table_keyboard_supports_native_data_as_well_as_array",
+      "status": "confirmed"
+    },
+    {
+      "id": "R4",
+      "priority": "P2",
+      "probe": "modified_key_capture_and_target_use_the_same_matching",
+      "status": "confirmed"
+    },
+    {
+      "id": "R5",
+      "priority": "P2",
+      "probe": "incomplete_environment_table_is_rejected",
+      "status": "confirmed"
+    }
+  ],
+  "fresh_tests": {
+    "workspace": {
+      "passed": 677,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "native": {
+      "passed": 235,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    }
+  },
+  "independent_probes": {
+    "passed": 0,
+    "failed": 5,
+    "all_have_behavior_evidence": true,
+    "canonical_runner_verified": true,
+    "dev_reload_enabled": true,
+    "note": "Early diagnostic logs include fixture setup/cleanup errors; only confirmed and runner logs determine findings"
+  },
+  "ci": {
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/eddix/gpui-rhai/actions/runs/37571320156"
+  },
+  "visual": {
+    "file_audit_passed": 57,
+    "manually_viewed": [
+      "button.compact.default-light.en.png",
+      "scene-operations.comfortable.default-dark.ar.png",
+      "scene-form.compact.default-dark.en.png"
+    ],
+    "fresh_gpu_recapture": false
+  },
+  "targets_checked": 21,
+  "release_remaining": [
+    "Fix R1-R5 and retain controls",
+    "Current-candidate macOS release smoke",
+    "Real OS input/accessibility and titlebar matrix",
+    "Physical120Hz evidence or release-specific maintainer decision",
+    "Version/dependency/generated-consumer 0.2.0 alignment and package verification"
+  ],
+  "no_carry_forward_waiver": "0.1.8 exception explicitly applies to that release only",
+  "product_changes": false,
+  "primary_checkout_unchanged": true,
+  "external_repository_changes": false,
+  "github_comments_merges_closures_publication": false,
+  "tracked_review_checkout_clean_after_probe_cleanup": true,
+  "review_worktree_cleanup_requested": true
+}

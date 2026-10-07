@@ -1,0 +1,43 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-020/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.45s
+     Running tests/audit_pr111.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111-8bb2db3cf78fbb1b)
+
+running 4 tests
+test file_token_reload_keeps_requirement_validation ... RELOAD valid height=40
+
+thread 'file_token_reload_keeps_requirement_validation' (11404087) panicked at tests/audit_pr111.rs:51:204:
+assertion `left == right` failed
+  left: 40.0
+ right: 50.0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test incomplete_environment_table_is_rejected ... INCOMPLETE accepted=true default_resolution=None
+
+thread 'incomplete_environment_table_is_rejected' (11404139) panicked at tests/audit_pr111.rs:37:2:
+declared default has no value but preparation accepted the theme
+FAILED
+test modified_key_capture_and_target_use_the_same_matching ... MODIFIED KEY trace=T
+
+thread 'modified_key_capture_and_target_use_the_same_matching' (11404140) panicked at tests/audit_pr111.rs:30:183:
+assertion `left == right` failed
+  left: "T"
+ right: "CT"
+FAILED
+test stretch_width_preserves_horizontal_margins ... MARGIN control: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }
+MARGIN implicit: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 300.0, height: 30.0 }
+
+thread 'stretch_width_preserves_horizontal_margins' (11404141) panicked at tests/audit_pr111.rs:21:39:
+implicit stretch must subtract both margins: [260.0, 300.0]
+FAILED
+
+failures:
+
+failures:
+    file_token_reload_keeps_requirement_validation
+    incomplete_environment_table_is_rejected
+    modified_key_capture_and_target_use_the_same_matching
+    stretch_width_preserves_horizontal_margins
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.54s
+
+error: test failed, to rerun pass `--test audit_pr111`

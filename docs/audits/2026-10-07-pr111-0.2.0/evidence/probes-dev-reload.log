@@ -1,0 +1,56 @@
+   Compiling fsevent-sys v4.1.0
+   Compiling notify-types v2.1.0
+   Compiling notify v8.2.0
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-020/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-020/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-020/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 46.21s
+     Running tests/audit_pr111.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111-5c6606d8cc1685dd)
+
+running 5 tests
+test file_token_reload_keeps_requirement_validation ... RELOAD valid height=50 error=None theme=Some(Fixed(Pixels(50.0)))
+RELOAD missing height=26 last_error=None fresh_prepare_error=Some("failed to load UI theme: theme `Audit/Dark` lacks tokens required by components/probe: [\"metrics.unit\"]")
+
+thread 'file_token_reload_keeps_requirement_validation' (11409105) panicked at tests/audit_pr111.rs:6:136:
+called `Result::unwrap()` on an `Err` value: DisposedView("reload")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test incomplete_environment_table_is_rejected ... INCOMPLETE accepted=true default_resolution=None
+
+thread 'incomplete_environment_table_is_rejected' (11409194) panicked at tests/audit_pr111.rs:37:2:
+declared default has no value but preparation accepted the theme
+FAILED
+test modified_key_capture_and_target_use_the_same_matching ... MODIFIED KEY trace=T
+
+thread 'modified_key_capture_and_target_use_the_same_matching' (11409195) panicked at tests/audit_pr111.rs:30:183:
+assertion `left == right` failed
+  left: "T"
+ right: "CT"
+FAILED
+test stretch_width_preserves_horizontal_margins ... MARGIN control: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }
+MARGIN implicit: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 300.0, height: 30.0 }
+
+thread 'stretch_width_preserves_horizontal_margins' (11409196) panicked at tests/audit_pr111.rs:21:39:
+implicit stretch must subtract both margins: [260.0, 300.0]
+FAILED
+test table_keyboard_supports_native_data_as_well_as_array ... TABLE KEY array selected=r1
+TABLE KEY native selected=r0
+
+thread 'table_keyboard_supports_native_data_as_well_as_array' (11409197) panicked at tests/audit_pr111.rs:72:2:
+assertion `left == right` failed
+  left: ["r1", "r0"]
+ right: ["r1", "r1"]
+FAILED
+
+failures:
+
+failures:
+    file_token_reload_keeps_requirement_validation
+    incomplete_environment_table_is_rejected
+    modified_key_capture_and_target_use_the_same_matching
+    stretch_width_preserves_horizontal_margins
+    table_keyboard_supports_native_data_as_well_as_array
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.11s
+
+error: test failed, to rerun pass `--test audit_pr111`

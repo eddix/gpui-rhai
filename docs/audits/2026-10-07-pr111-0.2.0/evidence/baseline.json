@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-07",
+  "base": "d87ebb9f781ecaaa53e265d39b9cacc7ded07f25",
+  "head": "c28849a139e34a2ed25fc8e27b63633383dcd48d",
+  "pr": "https://github.com/eddix/gpui-rhai/pull/111",
+  "primary_checkout_head": "5a98161b895837da5da129cb8682047add790fc8",
+  "review_checkout": "/Users/eddix/.codex/worktrees/review-pr111-020/gpui-rhai",
+  "changed_files": 355,
+  "dependencies": {
+    "gpui-pre": "0.3.7",
+    "rhai": "1.26.0",
+    "rust_version": "1.95"
+  },
+  "fresh_test_counts": {
+    "workspace": {
+      "passed": 677,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "native": {
+      "passed": 235,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    }
+  },
+  "probe_sha256": "7deaa4ad5454d27494dee379da3b5bf6fa4cedaf4f90338b4e31899e00237238",
+  "probe_features": [
+    "charts",
+    "gpui-rhai/dev-reload"
+  ],
+  "images_manually_viewed": [
+    "button.compact.default-light.en.png",
+    "scene-operations.comfortable.default-dark.ar.png",
+    "scene-form.compact.default-dark.en.png"
+  ]
+}

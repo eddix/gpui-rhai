@@ -1,0 +1,38 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-020/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.14s
+     Running tests/audit_pr111.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111-8bb2db3cf78fbb1b)
+
+running 4 tests
+test file_token_reload_keeps_requirement_validation ... 
+thread 'file_token_reload_keeps_requirement_validation' (11402751) panicked at tests/audit_pr111.rs:13:190:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test incomplete_environment_table_is_rejected ... INCOMPLETE accepted=true default_resolution=None
+
+thread 'incomplete_environment_table_is_rejected' (11402761) panicked at tests/audit_pr111.rs:37:2:
+declared default has no value but preparation accepted the theme
+FAILED
+test modified_key_capture_and_target_use_the_same_matching ... MODIFIED KEY trace=T
+
+thread 'modified_key_capture_and_target_use_the_same_matching' (11402762) panicked at tests/audit_pr111.rs:30:183:
+assertion `left == right` failed
+  left: "T"
+ right: "CT"
+FAILED
+test stretch_width_preserves_horizontal_margins ... 
+thread 'stretch_width_preserves_horizontal_margins' (11402763) panicked at tests/audit_pr111.rs:13:190:
+called `Option::unwrap()` on a `None` value
+FAILED
+
+failures:
+
+failures:
+    file_token_reload_keeps_requirement_validation
+    incomplete_environment_table_is_rejected
+    modified_key_capture_and_target_use_the_same_matching
+    stretch_width_preserves_horizontal_margins
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+error: test failed, to rerun pass `--test audit_pr111`
