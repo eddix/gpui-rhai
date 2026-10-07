@@ -3913,6 +3913,29 @@ fn scoped_overlay_spec(
     rendered
 }
 
+/// The overlay's `open_change` handler as the native element calls it.
+fn overlay_open_change<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+    target: EventTargetContext,
+) -> Option<crate::overlay_element::OpenChangeHandler> {
+    node.handler("open_change").map(|handler| {
+        let handler = handler.clone();
+        let dispatcher = environment.dispatcher.cloned();
+        Rc::new(move |open, window: &mut Window, cx: &mut App| {
+            dispatch_ui_event(
+                &handler,
+                "open_change",
+                UiValue::Bool(open),
+                target.snapshot(),
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
+        }) as crate::overlay_element::OpenChangeHandler
+    })
+}
+
 fn native_overlay_element<C: ColorResolver>(
     node: &UiNode,
     trigger: &UiNode,
@@ -3977,22 +4000,7 @@ fn native_overlay_element<C: ColorResolver>(
         ),
     );
     let event_target = EventTargetContext::new(retained_id, environment.geometry.clone());
-    let open_target = event_target.clone();
-    let open_change = node.handler("open_change").map(|handler| {
-        let handler = handler.clone();
-        let dispatcher = environment.dispatcher.cloned();
-        Rc::new(move |open, window: &mut Window, cx: &mut App| {
-            dispatch_ui_event(
-                &handler,
-                "open_change",
-                UiValue::Bool(open),
-                open_target.snapshot(),
-                window,
-                cx,
-                dispatcher.as_ref(),
-            );
-        }) as crate::overlay_element::OpenChangeHandler
-    });
+    let open_change = overlay_open_change(node, environment, event_target.clone());
     let panel_key = overlay_panel_key(
         node,
         environment.dispatcher,
