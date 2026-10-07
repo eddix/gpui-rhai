@@ -24,6 +24,10 @@
    resolution.
    Run the independent `tests/performance` structural suite on shared CI; keep
    absolute latency thresholds on the controlled Mac benchmark path.
+   Frame budget (from 0.2.0, replacing the physical 120Hz gate): in
+   `tests/native-keyboard`, `cargo run --release --bin gallery_profile`; every
+   interaction's `Window::draw` p95 must be at most 8.3 ms, one 120 Hz frame.
+   Rhai render and callback times are recorded, not gated.
 8. Run `scripts/audit-release-artifacts.sh` to reject workspace paths and
    development-only inspector strings in embedded example binaries.
    Shared Linux CI must also run `scripts/linux-window-smoke.sh` against the
@@ -169,3 +173,21 @@ do not replace this gate with a no-op TestPlatform setter or a forced refresh.
 The scope deferrals #83/#89/#91/#95 and #14 are not acceptance failures or
 delivered capabilities. Follow the explicit PR/issue disposition table; no
 merge, closure, package publication or tag is authorized by green checks alone.
+
+## 0.2.0 gates
+
+- Frame budget: release `gallery_profile`, `Window::draw` p95 at most 8.3 ms
+  for every interaction (item 7). The physical 120Hz check is no longer a gate.
+- Visuals: `gallery_baselines` (19 cases) and `example_baselines` (38) match the
+  committed PNGs; `gallery_baselines <dir> --pages <density>` for all 83 pages
+  in both densities, compared with the previous candidate, with every change
+  attributed to a commit. Compare in RGB (`Image.convert("RGB")`): Pillow's
+  `getbbox()` on an RGBA difference looks at alpha only and reports opaque
+  captures as identical. Include a known-different pair as a positive control.
+- Audit: `gallery_acceptance` passes every page in both densities.
+- Real windows: keyboard, focus, clipboard, multi-window, and the Rhai title
+  bar's drag and double press are driven with CGEvent on a real macOS window and
+  recorded. IME preedit and VoiceOver are checked by the maintainer.
+- The PR #111 disposition: review R1-R5 and issues #83 #89 #91 #95 #109 #110
+  #112-#118 are resolved in the PR; no merge, tag or publication follows from
+  green checks alone.
