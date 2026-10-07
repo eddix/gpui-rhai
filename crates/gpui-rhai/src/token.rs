@@ -319,6 +319,12 @@ impl<T> EnvTable<T> {
         &self.keys
     }
 
+    /// The value at one key path (one value per key, in key order).
+    #[must_use]
+    pub fn get(&self, path: &[Symbol]) -> Option<&T> {
+        self.entries.get(path)
+    }
+
     pub fn entries(&self) -> impl Iterator<Item = (&[Symbol], &T)> {
         self.entries
             .iter()

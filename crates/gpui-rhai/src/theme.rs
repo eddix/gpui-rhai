@@ -531,7 +531,45 @@ impl ThemeTokens {
                 }
             }
         }
-        Ok(())
+        // Every combination of declared values must have an entry: a gap would
+        // pass the required-token check and then resolve to nothing.
+        let axes = table
+            .keys()
+            .iter()
+            .filter_map(|name| self.environment.get(name).map(|d| d.values.as_slice()))
+            .collect::<Vec<_>>();
+        let mut path = axes.iter().map(|values| values[0]).collect::<Vec<_>>();
+        let mut indices = vec![0usize; axes.len()];
+        loop {
+            if table.get(&path).is_none() {
+                let missing = table
+                    .keys()
+                    .iter()
+                    .zip(&path)
+                    .map(|(name, value)| format!("{name}={value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(ThemeError::IncompleteEnvironmentTable {
+                    token: token.to_owned(),
+                    missing,
+                });
+            }
+            // Advance the last axis first, like an odometer.
+            let mut axis = axes.len();
+            loop {
+                if axis == 0 {
+                    return Ok(());
+                }
+                axis -= 1;
+                indices[axis] += 1;
+                if indices[axis] < axes[axis].len() {
+                    path[axis] = axes[axis][indices[axis]];
+                    break;
+                }
+                indices[axis] = 0;
+                path[axis] = axes[axis][0];
+            }
+        }
     }
 
     fn validate_typography(&self) -> Result<(), ThemeError> {
@@ -1529,6 +1567,10 @@ pub enum ThemeError {
     #[error("theme token `{token}` depends on undeclared environment value `{name}`")]
     UndeclaredEnvironment { token: String, name: String },
     #[error(
+        "theme token `{token}` has no value for {missing}; give every declared combination one"
+    )]
+    IncompleteEnvironmentTable { token: String, missing: String },
+    #[error(
         "theme token `{token}` uses `{value}`, which environment value `{name}` does not declare"
     )]
     UndeclaredEnvironmentValue {
@@ -1986,6 +2028,65 @@ mod tests {
             unknown_alias,
             Err(ThemeError::UnknownTypographyAlias { .. })
         ));
+    }
+
+    #[test]
+    fn environment_tables_must_cover_every_declared_combination() {
+        let engine = engine();
+        let load = |metrics: &str| {
+            let base = load_token_base(
+                engine.engine(),
+                "tokens.rhai",
+                &format!(
+                    r#"fn tokens() {{ #{{ environment: #{{
+                        density: #{{ values: ["comfortable", "compact"], "default": "compact" }},
+                        size: #{{ values: ["sm", "md"], "default": "md" }} }},
+                        metrics: #{{ {metrics} }} }} }}"#
+                ),
+            )
+            .unwrap();
+            load_theme_with_layers(
+                engine.engine(),
+                Some(&base),
+                "theme.rhai",
+                PALETTE,
+                &ThemeTokenOverrides::default(),
+            )
+        };
+        let missing = |metrics: &str| match load(metrics) {
+            Err(ThemeError::IncompleteEnvironmentTable { token, missing }) => {
+                format!("{token}: {missing}")
+            }
+            other => panic!("expected an incomplete table, got {other:?}"),
+        };
+        // The default branch, a non-default branch, one combination of two axes.
+        assert_eq!(
+            missing(r#"row: by_env("density", #{ comfortable: px(32) })"#),
+            "metrics.row: density=compact"
+        );
+        assert_eq!(
+            missing(r#"row: by_env("density", #{ compact: px(28) })"#),
+            "metrics.row: density=comfortable"
+        );
+        assert_eq!(
+            missing(
+                r#"control: by_env(["density", "size"], #{
+                    comfortable: #{ sm: px(28), md: px(32) }, compact: #{ md: px(28) } })"#
+            ),
+            "metrics.control: density=compact, size=sm"
+        );
+        let complete = load(
+            r#"control: by_env(["density", "size"], #{
+                comfortable: #{ sm: px(28), md: px(32) }, compact: #{ sm: px(24), md: px(28) } })"#,
+        )
+        .unwrap();
+        assert_eq!(
+            complete.tokens.resolve_length(
+                Length::token("metrics.control").unwrap(),
+                &Environment::EMPTY
+            ),
+            Some(Length::Pixels(28.0))
+        );
     }
 
     #[test]
