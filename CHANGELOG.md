@@ -171,6 +171,11 @@ and [docs/design/](docs/design/) for the specification.
   current row with the row's bounds. The caller shows a Menu at `anchor`.
   `ctx.virtual_item_bounds(collection_key, index)` reads a laid-out virtual
   item's window bounds at event time.
+- PanZoom and Rotatable keep showing a pan, zoom or turn after release: the
+  content no longer jumps back to its old place until some other input redraws
+  the window. They keep the proposed transform until the Host answers, return
+  to the source when it rejects the proposal, and ask for a frame after the
+  signal writes they make while a frame is drawn. Keyboard steps show at once.
 - Resize handles take a decorative grip (#83): SplitPane `handle` and Resizable
   `grips` (one node per handle) sit in a `grip` box centred on the handle and
   painted above the panes or content; pressing anywhere on it, overhang

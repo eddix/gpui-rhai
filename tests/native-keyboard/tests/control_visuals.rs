@@ -2031,3 +2031,157 @@ fn resizable_grip_overhang_starts_its_handle_drag(cx: &mut TestAppContext) {
         }
     }
 }
+
+/// The bounds of quads filled with `color`, as (x, y) in scaled pixels.
+fn filled_quads(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32)> {
+    let color: gpui::Hsla = rgba(color).into();
+    visual.update(|window, _| {
+        window
+            .painted_quads()
+            .iter()
+            .filter(|quad| quad.background == color.into())
+            .map(|quad| (quad.bounds.origin.x.0, quad.bounds.origin.y.0))
+            .collect()
+    })
+}
+
+fn pan_zoom_commit_script(accept: bool) -> String {
+    let commit = if accept {
+        r#"ctx.set_state("transform",value);"#
+    } else {
+        ""
+    };
+    format!(
+        r#"
+import "components/pan_zoom" as pan_zoom;
+fn state_schema(){{#{{fields:#{{
+    transform:#{{schema:#{{type:"object",allow_unknown:false,fields:#{{
+        x:#{{schema:#{{type:"number"}},required:true,sensitive:false}},
+        y:#{{schema:#{{type:"number"}},required:true,sensitive:false}},
+        scale:#{{schema:#{{type:"number",exclusive_min:0.0}},required:true,sensitive:false}}
+    }}}},"default":#{{type:"map",value:#{{
+        x:#{{type:"float",value:0.0}},y:#{{type:"float",value:0.0}},scale:#{{type:"float",value:1.0}}
+    }}}}}}
+}}}}}}
+fn changed(ctx,value){{{commit}}}
+fn view(ctx){{column([
+    pan_zoom::PanZoom(#{{key:"viewport",label:"Canvas viewport",transform:ctx.get_state("transform"),
+        min_scale:0.5,max_scale:4.0,
+        content:box([box([]).with_style(style().absolute().left(px(80)).top(px(50))
+            .width(px(40)).height(px(30)).background(rgba(0x00ff00ff)))]),
+        on_transform_change:Fn("changed")}})
+        .with_style(style().width(px(300)).height(px(180)))
+]).with_style(style().padding(px(12)))}}
+"#
+    )
+}
+
+/// Drag the PanZoom 40x20 and let only the window's own requests draw; returns
+/// the marker's position before and after, in scaled pixels.
+fn pan_zoom_drag(cx: &mut TestAppContext, accept: bool) -> ((f32, f32), (f32, f32), f32) {
+    let (window, view) = mount(cx, &pan_zoom_commit_script(accept), "pan-zoom-commit");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let before = filled_quads(&mut visual, 0x00ff00ff)[0];
+    let viewport = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("region", "Canvas viewport")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    #[allow(clippy::cast_possible_truncation)]
+    let start = point(
+        px((viewport.x + viewport.width / 2.0) as f32),
+        px((viewport.y + viewport.height / 2.0) as f32),
+    );
+    let end = point(start.x + px(40.0), start.y + px(20.0));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let after = filled_quads(&mut visual, 0x00ff00ff)[0];
+    let scale = visual.update(|window, _| window.scale_factor());
+    (before, after, scale)
+}
+
+#[gpui::test]
+fn pan_zoom_shows_the_committed_pan_without_another_input(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    // The new source reaches the transform signals while a frame is drawn, when
+    // GPUI drops the redraw a write asks for; the primitive asks for the next one.
+    let ((bx, by), (ax, ay), scale) = pan_zoom_drag(cx, true);
+    println!("accepted: ({bx},{by}) -> ({ax},{ay})");
+    assert!(
+        (ax - bx - 40.0 * scale).abs() < 0.5 && (ay - by - 20.0 * scale).abs() < 0.5,
+        "the content stays at the committed pan: ({bx},{by}) -> ({ax},{ay})"
+    );
+    // A Host that keeps its transform gets the content back at the source.
+    let ((bx, by), (ax, ay), _) = pan_zoom_drag(cx, false);
+    println!("rejected: ({bx},{by}) -> ({ax},{ay})");
+    assert!(
+        (ax - bx).abs() < 0.5 && (ay - by).abs() < 0.5,
+        "a rejected pan returns to the source: ({bx},{by}) -> ({ax},{ay})"
+    );
+}
+
+fn rotatable_commit_script(accept: bool) -> String {
+    let commit = if accept {
+        r#"ctx.set_state("angle",value);"#
+    } else {
+        ""
+    };
+    format!(
+        r#"
+import "components/rotatable" as rotatable;
+fn state_schema(){{#{{fields:#{{angle:#{{schema:#{{type:"number"}},"default":#{{type:"float",value:0.0}}}}}}}}}}
+fn changed(ctx,value){{{commit}}}
+fn view(ctx){{column([
+    rotatable::Rotatable(#{{key:"arm",label:"Rotate arm",angle:ctx.get_state("angle"),
+        pivot:#{{x:20.0,y:20.0}},keyboard_step:90.0,
+        content:canvas(canvas_scene([canvas_rect("arm",20.0,10.0,80.0,20.0,theme_color("accent"))]))
+            .with_key("arm-canvas").with_style(style().background(rgba(0x00ff00ff))),
+        on_rotate:Fn("changed")}})
+        .with_style(style().width(px(300)).height(px(220)))
+]).with_style(style().padding(px(12)))}}
+"#
+    )
+}
+
+/// Turn the arm 90 degrees from the keyboard and let only the window's own
+/// requests draw; returns the canvas background's position before and after.
+fn rotatable_turn(cx: &mut TestAppContext, accept: bool) -> ((f32, f32), (f32, f32)) {
+    let (window, _) = mount(cx, &rotatable_commit_script(accept), "rotatable-commit");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let before = filled_quads(&mut visual, 0x00ff00ff)[0];
+    visual.update(|window, cx| window.focus_next(cx));
+    visual.run_until_parked();
+    visual.simulate_keystrokes("right");
+    visual.run_until_parked();
+    let after = filled_quads(&mut visual, 0x00ff00ff)[0];
+    (before, after)
+}
+
+#[gpui::test]
+fn rotatable_shows_the_committed_angle_without_another_input(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    // Turning about a pivot off the canvas centre moves the canvas: the turned
+    // position must show once the Host takes the angle, and the original one
+    // when it does not.
+    let (before, after) = rotatable_turn(cx, true);
+    println!("accepted: {before:?} -> {after:?}");
+    assert!(
+        (after.0 - before.0).abs() > 1.0 || (after.1 - before.1).abs() > 1.0,
+        "the canvas shows the committed angle: {before:?} -> {after:?}"
+    );
+    let (before, after) = rotatable_turn(cx, false);
+    println!("rejected: {before:?} -> {after:?}");
+    assert!(
+        (after.0 - before.0).abs() < 0.5 && (after.1 - before.1).abs() < 0.5,
+        "a rejected turn returns to the source: {before:?} -> {after:?}"
+    );
+}

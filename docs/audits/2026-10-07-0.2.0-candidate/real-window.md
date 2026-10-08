@@ -35,6 +35,21 @@ next frame after the one that focused the panel; the re-run showed the frame
 on open, and `panel_focus_frame.rs` now opens a Dialog by a click and lets only
 the window's own requests draw (it fails without the fix).
 
+## Finding, fixed after the candidate
+
+Reported by the maintainer: in the Gallery a PanZoom drag jumped back to where
+it started on release and stayed there until another input redrew the window
+(moving the pointer out of the area). Rotatable did the same; Draggable and
+SplitPane did not. On release the primitive put the old transform back and
+proposed the new one; the new source reached the signals while the next frame
+was drawn, after the content had read them, and GPUI drops the redraw a write
+asks for during a draw. Both now keep the proposed value until the Host answers
+and ask for a frame after a draw-time write. Re-checked on real windows with
+`pzdrag.swift`, `rotdrag.swift`, `dragdrag.swift` and `spdrag.swift`: right
+after release, with no further input, each shows the committed position, and
+nothing moves when the pointer then leaves the area (the screenshots are equal,
+except SplitPane's separator line, which loses its hover color).
+
 ## Observation, open
 
 An Input keeps its selection highlighted in the accent tint after focus moves to

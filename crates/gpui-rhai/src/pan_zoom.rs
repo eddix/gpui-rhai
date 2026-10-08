@@ -73,6 +73,9 @@ struct PanZoomEntity {
     context: PrimitiveContext,
     preview: ViewTransform,
     suspended: bool,
+    /// A proposed transform is still shown and the Host has not answered: the
+    /// next source decides between keeping it and returning to the source.
+    proposal_pending: bool,
 }
 
 impl PanZoomEntity {
@@ -86,6 +89,7 @@ impl PanZoomEntity {
             config,
             context,
             suspended: false,
+            proposal_pending: false,
         }
     }
 
@@ -101,11 +105,16 @@ impl PanZoomEntity {
         let contract_changed = read_string_signal(&self.context, &config.source_token_signal, cx)
             .as_deref()
             != Some(config.source_token.as_str());
+        // This runs while the frame is drawn, after the content read the
+        // transform signals; GPUI drops the redraw a signal write asks for in a
+        // draw, so a write here asks for the next frame itself.
         if contract_changed {
             let owner = self.context.interaction_owner(&self.config.id);
             self.context.cancel_interaction(&owner, window, cx);
             invalidate_wheel(&self.context, &config, cx);
+            let shown = self.preview;
             self.preview = config.source;
+            self.proposal_pending = false;
             write_transform(&self.context, &config, config.source, cx);
             write_string_signal(
                 &self.context,
@@ -113,6 +122,15 @@ impl PanZoomEntity {
                 &config.source_token,
                 cx,
             );
+            if transform_changed(shown, config.source) {
+                window.defer(cx, |window, _| window.refresh());
+            }
+        } else if self.proposal_pending {
+            // The Host kept its source: the proposal was rejected.
+            self.proposal_pending = false;
+            self.preview = config.source;
+            write_transform(&self.context, &config, config.source, cx);
+            window.defer(cx, |window, _| window.refresh());
         } else {
             self.preview = read_transform(&self.context, &config, cx).unwrap_or(config.source);
         }
@@ -129,12 +147,20 @@ impl PanZoomEntity {
         write_transform(&self.context, &self.config, self.config.source, cx);
     }
 
+    /// Propose a transform and keep showing it until the next source: the new
+    /// source when the Host takes it (no frame back at the old one), the old
+    /// source when it does not.
     fn propose(&mut self, transform: ViewTransform, window: &mut Window, cx: &mut App) {
-        self.restore_source(cx);
-        if transform_changed(self.config.source, transform) {
-            self.context
-                .propose("transform_change", transform_value(transform), window, cx);
+        if !transform_changed(self.config.source, transform) {
+            self.restore_source(cx);
+            return;
         }
+        self.set_preview(transform, cx);
+        self.proposal_pending = true;
+        self.context
+            .propose("transform_change", transform_value(transform), window, cx);
+        // A frame must follow the answer even when the Host changes nothing.
+        window.defer(cx, |window, _| window.refresh());
     }
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -290,7 +316,7 @@ impl PanZoomEntity {
         let generation = next_wheel_generation(&self.context, &self.config, cx);
         let context = self.context.clone();
         let config = self.config.clone();
-        cx.spawn_in(window, async move |_, cx| {
+        cx.spawn_in(window, async move |entity, cx| {
             cx.background_executor().timer(WHEEL_COMMIT_DELAY).await;
             let _ = cx.update(|window, cx| {
                 if read_integer_signal(&context, &config.wheel_generation_signal, cx)
@@ -298,10 +324,7 @@ impl PanZoomEntity {
                     && let Some(transform) = read_transform(&context, &config, cx)
                 {
                     invalidate_wheel(&context, &config, cx);
-                    write_transform(&context, &config, config.source, cx);
-                    if transform_changed(config.source, transform) {
-                        context.propose("transform_change", transform_value(transform), window, cx);
-                    }
+                    let _ = entity.update(cx, |entity, cx| entity.propose(transform, window, cx));
                 }
             });
         })
@@ -364,6 +387,7 @@ impl PrimitiveHandler for PanZoomPrimitiveHandler {
         entity.update(cx, |pan_zoom, cx| {
             pan_zoom.update_config(config, context.clone(), window, cx);
         });
+        let keyboard_entity = entity.clone();
         let mut root = div().size_full().child(entity);
         if let Some(focus) = keyboard_focus {
             root = root.track_focus(&focus.tab_stop(!keyboard_config.disabled));
@@ -373,7 +397,7 @@ impl PrimitiveHandler for PanZoomPrimitiveHandler {
                 if let Some(next) =
                     keyboard_transform(&keyboard_config, &keyboard_context, event, cx)
                 {
-                    keyboard_context.propose("transform_change", transform_value(next), window, cx);
+                    keyboard_entity.update(cx, |entity, cx| entity.propose(next, window, cx));
                     cx.stop_propagation();
                 }
             })

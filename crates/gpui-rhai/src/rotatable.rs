@@ -99,7 +99,7 @@ impl Element for RotationElement {
         cx: &mut App,
     ) -> RotationPrepaint {
         if let Some(viewport) = self.context.canvas_bounds(&self.config.content_ref, cx) {
-            sync_controlled_source(&self.context, &self.config, viewport, cx);
+            sync_controlled_source(&self.context, &self.config, viewport, window, cx);
         }
         RotationPrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::Normal),
@@ -139,7 +139,7 @@ impl Element for RotationElement {
             if let Some(focus) = config.focus.as_ref() {
                 focus.focus(window, cx);
             }
-            sync_controlled_source(&context, &config, viewport, cx);
+            sync_controlled_source(&context, &config, viewport, window, cx);
             let pointer_start = pointer_angle(event.position, viewport, config.pivot);
             let source_angle = config.angle;
             let update_context = context.clone();
@@ -186,15 +186,23 @@ impl Element for RotationElement {
                 let pointer =
                     pointer_angle(gesture.current(), current_viewport, finish_config.pivot);
                 let next = rotated_angle(&finish_config, source_angle, pointer - pointer_start);
-                write_preview(
-                    &finish_context,
-                    &finish_config,
-                    current_viewport,
-                    finish_config.angle,
-                    cx,
-                );
                 if gesture.moved() && angle_changed(finish_config.angle, next) {
-                    finish_context.propose("rotate", UiValue::Float(next), window, cx);
+                    propose_angle(
+                        &finish_context,
+                        &finish_config,
+                        current_viewport,
+                        next,
+                        window,
+                        cx,
+                    );
+                } else {
+                    write_preview(
+                        &finish_context,
+                        &finish_config,
+                        current_viewport,
+                        finish_config.angle,
+                        cx,
+                    );
                 }
             };
             let cancel_context = context.clone();
@@ -243,12 +251,12 @@ impl PrimitiveHandler for RotatablePrimitiveHandler {
         instance: &PrimitiveInstance,
         context: &PrimitiveContext,
         _: &PrimitiveTheme,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> Result<AnyElement, String> {
         let config = parse_config(&instance.node.props, instance.focus_handle().cloned())?;
         if let Some(viewport) = context.canvas_bounds(&config.content_ref, cx) {
-            sync_controlled_source(context, &config, viewport, cx);
+            sync_controlled_source(context, &config, viewport, window, cx);
         }
         let key_config = config.clone();
         let key_context = context.clone();
@@ -275,7 +283,11 @@ impl PrimitiveHandler for RotatablePrimitiveHandler {
                 };
                 let next = rotated_angle(&key_config, key_config.angle, delta);
                 if angle_changed(key_config.angle, next) {
-                    key_context.propose("rotate", UiValue::Float(next), window, cx);
+                    if let Some(viewport) = key_context.canvas_bounds(&key_config.content_ref, cx) {
+                        propose_angle(&key_context, &key_config, viewport, next, window, cx);
+                    } else {
+                        key_context.propose("rotate", UiValue::Float(next), window, cx);
+                    }
                 }
                 cx.stop_propagation();
             })
@@ -448,16 +460,28 @@ fn write_preview(
     );
 }
 
+fn presentation_token(config: &RotatableConfig, viewport: crate::GeometryBounds) -> String {
+    format!(
+        "{}|{}|{}",
+        config.source_token, viewport.width, viewport.height
+    )
+}
+
+/// Show the controlled angle when the source (or the viewport) changed. A
+/// proposal leaves the token as `pending:<token>`: the same source then means
+/// the Host rejected it and the preview returns to the source.
+///
+/// This also runs while a frame is drawn, after the content read the signals,
+/// when GPUI drops the redraw a write asks for; a changed preview asks for the
+/// next frame itself.
 fn sync_controlled_source(
     context: &PrimitiveContext,
     config: &RotatableConfig,
     viewport: crate::GeometryBounds,
+    window: &mut Window,
     cx: &mut App,
 ) {
-    let presentation_token = format!(
-        "{}|{}|{}",
-        config.source_token, viewport.width, viewport.height
-    );
+    let presentation_token = presentation_token(config, viewport);
     let token_matches = matches!(
         context.read_signal(&config.source_token_signal, cx),
         Ok(SignalValue::String(value)) if value == presentation_token
@@ -465,12 +489,39 @@ fn sync_controlled_source(
     if token_matches {
         return;
     }
+    let shown = matches!(
+        context.read_signal(&config.angle_signal, cx),
+        Ok(SignalValue::Float(angle)) if !angle_changed(angle, preview_for(config.angle, config.pivot, viewport).angle)
+    );
     write_preview(context, config, viewport, config.angle, cx);
     let _ = context.write_signal(
         &config.source_token_signal,
         SignalValue::String(presentation_token),
         cx,
     );
+    if !shown {
+        window.defer(cx, |window, _| window.refresh());
+    }
+}
+
+/// Propose an angle and keep showing it until the next source decides.
+fn propose_angle(
+    context: &PrimitiveContext,
+    config: &RotatableConfig,
+    viewport: crate::GeometryBounds,
+    angle: f64,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    write_preview(context, config, viewport, angle, cx);
+    let _ = context.write_signal(
+        &config.source_token_signal,
+        SignalValue::String(format!("pending:{}", presentation_token(config, viewport))),
+        cx,
+    );
+    context.propose("rotate", UiValue::Float(angle), window, cx);
+    // A frame must follow the answer even when the Host changes nothing.
+    window.defer(cx, |window, _| window.refresh());
 }
 
 fn descriptor_signal_props() -> BTreeMap<String, ObjectField> {
