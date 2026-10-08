@@ -1,0 +1,92 @@
+{
+  "started_date": "2026-10-08",
+  "delivery_date": "2026-10-09",
+  "recorded_at": "2026-10-08T16:09:47.478888+00:00",
+  "head": "2c5e8a079304bb0c8910ddbd73eca772f49fd453",
+  "base": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8",
+  "pr": "https://github.com/eddix/gpui-rhai/pull/111",
+  "verdict": "approve_reviewed_code_and_contracts_only",
+  "closed_findings": [
+    "S1",
+    "S2",
+    "S3",
+    "S4"
+  ],
+  "new_P0_P1_P2_findings": [],
+  "nonblocking_notes": [
+    {
+      "id": "N1",
+      "priority": "P3",
+      "scope": "Resizable decorative grip directional cursor",
+      "status": "source-level follow-up suggestion; no OS cursor observation; not a release blocker"
+    }
+  ],
+  "fresh_execution": {
+    "workspace": {
+      "passed": 680,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "native": {
+      "passed": 275,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "previous-probes": {
+      "passed": 10,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    }
+  },
+  "original_probe_hashes": {
+    "previous-probes.rs": "7deaa4ad5454d27494dee379da3b5bf6fa4cedaf4f90338b4e31899e00237238",
+    "probes.rs": "1118e12e8e90dc86aebf8b9b3c7883a19c4fb0b8ab715948500e80d741e5c999"
+  },
+  "native_stack": "RUST_MIN_STACK unset",
+  "ci": {
+    "headSha": "2c5e8a079304bb0c8910ddbd73eca772f49fd453",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/eddix/gpui-rhai/actions/runs/37735020988"
+  },
+  "visual": {
+    "committed_files_rgb_comparison": {
+      "count": 57,
+      "changed": 43,
+      "unchanged": 14,
+      "positive_control": true,
+      "negative_control": true
+    },
+    "fresh_gpu_capture": false,
+    "manually_viewed": [
+      "gallery/scene-form.compact.default-light.en.png",
+      "form_showcase/default-light.en.ltr.png"
+    ],
+    "rgb_comparison_script_replayed": true
+  },
+  "dependencies": {
+    "gpui-pre": "0.3.7",
+    "rhai": "1.26.0"
+  },
+  "source_verified_gpui": [
+    "window.rs:5109 insert_hitbox stores content mask",
+    "window.rs:1110 frame hit_test intersects bounds with mask and observes occlusion",
+    "window.rs:773 HitboxId::is_hovered"
+  ],
+  "provided_not_locally_rerun": [
+    "Complete strict Clippy/MSRV/stable/package/Linux gates from current CI",
+    "Author GPU recaptures, release smoke and gallery_profile p95 <= 2.94 ms"
+  ],
+  "remaining_release_work": [
+    "Maintainer IME preedit and VoiceOver checks",
+    "Align 0.2.0 crate versions/dependencies/generated consumers",
+    "Final candidate release checks, macOS smoke record, packaging/clean consumer and authorized publication flow"
+  ],
+  "physical120Hz_gate": "Replaced by <=8.3 ms release draw-p95 policy; not required",
+  "product_changes": false,
+  "external_project_changes": false,
+  "merge_close_issues_publish_tag": false
+}

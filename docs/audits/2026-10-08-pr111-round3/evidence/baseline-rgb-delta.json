@@ -1,0 +1,857 @@
+{
+  "comparison": "existing committed baselines 48cdd0b4 -> 2c5e8a07, not a fresh capture",
+  "mode": "RGB",
+  "positive_control_bbox": [
+    0,
+    0,
+    2560,
+    1720
+  ],
+  "negative_control_bbox": null,
+  "count": 57,
+  "changed": 43,
+  "files": [
+    {
+      "path": "tests/visual/macos/dashboard_layout/catppuccin-latte.en.ltr.normal.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "faa21a2b2b3c072d9cf4c88a76ae240ff8616cbe72d93f1217570a1672922f73",
+      "new_sha256": "faa21a2b2b3c072d9cf4c88a76ae240ff8616cbe72d93f1217570a1672922f73"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/catppuccin-latte.en.ltr.reduced.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "9b5de3d689e83f1bee4d577a4230846a058cc3af5278fc862c384869bb7d088c",
+      "new_sha256": "9b5de3d689e83f1bee4d577a4230846a058cc3af5278fc862c384869bb7d088c"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/catppuccin-mocha.ar.rtl.normal.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "89d94337d46b2550b09c372bb459bc31e84d91e25f5416bd7bd35b429c07f6a9",
+      "new_sha256": "89d94337d46b2550b09c372bb459bc31e84d91e25f5416bd7bd35b429c07f6a9"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/catppuccin-mocha.ar.rtl.reduced.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "3260277961c97aa4d9a7c78e0355dc88bdf1499324bb69e00e6a11a99a2ca80f",
+      "new_sha256": "3260277961c97aa4d9a7c78e0355dc88bdf1499324bb69e00e6a11a99a2ca80f"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/catppuccin-mocha.en.ltr.normal.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "9ef42dcd5027412f2c44cf5e46b9670fabb6650569c1e32fb37a173b037389d8",
+      "new_sha256": "9ef42dcd5027412f2c44cf5e46b9670fabb6650569c1e32fb37a173b037389d8"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/catppuccin-mocha.en.ltr.reduced.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "e8847634ea7dd053c09d02bc2810732c9e9a332ada01ae18f7e48cdba30a5201",
+      "new_sha256": "e8847634ea7dd053c09d02bc2810732c9e9a332ada01ae18f7e48cdba30a5201"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/default-dark.en.ltr.normal.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "43421913e615256b4e21f5a1695e5cfe2ed68cd0b5eef7708eeb4d8c3f712eef",
+      "new_sha256": "43421913e615256b4e21f5a1695e5cfe2ed68cd0b5eef7708eeb4d8c3f712eef"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/default-dark.en.ltr.reduced.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "7f6eaafb60f57397ae0a906d5a2bf0f1bd69b7c20d45d141d54a58fa25280b33",
+      "new_sha256": "7f6eaafb60f57397ae0a906d5a2bf0f1bd69b7c20d45d141d54a58fa25280b33"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/default-light.en.ltr.normal.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "b6e910453f2991d32ec90f4d9c71c871d3a569ba0910be1d58c8f025b7c73059",
+      "new_sha256": "b6e910453f2991d32ec90f4d9c71c871d3a569ba0910be1d58c8f025b7c73059"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/default-light.en.ltr.reduced.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "49acc167fc3f721d6e6adac02e8b7a6b6495c11ff20c774cb9fbfc3f53341316",
+      "new_sha256": "49acc167fc3f721d6e6adac02e8b7a6b6495c11ff20c774cb9fbfc3f53341316"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/tokyo-night.en.ltr.normal.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "737aaa5cfc59d69bc24b5a03e000782fda2786cdd9d93105d1d2fd0a556e1e8b",
+      "new_sha256": "737aaa5cfc59d69bc24b5a03e000782fda2786cdd9d93105d1d2fd0a556e1e8b"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/tokyo-night.en.ltr.reduced.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "0547f810f2ea50af050fd280836fa47cb743ff956bbb9713548a7e57a2de2612",
+      "new_sha256": "0547f810f2ea50af050fd280836fa47cb743ff956bbb9713548a7e57a2de2612"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/tokyo-storm.en.ltr.normal.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "93f6a1cbbabd9b967051a38cee234ddadb2448374459042a933248907c0a32bd",
+      "new_sha256": "93f6a1cbbabd9b967051a38cee234ddadb2448374459042a933248907c0a32bd"
+    },
+    {
+      "path": "tests/visual/macos/dashboard_layout/tokyo-storm.en.ltr.reduced.png",
+      "size": [
+        1520,
+        1120
+      ],
+      "rgb_changed": false,
+      "bbox": null,
+      "old_sha256": "16033421c6e7afc331534a074ce90ab13912b3ed4ed09b3824f29410d240a08c",
+      "new_sha256": "16033421c6e7afc331534a074ce90ab13912b3ed4ed09b3824f29410d240a08c"
+    },
+    {
+      "path": "tests/visual/macos/data_table/catppuccin-mocha.ar.rtl.png",
+      "size": [
+        1960,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        597,
+        141,
+        1783,
+        1396
+      ],
+      "old_sha256": "c54b4275a3200b75dfbc39d3edc6363de612dc333e0cadbe7175bad45906b0bb",
+      "new_sha256": "9a6a893642a3db834ddf532d1802daba06384b751d60b459ba471f6fa6ba4b28"
+    },
+    {
+      "path": "tests/visual/macos/data_table/default-dark.en.selected.png",
+      "size": [
+        1960,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        50,
+        141,
+        1335,
+        1396
+      ],
+      "old_sha256": "0223befa8294b646b2485c6837133e9edc3ca9cb375cdc8cc7a6c32cc345545d",
+      "new_sha256": "2184efba929896a8356b620e37fd6b9964a25e809656651af904f98fa932efdd"
+    },
+    {
+      "path": "tests/visual/macos/data_table/default-light.en.empty.png",
+      "size": [
+        1960,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        50,
+        141,
+        1081,
+        1396
+      ],
+      "old_sha256": "6b68adf7b15497606461e5a41854442466a0eb0a94983add69c58709e4e4d391",
+      "new_sha256": "6ee9833560a7007d5fea2210833a11cdbdfc92fe61e1a3a8e283fdba0ccb5eb6"
+    },
+    {
+      "path": "tests/visual/macos/data_table/default-light.en.loading.png",
+      "size": [
+        1960,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        50,
+        141,
+        1335,
+        1396
+      ],
+      "old_sha256": "a2a25d8e8ef148ac3c1493865bb3a50a7bde3da924f366c2ab2bfffac72df760",
+      "new_sha256": "5ab41edf20dd7270c6fb1e7b1b98c68477d1b8bdc36f096c439be5f53efbe90b"
+    },
+    {
+      "path": "tests/visual/macos/data_table/default-light.en.ltr.png",
+      "size": [
+        1960,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        50,
+        141,
+        1335,
+        1396
+      ],
+      "old_sha256": "b2be246bcc1eacebf15bd3b754c4854af0d66d6004cd7fd1f0596ec70e938fee",
+      "new_sha256": "ee1ca25955a1f83869f555a628bb06b813e483359eb15a6ad3c2e5875c922817"
+    },
+    {
+      "path": "tests/visual/macos/embedded_views/default-dark.shared-host.png",
+      "size": [
+        1800,
+        840
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        366,
+        491,
+        1730,
+        501
+      ],
+      "old_sha256": "be120195b461fba08a607c920d341eb6dca72c6255bbb6d99c686bfe2d3b6c1f",
+      "new_sha256": "20296384e4a8e7dca8f8aac2e68c6745166046a579fdcb19253920081126cfe2"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/catppuccin-latte.en.ltr.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        218,
+        1016,
+        1416
+      ],
+      "old_sha256": "b6466b8f0ed54f3dc93d5986025a11a2fdfdd0971647fd46e4f3ba1d079ebe63",
+      "new_sha256": "3539aa18134c1b166abcfefa20a11efd593a5748c322987dd57cdb7d7e0a66cf"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/catppuccin-mocha.ar.rtl.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        504,
+        217,
+        1496,
+        1416
+      ],
+      "old_sha256": "5f471df7e826ced38f2597ec933d0750645b3363ec5b0c3864f8822b05bcfc8b",
+      "new_sha256": "c631b6f0d70c5013c5d0be7b7749737213fbb7374e03e3609de716bd8ff37eaa"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/catppuccin-mocha.en.ltr.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        217,
+        1016,
+        1416
+      ],
+      "old_sha256": "1738beceabe91c87db4ca2a18e8b86d91e0b198921afc1dbca0f4edfd853af86",
+      "new_sha256": "ef59a1bc36afc772d21a0bd203c0831267ec0bd72bb4906f702da9723c17c641"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/default-dark.en.ltr.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        217,
+        1016,
+        1416
+      ],
+      "old_sha256": "70bdc805298feb3b5565562bc07d097840265c009dd363a0531a8f9505b06ac7",
+      "new_sha256": "a75b572fee637625907bf28d5ea64becbea325fa937096f0fdace582f0d0f21f"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/default-light.en.dialog.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        218,
+        1016,
+        1372
+      ],
+      "old_sha256": "8153dbf4079b54b9e509013cd23ef876a473c249d08339c0b3e9b535802efcb6",
+      "new_sha256": "416657f4716ee2173958e16da45f3235a3c0aa8992c6a99c8bf1a191e8b94406"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/default-light.en.ltr.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        218,
+        1016,
+        1416
+      ],
+      "old_sha256": "1467b84204c99991d152e0b9a00843512f1f7323f9bf381818d40b119fee0952",
+      "new_sha256": "aae2f0c10b5a8c411dcbc6a6ec6ed6d59a7142fc3a9142f123e04d3615d6c868"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/default-light.en.toast.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        218,
+        1016,
+        1372
+      ],
+      "old_sha256": "c612f9b1fd10b791f9b99d48a22fef78246e52ab948b773f25819c807e2e40f9",
+      "new_sha256": "9aeae8873c379d0034bf5295363562785b311ccacd2e5906cac1e4d65e512105"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/tokyo-night.en.ltr.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        217,
+        1016,
+        1416
+      ],
+      "old_sha256": "ece32856ae7c04c4404f70987276413101529e269361d62703448b11400e9eb1",
+      "new_sha256": "0ee1fb5fd1531cdd48ace7789711f97a4ed2fa20208b2ffa2543a89f22b1a1c7"
+    },
+    {
+      "path": "tests/visual/macos/form_showcase/tokyo-storm.en.ltr.png",
+      "size": [
+        1520,
+        1440
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        26,
+        217,
+        1016,
+        1416
+      ],
+      "old_sha256": "b859b97a08584e4867b25b6789359c74ea93144e743d6ebd72b412c826202996",
+      "new_sha256": "2674521b8c03e4a8c595a89bfdd2d3750a0c118149acd8aec2784da7bfcdd360"
+    },
+    {
+      "path": "tests/visual/macos/gallery/button.comfortable.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1684,
+        24,
+        2248,
+        52
+      ],
+      "old_sha256": "9804217ffac2b547735ca2ada00b027f0cd4cf07971bac0bb2d09af2947c615f",
+      "new_sha256": "613816e137aa8c12101a48014b8bc1ff8db49bd4c81860557ea5ac16756d979f"
+    },
+    {
+      "path": "tests/visual/macos/gallery/button.comfortable.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1684,
+        24,
+        2248,
+        52
+      ],
+      "old_sha256": "095816426908cada574b0daa4e23132945e615157005c40177820edcc51a325b",
+      "new_sha256": "73c98f98fba65e1edef8ac5fe6f50cd81c95a5d0f2a31fcfb26a42c3643645d6"
+    },
+    {
+      "path": "tests/visual/macos/gallery/button.compact.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1702,
+        20,
+        2278,
+        48
+      ],
+      "old_sha256": "4e27789e5d7fd4ebe2a708fad7b9bc48638cc6ea2d4f678693240e81cc6908ed",
+      "new_sha256": "bc372b81adf4de678fffc03b0460d028d4ab5e5f45995758af9a3f6f4c506a05"
+    },
+    {
+      "path": "tests/visual/macos/gallery/button.compact.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1702,
+        20,
+        2278,
+        48
+      ],
+      "old_sha256": "215bb7dbbfa013369335c7d81c137a5cc0fee06a6d9ce664213e1fb3c41daae3",
+      "new_sha256": "af0e888ccebf962b6ecb339a4ed8886b621c2c23f1578e1477fcb00c3e217087"
+    },
+    {
+      "path": "tests/visual/macos/gallery/description-list.compact.default-light.zh-CN.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1702,
+        19,
+        2278,
+        48
+      ],
+      "old_sha256": "c0d3f5da173df82c115e2c354cb0dfce594dfc5bcc883f1f992cd2c5fffeecac",
+      "new_sha256": "1cf43893dcd35ec048ac71e6cfaa0d8ddf5b376acf12ea2eb0050cd1661df869"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-form.comfortable.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        833,
+        24,
+        2248,
+        663
+      ],
+      "old_sha256": "f08c9fe0775d6f9e09175f1d86ed953d08f3765c2c55150e90464116bf68b1a4",
+      "new_sha256": "732477c4c3d9dfdf1b14a244f4e00a2f6b7e1853587144163f166df828d5c9b1"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-form.comfortable.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        833,
+        24,
+        2248,
+        663
+      ],
+      "old_sha256": "2dcd2dc9e118420882c078d5b729b1b641ccbe76572cf7a898c7bbdac2ab696e",
+      "new_sha256": "33d4355eccd8f6a24e8bfd1593831d6d864c4fbe80ed0d187fad828cf7ab6a47"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-form.compact.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        817,
+        20,
+        2278,
+        601
+      ],
+      "old_sha256": "f2706e02473fa4a5c043c76b1189cdc44ac67ea1321b35b6de391998bb5f3b69",
+      "new_sha256": "c77884ba1285df2368c923b6f8f9244e2a0c53cba34dee096859096446fdaf79"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-form.compact.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        817,
+        20,
+        2278,
+        601
+      ],
+      "old_sha256": "25aa8479e9729428b5ed043eb6801be3837225315d3c494f341463cd90b6413c",
+      "new_sha256": "1ede946179f33d73d27a296c7d5686b188de1966f359058f29a4f3a78f85a054"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-operations.comfortable.default-dark.ar.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        312,
+        24,
+        1399,
+        264
+      ],
+      "old_sha256": "5636cf34b122d341f8edeb1d096220e1a235fc29652a0d235d58c5e1cf847ff5",
+      "new_sha256": "9607151b0fd72ef324799e4c8a559aeb582f7c966d82f00890d5d1b9187f0a36"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-operations.comfortable.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        926,
+        24,
+        2248,
+        264
+      ],
+      "old_sha256": "083b745f47ffaa768290029204ca1bb7e52c0aa433bb719ace01916c3ffedafd",
+      "new_sha256": "56cba20b89cefb41ab76ca0e9f8961c0efdb6752861120215d632415d5b6baad"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-operations.comfortable.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        926,
+        24,
+        2248,
+        264
+      ],
+      "old_sha256": "8a6c9d1bdf78cec9e5a0849562c36bdc70e70adf01c8c94c665b3d52b073fb2d",
+      "new_sha256": "9888e98992b8d5a10362b0acd8e2501ba0e4c93418723223974d657f8e7f66d1"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-operations.compact.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        910,
+        20,
+        2278,
+        236
+      ],
+      "old_sha256": "e8a56e9819d504f8b4e944b36cac742146876ba8b92c68396f40aecd74ff4bef",
+      "new_sha256": "fbb5abc5708443ae7dcb1d8c86e4e7ae980ab3e738bff4e38e970c6611851612"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-operations.compact.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        910,
+        20,
+        2278,
+        236
+      ],
+      "old_sha256": "51b908b3cdcefb2bb259df1037be8a0471f7c0519955e926938b5b368c475913",
+      "new_sha256": "237903defa81aac58fbbf7b5e8676bb1e3506ccec43063c91b45b08e95e46bf5"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-settings.comfortable.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1684,
+        24,
+        2248,
+        52
+      ],
+      "old_sha256": "123631c1202c46bf8c0d360d56e8c7ced21a658f65e09910ab3e744e0aa7fc8a",
+      "new_sha256": "fb00ff8fc81e10e2b4122d0bd381792438753103a452a22c1772a26c7af19735"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-settings.comfortable.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1684,
+        24,
+        2248,
+        52
+      ],
+      "old_sha256": "e712698a57baa88e97fe34192c8d5ebfe0c1f7ac8a1c077decff8f978d72b33e",
+      "new_sha256": "c346c892062dfb953006a614142445d74658b6743094fdca278c0846c9c7111c"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-settings.compact.default-dark.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1702,
+        20,
+        2278,
+        48
+      ],
+      "old_sha256": "6c83c53a790c0d67a40b7d9580e49b705154054a264a77f60edd4362734385cf",
+      "new_sha256": "38173d1a6c5341c270883ac530c510a24d7e5e2d13b93c4e9992d666e1f935fe"
+    },
+    {
+      "path": "tests/visual/macos/gallery/scene-settings.compact.default-light.en.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1702,
+        20,
+        2278,
+        48
+      ],
+      "old_sha256": "e0acc4813b53594740bc9c4cc8a39af3e6f5fd65cfb8deefb6697146009eb722",
+      "new_sha256": "3c9a8977953b58834faf12dc26d5eec129603753f2fca7a9d868ae4bf8b6f9de"
+    },
+    {
+      "path": "tests/visual/macos/gallery/table.comfortable.default-dark.zh-CN.png",
+      "size": [
+        2560,
+        1720
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        1684,
+        22,
+        2248,
+        49
+      ],
+      "old_sha256": "219ea0147cb6a824b290a5454a0d3f5bd8f690ecc0dca866dd80084023d0aaad",
+      "new_sha256": "d89e2499fba457091fc9c4d87786fed4a4dafbf0ac59e4ea8fb11ed76c7f5c4d"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/catppuccin-latte.en.ltr.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        321,
+        189,
+        745,
+        216
+      ],
+      "old_sha256": "c2d43dbf1abe49197fbfec4e20fb7a4409adf7c85d9ad1dfa0c0d541433ba09c",
+      "new_sha256": "66924a7c090d82937f4952b31f23a5aeb343115f4c1fd13638aec7a24ee34a47"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/catppuccin-mocha.ar.rtl.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        535,
+        189,
+        959,
+        216
+      ],
+      "old_sha256": "1ff1b40638cdd01fa2aa5dfaab2d2f41b099198028a4cc1a1bdb27e8d1fa70cd",
+      "new_sha256": "6c12e09d024854adc80bc7805dacef65b002575a9f43474cbc387cdbc060a3b3"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/catppuccin-mocha.en.ltr.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        321,
+        189,
+        745,
+        216
+      ],
+      "old_sha256": "713acf0fef65b3d8130536405e869ee6d2004cfc9e9cc529319c18104e85c531",
+      "new_sha256": "4b0dfd5a4505e36752119ae3fc528c5227407a8a3841f5fda63c782fa4c52dbd"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/default-dark.en.ltr.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        322,
+        189,
+        745,
+        212
+      ],
+      "old_sha256": "fd3d5cb841bd3d3f971f67e1ff16eaefcb28e4077c0a3b7e7102f6eef1d38c29",
+      "new_sha256": "0c7e06b9427f232f459ed7cadb65f00321470079da73b292307e2bab7366ad31"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/default-dark.zh-cn.button-focus.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        322,
+        189,
+        745,
+        212
+      ],
+      "old_sha256": "04f32f7409ed4528088588bf55da31b1992b5afc9fb67b45f934ef777935ec7d",
+      "new_sha256": "3853bc7e0e6fdca3fd6cc9fcc1eefdf3706db51826a1ea6bfae56b276d13ac79"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/default-dark.zh-cn.switch-focus.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        322,
+        189,
+        745,
+        212
+      ],
+      "old_sha256": "3e7d9b97a882adee828d811917912cf2d55d3f90f346122c47ef77ee4d063373",
+      "new_sha256": "53dfda060b839644e972c088c1751d279eaeecf8a707c2a7c48ba8f5740c74cd"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/default-light.en.ltr.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        322,
+        189,
+        745,
+        217
+      ],
+      "old_sha256": "87d97c7c433720a37e3a99d8714c46dc09590f6bf5a05fe15f03d3ba195fc4a8",
+      "new_sha256": "bc304bb09a7e0873040c3731fab67e6eb7a2ccda76d4ef6a0b64b215d975ab54"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/tokyo-night.en.ltr.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        320,
+        189,
+        745,
+        217
+      ],
+      "old_sha256": "dfaf191b00d04db1ef9d78d64be5466c60183cdfd36f62a38e2b19ea86e336fc",
+      "new_sha256": "fe86af524df106c1a03d5959f3286bb3cca3df801f6525c7861bd2befd6db346"
+    },
+    {
+      "path": "tests/visual/macos/settings_panel/tokyo-storm.en.ltr.png",
+      "size": [
+        1280,
+        1040
+      ],
+      "rgb_changed": true,
+      "bbox": [
+        320,
+        189,
+        745,
+        217
+      ],
+      "old_sha256": "cfcf835f7bb1c9468a3a4ff1f80d5a5b4414923c0fb65a0cf025994ac0bfaebf",
+      "new_sha256": "10ff41a2c8250d0b5e1e6e951a5a94221ca5af339d0f35d9dc57a1b3bc6a894c"
+    }
+  ]
+}

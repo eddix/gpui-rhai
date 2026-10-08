@@ -1,0 +1,51 @@
+Review target: 2c5e8a079304bb0c8910ddbd73eca772f49fd453
+previous SHA256: 7deaa4ad5454d27494dee379da3b5bf6fa4cedaf4f90338b4e31899e00237238
+new SHA256: 1118e12e8e90dc86aebf8b9b3c7883a19c4fb0b8ab715948500e80d741e5c999
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling gpui-rhai-registry v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round3/gpui-rhai/registry)
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round3/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round3/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-round3/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 04s
+     Running tests/audit_pr111_round2_new_71687.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_round2_new_71687-07e608d00e9ff490)
+
+running 5 tests
+test audit_grip_must_not_start_through_an_occluding_sibling ... GRIP grip=false covered=false ratio=0.5 error=None
+GRIP grip=true covered=false ratio=0.6714285714285714 error=None
+GRIP grip=true covered=true ratio=0.5 error=None
+ok
+test audit_region_default_clips_overflowing_body_input ... REGION scroll=true region=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 200.0 } click100px_below_region=0
+REGION scroll=false region=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 200.0 } click100px_below_region=0
+ok
+test audit_resizable_grip_must_not_start_through_cover ... RESIZE grip=false covered=false: width=200
+RESIZE grip=true covered=false: width=240
+RESIZE grip=true covered=true: width=200
+ok
+test audit_signal_style_margins_keep_stretch_equivalent ... SIGNAL MARGIN base=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }, signal=GeometryBounds { x: 20.0, y: 30.0, width: 260.0, height: 30.0 }
+ok
+test audit_task_followup_action_keeps_the_delivery_origin ... ORIGINS [("click", UserInput { event: "click" }), ("sync-action", UserInput { event: "click" }), ("completion", TaskCompletion { started_by: UserInput { event: "click" } }), ("after-task-action", TaskCompletion { started_by: UserInput { event: "click" } })] error=None
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.19s
+
+     Running tests/audit_pr111_round2_previous_71687.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_round2_previous_71687-d2f90076e3be9042)
+
+running 5 tests
+test file_token_reload_keeps_requirement_validation ... RELOAD valid height=50 error=None theme=Some(Fixed(Pixels(50.0)))
+RELOAD missing height=50 last_error=Some("failed to load UI theme: theme `Audit/Dark` lacks tokens required by components/probe: [\"metrics.unit\"]") fresh_prepare_error=Some("failed to load UI theme: theme `Audit/Dark` lacks tokens required by components/probe: [\"metrics.unit\"]")
+ok
+test incomplete_environment_table_is_rejected ... COMPLETE default_resolution=Some(Pixels(28.0))
+ok
+test modified_key_capture_and_target_use_the_same_matching ... MODIFIED KEY trace=CT
+ok
+test stretch_width_preserves_horizontal_margins ... MARGIN control: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }
+MARGIN implicit: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }
+ok
+test table_keyboard_supports_native_data_as_well_as_array ... TABLE KEY array selected=r1
+TABLE KEY native selected=r1
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.26s
+

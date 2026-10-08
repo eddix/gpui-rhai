@@ -1,0 +1,1 @@
+{"headRefOid":"2c5e8a079304bb0c8910ddbd73eca772f49fd453","state":"OPEN","statusCheckRollup":[{"__typename":"CheckRun","completedAt":"2026-10-08T06:34:21Z","conclusion":"SUCCESS","detailsUrl":"https://github.com/eddix/gpui-rhai/actions/runs/37735020988/job/113172500483","name":"portable","startedAt":"2026-10-08T05:57:42Z","status":"COMPLETED","workflowName":"CI"}]}

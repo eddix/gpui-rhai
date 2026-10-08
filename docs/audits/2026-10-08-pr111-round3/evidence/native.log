@@ -1,0 +1,549 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round3/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round3/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-round3/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 39s
+     Running unittests src/bin/example_baselines.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/example_baselines-43a84989edb24eaf)
+
+running 3 tests
+test data_table::tests::every_data_table_visual_state_prepares ... ok
+test embedded_views::tests::all_widget_variants_prepare_independently ... ok
+test form_showcase::tests::date_picker_visual_state_opens_the_real_component_panel ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.33s
+
+     Running unittests src/bin/gallery_baselines.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/gallery_baselines-ea4b90d6d0a101f0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gallery_profile.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/gallery_profile-39610a85ebb438a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/theme_appearance_lifecycle.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/theme_appearance_lifecycle-d0a1578869e9a7e0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/theme_appearance_probe.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/theme_appearance_probe-f5419d1e72701cc4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/asset_refresh_host.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/asset_refresh_host-8dd3b6e97cb94260)
+
+running 2 tests
+test shared_registry_requires_host_scheduled_foreground_window_refresh ... ok
+test task_result_publishes_changed_pixels_with_stable_asset_and_opaque_handle ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.88s
+
+     Running tests/audit_regressions.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_regressions-519da9cddf7b79b8)
+
+running 5 tests
+test a_badge_keeps_its_internal_gap_out_of_the_nesting_rule ... ok
+test content_behind_an_error_boundary_is_audited ... ok
+test content_led_by_a_heading_or_a_view_switcher_is_not_reported ... ok
+test realized_virtual_rows_are_audited ... ok
+test unrelated_panes_side_by_side_are_not_one_row_of_controls ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.17s
+
+     Running tests/charts.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/charts-025aed3695aa960f)
+
+running 30 tests
+test acknowledging_an_old_proposal_preserves_the_current_gesture ... ok
+test canceling_preview_rebuilds_the_committed_frame ... ok
+test chart_adapter_normalizes_full_spec_series_kind ... ok
+test chart_brush_does_not_capture_legend_control ... ok
+test chart_business_key_cannot_become_a_control_role ... ok
+test chart_catalog_story_uses_a_window_bounded_scroll_viewport ... ok
+test chart_controlled_zoom_rejects_unacknowledged_preview ... ok
+test chart_gauge_activation_returns_the_source_row_key ... ok
+test chart_motion_freezes_across_view_suspension ... ok
+test chart_phase_less_mouse_wheel_commits ... ok
+test chart_semantics_expose_active_and_selected_datum ... ok
+test chart_trackpad_preview_survives_intermediate_draw ... ok
+test failed_resume_prepare_does_not_consume_chart_motion_time ... ok
+test failed_script_suspend_restores_committed_chart_activity ... ok
+test formal_chart_adapters_forward_the_controlled_viewport ... ok
+test geo_link_group_synchronizes_acknowledged_camera ... ok
+test idle_linked_charts_do_not_repeat_layout ... ok
+test invalid_chart_candidate_reaches_view_error_and_keeps_last_good_scene ... ok
+test invalid_inline_chart_data_reaches_view_error ... ok
+test link_projection_identity_includes_the_group ... ok
+test linked_cartesian_axes_keep_independent_logical_windows ... ok
+test linked_selection_keeps_each_chart_source_instead_of_last_writer_wins ... ok
+test linked_target_gesture_uses_its_effective_axis_window ... ok
+test plain_wheel_over_chart_bubbles_to_scroll_container ... ok
+test relative_height_chart_presents_when_parent_width_comes_from_stretch ... ok
+test resize_reprojects_without_discarding_active_preview ... ok
+test resume_finishes_prepared_but_unpresented_frame ... ok
+test resumed_chart_discards_an_interrupted_explicit_wheel_gesture ... ok
+test suspended_chart_coalesces_stream_updates_until_resume ... ok
+test unrelated_host_render_does_not_acknowledge_a_viewport_proposal ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.73s
+
+     Running tests/code_typography.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/code_typography-22a9838b5948d5c4)
+
+running 3 tests
+test a_code_column_reaches_only_its_cells ... ok
+test a_group_header_uses_the_label_voice ... ok
+test a_span_takes_a_face_and_a_background ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.59s
+
+     Running tests/composition_audit.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/composition_audit-5cf1369c1a9016e4)
+
+running 3 tests
+test a_clean_composition_reports_nothing ... ok
+test each_broken_relationship_is_reported ... ok
+test no_profile_means_no_design_rules ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running tests/control_visuals.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/control_visuals-df28e9b102f9a6f6)
+
+running 31 tests
+test a_resizable_grip_takes_no_press_where_it_is_covered_or_clipped ... ok
+test a_split_pane_grip_takes_no_press_where_it_is_covered_or_clipped ... ok
+test animated_tabs_moves_one_shared_indicator_after_controlled_commit ... ok
+test button_and_badge_keep_distinct_density_with_the_same_label ... ok
+test compound_controls_show_focus_on_their_mark_and_frame ... ok
+test draggable_previews_natively_and_commits_once_from_the_declared_handle ... ok
+test input_wrapper_paints_focus_ring_for_the_native_editor_focus ... ok
+test interaction_workbench_mounts_and_closes_a_cross_component_drag_loop ... ok
+test pan_zoom_previews_pan_and_commits_pointer_anchored_zoom ... ok
+test pan_zoom_shows_the_committed_pan_without_another_input ... ok
+test range_slider_has_two_keyboard_thumbs_and_one_pointer_commit ... ok
+test resizable_drag_previews_natively_and_commits_opposite_corner_geometry ... ok
+test resizable_grip_overhang_starts_its_handle_drag ... ok
+test resizable_keyboard_handle_uses_the_same_controlled_proposal ... ok
+test resizable_rejected_proposal_restores_the_controlled_rectangle ... ok
+test rotatable_keeps_an_explicit_pivot_and_commits_pointer_and_keyboard ... ok
+test rotatable_shows_the_committed_angle_without_another_input ... ok
+test selection_area_shares_click_range_marquee_and_keyboard_state ... ok
+test single_axis_script_scroll_does_not_translate_the_other_axis ... ok
+test sortable_drag_auto_scrolls_the_active_drop_container ... ok
+test sortable_proposes_stable_anchors_for_pointer_and_keyboard ... ok
+test split_pane_drag_previews_natively_and_commits_only_on_release ... ok
+test split_pane_grip_overhang_starts_a_drag_and_shows_hover ... ok
+test split_pane_keyboard_step_commits_one_controlled_ratio ... ok
+test suspending_active_rotation_cleans_up_using_current_drawable_geometry ... ok
+test tabs_content_and_vertical_layout_use_natural_and_consistent_slots ... ok
+test tabs_equal_layout_preserves_track_inset_and_controlled_value ... ok
+test tabs_track_and_slot_follow_theme_spacing_and_typography ... ok
+test tree_uses_one_controlled_outline_for_expand_navigation_and_selection ... ok
+test typed_drag_drop_commits_one_target_and_keyboard_uses_the_same_contract ... ok
+test virtual_sortable_pins_the_dragged_key_while_realization_moves ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.01s
+
+     Running tests/drag_continuation.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/drag_continuation-b868c483e918aaa7)
+
+running 3 tests
+test canceled_tick_cannot_transfer_previous_destination_to_new_drag ... ok
+test occluding_rejecting_child_blocks_row_gap_continuation ... ok
+test open_row_gap_continues_with_stationary_pointer ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.20s
+
+     Running tests/element_ref_subscriptions.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/element_ref_subscriptions-1c6cf8d8140e2915)
+
+running 8 tests
+test tests::failed_effect_commit_restores_ref_binding_and_native_subscription ... ok
+test tests::reader_retargets_ref_without_retaining_old_node_subscription ... ok
+test tests::round7_existing_node_geometry_change_control ... ok
+test tests::round7_formal_virtual_row_unknown_geometry_has_executable_owner_control ... ok
+test tests::round7_pending_ref_wakes_formal_reader_when_producer_appears ... ok
+test tests::round7_ref_rebinding_to_new_node_preserves_reader ... ok
+test tests::round7_ref_removal_notifies_reader ... ok
+test tests::suspend_resume_preserves_logical_ref_readers ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+     Running tests/example_audit.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/example_audit-f4f8700f35cc23ea)
+
+running 4 tests
+test data_table::tests::every_data_table_visual_state_prepares ... ok
+test embedded_views::tests::all_widget_variants_prepare_independently ... ok
+test examples_pass_the_productivity_audit ... ok
+test form_showcase::tests::date_picker_visual_state_opens_the_real_component_panel ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.52s
+
+     Running tests/gallery.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/gallery-b6ec4494485dd77c)
+
+running 14 tests
+test chart_diagnostic_story_exposes_last_good_invalid_semantics ... ok
+test content_bearing_tabs_stretch_table_and_chart_panels ... ok
+test critical_story_viewport_and_locale_matrix_mounts_real_frames ... ok
+test every_bundled_theme_hot_switches_the_shared_design_story ... ok
+test every_gallery_story_case_mounts_draws_and_presents_semantics ... ok
+test host_embedding_story_types_through_the_real_nested_view_boundary ... ok
+test host_theme_overrides_survive_live_theme_switches ... ok
+test operations_fixture_cases_are_observable_and_streaming_is_bounded ... ok
+test operations_workbench_completes_and_cancels_the_deployment_boundary ... ok
+test operations_workbench_failure_keeps_the_previous_configuration ... ok
+test streaming_workbench_suspend_cancels_late_delivery_and_resume_restarts ... ok
+test workbench_consumes_host_owned_events_and_configuration_documents ... ok
+test workbench_large_hosts_filter_in_rust_without_materializing_rows_in_rhai ... ok
+test workbench_sheet_and_command_dialog_share_session_navigation ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.10s
+
+     Running tests/gallery_acceptance.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/gallery_acceptance-b76fde01d574a381)
+
+running 10 tests
+test command_palette_navigates_by_keyboard ... ok
+test every_gallery_page_passes_the_audit_in_both_densities ... ok
+test form_scene_validates_and_submits_by_keyboard ... ok
+test gallery_launches_any_bundled_theme_and_toggles_within_its_family ... ok
+test gallery_theme_picker_lists_loaded_themes_and_switches ... ok
+test operations_scene_filters_selects_and_acts_by_keyboard ... ok
+test pan_zoom_page_drags_accumulate_and_reset ... ok
+test resizable_page_stores_the_proposal_as_the_next_rect ... ok
+test rotatable_page_turns_from_anywhere_in_the_area ... ok
+test settings_scene_switches_views_and_toggles_by_keyboard ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 78.51s
+
+     Running tests/host_execution_policy.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/host_execution_policy-1b5512aff478f6e8)
+
+running 3 tests
+test child_engine_reapplies_builder_then_extension_policy ... ok
+test expression_depth_host_policy_mounts_the_same_file_and_embedded_tree ... ok
+test file_and_embedded_mount_actual_over_default_work_with_host_quota ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.83s
+
+     Running tests/invocation_origin.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/invocation_origin-615dd87150b5a79f)
+
+running 1 test
+test capability_calls_carry_their_origin ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+     Running tests/key_phases.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/key_phases-9bf88221b0892b41)
+
+running 1 test
+test every_phase_matches_qualified_names_first_and_plain_names_as_fallback ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+     Running tests/keyboard.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/keyboard-81cc88a8f70d62ba)
+
+running 63 tests
+test async_workers_wake_the_view_without_input_or_manual_poll ... ok
+test autofocus_input_receives_typing_without_any_click ... ok
+test automation_commands_use_mounted_handlers_actions_and_clock ... ok
+test canvas_morph_hit_testing_follows_the_presented_path ... ok
+test click_context_exposes_untracked_event_target_visual_bounds ... ok
+test code_and_diff_viewers_mount_native_document_surfaces ... ok
+test combobox_pointer_updates_transactional_rhai_caller_state ... ok
+test combobox_relative_width_tracks_flex_space_and_sizes_its_panel ... ok
+test command_dialog_filters_from_native_input_and_executes_with_enter ... ok
+test command_preserves_manual_scroll_and_reveals_controlled_active_item ... ok
+test component_catalog_story_switches_categories_and_live_themes ... ok
+test context_menu_anchors_at_the_right_click_and_closes_with_escape ... ok
+test custom_primitive_rejects_invalid_payload_before_host_callback ... ok
+test duplicate_local_overlay_ids_are_namespaced_per_embedded_view ... ok
+test effect_restart_still_delivers_async_task_results ... ok
+test effect_start_state_write_restarts_sibling_effect_and_delivers ... ok
+test element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys ... ok
+test embedded_view_suspend_resume_retains_state_and_rejects_new_elements ... ok
+test explicit_occlusion_blocks_pointer_hits_to_painted_siblings ... ok
+test grouped_command_initial_reveal_keeps_its_first_header_natural ... ok
+test grouped_table_headers_stick_through_the_native_virtual_list ... ok
+test host_callbacks_dispatch_without_a_script_runtime ... ok
+test host_can_suppress_the_builtin_error_banner_without_hiding_last_error ... ok
+test host_none_policy_snaps_layout_motion_in_the_presented_frame ... ok
+test host_slot_does_not_consume_text_input_before_ime_delivery ... ok
+test host_slot_preserves_an_independent_script_view_host ... ok
+test host_slot_renders_native_content_without_leaking_events_to_rhai ... ok
+test inherited_motion_group_survives_incremental_component_update ... ok
+test menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state ... ok
+test modal_dialog_reclaims_focus_stolen_by_an_embedding_host ... ok
+test motion_catalog_story_mounts_and_renders_a_real_frame ... ok
+test mounted_view_exposes_failed_render_while_retaining_last_good_root ... ok
+test multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state ... ok
+test native_collection_table_autofit_stays_on_the_realized_rust_path ... ok
+test native_input_updates_rhai_state_and_clipboard_with_unicode ... ok
+test native_text_document_revision_invalidates_exact_viewer_reader ... ok
+test native_textarea_wraps_inserts_newlines_and_limits_graphemes ... ok
+test nested_overlay_renders_inside_parent_deferred_subtree ... ok
+test node_prop_component_keeps_latest_ui_when_receiver_rerenders ... ok
+test overlay_default_panel_focus_keeps_keyboard_on_panel ... ok
+test overlay_initial_focus_first_reaches_input_on_every_open ... ok
+test read_only_input_allows_selection_and_copy_but_rejects_edits ... ok
+test script_runtime_install_is_idempotent_and_key_conflicts_are_explicit ... ok
+test scroll_area_thumb_drag_updates_the_retained_scroll_handle ... ok
+test selectable_text_uses_native_selection_and_copy_semantics ... ok
+test separate_hosts_in_one_window_keep_overlay_domains_isolated ... ok
+test set_theme_during_typing_keeps_input_focus ... ok
+test sheet_uses_the_viewport_end_edge_and_restores_controlled_open_state ... ok
+test slider_previews_drag_natively_and_commits_once_before_keyboard_steps ... ok
+test slider_reverses_horizontal_pointer_and_arrow_semantics_in_rtl ... ok
+test subscription_callback_state_write_restarts_effect_and_delivers ... ok
+test svg_raster_adapter_uses_the_gpui_system_font_environment ... ok
+test tab_order_skips_disabled_nodes_and_enter_activates_focus ... ok
+test table_1000_example::tests::one_thousand_row_workload_prepares ... ok
+test table_1000_tracks_the_resized_window_viewport ... ok
+test table_column_resize_previews_natively_and_emits_once_on_commit ... ok
+test table_does_not_expand_an_auto_min_width_host_flex_column_across_frames ... ok
+test table_flex_columns_distribute_remaining_width_by_weight ... ok
+test table_resize_handles_sit_on_column_boundaries_including_the_last_column ... ok
+test text_input_primitive_dispatches_host_callbacks ... ok
+test timeline_rebinds_a_replaced_child_in_presented_frames ... ok
+test tinted_svg_image_bytes_match_gpui_bgra_contract ... ok
+test virtual_collection_fill_height_uses_the_resolved_flex_viewport ... ok
+
+test result: ok. 63 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.33s
+
+     Running tests/l2_patterns.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/l2_patterns-c66499020533f425)
+
+running 2 tests
+test app_shell_composition_passes_the_productivity_audit ... ok
+test f6_moves_keyboard_focus_between_shell_regions ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.94s
+
+     Running tests/node_key_contract.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/node_key_contract-9a379ed5af8ca6d1)
+
+running 8 tests
+test active_gesture_escape_owner_precedes_script_key_capture ... ok
+test disabled_key_control_is_not_a_tab_target_or_click_fallback ... ok
+test enter_and_space_click_only_when_their_key_handler_is_absent ... ok
+test every_entry_dispatches_normalized_named_and_literal_punctuation_keys ... ok
+test explicit_capture_and_bubble_enter_replace_click_fallback ... ok
+test native_key_phases_follow_the_focus_path_and_stop_prevents_later_phases ... ok
+test raw_key_matching_ignores_modifiers_but_not_key_char ... ok
+test unrelated_native_text_focus_and_ime_commits_do_not_activate_node_shortcuts ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.10s
+
+     Running tests/overlay_identity.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/overlay_identity-bbd636f9ce1d4590)
+
+running 3 tests
+test a_submenu_parent_resolves_to_the_enclosing_menu_of_its_instance ... ok
+test each_instance_closes_its_own_overlay ... ok
+test host_lookups_by_key_name_the_instance_when_ambiguous ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.12s
+
+     Running tests/panel_focus_frame.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/panel_focus_frame-057f5513ed5b645f)
+
+running 3 tests
+test a_dialog_opened_by_a_click_shows_the_frame_without_another_input ... ok
+test a_dialog_panel_holding_focus_shows_the_frame ... ok
+test a_sheet_panel_holding_focus_shows_the_frame ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.82s
+
+     Running tests/primitive_lifecycle.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/primitive_lifecycle-0985edea9ba989b3)
+
+running 3 tests
+test failed_compensation_faults_and_quarantines_the_view ... ok
+test native_resume_failure_remains_suspended_and_retryable ... ok
+test native_suspend_failure_compensates_every_instance_and_retries ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+     Running tests/region_toolbar.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/region_toolbar-51b9b86fbda997b7)
+
+running 7 tests
+test a_bar_too_narrow_for_the_minimum_wraps_instead_of_shrinking ... ok
+test a_fill_sits_first_or_last_when_a_group_is_empty ... ok
+test a_fill_takes_the_width_between_the_groups ... ok
+test a_long_placeholder_does_not_wrap_the_bar ... ok
+test a_region_body_clips_unless_it_scrolls ... ok
+test a_region_body_scrolls_only_when_asked ... ok
+test data_view_passes_fill_size_and_inset_through ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.71s
+
+     Running tests/resolved_theme.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/resolved_theme-29a602b77d56a4fd)
+
+running 6 tests
+test effect_body_only_does_not_restart_but_explicit_render_deps_do ... ok
+test first_system_light_init_and_render_match_host_without_replaying_init ... ok
+test fixed_dark_and_host_token_overrides_preserve_resolved_identity ... ok
+test missing_theme_is_unit_in_a_mounted_script ... ok
+test secondary_initial_theme_and_failed_startup_keep_native_authority_closed ... ok
+test window_and_local_setters_keep_sibling_scopes_separate ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+
+     Running tests/shared_layout_scope.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/shared_layout_scope-97b2355355ebae5d)
+
+running 2 tests
+test one_instance_with_the_same_group_twice_is_still_a_duplicate ... ok
+test two_instances_keep_their_own_shared_layout_group ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.12s
+
+     Running tests/shortcut_legend.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/shortcut_legend-59290e3fbe3993a3)
+
+running 1 test
+test caller_written_shortcuts_show_the_platform_legend ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.50s
+
+     Running tests/stretch_layout.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/stretch_layout-13ae3609c9fc4208)
+
+running 2 tests
+test a_signal_selected_style_stretches_like_the_same_static_style ... ok
+test implicit_stretch_lays_out_like_an_explicit_stretch ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+
+     Running tests/tab_stops.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/tab_stops-0e6341d8d04f7076)
+
+running 1 test
+test interactive_components_are_one_tab_stop_each ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.87s
+
+     Running tests/table_boundaries.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/table_boundaries-386cd326a262cb9c)
+
+running 8 tests
+test data_loading_and_both_empty_paths_share_the_bordered_horizontal_viewport ... ok
+test ltr_array_boundary_and_last_column_owner ... ok
+test native_last_column_autofit_measures_last_column_without_sort ... ok
+test nonresizable_neighbor_preserves_owner_and_last_keyboard_resize ... ok
+test one_column_table_is_resizable ... ok
+test rtl_dragging_a_boundary_resizes_a_not_its_neighbor ... ok
+test rtl_handles_follow_the_owned_columns_logical_end ... ok
+test rtl_keyboard_arrows_resize_the_focused_logical_column ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.07s
+
+     Running tests/table_context.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/table_context-5fc108fe9cc1a7c2)
+
+running 3 tests
+test a_right_press_keeps_a_selection_that_holds_the_row ... ok
+test a_right_press_selects_the_row_and_asks_at_the_pointer ... ok
+test shift_f10_asks_at_the_current_row ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.92s
+
+     Running tests/table_extent.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/table_extent-6d9f77ea83c6332e)
+
+running 11 tests
+test accepted_final_column_width_recomputes_extent_and_clamps_offset ... ok
+test component_min_max_and_native_override_use_one_width_authority ... ok
+test direction_changes_preserve_logical_scroll_distance_and_clamp ... ok
+test fixed_wide_ltr_rtl_array_native_share_scroll_and_all_states ... ok
+test four_column_registry_width_descriptors_share_the_actual_native_plan ... ok
+test horizontal_body_input_and_vertical_input_are_independent ... ok
+test native_drag_override_repaints_widths_and_extent_without_rhai ... ok
+test percentage_and_weighted_flex_use_viewport_not_extent ... ok
+test percentage_overflow_does_not_feedback_into_its_basis ... ok
+test single_column_under_equal_overflow_and_autofit_share_the_viewport ... ok
+test theme_insets_are_in_the_shared_column_plan_and_real_extent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.15s
+
+     Running tests/table_frame_demand.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/table_frame_demand-5f17f848177f7754)
+
+running 2 tests
+test tests::measured_viewport_schedules_its_own_followup_frame ... ok
+test tests::viewport_change_schedules_its_own_followup_frame ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+     Running tests/table_keyboard.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/table_keyboard-8f442f527fd7cce8)
+
+running 1 test
+test both_data_sources_follow_the_same_keyboard_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.41s
+
+     Running tests/table_sticky_header.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/table_sticky_header-72e6d15b194acb25)
+
+running 1 test
+test a_pushed_sticky_header_does_not_cover_the_column_header ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s
+
+     Running tests/token_reload.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/token_reload-c3821e87372cc166)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/transformed_selection.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/transformed_selection-05de55ab51989329)
+
+running 4 tests
+test asymmetric_insets_negative_scale_rotation_click_control ... ok
+test larger_invertible_zoom_control ... ok
+test rotation_suspend_resume_resize_cycles_control ... ok
+test small_invertible_zoom_selection ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+     Running tests/virtual_item_paths.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/virtual_item_paths-64e1da4122e246cf)
+
+running 1 test
+test keyless_components_in_new_rows_do_not_take_retained_paths ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running tests/window_authority.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/window_authority-fd5151a94cd0add6)
+
+running 5 tests
+test dropping_last_handle_revokes_queued_authority ... ok
+test explicit_dispose_revokes_queued_authority_control ... ok
+test late_old_view_cleanup_cannot_unregister_same_id_replacement ... ok
+test mount_identity_guards_close_and_focus_across_same_and_new_host_replacements ... ok
+test retained_handle_clone_keeps_the_mount_authorized ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s
+
+     Running tests/window_command_deliveries.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/window_command_deliveries-e5a03c5c58f52559)
+
+running 6 tests
+test actual_mouse_and_worker_task_focus_the_qualified_source ... ok
+test cancelled_open_releases_reservation_for_a_live_peer ... ok
+test live_source_cannot_redirect_stale_focus_or_close_to_a_same_name_target ... ok
+test same_batch_open_focus_and_open_focus_close_keep_the_pending_target_identity ... ok
+test subscription_origin_is_revoked_by_dispose_drop_native_close_and_remount ... ok
+test suspended_source_keeps_origin_while_peer_pumps_subscription_commands ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.41s
+
+     Running tests/window_command_origin.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/window_command_origin-4dc9d2fd251ea7d8)
+
+running 2 tests
+test live_origin_survives_peer_delivery_and_initial_open_focus_uses_one_reservation ... ok
+test peer_pump_cannot_reauthorize_revoked_open_close_or_focus ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+
+     Running tests/window_drag.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/window_drag-9f1580b2eecb1b19)
+
+running 3 tests
+test a_control_inside_the_drag_area_keeps_its_press ... ok
+test an_embedded_view_cannot_move_the_window_unless_the_host_allows_it ... ok
+test the_drag_area_background_moves_the_window - should panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.73s
+
+     Running tests/window_ownership.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/window_ownership-93a6be4330fe3434)
+
+running 6 tests
+test disposed_command_owner_cannot_close_its_replacement_from_a_queued_operation ... ok
+test failed_mount_releases_the_command_claim_and_a_host_cannot_bind_another_window ... ok
+test managed_embedding_focuses_opens_and_closes_real_native_windows ... ok
+test native_close_confirmation_and_forced_close_share_the_owner ... ok
+test ordinary_embedding_stays_disabled_beside_a_command_owner ... ok
+test owner_conflicts_fail_without_revoking_the_existing_owner_and_dispose_allows_replacement ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+
