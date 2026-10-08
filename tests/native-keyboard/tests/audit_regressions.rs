@@ -41,6 +41,7 @@ fn audit(cx: &mut TestAppContext, view_body: &str) -> Vec<String> {
     let main = format!(
         r#"import "components/badge" as badge;
 import "components/button" as button;
+import "components/split_pane" as split;
 import "components/tabs" as tabs;
 import "layouts/region" as region;
 fn noop(ctx, payload) {{ () }}
@@ -225,5 +226,37 @@ fn content_led_by_a_heading_or_a_view_switcher_is_not_reported(cx: &mut TestAppC
     assert!(
         plain.iter().any(|f| f.starts_with("spacing-not-nested")),
         "{plain:?}"
+    );
+}
+
+#[gpui::test]
+fn the_panes_of_a_split_are_not_one_stack(cx: &mut TestAppContext) {
+    // Two panes stacked by a vertical SplitPane whose first texts start 4px apart (#114
+    // follow-up: a floated cell's placeholder above the next cell's title).
+    let pane = |inset: u32, label: &str| {
+        format!(r#"column([text("{label}")]).with_style(style().padding_start(px({inset})))"#)
+    };
+    let split = audit(
+        cx,
+        &format!(
+            r#"split::SplitPane(#{{ key: "cells", label: "Cells", orientation: "vertical",
+                size: 0.5, start: {}, end: {} }}).with_style(style().width(px(400)).height(px(300)))"#,
+            pane(12, "placeholder"),
+            pane(16, "Next cell")
+        ),
+    );
+    assert!(split.is_empty(), "{split:?}");
+    // The positive control: the same two blocks stacked in one column are misaligned.
+    let column = audit(
+        cx,
+        &format!(
+            "column([{}, {}]).with_style(style().gap(px(8)))",
+            pane(12, "placeholder"),
+            pane(16, "Next cell")
+        ),
+    );
+    assert!(
+        column.iter().any(|f| f.starts_with("text-edge-misaligned")),
+        "{column:?}"
     );
 }

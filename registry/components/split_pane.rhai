@@ -215,9 +215,8 @@ fn render_SplitPane(ctx, props) {
     let end = box(end_children).with_key(props.end_key)
         .with_style(ctx.component_style("end", end_style));
     let children = [start, handle, end];
-    if horizontal {
-        row(children).with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref)
-    } else {
-        column(children).with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref)
-    }
+    let root = if horizontal { row(children) } else { column(children) };
+    // The panes are separate regions: nothing in one is in a row or a stack with the other.
+    root.with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref)
+        .audit_allow(["text-edge-misaligned", "row-height-mismatch", "mixed-type-in-row"])
 }

@@ -214,6 +214,8 @@ and [docs/design/](docs/design/) for the specification.
   wraps the actions below the heading when both do not fit (#125).
 - FormLayout no longer reports `spacing-not-nested` on its own submit row or on
   vertical fields with a description (#126).
+- SplitPane's panes are separate regions for the composition audit: no
+  text-edge, row-height or mixed-type comparison crosses them (#114).
 
 ## 0.1.8 - 2026-10-04
 
