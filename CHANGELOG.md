@@ -207,6 +207,9 @@ and [docs/design/](docs/design/) for the specification.
 - InlineState draws `detail` in the stale and refreshing states too, under the
   line (#122); Alert and InlineState text wraps in a narrow container instead
   of running past it (#123).
+- Toolbar groups shrink below their content, so a view switcher or field in
+  `filters` scrolls or shrinks inside the bar; an empty end group is left out
+  and no longer adds a second line (#124).
 
 ## 0.1.8 - 2026-10-04
 

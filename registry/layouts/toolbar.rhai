@@ -66,8 +66,10 @@ fn render_Toolbar(ctx, props) {
     for node in if "actions" in props { props.actions } else { [] } { end.push(node); }
     if "primary" in props && props.primary != () { end.push(props.primary); }
     // When the region is too narrow the end group wraps below the start group rather
-    // than overlapping it.
-    let group = style().flex_row().flex_wrap().items_center().gap(theme_length("space.related"));
+    // than overlapping it. A group may shrink below its content (min_width 0), so a
+    // tab list or field in it scrolls or shrinks inside the bar instead of running past it.
+    let group = style().flex_row().flex_wrap().items_center().gap(theme_length("space.related"))
+        .min_width(px(0));
     let bar = style().flex_row().flex_wrap().items_center().justify_between();
     bar = bar.gap(theme_length("space.group")).min_height(theme_length("metrics.control"));
     let children = [];
@@ -80,8 +82,10 @@ fn render_Toolbar(ctx, props) {
                 .flex_grow().flex_basis(minimum).min_width(minimum))));
         if end.len > 0 { children.push(row(end).with_style(ctx.component_style("end", group))); }
     } else {
+        // An empty start group stays so the end group keeps to the end edge; an empty end
+        // group is left out, so it cannot wrap onto a line of its own.
         children.push(row(start).with_style(ctx.component_style("start", group)));
-        children.push(row(end).with_style(ctx.component_style("end", group)));
+        if end.len > 0 { children.push(row(end).with_style(ctx.component_style("end", group))); }
     }
     let root = row(children).with_style(ctx.component_style("root", bar))
         .accessibility_role("toolbar")
