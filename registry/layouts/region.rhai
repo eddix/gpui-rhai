@@ -124,7 +124,9 @@ fn render_Region(ctx, props) {
     }
     let body_style = style().flex_col().flex_grow().min_height(px(0)).min_width(px(0));
     if !bleed { body_style = body_style.padding_x(side); }
+    // The body never draws or takes input outside its box; `scroll` makes it a viewport.
     if "scroll" in props && props.scroll { body_style = body_style.overflow_y_scroll(); }
+    else { body_style = body_style.clip(); }
     children.push(column([props.body]).with_style(ctx.component_style("body", body_style)));
     let footer = if "footer" in props { props.footer } else { [] };
     if footer.len > 0 {

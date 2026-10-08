@@ -1,7 +1,8 @@
 //! Toolbar's `fill` slot takes the width the groups leave (#115): the field no
 //! longer collapses to its padding, it can sit first, between or last, and a
 //! long placeholder does not push the actions to a second line. DataView passes
-//! `fill`, `size` and `inset` through. Region's body scrolls only on `scroll`.
+//! `fill`, `size` and `inset` through. Region's body scrolls only on `scroll`
+//! and otherwise clips: it neither draws nor takes clicks outside the region.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -51,7 +52,10 @@ import "components/input" as input;
 import "layouts/region" as region;
 import "layouts/toolbar" as toolbar;
 import "patterns/data_view" as data_view;
+fn state_schema() {{ #{{ fields: #{{ clicks: #{{ schema: #{{ type: "integer" }},
+    "default": #{{ type: "integer", value: 0 }} }} }} }} }}
 fn noop(ctx, payload) {{ () }}
+fn clicked(ctx, payload) {{ ctx.set_state("clicks", ctx.get_state("clicks") + 1); }}
 fn rows() {{
     let rows = [];
     for index in 0..20 {{
@@ -303,4 +307,59 @@ fn a_region_body_scrolls_only_when_asked(cx: &mut TestAppContext) {
         (after - before).abs() < 0.5,
         "no scroll by default: {before} -> {after}"
     );
+}
+
+#[gpui::test]
+fn a_region_body_clips_unless_it_scrolls(cx: &mut TestAppContext) {
+    // A 500px body in a 200px Region: a press 100px under the region must not
+    // reach it, and its fill must be masked to the region; a press inside does.
+    for scroll in [false, true] {
+        let body = format!(
+            r#"region::Region(#{{ label: "Long", fill: false, inset: false, scroll: {scroll},
+                body: box([text("Long body")]).accessibility_role("button").accessibility_label("Long body")
+                    .on_click(Fn("clicked"))
+                    .with_style(style().height(px(500)).flex_shrink(false).background(rgba(0xff00ffff))) }})
+                .with_style(style().height(px(200)).flex_shrink(false)),
+            text(`${{ctx.get_state("clicks")}}`).test_id("clicks")"#
+        );
+        let (mut visual, view) = mount(cx, &body, 300, 600);
+        let clicks = |visual: &mut VisualTestContext| {
+            visual.update(|_, cx| {
+                view.accessibility_snapshot(cx)
+                    .unwrap()
+                    .nodes()
+                    .find(|node| node.test_id.as_deref() == Some("clicks"))
+                    .unwrap()
+                    .name
+                    .clone()
+            })
+        };
+        let magenta: gpui::Hsla = gpui::rgba(0xff00_ffff).into();
+        // Scene quads are in device pixels.
+        let mask_bottom = visual.update(|window, _| {
+            let scale = window.scale_factor();
+            window
+                .painted_quads()
+                .iter()
+                .filter(|quad| quad.background == magenta.into())
+                .map(|quad| {
+                    let mask = quad.content_mask.bounds;
+                    let bottom = (mask.origin.y + mask.size.height).0;
+                    bottom.min((quad.bounds.origin.y + quad.bounds.size.height).0) / scale
+                })
+                .fold(0.0_f32, f32::max)
+        });
+        assert!(
+            mask_bottom > 150.0 && mask_bottom <= 200.5,
+            "scroll {scroll}: the body paints down to {mask_bottom}"
+        );
+        visual.simulate_click(point(px(50.0), px(300.0)), gpui::Modifiers::none());
+        visual.update(|window, cx| window.simulate_next_frame(cx));
+        visual.run_until_parked();
+        assert_eq!(clicks(&mut visual), "0", "scroll {scroll}: a press below");
+        visual.simulate_click(point(px(50.0), px(100.0)), gpui::Modifiers::none());
+        visual.update(|window, cx| window.simulate_next_frame(cx));
+        visual.run_until_parked();
+        assert_eq!(clicks(&mut visual), "1", "scroll {scroll}: a press inside");
+    }
 }

@@ -126,8 +126,9 @@ and [docs/design/](docs/design/) for the specification.
   start and end groups, at least `metrics.label_column` wide, so the bar wraps
   only when that minimum does not fit. DataView passes `toolbar.fill` and
   `toolbar.size` through and takes Region's `inset`.
-- Region gains `scroll` (the body scrolls, header and footer stay) and
-  `external_title` (the title is drawn elsewhere; exclusive with `title`).
+- Region gains `scroll` (the body scrolls, header and footer stay; otherwise
+  the body clips) and `external_title` (the title is drawn elsewhere;
+  exclusive with `title`).
 - Table group headers use the label voice (mono, uppercase, muted), like the
   column headers.
 - Overlay panels that hold focus themselves show the 2px focus frame over their
