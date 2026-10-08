@@ -200,14 +200,9 @@ impl Element for SplitResizeHandle {
             .config
             .handle_ref
             .as_ref()
-            .and_then(|reference| self.events.element_bounds(reference, cx));
+            .and_then(|reference| self.events.element_hitbox(reference, cx));
         let hovered = !self.config.disabled
-            && crate::handle_state::over_handle(
-                &prepaint.hitbox,
-                handle,
-                window.mouse_position(),
-                window,
-            );
+            && crate::handle_state::over_handle(&prepaint.hitbox, handle, window);
         if self.config.line {
             let color = if dragged || hovered {
                 self.config.active_color
@@ -306,8 +301,8 @@ fn register_pointer_listeners(
         let handle = down_config
             .handle_ref
             .as_ref()
-            .and_then(|reference| down_events.element_bounds(reference, cx));
-        if !crate::handle_state::over_handle(&hitbox, handle, event.position, window) {
+            .and_then(|reference| down_events.element_hitbox(reference, cx));
+        if !crate::handle_state::over_handle(&hitbox, handle, window) {
             return;
         }
         let Some(group) = down_events.element_bounds(&down_config.group_ref, cx) else {

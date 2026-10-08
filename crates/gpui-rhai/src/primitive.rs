@@ -1109,6 +1109,18 @@ impl PrimitiveContext {
             .and_then(|dispatcher| dispatcher.element_bounds(reference, cx))
     }
 
+    /// This frame's hitbox of the node holding `reference`: hovered only where
+    /// the node is visible and nothing occluding sits above it.
+    pub(crate) fn element_hitbox(
+        &self,
+        reference: &crate::ElementRef,
+        cx: &App,
+    ) -> Option<gpui::HitboxId> {
+        self.dispatcher
+            .as_ref()
+            .and_then(|dispatcher| dispatcher.element_hitbox(reference, cx))
+    }
+
     pub(crate) fn canvas_local_point(
         &self,
         reference: &crate::ElementRef,

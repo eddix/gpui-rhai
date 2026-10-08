@@ -274,14 +274,9 @@ impl Element for ResizableHandleElement {
             .config
             .handle_ref
             .as_ref()
-            .and_then(|reference| self.events.element_bounds(reference, cx));
+            .and_then(|reference| self.events.element_hitbox(reference, cx));
         let hovered = !self.config.disabled
-            && crate::handle_state::over_handle(
-                &prepaint.hitbox,
-                grip,
-                window.mouse_position(),
-                window,
-            );
+            && crate::handle_state::over_handle(&prepaint.hitbox, grip, window);
         if self.config.line {
             let color = if dragging || hovered {
                 self.config.active_color
@@ -385,8 +380,8 @@ fn register_pointer_listeners(
         let grip = down_config
             .handle_ref
             .as_ref()
-            .and_then(|reference| down_events.element_bounds(reference, cx));
-        if !crate::handle_state::over_handle(&hitbox, grip, event.position, window) {
+            .and_then(|reference| down_events.element_hitbox(reference, cx));
+        if !crate::handle_state::over_handle(&hitbox, grip, window) {
             return;
         }
         let Some(boundary) = down_events.element_bounds(&down_config.boundary_ref, cx) else {

@@ -4137,6 +4137,7 @@ fn script_node_dispatcher(
         lifecycle_access: Rc::clone(&direct_signal_access),
     };
     let canvas_geometry_reader = geometry_reader.clone();
+    let hitbox_reader = geometry_reader.clone();
     let canvas_bounds_reader = geometry_reader.clone();
     NodeEventDispatcher::with_event_names(move |callback, event, payload, target, window, app| {
         let origin = crate::InvocationOrigin::UserInput {
@@ -4200,6 +4201,12 @@ fn script_node_dispatcher(
                 .presented(node)
                 .ok()
                 .map(|geometry| geometry.layout)
+        })
+    })
+    .with_element_hitbox(move |reference, app| {
+        hitbox_reader.read(app, |runtime, view_id| {
+            let node = runtime.element_refs.resolve(reference).ok()?;
+            runtime.geometry_for(Some(view_id)).hitbox(node)
         })
     })
     .with_canvas_local_point(move |reference, point, app| {

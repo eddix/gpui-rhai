@@ -53,6 +53,7 @@ type SignalReadFn =
     dyn Fn(&crate::NativeSignal, &App) -> Result<crate::SignalValue, crate::SignalError>;
 type ElementBoundsFn = dyn Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds>;
 type CanvasLocalPointFn = dyn Fn(&crate::ElementRef, (f64, f64), &App) -> Option<(f64, f64)>;
+type ElementHitboxFn = dyn Fn(&crate::ElementRef, &App) -> Option<gpui::HitboxId>;
 
 #[derive(Clone)]
 pub struct NodeEventDispatcher {
@@ -61,6 +62,7 @@ pub struct NodeEventDispatcher {
     signal_write: Rc<SignalWriteFn>,
     signal_read: Rc<SignalReadFn>,
     element_bounds: Rc<ElementBoundsFn>,
+    element_hitbox: Rc<ElementHitboxFn>,
     canvas_bounds: Rc<ElementBoundsFn>,
     canvas_local_point: Rc<CanvasLocalPointFn>,
 }
@@ -113,6 +115,7 @@ impl NodeEventDispatcher {
             }),
             signal_read: Rc::new(|signal, _| Err(crate::SignalError::Stale(signal.id().clone()))),
             element_bounds: Rc::new(|_, _| None),
+            element_hitbox: Rc::new(|_, _| None),
             canvas_bounds: Rc::new(|_, _| None),
             canvas_local_point: Rc::new(|_, _, _| None),
         }
@@ -166,6 +169,14 @@ impl NodeEventDispatcher {
         read: impl Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds> + 'static,
     ) -> Self {
         self.element_bounds = Rc::new(read);
+        self
+    }
+
+    pub(crate) fn with_element_hitbox(
+        mut self,
+        read: impl Fn(&crate::ElementRef, &App) -> Option<gpui::HitboxId> + 'static,
+    ) -> Self {
+        self.element_hitbox = Rc::new(read);
         self
     }
 
@@ -251,6 +262,14 @@ impl NodeEventDispatcher {
         app: &App,
     ) -> Option<crate::GeometryBounds> {
         (self.element_bounds)(reference, app)
+    }
+
+    pub(crate) fn element_hitbox(
+        &self,
+        reference: &crate::ElementRef,
+        app: &App,
+    ) -> Option<gpui::HitboxId> {
+        (self.element_hitbox)(reference, app)
     }
 
     pub(crate) fn canvas_local_point(
@@ -2359,9 +2378,10 @@ impl GpuiNodeRenderer {
         let layout_motion = layout_motion_spec(node, environment.now);
         let progress_motions = node.progress_motions().to_vec();
         match retained_id {
-            Some(node) => GeometryTrackedElement {
+            Some(retained) => GeometryTrackedElement {
                 child: Some(element),
-                node,
+                node: retained,
+                hit_area: node.element_ref().is_some(),
                 registry: environment.geometry.clone(),
                 translate_x: translate_x.unwrap_or(0.0),
                 translate_y: translate_y.unwrap_or(0.0),
@@ -4975,6 +4995,9 @@ fn layout_motion_spec(node: &UiNode, now: Instant) -> Option<LayoutMotionRenderS
 struct GeometryTrackedElement {
     child: Option<AnyElement>,
     node: NodeId,
+    /// The node has an element ref: it records a hitbox over its visual
+    /// bounds, under its ancestors' clip and in its place in paint order.
+    hit_area: bool,
     registry: crate::GeometryRegistry,
     translate_x: f64,
     translate_y: f64,
@@ -5148,16 +5171,17 @@ impl Element for GeometryTrackedElement {
             if sample.active {
                 window.request_animation_frame();
             }
+            let visual = crate::GeometryBounds {
+                x: layout.x + self.translate_x + sample.offset_x,
+                y: layout.y + self.translate_y + sample.offset_y,
+                width: layout.width * sample.scale_x,
+                height: layout.height * sample.scale_y,
+            };
             self.registry.update(
                 self.node,
                 crate::ElementGeometry {
                     layout,
-                    visual: crate::GeometryBounds {
-                        x: layout.x + self.translate_x + sample.offset_x,
-                        y: layout.y + self.translate_y + sample.offset_y,
-                        width: layout.width * sample.scale_x,
-                        height: layout.height * sample.scale_y,
-                    },
+                    visual,
                     clip: None,
                 },
             );
@@ -5165,10 +5189,23 @@ impl Element for GeometryTrackedElement {
                 px(f64_to_f32(sample.offset_x)),
                 px(f64_to_f32(sample.offset_y)),
             );
-            if offset != Point::default() {
+            if offset == Point::default() {
+                child.prepaint(window, cx);
+            } else {
                 window.with_element_offset(offset, |window| child.prepaint(window, cx));
-                return;
             }
+            // After the content, so the node's own children do not cover it.
+            if self.hit_area {
+                let hitbox = window.insert_hitbox(
+                    Bounds::new(
+                        point(px(f64_to_f32(visual.x)), px(f64_to_f32(visual.y))),
+                        gpui::size(px(f64_to_f32(visual.width)), px(f64_to_f32(visual.height))),
+                    ),
+                    gpui::HitboxBehavior::Normal,
+                );
+                self.registry.record_hitbox(self.node, hitbox.id);
+            }
+            return;
         }
         child.prepaint(window, cx);
     }

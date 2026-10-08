@@ -2032,6 +2032,190 @@ fn resizable_grip_overhang_starts_its_handle_drag(cx: &mut TestAppContext) {
     }
 }
 
+/// How a grip's surroundings are arranged for the occlusion and clipping checks.
+#[derive(Clone, Copy, Debug)]
+enum GripSetting {
+    Plain,
+    /// An opaque `.occlude()` box covers the whole component.
+    Covered,
+    /// A clipping ancestor cuts the grip at its outer edge.
+    Clipped,
+}
+
+/// Press `dx` from the centre of separator `name`, drag by `delta`, and read the
+/// status line.
+fn press_beside_separator(
+    cx: &mut TestAppContext,
+    script: &str,
+    name: &str,
+    dx: f64,
+    delta: (f32, f32),
+) -> String {
+    let (window, view) = mount(cx, script, "grip-cover");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let separator = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("separator", name)
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    #[allow(clippy::cast_possible_truncation)]
+    let start = point(
+        px((separator.x + separator.width / 2.0 + dx) as f32),
+        px((separator.y + separator.height / 2.0) as f32),
+    );
+    let end = point(start.x + px(delta.0), start.y + px(delta.1));
+    visual.simulate_mouse_move(start, None, Modifiers::default());
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .clone()
+    })
+}
+
+/// The component wrapped for `setting`: under a covering box, or in a 300px clip
+/// that starts 100px in (the caller pulls the component left so the cut falls
+/// through its grip).
+fn grip_surroundings(component: &str, setting: GripSetting) -> String {
+    match setting {
+        GripSetting::Plain => component.to_owned(),
+        GripSetting::Covered => format!(
+            r#"box([{component}, box([]).with_style(style().absolute().left(px(0)).top(px(0))
+                .width(px(520)).height(px(420)).background(rgba(0xaaaaaaff)).occlude())])
+                .with_style(style().relative())"#
+        ),
+        GripSetting::Clipped => format!(
+            r#"box([{component}]).with_style(style().margin_start(px(100)).width(px(300)).clip())"#
+        ),
+    }
+}
+
+#[gpui::test]
+fn a_split_pane_grip_takes_no_press_where_it_is_covered_or_clipped(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = |setting: GripSetting| {
+        // Clipped: the separator's lane starts at the clip's left edge.
+        let pull = if matches!(setting, GripSetting::Clipped) {
+            -210.0
+        } else {
+            0.0
+        };
+        let split = format!(
+            r#"split_pane::SplitPane(#{{key:"layout",label:"Resize panels",size:ctx.get_state("size"),
+                handle:box([]).with_style(style().width(px(16)).height(px(40))),
+                min_start:80.0,min_end:80.0,start:text("Start"),end:text("End"),on_resize:Fn("resized")}})
+                .with_style(style().width(px(420)).height(px(180)).flex_shrink(false).margin_start(offset_px({pull})))"#
+        );
+        split_grip_script(false).replace(
+            r#"split_pane::SplitPane(#{key:"layout",label:"Resize panels",size:ctx.get_state("size"),
+        min_start:80.0,min_end:80.0,start:text("Start"),end:text("End"),on_resize:Fn("resized")})
+        .with_style(style().width(px(420)).height(px(180)))"#,
+            &grip_surroundings(&split, setting),
+        )
+    };
+    let mut ratio = |setting, dx| {
+        press_beside_separator(cx, &script(setting), "Resize panels", dx, (72.0, 0.0))
+            .parse::<f64>()
+            .unwrap()
+    };
+    // 7px from the separator's centre: outside its 8px lane, inside the 18px grip.
+    let plain = ratio(GripSetting::Plain, -7.0);
+    let covered = ratio(GripSetting::Covered, -7.0);
+    let clipped_out = ratio(GripSetting::Clipped, -7.0);
+    let clipped_in = ratio(GripSetting::Clipped, 7.0);
+    println!("plain {plain}, covered {covered}, clipped out {clipped_out}, in {clipped_in}");
+    assert!(plain > 0.5, "the grip's overhang drags: {plain}");
+    assert!(
+        (covered - 0.5).abs() < f64::EPSILON,
+        "a covered grip: {covered}"
+    );
+    assert!(
+        (clipped_out - 0.5).abs() < f64::EPSILON,
+        "the clipped side of the grip: {clipped_out}"
+    );
+    assert!(
+        clipped_in > 0.5,
+        "the visible side still drags: {clipped_in}"
+    );
+}
+
+#[gpui::test]
+fn a_resizable_grip_takes_no_press_where_it_is_covered_or_clipped(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = |setting: GripSetting| {
+        let base = resizable_script("[]").replace(
+            "handles:[]",
+            r#"handles:["se"],grips:#{se:box([]).with_style(style().width(px(20)).height(px(20)))}"#,
+        );
+        let component = r#"resizable::Resizable(#{key:"card",label:"Demo",rect:rect,handles:["se"],grips:#{se:box([]).with_style(style().width(px(20)).height(px(20)))},
+        min_width:80.0,min_height:60.0,max_width:360.0,max_height:260.0,
+        content:text("Card"),on_resize:Fn("resized")})
+        .with_style(style().width(px(500)).height(px(400)))"#;
+        assert!(base.contains(component));
+        // Clipped: the clip spans x 100 to 400 and the corner sits 300px into
+        // the surface, so pulling the surface 4px left puts the corner 4px
+        // inside the clip's right edge.
+        let pulled = component.replace(
+            "style().width(px(500)).height(px(400))",
+            "style().width(px(500)).height(px(400)).flex_shrink(false).margin_start(offset_px(-4))",
+        );
+        let component = if matches!(setting, GripSetting::Clipped) {
+            pulled
+        } else {
+            component.to_owned()
+        };
+        base.replacen(
+            r#"resizable::Resizable(#{key:"card",label:"Demo",rect:rect,handles:["se"],grips:#{se:box([]).with_style(style().width(px(20)).height(px(20)))},
+        min_width:80.0,min_height:60.0,max_width:360.0,max_height:260.0,
+        content:text("Card"),on_resize:Fn("resized")})
+        .with_style(style().width(px(500)).height(px(400)))"#,
+            &grip_surroundings(&component, setting),
+            1,
+        )
+    };
+    let mut status = |setting, dx| {
+        press_beside_separator(
+            cx,
+            &script(setting),
+            "Demo: se resize handle",
+            dx,
+            (40.0, 30.0),
+        )
+    };
+    // 9px from the 14px handle's centre: past the handle, inside the 22px grip.
+    let plain = status(GripSetting::Plain, 9.0);
+    let covered = status(GripSetting::Covered, 9.0);
+    let clipped_out = status(GripSetting::Clipped, 9.0);
+    let clipped_in = status(GripSetting::Clipped, -9.0);
+    println!("plain {plain}, covered {covered}, clipped out {clipped_out}, in {clipped_in}");
+    assert_eq!(
+        plain, "100.0,80.0,240.0,150.0,1",
+        "the grip drags the corner"
+    );
+    assert!(covered.ends_with(",0"), "a covered grip: {covered}");
+    assert!(
+        clipped_out.ends_with(",0"),
+        "the clipped side of the grip: {clipped_out}"
+    );
+    assert!(
+        clipped_in.ends_with(",1"),
+        "the visible side still drags: {clipped_in}"
+    );
+}
+
 /// The bounds of quads filled with `color`, as (x, y) in scaled pixels.
 fn filled_quads(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32)> {
     let color: gpui::Hsla = rgba(color).into();

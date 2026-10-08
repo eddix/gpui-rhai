@@ -194,9 +194,11 @@ and [docs/design/](docs/design/) for the specification.
   `metrics.control_pad`.
 - Resize handles take a decorative grip (#83): SplitPane `handle` and Resizable
   `grips` (one node per handle) sit in a `grip` box centred on the handle and
-  painted above the panes or content; pressing anywhere on it, overhang
-  included, starts the drag, while keyboard steps, the separator role and the
-  tab stop stay on the native handle. The grip takes `grip_hover`, `grip_drag`,
+  painted above the panes or content; pressing it anywhere it is visible and
+  not covered, overhang included, starts the drag, while keyboard steps, the
+  separator role and the tab stop stay on the native handle. A node with an
+  element ref takes part in hit testing in its place in paint order, so
+  clipping and `.occlude()` content in front apply to it. The grip takes `grip_hover`, `grip_drag`,
   `grip_focus` or `grip_disabled` from a native state signal. `line: false`
   drops the native line and `line_inset` sets its end inset. The general
   `.signal_style(signal, #{ state: style() })` picks a style variant by a

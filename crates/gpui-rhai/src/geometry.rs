@@ -346,6 +346,9 @@ struct GeometryState {
     canvas_transforms: BTreeMap<NodeId, CanvasMotionTransform>,
     canvas_drawables: BTreeMap<NodeId, ElementGeometry>,
     element_offsets: BTreeMap<NodeId, (f64, f64)>,
+    /// This frame's hitbox of each node with an element ref, so native code
+    /// can ask whether the pointer is over its visible, unoccluded part.
+    hitboxes: BTreeMap<NodeId, gpui::HitboxId>,
 }
 
 #[derive(Clone, Debug)]
@@ -606,6 +609,16 @@ impl GeometryRegistry {
             .unwrap_or_default()
     }
 
+    pub(crate) fn record_hitbox(&self, node: NodeId, hitbox: gpui::HitboxId) {
+        Rc::make_mut(&mut self.inner.borrow_mut())
+            .hitboxes
+            .insert(node, hitbox);
+    }
+
+    pub(crate) fn hitbox(&self, node: NodeId) -> Option<gpui::HitboxId> {
+        self.inner.borrow().hitboxes.get(&node).copied()
+    }
+
     pub(crate) fn record_element_offset(&self, node: NodeId, offset: (f64, f64)) {
         Rc::make_mut(&mut self.inner.borrow_mut())
             .element_offsets
@@ -861,6 +874,8 @@ impl GeometryRegistry {
             .shared_layout
             .retain(|_, (node, _)| state.presented.contains(node));
         state.presented.clear();
+        // A node that is not drawn this frame has no hitbox.
+        state.hitboxes.clear();
     }
 
     pub(crate) fn finish_frame(&self) {
@@ -901,6 +916,7 @@ impl GeometryRegistry {
         state
             .element_offsets
             .retain(|node, _| active.contains(node));
+        state.hitboxes.retain(|node, _| active.contains(node));
     }
 
     pub(crate) fn retain_shared_layout_ids(&self, active: &BTreeSet<(String, String)>) {

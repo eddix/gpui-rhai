@@ -1,9 +1,9 @@
 //! State shared by the native resize handles (`SplitPane`, `Resizable`) with a
-//! decorative handle node: the node's bounds count as the handle for presses
-//! and hover, and a string signal carries the handle's state to the node's
-//! `signal_style` without a Rhai render.
+//! decorative handle node: where the node is visible and not covered, it counts
+//! as the handle for presses and hover, and a string signal carries the
+//! handle's state to the node's `signal_style` without a Rhai render.
 
-use gpui::{DispatchPhase, Hitbox, MouseMoveEvent, Pixels, Point, Window};
+use gpui::{DispatchPhase, Hitbox, HitboxId, MouseMoveEvent, Window};
 
 use crate::{ObjectField, PrimitiveContext, SignalValue, UiValue, ValueSchema};
 
@@ -35,21 +35,11 @@ pub(crate) fn decoration_props() -> [(String, ObjectField); 4] {
     ]
 }
 
-/// Whether `position` is over the handle or over its decorative node.
-pub(crate) fn over_handle(
-    hitbox: &Hitbox,
-    node: Option<crate::GeometryBounds>,
-    position: Point<Pixels>,
-    window: &Window,
-) -> bool {
-    hitbox.is_hovered(window)
-        || node.is_some_and(|bounds| {
-            let (x, y) = (f64::from(position.x), f64::from(position.y));
-            x >= bounds.x
-                && x < bounds.x + bounds.width
-                && y >= bounds.y
-                && y < bounds.y + bounds.height
-        })
+/// Whether the pointer is over the handle or over its decorative node. Both
+/// are hitboxes, so clipping and occluding content in front apply to the node
+/// as they do to the handle.
+pub(crate) fn over_handle(hitbox: &Hitbox, node: Option<HitboxId>, window: &Window) -> bool {
+    hitbox.is_hovered(window) || node.is_some_and(|node| node.is_hovered(window))
 }
 
 /// The state a handle publishes, by priority: four independent flags.
@@ -105,14 +95,14 @@ pub(crate) fn track_hover(
     let hitbox = hitbox.clone();
     let node = node.cloned();
     let events = events.clone();
-    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+    window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
         if phase != DispatchPhase::Bubble {
             return;
         }
-        let bounds = node
+        let node = node
             .as_ref()
-            .and_then(|reference| events.element_bounds(reference, cx));
-        if over_handle(&hitbox, bounds, event.position, window) != was_hovered {
+            .and_then(|reference| events.element_hitbox(reference, cx));
+        if over_handle(&hitbox, node, window) != was_hovered {
             window.refresh();
         }
     });
