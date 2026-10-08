@@ -23,10 +23,11 @@ fn view(ctx, h, v, id) {
     else { () }
 }
 
-// A labelled bar whose width is the token itself.
+// A labelled bar whose width is the token itself. The label column takes one and a
+// half label columns so the longest metric name stays on one line.
 fn bar(name, length) {
     row([
-        text(name).with_style(style().width(theme_length("metrics.label_column")).flex_shrink(false)
+        text(name).with_style(style().width(theme_length("metrics.label_column") * 1.5).flex_shrink(false)
             .typography("code").text_color(theme_color("text_muted"))),
         row([]).with_style(style().width(length).height(theme_length("metrics.mark") * 0.5)
             .background(theme_color("accent"))),
@@ -40,7 +41,7 @@ fn spacing_page(h, v) {
     let aliases = [];
     for alias in ["unit", "related", "group", "section"] { aliases.push(bar(`space.${alias}`, theme_length(`space.${alias}`))); }
     let metrics = [];
-    for metric in ["control", "control_pad", "row", "inset", "marker", "mark", "icon"] {
+    for metric in ["control", "control_pad", "field_pad", "multiline_pad", "row", "inset", "marker", "mark", "icon"] {
         metrics.push(bar(`metrics.${metric}`, theme_length(`metrics.${metric}`)));
     }
     kit::page(h, v, "foundations.spacing", "Spacing and metrics",

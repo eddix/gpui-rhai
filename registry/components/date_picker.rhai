@@ -10,7 +10,7 @@
   "tokens": [
     "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
     "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
-    "disabled", "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.marker",
+    "disabled", "metrics.control", "metrics.control_pad", "metrics.field_pad", "metrics.icon", "metrics.marker",
     "metrics.inset", "spacing.xs", "spacing.sm", "radius.md", "radius.lg",
     "typography.control", "typography.body", "typography.label"
   ],
@@ -30,7 +30,7 @@ define_component(#{
         tokens: [
             "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
             "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
-            "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
+            "disabled", "metrics.control", "metrics.control_pad", "metrics.field_pad", "metrics.icon",
             "metrics.marker", "metrics.inset", "spacing.xs", "spacing.sm", "radius.md",
             "radius.lg", "typography.control", "typography.body", "typography.label"
         ],
@@ -275,7 +275,7 @@ fn render_DatePicker(ctx, props) {
     let trigger_border = if open { theme_color("focus_ring") }
         else if error { theme_color("danger") } else { theme_color("border") };
     let trigger_style = style().width(width).min_height(theme_length("metrics.control"))
-        .padding_x(theme_length("metrics.control_pad")).gap(theme_spacing("sm")).items_center();
+        .padding_x(theme_length("metrics.field_pad")).gap(theme_spacing("sm")).items_center();
     trigger_style = trigger_style
         .border(px(2)).border_color(trigger_border)
         .radius(theme_radius("md")).background(theme_color("surface_raised"))

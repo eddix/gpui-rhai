@@ -8,7 +8,7 @@
   "capabilities": {},
   "tokens": [
     "border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
-    "metrics.control_pad", "radius.md", "typography.control"
+    "metrics.field_pad", "radius.md", "typography.control"
   ],
   "environment": ["size", "density", "corners"]
 }
@@ -24,7 +24,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
-            "metrics.control_pad", "radius.md", "typography.control"
+            "metrics.field_pad", "radius.md", "typography.control"
         ],
         environment: ["size", "density", "corners"] },
     schema: #{
@@ -53,7 +53,7 @@ fn render_InputGroup(ctx, props) {
     let children = [];
     if "prefix" in props && props.prefix != () {
         children.push(props.prefix.with_style(ctx.component_style("prefix", style()
-            .padding_start(theme_length("metrics.control_pad")).items_center().justify_center()
+            .padding_start(theme_length("metrics.field_pad")).items_center().justify_center()
             .text_color(theme_color("text_muted")))));
     }
     children.push(props.control.with_style(ctx.component_style("control", style()
@@ -61,7 +61,7 @@ fn render_InputGroup(ctx, props) {
         .border(px(0)).radius(px(0)).background(rgba(0x00000000)))));
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(ctx.component_style("suffix", style()
-            .padding_end(theme_length("metrics.control_pad")).items_center().justify_center()
+            .padding_end(theme_length("metrics.field_pad")).items_center().justify_center()
             .text_color(theme_color("text_muted")))));
     }
     let root = row(children).with_style(ctx.component_style("root", style()

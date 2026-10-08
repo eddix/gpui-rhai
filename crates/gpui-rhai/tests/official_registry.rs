@@ -898,6 +898,66 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
     }
 }
 
+#[test]
+fn field_padding_follows_the_vertical_gap_between_frame_and_text() {
+    use gpui_rhai::{ColorResolver, Length};
+    let engine = RuntimeEngine::new();
+    let (name, source) = BUNDLED_THEMES[0];
+    let theme = load_bundled(&engine, name, source);
+    let pixels = |token: &str, pairs: &[(&str, &str)]| match theme
+        .resolve_length_in(Length::token(token).unwrap(), &environment(pairs))
+    {
+        Some(Length::Pixels(value)) => value,
+        other => panic!("{token} {pairs:?}: {other:?}"),
+    };
+    let type_size = |role: &str, pairs: &[(&str, &str)]| match theme
+        .resolve_typography_in(role, &environment(pairs))
+    {
+        Some(token) => match (token.size, token.line_height) {
+            (Length::Pixels(size), Length::Pixels(line_height)) => (size, line_height),
+            other => panic!("{role}: {other:?}"),
+        },
+        None => panic!("{role}: missing"),
+    };
+    // Fields have a 2px frame on each side.
+    let frame = 2.0;
+    for density in ["comfortable", "compact"] {
+        for size in ["xs", "sm", "md", "lg"] {
+            let pairs = [("density", density), ("size", size)];
+            let (font, _) = type_size("control", &pairs);
+            let vertical = (pixels("metrics.control", &pairs) - 2.0 * frame - font) / 2.0;
+            let pad = pixels("metrics.field_pad", &pairs);
+            // About 1.4 times the vertical gap; the nudges stay within a pixel.
+            assert!(
+                (pad - 1.4 * vertical).abs() <= 1.0,
+                "{density} {size}: field_pad {pad} for a vertical gap of {vertical}"
+            );
+            assert!(pad >= 3.0, "{density} {size}: the caret needs room");
+            assert!(
+                pad < pixels("metrics.control_pad", &pairs),
+                "{density} {size}: fields stay tighter than buttons"
+            );
+            if size == "md" {
+                let inset = pixels("metrics.inset", &pairs);
+                assert!(
+                    (frame + pad - inset).abs() < 0.01,
+                    "{density}: md field text starts at {}, rows at {inset}",
+                    frame + pad
+                );
+            }
+            // Textarea: the same ratio, less the half-leading of its text role.
+            let role = if size == "xs" { "body_small" } else { "body" };
+            let (font, line_height) = type_size(role, &pairs);
+            let expected = (pad / 1.4 - (line_height - font) / 2.0).round().max(0.0);
+            let multiline = pixels("metrics.multiline_pad", &pairs);
+            assert!(
+                (multiline - expected).abs() < 0.01,
+                "{density} {size}: multiline_pad {multiline}, expected {expected}"
+            );
+        }
+    }
+}
+
 fn hue(color: gpui_rhai::Rgba8) -> (f64, f64) {
     let [red, green, blue, _] = color.as_rgba_hex().to_be_bytes();
     let max = red.max(green).max(blue);

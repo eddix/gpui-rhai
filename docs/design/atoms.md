@@ -40,7 +40,9 @@ section 9 repeats them for reviews.
 | Token | comfortable | compact | Use |
 |---|---:|---:|---|
 | `metrics.control` by size `xs` / `sm` / `md` / `lg` | 24 / 28 / 32 / 36 | 20 / 24 / 28 / 32 | Button, inputs, Select, Toggle, Tabs slots |
-| `metrics.control_pad` by size | 8 / 12 / 16 / 20 | 8 / 8 / 12 / 16 | horizontal padding of text controls |
+| `metrics.control_pad` by size | 8 / 12 / 16 / 20 | 8 / 8 / 12 / 16 | horizontal padding of pressed controls: Button, Tabs, ToggleGroup |
+| `metrics.field_pad` by size | 5 / 7 / 10 / 12 | 3 / 4 / 6 / 10 | horizontal padding of fields (section 7) |
+| `metrics.multiline_pad` by size | 0 / 1 / 3 / 5 | 0 / 0 / 0 / 3 | vertical padding of Textarea (section 7) |
 | `metrics.row` | 32 | 28 | Menu, Command, option lists, Table, Tree, navigation rows |
 | `metrics.inset` | 12 | 8 | text start in rows, panel padding |
 | `metrics.marker` | 20 | 20 | Badge, Tag, Kbd height (`metrics.marker_small` 18) |
@@ -288,8 +290,33 @@ Things you type into have a frame; things you press are blocks.
 
 - Input, Textarea, Select trigger, Combobox trigger and DatePicker share:
   height `metrics.control` by size, `surface_raised` well, 2px `border` frame,
-  padding `metrics.control_pad`, `control` text. Text therefore starts at the
+  padding `metrics.field_pad`, `control` text. Text therefore starts at the
   same x in every field. Textarea keeps `body` for multi-line reading.
+- The side padding follows the space above the text. With
+  v = (`metrics.control` − 2 × 2px frame − type size) / 2, the gap between the
+  frame and the text's em box, `field_pad` is about 1.4·v: text sits a little
+  further from the side than from the top, as set type does, and never a
+  typed space away from the frame. The values are then moved to nearby
+  structure: at md the text starts on `metrics.inset` (12 / 8), where row text
+  starts; compact xs gets 3px so the caret clears the frame; comfortable lg
+  takes 12 from the spacing scale.
+
+  | Size | comfortable v → `field_pad` | compact v → `field_pad` |
+  |---|---|---|
+  | xs | 3.5 → 5 | 1.5 → 3 (caret room, from 2.1) |
+  | sm | 5 → 7 | 3 → 4 |
+  | md | 7 → 10 (text at 12, `inset`) | 5 → 6 (text at 8, `inset`, from 7) |
+  | lg | 9 → 12 (spacing scale, from 12.6) | 7 → 10 |
+
+- Textarea keeps the same text column. Its vertical padding
+  `metrics.multiline_pad` is `field_pad / 1.4` less the half-leading of its
+  text (4px for `body`, 3.5 for `body_small` at xs), at least 0, so the first
+  line's em box sits as far below the frame as a single-line field's text.
+- InputGroup pads its prefix and suffix by `field_pad` on the frame side; the
+  inner control keeps its own `field_pad` toward the affix.
+- Pressed controls keep `metrics.control_pad`: a label you did not type cannot
+  be mistaken for a leading space, and the wider block is part of what reads
+  as a button.
 - InputGroup owns the frame for a prefix/suffix and its inner control; the
   frame takes `focus_ring` while the inner input has focus (`focus_within`).
 - Focus: frame turns `focus_ring`. Invalid: frame turns `danger`; while focused

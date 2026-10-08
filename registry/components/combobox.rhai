@@ -10,7 +10,7 @@
   "tokens": [
     "surface_raised", "border", "focus_ring", "surface_hover", "selection", "accent",
     "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
-    "metrics.control_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
+    "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
     "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
     "typography.body", "typography.label"
   ],
@@ -32,7 +32,7 @@ define_component(#{
         tokens: [
             "surface_raised", "border", "focus_ring", "surface_hover", "selection", "accent",
             "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
-            "metrics.control_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
+            "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
             "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
             "typography.body", "typography.label"
         ],
@@ -412,7 +412,7 @@ fn render_Combobox(ctx, props) {
         // focused or open.
         let field = style().width(relative(1.0)).min_width(px(0))
             .min_height(theme_length("metrics.control"))
-            .padding_x(theme_length("metrics.control_pad")).gap(theme_spacing("sm")).items_center();
+            .padding_x(theme_length("metrics.field_pad")).gap(theme_spacing("sm")).items_center();
         field
             .border(px(2)).border_color(if open { theme_color("focus_ring") } else { theme_color("border") })
             .radius(theme_radius("md")).background(theme_color("surface_raised"))

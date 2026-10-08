@@ -6,7 +6,9 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 ## Capture environment
 
 - Original capture: 2026-08-28; every file was recaptured for 0.2.0 on
-  2026-10-05 (examples) and 2026-10-04 (Gallery)
+  2026-10-05 (examples) and 2026-10-04 (Gallery); on 2026-10-07 the 19 Gallery
+  files and the Settings, Form, Data Table and Embedded Views files were
+  recaptured for the field padding (`metrics.field_pad`, decision D61)
 - Environment of the current files: macOS 27.0, gpui-pre 0.3.7, Rust 1.95.0,
   rendered offscreen and read back from the GPU texture (no window chrome, no
   screen capture), stored in device pixels (2x)

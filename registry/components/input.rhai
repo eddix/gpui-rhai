@@ -8,7 +8,7 @@
   "capabilities": {},
   "tokens": [
     "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
-    "disabled", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
+    "disabled", "metrics.control", "metrics.field_pad", "radius.md", "typography.control"
   ],
   "environment": ["size", "density", "corners"]
 }
@@ -30,7 +30,7 @@ define_component(#{
         capabilities: #{},
         tokens: [
             "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
-            "disabled", "metrics.control", "metrics.control_pad", "radius.md",
+            "disabled", "metrics.control", "metrics.field_pad", "radius.md",
             "typography.control"
         ],
         environment: ["size", "density", "corners"],
@@ -145,7 +145,7 @@ fn render_Input(ctx, props) {
     // owns the frame while focused; an error frame returns on blur.
     let field = style()
         .min_height(theme_length("metrics.control"))
-        .padding_x(theme_length("metrics.control_pad"))
+        .padding_x(theme_length("metrics.field_pad"))
         .items_center()
         .radius(theme_radius("md"));
     field = field

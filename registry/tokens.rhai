@@ -53,6 +53,21 @@ fn tokens() {
                 comfortable: #{ xs: px(8), sm: px(12), md: px(16), lg: px(20) },
                 compact: #{ xs: px(8), sm: px(8), md: px(12), lg: px(16) },
             }),
+            // Fields put their text about 1.4 times the vertical gap from the frame
+            // (control height minus the 2px frames and the type size, halved), so the
+            // side space never reads as a typed space. md lands on metrics.inset, the
+            // text start of rows; compact md is nudged down to it, compact xs up to
+            // leave the caret room, lg down to the spacing scale.
+            field_pad: by_env(["density", "size"], #{
+                comfortable: #{ xs: px(5), sm: px(7), md: px(10), lg: px(12) },
+                compact: #{ xs: px(3), sm: px(4), md: px(6), lg: px(10) },
+            }),
+            // Multi-line fields keep field_pad's text column and take their vertical
+            // padding from the same ratio, less the half-leading of body text.
+            multiline_pad: by_env(["density", "size"], #{
+                comfortable: #{ xs: px(0), sm: px(1), md: px(3), lg: px(5) },
+                compact: #{ xs: px(0), sm: px(0), md: px(0), lg: px(3) },
+            }),
             icon: by_env(["density", "size"], #{
                 comfortable: #{ xs: px(12), sm: px(14), md: px(16), lg: px(16) },
                 compact: #{ xs: px(12), sm: px(14), md: px(14), lg: px(16) },
