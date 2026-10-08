@@ -212,6 +212,8 @@ and [docs/design/](docs/design/) for the specification.
   and no longer adds a second line (#124).
 - Section keeps at least a label column for its heading beside the actions and
   wraps the actions below the heading when both do not fit (#125).
+- FormLayout no longer reports `spacing-not-nested` on its own submit row or on
+  vertical fields with a description (#126).
 
 ## 0.1.8 - 2026-10-04
 

@@ -119,9 +119,16 @@ fn form_field(ctx, form_key, index, field, vertical, label_width) {
             .accessibility_id(`${id}-error`).accessibility_role("alert"));
     }
     // Controls keep their own width (contract C4): a field that should be wide says so.
-    let control_cell = column(stack).with_style(style().flex_col().flex_grow().min_width(px(0))
-        .items_start().gap(theme_length("space.unit")));
-    let pair = if vertical { column([label_cell, control_cell]) } else { row([label_cell, control_cell]) };
+    // A vertical field is one column (label, control, description, error a unit apart), so
+    // it has no nested gap equal to its own.
+    let pair = if vertical {
+        let items = [label_cell];
+        for node in stack { items.push(node); }
+        column(items)
+    } else {
+        row([label_cell, column(stack).with_style(style().flex_col().flex_grow().min_width(px(0))
+            .items_start().gap(theme_length("space.unit")))])
+    };
     // A horizontal field row is a grid: the label column is a fixed track, so its gap
     // is not a proximity relationship for the control's own layout.
     let row_node = pair.with_style(ctx.component_style("field", style()
@@ -161,10 +168,13 @@ fn render_FormLayout(ctx, props) {
     if submit.len > 0 {
         let actions = row(submit).with_style(style().flex_row().items_center().gap(theme_length("space.related")));
         // The submit row starts on the field edge, past the label column.
+        // Horizontally the spacer is the label track, as in the field rows: its gap is
+        // grid spacing, not a proximity relationship with the actions' own gap.
         nodes.push(if vertical { actions.with_style(ctx.component_style("submit", style())) }
             else {
                 row([row([]).with_style(style().width(label_width).flex_shrink(false)), actions])
                     .with_style(ctx.component_style("submit", style().gap(theme_length("space.related"))))
+                    .audit_allow(["spacing-not-nested"])
             });
     }
     column(nodes).with_key(props.key)
