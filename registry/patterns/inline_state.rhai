@@ -18,7 +18,8 @@
 // content would appear.
 //
 // Props: key, state (loading|empty|error|stale|refreshing) and title are required;
-//        description, detail (raw error text, selectable), actions.
+//        description, detail (raw error text, selectable; error, stale and refreshing),
+//        actions. Long text wraps in a narrow container.
 // Events/state: none. Parts: root, title, description, detail, actions, lamp.
 // Example: InlineState(#{ key: "hosts", state: "empty", title: "No hosts yet",
 //              description: "Register a host to see it here.", actions: [add_button] })
@@ -61,6 +62,11 @@ define_component(#{
 
 fn InlineState(props) { render_component("patterns/inline_state", props) }
 fn optional(props, name) { if name in props && props[name] != () { props[name] } else { () } }
+// Raw error text: selectable, so it can be copied.
+fn detail_text(ctx, detail) {
+    text(detail).selectable(true).with_style(ctx.component_style("detail", style()
+        .min_width(px(0)).typography("code").text_color(theme_color("text_muted"))))
+}
 fn lamp(ctx, color) {
     // The 6px status lamp is a structural constant.
     row([]).with_style(ctx.component_style("lamp", style().width(px(6)).height(px(6)).background(color)))
@@ -75,32 +81,49 @@ fn render_InlineState(ctx, props) {
         let line = [];
         line.push(if state == "stale" { lamp(ctx, theme_color("warning")) }
             else { spinner::Spinner(#{ key: `${props.key}-spinner`, label: title, size: "xs" }) });
+        // Text items shrink below their line, so a narrow container wraps them.
         line.push(text(title).with_style(ctx.component_style("title", style()
-            .text_color(theme_color("text_primary")))));
+            .min_width(px(0)).text_color(theme_color("text_primary")))));
         if description != () {
             line.push(text(description).with_style(ctx.component_style("description", style()
-                .text_color(theme_color("text_muted")))));
+                .min_width(px(0)).text_color(theme_color("text_muted")))));
         }
         for action in actions { line.push(action); }
-        return row(line).with_key(props.key).with_style(ctx.component_style("root", style()
-            .flex_row().items_center().gap(theme_spacing("sm"))
-            .min_height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
+        let line_style = style().flex_row().items_center().gap(theme_spacing("sm"))
+            .min_height(theme_length("metrics.row")).min_width(px(0));
+        let root_style = style().padding_x(theme_length("metrics.inset")).min_width(px(0))
             .background(if state == "stale" { theme_color("surface_raised") } else { rgba(0x00000000) })
-            .typography("body")))
+            .typography("body");
+        let detail = optional(props, "detail");
+        if detail == () {
+            return row(line).with_key(props.key)
+                .with_style(ctx.component_style("root", root_style.flex_row().items_center()
+                    .gap(theme_spacing("sm")).min_height(theme_length("metrics.row"))))
+                .accessibility_role("status").accessibility_label(title);
+        }
+        // The raw error under the line, from the marker's edge, as in the error state.
+        return column([
+            row(line).with_style(line_style),
+            detail_text(ctx, detail).with_style(style().padding_bottom(theme_spacing("sm"))),
+        ]).with_key(props.key)
+            .with_style(ctx.component_style("root", root_style.flex_col()))
             .accessibility_role("status").accessibility_label(title);
     }
     let children = [];
     if state == "loading" {
         children.push(row([
             spinner::Spinner(#{ key: `${props.key}-spinner`, label: title, size: "sm" }),
-            text(title).with_style(ctx.component_style("title", style().text_color(theme_color("text_muted")))),
-        ]).with_style(style().flex_row().items_center().gap(theme_spacing("sm"))));
+            text(title).with_style(ctx.component_style("title", style().min_width(px(0))
+                .text_color(theme_color("text_muted")))),
+        ]).with_style(style().flex_row().items_center().gap(theme_spacing("sm")).min_width(px(0))
+            .max_width(relative(1.0))));
     } else if state == "error" {
         children.push(row([
             lamp(ctx, theme_color("danger")),
-            text(title).with_style(ctx.component_style("title", style()
+            text(title).with_style(ctx.component_style("title", style().min_width(px(0))
                 .font_weight(600).text_color(theme_color("text_primary")))),
-        ]).with_style(style().flex_row().items_center().gap(theme_spacing("sm"))));
+        ]).with_style(style().flex_row().items_center().gap(theme_spacing("sm")).min_width(px(0))
+            .max_width(relative(1.0))));
     } else {
         children.push(text(title).with_style(ctx.component_style("title", style()
             .typography("subtitle").text_color(theme_color("text_primary")))));
@@ -110,15 +133,14 @@ fn render_InlineState(ctx, props) {
             .text_color(theme_color("text_muted")))));
     }
     let detail = optional(props, "detail");
-    if detail != () && state == "error" {
-        children.push(text(detail).selectable(true).with_style(ctx.component_style("detail", style()
-            .typography("code").text_color(theme_color("text_muted")))));
-    }
+    if detail != () && state == "error" { children.push(detail_text(ctx, detail)); }
     if actions.len > 0 && state != "loading" {
         children.push(row(actions).with_style(ctx.component_style("actions", style()
             .flex_row().items_center().gap(theme_length("space.related")))));
     }
     // Loading and empty center in the space they replace; errors read from the content edge.
+    // Children of the items_start / centered column keep their line width unless capped, so
+    // the marker rows above carry max_width(100%).
     let centered = state != "error";
     let root = style().flex_col().gap(theme_spacing("sm"))
         .min_height(theme_length("metrics.row") * 4).padding(theme_length("metrics.inset"))

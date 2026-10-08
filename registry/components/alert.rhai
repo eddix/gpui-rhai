@@ -82,7 +82,9 @@ fn render_Alert(ctx, props) {
     let children = [
         // A zero-width body line gives the mark column the title's line box.
         row([mark, text("\u200B")]).with_style(style().items_center().typography("body")),
-        column(body).with_style(ctx.component_style("body", style().gap(theme_spacing("xxs")).flex_grow())),
+        // min_width(0): the body shrinks with the alert, so long text wraps.
+        column(body).with_style(ctx.component_style("body", style().gap(theme_spacing("xxs")).flex_grow()
+            .min_width(px(0)))),
     ];
     if "actions" in props && props.actions.len > 0 {
         children.push(row(props.actions).with_style(ctx.component_style("actions", style()

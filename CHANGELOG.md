@@ -204,6 +204,9 @@ and [docs/design/](docs/design/) for the specification.
   `.signal_style(signal, #{ state: style() })` picks a style variant by a
   string signal without a Rhai render; primitives can ask whether their host
   node has focus (`PrimitiveContext::is_focused`).
+- InlineState draws `detail` in the stale and refreshing states too, under the
+  line (#122); Alert and InlineState text wraps in a narrow container instead
+  of running past it (#123).
 
 ## 0.1.8 - 2026-10-04
 
