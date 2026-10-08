@@ -210,6 +210,8 @@ and [docs/design/](docs/design/) for the specification.
 - Toolbar groups shrink below their content, so a view switcher or field in
   `filters` scrolls or shrinks inside the bar; an empty end group is left out
   and no longer adds a second line (#124).
+- Section keeps at least a label column for its heading beside the actions and
+  wraps the actions below the heading when both do not fit (#125).
 
 ## 0.1.8 - 2026-10-04
 

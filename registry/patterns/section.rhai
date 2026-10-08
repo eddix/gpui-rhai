@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "space.related", "spacing.xxs", "metrics.control", "text_primary", "text_muted",
+    "space.related", "spacing.xxs", "metrics.control", "metrics.label_column", "text_primary", "text_muted",
     "typography.subtitle", "typography.caption", "typography.label"
   ],
   "environment": []
@@ -29,7 +29,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
-            "space.related", "spacing.xxs", "metrics.control", "text_primary", "text_muted",
+            "space.related", "spacing.xxs", "metrics.control", "metrics.label_column", "text_primary", "text_muted",
             "typography.subtitle", "typography.caption", "typography.label"
         ],
         environment: [],
@@ -67,12 +67,15 @@ fn render_Section(ctx, props) {
             .typography("caption").text_color(theme_color("text_muted")))));
     }
     let actions = if "actions" in props { props.actions } else { [] };
+    // The heading keeps at least a label column beside the actions; when the two do not
+    // fit, the actions wrap below the heading instead of squeezing it.
     let header = row([
-        column(heading).with_style(style().gap(theme_spacing("xxs")).flex_grow().min_width(px(0))),
+        column(heading).with_style(style().gap(theme_spacing("xxs")).flex_grow().min_width(px(0))
+            .flex_basis(theme_length("metrics.label_column"))),
         row(actions).with_style(ctx.component_style("actions", style()
             .flex_row().items_center().gap(theme_length("space.related")))),
     ]).with_style(ctx.component_style("header", style()
-        .flex_row().items_center().justify_between().gap(theme_length("space.related"))
+        .flex_row().flex_wrap().items_center().justify_between().gap(theme_length("space.related"))
         .min_height(if actions.len > 0 { theme_length("metrics.control") } else { px(0) })));
     column([header, props.content.with_style(ctx.component_style("content", style()))])
         .with_style(ctx.component_style("root", style().flex_col().gap(theme_length("space.related"))))
