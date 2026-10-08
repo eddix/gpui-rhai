@@ -1,0 +1,38 @@
+{
+  "initial_head": "a1fd37025152e8cdc67915c6b0b30de62821efa1",
+  "reviewed_head": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8",
+  "changed_paths": [
+    "CHANGELOG.md",
+    "crates/gpui-rhai/src/pan_zoom.rs",
+    "crates/gpui-rhai/src/rotatable.rs",
+    "docs/audits/2026-10-07-0.2.0-candidate/harness/dragdrag.swift",
+    "docs/audits/2026-10-07-0.2.0-candidate/harness/pzdrag.swift",
+    "docs/audits/2026-10-07-0.2.0-candidate/harness/rotdrag.swift",
+    "docs/audits/2026-10-07-0.2.0-candidate/harness/spdrag.swift",
+    "docs/audits/2026-10-07-0.2.0-candidate/real-window.md",
+    "tests/native-keyboard/tests/control_visuals.rs"
+  ],
+  "finding_source_blobs": {
+    "crates/gpui-rhai/src/handle_state.rs": {
+      "a1fd37025152e8cdc67915c6b0b30de62821efa1": "e7cda694ed0ff3efaebcbcaa9572a2f36fcdb0da",
+      "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8": "e7cda694ed0ff3efaebcbcaa9572a2f36fcdb0da"
+    },
+    "crates/gpui-rhai/src/lifecycle.rs": {
+      "a1fd37025152e8cdc67915c6b0b30de62821efa1": "fa5f741d5026d0dff9261249a935cefd2740a0a5",
+      "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8": "fa5f741d5026d0dff9261249a935cefd2740a0a5"
+    },
+    "crates/gpui-rhai/src/app.rs": {
+      "a1fd37025152e8cdc67915c6b0b30de62821efa1": "37c43b24deedc093f2a9d4591c99df27e8fb494a",
+      "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8": "37c43b24deedc093f2a9d4591c99df27e8fb494a"
+    },
+    "crates/gpui-rhai/src/renderer.rs": {
+      "a1fd37025152e8cdc67915c6b0b30de62821efa1": "888aec9244a1d6cb16f29d04e032206beb823bac",
+      "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8": "888aec9244a1d6cb16f29d04e032206beb823bac"
+    },
+    "registry/layouts/region.rhai": {
+      "a1fd37025152e8cdc67915c6b0b30de62821efa1": "c571bb661cd03f31353e0bee1b48ac26e01b5956",
+      "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8": "c571bb661cd03f31353e0bee1b48ac26e01b5956"
+    }
+  },
+  "source_review": "Read the PanZoom/Rotatable proposal, acceptance/rejection, delayed wheel and redraw changes; fresh full test suites and independent probes run on the later head."
+}

@@ -1,0 +1,23 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-round2/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.27s
+     Running tests/audit_pr111_round2.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_round2-6915bb9bbaf783a5)
+
+running 1 test
+test audit_region_default_clips_overflowing_body_input ... REGION scroll=true region=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 200.0 } click100px_below_region=0
+REGION scroll=false region=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 200.0 } click100px_below_region=1
+
+thread 'audit_region_default_clips_overflowing_body_input' (12983539) panicked at tests/audit_pr111_round2.rs:364:5:
+assertion `left == right` failed: the non-scrolling body should still clip, as documented
+  left: ["0", "1"]
+ right: ["0", "0"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    audit_region_default_clips_overflowing_body_input
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 2.11s
+
+error: test failed, to rerun pass `--test audit_pr111_round2`

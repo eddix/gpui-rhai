@@ -1,0 +1,152 @@
+{
+  "date": "2026-10-08",
+  "recorded_at": "2026-10-08T03:03:30.049221+00:00",
+  "head": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8",
+  "previous_review_head": "c28849a139e34a2ed25fc8e27b63633383dcd48d",
+  "pr": "https://github.com/eddix/gpui-rhai/pull/111",
+  "verdict": "request_changes",
+  "findings": [
+    {
+      "id": "S1",
+      "priority": "P1",
+      "issues": [
+        83
+      ],
+      "subject": "Decorative grip bypasses occlusion for SplitPane and Resizable"
+    },
+    {
+      "id": "S2",
+      "priority": "P1",
+      "issues": [
+        91
+      ],
+      "subject": "Queued action after task delivery loses InvocationOrigin"
+    },
+    {
+      "id": "S3",
+      "priority": "P2",
+      "issues": [
+        83
+      ],
+      "previous_finding": "R1",
+      "subject": "signal_style margins are applied after the stretch fast-path decision"
+    },
+    {
+      "id": "S4",
+      "priority": "P2",
+      "issues": [
+        117
+      ],
+      "subject": "Default non-scrolling Region body fails its clipping contract"
+    }
+  ],
+  "fresh_tests": {
+    "workspace": {
+      "passed": 679,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0,
+      "head": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8"
+    },
+    "native": {
+      "passed": 271,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0,
+      "head": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8"
+    },
+    "r1-r5": {
+      "passed": 5,
+      "failed": 0,
+      "head": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8"
+    },
+    "token-reload": {
+      "passed": 3,
+      "failed": 0,
+      "head": "a1fd37025152e8cdc67915c6b0b30de62821efa1",
+      "source_unchanged_in_latest": true
+    }
+  },
+  "original_probe_sha256": "7deaa4ad5454d27494dee379da3b5bf6fa4cedaf4f90338b4e31899e00237238",
+  "new_probe_sha256": "1118e12e8e90dc86aebf8b9b3c7883a19c4fb0b8ab715948500e80d741e5c999",
+  "new_probes": {
+    "passed": 0,
+    "failed": 5,
+    "findings": 4,
+    "scope": "S1 has two primitive tests; one each for S2/S3/S4",
+    "head": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8"
+  },
+  "canonical_runner_verified": true,
+  "ci": {
+    "headSha": "48cdd0b4a7546b68f553745ce7ecaf4020f2d2b8",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/eddix/gpui-rhai/actions/runs/37717655501"
+  },
+  "issue_disposition": {
+    "83": "needs_correction",
+    "89": "verified_with_documented_scope",
+    "91": "needs_correction",
+    "95": "verified_with_documented_scope",
+    "109": "verified_with_documented_scope",
+    "110": "verified_with_documented_scope",
+    "112": "verified_with_documented_scope",
+    "113": "verified_with_documented_scope",
+    "114": "verified_with_documented_scope",
+    "115": "verified_with_documented_scope",
+    "116": "verified_with_documented_scope",
+    "117": "needs_correction",
+    "118": "verified_with_documented_scope"
+  },
+  "policy": {
+    "physical120Hz_gate": "replaced by approved 2026-10-07 frame-budget policy",
+    "cpu_draw_p95_threshold_ms": 8.3,
+    "reported_cpu_draw_p95_max_ms": 3.38,
+    "independently_rerun_frame_profile": false,
+    "maintainer_pending": [
+      "IME preedit",
+      "VoiceOver"
+    ]
+  },
+  "provided_not_rerun_here": [
+    "28 release smoke cases",
+    "RGB pixel comparisons and frame budget",
+    "CGEvent real-window evidence"
+  ],
+  "product_changes": false,
+  "external_repo_changes": false,
+  "merge_close_publish_tag": false,
+  "initial_head": "a1fd37025152e8cdc67915c6b0b30de62821efa1",
+  "initial_fresh_tests": {
+    "workspace": {
+      "passed": 679,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "native": {
+      "passed": 269,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "token-reload": {
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "r1-r5": {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    }
+  },
+  "initial_ci": {
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/eddix/gpui-rhai/actions/runs/37686893583"
+  },
+  "latest_followup": "PanZoom/Rotatable proposal presentation reviewed; both new acceptance/rejection tests passed within the latest full native run"
+}

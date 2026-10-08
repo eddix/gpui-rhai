@@ -1,0 +1,25 @@
+Review target: a1fd37025152e8cdc67915c6b0b30de62821efa1
+Probe SHA256: 7deaa4ad5454d27494dee379da3b5bf6fa4cedaf4f90338b4e31899e00237238
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round2/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round2/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-round2/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 56.69s
+     Running tests/audit_pr111_release_6002.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_release_6002-e3fc24cc1de17b11)
+
+running 5 tests
+test file_token_reload_keeps_requirement_validation ... RELOAD valid height=50 error=None theme=Some(Fixed(Pixels(50.0)))
+RELOAD missing height=50 last_error=Some("failed to load UI theme: theme `Audit/Dark` lacks tokens required by components/probe: [\"metrics.unit\"]") fresh_prepare_error=Some("failed to load UI theme: theme `Audit/Dark` lacks tokens required by components/probe: [\"metrics.unit\"]")
+ok
+test incomplete_environment_table_is_rejected ... COMPLETE default_resolution=Some(Pixels(28.0))
+ok
+test modified_key_capture_and_target_use_the_same_matching ... MODIFIED KEY trace=CT
+ok
+test stretch_width_preserves_horizontal_margins ... MARGIN control: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }
+MARGIN implicit: parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },child=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }
+ok
+test table_keyboard_supports_native_data_as_well_as_array ... TABLE KEY array selected=r1
+TABLE KEY native selected=r1
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.05s
+

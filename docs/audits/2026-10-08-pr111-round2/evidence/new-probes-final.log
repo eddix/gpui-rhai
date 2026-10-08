@@ -1,0 +1,50 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-round2/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.01s
+     Running tests/audit_pr111_round2.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_round2-6915bb9bbaf783a5)
+
+running 4 tests
+test audit_grip_must_not_start_through_an_occluding_sibling ... GRIP grip=false covered=false ratio=0.5 error=None
+GRIP grip=true covered=false ratio=0.6714285714285714 error=None
+GRIP grip=true covered=true ratio=0.6714285714285714 error=None
+
+thread 'audit_grip_must_not_start_through_an_occluding_sibling' (12972923) panicked at tests/audit_pr111_round2.rs:152:5:
+assertion `left == right` failed: occluded grip must not take pointer input: [0.5, 0.6714285714285714, 0.6714285714285714]
+  left: 0.6714285714285714
+ right: 0.5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test audit_resizable_grip_must_not_start_through_cover ... RESIZE grip=false covered=false: width=200
+RESIZE grip=true covered=false: width=240
+RESIZE grip=true covered=true: width=240
+
+thread 'audit_resizable_grip_must_not_start_through_cover' (12972965) panicked at tests/audit_pr111_round2.rs:329:5:
+assertion `left == right` failed: covered resizable must not take pointer input
+  left: 240.0
+ right: 200.0
+FAILED
+test audit_signal_style_margins_keep_stretch_equivalent ... SIGNAL MARGIN base=GeometryBounds { x: 20.0, y: 0.0, width: 260.0, height: 30.0 }, signal=GeometryBounds { x: 20.0, y: 30.0, width: 300.0, height: 30.0 }
+
+thread 'audit_signal_style_margins_keep_stretch_equivalent' (12972975) panicked at tests/audit_pr111_round2.rs:282:5:
+assertion `left == right` failed: same effective margins must produce the same stretch box
+  left: 300.0
+ right: 260.0
+FAILED
+test audit_task_followup_action_keeps_the_delivery_origin ... ORIGINS [("click", UserInput { event: "click" }), ("sync-action", UserInput { event: "click" }), ("completion", TaskCompletion { started_by: UserInput { event: "click" } }), ("after-task-action", Lifecycle)] error=None
+
+thread 'audit_task_followup_action_keeps_the_delivery_origin' (12972978) panicked at tests/audit_pr111_round2.rs:257:5:
+assertion `left == right` failed
+  left: Lifecycle
+ right: TaskCompletion { started_by: UserInput { event: "click" } }
+FAILED
+
+failures:
+
+failures:
+    audit_grip_must_not_start_through_an_occluding_sibling
+    audit_resizable_grip_must_not_start_through_cover
+    audit_signal_style_margins_keep_stretch_equivalent
+    audit_task_followup_action_keeps_the_delivery_origin
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.92s
+
+error: test failed, to rerun pass `--test audit_pr111_round2`

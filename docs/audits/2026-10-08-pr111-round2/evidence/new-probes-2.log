@@ -1,0 +1,39 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-round2/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.44s
+     Running tests/audit_pr111_round2.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_round2-6915bb9bbaf783a5)
+
+running 3 tests
+test audit_context_menu_does_not_enable_selection_in_none_mode ... NONE MODE context=false: down=0,0, menu=0,0
+NONE MODE context=true: down=0,0, menu=0,0
+
+thread 'audit_context_menu_does_not_enable_selection_in_none_mode' (12962742) panicked at tests/audit_pr111_round2.rs:65:404:
+assertion failed: after_menu.ends_with(",1")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test audit_grip_must_not_start_through_an_occluding_sibling ... GRIP grip=false covered=false ratio=0.5 error=None
+GRIP grip=true covered=false ratio=0.6714285714285714 error=None
+GRIP grip=true covered=true ratio=0.6714285714285714 error=None
+
+thread 'audit_grip_must_not_start_through_an_occluding_sibling' (12962784) panicked at tests/audit_pr111_round2.rs:34:53:
+assertion `left == right` failed: occluded grip must not take pointer input: [0.5, 0.6714285714285714, 0.6714285714285714]
+  left: 0.6714285714285714
+ right: 0.5
+FAILED
+test audit_task_followup_action_keeps_the_delivery_origin ... ORIGINS [("click", UserInput { event: "click" }), ("sync-action", UserInput { event: "click" }), ("completion", TaskCompletion { started_by: UserInput { event: "click" } }), ("after-task-action", Lifecycle)] error=None
+
+thread 'audit_task_followup_action_keeps_the_delivery_origin' (12962818) panicked at tests/audit_pr111_round2.rs:53:335:
+assertion `left == right` failed
+  left: Lifecycle
+ right: TaskCompletion { started_by: UserInput { event: "click" } }
+FAILED
+
+failures:
+
+failures:
+    audit_context_menu_does_not_enable_selection_in_none_mode
+    audit_grip_must_not_start_through_an_occluding_sibling
+    audit_task_followup_action_keeps_the_delivery_origin
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.94s
+
+error: test failed, to rerun pass `--test audit_pr111_round2`
