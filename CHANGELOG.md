@@ -110,6 +110,10 @@ and [docs/design/](docs/design/) for the specification.
   (`native_table_neighbors`) and Table rows are no longer tab stops; key
   handlers match `key:shift+f6` in the capture phase too; a `by_env` table
   must cover every declared combination (**breaking** for incomplete tables).
+- A style a signal selects (`.signal_style`) and motion or signal sizes are
+  merged before the stretch rules read a node's style, so margins, alignment
+  and position from them stretch like the same static style, and a
+  signal-sized child of an RTL column sits on the start edge.
 - Slot content (virtual list rows) no longer tracks its focus owner's handle,
   which made the last realized row receive a Table's keys.
 - A caller-written `shortcut` (`cmd-p`) shows the platform legend (`⌘P`) on

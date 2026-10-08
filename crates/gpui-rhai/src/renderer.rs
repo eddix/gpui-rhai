@@ -2299,16 +2299,19 @@ impl GpuiNodeRenderer {
                     .update_canvas_transform(retained_id, animation.canvas_transform());
             }
         }
+        // Every layer that can set a width, margin, alignment or position is
+        // merged before the stretch rules read the style.
+        let mut resolved_style = node.style().resolve(&local_interaction);
+        apply_motion_dimensions(&mut resolved_style, animation);
+        apply_signal_style(&mut resolved_style, &signals);
+        apply_signal_state_style(&mut resolved_style, environment.signals, node);
         let mut resolved_style = definite_stretch(
             rtl_start_edge(
-                node.style().resolve(&local_interaction),
+                resolved_style,
                 environment.stretch_parent && environment.direction == TextDirection::RightToLeft,
             ),
             environment.stretch_parent,
         );
-        apply_motion_dimensions(&mut resolved_style, animation);
-        apply_signal_style(&mut resolved_style, &signals);
-        apply_signal_state_style(&mut resolved_style, environment.signals, node);
         normalize_text_content_layout(node, &mut resolved_style);
         let local_environment = environment.below(&resolved_style);
         let mut element = apply_style(
