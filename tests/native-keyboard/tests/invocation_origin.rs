@@ -1,6 +1,8 @@
 //! Capability handlers see what a call responds to (#91): a click, an
 //! automation command, the completion of a task a click started, an effect,
-//! the lifecycle; with the view and the calling component.
+//! the lifecycle; with the view and the calling component. An action dispatched
+//! or an event emitted from any of them runs with the same origin, although it
+//! runs after the callback that queued it has returned.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -85,27 +87,46 @@ const MAIN: &str = r#"
 define_component(#{ metadata: #{ id: "tests/probe", "export": "Probe", version: "0.0.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [],
         capabilities: #{ "app.capture": "*" } },
-    schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
-        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: [], effects: ["probe"] },
+    schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            on_ping: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false,
+                sensitive: false } },
+        state: #{ fields: #{} }, events: #{ ping: #{ payload: #{ type: "null" } } }, slots: #{},
+        parts: [], effects: ["probe"] },
     render: Fn("probe") });
-fn start_probe(ctx, deps) { ctx.call_capability("app.capture", "run", "effect"); }
+fn start_probe(ctx, deps) {
+    ctx.call_capability("app.capture", "run", "effect");
+    ctx.dispatch_action("app.followup", "effect");
+}
 fn stop_probe(ctx, deps) {}
-fn ticked(ctx, payload) { ctx.call_capability("app.capture", "run", "timer"); }
+fn ticked(ctx, payload) {
+    ctx.call_capability("app.capture", "run", "timer");
+    ctx.dispatch_action("app.followup", "timer");
+    ctx.emit("ping", ());
+}
 fn probe(ctx, props) {
     effect("probe", (), Fn("start_probe"), Fn("stop_probe"));
     timeout("tick", 5, false, Fn("ticked"), ());
     text("probe")
 }
-fn init(ctx) { ctx.call_capability("app.capture", "run", "init"); }
+fn init(ctx) {
+    ctx.register_action("app.followup", Fn("followup"));
+    ctx.call_capability("app.capture", "run", "init");
+}
+fn followup(ctx, label) { ctx.call_capability("app.capture", "run", `after-${label}`); }
+fn pinged(ctx, payload) { ctx.call_capability("app.capture", "run", "emitted"); }
 fn clicked(ctx, payload) {
     ctx.call_capability("app.capture", "run", "click");
+    ctx.dispatch_action("app.followup", "click");
     ctx.start_task("app.work", "run", "task", Fn("done"), Fn("failed"));
 }
-fn done(ctx, value) { ctx.call_capability("app.capture", "run", "done"); }
+fn done(ctx, value) {
+    ctx.call_capability("app.capture", "run", "done");
+    ctx.dispatch_action("app.followup", "done");
+}
 fn failed(ctx, error) {}
 fn view(ctx) {
     column([
-        render_component("tests/probe", #{ key: "probe" }),
+        render_component("tests/probe", #{ key: "probe", on_ping: Fn("pinged") }),
         box([text("Go")]).accessibility_role("button").accessibility_label("Go")
             .on_click(Fn("clicked")).with_style(style().width(px(80)).height(px(32))),
     ])
@@ -187,7 +208,11 @@ fn capability_calls_carry_their_origin(cx: &mut TestAppContext) {
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::none());
     settle(&mut visual);
     for _ in 0..20 {
-        if records.borrow().iter().any(|(label, ..)| label == "done") {
+        if records
+            .borrow()
+            .iter()
+            .any(|(label, ..)| label == "after-done")
+        {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
@@ -262,4 +287,11 @@ fn capability_calls_carry_their_origin(cx: &mut TestAppContext) {
     );
     assert!(done[0].0.is_user_input());
     assert!(!InvocationOrigin::Automation.is_user_input());
+
+    // Follow-ups queued by each of them keep its origin.
+    assert_eq!(find("after-click")[0].0, clicks[0].0);
+    assert_eq!(find("after-done")[0].0, done[0].0);
+    assert_eq!(find("after-timer")[0].0, find("timer")[0].0);
+    assert_eq!(find("emitted")[0].0, find("timer")[0].0);
+    assert_eq!(find("after-effect")[0].0, InvocationOrigin::Effect);
 }

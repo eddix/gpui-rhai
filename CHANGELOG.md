@@ -169,7 +169,11 @@ and [docs/design/](docs/design/) for the specification.
   view and the calling component. Timers and task completions carry the root
   origin that started them; `is_user_input()` follows it.
   `CapabilityRegistry::call_with` passes a context; `AsyncDelivery` gains
-  `origin` (**breaking** for code that builds deliveries).
+  `origin` (**breaking** for code that builds deliveries). An action
+  dispatched or an event emitted during an invocation runs with that
+  invocation's origin, also when it runs after a task completion, timer,
+  subscription or effect has returned: `ActionInvocation` and `PendingEvent`
+  gain `origin` (**breaking** for code that builds them).
 - Table `on_context_request` (#89): a right press on a cell selects its row
   (unless the selection holds it) and emits `#{ key, column, anchor, source }`
   with the pointer as anchor; Shift+F10 or the menu key emits it for the

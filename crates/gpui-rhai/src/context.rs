@@ -1113,6 +1113,9 @@ impl UiStateSnapshot {
 pub struct PendingEvent {
     pub target: ComponentInstancePath,
     pub event: UiEvent,
+    /// What the invocation that emitted the event responds to; its handler
+    /// runs with it.
+    pub origin: crate::InvocationOrigin,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -2167,12 +2170,14 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        let origin = runtime.origin.clone();
         runtime.pending_events.push(PendingEvent {
             target: self.component.clone(),
             event: UiEvent {
                 name: event.to_owned(),
                 payload,
             },
+            origin,
         });
         runtime.traces.push(
             crate::RuntimeTraceKind::Event,
@@ -2197,7 +2202,8 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        let invocation = runtime.actions.dispatch(&id, payload)?;
+        let mut invocation = runtime.actions.dispatch(&id, payload)?;
+        invocation.origin = runtime.origin.clone();
         runtime.pending_actions.push(invocation);
         runtime.traces.push(
             crate::RuntimeTraceKind::Action,

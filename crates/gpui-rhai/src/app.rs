@@ -5199,21 +5199,27 @@ impl ScriptHostView {
                     "semantic event/action dispatch exceeded the 64-callback budget",
                 ));
             }
+            // Each runs with the origin it was queued under: the delivery,
+            // timer or effect that queued it has returned by now.
             for action in actions {
                 let component = action.callback.component().cloned();
-                let result = self.lifecycle.invoke_callback_transactional(
-                    &self.engine,
-                    &action.callback,
-                    action.payload,
-                );
+                let result = self.lifecycle.with_origin(action.origin, || {
+                    self.lifecycle.invoke_callback_transactional(
+                        &self.engine,
+                        &action.callback,
+                        action.payload,
+                    )
+                });
                 let _ =
                     result.map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
             }
             for event in events {
                 let component = event.target.clone();
-                let result = self
-                    .lifecycle
-                    .invoke_component_event_transactional(&self.engine, event);
+                let origin = event.origin.clone();
+                let result = self.lifecycle.with_origin(origin, || {
+                    self.lifecycle
+                        .invoke_component_event_transactional(&self.engine, event)
+                });
                 let _ = result.map_err(|error| self.lifecycle_failure(&error, Some(&component)))?;
             }
         }

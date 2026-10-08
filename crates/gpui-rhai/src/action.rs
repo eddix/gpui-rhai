@@ -145,6 +145,7 @@ impl ActionRegistry {
             id: id.clone(),
             callback: entry.callback.clone(),
             payload,
+            origin: crate::InvocationOrigin::default(),
         })
     }
 }
@@ -154,6 +155,9 @@ pub struct ActionInvocation {
     pub id: ActionId,
     pub callback: ScriptCallback,
     pub payload: UiValue,
+    /// What the invocation that dispatched the action responds to; a queued
+    /// action runs with it.
+    pub origin: crate::InvocationOrigin,
 }
 
 #[derive(Clone, Debug, PartialEq, gpui::Action)]
