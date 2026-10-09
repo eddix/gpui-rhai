@@ -261,6 +261,27 @@ fn data_view_passes_fill_size_and_inset_through(cx: &mut TestAppContext) {
     );
 }
 
+#[gpui::test]
+fn data_view_insets_a_body_that_does_not_bleed(cx: &mut TestAppContext) {
+    // By default the body reaches the sides (rows carry their inset); `bleed: false`
+    // keeps the region inset for a body that has none of its own (#119).
+    let data_view = |extra: &str| {
+        format!(
+            r#"data_view::DataView(#{{ key: "hosts", label: "Hosts", {extra}
+                body: box([text("detail")]).accessibility_role("group").test_id("body") }})"#
+        )
+    };
+    let (mut visual, view) = mount(cx, &data_view(""), 800, 400);
+    let bled = bounds(&mut visual, &view, "body");
+    assert!(bled.x.abs() < 0.5, "the body bleeds: {bled:?}");
+    let (mut visual, view) = mount(cx, &data_view("bleed: false,"), 800, 400);
+    let inset = bounds(&mut visual, &view, "body");
+    assert!(
+        (inset.x - 12.0).abs() < 0.5,
+        "the body keeps the inset: {inset:?}"
+    );
+}
+
 fn scroll_body(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> (f64, f64) {
     let before = bounds(visual, view, "row-0");
     #[allow(clippy::cast_possible_truncation)]

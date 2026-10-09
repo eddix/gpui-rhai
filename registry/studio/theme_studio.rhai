@@ -32,6 +32,7 @@ import "components/pan_zoom" as pan_zoom;
 import "components/rotatable" as rotatable;
 import "components/selection_area" as selection_area;
 import "components/tree" as tree;
+import "components/list" as list;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -661,7 +662,10 @@ fn specimen_navigation(ctx) {
             #{key:"light",parent:"root",label:"light.rhai"}],expanded:ctx.get_state("specimen_tree_expanded"),
             selected_keys:ctx.get_state("specimen_tree_selected"),active_key:ctx.get_state("specimen_tree_active"),height:112.0,
             on_expanded_change:Fn("set_specimen_tree_expanded"),on_selection_change:Fn("set_specimen_tree_selected"),
-            on_active_change:Fn("set_specimen_tree_active")})
+            on_active_change:Fn("set_specimen_tree_active")}),
+        list::List(#{key:"specimen-list",label:"Theme releases",height:96.0,items:[
+            #{key:"r2",title:"Paper 2.1",meta:"Today",badge:#{text:"Draft",variant:"accent"}},
+            #{key:"r1",title:"Paper 2.0",secondary:"published",meta:"Mon"}]})
     ]).with_style(style().gap(px(7)))
 }
 

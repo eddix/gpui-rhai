@@ -125,6 +125,7 @@ bundled_components!(
         "../components/selection_area.rhai"
     ),
     (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
+    (LIST_SOURCE, "components/list", "../components/list.rhai"),
     (
         PAGINATION_SOURCE,
         "components/pagination",
@@ -588,6 +589,7 @@ pub const ROTATABLE_STORY_SOURCE: &str = include_str!("../stories/components/rot
 pub const SELECTION_AREA_STORY_SOURCE: &str =
     include_str!("../stories/components/selection_area.rhai");
 pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
+pub const LIST_STORY_SOURCE: &str = include_str!("../stories/components/list.rhai");
 pub const INTERACTION_LAB_STORY_SOURCE: &str =
     include_str!("../stories/workbench/interaction_lab.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
@@ -1007,6 +1009,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/list",
+        title: "List",
+        purpose: "Select and open keyed rows with a status badge, a title, a secondary line and meta.",
+        category: "navigation",
+        keywords: &["list", "rows", "selection", "virtual", "keyboard"],
+        module_ids: &["components/list", "components/badge"],
+        source_module: "stories/components/list",
+        source: LIST_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#list",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "workbench/interaction-lab",
         title: "Interaction Workbench",
         purpose: "Exercise the complete 0.1.8 direct-manipulation stack in one stateful application scene.",
@@ -1351,15 +1370,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 62);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 62);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 63);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 63);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 22);
+        assert_eq!(BUNDLED_STORIES.len(), 23);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

@@ -233,6 +233,11 @@ and [docs/design/](docs/design/) for the specification.
   palette with levels can go back one, `width` sets the panel width, and
   `command_part_styles` / `dialog_part_styles` reach the inner Command and
   Dialog parts.
+- Adds `List` (#119): keyed, virtualized rows with a status badge, title,
+  secondary text (beside or below the title) and meta, on the row inset, with
+  Table's selection, keyboard and context-request model; `badge_width` lines
+  the titles up when badges differ. DataView gains `bleed` (default true) for
+  bodies that keep the inset.
 
 ## 0.1.8 - 2026-10-04
 

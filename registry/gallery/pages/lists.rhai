@@ -6,6 +6,7 @@ import "components/context_menu" as context_menu;
 import "components/command" as command;
 import "components/command_dialog" as command_dialog;
 import "components/tree" as tree;
+import "components/list" as list;
 import "components/table" as table;
 import "components/accordion" as accordion;
 import "components/pagination" as pagination;
@@ -19,6 +20,7 @@ fn pages() {
         #{ id: "command", title: "Command", group: "Lists" },
         #{ id: "command_dialog", title: "CommandDialog", group: "Lists" },
         #{ id: "tree", title: "Tree", group: "Lists" },
+        #{ id: "list", title: "List", group: "Lists" },
         #{ id: "table", title: "Table", group: "Lists" },
         #{ id: "accordion", title: "Accordion", group: "Lists" },
         #{ id: "pagination", title: "Pagination", group: "Lists" },
@@ -32,6 +34,7 @@ fn view(ctx, h, v, id) {
     else if id == "command" { command_page(h, v) }
     else if id == "command_dialog" { command_dialog_page(h, v) }
     else if id == "tree" { tree_page(h, v) }
+    else if id == "list" { list_page(h, v) }
     else if id == "table" { table_page(h, v) }
     else if id == "accordion" { accordion_page(h, v) }
     else if id == "pagination" { pagination_page(h, v) }
@@ -118,6 +121,32 @@ fn tree_page(h, v) {
             active_key: kit::val(v, "tree.active", "app"), on_expanded_change: kit::store(h, "tree.expanded"),
             on_selection_change: kit::store(h, "tree.selected"), on_active_change: kit::store(h, "tree.active") })
             .with_style(style().width(px(280)))),
+    ])
+}
+
+fn ticket_items() {
+    [
+        #{ key: "t1", title: "Deploy api-gateway", secondary: "#4812 · ada", meta: "09:41",
+            badge: #{ text: "Running", variant: "accent" } },
+        #{ key: "t2", title: "Roll back worker-07", secondary: "#4809 · grace", meta: "09:12",
+            badge: #{ text: "Failed", variant: "danger" } },
+        #{ key: "t3", title: "Rotate certificates", secondary: "#4801 · linus", meta: "昨天",
+            badge: #{ text: "Done", variant: "success" } },
+        #{ key: "t4", title: "Archived ticket", secondary: "#4700", meta: "Mon", disabled: true },
+    ]
+}
+
+fn list_page(h, v) {
+    kit::page(h, v, "list", "List", "Keyed rows on the row inset: selection carries the indicator bar; the focused list shows the ink frame on the selected row.", [
+        kit::sec("Single selection", list::List(#{ key: "list-tickets", label: "Tickets", items: ticket_items(),
+            selection_mode: "single", selected_keys: kit::val(v, "list.selected", ["t2"]), height: 128.0,
+            badge_width: 80.0,
+            on_selection_change: kit::store(h, "list.selected"), on_row_click: h.noop })
+            .with_style(style().width(px(440)))),
+        kit::sec("Two lines, dividers", list::List(#{ key: "list-two-line", label: "Tickets, two lines",
+            items: ticket_items(), secondary_layout: "below", dividers: true, height: 196.0,
+            badge_width: 80.0,
+            on_row_click: h.noop }).with_style(style().width(px(440)))),
     ])
 }
 

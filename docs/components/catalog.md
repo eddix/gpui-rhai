@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 62 editable Rhai source components. They all use the same
+gpui-rhai ships 63 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -203,6 +203,30 @@ typography/truncation treatment; structured nodes keep their own appearance and
 handlers while still participating in TitleBar's start inset and clipping.
 Breadcrumb separators remain application-owned rather than becoming TitleBar
 policy.
+
+## List
+
+`List` is a controlled virtualized list of keyed rows: Table's rows, selection
+and keyboard model without columns or a header. Items are data, as Table cells
+are, so long lists realize only the visible rows:
+
+| Item field | Contract |
+|---|---|
+| `key` | Required stable string |
+| `title` | Required string; the row's accessible name starts with it |
+| `secondary` | Optional muted text, beside the title or below it (`secondary_layout`) |
+| `meta` | Optional trailing text such as a time or a count, tabular figures |
+| `badge` | Optional leading status `#{ text, variant, dot }` |
+| `disabled` | Optional; a disabled row takes no input and keyboard navigation skips it |
+
+The list takes `selection_mode` (`none` default, `single`, `multiple`),
+`selected_keys`, `height` or `fill_height`, `dividers`, `badge_width` (pixels;
+one leading slot on every row, so titles align when badges differ), `empty_text` /
+`empty`, and emits `selection_change`, `row_click` and `context_request`
+(`#{ key, anchor, source }`, like Table's without a column).
+
+Source: [list.rhai](../../registry/components/list.rhai).
+Runnable story: `gpui-rhai gallery --story components/list`.
 
 ## Foundations and status
 

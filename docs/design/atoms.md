@@ -244,8 +244,8 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 
 ## 6. List-like components
 
-Menu, Command, Select and Combobox option lists, ContextMenu, Tree, navigation
-lists and Table rows share one row grammar:
+Menu, Command, Select and Combobox option lists, ContextMenu, Tree, List,
+navigation lists and Table rows share one row grammar:
 
 | State | Treatment |
 |---|---|
@@ -265,6 +265,22 @@ lists and Table rows share one row grammar:
 - Virtual option lists size their viewport in whole rows
   (`metrics.row * visible`) with `fill_height`, so both densities show the
   same number of rows.
+
+### List
+
+- Keyed rows without columns, for tickets, recent items or plugins: an
+  optional leading status Badge, the title, a muted secondary text beside the
+  title (`body`, one line box) or below it (`caption`, `secondary_layout:
+  "below"`, rows grow to two lines) and trailing `meta` in `text_muted` with
+  tabular figures. Rows carry `metrics.inset`, so in a bled DataView or Region
+  body their text starts on the title's edge; `dividers: true` adds hairlines.
+  Badges of different widths push titles apart: `badge_width` (pixels)
+  reserves one leading slot on every row so the titles share an edge.
+- Selection follows Table: `table.selection` and the indicator bar, the focus
+  frame on the selected row while the list has focus, one tab stop whose
+  arrows move the selection, Enter for `row_click`, `on_context_request` for
+  a caller menu. Roles are `listbox` / `option` with a selection mode and
+  `list` / `listitem` without.
 
 ### Table
 

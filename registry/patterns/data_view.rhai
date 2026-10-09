@@ -15,7 +15,9 @@
 //
 // Props: key and label (required), body (required), title, toolbar (Toolbar slot map:
 //        context, filters, fill, actions, primary, size), state (InlineState props without
-//        key), footer (status, selection, count, updated), inset (Region's; default true).
+//        key), footer (status, selection, count, updated), inset (Region's; default true),
+//        bleed (default true: the body reaches the sides for a Table or List whose rows
+//        carry the inset; false insets a body that does not).
 // Events/state: none. Parts: root.
 // Example: DataView(#{ key: "hosts", label: "Hosts", title: "Hosts", body: table_node,
 //              toolbar: #{ filters: [filter_input], primary: add_button },
@@ -55,6 +57,8 @@ define_component(#{
             } } }, required: false, sensitive: false },
             inset: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
+            bleed: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true } },
             body: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             state: #{ schema: #{ type: "optional", value: #{ type: "object", allow_unknown: false, fields: #{
                 state: #{ schema: #{ type: "string", allowed: ["loading", "empty", "error", "stale", "refreshing"] },
@@ -83,9 +87,10 @@ fn DataView(props) { render_component("patterns/data_view", props) }
 fn has(map, name) { name in map && map[name] != () }
 
 fn render_DataView(ctx, props) {
-    // Rows carry their own inset, so the body bleeds to the region sides and row text
-    // starts on the title's edge.
-    let config = #{ label: props.label, body: props.body, bleed: true,
+    // Table and List rows carry their own inset, so by default the body bleeds to the
+    // region sides and row text starts on the title's edge; another body keeps the inset.
+    let config = #{ label: props.label, body: props.body,
+        bleed: if "bleed" in props { props.bleed } else { true },
         inset: if "inset" in props { props.inset } else { true } };
     if has(props, "title") { config.title = props.title; }
     if has(props, "toolbar") {
