@@ -60,8 +60,10 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
   Layouts and patterns 12, Scenes 4, Effects 1.
 - **Main**: one Region per page. Each section shows a component in real use,
   not a property sheet; size and density comparisons sit side by side.
-- **Source**: the inspector shows the Rhai source of the current page module
-  (`Source` or the palette).
+- **Source**: the Rhai source of the current page module, beside the page in a
+  SplitPane (`Source` or the palette). Drag the divider to widen it; a bar
+  shows on the divider under the pointer. The width is kept while the Gallery
+  runs, and hiding the source collapses the split without remounting the page.
 - **Status bar**: the launch environment and the live audit count. A page that
   breaks a composition rule shows `AUDIT n` with n > 0.
 

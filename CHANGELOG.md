@@ -201,6 +201,9 @@ and [docs/design/](docs/design/) for the specification.
   height beside content taller than the window. A flex column took a share of
   the overflow from them: a long page squeezed the title bar from 36 to 23
   and a two-line region header by 10.
+- The Gallery shows the source beside the page in a SplitPane instead of a
+  fixed 320px inspector: drag the divider to widen it; a bar shows on the
+  divider under the pointer.
 - Input gains `appearance: "embedded"` for the search or filter line that
   heads a panel: no frame or well, a 1px `border` line under it (`danger`
   while invalid), text on `metrics.inset` like the rows below; its caret shows

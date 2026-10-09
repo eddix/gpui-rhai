@@ -429,3 +429,84 @@ fn gallery_theme_picker_lists_loaded_themes_and_switches(cx: &mut TestAppContext
     no_error(&mut visual, &view);
     assert!(shows(&mut visual, &view, "THEME Catppuccin Mocha"));
 }
+
+/// Visible quads `width` x `height` logical pixels painted within `area`.
+fn quads_sized(
+    visual: &mut VisualTestContext,
+    area: GeometryBounds,
+    width: f32,
+    height: f32,
+) -> usize {
+    visual.update(|window, _| {
+        let scale = window.scale_factor();
+        window
+            .painted_quads()
+            .iter()
+            .filter(|quad| {
+                let x = f64::from(quad.bounds.origin.x.0 / scale);
+                quad.background
+                    .as_solid()
+                    .is_some_and(|color| color.a > 0.0)
+                    && x >= area.x - 8.0
+                    && x <= area.x + area.width + 8.0
+                    && (quad.bounds.size.width.0 / scale - width).abs() < 0.01
+                    && (quad.bounds.size.height.0 / scale - height).abs() < 0.01
+            })
+            .count()
+    })
+}
+
+#[gpui::test]
+fn the_source_sits_beside_the_page_and_resizes(cx: &mut TestAppContext) {
+    use gpui::{Modifiers, point, px};
+    let (mut visual, view) = keyboard_mount(cx, "button");
+    action(&mut visual, &view, "gallery.toggle_source", UiValue::Null);
+    let page = bounds_of(&mut visual, &view, "region", "Button");
+    let source = bounds_of(&mut visual, &view, "region", "Source");
+    let divider = bounds_of(&mut visual, &view, "separator", "Resize source");
+    assert!(
+        divider.x > page.x + page.width - 1.0 && source.x > divider.x,
+        "page {page:?}, divider {divider:?}, source {source:?}"
+    );
+    // The divider's bar shows only under the pointer.
+    assert_eq!(
+        quads_sized(&mut visual, divider, 4.0, 24.0),
+        0,
+        "a bar at rest"
+    );
+    let center = (
+        divider.x + divider.width / 2.0,
+        divider.y + divider.height / 2.0,
+    );
+    #[allow(clippy::cast_possible_truncation)]
+    visual.simulate_mouse_move(
+        point(px(center.0 as f32), px(center.1 as f32)),
+        None,
+        Modifiers::default(),
+    );
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    assert_eq!(
+        quads_sized(&mut visual, divider, 4.0, 24.0),
+        1,
+        "no bar under the pointer"
+    );
+    // Dragging it left widens the source; the page keeps its start edge.
+    drag(&mut visual, center, (-120.0, 0.0));
+    no_error(&mut visual, &view);
+    let wider = bounds_of(&mut visual, &view, "region", "Source");
+    let page_after = bounds_of(&mut visual, &view, "region", "Button");
+    assert!(
+        (wider.width - source.width - 120.0).abs() < 2.0 && (page_after.x - page.x).abs() < 0.5,
+        "source {source:?} -> {wider:?}, page {page:?} -> {page_after:?}"
+    );
+    // Hiding and showing the source keeps its width.
+    action(&mut visual, &view, "gallery.toggle_source", UiValue::Null);
+    assert!(!shows(&mut visual, &view, "Resize source"));
+    action(&mut visual, &view, "gallery.toggle_source", UiValue::Null);
+    let again = bounds_of(&mut visual, &view, "region", "Source");
+    assert!(
+        (again.width - wider.width).abs() < 0.5,
+        "{wider:?} -> {again:?}"
+    );
+}

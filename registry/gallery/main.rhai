@@ -10,6 +10,7 @@ import "components/select" as select;
 import "components/button" as button;
 import "components/command_dialog" as command_dialog;
 import "components/code_viewer" as code_viewer;
+import "components/split_pane" as split_pane;
 import "gallery/pages/foundations" as foundations;
 import "gallery/pages/markers" as markers;
 import "gallery/pages/fields" as fields;
@@ -112,6 +113,7 @@ fn palette_run(ctx, value) {
 }
 fn toggle_source(ctx, payload) { set_value("gallery.source_open", ctx, !source_open(ctx.get_state("values"))); }
 fn source_open(values) { "gallery.source_open" in values && values["gallery.source_open"] }
+fn source_resized(ctx, size) { set_value("gallery.source_size", ctx, size); }
 fn toggle_density(ctx, payload) {
     ctx.set_state("density", if ctx.get_state("density") == "compact" { "comfortable" } else { "compact" });
 }
@@ -293,6 +295,37 @@ fn source_inspector(ctx, page) {
     region::Region(#{ label: "Source", title: "Source", body: viewer, bleed: true })
 }
 
+// A pane's content fills it: SplitPane's panes are boxes with no direction of their own.
+fn pane_fill(node) {
+    column([node]).with_style(style().flex_col().width(relative(1.0)).height(relative(1.0))
+        .min_width(px(0)).min_height(px(0)))
+}
+
+// The divider shows a bar only while the pointer is on it (muted) or drags it (accent,
+// longer); at rest and under keyboard focus the line and the ink bar are enough.
+fn source_grip_parts() {
+    #{
+        grip: style().width(px(4)).height(px(24)).border(px(0)).radius(theme_radius("sm"))
+            .background(theme_color("text_muted")).opacity(0.0),
+        grip_hover: style().opacity(1.0),
+        grip_drag: style().height(px(40)).background(theme_color("accent")).opacity(1.0),
+    }
+}
+
+// The page and its source side by side. The split is always there and collapses the source
+// while it is hidden, so showing the source never remounts the page.
+fn main_view(ctx, h, v, page) {
+    let open = source_open(v);
+    split_pane::SplitPane(#{ key: "gallery-split", label: "Resize source",
+        size: if "gallery.source_size" in v { v["gallery.source_size"] } else { 0.6 },
+        min_start: 360.0, min_end: 240.0, end_collapsed: !open, line_inset: 0.0,
+        start: pane_fill(page_view(ctx, h, v, page)),
+        end: if open { pane_fill(source_inspector(ctx, page))
+            .with_style(style().background(theme_color("surface_raised"))) } else { box([]) },
+        handle: box([]), part_styles: source_grip_parts(),
+        on_resize: Fn("source_resized") })
+}
+
 fn theme_label(variant) { `${variant.family} ${variant.name}` }
 
 fn status_items(ctx) {
@@ -329,8 +362,7 @@ fn view(ctx) {
         on_active_change: Fn("palette_active"), on_action: Fn("palette_run") });
     let shell = #{ key: "gallery", label: "gpui-rhai Gallery",
         title_bar: title_bar(ctx, page),
-        sidebar: navigation(ctx, v, page), main: page_view(ctx, h, v, page),
+        sidebar: navigation(ctx, v, page), main: main_view(ctx, h, v, page),
         status: status_items(ctx), overlays: [palette] };
-    if source_open(v) { shell.inspector = source_inspector(ctx, page); }
     app_shell::AppShell(shell).env(#{ density: ctx.get_state("density"), corners: ctx.get_state("corners") })
 }
