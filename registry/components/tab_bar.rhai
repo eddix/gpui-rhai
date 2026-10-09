@@ -197,7 +197,8 @@ fn tab_slot(ctx, props, tab, selected) {
             .hover(style().background(theme_color("surface_hover")))
             // Above a reorderable tab's drag source, so a press here closes the tab.
             .occlude();
-        children.push(box([image_source(asset("app/icons/close"))
+        // A row, so the centering applies (a box has no flex direction).
+        children.push(row([image_source(asset("app/icons/close"))
             .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))])
             .with_key("close")
             .with_style(ctx.component_style("close", close))
@@ -355,7 +356,7 @@ fn render_TabBar(ctx, props) {
                 disabled: tab_flag(tab, "disabled") });
         }
         let menu_label = prop_or(props, "menu_label", "All tabs");
-        let trigger = box([image_source(asset("app/icons/chevron_down"))
+        let trigger = row([image_source(asset("app/icons/chevron_down"))
             .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))])
             // A definite height: the Menu root around the trigger has none to fill (#128).
             .with_style(style().width(theme_length("metrics.control")).height(theme_length("metrics.control"))
