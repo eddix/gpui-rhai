@@ -85,7 +85,7 @@ fn empty_page(h, v) {
 fn collapsible_page(h, v) {
     kit::page(h, v, "collapsible", "Collapsible", "One disclosure row with the ink focus frame drawn over it.", [
         kit::sec("Disclosure", collapsible::Collapsible(#{ key: "collapsible-advanced", open: kit::val(v, "collapsible.open", true),
-            trigger: text("Advanced options"), content: text("Scheduling, limits and probes."), content_height: 40,
+            trigger: text("Advanced options"), content: text("Scheduling, limits and probes."),
             on_open_change: kit::store(h, "collapsible.open") }).with_style(style().width(px(420)))),
     ])
 }

@@ -179,9 +179,9 @@ fn table_page(h, v) {
 
 fn accordion_page(h, v) {
     let items = [
-        #{ key: "general", title: "General", content: text("Name, owner and region."), content_height: 40 },
-        #{ key: "advanced", title: "Advanced", content: text("Scheduling and limits."), content_height: 40 },
-        #{ key: "danger", title: "危险操作", content: text("Delete the service."), content_height: 40 },
+        #{ key: "general", title: "General", content: text("Name, owner and region.") },
+        #{ key: "advanced", title: "Advanced", content: text("Scheduling and limits.") },
+        #{ key: "danger", title: "危险操作", content: text("Delete the service.") },
     ];
     kit::page(h, v, "accordion", "Accordion", "Sections as a Swiss list: hairlines between, no enclosing box.", [
         kit::sec("Sections", accordion::Accordion(#{ key: "accordion-settings", items: items,

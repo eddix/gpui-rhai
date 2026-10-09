@@ -219,6 +219,11 @@ and [docs/design/](docs/design/) for the specification.
 - Region's scrolling body draws ScrollArea's overlay scrollbar, so it can be
   seen and dragged; `scrollbar` (`auto`, `always`, `hidden`) and the
   `scrollbar_*` parts style it like ScrollArea's (#121).
+- Collapsible and Accordion items fit their content when `content_height` is
+  omitted, and take a Length (`theme_length("metrics.row") * 3`) as well as
+  pixels, so the panel follows density; the measured height is read after
+  layout (#127). A panel mounted open no longer grows in; toggles still
+  animate from the current height.
 
 ## 0.1.8 - 2026-10-04
 

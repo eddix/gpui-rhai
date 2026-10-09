@@ -15,7 +15,9 @@
 }
 */
 // Controlled single/multiple accordion with Rust-side clip motion.
-// Props: key, items, expanded, mode, disabled, on_change.
+// Props: key, items ({key, title, content, content_height?, disabled?}; content_height is
+//        pixels or a Length, omitted the panel fits its content), expanded, mode, disabled,
+//        on_change.
 // State/events: controlled expanded values; emits change(array<string>).
 // Example: Accordion(#{ key: "faq", items: items, expanded: [], on_change: Fn("changed") })
 
@@ -42,7 +44,9 @@ define_component(#{
                         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                         title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                         content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-                        content_height: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
+                        content_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
+                            #{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false,
+                            sensitive: false },
                         disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                             "default": #{ type: "bool", value: false } },
                     },
@@ -72,6 +76,42 @@ fn toggled(values, key, mode) {
 }
 
 fn Accordion(props) { render_component("components/accordion", props) }
+// The panel's open height: an integer as given; otherwise measured after layout, from a
+// Length (a zero-width sizer resolves it in this subtree's density) or from the content
+// itself, so a density switch changes it. On the first frame it is unknown and an open
+// panel takes the content's own height. The transition starts where it ends when first
+// declared, so a panel mounted open does not grow in; toggles animate from the current
+// height.
+fn disclosure_panel(ctx, key, open, height, content) {
+    let children = [];
+    let target = ();
+    // Only a measured panel owns an element ref, so a fixed height renders without a lifecycle.
+    let measure = if type_of(height) == "i64" { () } else { element_ref(`${key}-measure`) };
+    if type_of(height) == "i64" {
+        target = height * 1.0;
+        children.push(content);
+    } else if height == () {
+        children.push(column([content]).with_key(`${key}-measure`).with_ref(measure)
+            .with_style(style().flex_shrink(false)));
+    } else {
+        children.push(content);
+        children.push(row([]).with_key(`${key}-measure`).with_ref(measure)
+            .with_style(style().absolute().top(px(0)).left(px(0)).width(px(0)).height(height)));
+    }
+    if target == () {
+        let bounds = ctx.element_bounds(measure);
+        if bounds != () { target = bounds.layout.height; }
+    }
+    let panel_style = style().clip().relative();
+    if !open { panel_style = panel_style.height(px(0)); }
+    else if target != () { panel_style = panel_style.height(px(target)); }
+    let panel = column(children).with_key(`${key}-content`).with_style(panel_style);
+    if target == () { return panel; }
+    let end = if open { target } else { 0.0 };
+    panel.motion(motion_transition("clip_height", end, end,
+        #{ duration_ms: ctx.motion_duration("fast"), easing: ctx.motion_easing("entrance"),
+            intent: "feedback" }))
+}
 fn render_Accordion(ctx, props) {
     let mode = if "mode" in props { props.mode } else { "single" };
     let all_disabled = if "disabled" in props { props.disabled } else { false };
@@ -109,16 +149,11 @@ fn render_Accordion(ctx, props) {
         if !item_disabled && callback != () {
             trigger = trigger.on_click_value(callback, toggled(props.expanded, item.key, mode));
         }
-        let height = item.content_height;
+        let height = if "content_height" in item { item.content_height } else { () };
         let panel_content = item.content.with_style(ctx.component_style("content", style()
                 .padding_x(theme_length("metrics.inset")).padding_bottom(theme_length("metrics.inset"))
                 .typography("body")));
-        let panel = column([panel_content])
-            .with_key(`${item.key}-content`)
-            .with_style(style().height(px(if open { height } else { 0 })).clip())
-            .motion(motion_transition("clip_height", 0.0, if open { height * 1.0 } else { 0.0 },
-                #{ duration_ms: ctx.motion_duration("fast"), easing: ctx.motion_easing("entrance"),
-                    intent: "feedback" }));
+        let panel = disclosure_panel(ctx, item.key, open, height, panel_content);
         items.push(column([trigger, panel]).with_key(item.key)
             .with_style(ctx.component_style("item", style()
                 .border_bottom(px(1)).border_color(theme_color("border")))));
