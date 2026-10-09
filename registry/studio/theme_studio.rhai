@@ -33,6 +33,7 @@ import "components/rotatable" as rotatable;
 import "components/selection_area" as selection_area;
 import "components/tree" as tree;
 import "components/list" as list;
+import "components/tab_bar" as tab_bar;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -665,7 +666,9 @@ fn specimen_navigation(ctx) {
             on_active_change:Fn("set_specimen_tree_active")}),
         list::List(#{key:"specimen-list",label:"Theme releases",height:96.0,items:[
             #{key:"r2",title:"Paper 2.1",meta:"Today",badge:#{text:"Draft",variant:"accent"}},
-            #{key:"r1",title:"Paper 2.0",secondary:"published",meta:"Mon"}]})
+            #{key:"r1",title:"Paper 2.0",secondary:"published",meta:"Mon"}]}),
+        tab_bar::TabBar(#{key:"specimen-tab-bar",label:"Theme files",value:"dark",tabs:[
+            #{value:"dark",label:"dark.rhai",closable:true},#{value:"light",label:"light.rhai",dirty:true}]})
     ]).with_style(style().gap(px(7)))
 }
 

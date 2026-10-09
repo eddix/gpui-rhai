@@ -130,6 +130,10 @@ fn tokens() {
             "scrollbar.thumb_hover": theme_color("text_muted"),
             "tabs.foreground": readable(theme_color("text_muted"), theme_color("text_primary"),
                 theme_color("surface_hover"), 4.5),
+            // TabBar: the bar sits between the page and a tonal block; the selected tab
+            // takes the panel's surface so it joins the panel under it.
+            "tabbar.background": mix(theme_color("surface"), theme_color("surface_hover"), 0.5),
+            "tabbar.active": theme_color("surface"),
 
             "syntax.comment": theme_color("text_muted"),
             "syntax.string": theme_color("success"),

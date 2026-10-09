@@ -242,6 +242,22 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   panel (`panel: false`) when used as a view switcher; the panel itself is
   unframed.
 
+- **TabBar** switches what a panel shows (open documents, a workspace's
+  panels), and the panel's extent says what it switches: the bar is
+  `tabbar.background` with a 1px `border` line along its bottom; the selected
+  tab takes `tabbar.active` (the panel's surface), 1px side hairlines and the
+  top corners of `radius.md`, and covers the line, so it and the panel are one
+  surface. Unselected tabs are transparent with `tabs.foreground` labels.
+  Tabs are `metrics.control` high, start their text on `metrics.inset`, keep
+  their width (at most two label columns, then an ellipsis) and scroll
+  sideways when they do not fit, a vertical wheel included; the selected tab
+  stays revealed. A closable tab reserves a square slot whose close button
+  shows while the tab is selected or hovered (`group_hover`); a dirty tab shows
+  the 6px mark there until hovered. The strip is one tab stop: the arrows
+  move a cursor (the 2px frame) and Enter selects it, because switching may
+  remount a whole panel. Use Tabs for a few fixed views inside a region,
+  TabBar for the region itself.
+
 ## 6. List-like components
 
 Menu, Command, Select and Combobox option lists, ContextMenu, Tree, List,

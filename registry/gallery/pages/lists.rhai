@@ -7,6 +7,7 @@ import "components/command" as command;
 import "components/command_dialog" as command_dialog;
 import "components/tree" as tree;
 import "components/list" as list;
+import "components/tab_bar" as tab_bar;
 import "components/table" as table;
 import "components/accordion" as accordion;
 import "components/pagination" as pagination;
@@ -25,6 +26,7 @@ fn pages() {
         #{ id: "accordion", title: "Accordion", group: "Lists" },
         #{ id: "pagination", title: "Pagination", group: "Lists" },
         #{ id: "tabs", title: "Tabs", group: "Lists" },
+        #{ id: "tab_bar", title: "TabBar", group: "Lists" },
     ]
 }
 
@@ -39,6 +41,7 @@ fn view(ctx, h, v, id) {
     else if id == "accordion" { accordion_page(h, v) }
     else if id == "pagination" { pagination_page(h, v) }
     else if id == "tabs" { tabs_page(h, v) }
+    else if id == "tab_bar" { tab_bar_page(h, v) }
     else { () }
 }
 
@@ -147,6 +150,56 @@ fn list_page(h, v) {
             items: ticket_items(), secondary_layout: "below", dividers: true, height: 196.0,
             badge_width: 80.0,
             on_row_click: h.noop }).with_style(style().width(px(440)))),
+    ])
+}
+
+// Open documents for the TabBar page: the last closed tab is gone and the last move applies.
+fn document_tabs(v) {
+    let order = ["main", "lib", "app", "theme", "styles", "readme", "changelog", "cargo"];
+    let moved = kit::val(v, "tab_bar.moved", ());
+    if moved != () {
+        let rest = [];
+        for key in order { if key != moved.value { rest.push(key); } }
+        let placed = [];
+        for key in rest {
+            if key == moved.anchor && moved.placement == "before" { placed.push(moved.value); }
+            placed.push(key);
+            if key == moved.anchor && moved.placement == "after" { placed.push(moved.value); }
+        }
+        order = placed;
+    }
+    let names = #{ main: "main.rs", lib: "lib.rs", app: "app.rs", theme: "theme.rhai",
+        styles: "styles.rhai", readme: "README.md", changelog: "CHANGELOG.md", cargo: "Cargo.toml" };
+    let closed = kit::val(v, "tab_bar.closed", "");
+    let tabs = [];
+    for key in order {
+        if key != closed {
+            tabs.push(#{ value: key, label: names[key], closable: true, dirty: key == "lib" || key == "styles" });
+        }
+    }
+    tabs
+}
+
+fn tab_bar_page(h, v) {
+    let value = kit::val(v, "tab_bar.value", "lib");
+    let names = #{ main: "main.rs", lib: "lib.rs", app: "app.rs", theme: "theme.rhai",
+        styles: "styles.rhai", readme: "README.md", changelog: "CHANGELOG.md", cargo: "Cargo.toml" };
+    let panel = box([text(`Editing ${names[value]}`)]).with_style(style().height(px(96))
+        .padding(theme_length("metrics.inset")).background(theme_color("tabbar.active"))
+        .border(px(1)).border_top(px(0)).border_color(theme_color("border")));
+    kit::page(h, v, "tab_bar", "TabBar", "Document tabs that belong to the panel under them: the selected tab takes the panel's surface and covers the bar's line; the strip scrolls when the tabs do not fit.", [
+        kit::sec("Open files", column([
+            tab_bar::TabBar(#{ key: "tab-bar-files", label: "Open files", value: value,
+                tabs: document_tabs(v), overflow_menu: true, reorderable: true,
+                on_change: kit::store(h, "tab_bar.value"), on_close: kit::store(h, "tab_bar.closed"),
+                on_reorder: kit::store(h, "tab_bar.moved") }),
+            panel,
+        ]).with_style(style().width(px(560)))),
+        kit::sec("Panels, compact size", tab_bar::TabBar(#{ key: "tab-bar-panels", label: "Panels",
+            value: kit::val(v, "tab_bar.panel", "tce"), size: "sm",
+            tabs: [#{ value: "tce", label: "TCE" }, #{ value: "oncall", label: "Oncall" },
+                #{ value: "tcc", label: "TCC diff" }, #{ value: "sdk", label: "i18n SDK" }],
+            on_change: kit::store(h, "tab_bar.panel") }).with_style(style().width(px(560)))),
     ])
 }
 

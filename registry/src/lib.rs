@@ -127,6 +127,11 @@ bundled_components!(
     (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
     (LIST_SOURCE, "components/list", "../components/list.rhai"),
     (
+        TAB_BAR_SOURCE,
+        "components/tab_bar",
+        "../components/tab_bar.rhai"
+    ),
+    (
         PAGINATION_SOURCE,
         "components/pagination",
         "../components/pagination.rhai"
@@ -590,6 +595,7 @@ pub const SELECTION_AREA_STORY_SOURCE: &str =
     include_str!("../stories/components/selection_area.rhai");
 pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
 pub const LIST_STORY_SOURCE: &str = include_str!("../stories/components/list.rhai");
+pub const TAB_BAR_STORY_SOURCE: &str = include_str!("../stories/components/tab_bar.rhai");
 pub const INTERACTION_LAB_STORY_SOURCE: &str =
     include_str!("../stories/workbench/interaction_lab.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
@@ -1026,6 +1032,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/tab_bar",
+        title: "TabBar",
+        purpose: "Switch, close and reorder document tabs that belong to the panel under them.",
+        category: "navigation",
+        keywords: &["tabs", "documents", "panel", "close", "reorder", "scroll"],
+        module_ids: &["components/tab_bar", "components/menu"],
+        source_module: "stories/components/tab_bar",
+        source: TAB_BAR_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#tabbar",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "workbench/interaction-lab",
         title: "Interaction Workbench",
         purpose: "Exercise the complete 0.1.8 direct-manipulation stack in one stateful application scene.",
@@ -1370,15 +1393,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 63);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 63);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 64);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 64);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 23);
+        assert_eq!(BUNDLED_STORIES.len(), 24);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

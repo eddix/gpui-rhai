@@ -55,8 +55,8 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
   (`window_drag`, allowed by the Host). Corner styles are described in
   [design/atoms.md](design/atoms.md#radius-roles-and-the-corner-style); square
   is the design language and the baselines' style.
-- **Sidebar**: a Tree of 84 pages in 11 groups: Foundations 4, Markers 8,
-  Fields 14, Lists 10, Overlays 6, Containers 11, Display 7, Interaction 7,
+- **Sidebar**: a Tree of 85 pages in 11 groups: Foundations 4, Markers 8,
+  Fields 14, Lists 11, Overlays 6, Containers 11, Display 7, Interaction 7,
   Layouts and patterns 12, Scenes 4, Effects 1.
 - **Main**: one Region per page. Each section shows a component in real use,
   not a property sheet; size and density comparisons sit side by side.

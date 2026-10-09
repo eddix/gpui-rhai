@@ -37,7 +37,7 @@ Rotatable, RangeSlider, and Tree. Run the complete acceptance scene with
 `gpui-rhai gallery --story workbench/interaction-lab`.
 
 Version 0.2.0 (unreleased) adds a design system for productivity tools on a
-neutral runtime: a token base, 62 rebuilt components and new ones such as List,
+neutral runtime: a token base, 62 rebuilt components and new ones such as List and TabBar,
 layouts and patterns, a
 composition audit and the [Gallery](docs/gallery.md) as its acceptance
 application (`gpui-rhai gallery`). The specification is in

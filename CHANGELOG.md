@@ -246,6 +246,12 @@ and [docs/design/](docs/design/) for the specification.
   a request whose node was unmounted. The sortable item primitive gains
   `take_focus` and `tap` (`on_tap`). Rhai builds at `opt-level = 1` in dev
   profiles, giving deep views stack headroom in debug test threads.
+- Adds `TabBar`: document tabs that belong to the panel under them. The
+  selected tab takes `tabbar.active` (a new token, the panel's surface) and
+  covers the bar's line; tabs scroll sideways, also under a vertical wheel, and
+  the selected one stays revealed; closable and dirty tabs, middle-press close,
+  context requests, drag and Alt+Arrow reordering, an all-tabs menu and
+  `start` / `end` slots. The keys move a cursor and Enter selects.
 
 ## 0.1.8 - 2026-10-04
 

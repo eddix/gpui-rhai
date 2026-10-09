@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 63 editable Rhai source components. They all use the same
+gpui-rhai ships 64 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -227,6 +227,32 @@ one leading slot on every row, so titles align when badges differ), `empty_text`
 
 Source: [list.rhai](../../registry/components/list.rhai).
 Runnable story: `gpui-rhai gallery --story components/list`.
+
+## TabBar
+
+`TabBar` is a controlled strip of document tabs that belong to the panel under
+them (the panel is the caller's; give it `tabbar.active` so the selected tab
+joins it). Tabs keep their width and scroll sideways; the selected tab stays
+revealed.
+
+| Tab field | Contract |
+|---|---|
+| `value`, `label` | Required strings; the label is the tab's accessible name |
+| `icon` | Optional decorative node before the label |
+| `closable` | Shows a close button (selected or hovered) and closes on a middle press |
+| `dirty` | Shows the unsaved mark, which becomes the close button under the pointer |
+| `disabled` | Takes no input; the cursor skips it |
+
+Props: `key`, `label`, `value`, `tabs`, `size`, `start` / `end` (nodes beside
+the strip, not scrolled), `overflow_menu` (a menu listing every tab,
+`menu_label`), `close_label`, `reorderable`. Events: `change(value)`,
+`close(value)`, `context_request(#{ value, anchor, source })` from a right
+press or Shift+F10, `reorder(#{ value, anchor, placement })` from a drag (a
+press that does not move selects) or Alt+Left/Right. The strip is one tab
+stop: the arrows, Home and End move a cursor, Enter or Space selects it.
+
+Source: [tab_bar.rhai](../../registry/components/tab_bar.rhai).
+Runnable story: `gpui-rhai gallery --story components/tab_bar`.
 
 ## Foundations and status
 

@@ -179,7 +179,7 @@ merge, closure, package publication or tag is authorized by green checks alone.
 - Frame budget: release `gallery_profile`, `Window::draw` p95 at most 8.3 ms
   for every interaction (item 7). The physical 120Hz check is no longer a gate.
 - Visuals: `gallery_baselines` (19 cases) and `example_baselines` (38) match the
-  committed PNGs; `gallery_baselines <dir> --pages <density>` for all 84 pages
+  committed PNGs; `gallery_baselines <dir> --pages <density>` for all 85 pages
   in both densities, compared with the previous candidate, with every change
   attributed to a commit. Compare in RGB (`Image.convert("RGB")`): Pillow's
   `getbbox()` on an RGBA difference looks at alpha only and reports opaque

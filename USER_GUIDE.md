@@ -341,7 +341,7 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 63 official source components. Version 0.1.2
+The bundled catalog contains 64 official source components. Version 0.1.2
 froze the original 51 IDs, exports, controlled-state boundaries, semantic
 events, size vocabulary, and style-part contract as the component foundation;
 0.1.7 adds SplitPane and Resizable; the 0.1.8 development line adds
