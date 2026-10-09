@@ -359,7 +359,7 @@ every case.
 - Accepted geometry/order must respect constraints; no-op interactions must not
   produce spurious change events. Host updates during preview follow a documented
   rebase/cancel policy rather than silently overwriting newer state.
-- Reuse the [visual system](../registry-design-system.md#direct-manipulation-surfaces):
+- Reuse the [component contracts](../design/atoms.md):
   handles and previews follow theme roles, visible focus, and restrained feedback.
 
 ## Acceptance and implementation order

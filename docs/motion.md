@@ -5,8 +5,9 @@ sources and control intent; Rust samples frames, reads geometry and scroll
 state, enforces budgets, and paints. Rhai is never called from layout,
 prepaint, paint, or a per-frame callback.
 
-Runtime API 2 deliberately removes the old `transition`, `spring`,
-`loop_transition`, and `.animate(...)` API. There are no compatibility aliases.
+Since 0.1.3 (Runtime API 2) the old `transition`, `spring`,
+`loop_transition`, and `.animate(...)` API is gone. There are no compatibility
+aliases.
 
 ## Property sources
 

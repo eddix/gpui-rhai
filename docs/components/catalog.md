@@ -260,7 +260,7 @@ Runnable story: `gpui-rhai gallery --story components/tab-bar`.
 - `Avatar`, `Badge`, and `Tag` are distinct: Badge is read-only status,
   while Tag may represent removable application metadata. Badge keeps a compact
   text enclosure relative to Button; see the
-  [density metrics](../registry-design-system.md#button-and-badge-density).
+  [marker contracts](../design/atoms.md#badge).
 - `Alert` is persistent inline feedback; `Toast` is transient layered feedback.
 - `Card`, `GroupBox`, and `Empty` standardize common composition without hiding
   their node slots.
@@ -281,9 +281,8 @@ Runnable story: `gpui-rhai gallery --story components/tab-bar`.
   mixed with text. `Toggle`/`ToggleGroup` express labeled pressed tool state;
   `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain their separate selection
   and setting semantics.
-- ToggleGroup's future segmented appearance is recorded under
-  [known visual gaps](../registry-design-system.md#known-implementation-gaps);
-  it is not part of the current component contract.
+- ToggleGroup's segmented appearance is specified in the
+  [component contracts](../design/atoms.md#related-togglegroup-and-tabs).
 - `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
   editing core and explicit semantic relationships. `Input` with
   `appearance: "embedded"` is the frameless search line that heads a panel
@@ -350,7 +349,7 @@ Tabs retains one keyboard entry point, orientation-aware arrow navigation,
 disabled-item skipping, and the runtime's horizontal RTL behavior. It exposes
 group/tablist/tab semantics and selected state, rather than button pressed
 state. The track and inset selection thumb follow the
-[Tabs visual contract](../registry-design-system.md#tabs-track-and-selection-thumb).
+[Tabs visual contract](../design/atoms.md#related-togglegroup-and-tabs).
 
 | Style part | Responsibility |
 |---|---|
@@ -369,8 +368,7 @@ inner Tabs' motion identity. Its own style part is `root`. It uses the shared
 selection thumb instead of replaying opacity over the entire component.
 
 Current limit: horizontal overflow is locally scrollable but controlled
-selection does not automatically reveal an offscreen item. See the visual
-system's [known implementation gaps](../registry-design-system.md#known-implementation-gaps).
+selection does not automatically reveal an offscreen item.
 
 ## Command and CommandDialog
 

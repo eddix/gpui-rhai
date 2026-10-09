@@ -46,10 +46,9 @@ pair for every state, including enabled but unselected Tabs.
 Third-party reference screenshots are not project assets. Keep requirement
 documents text-only; any product captures used during an audit remain outside
 the repository unless their inclusion is explicitly approved for baselines.
-Automatic selected-tab reveal, adaptive tab height for larger fonts, and the
-future ToggleGroup appearance remain
-[known gaps](registry-design-system.md#known-implementation-gaps), not certified
-behavior. Add their geometry and interaction assertions when implemented.
+Tabs does not reveal an offscreen selected tab and does not grow with larger
+fonts; neither is certified behavior. Add their geometry and interaction
+assertions when they are implemented.
 Do not replace those assertions with snapshot-only tests.
 
 ## Deterministic matrix

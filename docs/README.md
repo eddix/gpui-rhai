@@ -35,7 +35,7 @@ security, testing, and troubleshooting.
 
 Complex component contracts:
 
-- [Tabs](components/catalog.md#tabs) and [Button/Badge density](registry-design-system.md#button-and-badge-density)
+- [Tabs](components/catalog.md#tabs) and [Button and Badge contracts](design/atoms.md#5-marker-system-button-tag-badge-kbd)
 - [DatePicker](components/date-picker.md)
 - [Combobox](components/combobox.md)
 - [Select](components/select.md)

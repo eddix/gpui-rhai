@@ -1049,9 +1049,10 @@ primitives](docs/custom-primitives.md).
 
 ### Motion is a native runtime path
 
-Runtime API 2 uses `motion_transition`, `motion_spring`, `motion_keyframes`,
-and `motion_inertia`, attached with `.motion(...)`. The old `.animate(...)`,
-`transition`, `spring`, and `loop_transition` API does not exist in 0.1.3.
+Motion uses `motion_transition`, `motion_spring`, `motion_keyframes`, and
+`motion_inertia`, attached with `.motion(...)`. The old `.animate(...)`,
+`transition`, `spring`, and `loop_transition` API was removed in 0.1.3
+(Runtime API 2) and does not exist.
 
 Use stable node keys and keep one source per property. Rhai declares sources,
 timelines, trigger intent, and callbacks; Rust samples frames. Do not build a
@@ -1082,7 +1083,7 @@ later reuse of the same window/view ID starts cleanly.
 
 Canvas morph/trim/stroke/clip and rotate/scale/skew share one presented geometry
 for paint and hit testing.
-Do not combine it with a command-level axis-aligned path clip: Runtime API 2
+Do not combine it with a command-level axis-aligned path clip: the runtime
 rejects that combination because GPUI cannot preserve the same transformed
 clip semantics.
 

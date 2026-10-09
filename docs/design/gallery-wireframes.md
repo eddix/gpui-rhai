@@ -32,9 +32,9 @@ during step 5 (see decisions D20 to D33):
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●   GPUI RHAI / Button                    [Comfortable|Compact] [◐] ⌘K │ TitleBar
+│ ●●● GPUI RHAI [Comfortable|Compact] [Square|Subtle|Round] [Theme▾][en▾]⌘K │ TitleBar
 ├───────────────┬───────────────────────────────────────────┬───────────────┤
-│ FOUNDATIONS   │ Button                         [Source ⌘⇧S]│ SOURCE        │
+│ FOUNDATIONS   │ Button                            [Source]┃ SOURCE        │
 │  Tokens       │ Seven variants, four sizes.               │ 1 import …    │
 │  Typography   │                                           │ 2 …           │
 │  Color        │ VARIANTS ──────────────────────────────── │               │
@@ -51,16 +51,19 @@ during step 5 (see decisions D20 to D33):
 │  Settings     │                                           │               │
 │ EFFECTS       │                                           │               │
 ├───────────────┴───────────────────────────────────────────┴───────────────┤
-│ DENSITY comfortable   THEME Default Dark   LOCALE en      AUDIT 0   ⌘K    │ StatusBar
+│ DENSITY comfortable THEME Default Dark CORNERS square LOCALE en  AUDIT 0  │ StatusBar
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-- Regions: `nav` (sidebar), `main`, `source` (inspector, toggled), `status`.
-  F6 cycles nav → main → source; `Cmd+1` nav, `Cmd+2` main.
-- Title bar end: density ToggleGroup, theme mode toggle (IconButton), locale
-  Select (`en`, `zh-CN`, `ar`), `⌘K` legend that opens the palette.
-- The status bar shows the live audit finding count; it must read 0.
-- The source inspector is a CodeViewer of the current page's story module.
+- Regions: `nav` (sidebar), `main`, `status`. F6 moves between nav and main.
+- Title bar end: density and corner-style ToggleGroups, a theme Select, a
+  locale Select (`en`, `zh-CN`, `ar`), and a Commands button with the `⌘K`
+  legend that opens the palette.
+- The status bar shows the environment and the live audit finding count; the
+  count must read 0.
+- `Source` shows a CodeViewer of the current page module beside the page, in a
+  SplitPane inside `main` (`┃` above): drag the divider to widen it. AppShell
+  keeps fixed side widths (D54), so the Gallery does not use its inspector.
 
 ## Spec page template
 
