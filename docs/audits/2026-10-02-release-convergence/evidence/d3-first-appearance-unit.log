@@ -1,9 +1,0 @@
-   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.21s
-     Running unittests src/lib.rs (target/debug/deps/gpui_rhai-56ecbb5b7b93d5e9)
-
-running 1 test
-test context::tests::first_native_appearance_replaces_dark_fallback_and_invalidates_render_readers_once ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 498 filtered out; finished in 0.79s
-

@@ -18,8 +18,7 @@ optional native composable [Chart Runtime](docs/charts.md), including typed
 streaming data, 15 series, Host-owned Geo2D maps, linked interaction, Motion
 integration, static export, and complete theme-driven component spacing and
 typography. See the [release and upgrade index](docs/releases/README.md). The authoritative product
-contract is in [INTENT.md](INTENT.md), and the dependency-ordered implementation
-plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+contract is in [INTENT.md](INTENT.md).
 
 Version 0.1.6 upgrades the Rust backend to the exact gpui-pre
 core/platform family, raises MSRV to Rust 1.95, and projects the retained

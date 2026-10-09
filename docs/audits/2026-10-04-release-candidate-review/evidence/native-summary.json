@@ -1,9 +1,0 @@
-{
-  "passed": 208,
-  "failed": 0,
-  "ignored": 0,
-  "harnesses": 21,
-  "failed_summary": false,
-  "scope": "Full tests/native-keyboard workspace; RUST_MIN_STACK unset; locked/offline; test threads 1",
-  "exit_code": 0
-}

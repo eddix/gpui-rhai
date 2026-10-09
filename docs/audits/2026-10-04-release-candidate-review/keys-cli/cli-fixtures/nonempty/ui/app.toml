@@ -1,5 +1,0 @@
-entry="main"
-runtime_api=2
-[capabilities]
-"app.alpha" = "^1.0"
-"app.beta" = "*"

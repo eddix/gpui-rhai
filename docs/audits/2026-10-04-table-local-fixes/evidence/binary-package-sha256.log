@@ -1,5 +1,0 @@
-4281282285f395906ecbb7e099257a66bb5cab58663f14c42ed6243ea3bb4991  target/release/examples/data_table
-f8c2a3a38201ae80c39e0b8e9a9bcd6b6b184ed888ea3898c61cbb35f5478916  target/release/gpui-rhai
-0bcd70d9cbb6e71909c7ce20928d6bfbf853b21bc5de7edbcc933063cebe1962  target/package/gpui-rhai-0.1.8.crate
-4c8976a4eff907a4679d9e70d2eae82e978af2561c7a4f4596f57764e089c6b4  target/package/gpui-rhai-registry-0.1.8.crate
-921a484d0c365abfc1e86fcbdc9f3b59298582eb642cf45e8144a6129140c51a  target/package/gpui-rhai-cli-0.1.8.crate

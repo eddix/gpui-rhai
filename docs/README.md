@@ -53,7 +53,6 @@ Complex component contracts:
 
 - [Architecture](architecture.md)
 - [Interaction Runtime architecture decision](adr/0022-interaction-runtime.md)
-- [0.1.8 interaction-foundation audit](audits/2026-09-28-interaction-foundation/report.zh-CN.md)
 - [Performance budgets and baselines](performance.md)
 - [Development inspector](devtools.md)
 - [macOS visual and interaction test matrix](visual-testing.md)
@@ -65,12 +64,10 @@ Complex component contracts:
   [0.1.2](releases/0.1.2.md), [0.1.3](releases/0.1.3.md),
   [0.1.4](releases/0.1.4.md), [0.1.5](releases/0.1.5.md),
   [0.1.6](releases/0.1.6.md), and [0.1.7](releases/0.1.7.md)
-- [Core Runtime v2 evidence ledger](core-runtime-v2-audit.md)
+- [History](history.md): audits, plans and research of earlier rounds
 
 Architecture decisions and their test evidence are recorded under
-[`docs/adr`](adr/). `INTENT.md` is the product contract;
-`IMPLEMENTATION_PLAN.md` records planned and incomplete work rather than the
-current user-facing API.
+[`docs/adr`](adr/). `INTENT.md` is the product contract.
 
 Maintain current visual rules in `registry-design-system.md`, public component
 contracts in `components/`, and acceptance procedures in `visual-testing.md`.

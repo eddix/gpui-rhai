@@ -1,9 +1,0 @@
-2026-10-02T16:53:52Z
- 0:53  up 1 day, 23:50, 2 users, load averages: 3.22 10.62 10.41
-Now drawing from 'AC Power'
-  PID  PPID  %CPU COMM
- 1028     1   0.0 /System/Library/PrivateFrameworks/EmailDaemon.framework/Versions/A/maild
- 7464     1   0.0 /System/Library/PrivateFrameworks/PackageKit.framework/Resources/system_installd
- 7465     1   0.0 /System/Library/PrivateFrameworks/PackageKit.framework/Resources/installd
-23605     1   0.0 /usr/libexec/triald
-90509     1   2.8 /private/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-visual.wJJ5TX/GPUI Rhai Visual Test.app/Contents/MacOS/gpui-rhai-example

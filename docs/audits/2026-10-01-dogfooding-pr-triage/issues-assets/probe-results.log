@@ -1,9 +1,0 @@
-   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
-   Compiling audit-issue98-asset-refresh v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-01-dogfooding-pr-triage/issues-assets/probe)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 26.08s
-     Running `tests/native-keyboard/target/debug/audit-issue98-asset-refresh`
-1 cached load_image keeps old image: confirmed
-2 start_image_decode on cached AssetId also keeps old image: confirmed
-3 foreground non-Send CapabilityHandler refreshes stable opaque handle and changes GPUI content id: confirmed
-4 namespace refresh accepts nonempty corrupt raster bytes before GPUI decode: confirmed
-5 refresh_namespace skips pending-only asset; old prepared bytes can install later: confirmed
