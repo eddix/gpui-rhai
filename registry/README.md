@@ -4,8 +4,10 @@ The versioned first-party source bundle for
 [GPUI Rhai](https://github.com/eddix/gpui-rhai). It contains the design
 system's token base, the editable Rhai components, layouts and patterns, the
 application profiles, optional chart and motion source packs, themes (palettes),
-locales, the Gallery and Theme Studio sources, and small SVG assets copied into
-application repositories by `gpui-rhai-cli`.
+locales, the Gallery and Theme Studio sources, small SVG assets copied into
+application repositories by `gpui-rhai-cli`, and the agent skills
+`gpui-rhai skills` writes (`BUNDLED_SKILL_FILES`, paths below a skills
+directory).
 
 Most application authors should install the CLI rather than depend on this
 crate directly:

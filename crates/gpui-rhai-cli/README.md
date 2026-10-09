@@ -25,6 +25,8 @@ Important commands:
 - `add`, `diff`, and `update` install and three-way merge official source;
 - `check` compiles and executes a validated headless first frame;
 - `metadata` emits schemas, editor snippets, and Rhai definitions;
+- `skills <directory>` writes the agent skills for this version, for example
+  into `.claude/skills` or `.agents/skills`;
 - `embed` generates production `include_str!`/`include_bytes!` wiring;
 - `theme-studio [path]` opens the live semantic theme editor and complete
   component specimen;

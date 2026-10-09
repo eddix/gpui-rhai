@@ -134,6 +134,7 @@ gpui-rhai add combobox select date_picker
 gpui-rhai diff
 gpui-rhai update
 gpui-rhai metadata
+gpui-rhai skills .claude/skills
 gpui-rhai embed
 gpui-rhai theme-studio
 gpui-rhai gallery
@@ -149,6 +150,10 @@ gpui-rhai gallery
   application source (not in installed official components).
 - `metadata` emits component schemas, snippets, and Rhai language-server
   definitions from the actual installed APIs.
+- `skills <directory>` writes the agent skills `gpui-rhai` and
+  `gpui-rhai-design` for this CLI's version: `.claude/skills` for Claude Code,
+  `.agents/skills` for Codex, Cursor and other agents. Run it again after an
+  upgrade; it replaces the files it wrote.
 - `embed` generates production Rust `include_str!`/`include_bytes!` wiring.
 - `theme-studio [path]` opens the theme editor and complete component specimen.
 - `gallery` opens the Gallery: every official component in both densities,

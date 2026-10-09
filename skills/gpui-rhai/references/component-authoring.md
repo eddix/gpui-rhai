@@ -1,0 +1,516 @@
+# Component authoring guide
+
+An official or application component is a Rhai module with three parts:
+
+1. a structured `/* gpui-rhai ... */` JSON header, followed by a `//` comment
+   with the component's purpose, any notes on state and behavior, and an
+   `Example:` call;
+2. a `define_component` schema and render declaration;
+3. a PascalCase constructor accepting one props map and a named
+   `render_Name(ctx, props)` function.
+
+The comment does not list props, events or parts: the schema states them, and
+the [module reference](modules/README.md) is generated from it.
+
+Use `registry/components/label.rhai` as the smallest complete reference.
+
+## Metadata
+
+The header declares component ID, source version, runtime API range (official
+0.2 components declare `{ "min_inclusive": 3, "max_exclusive": 4 }`),
+dependencies, capabilities, component-owned asset paths, the tokens the
+component reads (`tokens`) and the environment values it reads
+(`environment`, e.g. `["size", "density"]`). The same metadata appears in
+`define_component`; `gpui-rhai check` rejects disagreement, and preparation
+validates the active theme against the tokens of every mounted component.
+Declare every token read through `theme_color`, `theme_length`,
+`theme_spacing`, `theme_radius` and `.typography(...)`; the registry lint
+fails on an undeclared read.
+
+Asset paths are provider-relative files under `ui/assets`, such as
+`icons/chevron_next.svg`. Component source addresses an installed asset through
+the application namespace, for example `asset("app/icons/chevron_next")`. The
+CLI copies declared assets and records their pristine baselines with the source.
+Only declared assets are preloaded: drawing an undeclared asset with `asset(...)`
+renders an image error, because declarative images never load during render.
+
+Component contracts (size and density, content inset, intrinsic width, focus,
+parts) are specified in [design/atoms.md](../../gpui-rhai-design/references/atoms.md); its checklist is the
+review list for a new component.
+
+Module IDs are lowercase logical paths such as `components/form_field`.
+Components are imported under an explicit alias:
+
+```rhai
+import "components/label" as label;
+label::Label(#{ text: "Project" })
+```
+
+Imported module setup is declarative. At top level, use only static imports,
+literal `const` values and export declarations; a component module adds one
+direct `define_component(#{ ... })` call whose value is an inline literal Map
+plus named `Fn("...")` pointers. Mutable globals, control flow, arbitrary calls,
+and computed definition builders are rejected by the production module
+resolver before the AST is evaluated. Put application work in explicit
+lifecycle/event callbacks and component-owned work in a declared effect.
+
+## Schema
+
+Declare every prop, local state field, semantic event, slot, styleable part,
+and effect key. Give each prop, object field, event and slot a one-sentence
+`doc` saying what it means and does (units, who owns a controlled value, when
+an event fires); the type, required flag and default are rendered next to it.
+`doc` has no runtime effect. Official components document every item, and a
+test enforces it.
+
+```rhai
+props: #{
+    size: #{ schema: #{ type: "number", min: 0.0, max: 1.0 }, required: true, sensitive: false,
+        doc: "Start-pane ratio; the caller stores the `resize` payload and passes it back." },
+},
+events: #{ resize: #{ payload: #{ type: "number" }, doc: "Emitted once when a drag ends or a key steps the separator." } },
+```
+
+Unknown props are errors. Defaults must satisfy their own schemas. Every event
+named `change` requires an optional callback prop named `on_change`.
+
+Use inclusive/exclusive numeric bounds, `one_of`, `Length`, and
+UiValue-convertible schemas when a
+public contract needs them. Do not replace a precise union with an unrestricted
+map or defer every constraint to native construction. Component-specific tagged
+maps, such as Table column widths, still receive semantic validation after their
+outer schema succeeds.
+
+The `collection` schema accepts only `NativeCollection`. Use it in a `one_of`
+with the ordinary Array schema when a source component supports both small
+script-owned inputs and a Rust-backed large-data path. Do not expose indexing on
+the collection or immediately convert it back to an Array; pass it to a
+collection-aware mechanism such as `virtual_collection`.
+
+Every formal component automatically receives optional `key`, `style: Style`
+and `part_styles: map<Style>` props. Route the PascalCase constructor through
+the runtime wrapper, then validate normalized props in its render function:
+
+```rhai
+fn Counter(props) { render_component("components/counter", props) }
+fn render_Counter(ctx, props) {
+    text(`${ctx.get_state("count")}`)
+}
+```
+
+The wrapper validates and defaults props, derives the parent/key instance path, mounts declared local state,
+scopes callbacks to the component module, rejects duplicate stateful keys, and
+cleans unreachable instances only after a successful render. Resolve every
+public part with `ctx.component_style("part_name", base_style)`. The merge order
+is base, size, variant/state, application component stylesheet, caller `style`,
+then caller `part_styles`. Named `virtual_collection` item renderers use the
+same context method; its retained Style-only snapshot cannot expose nodes,
+callbacks, or arbitrary Dynamic values to deferred rendering.
+
+An interactive component must receive an explicit, non-incidental accessible
+name. Declare a required textual `label` when visible content alone is not the
+component's stable name, and forward it through nested source components.
+Placeholder text, current values, icon asset IDs, and empty-string defaults are
+not accessible names. A purely decorative node should use presentation
+semantics instead of exposing an empty image/control label.
+
+Formal render is pure and is also the automatic reuse boundary. A root `view`
+rerun can return the previous component subtree without calling its Rhai render
+when normalized props and the render environment are unchanged and neither the
+component nor a descendant is dirty. A reused subtree keeps its state,
+dependencies, callbacks, effects, timers, signals, refs, and virtual
+collections. Slots and other node-valued props intentionally opt out because
+node equality is not a safe ownership proof. Do not rely on render call counts
+for behavior; put effects in declarations and mutations in callbacks.
+
+A component received through a `Node` prop remains owned by the context that
+constructed it. Receiver-local rerenders hydrate the prop from that component's
+latest owned snapshot without executing it or restarting its resources. Fluent
+styles, handlers, refs, signals, attributes, and motion that the receiver
+adds to the component root form a distinct presentation layer: child rerenders
+preserve the layer and receiver rerenders apply it exactly once. This applies
+recursively to optional/array/map/object/union Node shapes and to nodes inside
+Overlay, Layer, ErrorBoundary, custom primitive, and realized virtual content.
+
+Construction is eager. Omitting an already-passed node from a receiver's output
+hides it but does not transfer or end the caller-owned lifecycle. Put the
+conditional around the constructor in the caller when removal must clean state,
+effects, tasks, timers, signals, or refs.
+
+Stateful components and lifecycle custom primitives require a stable caller
+`key`. Never store UI state in mutable script globals.
+
+Autofocus belongs to the lifecycle that owns presentation. Input/Textarea
+`autofocus` is a first-mount primitive policy. For retained content inside a
+reopenable Overlay, use `initial_focus: "first"` so every closed → open cycle
+walks to the first descendant tab stop; keep non-target key-handler containers
+out of that order with `tab_stop(false)`.
+
+### Nested state and store values
+
+`ctx.get_state(field)` and the whole-field store getters return complete values.
+For a Map or Array this is intentionally a broad read. Use the explicit path
+accessors when a component needs only one nested store value:
+
+```rhai
+let title = ctx.get_app_store_path("workspace", "model", ["document", "title"]);
+ctx.set_app_store_path("workspace", "model", ["document", "title"], "Renamed");
+```
+
+Path segments are bounded to 64 entries. A string selects a Map key and a
+non-negative integer selects an Array index. A keyed selector map selects an
+Array item by a stable string field, so reordering the Array does not invalidate
+that item dependency:
+
+```rhai
+let label = ctx.get_app_store_path(
+    "workspace",
+    "model",
+    ["rows", #{ by: "id", key: row_id }, "label"]
+);
+```
+
+Window stores expose the corresponding `get_window_store_path` and
+`set_window_store_path` methods. Local state also exposes `get_state_path` and
+`set_state_path` to avoid copying complete collections, but local state is
+already owned by one formal component, so its dependency boundary remains that
+component. Writes replace existing paths only, validate the complete resulting
+field against its schema, and never create typoed Map keys or grow Arrays.
+
+## Effects
+
+Effects are declarations made during a formal component's pure render. Declare
+their stable snake_case keys in the component schema, then provide a
+UiValue-convertible dependency payload and named start/cleanup functions:
+
+```rhai
+// schema: #{ ..., effects: ["subscription"] }
+fn start_subscription(ctx, dependency) { /* start owned work */ }
+fn cleanup_subscription(ctx, dependency) { /* release owned work */ }
+
+fn render_Stream(ctx, props) {
+    effect(
+        "subscription",
+        #{ channel: props.channel },
+        Fn("start_subscription"),
+        Fn("cleanup_subscription")
+    );
+    text(props.channel)
+}
+```
+
+Start runs only after the candidate subtree reconciles. A changed dependency or
+script generation runs the old cleanup in its original module context before
+starting the replacement. Removal, disposal, and successful hot reload clean up
+exactly once. Anonymous/capturing closures and non-UiValue dependencies are
+rejected. Failed start/cleanup restores runtime state and keeps the last-good
+tree; external Rust side effects remain outside rollback and therefore need
+idempotent Host design.
+
+Tasks, subscriptions, and background image decodes started by an effect callback
+belong to that exact effect activation. Subscriptions are accepted only from
+this scope; root initialization and ordinary event callbacks must not create
+long-lived streams. Scripts do not need to retain their handles merely for
+lifecycle cleanup. After every cleanup and replacement start
+succeeds, the Host cancels the old activation scope; a replacement uses a new
+scope even when its effect key is unchanged. Failed replacement starts cancel
+new work through transaction rollback; the Host does not automatically cancel
+the prior activation. Explicit cancellation performed by cleanup and external
+capability side effects remain irreversible and should therefore be idempotent.
+
+Retained view suspension is also an effect boundary. Every active effect is
+cleaned and its activation-owned work is cancelled while component state and
+native UI state stay mounted. On successful resume, one full reconcile restarts
+the declarations with new activation IDs. Put refresh policy in the optional
+root `resume(ctx, elapsed_ms)` hook; do not hide polling work outside effects.
+
+## Native signals
+
+Declare a component-local hot value during render and bind it only to an
+approved property. Event handlers address the signal by local key, so no Rhai
+closure or runtime reference is retained:
+
+```rhai
+fn advance(ctx, payload) {
+    ctx.set_signal("progress", ctx.get_signal("progress") + 0.1);
+}
+
+fn render_Meter(ctx, props) {
+    let progress = signal("progress", 0.0);
+    text("meter")
+        .bind_signal("opacity", progress)
+        .on_click(Fn("advance"))
+}
+```
+
+Signal identity is component path + key + value type. Compatible rerenders and
+hot reload preserve the current value; unmount makes old handles explicitly
+stale. Signal reads do not establish component dependencies and writes do not
+rerun Rhai. Trusted Rust can update a mounted handle through
+`ScriptViewHandle::write_signal` on the GPUI foreground thread.
+
+Sampling `ctx.get_signal(...)` during formal render makes that component subtree
+ineligible for automatic bailout, because signal reads intentionally create no
+dirty edge. Prefer `bind_signal` for visual properties; reserve `get_signal`
+for event handlers.
+
+`.signal_style(signal, #{ state: style(), ... })` picks a whole style variant by
+the current value of a string signal and merges it over the node's style, as a
+state style does. A native primitive that writes such a signal drives the look
+of a node it does not own without a Rhai render: SplitPane's and Resizable's
+resize handles publish `idle`, `hover`, `drag`, `focus` or `disabled`, and their
+grips take the matching `grip_<state>` part:
+
+```rhai
+let state = signal("handle-state", "idle");
+box([node]).signal_style(state, #{
+    hover: style().border_color(theme_color("accent")),
+    drag: style().border_color(theme_color("accent")),
+})
+```
+
+## Styling
+
+Use semantic theme tokens and the typed `Style` builder. Merge order is:
+
+```text
+base -> size -> variant/state -> component stylesheet -> caller style/part_styles
+```
+
+Use typed `linear_gradient(#{...})` and `shadow(#{...})` values for component
+paint; use Style grid/flex, opacity, cursor, typography, ellipsis/clamp, and
+translation methods only where their documented GPUI mapping applies. See
+`docs/style.md` for the supported surface and explicit remaining gaps.
+
+Use only `xs`, `sm`, `md`, and `lg` for component sizes. Preserve the desktop
+default cursor for controls. Attach normalized accessibility role/label data to
+the root node. Use `padding_start/end` and `margin_start/end` for asymmetric
+inline spacing so caller locale direction remains correct.
+
+Component spacing uses the shared `xxs/xs/sm/md/lg` theme scale: `xxs` for
+hairline-adjacent inset, `xs` for icon/label and compact-control gaps, `sm` for
+ordinary control content padding, `md` for panel content, and `lg` for dialog
+or empty-state outer padding. Keep structural constants such as 1px borders,
+platform titlebar safe insets, explicit row heights, and semantic circles as
+literal geometry rather than disguising them as theme spacing.
+
+Choose a semantic typography role with `style().typography(...)`; do not repeat
+numeric font-size/line-height pairs across component sources. Use `body` for
+ordinary controls, `body_small`/`caption` for compact metadata, and the named
+title/display roles for hierarchy. Native text primitives receive the same role
+so their shaping metrics stay aligned with surrounding nodes.
+
+Application/theme families may declare typed namespaced tokens. Components
+resolve colors with `theme_color("charts.series_a")`; unknown or wrong-typed
+paths do not fall back to arbitrary strings. Namespaced lengths/numbers/strings
+are retained for the corresponding final typed Style/data APIs.
+
+Use `box(children)` for layout/paint/interaction and `fragment(children)` only
+for transparent snapshot grouping. Fragment cannot carry Style, handlers,
+signals, attributes, motion, or refs. `row`, `column`, and `stack` are Box
+helpers, not distinct privileged node kinds.
+
+Use `text([span("Label ").bold(), span(value).color(theme_color("accent"))])`
+for inline runs. Span is an immutable inline value, not a child node; run
+refinements are color, `background(color)`, `typography(role)`, bold, and
+italic, and render through one GPUI `StyledText`. A span's `typography` takes
+the role's family and weight only: inline code is
+`span("cargo run").typography("code").background(theme_color("surface_raised"))`
+and stays on the paragraph's line.
+
+Use `canvas(canvas_scene([...]))` for retained vector drawing. Commands currently
+include rect/circle/line plus typed fill/stroke paths with quadratic/cubic
+segments, gradient paint, uniform transform, and axis-aligned clip; every
+command needs a stable unique key and finite logical geometry. Scene
+construction and Host budgets count path segments before commit, while GPUI
+paint consumes only the accepted Rust
+scene.
+
+Data-backed source components may pass explicit `sticky_headers: [indices]` to
+a top-aligned `virtual_collection`. NativeCollection projections can carry the
+same immutable index metadata without exposing source rows to Rhai. The generic
+runtime keeps one header realized and pushes it off with the next; component
+source remains responsible for section identity, controlled collapse, semantic
+labels, and styling. Do not duplicate a realized header as a second UiNode.
+
+The generic collection is presentation-only: it virtualizes, scrolls, reveals,
+and pins rows, but does not own a roving active row or draw an implicit row
+highlight. Components such as Command and Combobox must derive enabled
+navigation values from their complete data model, handle keys at their semantic
+focus owner, render the active style themselves, and pass that same controlled
+key through `reveal_key`. Never use `sticky_headers` as a navigability filter;
+sticky behavior and interaction eligibility are independent contracts.
+
+## Events
+
+Bind callbacks to nodes rather than calling them during rendering:
+
+```rhai
+node.on_click(props.on_click)
+```
+
+Handlers receive `(ctx, payload)`. They may update declared state, dispatch an
+action, emit an event, or call a manifest-declared capability. They may not
+access GPUI contexts. Pointer callbacks are handled by default; return
+`propagate()` to allow the normalized event to continue to an ancestor handler.
+
+Do not forward a callback prop through another formal component. Callback
+ownership is rebound at each formal boundary, so a two-hop pass-through can run
+against the intermediate component's state path. Instead, give the child a
+component-local named handler and emit the composite's declared event:
+
+```rhai
+fn option_selected(ctx, value) { ctx.emit("change", value); }
+
+radio::Radio(#{ on_select: Fn("option_selected"), /* ... */ })
+```
+
+The runtime validates the emitted payload and invokes the caller's `on_change`
+in the caller context. Use the same forwarding action for pointer and keyboard
+paths so their semantics cannot diverge.
+
+A controlled component's change event carries exactly the next value of the
+prop it controls: `move` sends a `position`, `transform_change` a `transform`,
+`resize` a `rect`. Callers store the payload as is (`ctx.set_state("rect",
+value)`); an extra field such as the dragged handle fails the prop schema on
+the next render and rolls the change back. Put extra information in a separate
+event.
+
+`on(event, handler)`, `on_capture(event, handler)`, and
+`on_bubble(event, handler)` append ordered handlers; they do not replace a prior
+binding. A handler may return `event_response()` refined with
+`prevent_default()`, `stop()`, `stop_immediate()`, `capture_pointer()`, or
+`release_pointer()`. Pointer and wheel handlers receive normalized maps rather
+than GPUI event values.
+
+Every raw pointer/wheel map includes `target`, the committed visual bounds of
+the retained node whose handler is running, in window coordinates:
+
+```rhai
+#{ x: 24.0, y: 80.0, width: 320.0, height: 96.0 }
+```
+
+Click and custom-value handlers keep their declared payload type. They read the
+same event-time geometry with `ctx.event_target_bounds()`. The value is `()` for
+actions, effects, semantic follow-up callbacks, and other work not dispatched
+from a retained node. Calling it outside an event is an error. The lookup is
+untracked: resizing does not dirty the component merely because a handler may
+read its bounds later. In capture/bubble dispatch, target means the node owning
+the currently executing handler, matching `currentTarget` semantics rather than
+guessing a logical ancestor.
+
+After committed prepaint, pointer maps use node-local coordinates derived from
+the retained geometry registry. `content` starts from `local` and subtracts the
+live GPUI offsets of the node and every scrollable ancestor, so nested native
+scrolling updates pointer coordinates without rerunning Rhai. Canvas pointer
+maps additionally include
+`canvas_key`, the topmost retained command hit or `()`; captured move/up events
+retain that production routing path.
+
+Use `tab_group()` on a container and bounded `tab_index(i)` on descendants for
+local native tab order. `tab_stop(false)` keeps an item programmatically
+focusable while removing it from keyboard traversal. Modal focus trap/restore
+belongs to Overlay; ordinary components should prefer one group tab stop plus
+semantic arrow-key roving policy.
+
+`selectable(true)` on a `text()` node enables single-node drag selection, painted
+with the required `selection` theme token. Dragging never mutates the clipboard;
+after selection, the normal platform copy action (`Cmd-C` on macOS) copies the
+selected slice. Selection suppresses ancestor click activation, follows stable
+retained node identity, and is cleared when its text or node disappears. Use it
+for error output and other copy-worthy text — editor components
+(`text_input`/`text_area`) keep their own richer selection.
+
+Trusted Hosts can register a `NativeHandlerDescriptor` and Rust closure, then
+Rhai resolves it with `native_handler("namespace.name")` and attaches it through
+the same `on` methods. The descriptor limits accepted event names and validates
+payloads before Rust runs. `NativeEvent::target` carries the optional event-time
+current-target bounds separately, so adding geometry does not weaken or wrap the
+declared payload schema. Native and Script handlers share transaction and
+response semantics. Events emitted by a custom primitive currently have no
+renderer-owned target. A primitive can accept a validated `ElementRef` prop and
+query its last committed layout bounds through
+`PrimitiveContext::element_bounds`; consumer-facing coordinates still
+belong in the declared event payload when the event contract requires them.
+
+Formal components may declare `element_ref("name")` during render and attach it
+to a stable keyed node with `with_ref`. `ctx.element_bounds(ref)` returns null
+before first committed prepaint and then the last committed layout/visual
+geometry. The unresolved first read is retained by ref identity, resolves after
+the candidate commits, and automatically rerenders when prepaint supplies the
+first value. Geometry dependencies follow a ref across retained `NodeId`
+replacement. Event handlers use `ctx.element_bounds("local_ref_key")`, because
+custom `ElementRef` values intentionally cannot cross the retained callback
+data boundary. Geometry changes dirty only components that read that exact ref.
+Event handlers can call `ctx.focus(ref)` or `ctx.focus("local_ref_key")`; focus
+is executed as a window-scoped retained command after the transaction commits.
+Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,
+`overflow_y_scroll()`, or `overflow_scroll()`. Handlers call
+`ctx.scroll_to(ref, x, y)` with finite non-negative visible offsets.
+For a retained descendant, `ctx.scroll_into_view(ref)` (or its component-local
+ref key) reveals it in the nearest retained scrollable ancestor on the next
+frame: a direct child scrolls the minimal amount that shows it (also when it
+was laid out for the first time), a deeper descendant aligns through a GPUI
+`ScrollAnchor`. A request for a node mounted or ref'd in the same transaction
+waits one frame; a request whose node is unmounted before it runs is dropped.
+A one-axis scroll container that should also take the other wheel axis (a
+horizontal tab strip under a vertical mouse wheel) declares
+`.translate_wheel()`.
+
+Declare one-shot foreground callbacks during formal render with
+`timeout(key, delay_ms, paused, Fn("callback"), payload)`. Keys are local to the
+component and signatures reconcile transactionally: unchanged declarations
+keep deadlines, changed declarations restart, completed declarations do not
+repeat until removed or changed, and unreachable scopes cancel. Event handlers
+may call `ctx.pause_timeout(key)`, `ctx.resume_timeout(key)`, or
+`ctx.cancel_timeout(key)`. Only named non-capturing callbacks and UiValue
+payloads cross the retained boundary.
+The signature includes callback curry/provenance, not only its function name.
+Declaration pause, explicit interaction pause, and temporary view suspension
+are independent reasons; resuming a view never clears an explicit pause.
+
+Timer deadlines and animation sampling share the Host's monotonic
+`RuntimeClock`. Production applications use the system clock. Tests and
+automation should inject a `ManualRuntimeClock` through
+`FileScriptView::runtime_clock` or `EmbeddedScriptView::runtime_clock`, advance
+it explicitly, and then request/poll a frame; scripts never read the clock
+directly.
+
+Use `layer(content, #{ id, placement, inset?, priority? })` for arbitrary
+window-level content. Placements are the four corners, `center`, and `fill`;
+IDs are namespaced by embedded `view_id`. Layer is a generic portal primitive,
+not an authorization mechanism or a replacement for modal Overlay policy.
+
+`on_hover_change(callback)` emits a boolean transition. The
+`on_hover_value(callback, value)` variant emits
+`#{ hovered: bool, value: UiValue }`, which lets source components pause keyed
+timers without retaining closures.
+
+Use `node.test_id("stable-id")` only for non-semantic automation identity.
+Accessible roles, labels, relationships, and IDs remain the user-facing
+contract; automation locators reject missing or duplicate test IDs rather than
+silently selecting the first match.
+
+For structural responsive composition, branch only on
+`ctx.viewport_class()` (`compact`, `regular`, or `wide`). Hosts may replace the
+default 600/1000 logical-pixel boundaries with a validated
+`ViewportBreakpoints`; avoid continuous script-side pixel calculations.
+
+## Required tests
+
+Each component needs logic tests, normalized node snapshots, representative
+macOS screenshots, keyboard/focus tests, accessibility assertions, and an
+example. Its file header must contain purpose, props, events, statefulness, and a
+short usage example.
+
+`gpui-rhai check` resolves the copied module graph, loads the real
+theme/locale/assets, mounts the application state schema, and executes the
+initial `view(ctx)` through ScriptLifecycle and retained reconciliation.
+Before execution it walks unoptimized Rhai ASTs and validates direct, method,
+and imported-module call arities against the same Engine function metadata that
+generates editor definitions. This catches misspelled or wrong-arity calls in
+branches the initial view does not execute; runtime execution remains the
+type-sensitive authority because Rhai dispatch is dynamic.
+Render-time errors, duplicate keys, component-state failures, effects/timers,
+and retained budget violations therefore fail headless CI rather than waiting
+for a native window.

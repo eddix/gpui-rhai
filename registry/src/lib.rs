@@ -1265,6 +1265,10 @@ pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
     ("aetheria.rhai", AETHERIA_THEME),
 ];
 
+mod skills;
+
+pub use skills::BUNDLED_SKILL_FILES;
+
 #[cfg(test)]
 mod tests {
     use super::*;

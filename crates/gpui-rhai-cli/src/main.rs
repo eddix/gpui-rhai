@@ -42,6 +42,15 @@ enum Command {
     Embed,
     /// Generate schema metadata and basic editor snippets.
     Metadata,
+    /// Write the agent skills `gpui-rhai` and `gpui-rhai-design` into a directory.
+    ///
+    /// Run it again after upgrading the CLI to refresh them: it replaces the
+    /// files it wrote and leaves the rest of the directory alone.
+    Skills {
+        /// Skills directory, relative to the project root: `.claude/skills` for
+        /// Claude Code, `.agents/skills` for Codex, Cursor and other agents.
+        directory: PathBuf,
+    },
     /// Open the first-party gpui-rhai theme editor and component specimen.
     ThemeStudio {
         /// Existing gpui-rhai theme to open. Omit to create a new draft.
@@ -121,6 +130,13 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
         }
         Command::Metadata => {
             let plan = project.plan_editor_metadata()?;
+            println!("{}", plan.summary());
+            if !cli.dry_run {
+                plan.apply()?;
+            }
+        }
+        Command::Skills { directory } => {
+            let plan = project.plan_skills(&directory)?;
             println!("{}", plan.summary());
             if !cli.dry_run {
                 plan.apply()?;

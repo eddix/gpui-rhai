@@ -91,6 +91,22 @@ An existing GPUI application mounts one or more isolated views through a shared
 the [embedding guide](docs/embedding.md). A host that already owns a plain-data
 UI tree can render it without Rhai (`host_owned_tree` example).
 
+## Skills for coding agents
+
+Rhai has little training data and gpui-rhai is a DSL on top of it, so an agent
+writes better views with the project's references at hand. Install the two
+skills for Claude Code, Codex, Cursor and other agents:
+
+```text
+npx skills add eddix/gpui-rhai          # from this repository
+gpui-rhai skills .claude/skills         # or the copy matching your CLI version
+```
+
+| Skill | Contents |
+|---|---|
+| `gpui-rhai` | Rhai as views use it, the script API, every module's props and events, tested recipes, the user guide, component authoring and embedding |
+| `gpui-rhai-design` | the design rules: principles, component contracts, composition, themes and the decision log |
+
 ## Documentation
 
 | To | Read |

@@ -27,6 +27,7 @@ pub mod acceptance;
 mod doc_snippets;
 pub mod gallery;
 pub mod reference;
+pub mod skills;
 pub mod theme_studio;
 
 use gpui_rhai_registry::{
@@ -590,6 +591,23 @@ impl Project {
                 .join(".gpui-rhai/editor/definitions/gpui_rhai.d.rhai"),
             definitions,
         )?;
+        Ok(plan)
+    }
+
+    /// Write the agent skills `gpui-rhai` and `gpui-rhai-design` into
+    /// `directory`, relative to the project root unless absolute. Files the
+    /// skills already have there are replaced, so running it again after an
+    /// upgrade refreshes them; nothing else in the directory is touched.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error when an existing skill file cannot be read.
+    pub fn plan_skills(&self, directory: &Path) -> Result<ProjectPlan, ProjectError> {
+        let directory = self.root.join(directory);
+        let mut plan = ProjectPlan::new(self.root.clone());
+        for (path, contents) in gpui_rhai_registry::BUNDLED_SKILL_FILES {
+            plan.replace_or_create(directory.join(path), (*contents).to_owned())?;
+        }
         Ok(plan)
     }
 
@@ -2227,6 +2245,8 @@ pub enum ProjectError {
     InstalledMetadata(ModuleId),
     #[error("component `{0}` did not call define_component")]
     MissingExport(ModuleId),
+    #[error("example `{0}` has no `const MAIN: &str = r#\"...\"#;` view")]
+    MissingExampleView(PathBuf),
     #[error("component `{component}` source documentation is missing {missing}")]
     ComponentDocumentation {
         component: ModuleId,
@@ -2305,6 +2325,38 @@ mod tests {
         )
         .unwrap();
         directory
+    }
+
+    #[test]
+    fn skills_are_written_where_asked_and_refreshed_in_place() {
+        let directory = tempfile::tempdir().unwrap();
+        let project = Project::new(directory.path());
+        let skills = directory.path().join(".claude/skills");
+        let plan = project.plan_skills(Path::new(".claude/skills")).unwrap();
+        assert_eq!(
+            plan.writes.len(),
+            gpui_rhai_registry::BUNDLED_SKILL_FILES.len()
+        );
+        plan.apply().unwrap();
+        let skill = fs::read_to_string(skills.join("gpui-rhai/SKILL.md")).unwrap();
+        assert!(skill.starts_with("---\nname: gpui-rhai\n"), "{skill}");
+        assert!(skills.join("gpui-rhai-design/SKILL.md").exists());
+        assert!(skills.join("gpui-rhai/references/script-api.md").exists());
+        assert!(!directory.path().join(".agents").exists());
+
+        fs::write(skills.join("gpui-rhai/SKILL.md"), "edited").unwrap();
+        fs::write(skills.join("notes.md"), "mine").unwrap();
+        let refresh = project.plan_skills(Path::new(".claude/skills")).unwrap();
+        assert_eq!(
+            refresh.summary(),
+            "1 file change(s):\n- update .claude/skills/gpui-rhai/SKILL.md"
+        );
+        refresh.apply().unwrap();
+        assert_eq!(
+            fs::read_to_string(skills.join("gpui-rhai/SKILL.md")).unwrap(),
+            skill
+        );
+        assert_eq!(fs::read_to_string(skills.join("notes.md")).unwrap(), "mine");
     }
 
     #[test]
