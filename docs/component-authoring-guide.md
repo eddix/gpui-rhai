@@ -2,10 +2,15 @@
 
 An official or application component is a Rhai module with three parts:
 
-1. a structured `/* gpui-rhai ... */` JSON header;
+1. a structured `/* gpui-rhai ... */` JSON header, followed by a `//` comment
+   with the component's purpose, any notes on state and behavior, and an
+   `Example:` call;
 2. a `define_component` schema and render declaration;
 3. a PascalCase constructor accepting one props map and a named
    `render_Name(ctx, props)` function.
+
+The comment does not list props, events or parts: the schema states them, and
+the [module reference](reference/README.md) is generated from it.
 
 Use `registry/components/label.rhai` as the smallest complete reference.
 
@@ -52,7 +57,20 @@ lifecycle/event callbacks and component-owned work in a declared effect.
 ## Schema
 
 Declare every prop, local state field, semantic event, slot, styleable part,
-and effect key.
+and effect key. Give each prop, object field, event and slot a one-sentence
+`doc` saying what it means and does (units, who owns a controlled value, when
+an event fires); the type, required flag and default are rendered next to it.
+`doc` has no runtime effect. Official components document every item, and a
+test enforces it.
+
+```rhai
+props: #{
+    size: #{ schema: #{ type: "number", min: 0.0, max: 1.0 }, required: true, sensitive: false,
+        doc: "Start-pane ratio; the caller stores the `resize` payload and passes it back." },
+},
+events: #{ resize: #{ payload: #{ type: "number" }, doc: "Emitted once when a drag ends or a key steps the separator." } },
+```
+
 Unknown props are errors. Defaults must satisfy their own schemas. Every event
 named `change` requires an optional callback prop named `on_change`.
 

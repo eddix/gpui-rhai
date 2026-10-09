@@ -14,8 +14,6 @@
 }
 */
 // Compact application footer with stable logical start, center, and end regions.
-// Props: accessible label and optional start/center/end node arrays.
-// Events/state: stateless and emits no events. Parts: root, start, center, end.
 // Example: StatusBar(#{ label: "Editor status", start: [text("Ready")], end: [text("UTF-8")] })
 
 define_component(#{
@@ -28,17 +26,22 @@ define_component(#{
         environment: ["density"] },
     schema: #{
         props: #{
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the bar, which is announced as a status bar." },
             start: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Fields at the start edge; they truncate when space runs out." },
             center: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Fields centered in the bar." },
             end: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Fields at the end edge; they keep their width." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ start: #{ required: false, multiple: true },
-            center: #{ required: false, multiple: true }, end: #{ required: false, multiple: true } },
+        slots: #{ start: #{ required: false, multiple: true, doc: "Fields at the start edge." },
+            center: #{ required: false, multiple: true, doc: "Fields centered in the bar." },
+            end: #{ required: false, multiple: true, doc: "Fields at the end edge." } },
         parts: ["root", "start", "center", "end"],
     },
     render: Fn("render_StatusBar")

@@ -1320,6 +1320,8 @@ registration and source paths must not leak into release artifacts.
 
 ## Further reading
 
-The documentation index is [docs/README.md](docs/README.md). Start with the
-architecture and embedding guides, then follow the component/theme/performance
-links relevant to the application you are building.
+The documentation index is [docs/README.md](docs/README.md). The
+[module reference](docs/reference/README.md) lists the props, events, slots and
+parts of every official module. Start with the architecture and embedding
+guides, then follow the component/theme/performance links relevant to the
+application you are building.

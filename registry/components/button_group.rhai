@@ -11,9 +11,6 @@
 }
 */
 // Visually joins related buttons into one horizontal or vertical control.
-// Props: buttons, orientation, size, and accessible label.
-// Events/state: stateless and emits no events; child buttons own actions.
-// Parts: root, item, first, last.
 // Example: ButtonGroup(#{ label: "View", buttons: [grid_button, list_button] })
 
 define_component(#{
@@ -23,15 +20,19 @@ define_component(#{
     schema: #{
         props: #{
             buttons: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: true, sensitive: false },
+                required: true, sensitive: false,
+                doc: "Buttons to join, in order, at least one; each keeps its own action and only the group's outer corners round." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "horizontal" } },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "string", value: "horizontal" },
+                doc: "`horizontal` joins the buttons in a row, `vertical` in a column." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the group; it is not drawn." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Control size for the buttons inside; unset, they inherit the `size` environment." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ buttons: #{ required: true, multiple: true } },
+        slots: #{ buttons: #{ required: true, multiple: true, doc: "The joined buttons." } },
         parts: ["root", "item", "first", "last"],
     },
     render: Fn("render_ButtonGroup")

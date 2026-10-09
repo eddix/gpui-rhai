@@ -17,9 +17,6 @@
 // With window_drag, the bar replaces the platform title bar: pressing its background
 // moves the window and a double press zooms it. The Host decides whether the window
 // draws a platform title bar; it never closes or resizes a window.
-// Props: accessible label, string-or-node title/subtitle, start/center/end nodes, logical start
-// inset (room for macOS window buttons), window_drag.
-// Events/state: stateless and emits no events. Parts: root, start, title, subtitle, center, end.
 // Example: TitleBar(#{ label: "Workbench", title: breadcrumb_node, end: [settings_button] })
 
 define_component(#{
@@ -32,26 +29,35 @@ define_component(#{
         environment: ["density"] },
     schema: #{
         props: #{
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the bar, which is announced as a toolbar." },
             title: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "node" }] },
-                required: true, sensitive: false },
+                required: true, sensitive: false,
+                doc: "Title text, or a node such as a breadcrumb; a string is set semibold and the subtitle truncates before it." },
             subtitle: #{ schema: #{ type: "optional", value: #{ type: "one_of",
                 variants: [#{ type: "string" }, #{ type: "node" }] } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Muted text or node on the title's line; it truncates first." },
             start: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Nodes before the title, at the start edge." },
             center: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Nodes centered in the bar." },
             end: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Nodes at the end edge; they keep their width while the title truncates." },
             inset_start: #{ schema: #{ type: "integer", min: 0, max: 256 }, required: false,
-                sensitive: false, "default": #{ type: "integer", value: 0 } },
+                sensitive: false, "default": #{ type: "integer", value: 0 },
+                doc: "Logical pixels kept free at the start edge, room for the macOS window buttons." },
             window_drag: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Whether pressing the bar's background moves the window and a double press zooms it." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ start: #{ required: false, multiple: true },
-            center: #{ required: false, multiple: true }, end: #{ required: false, multiple: true } },
+        slots: #{ start: #{ required: false, multiple: true, doc: "Nodes before the title, at the start edge." },
+            center: #{ required: false, multiple: true, doc: "Nodes centered in the bar." },
+            end: #{ required: false, multiple: true, doc: "Nodes at the end edge." } },
         parts: ["root", "start", "title", "subtitle", "center", "end"],
     },
     render: Fn("render_TitleBar")

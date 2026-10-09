@@ -199,6 +199,13 @@ and [docs/design/](docs/design/) for the specification.
   and appears in exported metadata. Rust code that builds these structs with a
   literal adds `doc: None`. The standard `key`, `style` and `part_styles` props
   get a doc from the runtime.
+- Every official module documents each prop, object field, event and slot, and
+  its header comment keeps the purpose, notes and an example (the prop, event
+  and part lists are gone; the schema states them). `docs/reference/` is
+  generated from them: one page per module with types, defaults and meaning; a
+  test keeps it current and another requires every official item to have a
+  `doc`. `gpui-rhai check` requires a purpose comment instead of a `Props:` line
+  in component sources.
 - `gpui-rhai init` makes the project depend on the CLI's own runtime line
   (`gpui-rhai = "0.2"` from a 0.2 CLI); it wrote a fixed `"0.1"`, which cannot
   load the Runtime API 3 components the same CLI copies.

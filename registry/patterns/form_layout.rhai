@@ -17,11 +17,6 @@
 // FormLayout aligns labels on one column, groups fields, and lines the submit row up with
 // the fields.
 //
-// Props: key and label (required), groups (title, fields) or fields, submit, orientation
-//        (horizontal|vertical), label_width.
-//        A field: label, control (node), description, error, required.
-// Events/state: none. Parts: root, group, group_title, field, label, control, description,
-//        error, submit.
 // Example: FormLayout(#{ key: "service", label: "Service", fields: [
 //              #{ label: "Name", control: name_input, required: true }],
 //              submit: [save_button] })
@@ -44,43 +39,61 @@ define_component(#{
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Keys the root and prefixes the accessibility ids of the fields, such as `<key>-field-0-label`." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the form; it is not drawn." },
             groups: #{ schema: #{ type: "array", max_items: 32, items: #{
                 type: "object", allow_unknown: false, fields: #{
-                    title: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                    title: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                        doc: "Heading above the group, drawn upper-case in `label` type and `text_muted`." },
                     fields: #{ schema: #{ type: "array", max_items: 64, items: #{ type: "object", allow_unknown: false, fields: #{
-                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                        control: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                            doc: "Label text, in the label column or above the control in a vertical form." },
+                        control: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                            doc: "The control; it keeps its own width, so a control that should be wide sets one." },
                         description: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-                            required: false, sensitive: false },
+                            required: false, sensitive: false,
+                            doc: "Helper text in caption type under the control; it describes the control while there is no `error`." },
                         error: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-                            required: false, sensitive: false },
+                            required: false, sensitive: false,
+                            doc: "Message in `text.danger` under the control, announced as an alert; also set the control's own `error`." },
                         required: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                            "default": #{ type: "bool", value: false } },
+                            "default": #{ type: "bool", value: false },
+                            doc: "Adds a `text.danger` asterisk to the label and marks the control required." },
                     } } },
-                        required: true, sensitive: false },
+                        required: true, sensitive: false, doc: "Fields of the group, in order." },
                 },
-            } }, required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+            } }, required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Field groups, each under an optional title; when not empty, `fields` is ignored." },
             fields: #{ schema: #{ type: "array", max_items: 64, items: #{ type: "object", allow_unknown: false, fields: #{
-                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    control: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Label text, in the label column or above the control in a vertical form." },
+                    control: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                        doc: "The control; it keeps its own width, so a control that should be wide sets one." },
                     description: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-                        required: false, sensitive: false },
+                        required: false, sensitive: false,
+                        doc: "Helper text in caption type under the control; it describes the control while there is no `error`." },
                     error: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-                        required: false, sensitive: false },
+                        required: false, sensitive: false,
+                        doc: "Message in `text.danger` under the control, announced as an alert; also set the control's own `error`." },
                     required: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
+                        "default": #{ type: "bool", value: false },
+                        doc: "Adds a `text.danger` asterisk to the label and marks the control required." },
                 } } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Fields of a form without groups, in order; used only while `groups` is empty." },
             submit: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Action buttons in a row under the fields; in a horizontal form the row starts past the label column." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "horizontal" } },
-            label_width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
+                sensitive: false, "default": #{ type: "string", value: "horizontal" },
+                doc: "`horizontal` puts the labels in a column beside the controls; `vertical` stacks each label above its control." },
+            label_width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "Width of the label column of a horizontal form; unset, it is `metrics.label_column`. Ignored when vertical." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ submit: #{ required: false, multiple: true } },
+        slots: #{ submit: #{ required: false, multiple: true, doc: "The action buttons under the fields." } },
         parts: ["root", "group", "group_title", "field", "label", "control", "description", "error", "submit"],
     },
     render: Fn("render_FormLayout")

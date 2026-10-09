@@ -15,10 +15,7 @@
 */
 // Dialog presents controlled modal content through the native overlay layer.
 //
-// Props: key, open, title (also the accessible name), title_visible (default true),
-//        content/actions slots, dismissal policy, on_open_change.
-// Events: open_change(bool). State: controlled by the caller.
-// Parts: root, backdrop, panel, title, content, actions, focus_frame.
+// State: controlled by the caller.
 // Example: Dialog(#{ key: "confirm", open: true, title: "Confirm", content: text("Continue?") })
 
 define_component(#{
@@ -37,47 +34,58 @@ define_component(#{
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
-            title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Identity of the dialog and the id of its overlay; keep it unique among open overlays." },
+            open: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
+                doc: "Whether the dialog is open; the caller stores the `open_change` payload and passes it back." },
+            title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Heading of the panel and the dialog's accessible name." },
             title_visible: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+                "default": #{ type: "bool", value: true },
+                doc: "Whether the title is drawn; a hidden title still names the dialog." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Body of the dialog, under the title." },
             actions: #{
                 schema: #{ type: "array", items: #{ type: "node" }, max_items: 8 },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "array", value: [] },
+                doc: "Buttons in a row at the end of the panel, after the content.",
             },
             dismiss_on_escape: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: true },
+                doc: "Whether Escape asks to close the dialog through `open_change`.",
             },
             dismiss_on_outside: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: true },
+                doc: "Whether a press on the backdrop asks to close the dialog through `open_change`.",
             },
             initial_focus: #{
                 schema: #{ type: "string", allowed: ["panel", "first"] },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "panel" },
+                doc: "What takes focus when the dialog opens: `panel` the panel itself, `first` its first focusable control.",
             },
             on_open_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
+                doc: "Called with `false` when Escape or a backdrop press dismisses the dialog.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ open_change: #{ payload: #{ type: "bool" } } },
+        events: #{ open_change: #{ payload: #{ type: "bool" },
+            doc: "Emitted when Escape or a backdrop press dismisses the dialog; the payload is the requested open state." } },
         slots: #{
-            content: #{ required: true, multiple: false },
-            actions: #{ required: false, multiple: true },
+            content: #{ required: true, multiple: false, doc: "Body of the dialog, under the title." },
+            actions: #{ required: false, multiple: true, doc: "Buttons in a row at the end of the panel." },
         },
         parts: ["root", "backdrop", "panel", "title", "content", "actions", "focus_frame"],
     },

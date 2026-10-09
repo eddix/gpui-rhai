@@ -11,8 +11,6 @@
 }
 */
 // Controlled radio group with one tab stop and roving arrow-key selection.
-// Props: value, options, orientation, disabled, label, on_change.
-// Events: change(string). Parts: root, option.
 // State: controlled by the value prop.
 // Example: RadioGroup(#{ value: "one", label: "Choice", options: options, on_change: Fn("changed") })
 
@@ -28,41 +26,59 @@ define_component(#{
     },
     schema: #{
         props: #{
-            value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            value: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Value of the selected option; the caller stores the `change` payload and passes it back.",
+            },
+            label: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the group.",
+            },
             options: #{
                 schema: #{
                     type: "array", max_items: 256,
                     items: #{
                         type: "object", allow_unknown: false,
                         fields: #{
-                            value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                            value: #{
+                                schema: #{ type: "string" }, required: true, sensitive: false,
+                                doc: "Value that `change` reports when this option is chosen.",
+                            },
+                            label: #{
+                                schema: #{ type: "string" }, required: true, sensitive: false,
+                                doc: "Text beside the option's circle; also its accessible name.",
+                            },
                             disabled: #{
                                 schema: #{ type: "bool" }, required: false, sensitive: false,
                                 "default": #{ type: "bool", value: false },
+                                doc: "Blocks clicks on this option; arrow keys skip it.",
                             },
                         },
                     },
                 },
                 required: true, sensitive: false,
+                doc: "Options in display order.",
             },
             orientation: #{
                 schema: #{ type: "string", allowed: ["horizontal", "vertical"] },
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "vertical" },
+                doc: "Stacks options in a column, or lays them in a row spaced by `space.group`.",
             },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Disables every option and takes the group out of the tab order.",
             },
             on_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false, sensitive: false,
+                doc: "Called with the chosen option's value on click or arrow key; without it the group renders disabled.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ change: #{ payload: #{ type: "string" } } },
+        events: #{ change: #{ payload: #{ type: "string" },
+            doc: "Emitted when an option is clicked or an arrow key selects the previous or next enabled one; the payload is the new value." } },
         slots: #{}, parts: ["root", "option"],
     },
     render: Fn("render_RadioGroup")

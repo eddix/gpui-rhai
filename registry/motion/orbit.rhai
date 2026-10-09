@@ -8,7 +8,8 @@
   "capabilities": {}
 }
 */
-// Props: key and square size. State: stateless. Emits no events.
+// Orbit spins a satellite dot around a center dot in an endless loop.
+// State: stateless. Emits no events.
 // Example: Orbit(#{ key: "orbit", size: 96 })
 
 define_component(#{
@@ -16,8 +17,10 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            size: #{ schema: #{ type: "integer", min: 8 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Motion identity of the orbit; keep it stable so the loop keeps its progress across renders." },
+            size: #{ schema: #{ type: "integer", min: 8 }, required: true, sensitive: false,
+                doc: "Side of the square canvas in logical pixels; the dots scale with it." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
     },

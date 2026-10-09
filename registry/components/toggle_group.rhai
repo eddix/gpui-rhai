@@ -15,10 +15,7 @@
 */
 // ToggleGroup holds pressed tool state: equal-height segments joined inside one frame.
 //
-// Props: key, label, items, values, mode, orientation, allow_empty, size, disabled, on_change.
-// Events: change(array<string>).
 // State: caller owns values; component owns only the roving active item.
-// Parts: root, item.
 // Example: ToggleGroup(#{ key: "align", label: "Alignment", values: ["left"], items: items, on_change: Fn("changed") })
 //
 // Keyboard: one tab stop on the active segment; arrows move focus between enabled
@@ -35,33 +32,45 @@ define_component(#{
         environment: ["size", "density", "corners"] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Identity of the group and prefix of its segment keys (`<key>-<value>`), which arrow keys focus." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the group." },
             items: #{ schema: #{ type: "array", max_items: 64, items: #{
                 type: "object", allow_unknown: false, fields: #{
-                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Value this segment adds to or removes from `values`." },
+                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Segment text; also its accessible name." },
                     disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
+                        "default": #{ type: "bool", value: false },
+                        doc: "Blocks clicks on this segment; arrow keys skip it." },
                 }
-            } }, required: true, sensitive: false },
+            } }, required: true, sensitive: false, doc: "Segments in display order." },
             values: #{ schema: #{ type: "array", max_items: 64, items: #{ type: "string" } },
-                required: true, sensitive: false },
+                required: true, sensitive: false,
+                doc: "Pressed segment values, at most one in `single` mode; the caller stores the `change` payload and passes it back." },
             mode: #{ schema: #{ type: "string", allowed: ["single", "multiple"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "single" } },
+                sensitive: false, "default": #{ type: "string", value: "single" },
+                doc: "With `single`, one segment is pressed at a time; with `multiple`, each segment toggles on its own." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "horizontal" } },
+                sensitive: false, "default": #{ type: "string", value: "horizontal" },
+                doc: "Joins segments in a row or a column; arrow keys follow it (left and right, or up and down)." },
             allow_empty: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "In `single` mode, whether clicking the pressed segment unpresses it; `multiple` mode ignores it." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
+                required: false, sensitive: false, doc: "Control size; leave unset to inherit the environment size." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Disables every segment and the arrow-key navigation." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the next `values` array when a segment is clicked or activated from the keyboard." },
         },
         state: #{ fields: #{ active: #{ schema: #{ type: "string" },
             "default": #{ type: "string", value: "" } } } },
-        events: #{ change: #{ payload: #{ type: "array", max_items: 64, items: #{ type: "string" } } } },
+        events: #{ change: #{ payload: #{ type: "array", max_items: 64, items: #{ type: "string" } },
+            doc: "Emitted when a segment is clicked or activated; the payload is the full next `values` array." } },
         slots: #{}, parts: ["root", "item"],
     },
     render: Fn("render_ToggleGroup")

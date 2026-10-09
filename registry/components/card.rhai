@@ -14,9 +14,7 @@
 }
 */
 // General themed content surface with optional header and footer slots.
-// Props: content, optional header/footer nodes, and elevated.
-// Events/state: stateless and emits no events.
-// Parts: root, header, content, footer.
+//
 // Example: Card(#{ header: text("Account"), content: text("Ada") })
 
 define_component(#{
@@ -29,17 +27,21 @@ define_component(#{
         environment: ["density", "corners"] },
     schema: #{
         props: #{
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            header: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            footer: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The card body; header, content and footer sit `group` apart within `metrics.inset`." },
+            header: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "A heading node above the content, in `subtitle` typography." },
+            footer: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "A node below the content." },
             variant: #{ schema: #{ type: "string", allowed: ["block", "outline"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "block" } },
+                "default": #{ type: "string", value: "block" },
+                doc: "`block` fills with `surface_raised`; `outline` draws a hairline, for cards on a raised surface." },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
-            header: #{ required: false, multiple: false },
-            content: #{ required: true, multiple: false },
-            footer: #{ required: false, multiple: false },
+            header: #{ required: false, multiple: false, doc: "The heading above the content." },
+            content: #{ required: true, multiple: false, doc: "The card body." },
+            footer: #{ required: false, multiple: false, doc: "The node below the content." },
         },
         parts: ["root", "header", "content", "footer"],
     },

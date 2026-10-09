@@ -12,8 +12,6 @@
 */
 // Divider separates adjacent content without owning layout spacing.
 //
-// Props: orientation, thickness.
-// Events: none. State: none. Slots: none. Parts: root.
 // Example: Divider(#{ orientation: "horizontal" })
 
 define_component(#{
@@ -34,12 +32,14 @@ define_component(#{
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "horizontal" },
+                doc: "`horizontal` draws a full-width line; `vertical` a full-height one.",
             },
             thickness: #{
                 schema: #{ type: "integer", min: 1 },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "integer", value: 1 },
+                doc: "Line thickness in logical pixels; values above 8 are drawn as 8.",
             },
         },
         state: #{ fields: #{} },

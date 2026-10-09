@@ -14,8 +14,6 @@
 }
 */
 // Controlled radio option. RadioGroup owns roving keyboard behavior.
-// Props: value, selected, label, disabled, on_select.
-// Events: select(string). Parts: root, indicator, label.
 // State: controlled by the selected prop.
 // Example: Radio(#{ value: "team", selected: true, label: "Team", on_select: Fn("selected") })
 
@@ -32,24 +30,37 @@ define_component(#{
     },
     schema: #{
         props: #{
-            value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            selected: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            value: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Value this option stands for; passed to `on_select` and used as the option's key.",
+            },
+            selected: #{
+                schema: #{ type: "bool" }, required: true, sensitive: false,
+                doc: "Whether this is the chosen option; the caller derives it from the value it stores.",
+            },
+            label: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Text beside the circle; also the accessible name.",
+            },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and shows the disabled style.",
             },
             on_select: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false, sensitive: false,
+                doc: "Called with `value` when the option is clicked, even if it is already selected.",
             },
             focus_mark: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
+                doc: "Whether focus shows the ring on this option's circle; RadioGroup sets it only on its keyboard cursor.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ select: #{ payload: #{ type: "string" } } },
+        events: #{ select: #{ payload: #{ type: "string" },
+            doc: "Emitted when the option is clicked, even if it is already selected; the payload is `value`." } },
         slots: #{}, parts: ["root", "indicator", "label"],
     },
     render: Fn("render_Radio")

@@ -15,8 +15,6 @@
 }
 */
 // Controlled binary switch with disabled and loading states.
-// Props: checked, label, disabled, loading, on_change.
-// Events: change(bool). Parts: root, track, thumb, label.
 // State: controlled by the checked prop.
 // Example: Switch(#{ checked: true, label: "Updates", on_change: Fn("changed") })
 
@@ -34,23 +32,33 @@ define_component(#{
     },
     schema: #{
         props: #{
-            checked: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            checked: #{
+                schema: #{ type: "bool" }, required: true, sensitive: false,
+                doc: "Whether the switch is on; the caller stores the `change` payload and passes it back.",
+            },
+            label: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Text beside the track; also the accessible name.",
+            },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and shows the disabled style.",
             },
             loading: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Marks a pending change: the thumb shows a dot and the switch blocks clicks like `disabled`.",
             },
             on_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false, sensitive: false,
+                doc: "Called with the new checked value, the opposite of `checked`, when the switch is clicked.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ change: #{ payload: #{ type: "bool" } } },
+        events: #{ change: #{ payload: #{ type: "bool" },
+            doc: "Emitted when the switch is clicked; the payload is the new checked value." } },
         slots: #{}, parts: ["root", "track", "thumb", "label"],
     },
     render: Fn("render_Switch")

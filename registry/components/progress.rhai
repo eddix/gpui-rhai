@@ -11,8 +11,7 @@
 }
 */
 // Determinate or indeterminate progress indicator animated entirely in Rust.
-// Props: key, label, value, max, width, indeterminate. Parts: root, track, indicator.
-// State/events: stateless; Rust owns animation frames and no events are emitted.
+//
 // Example: Progress(#{ key: "upload", value: 60, max: 100, label: "Upload" })
 
 define_component(#{
@@ -24,16 +23,22 @@ define_component(#{
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable identity of the bar; its indicator is keyed `<key>-indicator` to keep its animation." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name saying what is in progress." },
             value: #{ schema: #{ type: "number", min: 0.0 }, required: false, sensitive: false,
-                "default": #{ type: "float", value: 0.0 } },
+                "default": #{ type: "float", value: 0.0 },
+                doc: "Amount done, in the units of `max`; a value above `max` shows a full bar." },
             max: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: false, sensitive: false,
-                "default": #{ type: "float", value: 100.0 } },
+                "default": #{ type: "float", value: 100.0 },
+                doc: "The value of a complete bar." },
             indeterminate: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Ignores `value` and loops a short indicator across the track, for work of unknown length." },
             width: #{ schema: #{ type: "integer", min: 24, max: 4096 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 200 } },
+                "default": #{ type: "integer", value: 200 },
+                doc: "Track width in logical pixels; the track is 4px tall." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "track", "indicator"],
     },

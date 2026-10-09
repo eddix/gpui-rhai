@@ -15,9 +15,6 @@
 */
 // Inline places children in a row with one spacing relationship and one control size.
 //
-// Props: children, gap (default related), align (start|center|end, default center),
-//        justify (start|between|end), wrap, size, label.
-// Events/state: none. Parts: root.
 // Example: Inline(#{ size: "sm", children: [button_a, button_b] })
 //
 // `size` sets the environment for every control inside, so a row shares one height.
@@ -36,21 +33,27 @@ define_component(#{
     schema: #{
         props: #{
             children: #{ schema: #{ type: "array", max_items: 256, items: #{ type: "node" } },
-                required: true, sensitive: false },
+                required: true, sensitive: false, doc: "Nodes placed in one row, in order." },
             gap: #{ schema: #{ type: "string", allowed: ["none", "unit", "related", "group", "section", "xxs", "xs", "sm", "md", "lg", "xl"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "related" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "related" },
+                doc: "Space between children: a relationship (`space.*`), a scale step (`spacing.*`) or `none`." },
             align: #{ schema: #{ type: "string", allowed: ["start", "center", "end"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "center" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "center" },
+                doc: "Vertical alignment of the children within the row." },
             justify: #{ schema: #{ type: "string", allowed: ["start", "between", "end"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "start" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "start" },
+                doc: "Horizontal placement: packed at the start or end, or `between`, spread to both ends." },
             wrap: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Lets children wrap onto further lines when the row is too narrow." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
-            label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Control size passed to every control inside, so the row shares one height." },
+            label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "When set, exposes the row as an accessible group with this name." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ children: #{ required: true, multiple: true } },
+        slots: #{ children: #{ required: true, multiple: true, doc: "The nodes in the row." } },
         parts: ["root"],
     },
     render: Fn("render_Inline")

@@ -11,10 +11,7 @@
 }
 */
 // Controlled Canvas rotation around an explicit local pivot.
-// Props: key, label, angle, pivot{x,y}, optional snap/handle, keyboard_step,
-// threshold, content, disabled, on_rotate.
-// Events: rotate(number degrees in [0,360)). State: caller owns angle.
-// Parts: root, content, handle, interaction.
+// State: caller owns angle.
 // Example: Rotatable(#{key:"dial",label:"Rotate dial",angle:0.0,pivot:#{x:100.0,y:100.0},content:canvas_node,on_rotate:Fn("changed")})
 
 define_component(#{
@@ -24,23 +21,37 @@ define_component(#{
         environment: []},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false},
-        label:#{schema:#{type:"string"},required:true,sensitive:false},
-        angle:#{schema:#{type:"number"},required:true,sensitive:false},
+        label:#{schema:#{type:"string"},required:true,sensitive:false,
+            doc:"Accessible name of the rotation slider."},
+        angle:#{schema:#{type:"number"},required:true,sensitive:false,
+            doc:"Clockwise rotation in degrees; the caller stores the `rotate` payload and passes it back."},
         pivot:#{schema:#{type:"object",allow_unknown:false,fields:#{
-            x:#{schema:#{type:"number"},required:true,sensitive:false},
-            y:#{schema:#{type:"number"},required:true,sensitive:false},
-        }},required:true,sensitive:false},
-        snap:#{schema:#{type:"optional",value:#{type:"number",exclusive_min:0.0,max:360.0}},required:false,sensitive:false},
+            x:#{schema:#{type:"number"},required:true,sensitive:false,
+                doc:"Pivot distance from the content's left edge, in logical pixels."},
+            y:#{schema:#{type:"number"},required:true,sensitive:false,
+                doc:"Pivot distance from the content's top edge, in logical pixels."},
+        }},required:true,sensitive:false,
+            doc:"Point the content turns around, in logical pixels from the content's top-left corner."},
+        snap:#{schema:#{type:"optional",value:#{type:"number",exclusive_min:0.0,max:360.0}},required:false,sensitive:false,
+            doc:"Angle step in degrees that proposed angles round to; it also replaces `keyboard_step`."},
         keyboard_step:#{schema:#{type:"number",min:0.1,max:180.0},required:false,sensitive:false,
-            "default":#{type:"float",value:5.0}},
+            "default":#{type:"float",value:5.0},
+            doc:"Degrees one arrow key turns, Right/Up clockwise; Shift turns four times as far and Home returns to 0."},
         threshold:#{schema:#{type:"number",min:0.0,max:64.0},required:false,sensitive:false,
-            "default":#{type:"float",value:4.0}},
-        handle:#{schema:#{type:"optional",value:#{type:"node"}},required:false,sensitive:false},
-        content:#{schema:#{type:"node"},required:true,sensitive:false},
-        disabled:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false}},
-        on_rotate:#{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false},
-    },state:#{fields:#{}},events:#{rotate:#{payload:#{type:"number"}}},
-        slots:#{content:#{required:true,multiple:false},handle:#{required:false,multiple:false}},
+            "default":#{type:"float",value:4.0},
+            doc:"Pointer travel in logical pixels before a press starts rotating."},
+        handle:#{schema:#{type:"optional",value:#{type:"node"}},required:false,sensitive:false,
+            doc:"Grip in the top-right corner that alone starts a rotation drag; without it the whole content does."},
+        content:#{schema:#{type:"node"},required:true,sensitive:false,
+            doc:"Node that rotates; it fills the component."},
+        disabled:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false},
+            doc:"Ignores pointer and keyboard input and removes the control from the tab order."},
+        on_rotate:#{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false,
+            doc:"Called with the proposed angle in degrees when a rotation drag ends or a key turns the content."},
+    },state:#{fields:#{}},events:#{rotate:#{payload:#{type:"number"},
+            doc:"Emitted when a rotation drag ends or a key turns the content; the payload is the next angle in [0, 360)."}},
+        slots:#{content:#{required:true,multiple:false,doc:"The rotated content."},
+            handle:#{required:false,multiple:false,doc:"The rotation grip in the top-right corner."}},
         parts:["root","content","handle","interaction"]},render:Fn("render_Rotatable")
 });
 

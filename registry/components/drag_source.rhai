@@ -11,11 +11,7 @@
 }
 */
 // Typed in-application data drag source. It does not move the source object.
-// Props: key, label, source_id, payload_type, payload, operation, content,
-// threshold, keyboard_target, disabled, on_drag_end.
-// Events: drag_end({accepted,target_id,operation,cancelled}).
 // State: Host-domain native drag session only; application data remains controlled.
-// Parts: root, content, interaction.
 // Example: DragSource(#{ key:"server", label:"Move server", source_id:"server-a",
 //     payload_type:"server", payload:#{id:"a"}, content:text("Server A") })
 
@@ -26,25 +22,41 @@ define_component(#{
         environment: [] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
-        label: #{ schema:#{type:"string"}, required:true, sensitive:false },
-        source_id: #{ schema:#{type:"string"}, required:true, sensitive:false },
-        payload_type: #{ schema:#{type:"string"}, required:true, sensitive:false },
-        payload: #{ schema:#{type:"ui_value"}, required:true, sensitive:false },
+        label: #{ schema:#{type:"string"}, required:true, sensitive:false,
+            doc:"Accessible name of the drag source button." },
+        source_id: #{ schema:#{type:"string"}, required:true, sensitive:false,
+            doc:"Identity of the dragged item, 1 to 128 characters; drop zones receive it as `source_id`." },
+        payload_type: #{ schema:#{type:"string"}, required:true, sensitive:false,
+            doc:"Type name, 1 to 128 characters, that drop zones match against their `payload_types`." },
+        payload: #{ schema:#{type:"ui_value"}, required:true, sensitive:false,
+            doc:"Data handed unchanged to the receiving zone's `drop` event." },
         operation: #{ schema:#{type:"string",allowed:["copy","move"]}, required:false,
-            sensitive:false, "default":#{type:"string",value:"move"} },
-        content: #{ schema:#{type:"node"}, required:true, sensitive:false },
+            sensitive:false, "default":#{type:"string",value:"move"},
+            doc:"What the drop means; only zones listing it in `operations` accept the drag." },
+        content: #{ schema:#{type:"node"}, required:true, sensitive:false,
+            doc:"Node the user presses and drags." },
         threshold: #{ schema:#{type:"number",min:0.0,max:64.0}, required:false,
-            sensitive:false, "default":#{type:"float",value:4.0} },
-        keyboard_target: #{ schema:#{type:"optional",value:#{type:"string"}}, required:false, sensitive:false },
+            sensitive:false, "default":#{type:"float",value:4.0},
+            doc:"Pointer travel in logical pixels before a press becomes a drag." },
+        keyboard_target: #{ schema:#{type:"optional",value:#{type:"string"}}, required:false, sensitive:false,
+            doc:"`target_id` of the zone that Enter or Space drops onto; without it the keyboard cannot drop." },
         disabled: #{ schema:#{type:"bool"}, required:false, sensitive:false,
-            "default":#{type:"bool",value:false} },
-        on_drag_end: #{ schema:#{type:"optional",value:#{type:"callback"}}, required:false, sensitive:false },
+            "default":#{type:"bool",value:false},
+            doc:"Ignores pointer and keyboard input and removes the source from the tab order." },
+        on_drag_end: #{ schema:#{type:"optional",value:#{type:"callback"}}, required:false, sensitive:false,
+            doc:"Called with `{accepted, target_id, operation, cancelled}` when a drag or keyboard drop ends." },
     }, state:#{fields:#{}}, events:#{ drag_end:#{ payload:#{type:"object",allow_unknown:false,fields:#{
-        accepted:#{schema:#{type:"bool"},required:true,sensitive:false},
-        target_id:#{schema:#{type:"optional",value:#{type:"string"}},required:true,sensitive:false},
-        operation:#{schema:#{type:"string",allowed:["copy","move"]},required:true,sensitive:false},
-        cancelled:#{schema:#{type:"bool"},required:true,sensitive:false},
-    }} } }, slots:#{}, parts:["root","content","interaction"] },
+        accepted:#{schema:#{type:"bool"},required:true,sensitive:false,
+            doc:"True when a drop zone received the drop; that zone's Host still decides what it does."},
+        target_id:#{schema:#{type:"optional",value:#{type:"string"}},required:true,sensitive:false,
+            doc:"`target_id` of the zone that received the drop, or `()`."},
+        operation:#{schema:#{type:"string",allowed:["copy","move"]},required:true,sensitive:false,
+            doc:"The drag's `operation`."},
+        cancelled:#{schema:#{type:"bool"},required:true,sensitive:false,
+            doc:"True when the drag was cancelled, for example with Escape."},
+    }},
+        doc:"Emitted when a drag past the threshold ends or is cancelled, or a keyboard drop runs; the payload is the outcome." } },
+        slots:#{}, parts:["root","content","interaction"] },
     render:Fn("render_DragSource")
 });
 

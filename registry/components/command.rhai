@@ -15,11 +15,8 @@
 }
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
-// Props: key, label, controlled query/active_value, items (text label plus optional rich content),
-//        max_visible, disabled, and callbacks. Items may bind a registered `action`.
-// Events: query_change(string), active_change(string), and action(string).
+//
 // State: caller owns query and the roving active command.
-// Parts: root, search, list, group, item, item_active, label, shortcut, empty.
 // Example: Command(#{ key: "palette", label: "Commands", query: query, active_value: active, items: items, on_query_change: Fn("queried"), on_active_change: Fn("preview"), on_action: Fn("run") })
 
 import "components/input" as input;
@@ -38,44 +35,70 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the search field and the command list." },
+            query: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Search text; the caller stores the `query_change` payload and passes it back." },
+            active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Highlighted command value; the caller stores the `active_change` payload. Other values show the first enabled match." },
             items: #{ schema: #{ type: "one_of", variants: [
                 #{ type: "array", max_items: 4096, items: #{
                     type: "object", allow_unknown: false, fields: #{
-                        value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                        value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                            doc: "Unique, non-empty id reported by `active_change` and `action`." },
+                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                            doc: "Non-empty text ranked against the query; the row shows it unless `content` is set." },
                         content: #{ schema: #{ type: "optional", value: #{ type: "node" } },
-                            required: false, sensitive: false },
+                            required: false, sensitive: false,
+                            doc: "Rich node shown in place of the label text; ranking and the accessible name still use `label`." },
                         keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
-                            required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-                        group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                        shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                        action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                            required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                            doc: "Extra terms matched against the query; a keyword match ranks just below the same label match." },
+                        group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                            doc: "Heading the command is listed under; groups keep the source order of their first match." },
+                        shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                            doc: "Key legend shown at the row end, written like `cmd-k`; overrides the binding of `action`." },
+                        action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                            doc: "Registered action dispatched on activation; it also supplies the shortcut legend and can disable the row." },
                         disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                            "default": #{ type: "bool", value: false } },
+                            "default": #{ type: "bool", value: false },
+                            doc: "Dims the command; it cannot be activated and keyboard navigation skips it." },
                     }
                 } },
                 #{ type: "collection" }
-            ] }, required: true, sensitive: false },
+            ] }, required: true, sensitive: false,
+                doc: "Commands to rank: item maps, or a native collection keyed by value with the same fields but no `content` or `action`." },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Type a command" } },
+                "default": #{ type: "string", value: "Type a command" },
+                doc: "Hint shown in the empty search field." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "No commands found" } },
+                "default": #{ type: "string", value: "No commands found" },
+                doc: "Message shown in place of the list when no command matches." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 8 } },
+                "default": #{ type: "integer", value: 8 },
+                doc: "Rows the list shows before it scrolls; group headings count as rows." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Disables the search field and the list's arrow, Home, End and Enter keys." },
             autofocus: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
-            on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
-            on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Focuses the search field when the command first mounts." },
+            on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the new search text on each edit; store it as `query`." },
+            on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the command value to highlight on Up, Down, Home, End or hover; store it as `active_value`." },
+            on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the command value when a row is clicked or Enter activates the highlighted command." },
         },
         state: #{ fields: #{} },
-        events: #{ query_change: #{ payload: #{ type: "string" } },
-            active_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } } },
+        events: #{
+            query_change: #{ payload: #{ type: "string" },
+                doc: "Emitted on each edit of the search field; the payload is the new query." },
+            active_change: #{ payload: #{ type: "string" },
+                doc: "Emitted when a key or hover moves the highlight; the payload is the newly highlighted value." },
+            action: #{ payload: #{ type: "string" },
+                doc: "Emitted when a command is clicked or activated with Enter, after its bound action; the payload is its value." },
+        },
         slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty",
             "indicator_bar"],
     },

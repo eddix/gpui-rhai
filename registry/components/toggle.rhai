@@ -11,10 +11,7 @@
 }
 */
 // Controlled pressed-state tool button, distinct from Checkbox and Switch.
-// Props: text, pressed, optional prefix/suffix, size, disabled, and on_pressed_change.
-// Events: pressed_change(bool).
 // State: caller owns pressed state.
-// Parts: root, label, prefix, suffix.
 // Example: Toggle(#{ text: "Bold", pressed: true, on_pressed_change: Fn("changed") })
 
 import "components/button" as button;
@@ -26,19 +23,28 @@ define_component(#{
         tokens: ["selection", "text_primary"], environment: ["size", "density"] },
     schema: #{
         props: #{
-            text: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            pressed: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
-            prefix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            suffix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+            text: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Label text; also the accessible name." },
+            pressed: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
+                doc: "Whether the toggle is on; the caller stores the `pressed_change` payload and passes it back." },
+            prefix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Node before the label, such as an icon." },
+            suffix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Node after the label." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
+                required: false, sensitive: false, doc: "Control size; leave unset to inherit the environment size." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false }, doc: "Blocks clicks and shows the disabled style." },
             on_pressed_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Called with the new pressed value, the opposite of `pressed`, when the toggle is clicked." },
         },
-        state: #{ fields: #{} }, events: #{ pressed_change: #{ payload: #{ type: "bool" } } },
-        slots: #{ prefix: #{ required: false, multiple: false }, suffix: #{ required: false, multiple: false } },
+        state: #{ fields: #{} }, events: #{ pressed_change: #{ payload: #{ type: "bool" },
+            doc: "Emitted when the toggle is clicked; the payload is the new pressed value." } },
+        slots: #{
+            prefix: #{ required: false, multiple: false, doc: "Node before the label, such as an icon." },
+            suffix: #{ required: false, multiple: false, doc: "Node after the label." },
+        },
         parts: ["root", "label", "prefix", "suffix"],
     },
     render: Fn("render_Toggle")

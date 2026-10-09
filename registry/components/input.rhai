@@ -16,10 +16,7 @@
 */
 // Input is a controlled single-line native text input.
 //
-// Props: key, label, value, placeholder, size, disabled, read_only, error, autofocus,
-//        appearance (field|embedded), callbacks.
-// Events: change(string), submit(string), focus(null), blur(null).
-// State: native keyed TextInput Entity. Parts: root, input.
+// State: native keyed TextInput Entity.
 //
 // `appearance: "embedded"` is the search or filter line that heads a panel or a list and
 // keeps focus while it is open: no frame or well of its own, the container's edges and a
@@ -48,61 +45,73 @@ define_component(#{
                 schema: #{ type: "string" },
                 required: true,
                 sensitive: false,
+                doc: "Names the native editor, which keeps caret, selection and undo history across renders; a new key starts a fresh editor.",
             },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the field; it is not drawn, so pair the input with a `Label` or a `FormField`." },
             value: #{
                 schema: #{ type: "string" },
                 required: true,
                 sensitive: false,
+                doc: "Current text; the caller stores the `change` payload and passes it back.",
             },
             placeholder: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false,
                 sensitive: false,
+                doc: "Muted hint shown while `value` is empty.",
             },
             disabled: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Takes the field out of the tab order, blocks editing and submit, and dims it.",
             },
             read_only: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Keeps the text focusable, selectable and copyable but blocks edits; the text turns `text_muted`.",
             },
             autofocus: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Focuses the field once, when its editor first mounts; ignored while `disabled`.",
             },
             error: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Marks the value invalid: a `danger` frame (or hairline when embedded) and the invalid state for assistive tech.",
             },
             on_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
+                doc: "Called with the full new text after each edit.",
             },
             on_submit: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
+                doc: "Called with the current text when Enter is pressed in a field that is not `disabled`.",
             },
             on_focus: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
+                doc: "Called when the field gains keyboard focus.",
             },
             on_blur: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
+                doc: "Called when the field loses keyboard focus.",
             },
             size: #{
                 schema: #{
@@ -111,20 +120,24 @@ define_component(#{
                 },
                 required: false,
                 sensitive: false,
+                doc: "Control size of the field; unset, it inherits the `size` environment.",
             },
             appearance: #{
                 schema: #{ type: "string", allowed: ["field", "embedded"] },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "field" },
+                doc: "`field` is a framed well; `embedded` is the frameless search or filter line that heads a panel or list.",
             },
         },
         state: #{ fields: #{} },
         events: #{
-            change: #{ payload: #{ type: "string" } },
-            submit: #{ payload: #{ type: "string" } },
-            focus: #{ payload: #{ type: "null" } },
-            blur: #{ payload: #{ type: "null" } },
+            change: #{ payload: #{ type: "string" },
+                doc: "Emitted after each edit; the payload is the full new text." },
+            submit: #{ payload: #{ type: "string" },
+                doc: "Emitted when Enter is pressed in a field that is not `disabled`; the payload is the current text." },
+            focus: #{ payload: #{ type: "null" }, doc: "Emitted when the field gains keyboard focus." },
+            blur: #{ payload: #{ type: "null" }, doc: "Emitted when the field loses keyboard focus." },
         },
         slots: #{},
         parts: ["root", "input"],

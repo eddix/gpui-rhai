@@ -13,8 +13,6 @@
 // Toolbar arranges a region's controls by role: context and filters at the start,
 // secondary actions and the one primary action at the end.
 //
-// Props: label (required), context, filters, fill, actions, primary, size.
-// Events/state: none. Parts: root, start, fill, end.
 // Example: Toolbar(#{ label: "Hosts", filters: [filter_input], actions: [export_button],
 //              primary: deploy_button })
 //
@@ -34,23 +32,32 @@ define_component(#{
     },
     schema: #{
         props: #{
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the toolbar." },
             context: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "What the bar acts on (tags, a breadcrumb), first in the start group, `related` apart." },
             filters: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Controls that narrow the content, after `context` in the start group." },
             actions: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-            primary: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            fill: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Secondary actions in the end group, before `primary`." },
+            primary: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "The one solid action of the bar, last in the end group." },
+            fill: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "One field that takes the width between the groups, at least `metrics.label_column` wide." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Control size passed to every control in the bar, so they share one height." },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
-            context: #{ required: false, multiple: true }, filters: #{ required: false, multiple: true },
-            actions: #{ required: false, multiple: true }, primary: #{ required: false, multiple: false },
-            fill: #{ required: false, multiple: false },
+            context: #{ required: false, multiple: true, doc: "What the bar acts on, at the start." },
+            filters: #{ required: false, multiple: true, doc: "Controls that narrow the content." },
+            actions: #{ required: false, multiple: true, doc: "Secondary actions at the end." },
+            primary: #{ required: false, multiple: false, doc: "The one solid action, last." },
+            fill: #{ required: false, multiple: false, doc: "The field that takes the free width." },
         },
         parts: ["root", "start", "fill", "end"],
     },

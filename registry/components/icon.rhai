@@ -16,8 +16,6 @@
 */
 // Icon wraps a declarative AssetId or a runtime image handle with consistent sizing.
 //
-// Props: source, optional rtl_source, size, and label.
-// State/events: none. Parts: root.
 // Example: Icon(#{ source: asset("app/icons/check"), size: "sm", label: "Complete" })
 
 define_component(#{
@@ -45,6 +43,7 @@ define_component(#{
                 ] },
                 required: true,
                 sensitive: false,
+                doc: "The glyph: a declared asset such as `asset(\"app/icons/check\")`, or a runtime image handle.",
             },
             rtl_source: #{
                 schema: #{ type: "optional", value: #{ type: "one_of", variants: [
@@ -53,16 +52,19 @@ define_component(#{
                 ] } },
                 required: false,
                 sensitive: false,
+                doc: "Glyph drawn instead of `source` in right-to-left layouts, for directional icons such as arrows.",
             },
             size: #{
                 schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false,
                 sensitive: false,
+                doc: "Glyph box: `xs` 12, `sm` 14, `md` 16, `lg` 20 logical pixels; unset, it follows `metrics.icon`.",
             },
             label: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false,
                 sensitive: false,
+                doc: "Accessible name; without one, or with an empty one, the icon is decorative.",
             },
         },
         state: #{ fields: #{} },

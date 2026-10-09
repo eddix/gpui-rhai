@@ -4,6 +4,10 @@ gpui-rhai ships 64 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
+This page records how components differ and what their contracts promise. The
+props, events, slots and parts of every module, with their types, defaults and
+meaning, are in the generated [module reference](../reference/README.md).
+
 Run the interactive catalog from this repository:
 
 ```text

@@ -14,9 +14,7 @@
 }
 */
 // Consistent empty-state composition with optional icon, content, and actions.
-// Props: title, optional description/icon/content, and action nodes.
-// Events/state: stateless and emits no events.
-// Parts: root, icon, title, description, content, actions.
+//
 // Example: Empty(#{ title: "No projects", description: "Create one to begin." })
 
 define_component(#{
@@ -30,17 +28,23 @@ define_component(#{
         environment: ["density"] },
     schema: #{
         props: #{
-            title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+            title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "What is empty, as a subtitle; also the accessible name." },
+            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Why it is empty and what to do next; centered, muted, at most 420px wide." },
+            icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "A glyph above the title, in a raised square 1.5 times `metrics.control` on each side." },
+            content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Extra content under the description." },
             actions: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Buttons centered under the text, `related` apart." },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
-            icon: #{ required: false, multiple: false }, content: #{ required: false, multiple: false },
-            actions: #{ required: false, multiple: true },
+            icon: #{ required: false, multiple: false, doc: "A glyph above the title." },
+            content: #{ required: false, multiple: false, doc: "Extra content under the description." },
+            actions: #{ required: false, multiple: true, doc: "Buttons under the text." },
         },
         parts: ["root", "icon", "title", "description", "content", "actions"],
     },

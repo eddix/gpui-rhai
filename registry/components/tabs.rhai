@@ -16,10 +16,7 @@
 }
 */
 // Controlled tabs with one tab stop and orientation-aware arrow selection.
-// Props: value, tabs, orientation, layout, label, motion_key, panel, size, on_change.
-// `panel: false` renders only the tab list, for view switchers.
-// Parts: root, list, indicator, tab, tab_selected, label, icon, panel.
-// State/events: controlled selected value; emits change(string).
+// State: controlled selected value.
 // Example: Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("changed") })
 
 define_component(#{
@@ -36,33 +33,47 @@ define_component(#{
     },
     schema: #{
         props: #{
-            value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "The `value` of the selected tab; the caller stores the `change` payload and passes it back." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the tab list, and of the group that holds the list and the panel." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "horizontal" } },
+                "default": #{ type: "string", value: "horizontal" },
+                doc: "Direction of the list: `horizontal` is a row moved with Left/Right, `vertical` a column beside the panel moved with Up/Down." },
             layout: #{ schema: #{ type: "string", allowed: ["content", "equal"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "content" } },
+                "default": #{ type: "string", value: "content" },
+                doc: "Tab widths of a horizontal list: `content` fits each label, `equal` fills the width and shares it equally." },
             motion_key: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "" } },
+                "default": #{ type: "string", value: "" },
+                doc: "Shared-layout id, at most 128 characters, that slides the selected indicator between tabs; empty turns it off." },
             tabs: #{ schema: #{ type: "array", max_items: 128, items: #{
                 type: "object", allow_unknown: false, fields: #{
-                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Identity of the tab, matched against `value` and passed to `on_change`." },
+                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Tab text and accessible name." },
+                    icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                        doc: "Node drawn at icon size before the label." },
                     label_visible: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: true } },
-                    content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+                        "default": #{ type: "bool", value: true },
+                        doc: "Whether the label text shows; a tab that hides it needs an `icon` and keeps the label as its name." },
+                    content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                        doc: "Panel shown while this tab is selected." },
                     disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
+                        "default": #{ type: "bool", value: false },
+                        doc: "Whether the tab ignores clicks; arrow keys skip it." },
                 },
-            } }, required: true, sensitive: false },
+            } }, required: true, sensitive: false, doc: "The tabs in list order." },
             panel: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Whether the selected tab's `content` renders; `false` renders only the tab list, for view switchers." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                required: false, sensitive: false, doc: "Overrides the `size` environment for the tabs." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with a tab's `value` when it is clicked or reached with an arrow key; without it the tabs take no input." },
         },
-        state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "string" } } },
+        state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "string" },
+            doc: "Emitted when a tab is clicked or an arrow key moves the selection; the payload is the new tab's `value`." } },
         slots: #{}, parts: ["root", "list", "indicator", "tab", "tab_selected", "label", "icon", "panel"],
     },
     render: Fn("render_Tabs")

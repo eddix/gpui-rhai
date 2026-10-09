@@ -15,10 +15,7 @@
 }
 */
 // Controlled single/multiple accordion with Rust-side clip motion.
-// Props: key, items ({key, title, content, content_height?, disabled?}; content_height is
-//        pixels or a Length, omitted the panel fits its content), expanded, mode, disabled,
-//        on_change.
-// State/events: controlled expanded values; emits change(array<string>).
+// State: controlled expanded values.
 // Example: Accordion(#{ key: "faq", items: items, expanded: [], on_change: Fn("changed") })
 
 define_component(#{
@@ -35,28 +32,39 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            expanded: #{ schema: #{ type: "array", max_items: 256, items: #{ type: "string" } }, required: true, sensitive: false },
+            expanded: #{ schema: #{ type: "array", max_items: 256, items: #{ type: "string" } }, required: true, sensitive: false,
+                doc: "Keys of the open items; the caller stores the `change` payload and passes it back." },
             mode: #{ schema: #{ type: "string", allowed: ["single", "multiple"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "single" } },
+                "default": #{ type: "string", value: "single" },
+                doc: "With `single` at most one item is open; with `multiple` items open and close independently." },
             items: #{
                 schema: #{ type: "array", max_items: 256, items: #{
                     type: "object", allow_unknown: false, fields: #{
-                        key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                        title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                        content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+                        key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                            doc: "Identity of the item; `expanded` lists it while the item is open." },
+                        title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                            doc: "Header text of the item." },
+                        content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                            doc: "Panel shown under the header while the item is open." },
                         content_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
                             #{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false,
-                            sensitive: false },
+                            sensitive: false,
+                            doc: "Open panel height: logical pixels, or a Length resolved in this subtree's density; omitted, the panel fits its content." },
                         disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                            "default": #{ type: "bool", value: false } },
+                            "default": #{ type: "bool", value: false },
+                            doc: "Whether this item's header ignores presses." },
                     },
                 } }, required: true, sensitive: false,
+                doc: "The sections, in order.",
             },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Whether every header ignores presses." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the next `expanded` keys when a header is pressed." },
         },
-        state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "array", max_items: 256, items: #{ type: "string" } } } },
+        state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "array", max_items: 256, items: #{ type: "string" } },
+            doc: "Emitted when a header is pressed; the payload is the keys of the items open after the toggle." } },
         slots: #{}, parts: ["root", "item", "trigger", "content", "focus_frame"],
     },
     render: Fn("render_Accordion")

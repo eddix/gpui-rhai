@@ -15,11 +15,7 @@
 */
 // IconButton presents one icon in a square action target.
 //
-// Props: icon and label (required), variant, size, selected, disabled, loading, hoverable,
-//   on_click, action.
-// Events: click(null).
 // State: stateless and controlled by caller props.
-// Parts: root, icon.
 // Example: IconButton(#{ icon: svg(markup), label: "Close", variant: "ghost", size: "sm" })
 
 import "components/button" as button;
@@ -40,8 +36,10 @@ define_component(#{
     },
     schema: #{
         props: #{
-            icon: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            icon: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Icon node, sized `metrics.icon` square and drawn in the button's text color." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name; the button shows no text, so it must not be empty." },
             variant: #{
                 schema: #{
                     type: "string",
@@ -52,6 +50,7 @@ define_component(#{
                 },
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "ghost" },
+                doc: "Fill, as on `Button`; the default `ghost` stays bare until hovered or `selected`.",
             },
             size: #{
                 schema: #{
@@ -59,23 +58,30 @@ define_component(#{
                     value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }
                 },
                 required: false, sensitive: false,
+                doc: "Control size, which sets the square's side; unset, it inherits the `size` environment.",
             },
             selected: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Pressed state of a toggle; `ghost`, `outline` and `secondary` fill with `selection` and stop reacting to hover." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and greys the icon; a disabled `action` disables it too." },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and shows the disabled look while work runs; it draws no spinner." },
             hoverable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true }, doc: "Changes the fill on hover; `false` keeps it still." },
             on_click: #{ schema: #{ type: "optional", value: #{ type: "callback" } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Called when the button is pressed; not while disabled or loading, and not when `action` is set." },
             action: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Registered action dispatched on click, in place of `on_click`; it also sets the enabled state and the shortcut told to assistive tech." },
         },
         state: #{ fields: #{} },
-        events: #{ click: #{ payload: #{ type: "null" } } },
-        slots: #{ icon: #{ required: true, multiple: false } },
+        events: #{ click: #{ payload: #{ type: "null" },
+            doc: "Emitted when the button is pressed while enabled, not loading and without an `action`." } },
+        slots: #{ icon: #{ required: true, multiple: false, doc: "The icon in the square." } },
         parts: ["root", "icon"],
     },
     render: Fn("render_IconButton")

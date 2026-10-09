@@ -16,8 +16,6 @@
 }
 */
 // Controlled checkbox with checked, unchecked, and indeterminate states.
-// Props: checked, indeterminate, label, disabled, on_change.
-// Events: change({ checked, indeterminate }). Parts: root, box, mark, label.
 // State: controlled by checked/indeterminate props.
 // Example: Checkbox(#{ checked: true, label: "Remember", on_change: Fn("changed") })
 
@@ -35,19 +33,28 @@ define_component(#{
     },
     schema: #{
         props: #{
-            checked: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
+            checked: #{
+                schema: #{ type: "bool" }, required: true, sensitive: false,
+                doc: "Whether the box is checked; the caller stores `checked` from the `change` payload and passes it back.",
+            },
             indeterminate: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Shows the minus mark and a mixed accessible state over `checked`; the caller stores it from the `change` payload.",
             },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Text beside the box; also the accessible name.",
+            },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and shows the disabled style.",
             },
             on_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false, sensitive: false,
+                doc: "Called with the next `#{ checked, indeterminate }` state when the box is clicked.",
             },
         },
         state: #{ fields: #{} },
@@ -56,10 +63,13 @@ define_component(#{
                 payload: #{
                     type: "object", allow_unknown: false,
                     fields: #{
-                        checked: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
-                        indeterminate: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
+                        checked: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
+                            doc: "The next checked value: true when the box was unchecked or mixed." },
+                        indeterminate: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
+                            doc: "Always false, since a click resolves the mixed state." },
                     },
                 },
+                doc: "Emitted when the box is clicked; the payload is its next state, and a mixed box becomes checked.",
             },
         },
         slots: #{},

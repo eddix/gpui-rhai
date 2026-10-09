@@ -14,11 +14,7 @@
 }
 */
 // Controlled keyed ordering with native pointer targets and keyboard moves.
-// Props: key, label, items[{key,label,content,disabled?}], direction,
-// grid_columns, gap, threshold, disabled, on_reorder.
-// Events: reorder({source_key,anchor_key,placement,x,y}).
 // State: order is caller-owned; native state contains only one transient drag.
-// Parts: root, item, item_disabled, handle, handle_icon, content.
 // Keyboard: focus a handle, then Option/Alt+Arrow, Home, or End.
 // Example: Sortable(#{ key:"queue", label:"Queue", items:items, on_reorder:Fn("reordered") })
 
@@ -32,43 +28,65 @@ define_component(#{
         environment: ["density"] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
-        label: #{ schema:#{type:"string"}, required:true, sensitive:false },
+        label: #{ schema:#{type:"string"}, required:true, sensitive:false,
+            doc:"Accessible name of the list." },
         items: #{ schema:#{type:"optional",value:#{type:"array",max_items:512,items:#{
             type:"object",allow_unknown:false,fields:#{
-                key:#{schema:#{type:"string"},required:true,sensitive:false},
-                label:#{schema:#{type:"string"},required:true,sensitive:false},
-                content:#{schema:#{type:"node"},required:true,sensitive:false},
+                key:#{schema:#{type:"string"},required:true,sensitive:false,
+                    doc:"Identity of the row, unique in the list; `reorder` reports it."},
+                label:#{schema:#{type:"string"},required:true,sensitive:false,
+                    doc:"Accessible name of the row; its handle reads `Reorder <label>`."},
+                content:#{schema:#{type:"node"},required:true,sensitive:false,
+                    doc:"Node shown beside the drag handle."},
                 disabled:#{schema:#{type:"bool"},required:false,sensitive:false,
-                    "default":#{type:"bool",value:false}},
+                    "default":#{type:"bool",value:false},
+                    doc:"Keeps the row from being dragged or moved by key; rows can still drop beside it."},
             }
-        }}}, required:false, sensitive:false },
+        }}}, required:false, sensitive:false,
+            doc:"Rows in their current order, owned by the caller; give exactly one of `items` and `virtual_data`." },
         virtual_data: #{ schema:#{type:"optional",value:#{type:"one_of",variants:[
             #{type:"array",max_items:10000,items:#{type:"map",values:#{type:"ui_value"}}},
             #{type:"collection"}
-        ]}}, required:false, sensitive:false },
+        ]}}, required:false, sensitive:false,
+            doc:"Virtualized rows: maps with a string `key`, a `label_key` field and an optional `disabled`." },
         label_key: #{schema:#{type:"string"},required:false,sensitive:false,
-            "default":#{type:"string",value:"label"}},
+            "default":#{type:"string",value:"label"},
+            doc:"Field of a `virtual_data` row shown as its text and used as its accessible name."},
         estimated_row_height: #{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,
-            "default":#{type:"float",value:40.0}},
-        height: #{schema:#{type:"optional",value:#{type:"number",exclusive_min:0.0}},required:false,sensitive:false},
-        fill_height: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false}},
+            "default":#{type:"float",value:40.0},
+            doc:"Row height the virtual list assumes before rows are measured, in logical pixels."},
+        height: #{schema:#{type:"optional",value:#{type:"number",exclusive_min:0.0}},required:false,sensitive:false,
+            doc:"Viewport height of the virtual list, in logical pixels; give exactly one of `height` and `fill_height`."},
+        fill_height: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false},
+            doc:"Lets the virtual list fill its parent's height; give exactly one of `height` and `fill_height`."},
         direction: #{ schema:#{type:"string",allowed:["vertical","horizontal","grid"]},
-            required:false,sensitive:false,"default":#{type:"string",value:"vertical"} },
+            required:false,sensitive:false,"default":#{type:"string",value:"vertical"},
+            doc:"Lays rows out as a column, a scrolling row or a grid of `grid_columns`; `virtual_data` needs `vertical`." },
         grid_columns: #{ schema:#{type:"integer",min:1,max:64},required:false,sensitive:false,
-            "default":#{type:"integer",value:3} },
-        gap: #{ schema:#{type:"optional",value:#{type:"length"}},required:false,sensitive:false },
+            "default":#{type:"integer",value:3},
+            doc:"Number of columns when `direction` is `grid`." },
+        gap: #{ schema:#{type:"optional",value:#{type:"length"}},required:false,sensitive:false,
+            doc:"Space between rows, `spacing.xs` when unset; ignored with `virtual_data`." },
         threshold: #{ schema:#{type:"number",min:0.0,max:64.0},required:false,sensitive:false,
-            "default":#{type:"float",value:4.0} },
+            "default":#{type:"float",value:4.0},
+            doc:"Pointer travel in logical pixels before a press becomes a drag." },
         disabled: #{ schema:#{type:"bool"},required:false,sensitive:false,
-            "default":#{type:"bool",value:false} },
-        on_reorder: #{ schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false },
+            "default":#{type:"bool",value:false},
+            doc:"Disables dragging and keyboard moves for every row." },
+        on_reorder: #{ schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false,
+            doc:"Called with the `reorder` payload when a row is dropped or moved with Option/Alt and an arrow, Home or End." },
     }, state:#{fields:#{}}, events:#{ reorder:#{payload:#{type:"object",allow_unknown:false,fields:#{
-        source_key:#{schema:#{type:"string"},required:true,sensitive:false},
-        anchor_key:#{schema:#{type:"string"},required:true,sensitive:false},
-        placement:#{schema:#{type:"string",allowed:["before","after"]},required:true,sensitive:false},
-        x:#{schema:#{type:"number"},required:true,sensitive:false},
-        y:#{schema:#{type:"number"},required:true,sensitive:false},
-    }}} }, slots:#{}, parts:["root","item","item_disabled","handle","handle_icon","content"] },
+        source_key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Key of the row that moves."},
+        anchor_key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Key of the row it lands next to."},
+        placement:#{schema:#{type:"string",allowed:["before","after"]},required:true,sensitive:false,
+            doc:"Whether the moving row goes before or after the anchor row."},
+        x:#{schema:#{type:"number"},required:true,sensitive:false,
+            doc:"Pointer x at the drop in window coordinates, in logical pixels; 0 for keyboard moves."},
+        y:#{schema:#{type:"number"},required:true,sensitive:false,
+            doc:"Pointer y at the drop in window coordinates, in logical pixels; 0 for keyboard moves."},
+    }},
+        doc:"Emitted when a row is dropped or moved by key; the payload names the move, and the caller reorders its rows."} },
+        slots:#{}, parts:["root","item","item_disabled","handle","handle_icon","content"] },
     render:Fn("render_Sortable")
 });
 

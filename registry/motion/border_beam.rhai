@@ -8,7 +8,8 @@
   "capabilities": {}
 }
 */
-// Props: key, width, and height. State: stateless. Emits no events.
+// BorderBeam traces an accent stroke around a rectangle in an endless loop.
+// State: stateless. Emits no events.
 // Example: BorderBeam(#{ key: "beam", width: 220, height: 72 })
 
 define_component(#{
@@ -16,9 +17,12 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            width: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            height: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Motion identity of the beam; keep it stable so the loop keeps its progress across renders." },
+            width: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Width of the traced rectangle in logical pixels." },
+            height: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Height of the traced rectangle in logical pixels." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
     },

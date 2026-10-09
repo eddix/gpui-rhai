@@ -19,8 +19,6 @@
 */
 // Tag labels a category: a flat tonal tape with an optional facet segment.
 //
-// Props: text (required), facet, variant, closable, close_label, disabled, on_close.
-// Events: close(string). Parts: root, facet, label, close.
 // State: stateless and controlled by caller props.
 // Example: Tag(#{ facet: "env", text: "prod", variant: "danger" })
 //
@@ -43,31 +41,39 @@ define_component(#{
     },
     schema: #{
         props: #{
-            text: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            text: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "The value shown; it is also the payload of `close`." },
             facet: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Key drawn uppercase in a segment before the text, as in `ENV prod`; empty means none." },
             variant: #{
                 schema: #{ type: "string", allowed: ["neutral", "accent", "success", "warning", "danger"] },
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "neutral" },
+                doc: "Category color: it colors the text, or fills the facet segment when there is a `facet`.",
             },
             closable: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Adds a close button after the text.",
             },
             close_label: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Accessible name of the close button; defaults to `Remove <text>`." },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Draws the tag in the `disabled` color and makes the close button inert.",
             },
             on_close: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false, sensitive: false,
+                doc: "Called with the tag's `text` when the close button is clicked; not called while `disabled`.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ close: #{ payload: #{ type: "string" } } },
+        events: #{ close: #{ payload: #{ type: "string" },
+            doc: "Emitted when the close button is clicked; the payload is the tag's `text`." } },
         slots: #{}, parts: ["root", "facet", "label", "close"],
     },
     render: Fn("render_Tag")

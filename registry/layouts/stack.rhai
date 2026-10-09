@@ -15,9 +15,6 @@
 */
 // Stack places children in a column with one spacing relationship between them.
 //
-// Props: children, gap (relationship unit|related|group|section, scale xxs..xl, or none;
-//        default related), align (stretch|start|center|end), fill, label.
-// Events/state: none. Parts: root.
 // Example: Stack(#{ gap: "group", children: [section_a, section_b] })
 //
 // Layouts are visually neutral: no padding, color or frame. Prefer relationship names so
@@ -37,17 +34,21 @@ define_component(#{
     schema: #{
         props: #{
             children: #{ schema: #{ type: "array", max_items: 512, items: #{ type: "node" } },
-                required: true, sensitive: false },
+                required: true, sensitive: false, doc: "Nodes placed in one column, in order." },
             gap: #{ schema: #{ type: "string", allowed: ["none", "unit", "related", "group", "section", "xxs", "xs", "sm", "md", "lg", "xl"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "related" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "related" },
+                doc: "Space between children: a relationship (`space.*`), a scale step (`spacing.*`) or `none`." },
             align: #{ schema: #{ type: "string", allowed: ["stretch", "start", "center", "end"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "stretch" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "stretch" },
+                doc: "Horizontal alignment of the children; `stretch` makes each as wide as the stack." },
             fill: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Grows the stack to the remaining height of its parent." },
+            label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "When set, exposes the column as an accessible group with this name." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ children: #{ required: true, multiple: true } },
+        slots: #{ children: #{ required: true, multiple: true, doc: "The nodes in the column." } },
         parts: ["root"],
     },
     render: Fn("render_Stack")

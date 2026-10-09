@@ -16,9 +16,6 @@
 */
 // Badge marks a read-only status: a square lamp followed by its label.
 //
-// Props: text (required), variant, emphasis, dot, size.
-// Events/state: stateless and emits no events.
-// Parts: root, lamp, label.
 // Example: Badge(#{ text: "Ready", variant: "success" })
 //
 // `emphasis: "strong"` turns the badge into a solid status block; reserve it for
@@ -38,21 +35,26 @@ define_component(#{
     },
     schema: #{
         props: #{
-            text: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            text: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "The status label; also the accessible name." },
             variant: #{
                 schema: #{ type: "string", allowed: ["neutral", "accent", "success", "warning", "danger"] },
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "neutral" },
+                doc: "Status color of the lamp, or of the block when `strong`; `neutral` is muted ink.",
             },
             emphasis: #{
                 schema: #{ type: "string", allowed: ["subtle", "strong"] },
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "subtle" },
+                doc: "`strong` draws a solid block with a bold label and no lamp, for states that need action.",
             },
             dot: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Shows the 6px square lamp before the label; a `strong` badge never shows it." },
             size: #{ schema: #{ type: "string", allowed: ["sm", "md"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
+                "default": #{ type: "string", value: "md" },
+                doc: "Badge height: `md` is `metrics.marker`, `sm` is `metrics.marker_small`." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{},
         parts: ["root", "lamp", "label"],

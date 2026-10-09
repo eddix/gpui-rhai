@@ -15,8 +15,7 @@
 */
 // Label presents a control label with optional required and description text.
 //
-// Props: text (required), required, description.
-// Events: none. State: none. Parts: root, text, required, description.
+// State: none.
 // Example: Label(#{ text: "Project name", required: true })
 
 define_component(#{
@@ -39,17 +38,20 @@ define_component(#{
                 schema: #{ type: "string" },
                 required: true,
                 sensitive: false,
+                doc: "Label text in body type; also the accessible name of the label.",
             },
             required: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Appends a ` *` required mark in `text.danger` to the text.",
             },
             description: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false,
                 sensitive: false,
+                doc: "Secondary text in caption type and `text_muted`, under the label text.",
             },
         },
         state: #{ fields: #{} },

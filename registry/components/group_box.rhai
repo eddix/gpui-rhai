@@ -14,9 +14,7 @@
 }
 */
 // Labelled desktop group surface for related controls or settings.
-// Props: label, content, optional description, and disabled.
-// Events/state: stateless and emits no events.
-// Parts: root, label, description, content.
+//
 // Example: GroupBox(#{ label: "Sync", content: text("Settings") })
 
 define_component(#{
@@ -29,14 +27,18 @@ define_component(#{
         environment: ["density"] },
     schema: #{
         props: #{
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Heading in the uppercase label voice under the top hairline; also the accessible name." },
+            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "A muted caption under the label." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The grouped controls or settings, `related` below the heading." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Disables every control inside and dims the whole group." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ content: #{ required: true, multiple: false } },
+        slots: #{ content: #{ required: true, multiple: false, doc: "The grouped controls or settings." } },
         parts: ["root", "label", "description", "content"],
     },
     render: Fn("render_GroupBox")

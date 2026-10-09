@@ -14,9 +14,6 @@
 }
 */
 // Composes an input-like control with integrated prefix and suffix content.
-// Props: control, optional prefix/suffix nodes, disabled, and accessible label.
-// Events/state: stateless and emits no events; the control owns editing events.
-// Parts: root, prefix, control, suffix.
 // Example: InputGroup(#{ label: "Search", prefix: search_icon, control: input_node })
 
 define_component(#{
@@ -29,18 +26,25 @@ define_component(#{
         environment: ["size", "density", "corners"] },
     schema: #{
         props: #{
-            control: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            prefix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            suffix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+            control: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The input-like node to frame, usually an `Input`; it loses its own frame and keeps its own editing events." },
+            prefix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Leading content inside the frame, such as a search icon, in `text_muted`." },
+            suffix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Trailing content inside the frame, such as a unit or a clear button, in `text_muted`." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Disables and dims the whole group; the control inside is disabled with it." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the group; it is not drawn." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Control size of the group and the control inside; unset, it inherits the `size` environment." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ control: #{ required: true, multiple: false }, prefix: #{ required: false, multiple: false },
-            suffix: #{ required: false, multiple: false } },
+        slots: #{ control: #{ required: true, multiple: false, doc: "The framed control, between `prefix` and `suffix`." },
+            prefix: #{ required: false, multiple: false, doc: "Content before the control." },
+            suffix: #{ required: false, multiple: false, doc: "Content after the control." } },
         parts: ["root", "prefix", "control", "suffix"],
     },
     render: Fn("render_InputGroup")

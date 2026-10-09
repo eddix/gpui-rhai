@@ -11,9 +11,6 @@
 }
 */
 // Neutral two-way, read-only source comparison over the native document surface.
-// Props: key, left/right descriptors, unified/split mode, comparison and display policy.
-// Events: location_activate(#{ side: "left" | "right", line, column }).
-// Parts: root, header, gutter, line, text, fold, loading, error, search, status.
 // Example: DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A" }, right: #{ source: b, label: "Server B" }, mode: "split" })
 
 define_component(#{
@@ -23,42 +20,64 @@ define_component(#{
         environment: [] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable viewer identity; keeps scroll, folds, selection and search across renders." },
             left: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
-                source: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "document" }] }, required: true, sensitive: false },
-                label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                file_name: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                language: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            } }, required: true, sensitive: false },
+                source: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "document" }] }, required: true, sensitive: false,
+                    doc: "Text of this side: a string, or a Host-owned `NativeTextDocument`." },
+                label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                    doc: "Name of this side in the header, the accessible name and copied patches." },
+                file_name: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                    doc: "File name whose extension picks this side's syntax when `language` is not set." },
+                language: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                    doc: "Syntax to highlight this side with; takes precedence over `file_name`." },
+            } }, required: true, sensitive: false,
+                doc: "Document on the left in split mode; left and right carry no old or new meaning." },
             right: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
-                source: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "document" }] }, required: true, sensitive: false },
-                label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                file_name: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                language: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            } }, required: true, sensitive: false },
+                source: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "document" }] }, required: true, sensitive: false,
+                    doc: "Text of this side: a string, or a Host-owned `NativeTextDocument`." },
+                label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                    doc: "Name of this side in the header, the accessible name and copied patches." },
+                file_name: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                    doc: "File name whose extension picks this side's syntax when `language` is not set." },
+                language: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                    doc: "Syntax to highlight this side with; takes precedence over `file_name`." },
+            } }, required: true, sensitive: false,
+                doc: "Document on the right in split mode." },
             mode: #{ schema: #{ type: "string", allowed: ["unified", "split"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "unified" } },
+                "default": #{ type: "string", value: "unified" },
+                doc: "`unified` interleaves both sides in one column; `split` aligns them side by side with one scroll position." },
             whitespace: #{ schema: #{ type: "string", allowed: ["exact", "ignore_changes", "ignore_all"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "exact" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "exact" },
+                doc: "`exact` compares lines as written, `ignore_changes` collapses runs of whitespace, `ignore_all` drops all whitespace." },
             context_lines: #{ schema: #{ type: "one_of", variants: [
                 #{ type: "integer", min: 0, max: 100 }, #{ type: "string", allowed: ["all"] }
-            ] }, required: false, sensitive: false, "default": #{ type: "integer", value: 3 } },
+            ] }, required: false, sensitive: false, "default": #{ type: "integer", value: 3 },
+                doc: "Unchanged lines kept around each hunk; longer equal runs fold, and `\"all\"` never folds." },
             show_line_numbers: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Shows the line-number gutters." },
             wrap: #{ schema: #{ type: "string", allowed: ["none", "viewport", "column"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "none" } },
+                sensitive: false, "default": #{ type: "string", value: "none" },
+                doc: "`none` scrolls long lines sideways, `viewport` wraps them at the pane width, `column` at `wrap_column`." },
             wrap_column: #{ schema: #{ type: "integer", min: 20, max: 500 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 100 } },
+                "default": #{ type: "integer", value: 100 },
+                doc: "Display column at which lines wrap when `wrap` is `column`." },
             tab_size: #{ schema: #{ type: "integer", min: 1, max: 16 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 4 } },
-            on_location_activate: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "integer", value: 4 },
+                doc: "Columns between tab stops when tabs are expanded for display." },
+            on_location_activate: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with `#{ side, line, column }` when a side's text is double-clicked or Enter is pressed in it." },
         },
         state: #{ fields: #{} },
         events: #{ location_activate: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
-            side: #{ schema: #{ type: "string", allowed: ["left", "right"] }, required: true, sensitive: false },
-            line: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            column: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-        } } } },
+            side: #{ schema: #{ type: "string", allowed: ["left", "right"] }, required: true, sensitive: false,
+                doc: "Side the location belongs to." },
+            line: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "One-based line in that side's source." },
+            column: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "One-based column, counted in characters from the start of the line." },
+        } }, doc: "Emitted on a double-click or Enter in either side's text; the payload is the side and its one-based location." } },
         slots: #{}, parts: ["root", "header", "gutter", "line", "text", "fold", "loading", "error", "search", "status"],
     },
     render: Fn("render_DiffViewer")

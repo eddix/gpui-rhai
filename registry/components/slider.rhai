@@ -15,10 +15,7 @@
 }
 */
 // Controlled single-value range input with native drag preview and commit events.
-// Props: key, value, min, max, step, orientation, label, show_value, disabled, and on_change.
-// Events: change(number), emitted on keyboard steps and pointer commit.
 // State: caller owns value; the native primitive retains only hot drag preview.
-// Parts: root, header, label, value, control, track, fill, thumb.
 // Example: Slider(#{ key: "volume", value: 40, min: 0, max: 100, step: 5, label: "Volume", on_change: Fn("changed") })
 
 define_component(#{
@@ -32,25 +29,36 @@ define_component(#{
         environment: ["size", "density"] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            value: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Names the native slider, which holds the drag preview across renders; it also keys the root." },
+            value: #{ schema: #{ type: "number" }, required: true, sensitive: false,
+                doc: "Current value, within `min`..`max`; the caller stores the `change` payload and passes it back." },
             min: #{ schema: #{ type: "number" }, required: false, sensitive: false,
-                "default": #{ type: "float", value: 0.0 } },
+                "default": #{ type: "float", value: 0.0 }, doc: "Lowest value, at the start of the track; must be below `max`." },
             max: #{ schema: #{ type: "number" }, required: false, sensitive: false,
-                "default": #{ type: "float", value: 100.0 } },
+                "default": #{ type: "float", value: 100.0 }, doc: "Highest value, at the end of the track; must be above `min`." },
             step: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: false, sensitive: false,
-                "default": #{ type: "float", value: 1.0 } },
+                "default": #{ type: "float", value: 1.0 },
+                doc: "Distance between accepted values, counted from `min`; one arrow key moves one step. At most `max - min`." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "horizontal" } },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            value_label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "string", value: "horizontal" },
+                doc: "`horizontal` is 240 logical pixels wide (set a width on `root` to change it); `vertical` has a 180-pixel track." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Visible label at the start of the header row; also the accessible name." },
+            value_label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Text shown for the value, such as `40%`; unset, the number itself is shown." },
             show_value: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Shows the value (or `value_label`) at the end of the header row, over the end of the track." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false }, doc: "Blocks pointer and keyboard input and greys the thumb." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the new value on each arrow, Home or End key and when a drag ends." },
         },
-        state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "number" } } }, slots: #{},
+        state: #{ fields: #{} },
+        events: #{ change: #{ payload: #{ type: "number" },
+            doc: "Emitted on each arrow, Home or End key and when a drag ends, not during it; the payload is the new value, snapped to `step`." } },
+        slots: #{},
         parts: ["root", "header", "label", "value", "control", "track", "fill", "thumb"],
     },
     render: Fn("render_Slider")

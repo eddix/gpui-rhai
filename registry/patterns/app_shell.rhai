@@ -13,17 +13,13 @@
 // AppShell is the window frame of a productivity tool: title bar, sidebar, main area,
 // optional inspector, status bar, and keyboard regions.
 //
-// Props: key and label (required), main (required), title_bar (TitleBar props without
-//        label), sidebar, inspector, status (StatusBar props without label), overlays,
-//        sidebar_width, inspector_width.
-// Events/state: the last region moved to by F6. Parts: root, sidebar, main, inspector,
-//        region_frame.
 // Example: AppShell(#{ key: "app", label: "Workbench", title_bar: #{ title: "Workbench" },
 //              sidebar: nav_node, main: region_node, status: #{ start: [text("Ready")] } })
 //
 // The sidebar and inspector are raised color blocks beside the main surface; no rules.
 // F6 and Shift+F6 move focus between the present regions; a region shows the 2px ink frame
-// while it holds focus itself, and Tab then enters it.
+// while it holds focus itself, and Tab then enters it. The shell keeps the last region F6
+// moved to as its only state.
 
 import "components/title_bar" as title_bar;
 import "components/status_bar" as status_bar;
@@ -38,45 +34,67 @@ define_component(#{
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Identity of the shell; the keys of its regions, which F6 focuses, derive from it." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the shell; it also names the title bar (`<label> title bar`) and the status bar (`<label> status`)." },
             title_bar: #{ schema: #{ type: "optional", value: #{ type: "object", allow_unknown: false, fields: #{
                 title: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "node" }] },
-                    required: true, sensitive: false },
+                    required: true, sensitive: false,
+                    doc: "Title text, or a node such as a breadcrumb; a string is set semibold and the subtitle truncates before it." },
                 subtitle: #{ schema: #{ type: "optional", value: #{ type: "one_of",
-                    variants: [#{ type: "string" }, #{ type: "node" }] } }, required: false, sensitive: false },
+                    variants: [#{ type: "string" }, #{ type: "node" }] } }, required: false, sensitive: false,
+                    doc: "Muted text or node on the title's line; it truncates first." },
                 start: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                    required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                    required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                    doc: "Nodes before the title, at the start edge." },
                 center: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                    required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                    required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                    doc: "Nodes centered in the bar." },
                 end: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                    required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                    required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                    doc: "Nodes at the end edge; they keep their width while the title truncates." },
                 inset_start: #{ schema: #{ type: "integer", min: 0, max: 256 }, required: false,
-                    sensitive: false, "default": #{ type: "integer", value: 0 } },
+                    sensitive: false, "default": #{ type: "integer", value: 0 },
+                    doc: "Logical pixels kept free at the start edge, room for the macOS window buttons." },
                 window_drag: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                    "default": #{ type: "bool", value: false } },
-            } } }, required: false, sensitive: false },
-            sidebar: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            main: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            inspector: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+                    "default": #{ type: "bool", value: false },
+                    doc: "Whether pressing the bar's background moves the window and a double press zooms it." },
+            } } }, required: false, sensitive: false,
+                doc: "TitleBar props without `label`, for the bar across the top; omitted, the shell has no title bar." },
+            sidebar: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Raised region before the main area, and an F6 stop." },
+            main: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The main working area; it takes the free width and is always an F6 stop." },
+            inspector: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Raised region after the main area, and an F6 stop." },
             status: #{ schema: #{ type: "optional", value: #{ type: "object", allow_unknown: false, fields: #{
                 start: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                    required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                    required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                    doc: "Fields at the start edge; they truncate when space runs out." },
                 center: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                    required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                    required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                    doc: "Fields centered in the bar." },
                 end: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                    required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-            } } }, required: false, sensitive: false },
+                    required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                    doc: "Fields at the end edge; they keep their width." },
+            } } }, required: false, sensitive: false,
+                doc: "StatusBar props without `label`, for the bar along the bottom; omitted, the shell has no status bar." },
             overlays: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-            sidebar_width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
-            inspector_width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Nodes placed after the bars, for overlays such as dialogs, sheets and toasts." },
+            sidebar_width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "Width of the sidebar; omitted, twice `metrics.label_column`." },
+            inspector_width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "Width of the inspector; omitted, 320 logical pixels." },
         },
         state: #{ fields: #{ region: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } } } },
         events: #{},
         slots: #{
-            sidebar: #{ required: false, multiple: false }, main: #{ required: true, multiple: false },
-            inspector: #{ required: false, multiple: false }, overlays: #{ required: false, multiple: true },
+            sidebar: #{ required: false, multiple: false, doc: "Raised region before the main area." },
+            main: #{ required: true, multiple: false, doc: "The main working area." },
+            inspector: #{ required: false, multiple: false, doc: "Raised region after the main area." },
+            overlays: #{ required: false, multiple: true, doc: "Overlays such as dialogs, sheets and toasts." },
         },
         parts: ["root", "sidebar", "main", "inspector", "region_frame"],
     },

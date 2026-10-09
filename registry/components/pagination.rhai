@@ -16,9 +16,6 @@
 */
 // Pagination is a stateless Rhai composition for one-based controlled page state.
 //
-// Props: key, label, total_items, current_page, page_size/options, boundary/sibling counts,
-//        summary visibility, size, and atomic on_change.
-// Events: change({ current_page, page_size }).
 // Example: Pagination(#{ key: "users-pages", label: "Users pagination", total_items: 128, current_page: 3, page_size: 10, on_change: Fn("page_changed") })
 
 import "components/button" as button;
@@ -37,31 +34,43 @@ define_component(#{
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            total_items: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
-            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable identity of this instance; must not be empty, and keys the per-page Select as `<key>-page-size`." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the navigation landmark." },
+            total_items: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false,
+                doc: "Number of items across all pages; the page count is this over `page_size` rounded up, at least 1." },
+            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "One-based page shown, at most the page count; the caller stores it from the `change` payload." },
+            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Items per page; the caller stores it from the `change` payload together with `current_page`." },
             page_size_options: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "integer", min: 1 } }, required: false, sensitive: false,
-                "default": #{ type: "array", value: [] } },
+                "default": #{ type: "array", value: [] },
+                doc: "Choices of the per-page Select, without duplicates and including `page_size`; empty hides the Select." },
             boundary_count: #{ schema: #{ type: "integer", min: 1, max: 3 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 1 } },
+                "default": #{ type: "integer", value: 1 }, doc: "Pages always shown at each end of the range." },
             sibling_count: #{ schema: #{ type: "integer", min: 0, max: 3 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 1 } },
+                "default": #{ type: "integer", value: 1 },
+                doc: "Pages shown on each side of the current page; a gap of more than one page becomes an ellipsis." },
             show_summary: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Shows the item count and the current page out of the page count before the controls." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
-                required: false, sensitive: false },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Size of the buttons and the per-page Select; `()` follows the `size` environment." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the next `#{ current_page, page_size }` when a page, Previous, Next or a page size is picked." },
         },
         state: #{ fields: #{
             page_size_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
             page_size_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         } },
         events: #{ change: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
-            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-        } } } },
+            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Next one-based page; 1 after a page-size change." },
+            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Page size to show; differs from the prop only after a page-size change." },
+        } }, doc: "Emitted when a page, Previous, Next or a page size is picked; the payload carries the next page and page size together." } },
         slots: #{},
         parts: ["root", "summary", "controls", "previous", "next", "page", "page_current", "ellipsis", "page_size", "page_size_label"],
     },

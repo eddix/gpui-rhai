@@ -14,10 +14,7 @@
 }
 */
 // Controlled two-thumb range selection with native pointer preview and keyboard thumbs.
-// Props: key, values{low,high}, min, max, step, minimum_gap, orientation,
-// label/low_label/high_label, show_value, disabled, on_change.
-// Events: change({low,high}). State: caller owns accepted values.
-// Parts: root, header, label, value, control, track, fill, thumb.
+// State: caller owns accepted values.
 // Example: RangeSlider(#{ key:"price", label:"Price", values:#{low:20,high:80}, on_change:Fn("changed") })
 
 import "components/slider" as slider;
@@ -31,29 +28,43 @@ define_component(#{
         ],
         environment: ["size", "density"] },
     schema: #{ props: #{
-        key: #{schema:#{type:"string"},required:true,sensitive:false},
-        label: #{schema:#{type:"string"},required:true,sensitive:false},
+        key: #{schema:#{type:"string"},required:true,sensitive:false,
+            doc:"Names the native slider, which holds the drag preview across renders; it also keys the root."},
+        label: #{schema:#{type:"string"},required:true,sensitive:false,
+            doc:"Visible label at the start of the header row; also the accessible name of the slider."},
         low_label: #{schema:#{type:"string"},required:false,sensitive:false,
-            "default":#{type:"string",value:"Minimum"}},
+            "default":#{type:"string",value:"Minimum"},doc:"Accessible name of the low thumb."},
         high_label: #{schema:#{type:"string"},required:false,sensitive:false,
-            "default":#{type:"string",value:"Maximum"}},
+            "default":#{type:"string",value:"Maximum"},doc:"Accessible name of the high thumb."},
         values: #{schema:#{type:"object",allow_unknown:false,fields:#{
-            low:#{schema:#{type:"number"},required:true,sensitive:false},
-            high:#{schema:#{type:"number"},required:true,sensitive:false},
-        }},required:true,sensitive:false},
-        min: #{schema:#{type:"number"},required:false,sensitive:false,"default":#{type:"float",value:0.0}},
-        max: #{schema:#{type:"number"},required:false,sensitive:false,"default":#{type:"float",value:100.0}},
-        step: #{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,"default":#{type:"float",value:1.0}},
-        minimum_gap: #{schema:#{type:"number",min:0.0},required:false,sensitive:false,"default":#{type:"float",value:0.0}},
+            low:#{schema:#{type:"number"},required:true,sensitive:false,
+                doc:"Value of the low thumb; at least `min`."},
+            high:#{schema:#{type:"number"},required:true,sensitive:false,
+                doc:"Value of the high thumb; at most `max` and at least `low + minimum_gap`."},
+        }},required:true,sensitive:false,
+            doc:"Current range; the caller stores the `change` payload and passes it back."},
+        min: #{schema:#{type:"number"},required:false,sensitive:false,"default":#{type:"float",value:0.0},
+            doc:"Lowest value, at the start of the track; must be below `max`."},
+        max: #{schema:#{type:"number"},required:false,sensitive:false,"default":#{type:"float",value:100.0},
+            doc:"Highest value, at the end of the track; must be above `min`."},
+        step: #{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,"default":#{type:"float",value:1.0},
+            doc:"Distance between accepted values, counted from `min`; one arrow key moves a thumb one step. At most `max - min`."},
+        minimum_gap: #{schema:#{type:"number",min:0.0},required:false,sensitive:false,"default":#{type:"float",value:0.0},
+            doc:"Smallest distance kept between `low` and `high`; a thumb stops there. At most `max - min`."},
         orientation: #{schema:#{type:"string",allowed:["horizontal","vertical"]},required:false,
-            sensitive:false,"default":#{type:"string",value:"horizontal"}},
-        show_value: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:true}},
-        disabled: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false}},
-        on_change: #{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false},
+            sensitive:false,"default":#{type:"string",value:"horizontal"},
+            doc:"`horizontal` is 240 logical pixels wide (set a width on `root` to change it); `vertical` has a 180-pixel track."},
+        show_value: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:true},
+            doc:"Shows `low – high` at the end of the header row."},
+        disabled: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false},
+            doc:"Blocks pointer and keyboard input and greys the thumbs."},
+        on_change: #{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false,
+            doc:"Called with `#{ low, high }` when an arrow, Home or End key moves a thumb and when a drag ends."},
     }, state:#{fields:#{}}, events:#{change:#{payload:#{type:"object",allow_unknown:false,fields:#{
-        low:#{schema:#{type:"number"},required:true,sensitive:false},
-        high:#{schema:#{type:"number"},required:true,sensitive:false},
-    }}}}, slots:#{}, parts:["root","header","label","value","control","track","fill","thumb"] },
+        low:#{schema:#{type:"number"},required:true,sensitive:false,doc:"New value of the low thumb."},
+        high:#{schema:#{type:"number"},required:true,sensitive:false,doc:"New value of the high thumb."},
+    }},doc:"Emitted when a key moves a thumb and when a drag ends, not during it; the payload is the new range, snapped to `step`."}},
+    slots:#{}, parts:["root","header","label","value","control","track","fill","thumb"] },
     render:Fn("render_RangeSlider")
 });
 

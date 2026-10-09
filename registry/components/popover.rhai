@@ -12,10 +12,7 @@
 */
 // Popover renders controlled content through the native per-window overlay layer.
 //
-// Props: key, label, trigger/content slots, open, placement, align (start|center|end,
-//        default start), gap, dismissal policy, on_open_change.
-// Events: open_change(bool). State: controlled by the caller.
-// Parts: root, trigger, content, focus_frame.
+// State: controlled by the caller.
 // Example: Popover(#{ key: "profile", label: "Profile", trigger: text("Open"), content: text("Profile"), open: true })
 
 define_component(#{
@@ -34,57 +31,94 @@ define_component(#{
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{
+                schema: #{ type: "string" },
+                required: true,
+                sensitive: false,
+                doc: "Stable identity of this instance; also the overlay id a nested overlay names in `parent_overlay`.",
+            },
+            label: #{
+                schema: #{ type: "string" },
+                required: true,
+                sensitive: false,
+                doc: "Accessible name of the popover panel.",
+            },
             parent_overlay: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false,
                 sensitive: false,
+                doc: "`key` of the open menu or popover this one nests in; closing that overlay closes this one too.",
             },
-            trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
+            trigger: #{
+                schema: #{ type: "node" },
+                required: true,
+                sensitive: false,
+                doc: "Node that anchors the panel; clicking it, or Enter and Space on it, toggles the popover.",
+            },
+            content: #{
+                schema: #{ type: "node" },
+                required: true,
+                sensitive: false,
+                doc: "Body of the panel, which is 240 to 400 px wide and padded by `metrics.inset`.",
+            },
+            open: #{
+                schema: #{ type: "bool" },
+                required: true,
+                sensitive: false,
+                doc: "Whether the panel is shown; the caller stores the `open_change` payload and passes it back.",
+            },
             placement: #{
                 schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "bottom" },
+                doc: "Preferred side of the trigger the panel opens on.",
             },
             align: #{
                 schema: #{ type: "string", allowed: ["start", "center", "end"] },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "start" },
+                doc: "Alignment of the panel along the trigger edge; `start` and `end` follow the writing direction.",
             },
             gap: #{
                 schema: #{ type: "number", min: 0.0 },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "float", value: 8.0 },
+                doc: "Distance between the trigger and the panel, in logical pixels.",
             },
             dismiss_on_escape: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: true },
+                doc: "Lets Escape close the popover through `on_open_change`.",
             },
             dismiss_on_outside: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: true },
+                doc: "Lets a click outside the panel and its trigger close the popover through `on_open_change`.",
             },
             on_open_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
+                doc: "Called with `true` when the trigger opens the popover and `false` when it is dismissed; store it as `open`.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ open_change: #{ payload: #{ type: "bool" } } },
+        events: #{
+            open_change: #{
+                payload: #{ type: "bool" },
+                doc: "Emitted when the trigger or a dismissal asks to open or close; the payload is the requested `open`.",
+            },
+        },
         slots: #{
-            trigger: #{ required: true, multiple: false },
-            content: #{ required: true, multiple: false },
+            trigger: #{ required: true, multiple: false, doc: "Node that anchors and toggles the panel." },
+            content: #{ required: true, multiple: false, doc: "Body of the panel." },
         },
         parts: ["root", "trigger", "content", "focus_frame"],
     },

@@ -24,6 +24,7 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
 pub mod acceptance;
 pub mod gallery;
+pub mod reference;
 pub mod theme_studio;
 
 use gpui_rhai_registry::{
@@ -65,6 +66,36 @@ pub struct BundledRegistry {
 }
 
 impl BundledRegistry {
+    /// Compile every bundled module and return its exported definition with its
+    /// source, for references and audits of the official registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns compile or export errors of the bundled modules.
+    pub fn compiled_definitions(
+        &self,
+    ) -> Result<BTreeMap<ModuleId, (ComponentDefinition, &'static str)>, ProjectError> {
+        let modules = self
+            .entries
+            .iter()
+            .map(|(id, entry)| (id.clone(), entry.source.to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        let headers = self
+            .entries
+            .iter()
+            .map(|(id, entry)| (id.clone(), entry.metadata.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let registry = validate_component_exports(&modules, &headers)?;
+        Ok(registry
+            .iter()
+            .filter_map(|(id, definition)| {
+                self.entries
+                    .get(id)
+                    .map(|entry| (id.clone(), (definition.clone(), entry.source)))
+            })
+            .collect())
+    }
+
     /// Load and validate the CLI's built-in registry snapshot.
     ///
     /// # Errors
@@ -903,8 +934,13 @@ fn workspace_dependency(
 
 fn validate_component_documentation(source: &str, id: &ModuleId) -> Result<(), ProjectError> {
     let lower = source.to_ascii_lowercase();
+    // Props, events, slots and parts are documented by the schema (`doc`); the
+    // header comment carries the purpose and an example.
     for (label, present) in [
-        ("props", source.contains("// Props:")),
+        (
+            "purpose",
+            !reference::header_notes(source).paragraphs.is_empty(),
+        ),
         (
             "state",
             lower.contains("state:") || lower.contains("state/"),

@@ -16,8 +16,6 @@
 // Section is a titled part of a region: a subtitle, an optional description and actions on
 // the end side, then the content.
 //
-// Props: title (required), content (required), description, actions, voice (title|label).
-// Events/state: none. Parts: root, header, title, description, actions, content.
 // Example: Section(#{ title: "Replicas", actions: [scale_button], content: table_node })
 //
 // `voice: "label"` uses the label voice instead of a subtitle, for dense side panels. A
@@ -36,16 +34,24 @@ define_component(#{
     },
     schema: #{
         props: #{
-            title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Section heading, drawn in the `voice`; also the section's accessible name." },
+            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "A muted caption under the title." },
             actions: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Controls on the end side of the header; they wrap below the heading when space runs out." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The section body, `related` below the header." },
             voice: #{ schema: #{ type: "string", allowed: ["title", "label"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "title" } },
+                sensitive: false, "default": #{ type: "string", value: "title" },
+                doc: "`title` draws a subtitle; `label` the uppercase muted label voice, for dense side panels." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ actions: #{ required: false, multiple: true }, content: #{ required: true, multiple: false } },
+        slots: #{
+            actions: #{ required: false, multiple: true, doc: "Header controls on the end side." },
+            content: #{ required: true, multiple: false, doc: "The section body." },
+        },
         parts: ["root", "header", "title", "description", "actions", "content"],
     },
     render: Fn("render_Section")

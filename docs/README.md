@@ -14,7 +14,9 @@ is the shortest path to a running project.
   (layouts, patterns and the audit rules), [themes](design/themes.md), the
   [decision log](design/decisions.md) and the
   [Gallery wireframes](design/gallery-wireframes.md)
-- [Official component catalog](components/catalog.md)
+- [Official component catalog](components/catalog.md) and the generated
+  [module reference](reference/README.md): props, events, slots and parts of
+  every component, layout, pattern, motion and chart module
 - [Gallery](gallery.md), the acceptance application, and
   [Theme Studio](theme-studio.md)
 - [Component authoring](component-authoring-guide.md)

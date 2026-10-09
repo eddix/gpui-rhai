@@ -17,12 +17,6 @@
 // Region is one working area: a header with the region's title and actions, an optional
 // toolbar, a body that fills the remaining height, and a footer pinned to the bottom.
 //
-// Props: label (required), body (required), title (string or node), actions, toolbar,
-//        footer (status items), fill (default true), inset (default true), bleed,
-//        scroll (default false), scrollbar (auto|always|hidden, default auto),
-//        external_title (default false).
-// Events/state: none. Parts: root, header, title, actions, body, footer, scrollbar_track,
-//        scrollbar_thumb, scrollbar_thumb_hover.
 // Example: Region(#{ label: "Hosts", title: "Hosts", toolbar: toolbar_node, body: table_node,
 //              footer: [text("128 hosts")] })
 //
@@ -32,9 +26,10 @@
 // text then starts on the same edge as the title.
 //
 // `scroll` makes the body scroll vertically when it is taller than the region, with the same
-// overlay scrollbar as ScrollArea (`scrollbar`); the header, toolbar and footer stay put. Leave it off for bodies that scroll themselves (Table,
-// VirtualList). `external_title` says the region's title is drawn elsewhere, in a TitleBar
-// or a tab: the region takes no `title`, and its parts are not held to a missing title.
+// overlay scrollbar as ScrollArea (`scrollbar`); the header, toolbar and footer stay put.
+// Leave it off for bodies that scroll themselves (Table, VirtualList). `external_title`
+// says the region's title is drawn elsewhere, in a TitleBar or a tab: the region takes no
+// `title`, and its parts are not held to a missing title.
 
 define_component(#{
     metadata: #{
@@ -50,32 +45,46 @@ define_component(#{
     },
     schema: #{
         props: #{
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the region." },
             title: #{ schema: #{ type: "optional", value: #{ type: "one_of",
-                variants: [#{ type: "string" }, #{ type: "node" }] } }, required: false, sensitive: false },
+                variants: [#{ type: "string" }, #{ type: "node" }] } }, required: false, sensitive: false,
+                doc: "Header title: a string is drawn as the region's heading; a node is placed as given." },
             actions: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-            toolbar: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            body: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Controls on the end side of the header, `related` apart." },
+            toolbar: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "A bar between the header and the body, usually a `Toolbar`; it keeps its height." },
+            body: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Main content; fills the remaining height and clips, or scrolls with `scroll`." },
             footer: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Status items in a caption row pinned to the bottom under a hairline, `group` apart." },
             fill: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Grows the region to the remaining height of its parent, so the body can fill it." },
             inset: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Pads the region by `metrics.inset` at the top and bottom and each part at the sides." },
             bleed: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Lets the body reach the sides, for tables and lists whose rows carry the inset." },
             scroll: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Scrolls a body taller than the region while the header, toolbar and footer stay put." },
             scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "auto" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "auto" },
+                doc: "Visibility of the body's overlay scrollbar, as in ScrollArea; only used with `scroll`." },
             external_title: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "The title is drawn elsewhere (a TitleBar or a tab); the region then takes no `title`." },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
-            actions: #{ required: false, multiple: true }, toolbar: #{ required: false, multiple: false },
-            body: #{ required: true, multiple: false }, footer: #{ required: false, multiple: true },
+            actions: #{ required: false, multiple: true, doc: "Header controls on the end side." },
+            toolbar: #{ required: false, multiple: false, doc: "The bar between the header and the body." },
+            body: #{ required: true, multiple: false, doc: "The content that fills the region." },
+            footer: #{ required: false, multiple: true, doc: "Status items pinned to the bottom." },
         },
         parts: ["root", "header", "title", "actions", "body", "footer", "scrollbar_track",
             "scrollbar_thumb", "scrollbar_thumb_hover"],

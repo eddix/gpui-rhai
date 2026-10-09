@@ -14,9 +14,8 @@
 }
 */
 // Native delayed tooltip using the per-window overlay scheduler.
-// Props: key, label, trigger/content slots, placement, show/hide delay, disabled, action, shortcut.
-// Parts: root, trigger, content, shortcut.
-// State/events: stateless delayed overlay; emits no semantic events.
+//
+// State: stateless; the overlay scheduler owns the delay.
 // Example: Tooltip(#{ key: "help", label: "Help", trigger: text("?"), content: text("Help") })
 
 define_component(#{
@@ -32,24 +31,33 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the tooltip, usually the words of `content`." },
+            trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Element whose hover shows the tooltip after `show_delay_ms`." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Hint shown in the tooltip, in inverted colors and at most 320 px wide." },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "top" } },
+                "default": #{ type: "string", value: "top" },
+                doc: "Preferred side of the trigger the tooltip appears on." },
             show_delay_ms: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 500 } },
+                "default": #{ type: "integer", value: 500 },
+                doc: "Hover time before the tooltip appears, in milliseconds." },
             hide_delay_ms: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 100 } },
+                "default": #{ type: "integer", value: 100 },
+                doc: "Time the tooltip stays after the pointer leaves the trigger and the tooltip, in milliseconds." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Renders the trigger alone, with no tooltip." },
+            action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Registered action whose bound shortcut is shown after the hint; `shortcut` takes precedence." },
+            shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Key legend shown after the hint, written like `cmd-d` and formatted for the platform." },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
-            trigger: #{ required: true, multiple: false },
-            content: #{ required: true, multiple: false },
+            trigger: #{ required: true, multiple: false, doc: "Element whose hover shows the tooltip." },
+            content: #{ required: true, multiple: false, doc: "Hint shown in the tooltip." },
         },
         parts: ["root", "trigger", "content", "shortcut"],
     },

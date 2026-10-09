@@ -11,10 +11,10 @@
 }
 */
 // Compact indeterminate activity indicator animated by the native runtime clock.
-// Props: key, label, size, and speed_ms.
-// Events/state: stateless and emits no events; reduced motion settles to a visible frame.
-// Parts: root, indicator.
+//
 // Example: Spinner(#{ key: "loading", label: "Loading" })
+//
+// With reduced motion the spinner stops turning and settles on a visible frame.
 
 define_component(#{
     metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.2.0",
@@ -23,12 +23,16 @@ define_component(#{
         environment: [] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable identity of the spinner; keeps its rotation continuous across renders." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name saying what is in progress." },
             size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "md" } },
+                sensitive: false, "default": #{ type: "string", value: "md" },
+                doc: "Diameter: `xs` 12, `sm` 14, `md` 18 and `lg` 22 logical pixels." },
             speed_ms: #{ schema: #{ type: "integer", min: 240, max: 4000 }, required: false,
-                sensitive: false, "default": #{ type: "integer", value: 850 } },
+                sensitive: false, "default": #{ type: "integer", value: 850 },
+                doc: "Duration of one full turn in milliseconds." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "indicator"],
     },

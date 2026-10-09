@@ -11,11 +11,6 @@
 }
 */
 // Controlled Canvas click/range/marquee object selection.
-// Props: key, label, targets[{key,x,y,width,height,disabled?}], selected_keys,
-// active_key, anchor_key, multiple, marquee, threshold, content, disabled,
-// on_selection_change.
-// Events: selection_change({selected_keys,active_key,anchor_key}).
-// Parts: root, content, interaction.
 // Example: SelectionArea(#{key:"nodes",label:"Nodes",targets:targets,selected_keys:[],content:canvas_node,on_selection_change:Fn("changed")})
 
 define_component(#{
@@ -25,24 +20,41 @@ define_component(#{
         environment: []},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false},
-        label:#{schema:#{type:"string"},required:true,sensitive:false},
-        targets:#{schema:#{type:"array",max_items:10000,items:#{type:"map",values:#{type:"ui_value"}}},required:true,sensitive:false},
-        selected_keys:#{schema:#{type:"array",max_items:10000,items:#{type:"string"}},required:true,sensitive:false},
-        active_key:#{schema:#{type:"optional",value:#{type:"string"}},required:false,sensitive:false},
-        anchor_key:#{schema:#{type:"optional",value:#{type:"string"}},required:false,sensitive:false},
-        multiple:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:true}},
+        label:#{schema:#{type:"string"},required:true,sensitive:false,
+            doc:"Accessible name of the selection grid."},
+        targets:#{schema:#{type:"array",max_items:10000,items:#{type:"map",values:#{type:"ui_value"}}},required:true,sensitive:false,
+            doc:"Selectable objects, `#{key, x, y, width, height, disabled?}` in the content's logical pixels; later ones win overlaps."},
+        selected_keys:#{schema:#{type:"array",max_items:10000,items:#{type:"string"}},required:true,sensitive:false,
+            doc:"Keys of the selected targets; the caller stores the `selection_change` payload and passes it back."},
+        active_key:#{schema:#{type:"optional",value:#{type:"string"}},required:false,sensitive:false,
+            doc:"Target the keyboard is on: arrows, Home and End move from it in `targets` order, Space toggles it."},
+        anchor_key:#{schema:#{type:"optional",value:#{type:"string"}},required:false,sensitive:false,
+            doc:"Target a Shift range extends from; the caller stores it from the `selection_change` payload."},
+        multiple:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:true},
+            doc:"Allows several selected targets, with Shift ranges, Ctrl/Cmd toggles and additive marquees."},
         marquee:#{schema:#{type:"string",allowed:["intersect","enclose"]},required:false,sensitive:false,
-            "default":#{type:"string",value:"intersect"}},
+            "default":#{type:"string",value:"intersect"},
+            doc:"Whether a marquee drag selects targets it touches or only those wholly inside it."},
         threshold:#{schema:#{type:"number",min:0.0,max:64.0},required:false,sensitive:false,
-            "default":#{type:"float",value:4.0}},
-        content:#{schema:#{type:"node"},required:true,sensitive:false},
-        disabled:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false}},
-        on_selection_change:#{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false},
+            "default":#{type:"float",value:4.0},
+            doc:"Pointer travel in logical pixels before a press becomes a marquee drag."},
+        content:#{schema:#{type:"node"},required:true,sensitive:false,
+            doc:"Canvas that draws the targets; target coordinates are local to it."},
+        disabled:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false},
+            doc:"Ignores pointer and keyboard input and removes the area from the tab order."},
+        on_selection_change:#{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false,
+            doc:"Called with `{selected_keys, active_key, anchor_key}` when a click, marquee or key changes the selection."},
     },state:#{fields:#{}},events:#{selection_change:#{payload:#{type:"object",allow_unknown:false,fields:#{
-        selected_keys:#{schema:#{type:"array",max_items:10000,items:#{type:"string"}},required:true,sensitive:false},
-        active_key:#{schema:#{type:"optional",value:#{type:"string"}},required:true,sensitive:false},
-        anchor_key:#{schema:#{type:"optional",value:#{type:"string"}},required:true,sensitive:false},
-    }}}},slots:#{content:#{required:true,multiple:false}},parts:["root","content","interaction"]},
+        selected_keys:#{schema:#{type:"array",max_items:10000,items:#{type:"string"}},required:true,sensitive:false,
+            doc:"Keys of the targets to select."},
+        active_key:#{schema:#{type:"optional",value:#{type:"string"}},required:true,sensitive:false,
+            doc:"Next `active_key`, or `()` for none."},
+        anchor_key:#{schema:#{type:"optional",value:#{type:"string"}},required:true,sensitive:false,
+            doc:"Next `anchor_key`, or `()` for none."},
+    }},
+        doc:"Emitted when a click, marquee drag or key changes the selection; the payload is the next selection state."}},
+        slots:#{content:#{required:true,multiple:false,doc:"The canvas the targets are drawn on."}},
+        parts:["root","content","interaction"]},
     render:Fn("render_SelectionArea")
 });
 

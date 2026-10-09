@@ -15,9 +15,6 @@
 */
 // Kbd presents a key legend: a framed keycap, or an inline legend inside menus and buttons.
 //
-// Props: text or keys (one is required), label, appearance.
-// Events/state: stateless and emits no events.
-// Parts: root, key.
 // Example: Kbd(#{ keys: ["⌘", "K"], label: "Command K" })
 //
 // `keys` renders one keycap per key. Markers keep their size in both densities.
@@ -33,12 +30,16 @@ define_component(#{
     schema: #{
         props: #{
             text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "" } },
+                "default": #{ type: "string", value: "" },
+                doc: "Legend of a single key, used when `keys` is empty; one of `text` and `keys` is required." },
             keys: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "string" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-            label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Legends rendered one key each, in order; when non-empty they replace `text`." },
+            label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Accessible name; defaults to `text`, or to the `keys` joined by spaces." },
             appearance: #{ schema: #{ type: "string", allowed: ["keycap", "inline"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "keycap" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "keycap" },
+                doc: "`keycap` frames each key; `inline` shows bare legends, for use inside menus and buttons." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "key"],
     },

@@ -12,9 +12,6 @@
 */
 // ListDetail shows a list and the selected item's detail, side by side or stacked.
 //
-// Props: label (required), list (required), detail (required), orientation
-//        (horizontal|vertical), list_size.
-// Events/state: none. Parts: root, list, detail.
 // Example: ListDetail(#{ label: "Hosts", list: host_list, detail: host_detail })
 //
 // The list keeps a fixed width (or height when stacked); the detail fills. One hairline
@@ -30,15 +27,23 @@ define_component(#{
     },
     schema: #{
         props: #{
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            list: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            detail: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the group holding both panes." },
+            list: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The list pane; it keeps a fixed width, or a fixed height when stacked." },
+            detail: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The selected item's detail; it fills the remaining space." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "horizontal" } },
-            list_size: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
+                sensitive: false, "default": #{ type: "string", value: "horizontal" },
+                doc: "`horizontal` puts the list beside the detail; `vertical` stacks it above." },
+            list_size: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "List width, or height when vertical; defaults to 320px wide or 8 `metrics.row` tall." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ list: #{ required: true, multiple: false }, detail: #{ required: true, multiple: false } },
+        slots: #{
+            list: #{ required: true, multiple: false, doc: "The list pane." },
+            detail: #{ required: true, multiple: false, doc: "The detail pane that fills." },
+        },
         parts: ["root", "list", "detail"],
     },
     render: Fn("render_ListDetail")

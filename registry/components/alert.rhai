@@ -15,9 +15,7 @@
 }
 */
 // Persistent inline feedback with semantic variants and composable actions.
-// Props: title, optional description/icon/content/actions, and variant.
-// Events/state: stateless and emits no events.
-// Parts: root, icon, lamp, body, title, description, content, actions.
+//
 // Example: Alert(#{ title: "Saved", description: "Changes are live.", variant: "success" })
 
 define_component(#{
@@ -31,18 +29,27 @@ define_component(#{
         environment: ["density", "corners"] },
     schema: #{
         props: #{
-            title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
-            content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+            title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "The message in bold body text; also the alert's accessible name." },
+            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Muted text under the title; it wraps with the alert's width." },
+            icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Replaces the square lamp; sized to `metrics.icon` and tinted with the variant color." },
+            content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Extra content under the description, such as a list or a link." },
             actions: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Controls on the end side, `related` apart." },
             variant: #{ schema: #{ type: "string", allowed: ["info", "success", "warning", "danger"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "info" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "info" },
+                doc: "Lamp or icon color; `warning` and `danger` announce as an alert, the others as a status." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ icon: #{ required: false, multiple: false }, content: #{ required: false, multiple: false },
-            actions: #{ required: false, multiple: true } },
+        slots: #{
+            icon: #{ required: false, multiple: false, doc: "A glyph in place of the lamp." },
+            content: #{ required: false, multiple: false, doc: "Extra content under the description." },
+            actions: #{ required: false, multiple: true, doc: "Controls on the end side." },
+        },
         parts: ["root", "icon", "lamp", "body", "title", "description", "content", "actions"],
     },
     render: Fn("render_Alert")

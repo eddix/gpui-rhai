@@ -14,8 +14,7 @@
 }
 */
 // Avatar displays an image handle or name-derived initials with presence.
-// Props: name, handle, initials, size, presence. Parts: root, image, initials, presence.
-// State/events: stateless; emits no events.
+//
 // Example: Avatar(#{ name: "Ada Lovelace", initials: "AL", presence: "online" })
 
 define_component(#{
@@ -30,23 +29,28 @@ define_component(#{
     },
     schema: #{
         props: #{
-            name: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            name: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "The person's name: the accessible name, and the source of the fallback initials." },
             handle: #{
                 schema: #{ type: "optional", value: #{ type: "handle", kind: "image" } },
                 required: false, sensitive: false,
+                doc: "Image handle of the picture, shown in the circle instead of the initials.",
             },
             initials: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false, sensitive: false,
+                doc: "Text shown when there is no `handle`; defaults to the first character of `name`.",
             },
             size: #{
                 schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false,
+                doc: "Control size whose `metrics.control` is the diameter; without it, the environment's size.",
             },
             presence: #{
                 schema: #{ type: "string", allowed: ["none", "online", "away", "busy"] },
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "none" },
+                doc: "Adds an 8px dot at the bottom right: `success` for online, `warning` away, `danger` busy.",
             },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{},

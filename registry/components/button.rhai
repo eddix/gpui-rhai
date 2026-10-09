@@ -17,11 +17,7 @@
 */
 // Button presents a desktop action: a large block with a centered label.
 //
-// Props: text (required), prefix/suffix slots, variant, size, disabled, loading, loading_text,
-//   hoverable, on_click, action, shortcut.
-// Events: click(null).
 // State: stateless and controlled by caller props.
-// Parts: root, label, prefix, suffix, shortcut.
 // Example: Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" })
 //
 // `size` is inherited from the environment unless set. `action` dispatches a registered
@@ -49,16 +45,19 @@ define_component(#{
                 schema: #{ type: "string" },
                 required: true,
                 sensitive: false,
+                doc: "Label of the button; also its accessible name.",
             },
             prefix: #{
                 schema: #{ type: "optional", value: #{ type: "node" } },
                 required: false,
                 sensitive: false,
+                doc: "Node before the label, such as an icon, drawn in the button's text color.",
             },
             suffix: #{
                 schema: #{ type: "optional", value: #{ type: "node" } },
                 required: false,
                 sensitive: false,
+                doc: "Node after the label, such as a disclosure chevron, drawn in the button's text color.",
             },
             variant: #{
                 schema: #{
@@ -71,6 +70,7 @@ define_component(#{
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "secondary" },
+                doc: "Fill: `primary` accent, `danger`/`warning`/`success` status colors, `secondary` neutral, `ghost` bare, `outline` framed.",
             },
             size: #{
                 schema: #{
@@ -79,52 +79,61 @@ define_component(#{
                 },
                 required: false,
                 sensitive: false,
+                doc: "Control size of the button; unset, it inherits the `size` environment.",
             },
             disabled: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and greys the button but keeps the variant's silhouette; a disabled `action` disables it too.",
             },
             loading: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and shows the disabled look while work runs; it draws no spinner.",
             },
             loading_text: #{
                 schema: #{ type: "string" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "" },
+                doc: "Text put before `text`, with a space, while `loading`; empty leaves the label as it is.",
             },
             hoverable: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: true },
+                doc: "Changes the fill on hover; `false` keeps it still.",
             },
             on_click: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
+                doc: "Called when the button is pressed; not while disabled or loading, and not when `action` is set.",
             },
             action: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false,
                 sensitive: false,
+                doc: "Registered action dispatched on click, in place of `on_click`; it also sets the enabled state and the shortcut legend.",
             },
             shortcut: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false,
                 sensitive: false,
+                doc: "Key legend after the label, such as `cmd-s`, formatted for the platform; it binds no key and overrides the `action` legend.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ click: #{ payload: #{ type: "null" } } },
+        events: #{ click: #{ payload: #{ type: "null" },
+            doc: "Emitted when the button is pressed while enabled, not loading and without an `action`." } },
         slots: #{
-            prefix: #{ required: false, multiple: false },
-            suffix: #{ required: false, multiple: false },
+            prefix: #{ required: false, multiple: false, doc: "Node before the label." },
+            suffix: #{ required: false, multiple: false, doc: "Node after the label." },
         },
         parts: ["root", "label", "prefix", "suffix", "shortcut"],
     },

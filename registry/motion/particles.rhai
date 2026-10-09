@@ -9,7 +9,7 @@
 }
 */
 // Bounded deterministic particle field. Geometry is built once; Canvas paints it in one batch.
-// Props: key, width, height, and bounded count. State: stateless. Emits no events.
+// State: stateless. Emits no events.
 // Example: Particles(#{ key: "stars", width: 640, height: 240, count: 96 })
 
 define_component(#{
@@ -17,10 +17,14 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            width: #{ schema: #{ type: "integer", min: 8 }, required: true, sensitive: false },
-            height: #{ schema: #{ type: "integer", min: 8 }, required: true, sensitive: false },
-            count: #{ schema: #{ type: "integer", min: 1, max: 512 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Motion identity of the field; keep it stable so the rotation keeps its progress across renders." },
+            width: #{ schema: #{ type: "integer", min: 8 }, required: true, sensitive: false,
+                doc: "Width of the field in logical pixels." },
+            height: #{ schema: #{ type: "integer", min: 8 }, required: true, sensitive: false,
+                doc: "Height of the field in logical pixels." },
+            count: #{ schema: #{ type: "integer", min: 1, max: 512 }, required: true, sensitive: false,
+                doc: "Number of particles; the Host motion quality caps it at 64 for low and 256 for medium." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
     },

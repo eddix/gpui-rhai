@@ -17,8 +17,6 @@
 // Stat shows one figure: a label-voice label, the value with its unit, and an optional
 // change against a reference.
 //
-// Props: label (required), value (required), unit, delta, tone, description.
-// Events/state: none. Parts: root, label, value, unit, delta, description.
 // Example: Stat(#{ label: "Hosts", value: "128", delta: "+4 this week", tone: "success" })
 //
 // Figures use tabular digits; the unit follows the number in the muted color. `tone` colors
@@ -39,13 +37,19 @@ define_component(#{
     },
     schema: #{
         props: #{
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            unit: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            delta: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "What the figure counts; shown in capitals in the label voice." },
+            value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "The figure itself, already formatted; set in the display size with tabular digits." },
+            unit: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Unit after the value, in the muted body size." },
+            delta: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Change against a reference, such as \"+4 this week\"; a caption under the figure." },
             tone: #{ schema: #{ type: "string", allowed: ["neutral", "accent", "success", "warning", "danger"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "neutral" } },
-            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                required: false, sensitive: false, "default": #{ type: "string", value: "neutral" },
+                doc: "Color of `delta` only; keep `neutral` (muted) unless the change deviates from normal." },
+            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Muted caption line below the figure and delta." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{},
         parts: ["root", "label", "value", "unit", "delta", "description"],

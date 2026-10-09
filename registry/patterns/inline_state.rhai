@@ -17,16 +17,13 @@
 // InlineState shows loading, empty, error, stale and refreshing feedback where the
 // content would appear.
 //
-// Props: key, state (loading|empty|error|stale|refreshing) and title are required;
-//        description, detail (raw error text, selectable; error, stale and refreshing),
-//        actions. Long text wraps in a narrow container.
-// Events/state: none. Parts: root, title, description, detail, actions, lamp.
 // Example: InlineState(#{ key: "hosts", state: "empty", title: "No hosts yet",
 //              description: "Register a host to see it here.", actions: [add_button] })
 //
 // Loading and empty center in the space; errors read top-down from the content edge with
 // the raw error selectable; stale and refreshing are one quiet line above kept data. The
-// title is required because only the caller knows what is loading or why it is empty.
+// title is required because only the caller knows what is loading or why it is empty. Long
+// text wraps in a narrow container.
 
 import "components/spinner" as spinner;
 
@@ -44,17 +41,23 @@ define_component(#{
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable identity of the feedback; its spinner is keyed `<key>-spinner`." },
             state: #{ schema: #{ type: "string", allowed: ["loading", "empty", "error", "stale", "refreshing"] },
-                required: true, sensitive: false },
-            title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            detail: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                required: true, sensitive: false,
+                doc: "Which feedback to show; `stale` and `refreshing` are one line meant to sit above kept data." },
+            title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "What is loading, why it is empty, or what failed; also the accessible name." },
+            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "A muted second line, such as the next step or the reason; not shown while loading." },
+            detail: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Raw error text, selectable, in the code face; shown for `error`, `stale` and `refreshing`." },
             actions: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "node" } },
-                required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                required: false, sensitive: false, "default": #{ type: "array", value: [] },
+                doc: "Buttons after the text, such as Retry; not shown while loading." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ actions: #{ required: false, multiple: true } },
+        slots: #{ actions: #{ required: false, multiple: true, doc: "Buttons after the text." } },
         parts: ["root", "title", "description", "detail", "actions", "lamp"],
     },
     render: Fn("render_InlineState")

@@ -15,9 +15,7 @@
 }
 */
 // Controlled disclosure with trigger/content slots and Rust clip animation.
-// Props: key, open, trigger, content, content_height (optional: pixels or a Length;
-//        omitted, the panel fits its content), disabled, on_open_change.
-// State/events: controlled open state; emits open_change(bool).
+// State: controlled open state.
 // Example: Collapsible(#{ key: "details", open: true, trigger: text("Details"), content: text("Body") })
 
 define_component(#{
@@ -34,19 +32,26 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
-            trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+            open: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
+                doc: "Whether the content is shown; the caller stores the `open_change` payload and passes it back." },
+            trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Header content after the chevron; the whole header row toggles the panel." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Body shown under the header while open." },
             content_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
-                #{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false, sensitive: false },
+                #{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false, sensitive: false,
+                doc: "Open panel height: logical pixels, or a Length resolved in this subtree's density; omitted, the panel fits its content." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Whether the header ignores presses." },
+            on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the opposite of `open` when the header is pressed." },
         },
-        state: #{ fields: #{} }, events: #{ open_change: #{ payload: #{ type: "bool" } } },
+        state: #{ fields: #{} }, events: #{ open_change: #{ payload: #{ type: "bool" },
+            doc: "Emitted when the header is pressed; the payload is the requested open state." } },
         slots: #{
-            trigger: #{ required: true, multiple: false },
-            content: #{ required: true, multiple: false },
+            trigger: #{ required: true, multiple: false, doc: "Header content after the chevron." },
+            content: #{ required: true, multiple: false, doc: "Body shown under the header while open." },
         },
         parts: ["root", "trigger", "content", "indicator", "focus_frame"],
     },
