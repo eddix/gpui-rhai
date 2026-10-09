@@ -60,7 +60,7 @@ fn render_StatusBar(ctx, props) {
         status_region(ctx, "center", if "center" in props { props.center } else { [] }, "center"),
         status_region(ctx, "end", if "end" in props { props.end } else { [] }, "end"),
     ]).with_style(ctx.component_style("root", style()
-        .width(relative(1.0)).height(theme_length("metrics.statusbar"))
+        .width(relative(1.0)).height(theme_length("metrics.statusbar")).flex_shrink(false)
         .padding_x(theme_length("metrics.inset")).items_center()
         .border_top(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface_raised"))

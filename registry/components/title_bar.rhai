@@ -97,10 +97,11 @@ fn render_TitleBar(ctx, props) {
         .with_style(ctx.component_style("end", style()
             .flex_grow().flex_basis(relative(0)).height(relative(1.0))
         .items_center().justify_end().gap(theme_length("space.related"))));
-    // Window chrome: a raised block, metrics.titlebar high, content at metrics.inset.
+    // Window chrome: a raised block, metrics.titlebar high, content at metrics.inset. It
+    // never shrinks: in a column beside content taller than the window it keeps its height.
     let bar = row([start, center, end])
         .with_style(ctx.component_style("root", style()
-        .width(relative(1.0)).height(theme_length("metrics.titlebar"))
+        .width(relative(1.0)).height(theme_length("metrics.titlebar")).flex_shrink(false)
             .padding_x(theme_length("metrics.inset")).items_center()
             .border_bottom(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised")).text_color(theme_color("text_primary"))))

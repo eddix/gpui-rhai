@@ -88,8 +88,10 @@ fn title_style() {
     let title = style().typography("title").text_color(theme_color("text_primary"));
     title.whitespace_nowrap().text_ellipsis().min_width(px(0))
 }
+// The header, toolbar and footer keep their height; only the body gives way when its
+// content is taller than the region.
 fn header_style() {
-    let header = style().flex_row().items_center().justify_between();
+    let header = style().flex_row().items_center().justify_between().flex_shrink(false);
     header.gap(theme_length("space.group")).min_height(theme_length("metrics.control"))
 }
 fn footer_style() {
@@ -125,7 +127,7 @@ fn render_Region(ctx, props) {
         children.push(row(header).with_style(ctx.component_style("header", header_style().padding_x(side))));
     }
     if "toolbar" in props && props.toolbar != () {
-        children.push(column([props.toolbar]).with_style(style().padding_x(side)));
+        children.push(column([props.toolbar]).with_style(style().padding_x(side).flex_shrink(false)));
     }
     let body_style = style().flex_col().flex_grow().min_height(px(0)).min_width(px(0));
     if !bleed { body_style = body_style.padding_x(side); }
@@ -150,7 +152,7 @@ fn render_Region(ctx, props) {
     let footer = if "footer" in props { props.footer } else { [] };
     if footer.len > 0 {
         let footer_row = row(footer).with_style(ctx.component_style("footer", footer_style()));
-        children.push(column([footer_row]).with_style(style().padding_x(side)));
+        children.push(column([footer_row]).with_style(style().padding_x(side).flex_shrink(false)));
     }
     let root = style().flex_col().gap(theme_length("space.group")).min_width(px(0));
     if inset { root = root.padding_y(theme_length("metrics.inset")); }

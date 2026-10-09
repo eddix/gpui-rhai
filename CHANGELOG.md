@@ -193,6 +193,10 @@ and [docs/design/](docs/design/) for the specification.
   clears a capsule's ends in the round corner style, the same in every corner
   style. Textarea's vertical padding becomes `metrics.multiline_pad`. Button,
   Tabs and ToggleGroup keep `metrics.control_pad`.
+- TitleBar, StatusBar and Region's header, toolbar and footer keep their
+  height beside content taller than the window. A flex column took a share of
+  the overflow from them: a long page squeezed the title bar from 36 to 23
+  and a two-line region header by 10.
 - Input gains `appearance: "embedded"` for the search or filter line that
   heads a panel: no frame or well, a 1px `border` line under it (`danger`
   while invalid), text on `metrics.inset` like the rows below; its caret shows
