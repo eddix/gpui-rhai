@@ -193,6 +193,10 @@ and [docs/design/](docs/design/) for the specification.
   clears a capsule's ends in the round corner style, the same in every corner
   style. Textarea's vertical padding becomes `metrics.multiline_pad`. Button,
   Tabs and ToggleGroup keep `metrics.control_pad`.
+- SplitPane draws one line at the separator, the native one down the middle of
+  the 8px grab zone; the zone's start edge drew a second, full-length line
+  beside it. Collapsing one pane keeps the other mounted (its key no longer
+  changes), so its scroll position and component state survive.
 - TitleBar, StatusBar and Region's header, toolbar and footer keep their
   height beside content taller than the window. A flex column took a share of
   the overflow from them: a long page squeezed the title bar from 36 to 23

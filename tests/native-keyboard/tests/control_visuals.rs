@@ -1956,6 +1956,152 @@ fn drag_beside_separator(cx: &mut TestAppContext, handle: bool) -> (f64, Vec<(f3
     (ratio, hovered)
 }
 
+/// Quads painted in `color` over the separator, filled or bordered, as (x, width, height)
+/// in logical pixels.
+fn separator_lines(cx: &mut TestAppContext, line: &str) -> (Vec<(f64, f64, f64)>, f64) {
+    let color = 0xff00_ffff;
+    let overrides = ThemeTokenOverrides {
+        colors: BTreeMap::from([("border".to_owned(), Rgba8::from_rgba_hex(color))]),
+        ..Default::default()
+    };
+    let script = split_grip_script(false).replace(
+        "size:ctx.get_state(\"size\"),",
+        &format!("size:ctx.get_state(\"size\"),{line}"),
+    );
+    let (window, view) = mount_with_overrides(cx, &script, "split-line", overrides);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let separator = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("separator", "Resize panels")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let fill: gpui::Background = rgba(color).into();
+    let edge: gpui::Hsla = rgba(color).into();
+    let lines = visual.update(|window, _| {
+        let scale = f64::from(window.scale_factor());
+        window
+            .painted_quads()
+            .iter()
+            .filter(|quad| {
+                let bordered = quad.border_color == edge
+                    && quad.border_widths.left.0
+                        + quad.border_widths.right.0
+                        + quad.border_widths.top.0
+                        + quad.border_widths.bottom.0
+                        > 0.0;
+                quad.background == fill || bordered
+            })
+            .map(|quad| {
+                (
+                    f64::from(quad.bounds.origin.x.0) / scale,
+                    f64::from(quad.bounds.size.width.0) / scale,
+                    f64::from(quad.bounds.size.height.0) / scale,
+                )
+            })
+            .filter(|(x, width, _)| *x < separator.x + separator.width && x + width > separator.x)
+            .collect()
+    });
+    (lines, separator.x)
+}
+
+#[gpui::test]
+fn a_split_pane_draws_one_line_down_the_middle_of_its_grab_zone(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    // One native hairline centred in the 8px zone, 4px short of each end; the zone itself
+    // paints no edge of its own, so the separator never reads as two lines.
+    let (lines, zone) = separator_lines(cx, "");
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let (x, width, height) = lines[0];
+    assert!(
+        (x - (zone + 3.5)).abs() < 0.01 && (width - 1.0).abs() < 0.01,
+        "{lines:?}"
+    );
+    assert!((height - (180.0 - 8.0)).abs() < 0.01, "{lines:?}");
+    // `line: false` leaves the zone to a grip that draws its own.
+    let (lines, _) = separator_lines(cx, "line:false,");
+    assert!(lines.is_empty(), "{lines:?}");
+}
+
+#[gpui::test]
+fn collapsing_one_pane_keeps_the_other_mounted(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    // A scrolled list in the start pane keeps its offset while the end pane collapses and
+    // comes back: the start pane is the same node either way, not a new one.
+    let script = r#"
+import "components/split_pane" as split_pane;
+import "components/scroll_area" as scroll_area;
+import "components/button" as button;
+fn state_schema(){#{fields:#{collapsed:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}}}}}
+fn toggled(ctx,payload){ctx.set_state("collapsed",!ctx.get_state("collapsed"));}
+fn noop(ctx,value){}
+fn view(ctx){
+    let lines=[];
+    for index in 0..40 { lines.push(text(`line ${index}`).accessibility_label(`line ${index}`)); }
+    column([
+        button::Button(#{text:"Toggle",on_click:Fn("toggled")}),
+        split_pane::SplitPane(#{key:"layout",label:"Resize panels",size:0.5,
+            end_collapsed:ctx.get_state("collapsed"),
+            start:scroll_area::ScrollArea(#{key:"list",label:"List",height:px(120),content:column(lines)}),
+            end:text("End"),on_resize:Fn("noop")})
+            .with_style(style().width(px(400)).height(px(160))),
+    ])
+}
+"#;
+    let (window, view) = mount(cx, script, "split-collapse");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let geometry = |visual: &mut VisualTestContext, role: &str, name: &str| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name(role, name)
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual
+        })
+    };
+    let list = geometry(&mut visual, "text", "line 0");
+    #[allow(clippy::cast_possible_truncation)]
+    let position = point(px((list.x + 20.0) as f32), px((list.y + 40.0) as f32));
+    visual.simulate_mouse_move(position, None, Modifiers::none());
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.), px(-60.))),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let scrolled = geometry(&mut visual, "text", "line 0").y;
+    assert!(
+        scrolled < list.y - 30.0,
+        "the list scrolled: {} -> {scrolled}",
+        list.y
+    );
+    for _ in 0..2 {
+        let toggle = geometry(&mut visual, "button", "Toggle");
+        #[allow(clippy::cast_possible_truncation)]
+        let at = point(px((toggle.x + 10.0) as f32), px((toggle.y + 10.0) as f32));
+        visual.simulate_click(at, Modifiers::none());
+        visual.run_until_parked();
+        visual.update(|window, _| window.refresh());
+        visual.run_until_parked();
+        let now = geometry(&mut visual, "text", "line 0").y;
+        assert!(
+            (now - scrolled).abs() < 0.5,
+            "the list kept its offset: {scrolled} -> {now}"
+        );
+    }
+}
+
 #[gpui::test]
 fn split_pane_grip_overhang_starts_a_drag_and_shows_hover(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);

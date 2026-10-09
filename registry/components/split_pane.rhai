@@ -145,8 +145,9 @@ fn render_SplitPane(ctx, props) {
             style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))))])
             .with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref);
     }
+    // A collapsed side keeps the other pane's key, so collapsing never remounts it.
     if props.end_collapsed {
-        return box([box([props.start]).with_key(props.start_key).with_style(ctx.component_style("start",
+        return box([box([props.start]).with_key(start_ref_key).with_style(ctx.component_style("start",
             style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))))])
             .with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref);
     }
@@ -154,21 +155,20 @@ fn render_SplitPane(ctx, props) {
     let preview = optional_float_signal("start-size");
     let start_style = style().min_width(px(0)).min_height(px(0)).flex_shrink(false);
     let end_style = style().min_width(px(0)).min_height(px(0)).flex_grow();
-    // The 8px grab zone shows a hairline on the start pane's edge; hover fills it with
-    // the tonal step and keyboard focus turns it into an ink bar.
-    let line = split_prop(props, "line", true);
-    let handle_style = style().flex_shrink(false).border_color(theme_color("border"))
+    // The 8px grab zone: the native handle draws the hairline down its middle (`line`,
+    // `line_inset`); hover fills the zone with the tonal step and keyboard focus turns it
+    // into an ink bar.
+    let handle_style = style().flex_shrink(false)
         .hover(style().background(theme_color("surface_hover")))
         .focus(style().background(theme_color("focus_ring")));
-    let hairline = if line { px(1) } else { px(0) };
     if horizontal {
         start_style = start_style.width(relative(props.size)).height(relative(1.0));
         end_style = end_style.height(relative(1.0));
-        handle_style = handle_style.width(px(8)).height(relative(1.0)).border_start(hairline).cursor_resize_x();
+        handle_style = handle_style.width(px(8)).height(relative(1.0)).cursor_resize_x();
     } else {
         start_style = start_style.height(relative(props.size)).width(relative(1.0));
         end_style = end_style.width(relative(1.0));
-        handle_style = handle_style.height(px(8)).width(relative(1.0)).border_top(hairline).cursor_resize_y();
+        handle_style = handle_style.height(px(8)).width(relative(1.0)).cursor_resize_y();
     }
     let has_grip = "handle" in props && props.handle != ();
     let start = box([props.start]).with_key(start_ref_key)
@@ -179,7 +179,7 @@ fn render_SplitPane(ctx, props) {
         source_ratio: props.size, min_start: props.min_start, min_end: props.min_end,
         max_start: props.max_start, disabled: props.disabled,
         signal: preview, group_ref: root_ref, start_ref: start_ref,
-        line: line, line_inset: split_prop(props, "line_inset", 4.0) };
+        line: split_prop(props, "line", true), line_inset: split_prop(props, "line_inset", 4.0) };
     let grip = ();
     if has_grip {
         let grip_ref = element_ref(`${props.key}-grip`);
