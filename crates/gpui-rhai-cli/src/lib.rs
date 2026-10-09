@@ -1167,7 +1167,7 @@ fn profile_warnings(root: &Path, manifest: &LocalManifest) -> Result<Vec<String>
         .keys()
         .filter_map(|id| ModuleId::parse(id).ok())
         .filter_map(|id| component_relative_path(&id).ok())
-        .map(|relative| root.join(relative))
+        .map(|relative| root.join("ui").join(relative))
         .collect::<BTreeSet<_>>();
     let excluded = ["theme.rhai", "tokens.rhai", "styles.rhai", "profile.rhai"]
         .map(|name| root.join("ui").join(name));
@@ -2371,12 +2371,18 @@ mod tests {
             .unwrap();
         assert!(directory.path().join("ui/profile.rhai").exists());
         assert!(directory.path().join("ui/tokens.rhai").exists());
+        // Table brings Badge, whose 6px lamp is a literal: installed official source
+        // is the registry's, not the application's, and is not reported.
         project
-            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
+            .plan_add(
+                &BundledRegistry::load().unwrap(),
+                &["button".to_owned(), "table".to_owned()],
+            )
             .unwrap()
             .apply()
             .unwrap();
-        assert!(project.check().unwrap().warnings.is_empty());
+        let report = project.check().unwrap();
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
         fs::write(
             directory.path().join("ui/main.rhai"),
             "fn view(ctx) {\n    text(\"Hi\").with_style(style().font_size(px(13)).gap(px(0)))\n}\n",
