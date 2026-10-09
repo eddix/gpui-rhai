@@ -2349,6 +2349,7 @@ mod tests {
             events: BTreeMap::from([(
                 "change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::string(),
                 },
             )]),

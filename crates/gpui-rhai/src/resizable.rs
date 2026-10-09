@@ -1042,6 +1042,7 @@ pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
+                doc: None,
                 payload: rect_schema(),
             },
         )]),

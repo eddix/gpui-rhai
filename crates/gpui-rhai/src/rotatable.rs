@@ -593,6 +593,7 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "rotate".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::number(),
             },
         )]),

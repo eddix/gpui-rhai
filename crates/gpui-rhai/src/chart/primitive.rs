@@ -3369,6 +3369,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "select".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3407,6 +3408,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "zoom_change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3437,6 +3439,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "brush_change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3475,6 +3478,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "legend_change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3493,6 +3497,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "annotation_activate".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (

@@ -910,6 +910,7 @@ pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "transform_change".to_owned(),
             EventSchema {
+                doc: None,
                 payload: transform_schema(),
             },
         )]),

@@ -4785,6 +4785,7 @@ mod tests {
             BTreeMap::from([(
                 "change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::integer(),
                 },
             )]),
@@ -5046,6 +5047,7 @@ mod tests {
             BTreeMap::from([(
                 "change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::string(),
                 },
             )]),

@@ -719,12 +719,14 @@ fn sortable_events() -> BTreeMap<String, EventSchema> {
         (
             "reorder".to_owned(),
             EventSchema {
+                doc: None,
                 payload: reorder_schema(),
             },
         ),
         (
             "tap".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::string(),
             },
         ),

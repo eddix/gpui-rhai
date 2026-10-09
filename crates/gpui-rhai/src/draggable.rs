@@ -573,6 +573,7 @@ pub fn draggable_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "move".to_owned(),
             EventSchema {
+                doc: None,
                 payload: position_schema(),
             },
         )]),

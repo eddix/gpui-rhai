@@ -874,6 +874,7 @@ pub fn selection_area_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "selection_change".to_owned(),
             EventSchema {
+                doc: None,
                 payload: proposal_schema(),
             },
         )]),

@@ -998,24 +998,28 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::string(),
                 },
             ),
             (
                 "submit".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::string(),
                 },
             ),
             (
                 "focus".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::Null,
                 },
             ),
             (
                 "blur".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::Null,
                 },
             ),

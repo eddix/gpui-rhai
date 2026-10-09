@@ -193,6 +193,12 @@ and [docs/design/](docs/design/) for the specification.
   clears a capsule's ends in the round corner style, the same in every corner
   style. Textarea's vertical padding becomes `metrics.multiline_pad`. Button,
   Tabs and ToggleGroup keep `metrics.control_pad`.
+- **Breaking (Rust):** component schemas take an optional `doc` on props, object
+  fields, events and slots (`ObjectField::doc`, `EventSchema::doc`,
+  `SlotSchema::doc`; `EventSchema::new`, `with_doc`). It has no runtime effect
+  and appears in exported metadata. Rust code that builds these structs with a
+  literal adds `doc: None`. The standard `key`, `style` and `part_styles` props
+  get a doc from the runtime.
 - `gpui-rhai init` makes the project depend on the CLI's own runtime line
   (`gpui-rhai = "0.2"` from a 0.2 CLI); it wrote a fixed `"0.1"`, which cannot
   load the Runtime API 3 components the same CLI copies.

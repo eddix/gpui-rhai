@@ -787,6 +787,7 @@ pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "change".to_owned(),
             EventSchema {
+                doc: None,
                 payload: pair_schema(),
             },
         )]),

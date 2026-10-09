@@ -651,6 +651,7 @@ pub fn split_resize_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::Number {
                     min: Some(0.0),
                     max: Some(1.0),

@@ -691,6 +691,7 @@ pub fn column_resize_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::object(BTreeMap::from([
                     (
                         "key".to_owned(),

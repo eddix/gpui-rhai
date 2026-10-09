@@ -557,6 +557,80 @@ fn find_label<'a>(node: &'a gpui_rhai::UiNode, label: &str) -> Option<&'a gpui_r
 }
 
 #[test]
+fn schema_docs_are_read_and_exported() {
+    // `doc` on props, nested object fields, events and slots is metadata for references
+    // and editors; it reaches the definition and its serialized form.
+    let id = ModuleId::parse("components/doc_probe").unwrap();
+    let probe = r#"/* gpui-rhai
+{
+  "id": "components/doc_probe",
+  "export": "DocProbe",
+  "version": "0.1.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
+  "dependencies": [],
+  "capabilities": {}
+}
+*/
+define_component(#{
+    metadata: #{ id: "components/doc_probe", "export": "DocProbe", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    schema: #{
+        props: #{
+            items: #{ schema: #{ type: "array", items: #{ type: "object", fields: #{
+                    id: #{ schema: #{ type: "string" }, required: true, doc: "Unique row id." },
+                } } },
+                required: true, sensitive: false, doc: "Rows to show." },
+            on_pick: #{ schema: #{ type: "optional", value: #{ type: "callback" } },
+                required: false, sensitive: false },
+            footer: #{ schema: #{ type: "optional", value: #{ type: "node" } },
+                required: false, sensitive: false },
+        },
+        state: #{ fields: #{} },
+        events: #{ pick: #{ payload: #{ type: "string" }, doc: "A row was picked." } },
+        slots: #{ footer: #{ required: false, multiple: false, doc: "Below the rows." } },
+        parts: ["root"],
+    },
+    render: Fn("render_DocProbe")
+});
+fn DocProbe(props) { render_component("components/doc_probe", props) }
+fn render_DocProbe(ctx, props) { text("probe") }
+"#;
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(id.clone(), probe.to_owned())]));
+    let resolver = RestrictedModuleResolver::from_source(&source).unwrap();
+    let mut runtime = RuntimeEngine::new();
+    runtime.set_module_resolver(resolver);
+    runtime
+        .compile_self_contained_named(
+            "ui/main.rhai",
+            "import \"components/doc_probe\" as probe;\nfn view(ctx) { text(\"ok\") }\n",
+        )
+        .unwrap();
+    let registry = runtime.component_exports().unwrap();
+    let schema = &registry.get(&id).unwrap().schema;
+    let items = &schema.props["items"];
+    assert_eq!(items.doc.as_deref(), Some("Rows to show."));
+    let gpui_rhai::ValueSchema::Array { items: row, .. } = &items.schema else {
+        panic!("items is an array: {:?}", items.schema)
+    };
+    let gpui_rhai::ValueSchema::Object { fields, .. } = row.as_ref() else {
+        panic!("rows are objects: {row:?}")
+    };
+    assert_eq!(fields["id"].doc.as_deref(), Some("Unique row id."));
+    assert_eq!(schema.props["on_pick"].doc, None);
+    assert_eq!(
+        schema.events["pick"].doc.as_deref(),
+        Some("A row was picked.")
+    );
+    assert_eq!(
+        schema.slots["footer"].doc.as_deref(),
+        Some("Below the rows.")
+    );
+    let json = serde_json::to_value(schema).unwrap();
+    assert_eq!(json["props"]["items"]["doc"], "Rows to show.");
+    assert!(json["props"]["on_pick"].get("doc").is_none(), "{json}");
+}
+
+#[test]
 fn official_m0_components_compile_export_and_render_together() {
     let button_id = ModuleId::parse("components/button").unwrap();
     let label_id = ModuleId::parse("components/label").unwrap();

@@ -729,6 +729,7 @@ pub fn drag_source_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "drag_end".to_owned(),
             EventSchema {
+                doc: None,
                 payload: drag_end_schema(),
             },
         )]),
@@ -785,6 +786,7 @@ pub fn drop_zone_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "drop".to_owned(),
             EventSchema {
+                doc: None,
                 payload: drop_schema(),
             },
         )]),

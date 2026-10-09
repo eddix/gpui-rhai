@@ -1307,18 +1307,21 @@ fn text_area_events() -> BTreeMap<String, EventSchema> {
         (
             "change".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::string(),
             },
         ),
         (
             "focus".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::Null,
             },
         ),
         (
             "blur".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::Null,
             },
         ),

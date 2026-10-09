@@ -1902,6 +1902,7 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "location_activate".to_owned(),
             EventSchema {
+                doc: None,
                 payload: location_schema(false),
             },
         )]),
@@ -3918,6 +3919,7 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "location_activate".to_owned(),
             EventSchema {
+                doc: None,
                 payload: location_schema(true),
             },
         )]),

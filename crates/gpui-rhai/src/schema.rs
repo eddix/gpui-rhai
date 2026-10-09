@@ -976,6 +976,9 @@ pub struct ObjectField {
     pub sensitive: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<crate::UiValue>,
+    /// One-sentence description for references and editor tooling; no runtime effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
 }
 
 impl ObjectField {
@@ -986,6 +989,7 @@ impl ObjectField {
             required: true,
             sensitive: false,
             default: None,
+            doc: None,
         }
     }
 
@@ -996,12 +1000,19 @@ impl ObjectField {
             required: false,
             sensitive: false,
             default: None,
+            doc: None,
         }
     }
 
     #[must_use]
     pub fn sensitive(mut self) -> Self {
         self.sensitive = true;
+        self
+    }
+
+    #[must_use]
+    pub fn with_doc(mut self, doc: impl Into<String>) -> Self {
+        self.doc = Some(doc.into());
         self
     }
 

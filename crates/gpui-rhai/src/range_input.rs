@@ -616,6 +616,7 @@ pub fn range_input_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "change".to_owned(),
             EventSchema {
+                doc: None,
                 payload: ValueSchema::number(),
             },
         )]),
