@@ -621,6 +621,14 @@ impl UiRuntimeState {
         });
     }
 
+    /// Put commands back to run with the next frame's commands.
+    pub(crate) fn requeue_element_commands(
+        &mut self,
+        commands: Vec<crate::element_ref::ElementCommand>,
+    ) {
+        self.pending_element_commands.extend(commands);
+    }
+
     pub(crate) fn take_window_element_commands(
         &mut self,
         window: &str,

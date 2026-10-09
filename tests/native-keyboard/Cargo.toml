@@ -19,3 +19,8 @@ serde_json = "1"
 [features]
 # Mounted hot-reload tests: `cargo test --features dev-reload --test token_reload`.
 dev-reload = ["gpui-rhai/dev-reload"]
+
+# As in the main workspace: unoptimized Rhai frames are large, and stories that render every
+# official component come close to a 2MB test-thread stack in debug builds.
+[profile.dev.package.rhai]
+opt-level = 1

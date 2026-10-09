@@ -238,6 +238,14 @@ and [docs/design/](docs/design/) for the specification.
   Table's selection, keyboard and context-request model; `badge_width` lines
   the titles up when badges differ. DataView gains `bleed` (default true) for
   bodies that keep the inset.
+- Runtime: `.group_hover(style)` paints a node while its nearest hover-styled
+  ancestor is hovered; `.translate_wheel()` lets a one-axis scroll container
+  take the other wheel axis; `ctx.scroll_into_view` reveals a direct child of
+  the scroll container minimally (it aligned it to the start), waits a frame
+  for a node mounted in the same transaction (it reported an error) and drops
+  a request whose node was unmounted. The sortable item primitive gains
+  `take_focus` and `tap` (`on_tap`). Rhai builds at `opt-level = 1` in dev
+  profiles, giving deep views stack headroom in debug test threads.
 
 ## 0.1.8 - 2026-10-04
 

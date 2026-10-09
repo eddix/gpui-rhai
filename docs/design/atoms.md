@@ -397,6 +397,7 @@ layout shift:
 | `.focus(style)` | the node itself has focus | Button, fields, Tag close, segments, day cells |
 | `.group_focus(style)` | the nearest focusable ancestor-or-self with a `.focus` style has focus; a `tab_stop(false)` child passes ownership up | Checkbox box, Radio ring, Switch track, Tabs thumb, list cursor frames, the focused RadioGroup option |
 | `.focus_within(style)` | the node or a descendant has focus | InputGroup frame |
+| `.group_hover(style)` | the nearest ancestor declaring a `.hover` style is hovered (paint only: background, border, text, opacity) | TabBar close button and dirty mark |
 
 A focus owner that needs no visual of its own declares `.focus(style())`.
 

@@ -5049,6 +5049,7 @@ impl ScriptHostView {
             .runtime()
             .borrow_mut()
             .take_window_element_commands(&self.window_id);
+        let mut deferred = Vec::new();
         for command in commands {
             match command {
                 crate::element_ref::ElementCommand::Focus { node, .. } => {
@@ -5070,15 +5071,43 @@ impl ScriptHostView {
                     }
                 }
                 crate::element_ref::ElementCommand::ScrollIntoView { node, .. } => {
-                    if let Some(anchor) = self.scroll_anchors.get(&node) {
+                    let retained = self.lifecycle.retained();
+                    let ancestor = nearest_scroll_ancestor(retained, node);
+                    let handle = ancestor.and_then(|ancestor| self.scroll_handles.get(&ancestor));
+                    // A direct child scrolls the minimal amount that shows it, in the next
+                    // prepaint, which also finds a child laid out for the first time.
+                    let child_index = ancestor.and_then(|ancestor| {
+                        retained
+                            .node(ancestor)?
+                            .children()
+                            .position(|link| link.node() == node)
+                    });
+                    if let (Some(handle), Some(index)) = (handle, child_index) {
+                        handle.scroll_to_item(index);
+                        cx.notify();
+                    } else if let Some(anchor) = self.scroll_anchors.get(&node) {
                         anchor.scroll_to(window, cx);
+                    } else if retained.node(node).is_none() {
+                        // Unmounted before the request ran (the view moved on): a reveal is a
+                        // request, not a command that must take effect.
+                    } else if ancestor.is_some() {
+                        // Mounted or ref'd in this transaction: the scroll handle and anchor
+                        // exist after the next frame's sync.
+                        deferred.push(command);
                     } else {
                         self.set_plain_failure(format!(
-                            "retained node {node} has no scrollable ancestor or was unmounted"
+                            "retained node {node} has no scrollable ancestor"
                         ));
                     }
                 }
             }
+        }
+        if !deferred.is_empty() {
+            self.lifecycle
+                .runtime()
+                .borrow_mut()
+                .requeue_element_commands(deferred);
+            cx.notify();
         }
     }
 

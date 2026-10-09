@@ -187,6 +187,7 @@ fn register_source_pointer(
             move |result, cancelled, window, cx| {
                 finish_context.propose("drag_end", drag_end_value(&result, cancelled), window, cx);
             },
+            None,
             window,
             cx,
         );

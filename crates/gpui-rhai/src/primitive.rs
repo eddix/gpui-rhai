@@ -1046,6 +1046,8 @@ impl PrimitiveContext {
         self.interactions.drop_target_state(owner)
     }
 
+    // A drag source passes its press, threshold and both endings through unchanged.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn begin_application_drag(
         &self,
         spec: crate::interaction::ApplicationDragSpec,
@@ -1053,6 +1055,7 @@ impl PrimitiveContext {
         threshold: f64,
         on_end: impl Fn(crate::interaction::ApplicationDropResult, bool, &mut Window, &mut App)
         + 'static,
+        on_tap: Option<crate::interaction::TapHandler>,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -1063,6 +1066,7 @@ impl PrimitiveContext {
             spec,
             threshold,
             on_end,
+            on_tap,
         );
         self.interactions.begin(gesture, window, cx);
     }

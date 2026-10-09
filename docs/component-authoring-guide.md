@@ -430,8 +430,14 @@ Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,
 `overflow_y_scroll()`, or `overflow_scroll()`. Handlers call
 `ctx.scroll_to(ref, x, y)` with finite non-negative visible offsets.
 For a retained descendant, `ctx.scroll_into_view(ref)` (or its component-local
-ref key) uses a GPUI `ScrollAnchor` tied to the nearest retained scrollable
-ancestor and applies the minimal native reveal on the next frame.
+ref key) reveals it in the nearest retained scrollable ancestor on the next
+frame: a direct child scrolls the minimal amount that shows it (also when it
+was laid out for the first time), a deeper descendant aligns through a GPUI
+`ScrollAnchor`. A request for a node mounted or ref'd in the same transaction
+waits one frame; a request whose node is unmounted before it runs is dropped.
+A one-axis scroll container that should also take the other wheel axis (a
+horizontal tab strip under a vertical mouse wheel) declares
+`.translate_wheel()`.
 
 Declare one-shot foreground callbacks during formal render with
 `timeout(key, delay_ms, paused, Fn("callback"), payload)`. Keys are local to the

@@ -1266,6 +1266,11 @@ pub struct Style {
     /// focus.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_focus: Option<StyleProperties>,
+    /// Paint (background, border, text color, opacity) that applies while the
+    /// nearest ancestor declaring a `hover` style is hovered: a row's close
+    /// button or actions that show when the pointer is over the row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_hover: Option<StyleProperties>,
     /// Applies while the node or any descendant has keyboard focus, such as
     /// the frame of a field group around a native input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1292,6 +1297,7 @@ impl Style {
         merge_pseudo(&mut self.active, overlay.active.as_ref());
         merge_pseudo(&mut self.focus, overlay.focus.as_ref());
         merge_pseudo(&mut self.group_focus, overlay.group_focus.as_ref());
+        merge_pseudo(&mut self.group_hover, overlay.group_hover.as_ref());
         merge_pseudo(&mut self.focus_within, overlay.focus_within.as_ref());
         merge_pseudo(&mut self.disabled, overlay.disabled.as_ref());
     }
@@ -2107,6 +2113,12 @@ impl Style {
     }
 
     #[must_use]
+    pub fn group_hover(mut self, style: &Self) -> Self {
+        merge_pseudo(&mut self.group_hover, Some(&style.base));
+        self
+    }
+
+    #[must_use]
     pub fn focus_within(mut self, style: &Self) -> Self {
         merge_pseudo(&mut self.focus_within, Some(&style.base));
         self
@@ -2335,29 +2347,37 @@ impl CustomType for Style {
         register_property_specific_layout_methods(&mut builder);
         register_visual_methods(&mut builder);
         register_text_methods(&mut builder);
-        builder
-            .with_fn("hover", |style: &mut Self, state: Self| {
-                style.clone().hover(&state)
-            })
-            .with_fn("active", |style: &mut Self, state: Self| {
-                style.clone().active(&state)
-            })
-            .with_fn("focus", |style: &mut Self, state: Self| {
-                style.clone().focus(&state)
-            })
-            .with_fn("group_focus", |style: &mut Self, state: Self| {
-                style.clone().group_focus(&state)
-            })
-            .with_fn("focus_within", |style: &mut Self, state: Self| {
-                style.clone().focus_within(&state)
-            })
-            .with_fn("disabled", |style: &mut Self, state: Self| {
-                style.clone().disabled(&state)
-            })
-            .with_fn("merge", |style: &mut Self, overlay: Self| {
-                style.clone().merged(&overlay)
-            });
+        register_state_methods(&mut builder);
+        builder.with_fn("merge", |style: &mut Self, overlay: Self| {
+            style.clone().merged(&overlay)
+        });
     }
+}
+
+/// Pseudo-state variants: `style().hover(style()...)` and its siblings.
+fn register_state_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("hover", |style: &mut Style, state: Style| {
+            style.clone().hover(&state)
+        })
+        .with_fn("active", |style: &mut Style, state: Style| {
+            style.clone().active(&state)
+        })
+        .with_fn("focus", |style: &mut Style, state: Style| {
+            style.clone().focus(&state)
+        })
+        .with_fn("group_focus", |style: &mut Style, state: Style| {
+            style.clone().group_focus(&state)
+        })
+        .with_fn("group_hover", |style: &mut Style, state: Style| {
+            style.clone().group_hover(&state)
+        })
+        .with_fn("focus_within", |style: &mut Style, state: Style| {
+            style.clone().focus_within(&state)
+        })
+        .with_fn("disabled", |style: &mut Style, state: Style| {
+            style.clone().disabled(&state)
+        });
 }
 
 fn register_border_methods(builder: &mut TypeBuilder<Style>) {

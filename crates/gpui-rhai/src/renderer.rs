@@ -654,8 +654,10 @@ fn apply_scroll_behavior(
     }
     // GPUI translates an unsupported wheel axis onto the one scrollable axis
     // by default. Ordinary one-axis UI containers promise a stricter contract;
-    // two-axis canvases retain GPUI's native gesture handling.
-    if scrolls_x ^ scrolls_y {
+    // two-axis canvases retain GPUI's native gesture handling, and a node can ask
+    // for the translation (`.translate_wheel()`, a horizontal tab strip).
+    let translate = node.attributes().get("translate_wheel") == Some(&UiValue::Bool(true));
+    if scrolls_x ^ scrolls_y && !translate {
         element = element.restrict_scroll_to_axis();
     }
     if let Some(handle) = retained_id.and_then(|node| handles.get(&node)) {
@@ -1578,6 +1580,9 @@ struct RenderEnvironment<'a, C> {
     /// The overlays whose content this node is in, innermost first, so a
     /// `parent` key names the nearest enclosing overlay with that key.
     overlay_scope: Option<&'a OverlayScope<'a>>,
+    /// The nearest ancestor declaring a `hover` style: its GPUI group drives
+    /// `group_hover` paint below it.
+    hover_group: Option<NodeId>,
 }
 
 /// An overlay whose content is being rendered: its script key and its
@@ -1787,6 +1792,7 @@ impl GpuiNodeRenderer {
             stretch_parent: false,
             stretch_children: false,
             overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1872,6 +1878,7 @@ impl GpuiNodeRenderer {
             stretch_parent: false,
             stretch_children: false,
             overlay_scope: None,
+            hover_group: None,
         };
         tree.root().map_or_else(
             || {
@@ -1950,6 +1957,7 @@ impl GpuiNodeRenderer {
             stretch_parent: false,
             stretch_children: false,
             overlay_scope: None,
+            hover_group: None,
         };
         tree.root().map_or_else(
             || {
@@ -2020,6 +2028,7 @@ impl GpuiNodeRenderer {
             stretch_parent: false,
             stretch_children: false,
             overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -2148,6 +2157,7 @@ impl GpuiNodeRenderer {
             stretch_parent: false,
             stretch_children: false,
             overlay_scope: None,
+            hover_group: None,
         };
         tree.root().map_or_else(
             || {
@@ -2218,6 +2228,7 @@ impl GpuiNodeRenderer {
             stretch_parent: false,
             stretch_children: false,
             overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -2274,6 +2285,7 @@ impl GpuiNodeRenderer {
             stretch_parent: false,
             stretch_children: false,
             overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
     }
@@ -2332,7 +2344,10 @@ impl GpuiNodeRenderer {
             environment.stretch_parent,
         );
         normalize_text_content_layout(node, &mut resolved_style);
-        let local_environment = environment.below(&resolved_style);
+        let mut local_environment = environment.below(&resolved_style);
+        if node.style().hover.is_some() && retained_id.is_some() {
+            local_environment.hover_group = retained_id;
+        }
         let mut element = apply_style(
             div(),
             &resolved_style,
@@ -2513,6 +2528,7 @@ impl GpuiNodeRenderer {
         } else {
             apply_pseudo_backgrounds(element, node.style(), &environment.resolver())
         };
+        let element = apply_hover_group(element, node, retained_id, environment, disabled);
         let element = apply_native_semantics(element, semantic.as_ref());
         let element = apply_primitive_accessibility_actions(
             element,
@@ -3071,6 +3087,7 @@ fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> b
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)
                 || node.style().hover.is_some()
+                || node.style().group_hover.is_some()
                 || node.style().active.is_some()
                 || node.style().focus.is_some()
                 || node_has_raw_pointer_handlers(node)
@@ -5344,6 +5361,33 @@ fn apply_pseudo_paint(
         style = style.opacity(opacity);
     }
     style
+}
+
+/// A node with a `hover` style names a GPUI group; a `group_hover` style below it paints
+/// while that group is hovered.
+fn apply_hover_group<C: ColorResolver>(
+    mut element: Stateful<Div>,
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    environment: &RenderEnvironment<'_, C>,
+    disabled: bool,
+) -> Stateful<Div> {
+    if let Some(id) = retained_id.filter(|_| node.style().hover.is_some()) {
+        element = element.group(hover_group_name(id));
+    }
+    if !disabled
+        && let (Some(group), Some(style)) = (environment.hover_group, &node.style().group_hover)
+    {
+        let paint = pseudo_paint(Some(style), &environment.resolver());
+        element = element.group_hover(hover_group_name(group), move |style| {
+            apply_pseudo_paint(style, paint)
+        });
+    }
+    element
+}
+
+fn hover_group_name(id: NodeId) -> SharedString {
+    SharedString::from(format!("gpui-rhai-hover-{}", id.get()))
 }
 
 fn apply_pseudo_backgrounds(

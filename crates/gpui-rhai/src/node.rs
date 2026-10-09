@@ -2349,6 +2349,12 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
             node.clone()
                 .with_attribute("heading_elsewhere", UiValue::Bool(true))
         })
+        // A container that scrolls on one axis also takes wheel deltas of the other axis
+        // on it: a horizontal tab strip scrolls with a vertical mouse wheel.
+        .with_fn("translate_wheel", |node: &mut UiNode| {
+            node.clone()
+                .with_attribute("translate_wheel", UiValue::Bool(true))
+        })
         // Pressing the node itself (not a focusable control inside it) moves
         // the window, and a double press runs the platform title-bar action.
         .with_fn("window_drag_area", |node: &mut UiNode| {

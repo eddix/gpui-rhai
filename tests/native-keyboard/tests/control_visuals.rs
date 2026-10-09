@@ -2216,6 +2216,56 @@ fn a_resizable_grip_takes_no_press_where_it_is_covered_or_clipped(cx: &mut TestA
     );
 }
 
+#[gpui::test]
+fn group_hover_paints_a_child_while_the_hover_owner_is_hovered(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    // The row declares a hover style, so its hover drives the child's group_hover paint; the
+    // child is red at rest and green while the pointer is anywhere over the row.
+    let script = r#"
+fn view(ctx){column([
+    row([text("Row"), row([]).with_style(style().width(px(20)).height(px(20))
+        .background(rgba(0xff0000ff)).group_hover(style().background(rgba(0x00ff00ff))))])
+        .accessibility_role("group").accessibility_label("Row")
+        .with_style(style().width(px(300)).height(px(40)).gap(px(8)).items_center()
+            .hover(style().background(rgba(0x000000ff)))),
+]).with_style(style().width(px(400)).height(px(200)))}
+"#;
+    let (window, view) = mount(cx, script, "group-hover");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    // The pointer starts at the window origin, over the row: move it off first.
+    visual.simulate_mouse_move(point(px(390.0), px(190.0)), None, Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    assert_eq!(filled_quads(&mut visual, 0x00ff_00ff).len(), 0, "at rest");
+    assert_eq!(filled_quads(&mut visual, 0xff00_00ff).len(), 1, "at rest");
+    let row = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("group", "Row")
+            .next()
+            .and_then(|node| node.geometry)
+            .unwrap()
+            .visual
+    });
+    // Over the row's text, away from the child itself.
+    #[allow(clippy::cast_possible_truncation)]
+    let over_text = point(
+        px((row.x + 8.0) as f32),
+        px((row.y + row.height / 2.0) as f32),
+    );
+    visual.simulate_mouse_move(over_text, None, Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    assert_eq!(
+        filled_quads(&mut visual, 0x00ff_00ff).len(),
+        1,
+        "hovered row"
+    );
+}
+
 /// The bounds of quads filled with `color`, as (x, y) in scaled pixels.
 fn filled_quads(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32)> {
     let color: gpui::Hsla = rgba(color).into();

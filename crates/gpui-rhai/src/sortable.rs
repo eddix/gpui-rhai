@@ -71,6 +71,12 @@ struct SortableConfig {
     disabled: bool,
     item_ref: Option<crate::ElementRef>,
     focus: Option<FocusHandle>,
+    /// A press focuses the item (false: the press leaves focus where it is, for items
+    /// inside a control that keeps one tab stop, such as the tabs of a `TabBar`).
+    take_focus: bool,
+    /// A release before the drag threshold proposes `tap` with the item key, so the
+    /// item can be pressed as well as dragged.
+    tap: bool,
     accent: Rgba8,
 }
 
@@ -398,15 +404,25 @@ fn register_pointer_source(
         {
             return;
         }
-        if let Some(focus) = config.focus.as_ref() {
+        if config.take_focus
+            && let Some(focus) = config.focus.as_ref()
+        {
             focus.focus(window, cx);
         }
         let spec = drag_spec(&context, &config, view);
+        let on_tap: Option<crate::interaction::TapHandler> = config.tap.then(|| {
+            let tap_context = context.clone();
+            let key = config.item_key.clone();
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                tap_context.propose("tap", UiValue::String(key.clone()), window, cx);
+            }) as crate::interaction::TapHandler
+        });
         context.begin_application_drag(
             spec,
             event.position,
             config.threshold,
             |_, _, _, _| {},
+            on_tap,
             window,
             cx,
         );
@@ -634,6 +650,8 @@ fn parse_config(
         disabled: props.boolean("disabled").unwrap_or(false),
         item_ref: props.element_ref("item_ref").cloned(),
         focus,
+        take_focus: props.boolean("take_focus").unwrap_or(true),
+        tap: props.boolean("tap").unwrap_or(false),
         accent: theme
             .color("accent")
             .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
@@ -693,6 +711,24 @@ fn reorder_schema() -> ValueSchema {
         ("x".to_owned(), ObjectField::required(ValueSchema::number())),
         ("y".to_owned(), ObjectField::required(ValueSchema::number())),
     ]))
+}
+
+/// `reorder` from a drop or Alt+Arrow, `tap` from a press released before it dragged.
+fn sortable_events() -> BTreeMap<String, EventSchema> {
+    BTreeMap::from([
+        (
+            "reorder".to_owned(),
+            EventSchema {
+                payload: reorder_schema(),
+            },
+        ),
+        (
+            "tap".to_owned(),
+            EventSchema {
+                payload: ValueSchema::string(),
+            },
+        ),
+    ])
 }
 
 /// Build the native keyed sortable-item interaction schema.
@@ -769,16 +805,23 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)),
             ),
             (
+                "take_focus".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+            ),
+            (
+                "tap".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+            ),
+            (
                 "on_reorder".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
             ),
+            (
+                "on_tap".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+            ),
         ]),
-        events: BTreeMap::from([(
-            "reorder".to_owned(),
-            EventSchema {
-                payload: reorder_schema(),
-            },
-        )]),
+        events: sortable_events(),
         state: ComponentStateSchema::default(),
         lifecycle: true,
         effect: None,

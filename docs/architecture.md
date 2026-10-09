@@ -184,9 +184,10 @@ queries it by role/name or semantic ID; the pinned GPUI platform bridge remains
 the final forwarding boundary.
 Per-axis `Style.overflow_x_scroll/y_scroll` creates a retained GPUI
 `ScrollHandle` for keyed ref nodes. `ctx.scroll_to(ref, x, y)` queues positive
-visible offsets and applies them only after transaction commit. Ref descendants
-also retain a GPUI `ScrollAnchor` for nearest-ancestor `scroll_into_view`
-without assuming they are direct children.
+visible offsets and applies them only after transaction commit. `scroll_into_view` reveals a
+direct child of the scroll ancestor with `ScrollHandle::scroll_to_item` (minimal,
+resolved in the next prepaint) and other ref descendants through a retained
+GPUI `ScrollAnchor`, without assuming they are direct children.
 
 The generic `scrollbars(horizontal, vertical)` node decoration overlays themed
 tracks and draggable thumbs on that same ScrollHandle. `auto`, `always`, and
