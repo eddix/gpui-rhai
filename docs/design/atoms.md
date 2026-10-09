@@ -27,7 +27,7 @@ section 9 repeats them for reviews.
 | C7 | **Declared consumption** | Component metadata lists the tokens (`tokens`) and environment values (`environment`) it reads. Preparation validates the active theme against the union of mounted components. |
 | C8 | **Removable signatures** | Each structural signature is a declared part (`indicator_bar`, `lamp`, `facet`, `shortcut`, `label`, `cursor`, `focus_frame`), so `ui/styles.rhai` can restyle or hide it. |
 | C9 | **States without layout shift** | State priority is `active > focus > hover/cursor > selected > idle`; `disabled` suppresses interaction and wins over pointer states. Borders are reserved in idle geometry. Selection stays visible under focus. |
-| C10 | **Visible focus** | Focus is always a 2px `focus_ring` frame (the ink color by default) and never moves layout. A control frames itself with a reserved 2px border that idles in its fill or, for outline treatments, in `border`. A compound control frames its mark instead of the whole row (`group_focus`), a list frames its cursor row with an overlay, and a field group frames itself while its input has focus (`focus_within`). See section 10. |
+| C10 | **Visible focus** | Focus is always a 2px `focus_ring` frame (the ink color by default) and never moves layout. A control frames itself with a reserved 2px border that idles in its fill or, for outline treatments, in `border`. A compound control frames its mark instead of the whole row (`group_focus`), a list frames its cursor row with an overlay, and a field group frames itself while its input has focus (`focus_within`). The one exception is the embedded search line that heads a panel and holds focus while it is open: its caret shows focus (section 7). See section 10. |
 | C11 | **Inherited disabled** | A disabled container disables every descendant natively: input, focus, pseudo styles and accessibility semantics. Components do not need to forward `disabled` to children. |
 | C12 | **Action binding** | Components that trigger commands (Button, IconButton, Menu items, Command items, ContextMenu items, Tooltip hints) accept `action: "id"`. The displayed shortcut, enabled state and dispatch derive from that action. A free-text `shortcut` remains for commands without an action. |
 | C13 | **Data defaults** | When a component knows a value is numeric (a Table column with `numeric: true`, Stat, DescriptionList numeric values), it aligns to the end and enables tabular figures by default. |
@@ -350,6 +350,14 @@ Things you type into have a frame; things you press are blocks.
   as a button.
 - InputGroup owns the frame for a prefix/suffix and its inner control; the
   frame takes `focus_ring` while the inner input has focus (`focus_within`).
+- Exception, the embedded field (Input `appearance: "embedded"`): a search or
+  filter line that heads a panel or list and keeps focus while it is open
+  (Command, CommandDialog, a searchable Combobox panel). The container's edges
+  frame it: no well, no frame, full width, a 1px `border` line under it
+  (`danger` while invalid), text on `metrics.inset` like the rows below. Its
+  caret shows focus; the line keeps its color, because a focus color on a
+  field that never loses focus would never turn off and says nothing. A field
+  in a form, a toolbar or anywhere focus moves in and out keeps the frame.
 - Focus: frame turns `focus_ring`. Invalid: frame turns `danger`; while focused
   the focus color owns the frame and danger returns on blur. Read-only: no
   frame change on hover, muted caret area. Disabled: `disabled` text, frame
@@ -415,6 +423,8 @@ layout shift:
 | `.group_hover(style)` | the nearest ancestor declaring a `.hover` style is hovered (paint only: background, border, text, opacity) | TabBar close button and dirty mark |
 
 A focus owner that needs no visual of its own declares `.focus(style())`.
+The one field without a focus frame is the embedded search line (section 7):
+it holds focus for as long as its panel is open, so its caret shows focus.
 
 **Containers that hold focus.** A container that can hold focus itself (an
 overlay panel of Dialog, Sheet, Popover, Menu, DatePicker or Combobox; an

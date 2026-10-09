@@ -193,6 +193,14 @@ and [docs/design/](docs/design/) for the specification.
   clears a capsule's ends in the round corner style, the same in every corner
   style. Textarea's vertical padding becomes `metrics.multiline_pad`. Button,
   Tabs and ToggleGroup keep `metrics.control_pad`.
+- Input gains `appearance: "embedded"` for the search or filter line that
+  heads a panel: no frame or well, a 1px `border` line under it (`danger`
+  while invalid), text on `metrics.inset` like the rows below; its caret shows
+  focus. Command, CommandDialog and a searchable Combobox panel use it: the
+  search spans the panel at the top instead of a framed field inside it.
+  Command's search is the `lg` size (36 / 32) with an `xs` gap above the rows;
+  CommandDialog's panel has no padding by default (`dialog_part_styles.panel`
+  still overrides it) and a visible title sits on `metrics.inset`.
 - Resize handles take a decorative grip (#83): SplitPane `handle` and Resizable
   `grips` (one node per handle) sit in a `grip` box centred on the handle and
   painted above the panes or content; pressing it anywhere it is visible and

@@ -72,6 +72,26 @@ fn input_sizes(h, v, suffix) {
     ])
 }
 
+// An embedded search heads a panel: the panel frames it, the hairline separates it from
+// the rows, and its text sits on their inset.
+fn embedded_search(h, v) {
+    let query = kit::val(v, "input.embedded", "");
+    let rows = [];
+    for name in ["api-gateway", "billing-worker", "edge-03"] {
+        if query == "" || name.contains(query) {
+            rows.push(row([text(name)]).with_style(style().height(theme_length("metrics.row"))
+                .padding_x(theme_length("metrics.inset")).items_center()
+                .typography("body").text_color(theme_color("text_primary"))));
+        }
+    }
+    column([input::Input(#{ key: "input.embedded", label: "Filter services", value: query,
+        placeholder: "Filter services", appearance: "embedded", on_change: kit::store(h, "input.embedded") })]
+        + rows)
+        .with_style(style().width(px(280)).gap(theme_spacing("xs")).padding_bottom(theme_spacing("xs"))
+            .border(px(1)).border_color(theme_color("border")).radius(theme_radius("lg"))
+            .background(theme_color("surface_raised")))
+}
+
 fn input_page(h, v) {
     kit::page(h, v, "input", "Input", "Things you type into have a frame. Focus turns the frame ink; errors return on blur.", [
         kit::sec("States", kit::line([
@@ -85,6 +105,7 @@ fn input_page(h, v) {
         ])),
         kit::sec("Sizes", input_sizes(h, v, "sizes")),
         kit::sec("Density", kit::densities(input_sizes(h, v, "c"), input_sizes(h, v, "k"))),
+        kit::sec("Embedded", embedded_search(h, v)),
     ])
 }
 

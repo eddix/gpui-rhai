@@ -285,7 +285,9 @@ Runnable story: `gpui-rhai gallery --story components/tab_bar`.
   [known visual gaps](../registry-design-system.md#known-implementation-gaps);
   it is not part of the current component contract.
 - `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
-  editing core and explicit semantic relationships.
+  editing core and explicit semantic relationships. `Input` with
+  `appearance: "embedded"` is the frameless search line that heads a panel
+  (Command, CommandDialog, a searchable Combobox).
 - `Select` is scalar choice. `Combobox` is searchable single/multiple choice.
   Both are strictly controlled for value, open state, and query.
 - `DatePicker` remains a controlled ISO-date composition over public calendar

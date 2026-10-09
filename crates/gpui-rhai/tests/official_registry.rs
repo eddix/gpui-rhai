@@ -1170,6 +1170,7 @@ fn official_component_sources_reject_decorative_visual_drift() {
         }) {
             let allowed_structure = (id == "icon_button" && line.contains(".padding(px(0))"))
                 || (id == "switch" && line.contains(".padding(px(2))"))
+                || (id == "command_dialog" && line.contains(".padding(px(0)).gap(px(0))"))
                 || (id == "title_bar"
                     && (line.contains("gap(px(0))") || line.contains("padding_start(px(inset))")));
             assert!(

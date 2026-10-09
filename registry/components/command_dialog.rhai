@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/command", "components/dialog"],
   "capabilities": {},
-  "tokens": [],
+  "tokens": ["metrics.inset"],
   "environment": ["density"]
 }
 */
@@ -21,6 +21,8 @@
 // inner Command (search, item, item_active, ...) and Dialog (panel, title, ...) parts.
 // With `on_escape` the dialog no longer closes on Escape: the caller sees it first and
 // closes through `open`, so a palette with levels can go back one level instead.
+// The command fills the panel edge to edge: the panel has no padding, its search line spans
+// the panel, and a visible title sits on the rows' inset above it.
 // Example: CommandDialog(#{ key: "palette", open: open, query: query, active_value: active, label: "Commands", items: items, on_open_change: Fn("opened"), on_query_change: Fn("queried"), on_active_change: Fn("preview"), on_action: Fn("run") })
 
 import "components/command" as command;
@@ -30,7 +32,7 @@ define_component(#{
     metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/command", "components/dialog"], capabilities: #{},
-        tokens: [],
+        tokens: ["metrics.inset"],
         environment: ["density"] },
     schema: #{
         props: #{
@@ -109,14 +111,16 @@ fn render_CommandDialog(ctx, props) {
         on_active_change: Fn("active_action"),
         on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)),
         part_styles: prop_or(props, "command_part_styles", #{}) })
-        .with_style(ctx.component_style("command", style().border(px(0)).padding_bottom(px(0))));
+        .with_style(ctx.component_style("command", style().border(px(0))));
     let escape = "on_escape" in props && props.on_escape != ();
     if escape { list = list.on_key_value("escape", Fn("escape_action"), ()); }
     let dialog_parts = prop_or(props, "dialog_part_styles", #{});
-    if "width" in props && props.width != () {
-        let panel = if "panel" in dialog_parts { dialog_parts.panel } else { style() };
-        dialog_parts.panel = panel.width(props.width);
-    }
+    let panel = style().padding(px(0)).gap(px(0));
+    if "panel" in dialog_parts { panel = panel.merge(dialog_parts.panel); }
+    if "width" in props && props.width != () { panel = panel.width(props.width); }
+    dialog_parts.panel = panel;
+    let title = style().padding_x(theme_length("metrics.inset")).padding_top(theme_length("metrics.inset"));
+    dialog_parts.title = if "title" in dialog_parts { title.merge(dialog_parts.title) } else { title };
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.label,
         title_visible: prop_or(props, "title_visible", true), dismiss_on_escape: !escape,
         content: list, initial_focus: "first", on_open_change: Fn("open_action"),

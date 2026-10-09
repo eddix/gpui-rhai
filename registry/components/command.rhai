@@ -311,15 +311,15 @@ fn render_Command(ctx, props) {
     };
     let data = model.data;
     let active = model.active;
+    // The search heads the panel full width, one size above the rows, on their inset.
     let search = input::Input(#{ key: `${props.key}-search`, label: props.label, value: query,
         placeholder: prop_or(props, "placeholder", "Type a command"),
+        appearance: "embedded", size: "lg",
         disabled: prop_or(props, "disabled", false),
         autofocus: prop_or(props, "autofocus", false),
         on_change: Fn("query_action"),
         on_submit: Fn("submit_action").curry(#{ value: active, action: model.active_action }) })
         .with_style(ctx.component_style("search", style()));
-    let search = column([search]).with_style(style()
-        .padding_x(theme_length("metrics.inset")).padding_y(theme_spacing("xs")));
     let body = if data.len == 0 {
         row([text(prop_or(props, "empty_text", "No commands found"))])
             .with_style(ctx.component_style("empty", style()
@@ -345,7 +345,7 @@ fn render_Command(ctx, props) {
     };
     let root = column([search, body]).with_key(props.key)
         .with_style(ctx.component_style("root", style()
-            .padding_bottom(theme_spacing("xs")).radius(theme_radius("lg"))
+            .gap(theme_spacing("xs")).padding_bottom(theme_spacing("xs")).radius(theme_radius("lg"))
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised"))))
         .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);

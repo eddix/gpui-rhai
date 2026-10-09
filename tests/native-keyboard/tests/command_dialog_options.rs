@@ -180,25 +180,27 @@ fn search_inset(cx: &mut TestAppContext, extra: &str) -> (GeometryBounds, f64) {
 
 #[gpui::test]
 fn width_and_part_styles_reach_the_inner_parts(cx: &mut TestAppContext) {
-    let (default, padded) = search_inset(cx, "");
+    let (default, flush) = search_inset(cx, "");
     // The documented 420px, no longer 90% of itself.
     assert!(
         (default.width - 420.0).abs() < 0.5,
         "default width {}",
         default.width
     );
-    let (wide, flush) = search_inset(
+    // The command fills the panel: its search starts inside the 1px hairline.
+    assert!((flush - 1.0).abs() < 0.5, "search inset {flush}");
+    let (wide, padded) = search_inset(
         cx,
-        r#", width: px(560), dialog_part_styles: #{ panel: style().padding(px(0)) }"#,
+        r#", width: px(560), dialog_part_styles: #{ panel: style().padding(px(16)) }"#,
     );
     assert!(
         (wide.width - 560.0).abs() < 0.5,
         "panel width {}",
         wide.width
     );
-    // Removing the panel's xl padding (24px) moves the search 24px toward the edge.
+    // A caller's panel padding still wins over the flush default.
     assert!(
-        (padded - flush - 24.0).abs() < 0.5,
-        "search inset {padded} with the panel padding, {flush} without"
+        (padded - flush - 16.0).abs() < 0.5,
+        "search inset {padded} with a 16px panel padding, {flush} without"
     );
 }

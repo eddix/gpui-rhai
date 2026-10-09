@@ -448,15 +448,17 @@ fn render_Combobox(ctx, props) {
     }
 
     let content = [];
-    if "header" in props && props.header != () { content.push(props.header); }
-    if prop_or(props, "searchable", false) {
+    let header = "header" in props && props.header != ();
+    let searchable = prop_or(props, "searchable", false);
+    if header { content.push(props.header); }
+    if searchable {
+        // The search spans the panel on the rows' inset; without a header it heads the panel.
         content.push(input::Input(#{
             key: `${props.key}-search`, label: props.label, value: query,
             placeholder: prop_or(props, "search_placeholder", "Search"),
+            appearance: "embedded",
             on_change: Fn("query_action")
         }).with_style(ctx.component_style("search", style())));
-        content[content.len - 1] = column([content[content.len - 1]])
-            .with_style(style().padding_x(theme_length("metrics.inset")));
     }
     if ordered.len == 0 {
         content.push(if "empty" in props && props.empty != () { props.empty }
@@ -483,6 +485,7 @@ fn render_Combobox(ctx, props) {
         .with_style(ctx.component_style("panel",
             style().relative().width(if custom_trigger { width } else { relative(1.0) })
             .min_width(px(0)).gap(theme_spacing("xs")).padding_y(theme_spacing("xs"))
+                .padding_top(if searchable && !header { px(0) } else { theme_spacing("xs") })
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("lg")).background(theme_color("surface_raised"))
                 .focus(style().border_color(theme_color("focus_ring")))))

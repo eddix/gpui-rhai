@@ -8,16 +8,23 @@
   "capabilities": {},
   "tokens": [
     "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
-    "disabled", "metrics.control", "metrics.field_pad", "radius.md", "typography.control"
+    "disabled", "metrics.control", "metrics.field_pad", "metrics.inset", "radius.md",
+    "typography.control"
   ],
   "environment": ["size", "density", "corners"]
 }
 */
 // Input is a controlled single-line native text input.
 //
-// Props: key, label, value, placeholder, size, disabled, read_only, error, autofocus, callbacks.
+// Props: key, label, value, placeholder, size, disabled, read_only, error, autofocus,
+//        appearance (field|embedded), callbacks.
 // Events: change(string), submit(string), focus(null), blur(null).
 // State: native keyed TextInput Entity. Parts: root, input.
+//
+// `appearance: "embedded"` is the search or filter line that heads a panel or a list and
+// keeps focus while it is open: no frame or well of its own, the container's edges and a
+// hairline under it frame it, and its text starts on metrics.inset like the rows below.
+// Its caret shows focus; the hairline stays `border` (`danger` while invalid).
 // Example: Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_changed") })
 
 define_component(#{
@@ -30,7 +37,7 @@ define_component(#{
         capabilities: #{},
         tokens: [
             "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
-            "disabled", "metrics.control", "metrics.field_pad", "radius.md",
+            "disabled", "metrics.control", "metrics.field_pad", "metrics.inset", "radius.md",
             "typography.control"
         ],
         environment: ["size", "density", "corners"],
@@ -105,6 +112,12 @@ define_component(#{
                 required: false,
                 sensitive: false,
             },
+            appearance: #{
+                schema: #{ type: "string", allowed: ["field", "embedded"] },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "string", value: "field" },
+            },
         },
         state: #{ fields: #{} },
         events: #{
@@ -141,21 +154,32 @@ fn render_Input(ctx, props) {
         on_focus: optional_prop(props, "on_focus"),
         on_blur: optional_prop(props, "on_blur"),
     });
-    // Fields are framed wells: things you type into have a frame. The focus color
-    // owns the frame while focused; an error frame returns on blur.
+    let embedded = optional_prop(props, "appearance") == "embedded";
     let field = style()
         .min_height(theme_length("metrics.control"))
-        .padding_x(theme_length("metrics.field_pad"))
         .items_center()
-        .radius(theme_radius("md"));
-    field = field
-        .border(px(2))
-        .border_color(if error { theme_color("danger") } else { theme_color("border") })
-        .background(theme_color("surface_raised"))
         .text_color(if read_only { theme_color("text_muted") } else { theme_color("text_primary") })
-        .typography("control")
-        .focus(style().border_color(theme_color("focus_ring")))
-        .disabled(style().text_color(theme_color("disabled")).opacity(0.72));
+        .typography("control");
+    if embedded {
+        // The container frames it and the hairline separates it from the rows. It holds
+        // focus for as long as its panel is open, so a focus color here would never turn
+        // off and would say nothing; the caret shows focus.
+        field = field
+            .padding_x(theme_length("metrics.inset"))
+            .border_bottom(px(1))
+            .border_color(if error { theme_color("danger") } else { theme_color("border") });
+    } else {
+        // Fields are framed wells: things you type into have a frame. The focus color
+        // owns the frame while focused; an error frame returns on blur.
+        field = field
+            .padding_x(theme_length("metrics.field_pad"))
+            .radius(theme_radius("md"))
+            .border(px(2))
+            .border_color(if error { theme_color("danger") } else { theme_color("border") })
+            .background(theme_color("surface_raised"))
+            .focus(style().border_color(theme_color("focus_ring")));
+    }
+    field = field.disabled(style().text_color(theme_color("disabled")).opacity(0.72));
     input = input
         .with_style(ctx.component_style("root", ctx.component_style("input", field)))
         .disabled(disabled)
