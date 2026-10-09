@@ -248,7 +248,8 @@ and [docs/design/](docs/design/) for the specification.
   profiles, giving deep views stack headroom in debug test threads.
 - Adds `TabBar`: document tabs that belong to the panel under them. The
   selected tab takes `tabbar.active` (a new token, the panel's surface) and
-  covers the bar's line; tabs scroll sideways, also under a vertical wheel, and
+  covers the bar's line, square in every corner style, with no start line on
+  the bar's edge; tabs scroll sideways, also under a vertical wheel, and
   the selected one stays revealed; closable and dirty tabs, middle-press close,
   context requests, drag and Alt+Arrow reordering, an all-tabs menu and
   `start` / `end` slots. The keys move a cursor and Enter selects.

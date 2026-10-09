@@ -213,8 +213,10 @@ fn tab_slot(ctx, props, tab, selected) {
 }
 
 // Side hairlines are reserved on every tab and drawn on the selected one, which also takes
-// the panel's surface and covers the bar's bottom line.
-fn tab_style(selected, disabled, slotted) {
+// the panel's surface and covers the bar's bottom line. The bar is a rectangle with no
+// margin, so the selected tab stays square in every corner style. A first tab on the bar's
+// start edge draws no start hairline: the edge (or a separator beside the bar) is its edge.
+fn tab_style(selected, disabled, slotted, on_edge) {
     let ink = if disabled { theme_color("disabled") }
         else if selected { theme_color("text_primary") } else { theme_color("tabs.foreground") };
     let hover_ink = if disabled { theme_color("disabled") } else { theme_color("text_primary") };
@@ -223,11 +225,10 @@ fn tab_style(selected, disabled, slotted) {
         .items_center().gap(theme_spacing("xs"))
         .padding_start(theme_length("metrics.inset"))
         .padding_end(if slotted { theme_spacing("xs") } else { theme_length("metrics.inset") });
-    tab = tab.border_left(px(1)).border_right(px(1))
+    tab = tab.border_start(if on_edge { px(0) } else { px(1) }).border_end(px(1))
         .border_color(if selected { theme_color("border") } else { rgba(0x00000000) })
         .background(if selected { theme_color("tabbar.active") } else { rgba(0x00000000) })
         .typography("control").text_color(ink).hover(style().text_color(hover_ink));
-    if selected { tab = tab.radius_top_left(theme_radius("md")).radius_top_right(theme_radius("md")); }
     tab
 }
 
@@ -286,7 +287,8 @@ fn render_TabBar(ctx, props) {
         if item_ref != () { children.push(drag_overlay(props.key, list_ref.scope, tabs, index, item_ref)); }
         if slotted { children.push(tab_slot(ctx, props, tab, selected)); }
         if tab.value == cursor { children.push(cursor_frame(ctx)); }
-        let resolved = ctx.component_style("tab", tab_style(selected, disabled, slotted));
+        let on_edge = index == 0 && prop_or(props, "start", []).len == 0;
+        let resolved = ctx.component_style("tab", tab_style(selected, disabled, slotted, on_edge));
         if selected { resolved = ctx.component_style("tab_selected", resolved); }
         let node = row(children).with_key(tab.value).with_style(resolved)
             .disabled(disabled).tab_stop(false)
@@ -355,7 +357,8 @@ fn render_TabBar(ctx, props) {
         let menu_label = prop_or(props, "menu_label", "All tabs");
         let trigger = box([image_source(asset("app/icons/chevron_down"))
             .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))])
-            .with_style(style().width(theme_length("metrics.control")).height(relative(1.0))
+            // A definite height: the Menu root around the trigger has none to fill (#128).
+            .with_style(style().width(theme_length("metrics.control")).height(theme_length("metrics.control"))
                 .items_center().justify_center().text_color(theme_color("tabs.foreground"))
                 .hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary"))))
             .accessibility_role("button").accessibility_label(menu_label);

@@ -329,3 +329,56 @@ fn the_overflow_menu_lists_every_tab(cx: &mut TestAppContext) {
     press(&mut visual, center(item), MouseButton::Left);
     assert_eq!(log(&mut visual, &view), "change:t5");
 }
+
+/// The selected tab's painted corner radius and start border width, in scaled pixels. A
+/// unique fill marks the tab; GPUI paints its border as separate quads over the same bounds.
+fn selected_quad(visual: &mut VisualTestContext) -> (f32, f32) {
+    let fill: gpui::Hsla = gpui::rgba(0x00ff_00ff).into();
+    visual.update(|window, _| {
+        let quads = window.painted_quads();
+        let tab = quads
+            .iter()
+            .find(|quad| quad.background == fill.into())
+            .expect("the selected tab is painted");
+        let radii = tab.corner_radii;
+        let start_border = quads
+            .iter()
+            .filter(|quad| quad.bounds == tab.bounds)
+            .map(|quad| quad.border_widths.left.0)
+            .fold(0.0_f32, f32::max);
+        (radii.top_left.0.max(radii.top_right.0), start_border)
+    })
+}
+
+#[gpui::test]
+fn the_selected_tab_is_square_in_every_corner_style_and_owns_no_edge_line(cx: &mut TestAppContext) {
+    // Round corners, the first tab selected on the bar's start edge.
+    let source = script(
+        3,
+        600,
+        ",part_styles:#{tab_selected:style().background(rgba(0x00ff00ff))}",
+    )
+    .replace(r#"value:ctx.get_state("value")"#, r#"value:"t0""#)
+    .replace(
+        "}).with_style(style().width(px(600))),",
+        "}).env(#{corners:\"round\"}).with_style(style().width(px(600))),",
+    );
+    assert!(source.contains("corners"), "the round corner style is set");
+    let (mut visual, _) = mount(cx, source.clone());
+    let (radius, start_border) = selected_quad(&mut visual);
+    assert!(
+        radius.abs() < 0.01,
+        "round corners leave the selected tab square: {radius}"
+    );
+    assert!(
+        start_border.abs() < 0.01,
+        "the first tab draws no start hairline: {start_border}"
+    );
+    // The second tab keeps its start hairline.
+    let (mut visual, _) = mount(cx, source.replace(r#"value:"t0""#, r#"value:"t1""#));
+    let (_, start_border) = selected_quad(&mut visual);
+    assert!(
+        start_border > 0.5,
+        "a later tab draws its start hairline: {start_border}"
+    );
+}

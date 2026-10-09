@@ -245,9 +245,11 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 - **TabBar** switches what a panel shows (open documents, a workspace's
   panels), and the panel's extent says what it switches: the bar is
   `tabbar.background` with a 1px `border` line along its bottom; the selected
-  tab takes `tabbar.active` (the panel's surface), 1px side hairlines and the
-  top corners of `radius.md`, and covers the line, so it and the panel are one
-  surface. Unselected tabs are transparent with `tabs.foreground` labels.
+  tab takes `tabbar.active` (the panel's surface) and 1px side hairlines and
+  covers the line, so it and the panel are one surface. The bar is a
+  rectangle with no margin, so the selected tab stays square in every corner
+  style; a first tab on the bar's start edge draws no start hairline, so it
+  never doubles a separator beside the bar (buttons go in `start`). Unselected tabs are transparent with `tabs.foreground` labels.
   Tabs are `metrics.control` high, start their text on `metrics.inset`, keep
   their width (at most two label columns, then an ellipsis) and scroll
   sideways when they do not fit, a vertical wheel included; the selected tab
