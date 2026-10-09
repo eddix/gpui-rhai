@@ -1032,7 +1032,7 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
-        id: "components/tab_bar",
+        id: "components/tab-bar",
         title: "TabBar",
         purpose: "Switch, close and reorder document tabs that belong to the panel under them.",
         category: "navigation",

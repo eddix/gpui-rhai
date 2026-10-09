@@ -252,7 +252,7 @@ press that does not move selects) or Alt+Left/Right. The strip is one tab
 stop: the arrows, Home and End move a cursor, Enter or Space selects it.
 
 Source: [tab_bar.rhai](../../registry/components/tab_bar.rhai).
-Runnable story: `gpui-rhai gallery --story components/tab_bar`.
+Runnable story: `gpui-rhai gallery --story components/tab-bar`.
 
 ## Foundations and status
 
