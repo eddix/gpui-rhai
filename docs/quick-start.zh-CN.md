@@ -12,16 +12,22 @@ GPUI Rhai 的 Rust runtime 负责 GPUI、生命周期与安全边界；组件、
 cargo install gpui-rhai-cli --locked
 ```
 
+`init` 在一个已有的 Cargo 项目里工作，新项目先 `cargo new`：
+
 ```text
-gpui-rhai init
+cargo new my-app && cd my-app
+gpui-rhai init --profile productivity
 gpui-rhai add button input combobox dialog
 gpui-rhai check
 gpui-rhai dev
 ```
 
-`init` 会写入 `gpui-rhai = "0.1"`。只有在开发 runtime 本身或验收未发布
-提交时，才临时改成本地 checkout 或固定 Git commit；不要让应用无意中跟随
-不断变化的 `main`：
+`--profile productivity` 会装上生产力工具的设计规则，`check` 会据此提示应用
+源码里写死的尺寸和颜色（不检查 `add` 装进来的官方组件）。
+
+`init` 写入的 runtime 依赖与 CLI 属于同一版本线（0.2 的 CLI 写入
+`gpui-rhai = "0.2"`）。只有在开发 runtime 本身或验收未发布提交时，才临时改成
+本地 checkout 或固定 Git commit；不要让应用无意中跟随不断变化的 `main`：
 
 ```toml
 gpui-rhai = { path = "/path/to/gpui-rhai/crates/gpui-rhai", features = ["dev-reload"] }
@@ -54,8 +60,10 @@ fn view(ctx) {
 }
 ```
 
-全局配色、圆角尺度和字号体系写在 `ui/theme.rhai`；针对 Button、Input 等
-正式组件及其公开 part 的统一覆盖写在 `ui/styles.rhai`。样式表使用同一个
+配色写在 `ui/theme.rhai`（主题只含颜色）；尺寸、间距、圆角和字号体系在
+token 基础层 `ui/tokens.rhai`，由 density、size、corners 三个环境轴取值，详见
+[设计规范](design/)。针对 Button、Input 等正式组件及其公开 part 的统一覆盖写在
+`ui/styles.rhai`。样式表使用同一个
 类型安全的 `style()` builder，并由 `gpui-rhai check` 校验组件 ID 和 part；
 详见[组件样式表](component-styles.md)。单个实例仍可在调用处传入
 `style`/`part_styles`。

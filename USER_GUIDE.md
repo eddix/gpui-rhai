@@ -49,16 +49,17 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 
 ## 2. Start a project
 
-Install the versioned CLI from crates.io:
+Install the CLI from crates.io. Use the CLI of the runtime line you build
+against; the CLI, runtime and registry are released together:
 
 ```text
-cargo install gpui-rhai-cli --version 0.1.7 --locked
+cargo install gpui-rhai-cli --locked
 ```
 
-Then, from a Cargo application root:
+Then, from a Cargo application root (`cargo new my-app` for a new one):
 
 ```text
-gpui-rhai init
+gpui-rhai init --profile productivity
 gpui-rhai add button input form_field
 gpui-rhai check
 gpui-rhai dev
@@ -70,19 +71,20 @@ Inside this repository, contributors can invoke the matching workspace CLI with:
 cargo run -p gpui-rhai-cli -- --root /path/to/app init
 ```
 
-`init` creates the normal source tree:
+`init` creates the normal source tree; `add` fills `components/` and `assets/`:
 
 ```text
 ui/
 ├─ app.toml
 ├─ main.rhai
-├─ theme.rhai
-├─ styles.rhai
+├─ theme.rhai        # the palette: colors only
+├─ tokens.rhai       # the token base: spacing, metrics, radius, type
+├─ styles.rhai       # application-wide part styles for official components
+├─ profile.rhai      # with --profile: the design rules `check` reports
 ├─ themes/
 ├─ locales/
 ├─ components/
-├─ assets/
-└─ fonts/
+└─ assets/
 
 .gpui-rhai/
 ├─ manifest.toml
@@ -94,40 +96,19 @@ The files under `ui/` belong to the application. The files under
 source updates. `init` never overwrites an existing `src/main.rs`; when one is
 present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
 
-`init` writes the normal crates.io dependency:
+`init` writes the crates.io dependency of the CLI's own runtime line, for
+example from a 0.2 CLI:
 
 ```toml
-gpui-rhai = { version = "0.1", features = ["dev-reload"] }
+gpui-rhai = { version = "0.2", features = ["dev-reload"] }
 ```
 
-### Upgrading an existing application to 0.1.7
-
-Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.7 together.
-Run `gpui-rhai update`, review the Table, Tabs, Chart, SplitPane and Resizable
-source changes, then run `gpui-rhai check`. Replace the removed legacy Gallery
-examples with `gpui-rhai gallery`; the source-backed Explore catalog and
-Operations Workbench are the maintained acceptance application. Runtime API
-remains 2.
-
-Rust Hosts may change a mounted view theme, locale or Motion preference through
-`ScriptViewHandle` without reconstructing the view. Hosts upgrading from 0.1.5
-or earlier must also complete the 0.1.6 GPUI package-identity migration below.
-
-### Upgrading an existing application to 0.1.6
-
-Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.6 together.
-Run `gpui-rhai update`, inspect its three-way source merges, then run
-`gpui-rhai check`. Runtime API remains 2 and existing Rhai sources remain
-compatible. Rust Hosts that directly use GPUI must replace official
-`gpui 0.2.2` with the exact `gpui-pre 0.3.7` core/platform family, or use
-`gpui_rhai::gpui` and `gpui_rhai::gpui_platform` re-exports. The declared MSRV
-is Rust 1.95. See [Embedding](docs/embedding.md) for the exact manifest and
-entrypoint migration.
-
-Custom themes still require `spacing.xxs` (normally 2px). Applications using
-linked or independently scaled charts should persist the exact
-`zoom_change.viewport` and `viewport_revision` values. See the
-[release/upgrade index](docs/releases/README.md) for every earlier migration.
+To upgrade an existing application, keep `gpui-rhai`, `gpui-rhai-registry`
+and `gpui-rhai-cli` on one version, run `gpui-rhai update`, review its
+three-way source merges, then run `gpui-rhai check`. The
+[release and upgrade index](docs/releases/README.md) lists each version's
+migration; [0.2.0](docs/releases/0.2.0.md) moves to Runtime API 3 and adds the
+token base.
 
 For runtime development, replace it temporarily with the checkout you are
 testing:
@@ -155,6 +136,7 @@ gpui-rhai update
 gpui-rhai metadata
 gpui-rhai embed
 gpui-rhai theme-studio
+gpui-rhai gallery
 ```
 
 - `add` installs requested components and their source dependencies.
@@ -162,10 +144,15 @@ gpui-rhai theme-studio
   transitive requirements, and three-way merges component updates. The complete
   plan is staged before any target is replaced; it never silently overwrites
   application-owned source.
+- `check` validates scripts, schemas, themes and known calls, runs one complete
+  headless first frame, and with a profile reports design-rule warnings in
+  application source (not in installed official components).
 - `metadata` emits component schemas, snippets, and Rhai language-server
   definitions from the actual installed APIs.
 - `embed` generates production Rust `include_str!`/`include_bytes!` wiring.
 - `theme-studio [path]` opens the theme editor and complete component specimen.
+- `gallery` opens the Gallery: every official component in both densities,
+  with its source.
 
 ## 3. Your first Rhai view
 
@@ -341,35 +328,29 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 64 official source components. Version 0.1.2
-froze the original 51 IDs, exports, controlled-state boundaries, semantic
-events, size vocabulary, and style-part contract as the component foundation;
-0.1.7 adds SplitPane and Resizable; the 0.1.8 development line adds
-Draggable, DragSource, DropZone, Sortable, Canvas PanZoom/Rotatable/SelectionArea,
-RangeSlider, and Tree without weakening that contract:
+The bundled catalog contains 64 official source components. Each keeps one
+contract for its ID and export, controlled-state boundary, semantic events,
+size vocabulary and style parts:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
   StatusBar;
-- actions and choices: Button, ButtonGroup, Checkbox, Radio, RadioGroup,
-  Switch, Toggle, ToggleGroup, and Slider;
+- actions and choices: Button, IconButton, ButtonGroup, Checkbox, Radio,
+  RadioGroup, Switch, Toggle, ToggleGroup, and Slider;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, DatePicker,
   and RangeSlider;
-- navigation, layout, and data: Tabs, Accordion, Collapsible, Menu, Pagination,
-  Table, ScrollArea, SplitPane, Resizable, Draggable, DragSource, DropZone,
-  Sortable, PanZoom, Rotatable, SelectionArea, and Tree;
+- navigation, layout, and data: Tabs, TabBar, Accordion, Collapsible, Menu,
+  Pagination, Table, List, ScrollArea, SplitPane, Resizable, Draggable,
+  DragSource, DropZone, Sortable, PanZoom, Rotatable, SelectionArea, and Tree;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
 - read-only documents: CodeViewer and DiffViewer;
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
 
-Run `cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog`
-for the authoritative interactive catalog with category navigation, cases,
-responsive viewport presets, Motion preferences, live themes, locales, and the
-exact running Rhai source.
-Run `cargo run --release -p gpui-rhai-cli -- gallery --story workbench/interaction-lab`
-for the integrated 0.1.8 direct-manipulation acceptance application.
+Run `gpui-rhai gallery` for every component in both densities with its running
+Rhai source, and `gpui-rhai gallery --story workbench/interaction-lab` for the
+integrated direct-manipulation acceptance application.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
 See [Gallery and acceptance application](docs/gallery.md) for story metadata,
@@ -743,7 +724,7 @@ row([
     icon_node,
     text("Build complete"),
 ]).with_style(
-    style().height(px(32)).gap(px(8)).items_center()
+    style().height(theme_length("metrics.row")).gap(theme_length("space.related")).items_center()
 )
 ```
 
@@ -753,6 +734,29 @@ Input and Textarea own separate native line-layout implementations.
 
 Use semantic layout directions and `margin_start`/`padding_end` where RTL must
 mirror. Avoid hard-coded left/right behavior for logical navigation.
+
+### Layouts, patterns and the composition audit
+
+Screens are composed from `layouts/` (neutral) and `patterns/` (opinionated)
+rather than hand-built rows of padding and gaps:
+
+| Module | Use |
+|---|---|
+| `layouts/stack`, `layouts/inline` | a column or row with one spacing relationship |
+| `layouts/toolbar` | context, filters, one filling field, actions; wraps when narrow |
+| `layouts/region` | a working area: title and actions, toolbar, filling body, footer |
+| `patterns/section`, `patterns/description_list`, `patterns/stat` | headed content, label/value pairs, figures |
+| `patterns/form_layout`, `patterns/inline_state` | aligned forms; loading, empty, error and stale states in place |
+| `patterns/data_view`, `patterns/list_detail`, `patterns/app_shell` | a data region, a list beside its detail, a window shell |
+
+The composition audit checks the committed geometry against the rules in
+[composition](docs/design/composition.md): rows of mismatched height, text
+edges a few pixels apart, inner gaps not smaller than outer ones, several solid
+actions in one group, mixed type in a row, low-contrast text. A profile
+(`ui/profile.rhai`, installed by `gpui-rhai init --profile productivity`)
+selects the rules; `ScriptViewHandle::composition_audit` reports them at
+runtime and `gpui-rhai check` adds static warnings for literal geometry in
+application source. A node opts out of a rule with `.audit_allow([...])`.
 
 Declare shared component assets in component metadata. Application assets live
 under `ui/assets` and are referenced by logical identity:
@@ -808,22 +812,35 @@ See [Native document viewers](docs/document-viewers.md),
 [CodeViewer](docs/components/code-viewer.md), and
 [DiffViewer](docs/components/diff-viewer.md).
 
-## 9. Themes and Theme Studio
+## 9. Design tokens, themes and Theme Studio
 
-Components refer only to semantic roles such as:
+Values come from three layers, and components name roles rather than numbers:
+
+| Layer | File | Holds |
+|---|---|---|
+| Palette | `ui/theme.rhai` (and `ui/themes/`) | colors only: `surface`, `text_primary`, `accent`, `focus_ring`, ... |
+| Token base | `ui/tokens.rhai` | the spacing scale, spacing relationships, radius roles, metrics and typography roles |
+| Part styles | `ui/styles.rhai` | application-wide styles for the parts of official components |
+
+The token base resolves through three environment axes: `density`
+(`comfortable`, `compact`), `size` (`xs` to `lg`) and `corners` (`square`,
+`subtle`, `round`). A subtree selects them with `.env(#{ density: "compact" })`;
+most controls also take a `size` prop. Write roles, not pixels:
 
 ```rhai
-theme_color("surface")
-theme_color("text_primary")
-theme_color("accent")
-theme_color("focus_ring")
-theme_typography("body")
+style()
+    .min_height(theme_length("metrics.control"))   // control height for size and density
+    .padding_x(theme_length("metrics.inset"))      // the content inset of rows and panels
+    .gap(theme_length("space.related"))            // unit < related < group < section
+    .radius(theme_radius("md"))                    // zero unless corners asks otherwise
+    .background(theme_color("surface_raised"))
+    .typography("control")
 ```
 
-Theme variants also own the `xxs/xs/sm/md/lg` spacing scale, `sm/md/lg` radius
-scale, and all eight typography size/line-height/weight roles plus an optional
-font family/fallback stack. These values are editable data in `ui/theme.rhai`,
-not hard-coded Rust constants.
+The design language behind these roles (density, the content inset, the 2px
+focus frame, marker shapes, color semantics) is specified in
+[docs/design](docs/design/). An application with its own design can skip the
+token base entirely; see the `byod_treemap` example.
 
 Rust Hosts may layer user preferences uniformly over every default, bundled,
 and user-supplied variant with
@@ -835,9 +852,10 @@ startup and reapplied after file-theme hot reload. Use this for preferences
 such as UI font/scale, corner scale, motion timing, and visualization palettes;
 continue to use `styles.rhai` for component-specific structure and styling.
 
-Use `style().typography("caption" | "body_small" | "body" | "subtitle" |
-"title" | "heading" | "display" | "display_large")` instead of copying font
-sizes and line heights into components. Theme values remain symbolic until
+Use `style().typography(role)` with a role of the token base (`caption`,
+`body_small`, `body`, `subtitle`, `title`, `heading`, `display`,
+`display_large`, `label`, `code`, `control`) instead of copying font sizes and
+line heights into components. Theme values remain symbolic until
 rendering. Switching a ThemeVariant advances
 the theme generation and repaints/rerenders affected native content without
 recompiling Rhai or discarding component state.

@@ -1,17 +1,19 @@
 # gpui-rhai-registry
 
 The versioned first-party source bundle for
-[GPUI Rhai](https://github.com/eddix/gpui-rhai). It contains the editable Rhai
-components, optional chart/motion source packs, themes, locales, Theme Studio
-source, and small SVG assets copied
-into application repositories by `gpui-rhai-cli`.
+[GPUI Rhai](https://github.com/eddix/gpui-rhai). It contains the design
+system's token base, the editable Rhai components, layouts and patterns, the
+application profiles, optional chart and motion source packs, themes (palettes),
+locales, the Gallery and Theme Studio sources, and small SVG assets copied into
+application repositories by `gpui-rhai-cli`.
 
 Most application authors should install the CLI rather than depend on this
 crate directly:
 
 ```text
 cargo install gpui-rhai-cli --locked
-gpui-rhai init
+cargo new my-app && cd my-app
+gpui-rhai init --profile productivity
 gpui-rhai add button input form_field
 ```
 
@@ -23,4 +25,8 @@ contains no runtime engine and grants no component privileged access to GPUI.
 pairs. `BUNDLED_ASSET_SOURCES` uses the exact provider-relative paths declared
 by component metadata. The legacy source-only component slice and individual
 constants remain available for consumers that do not need the named catalogs.
-`BUNDLED_CHART_SOURCES_BY_ID` exposes the optional `charts/chart` adapter.
+`BUNDLED_CHART_SOURCES_BY_ID` exposes the optional `charts/chart` adapter;
+`BUNDLED_LAYOUT_SOURCES_BY_ID` and `BUNDLED_PATTERN_SOURCES_BY_ID` the `layouts/`
+and `patterns/` modules; `TOKEN_BASE_SOURCE` the token base that official
+components need (a Host passes it to `token_base`); `BUNDLED_PROFILES` the
+application profiles.

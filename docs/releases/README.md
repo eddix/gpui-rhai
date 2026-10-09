@@ -19,7 +19,7 @@ not drift.
 
 ```bash
 cargo update -p gpui-rhai
-cargo install gpui-rhai-cli --version 0.1.8 --locked --force
+cargo install gpui-rhai-cli --version <version> --locked --force
 gpui-rhai update
 gpui-rhai check
 ```

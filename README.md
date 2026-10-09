@@ -1,118 +1,83 @@
 # GPUI Rhai
 
-Start with the [User Guide](USER_GUIDE.md) for the complete application and
-agent workflow.
+GPUI Rhai builds desktop interfaces from Rhai scripts that your application
+owns. A script returns a declarative `UiNode` tree; a Rust runtime keeps its
+identity and native state and renders it with GPUI.
 
-GPUI Rhai is a desktop UI system in which editable Rhai source builds a stable
-declarative `UiNode` tree and a thin Rust runtime renders that tree with GPUI.
+- **Components are source.** `gpui-rhai add` copies components, layouts,
+  themes and the token base into your repository as editable Rhai. You change
+  them like your own code; `gpui-rhai update` merges later upstream changes
+  three-way and never overwrites a local edit.
+- **A neutral runtime with an optional design system.** The runtime draws what
+  a script declares and has no visual opinions. The official registry adds a
+  design system for productivity tools: a token base, 64 components, layouts
+  and patterns, a composition audit, and the Gallery that shows every component
+  in both densities. It is specified in [docs/design](docs/design/).
+- **Native where frames matter.** Text editing, virtual lists, tables, charts,
+  motion, drag and resize run in Rust; Rhai declares them and handles their
+  events. Rhai never runs during layout or paint.
+- **Standalone or embedded.** Run a window-owning application, or mount
+  isolated script views inside an existing GPUI application.
 
-This is not a traditional opaque component crate. The runtime is a Cargo
-dependency, while components, themes, the typed component stylesheet, locale bundles, and small assets are
-copied into the application repository and owned by the application developer.
-
-The runtime remains under active implementation. Version 0.1.2 froze the first
-complete 51-component foundation, 0.1.3 introduced Motion Runtime 2, and 0.1.4
-hardens SVG rendering, Rust Host composition, adaptive overlays, and incremental
-motion presentation without changing Runtime API 2. Version 0.1.5 adds the
-optional native composable [Chart Runtime](docs/charts.md), including typed
-streaming data, 15 series, Host-owned Geo2D maps, linked interaction, Motion
-integration, static export, and complete theme-driven component spacing and
-typography. See the [release and upgrade index](docs/releases/README.md). The authoritative product
-contract is in [INTENT.md](INTENT.md).
-
-Version 0.1.6 upgrades the Rust backend to the exact gpui-pre
-core/platform family, raises MSRV to Rust 1.95, and projects the retained
-semantic frame into native AccessKit. Runtime API 2 and existing Rhai sources
-remain compatible; Rust Hosts must align their GPUI package identity. See
-[Accessibility](docs/accessibility.md) and [Embedding](docs/embedding.md).
-
-Version 0.1.7 adds the formal Gallery/Operations acceptance
-application plus independent `SplitPane` and `Resizable` source components,
-both with controlled native drag preview and keyboard-accessible handles.
-
-Version 0.1.8 adds the unified Interaction Runtime and nine direct-manipulation
-components: Draggable, DragSource, DropZone, Sortable, PanZoom, SelectionArea,
-Rotatable, RangeSlider, and Tree. Run the complete acceptance scene with
-`gpui-rhai gallery --story workbench/interaction-lab`.
-
-Version 0.2.0 (unreleased) adds a design system for productivity tools on a
-neutral runtime: a token base, 62 rebuilt components and new ones such as List and TabBar,
-layouts and patterns, a
-composition audit and the [Gallery](docs/gallery.md) as its acceptance
-application (`gpui-rhai gallery`). The specification is in
-[docs/design](docs/design/); migration is in the
-[0.2.0 release notes](docs/releases/0.2.0.md).
-
-The implemented complex-control line is specified under
-[docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
-Textarea, CodeViewer, and DiffViewer.
+0.2.0 is the next release (Runtime API 3); the latest published release is
+0.1.8. See the [release notes](docs/releases/README.md).
 
 ## Quick start
 
 ```text
 cargo install gpui-rhai-cli --locked
-gpui-rhai --root /path/to/app init
-gpui-rhai --root /path/to/app add button label input icon divider popover combobox dialog
-gpui-rhai --root /path/to/app check
-gpui-rhai --root /path/to/app metadata
+cargo new my-app && cd my-app
+gpui-rhai init --profile productivity
+gpui-rhai add button input table
+gpui-rhai check
+gpui-rhai dev
 ```
 
-`init` adds the runtime dependency and creates the minimal Rust host, Rhai entry,
-theme, and manifests without overwriting an existing `main.rs`. `add` copies
-editable source plus a committed update baseline.
+`init` adds the runtime dependency, a minimal Rust host (it never overwrites
+an existing `main.rs`), the Rhai entry `ui/main.rhai`, the theme, the token
+base `ui/tokens.rhai`, the component stylesheet `ui/styles.rhai` and the
+manifests; `--profile productivity` adds the design rules `check` reports on.
+`add` copies components with their dependencies and an update baseline.
+`check` validates scripts, schemas, themes and known calls, then runs one
+complete headless first frame. `dev` runs the application. `metadata` writes
+editor completions for the installed components and Rhai language-server
+definitions for the runtime API.
 
-The generated Host uses the crates.io `gpui-rhai = "0.1"` runtime dependency.
-For repository development, invoke the matching workspace CLI with
-`cargo run -p gpui-rhai-cli -- ...`.
+A view is a Rhai function that returns nodes; callbacks name functions:
 
-`update` performs an offline three-way merge between the installed baseline,
-the application-owned source, and the bundled registry. Conflicts never
-overwrite local source; inspect them under `.gpui-rhai/conflicts/`.
+```rhai
+import "components/button" as button;
 
-`metadata` compiles the installed Rhai component sources and writes
-`.gpui-rhai/editor/components.json` plus basic editor snippets derived from the
-actual exported prop, event, slot, and part schemas. It also writes
-`.gpui-rhai/editor/definitions/gpui_rhai.d.rhai` using Rhai 1.26's official
-`Engine::definitions()` format for the Rhai Language Server. Hosts that register
-extensions can call `RuntimeEngine::definition_source()` after configuration to
-emit the same format including their custom APIs.
+fn state_schema() {
+    #{ fields: #{ count: #{ schema: #{ type: "integer" },
+        "default": #{ type: "integer", value: 0 } } } }
+}
 
-`theme-studio [path]` opens the first-party semantic theme editor and canonical
-all-component specimen. It creates, opens, imports-as-copy, validates, previews,
-and saves gpui-rhai `.rhai` themes; see [Theme Studio](docs/theme-studio.md) and
-the [bundled theme catalog](docs/bundled-themes.md).
+fn clicked(ctx, payload) { ctx.set_state("count", ctx.get_state("count") + 1); }
 
-`gallery` opens the formal acceptance application: searchable source-backed
-Component/Motion/Chart stories plus the connected Operations Workbench. See
-[Gallery and acceptance application](docs/gallery.md).
+fn view(ctx) {
+    button::Button(#{ key: "count", text: `Clicked ${ctx.get_state("count")} times`,
+        on_click: Fn("clicked") })
+}
+```
 
-Run the repository example with:
+## Explore
 
 ```text
-cargo run -p gpui-rhai --features dev-reload --example hello_world
-cargo run -p gpui-rhai --example settings_panel
-cargo run -p gpui-rhai --example dashboard_layout
-cargo run -p gpui-rhai --example form_showcase
-cargo run -p gpui-rhai --example data_table
-cargo run --release -p gpui-rhai-cli -- gallery
-cargo run --release -p gpui-rhai-cli -- gallery --page scene.operations --density compact
-cargo run --release -p gpui-rhai --example byod_treemap
-cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
-cargo run --release -p gpui-rhai-cli -- gallery --story motion/catalog
-cargo run --release -p gpui-rhai-cli -- gallery --story charts/catalog
-cargo run --release -p gpui-rhai --example code_viewer
-cargo run --release -p gpui-rhai --example diff_viewer
-cargo run -p gpui-rhai-cli -- theme-studio
-cargo run -p gpui-rhai --example extension_host
-cargo run -p gpui-rhai --example host_owned_tree
-cargo run -p gpui-rhai --example multi_window
-cargo run -p gpui-rhai --example embedded_views
+gpui-rhai gallery                                   # every component, both densities, with source
+gpui-rhai gallery --page table --density compact
+gpui-rhai theme-studio                              # edit a theme against every component
 ```
 
-See [the example index](examples/README.md) for copyable tutorials and the
-separately classified internal performance/smoke targets.
+From this repository, run the same commands through
+`cargo run --release -p gpui-rhai-cli -- gallery`. The
+[example index](examples/README.md) lists Rust host examples worth copying,
+such as `extension_host`, `multi_window` and `byod_treemap` (an application
+with its own design and no official components).
 
-Standalone applications explicitly adapt a prepared view into a window-owning
+## Embed in a GPUI application
+
+A standalone application adapts a prepared view into a window-owning
 application:
 
 ```rust
@@ -120,18 +85,21 @@ let view = gpui_rhai::FileScriptView::new("ui/main.rhai").prepare()?;
 gpui_rhai::ScriptApplication::new(view).run()?;
 ```
 
-Existing GPUI applications instead mount one or more isolated views through a
-shared `ScriptViewHost`. Hosts can suspend expensive inactive views as fully
-retained, quiescent tombstones and later resume them atomically; see the
-[embedding guide](docs/embedding.md).
+An existing GPUI application mounts one or more isolated views through a shared
+`ScriptViewHost`, and can suspend inactive views and resume them later; see
+the [embedding guide](docs/embedding.md). A host that already owns a plain-data
+UI tree can render it without Rhai (`host_owned_tree` example).
 
-Hosts that already own a plain-data UI tree can render it without Rhai and
-attach trusted Rust event closures. The `host_owned_tree` example demonstrates
-`HostCallback`, callback-typed primitive props, a worker channel, and controlled
-`StaticUiView::set_root` updates without a script lifecycle or capability bridge.
+## Documentation
 
-See the [documentation index](docs/README.md) or the
-[Simplified Chinese quick start](docs/quick-start.zh-CN.md).
+| To | Read |
+|---|---|
+| learn the model and build an application | [User Guide](USER_GUIDE.md), [简体中文快速开始](docs/quick-start.zh-CN.md) |
+| design screens with the official components | [design specification](docs/design/), [component catalog](docs/components/catalog.md) |
+| embed views in a Rust host | [embedding](docs/embedding.md), [multi-window applications](docs/multi-window.md) |
+| upgrade | [release notes](docs/releases/README.md), [CHANGELOG](CHANGELOG.md) |
+| work on the framework | [architecture](docs/architecture.md), [contributing](CONTRIBUTING.md) |
+| find any document | [documentation index](docs/README.md) |
 
 ## License
 

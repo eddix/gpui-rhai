@@ -4,13 +4,12 @@ Visual baselines supplement logic and semantic tests; they never replace
 keyboard, focus, or accessibility assertions. Theme Studio owns one dense,
 canonical matrix for every official component: actions, form controls, choices,
 status/loading, navigation, data/virtualization, assets, and overlays. The
-default metrics and state vocabulary are defined in
-`registry-design-system.md`.
+default metrics and state vocabulary are defined in the
+[design specification](design/).
 
 ## Tabs, Button, and Badge control baseline
 
-The maintained [registry visual system](registry-design-system.md) defines
-control appearance; the [Tabs contract](components/catalog.md#tabs) defines
+The [component contracts](design/atoms.md) define control appearance; the [Tabs contract](components/catalog.md#tabs) defines
 its public props, semantics, and style parts.
 
 Maintain one contextual specimen containing:

@@ -18,9 +18,9 @@ loading, read-only and presentation-only specimens intentionally remain inert.
 
 Theme Studio renders the same exhaustive specimen while editing a theme.
 
-The [registry visual system](../registry-design-system.md) is the maintained
-source for component dimensions, color roles, state appearance, and known
-visual gaps. This catalog records component semantics and public contracts.
+The [design specification](../design/) is the maintained source for component
+dimensions, color roles and state appearance. This catalog records component
+semantics and public contracts.
 
 Version 0.1.2 freezes the original 51-component foundation: component IDs and exports,
 controlled-state ownership, semantic event payloads, the `xs`/`sm`/`md`/`lg`

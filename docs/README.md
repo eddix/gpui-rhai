@@ -3,76 +3,79 @@
 Start with the [User Guide](../USER_GUIDE.md). It is the end-to-end contract for
 application authors and coding agents: project setup, Rhai lifecycle, component
 reuse, callback context, event geometry, Rust bridges, embedding, performance,
-security, testing, and troubleshooting.
+security, testing, and troubleshooting. The [简体中文快速开始](quick-start.zh-CN.md)
+is the shortest path to a running project.
 
-## Build an application
+## Design with the official components
 
-- [简体中文快速开始](quick-start.zh-CN.md)
+- Design specification: [principles](design/principles.md) (character,
+  layers, density, spacing, type, color, focus),
+  [component contracts](design/atoms.md), [composition](design/composition.md)
+  (layouts, patterns and the audit rules), [themes](design/themes.md), the
+  [decision log](design/decisions.md) and the
+  [Gallery wireframes](design/gallery-wireframes.md)
+- [Official component catalog](components/catalog.md)
+- [Gallery](gallery.md), the acceptance application, and
+  [Theme Studio](theme-studio.md)
+- [Component authoring](component-authoring-guide.md)
+
+Complex component contracts: [Table](components/table.md),
+[DatePicker](components/date-picker.md), [Combobox](components/combobox.md),
+[Select](components/select.md), [Textarea](components/textarea.md),
+[Pagination](components/pagination.md), [Toast](components/toast.md),
+[CodeViewer](components/code-viewer.md), [DiffViewer](components/diff-viewer.md),
+[Command and CommandDialog](components/catalog.md#command-and-commanddialog),
+[Tabs](components/catalog.md#tabs), and
+[direct manipulation and layout behaviors](components/interaction-behaviors.md)
+(SplitPane, Resizable, drag and drop, PanZoom and more).
+
+## Build the interface
+
+- [Typed Style surface](style.md) and [component stylesheets](component-styles.md)
+- [Theming](theming.md) and [bundled themes](bundled-themes.md)
+- [Locale and RTL](locale-and-rtl.md)
+- [Assets and fonts](assets.md) and [refreshing Host-owned images](asset-refresh-host.md)
+- [Retained Canvas scenes](canvas.md)
+- [Motion](motion.md)
+- [Native charts](charts.md)
+- [Native virtual collections](virtual-list.md) and [Rust-owned collection data](native-collections.md)
+- [Native text documents and read-only viewers](document-viewers.md)
+- [Accessibility](accessibility.md)
+
+## Host the views in Rust
+
 - [Embedding script views](embedding.md) and [multi-window applications](multi-window.md)
 - [Hot reload and production embedding](hot-reload-and-production.md)
 - [Actions and keybindings](actions-and-keybindings.md)
 - [Capabilities](capabilities.md) and [custom Rust primitives](custom-primitives.md)
-- [Retained automation and JSON-lines protocol](automation.md)
+- [Retained automation and the JSON-lines protocol](automation.md)
 - [Security boundary](security-boundary.md)
-
-## Build the interface
-
-- [Component authoring](component-authoring-guide.md)
-- [Registry design system](registry-design-system.md)
-- [Typed Style surface](style.md) and [component stylesheets](component-styles.md)
-- [Theming](theming.md), [bundled themes](bundled-themes.md), and [Theme Studio](theme-studio.md)
-- [Locale and RTL](locale-and-rtl.md)
-- [Assets and fonts](assets.md)
-- [Retained Canvas scenes](canvas.md)
-- [Motion Runtime 2](motion.md)
-- [Chart Runtime architecture decision](adr/0021-chart-runtime.md)
-- [Native Chart Runtime](charts.md)
-- [Native virtual collections](virtual-list.md) and [Rust-owned collection data](native-collections.md)
-- [Native text documents and read-only viewers](document-viewers.md)
-- [Accessibility status](accessibility.md)
-- [Official component catalog](components/catalog.md)
-- [Direct manipulation and layout behaviors — implemented and planned](components/interaction-behaviors.md)
-
-Complex component contracts:
-
-- [Tabs](components/catalog.md#tabs) and [Button and Badge contracts](design/atoms.md#5-marker-system-button-tag-badge-kbd)
-- [DatePicker](components/date-picker.md)
-- [Combobox](components/combobox.md)
-- [Select](components/select.md)
-- [Textarea](components/textarea.md)
-- [Table](components/table.md)
-- [Pagination](components/pagination.md)
-- [Toast](components/toast.md)
-- [Command and CommandDialog](components/catalog.md#command-and-commanddialog)
-- [CodeViewer](components/code-viewer.md) and [DiffViewer](components/diff-viewer.md)
-- [Slider and ScrollArea](components/catalog.md#native-interaction-foundations)
-- [SplitPane](components/interaction-behaviors.md#splitpane--implemented) and
-  [Resizable](components/interaction-behaviors.md#resizable--implemented)
 
 ## Develop the framework
 
-- [Architecture](architecture.md)
-- [Interaction Runtime architecture decision](adr/0022-interaction-runtime.md)
+- [Architecture](architecture.md) and the [architecture decisions](adr/)
+- [Runtime contract tests](runtime-contract-tests.md)
 - [Performance budgets and baselines](performance.md)
 - [Development inspector](devtools.md)
-- [macOS visual and interaction test matrix](visual-testing.md)
+- [macOS visual and interaction testing](visual-testing.md)
 - [Updating copied source](source-updates.md)
 - [Rhai execution backends](rhai-execution-backends.md)
 - [Release checklist](release-checklist.md)
-- [Release notes and upgrade index](releases/README.md)
-- [0.1.0](releases/0.1.0.md), [0.1.1](releases/0.1.1.md),
-  [0.1.2](releases/0.1.2.md), [0.1.3](releases/0.1.3.md),
-  [0.1.4](releases/0.1.4.md), [0.1.5](releases/0.1.5.md),
-  [0.1.6](releases/0.1.6.md), and [0.1.7](releases/0.1.7.md)
+
+## Releases and history
+
+- [Release notes and upgrade index](releases/README.md): [0.2.0](releases/0.2.0.md),
+  [0.1.8](releases/0.1.8.md) and every earlier version
+- [CHANGELOG](../CHANGELOG.md)
 - [History](history.md): audits, plans and research of earlier rounds
 
-Architecture decisions and their test evidence are recorded under
-[`docs/adr`](adr/). `INTENT.md` is the product contract.
+## Maintaining these documents
 
-Maintain current visual rules in `registry-design-system.md`, public component
-contracts in `components/`, and acceptance procedures in `visual-testing.md`.
-After an iteration lands, merge durable requirements into these documents and
-remove the temporary implementation brief; preserve unfinished work as an
-explicit gap. Third-party reference screenshots are not checked-in component
-specification assets. Product-generated visual test evidence follows the
-separate baseline process in `visual-testing.md`.
+`INTENT.md` is the product contract. Keep visual rules in [design/](design/),
+public component contracts in [components/](components/), runtime decisions in
+[adr/](adr/), and acceptance procedures in `visual-testing.md`. A working round
+(an audit, a plan, an investigation) does not stay in the tree: merge what
+lasts into these documents, record unfinished work as an explicit gap, and list
+the round in [History](history.md). Third-party reference screenshots are not
+specification assets; product-generated visual evidence follows the baseline
+process in `visual-testing.md`.
