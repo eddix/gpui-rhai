@@ -720,6 +720,7 @@ fn pair_schema() -> ValueSchema {
 ///
 /// Panics only if the static primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.range_slider").expect("static primitive ID"),
@@ -727,67 +728,96 @@ pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "low".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Lower selected value; controlled, so store `change.low` here. At least `min` and `minimum_gap` below `high`.",
+                ),
             ),
             (
                 "high".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Upper selected value; controlled, so store `change.high` here. At most `max` and `minimum_gap` above `low`.",
+                ),
             ),
             (
                 "min".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Value at the start of the track: the leading edge, or the bottom when vertical; must be less than `max`.",
+                ),
             ),
             (
                 "max".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number())
+                    .with_doc("Value at the end of the track; must be greater than `min`."),
             ),
             (
                 "step".to_owned(),
-                ObjectField::required(ValueSchema::positive_number()),
+                ObjectField::required(ValueSchema::positive_number()).with_doc(
+                    "Increment both values snap to, counted from `min`, and the arrow-key step.",
+                ),
             ),
             (
                 "minimum_gap".to_owned(),
-                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), None)),
+                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), None)).with_doc(
+                    "Smallest allowed distance between `low` and `high`, at most `max - min`; 0 when omitted.",
+                ),
             ),
             (
                 "orientation".to_owned(),
                 ObjectField::required(ValueSchema::String {
                     allowed: vec!["horizontal".to_owned(), "vertical".to_owned()],
-                }),
+                })
+                .with_doc(
+                    "`horizontal` runs the track in the reading direction (mirrored in RTL); `vertical` runs it bottom to top.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Blocks pointer and keyboard input, takes both thumbs out of the tab order and dims the control."),
             ),
             (
                 "low_label".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Accessible name of the lower thumb, such as `Minimum price`."),
             ),
             (
                 "high_label".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Accessible name of the upper thumb, such as `Maximum price`."),
             ),
             (
                 "track_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the track that holds the fill and thumbs; give it its size here, such as full width by 4px.",
+                ),
             ),
             (
                 "fill_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the fill between the two thumbs; its position and length are set natively from the values.",
+                ),
             ),
             (
                 "thumb_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of both thumbs, each centered on its value; its `focus` and `disabled` states apply per thumb.",
+                ),
             ),
             (
                 "on_change".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with `#{ low, high }` when a drag ends or an arrow, Home or End key moves a thumb.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "change".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted when a drag ends or a key moves a thumb; the payload is the proposed `#{ low, high }`, snapped and gapped."
+                        .to_owned(),
+                ),
                 payload: pair_schema(),
             },
         )]),

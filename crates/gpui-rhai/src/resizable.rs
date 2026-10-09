@@ -957,6 +957,7 @@ fn bounded_dimension_schema() -> ValueSchema {
 ///
 /// Panics only if the static built-in primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_number = || ObjectField::optional(ValueSchema::optional(ValueSchema::number()));
     PrimitiveDescriptor {
@@ -977,38 +978,70 @@ pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
                             "se".to_owned(),
                             "sw".to_owned(),
                         ],
-                    }),
+                    })
+                    .with_doc(
+                        "Physical edge (`n`, `s`, `e`, `w`) or corner (`ne`, `nw`, `se`, `sw`) this handle drags; it does not flip in RTL.",
+                    ),
                 ),
-                ("x".to_owned(), ObjectField::required(ValueSchema::number())),
-                ("y".to_owned(), ObjectField::required(ValueSchema::number())),
+                (
+                    "x".to_owned(),
+                    ObjectField::required(ValueSchema::number()).with_doc(
+                        "Controlled left edge of the rectangle in `boundary_ref`'s local logical pixels.",
+                    ),
+                ),
+                (
+                    "y".to_owned(),
+                    ObjectField::required(ValueSchema::number()).with_doc(
+                        "Controlled top edge of the rectangle in `boundary_ref`'s local logical pixels.",
+                    ),
+                ),
                 (
                     "width".to_owned(),
-                    ObjectField::required(ValueSchema::positive_number()),
+                    ObjectField::required(ValueSchema::positive_number())
+                        .with_doc("Controlled width of the rectangle in logical pixels."),
                 ),
                 (
                     "height".to_owned(),
-                    ObjectField::required(ValueSchema::positive_number()),
+                    ObjectField::required(ValueSchema::positive_number())
+                        .with_doc("Controlled height of the rectangle in logical pixels."),
                 ),
                 (
                     "min_width".to_owned(),
-                    ObjectField::optional(bounded_dimension_schema()),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Smallest width a resize may propose, in logical pixels; defaults to 24.",
+                    ),
                 ),
                 (
                     "min_height".to_owned(),
-                    ObjectField::optional(bounded_dimension_schema()),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Smallest height a resize may propose, in logical pixels; defaults to 24.",
+                    ),
                 ),
                 (
                     "max_width".to_owned(),
-                    ObjectField::optional(bounded_dimension_schema()),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Largest width a resize may propose, in logical pixels; defaults to 16,384.",
+                    ),
                 ),
                 (
                     "max_height".to_owned(),
-                    ObjectField::optional(bounded_dimension_schema()),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Largest height a resize may propose, in logical pixels; defaults to 16,384.",
+                    ),
                 ),
-                ("aspect_ratio".to_owned(), optional_number()),
+                (
+                    "aspect_ratio".to_owned(),
+                    optional_number().with_doc(
+                        "Width-to-height ratio a resize keeps, or `()` to resize each axis freely.",
+                    ),
+                ),
                 (
                     "contain".to_owned(),
-                    ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+                    ObjectField::optional(ValueSchema::Bool)
+                        .with_default(UiValue::Bool(true))
+                        .with_doc(
+                            "Keeps the rectangle inside `boundary_ref`; presses are ignored while the controlled rectangle lies outside it.",
+                        ),
                 ),
                 (
                     "keyboard_step".to_owned(),
@@ -1017,24 +1050,57 @@ pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
                         max: Some(512.0),
                         exclusive_min: Some(0.0),
                         exclusive_max: None,
-                    }),
+                    })
+                    .with_doc(
+                        "Logical pixels one arrow-key press moves the dragged edge; Shift multiplies it by four; defaults to 8.",
+                    ),
                 ),
                 (
                     "disabled".to_owned(),
-                    ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                    ObjectField::optional(ValueSchema::Bool)
+                        .with_default(UiValue::Bool(false))
+                        .with_doc(
+                            "Ignores presses and arrow keys and removes the handle from the tab order.",
+                        ),
                 ),
                 (
                     "boundary_ref".to_owned(),
-                    ObjectField::required(ValueSchema::Ref),
+                    ObjectField::required(ValueSchema::Ref).with_doc(
+                        "Ref to the container the rectangle is local to; resizing it during a drag cancels the drag.",
+                    ),
                 ),
                 (
                     "on_resize".to_owned(),
-                    ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                    ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                        "Called with the proposed `{x, y, width, height}` when a drag ends or an arrow key is pressed.",
+                    ),
                 ),
             ]);
             props.extend(
-                ["x_signal", "y_signal", "width_signal", "height_signal"]
-                    .map(|name| (name.to_owned(), ObjectField::required(ValueSchema::Signal))),
+                [
+                    (
+                        "x_signal",
+                        "Optional-float signal that receives the previewed horizontal offset from `x` during a drag, or `()` when idle.",
+                    ),
+                    (
+                        "y_signal",
+                        "Optional-float signal that receives the previewed vertical offset from `y` during a drag, or `()` when idle.",
+                    ),
+                    (
+                        "width_signal",
+                        "Optional-float signal that receives the previewed width during a drag, or `()` when idle.",
+                    ),
+                    (
+                        "height_signal",
+                        "Optional-float signal that receives the previewed height during a drag, or `()` when idle.",
+                    ),
+                ]
+                .map(|(name, doc)| {
+                    (
+                        name.to_owned(),
+                        ObjectField::required(ValueSchema::Signal).with_doc(doc),
+                    )
+                }),
             );
             props.extend(crate::handle_state::decoration_props());
             props
@@ -1042,7 +1108,10 @@ pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted once when a drag ends or an arrow key is pressed; the payload is the next rectangle, shaped like the controlled one."
+                        .to_owned(),
+                ),
                 payload: rect_schema(),
             },
         )]),

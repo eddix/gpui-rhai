@@ -1839,10 +1839,17 @@ impl RuntimeEngine {
     /// Standard packages are omitted because the language server supplies them.
     #[must_use]
     pub fn definition_source(&self) -> String {
-        self.engine
-            .definitions()
-            .include_standard_packages(false)
-            .single_file()
+        // Parameter names, doc comments and readable return types come from the
+        // script docs; Rhai's own printer is the fallback.
+        crate::script_docs::ScriptApi::from_engine(&self.engine).map_or_else(
+            |_| {
+                self.engine
+                    .definitions()
+                    .include_standard_packages(false)
+                    .single_file()
+            },
+            |api| api.definitions(),
+        )
     }
 
     /// Validate statically visible direct and method call arities in an entry

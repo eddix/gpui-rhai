@@ -4,6 +4,9 @@ Generated from the schemas and header comments of the official modules; do not
 edit. Regenerate with
 `GPUI_RHAI_UPDATE_REFERENCE=1 cargo test -p gpui-rhai-cli reference`.
 
+The functions, methods and native primitives a script calls are in the
+[script API](script-api.md).
+
 ## Components
 
 | Module | Export | Purpose |

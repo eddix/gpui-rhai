@@ -13,7 +13,11 @@ pub(crate) fn decoration_props() -> [(String, ObjectField); 4] {
     [
         (
             "line".to_owned(),
-            ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+            ObjectField::optional(ValueSchema::Bool)
+                .with_default(UiValue::Bool(true))
+                .with_doc(
+                    "Paints the native handle mark (a square on a corner); set `false` when a handle node draws its own.",
+                ),
         ),
         (
             "line_inset".to_owned(),
@@ -22,15 +26,22 @@ pub(crate) fn decoration_props() -> [(String, ObjectField); 4] {
                 max: Some(256.0),
                 exclusive_min: None,
                 exclusive_max: None,
-            }),
+            })
+            .with_doc(
+                "How far the native line stops short of each end of the handle, in logical pixels; defaults to 4.",
+            ),
         ),
         (
             "state_signal".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::Signal)),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Signal)).with_doc(
+                "String signal that receives `idle`, `hover`, `drag`, `focus` or `disabled`, for a handle node's `signal_style`.",
+            ),
         ),
         (
             "handle_ref".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)).with_doc(
+                "Ref to a decorative handle node; presses and hover over its visible bounds count as the handle's own.",
+            ),
         ),
     ]
 }

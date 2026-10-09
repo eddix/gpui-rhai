@@ -44,6 +44,7 @@ pub mod responsive;
 pub mod retained;
 pub mod rotatable;
 pub mod schema;
+pub mod script_docs;
 mod script_lint;
 pub mod script_source;
 pub mod scrollbar;

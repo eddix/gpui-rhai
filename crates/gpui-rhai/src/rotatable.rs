@@ -526,13 +526,30 @@ fn propose_angle(
 
 fn descriptor_signal_props() -> BTreeMap<String, ObjectField> {
     [
-        "angle_signal",
-        "x_signal",
-        "y_signal",
-        "source_token_signal",
+        (
+            "angle_signal",
+            "Float signal that receives the previewed angle in degrees; bind it to the Canvas `rotate`.",
+        ),
+        (
+            "x_signal",
+            "Float signal that receives the horizontal shift that keeps the pivot in place while the Canvas turns about its centre.",
+        ),
+        (
+            "y_signal",
+            "Float signal that receives the vertical shift that keeps the pivot in place while the Canvas turns about its centre.",
+        ),
+        (
+            "source_token_signal",
+            "String signal that keeps the source last shown or proposed, so a rerender with the same source reads as a rejection.",
+        ),
     ]
     .into_iter()
-    .map(|name| (name.to_owned(), ObjectField::required(ValueSchema::Signal)))
+    .map(|(name, doc)| {
+        (
+            name.to_owned(),
+            ObjectField::required(ValueSchema::Signal).with_doc(doc),
+        )
+    })
     .collect()
 }
 
@@ -546,43 +563,63 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
     let mut props = BTreeMap::from([
         (
             "source_token".to_owned(),
-            ObjectField::required(ValueSchema::string()),
+            ObjectField::required(ValueSchema::string()).with_doc(
+                "Fingerprint of the controlled angle, pivot and settings; when it changes, the preview returns to `angle`.",
+            ),
         ),
         (
             "angle".to_owned(),
-            ObjectField::required(ValueSchema::number()),
+            ObjectField::required(ValueSchema::number()).with_doc(
+                "Controlled rotation in degrees, clockwise on screen; it is wrapped into 0 to 360.",
+            ),
         ),
         (
             "pivot_x".to_owned(),
-            ObjectField::required(ValueSchema::number()),
+            ObjectField::required(ValueSchema::number()).with_doc(
+                "Horizontal position of the pivot in `content_ref`'s local logical pixels.",
+            ),
         ),
         (
             "pivot_y".to_owned(),
-            ObjectField::required(ValueSchema::number()),
+            ObjectField::required(ValueSchema::number()).with_doc(
+                "Vertical position of the pivot in `content_ref`'s local logical pixels.",
+            ),
         ),
         (
             "snap".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::number())),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::number())).with_doc(
+                "Step in degrees, up to 360, that angles round to and keys turn by; `()` turns snapping off.",
+            ),
         ),
         (
             "keyboard_step".to_owned(),
-            ObjectField::optional(ValueSchema::bounded_number(Some(0.1), Some(180.0))),
+            ObjectField::optional(ValueSchema::bounded_number(Some(0.1), Some(180.0))).with_doc(
+                "Degrees one arrow-key press turns when `snap` is unset; Shift multiplies it by four; defaults to 5.",
+            ),
         ),
         (
             "threshold".to_owned(),
-            ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+            ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                "Pointer movement in logical pixels before a press becomes a rotation; defaults to 4.",
+            ),
         ),
         (
             "disabled".to_owned(),
-            ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+            ObjectField::optional(ValueSchema::Bool)
+                .with_default(UiValue::Bool(false))
+                .with_doc("Ignores presses and keys and removes the handle from the tab order."),
         ),
         (
             "content_ref".to_owned(),
-            ObjectField::required(ValueSchema::Ref),
+            ObjectField::required(ValueSchema::Ref).with_doc(
+                "Ref to the rotated Canvas; the pivot is local to it, and moving or resizing it during a drag cancels the rotation.",
+            ),
         ),
         (
             "on_rotate".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                "Called with the proposed angle when a rotation drag ends or an arrow key or Home is pressed.",
+            ),
         ),
     ]);
     props.extend(descriptor_signal_props());
@@ -593,7 +630,10 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "rotate".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted once when a rotation drag ends or an arrow key or Home turns it; the payload is the next angle in degrees, 0 to 360."
+                        .to_owned(),
+                ),
                 payload: ValueSchema::number(),
             },
         )]),

@@ -10,7 +10,11 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use gpui_rhai::{ComponentDefinition, ModuleId, ObjectField, UiValue, ValueSchema};
+use gpui_rhai::script_docs::{ScriptApi, ScriptFn};
+use gpui_rhai::{
+    ComponentDefinition, ModuleId, ObjectField, PrimitiveDescriptor, RuntimeEngine, UiValue,
+    ValueSchema,
+};
 
 use crate::{BundledRegistry, ProjectError};
 
@@ -140,7 +144,9 @@ pub fn reference_documents(
         "# Module reference\n\n\
          Generated from the schemas and header comments of the official modules; do not\n\
          edit. Regenerate with\n\
-         `GPUI_RHAI_UPDATE_REFERENCE=1 cargo test -p gpui-rhai-cli reference`.\n",
+         `GPUI_RHAI_UPDATE_REFERENCE=1 cargo test -p gpui-rhai-cli reference`.\n\n\
+         The functions, methods and native primitives a script calls are in the\n\
+         [script API](script-api.md).\n",
     );
     for (family, title) in REFERENCE_FAMILIES {
         let members = definitions
@@ -169,7 +175,197 @@ pub fn reference_documents(
         }
     }
     documents.insert(PathBuf::from("README.md"), index);
+    documents.insert(PathBuf::from("script-api.md"), script_api_document()?);
     Ok(documents)
+}
+
+/// The script API page: every native function and primitive the runtime registers.
+///
+/// # Errors
+///
+/// Returns an error when the engine's function metadata cannot be read.
+pub fn script_api_document() -> Result<String, ProjectError> {
+    let runtime = RuntimeEngine::new();
+    let api = ScriptApi::from_engine(runtime.engine()).map_err(ProjectError::JsonSerialize)?;
+    let mut page = String::from(
+        "# Script API\n\n\
+         Generated from the native functions and primitives the runtime registers and\n\
+         their documentation in `crates/gpui-rhai/src/script_docs/` and the primitive\n\
+         descriptors; do not edit. Rhai's own standard library (strings, arrays, maps,\n\
+         math) is in the [Rhai book](https://rhai.rs/book/); the language as views use it\n\
+         is in [Rhai for gpui-rhai](../rhai.md). Components are in the\n\
+         [module reference](README.md).\n",
+    );
+    let globals = |category: fn(&ScriptFn) -> bool| {
+        api.functions
+            .iter()
+            .filter(move |function| {
+                function.module.is_none()
+                    && function.receiver.is_none()
+                    && !function.is_operator()
+                    && category(function)
+            })
+            .collect::<Vec<_>>()
+    };
+    function_table(
+        &mut page,
+        "Node constructors",
+        "Functions that build `UiNode` values.",
+        &globals(|function| function.return_type == "UiNode"),
+    );
+    function_table(
+        &mut page,
+        "Styles, lengths and colors",
+        "Values a style is built from; read lengths and colors from theme tokens.",
+        &globals(|function| {
+            [
+                "Style",
+                "Length",
+                "ColorValue",
+                "SignedLength",
+                "Typography",
+            ]
+            .contains(&function.return_type.as_str())
+        }),
+    );
+    function_table(
+        &mut page,
+        "Other global functions",
+        "Components, references, collections, timers, motion and canvas commands.",
+        &globals(|function| {
+            function.return_type != "UiNode"
+                && ![
+                    "Style",
+                    "Length",
+                    "ColorValue",
+                    "SignedLength",
+                    "Typography",
+                ]
+                .contains(&function.return_type.as_str())
+        }),
+    );
+    method_sections(&mut page, &api);
+    primitives_section(&mut page, &api, &runtime.primitive_registry().descriptors());
+    Ok(page)
+}
+
+/// The methods of `ctx`, nodes, styles and other values, and the operators.
+fn method_sections(page: &mut String, api: &ScriptApi) {
+    let methods = |receiver: &str| {
+        api.functions
+            .iter()
+            .filter(|function| {
+                function.module.is_none()
+                    && function.receiver.as_deref() == Some(receiver)
+                    && !function.is_operator()
+            })
+            .collect::<Vec<_>>()
+    };
+    function_table(
+        page,
+        "Context methods (`ctx`)",
+        "Methods of the context a view, callback or effect receives.",
+        &methods("UiContext"),
+    );
+    function_table(
+        page,
+        "Node methods",
+        "Methods of `UiNode`; each returns the node, so calls chain.",
+        &methods("UiNode"),
+    );
+    function_table(
+        page,
+        "Style methods",
+        "Methods of the `style()` builder; each returns the style, so calls chain.",
+        &methods("Style"),
+    );
+    let mut others =
+        api.functions
+            .iter()
+            .filter(|function| {
+                function.module.is_none()
+                    && !function.is_operator()
+                    && function.receiver.as_deref().is_some_and(|receiver| {
+                        !["UiContext", "UiNode", "Style"].contains(&receiver)
+                    })
+            })
+            .collect::<Vec<_>>();
+    others.sort_by(|left, right| left.receiver.cmp(&right.receiver));
+    function_table(
+        page,
+        "Methods of other values",
+        "Properties and methods of handles, signals, documents, collections and canvas values.",
+        &others,
+    );
+    function_table(
+        page,
+        "Operators",
+        "Arithmetic defined on runtime values.",
+        &api.functions
+            .iter()
+            .filter(|function| function.module.is_none() && function.is_operator())
+            .collect::<Vec<_>>(),
+    );
+}
+
+fn function_table(page: &mut String, title: &str, intro: &str, functions: &[&ScriptFn]) {
+    if functions.is_empty() {
+        return;
+    }
+    let _ = write!(
+        page,
+        "\n## {title}\n\n{intro}\n\n| Call | Description |\n|---|---|\n"
+    );
+    for function in functions {
+        let _ = writeln!(
+            page,
+            "| `{}` | {} |",
+            cell(&function.display()),
+            cell(function.doc.unwrap_or("—"))
+        );
+    }
+}
+
+fn primitives_section(page: &mut String, api: &ScriptApi, descriptors: &[PrimitiveDescriptor]) {
+    page.push_str(
+        "\n## Native primitives\n\n\
+         Rust elements a component calls through the `gpui_rhai` module with one props\n\
+         map, for example `gpui_rhai::TextInputPrimitive(#{ key: \"name\", value: name })`.\n\
+         Official components wrap them; application components may too.\n",
+    );
+    for descriptor in descriptors {
+        let doc = api
+            .functions
+            .iter()
+            .find(|function| function.module.is_some() && function.name == descriptor.export)
+            .and_then(|function| function.doc)
+            .unwrap_or("—");
+        let _ = write!(
+            page,
+            "\n### {export}\n\n`gpui_rhai::{export}(props)` · `{id}`. {doc}\n",
+            export = descriptor.export,
+            id = descriptor.id.as_str(),
+        );
+        if !descriptor.props.is_empty() {
+            page.push_str(
+                "\n| Prop | Type | Required or default | Description |\n|---|---|---|---|\n",
+            );
+            for (name, field) in &descriptor.props {
+                let _ = writeln!(page, "{}", field_row(name, field));
+            }
+        }
+        if !descriptor.events.is_empty() {
+            page.push_str("\n| Event | Payload | Description |\n|---|---|---|\n");
+            for (name, event) in &descriptor.events {
+                let _ = writeln!(
+                    page,
+                    "| `{name}` | {} | {} |",
+                    cell(&type_name(&event.payload)),
+                    cell(event.doc.as_deref().unwrap_or("—"))
+                );
+            }
+        }
+    }
 }
 
 fn module_page(id: &ModuleId, definition: &ComponentDefinition, notes: &HeaderNotes) -> String {
@@ -409,8 +605,9 @@ pub fn type_name(schema: &ValueSchema) -> String {
         ValueSchema::Signal => "signal".to_owned(),
         ValueSchema::Collection => "native collection".to_owned(),
         ValueSchema::Document => "native document".to_owned(),
-        #[allow(unreachable_patterns)]
-        _ => "chart data".to_owned(),
+        ValueSchema::ChartData => "chart data".to_owned(),
+        ValueSchema::Ref => "element ref".to_owned(),
+        ValueSchema::Handle { kind } => format!("`{kind}` handle"),
     }
 }
 

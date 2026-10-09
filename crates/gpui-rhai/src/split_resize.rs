@@ -601,7 +601,10 @@ pub fn split_resize_primitive_descriptor() -> PrimitiveDescriptor {
                     "orientation".to_owned(),
                     ObjectField::required(ValueSchema::String {
                         allowed: vec!["horizontal".to_owned(), "vertical".to_owned()],
-                    }),
+                    })
+                    .with_doc(
+                        "`horizontal` resizes the start panel's width (panels side by side); `vertical` resizes its height.",
+                    ),
                 ),
                 (
                     "source_ratio".to_owned(),
@@ -610,39 +613,57 @@ pub fn split_resize_primitive_descriptor() -> PrimitiveDescriptor {
                         max: Some(1.0),
                         exclusive_min: None,
                         exclusive_max: None,
-                    }),
+                    })
+                    .with_doc(
+                        "Controlled start-panel share of the group's length, 0 to 1; the caller stores the `resize` payload here.",
+                    ),
                 ),
                 (
                     "min_start".to_owned(),
-                    ObjectField::optional(panel_bound_schema()),
+                    ObjectField::optional(panel_bound_schema()).with_doc(
+                        "Smallest start-panel length a drag may propose, in logical pixels; defaults to 0.",
+                    ),
                 ),
                 (
                     "min_end".to_owned(),
-                    ObjectField::optional(panel_bound_schema()),
+                    ObjectField::optional(panel_bound_schema()).with_doc(
+                        "Smallest end-panel length a drag may leave, in logical pixels; it wins when both minimums cannot fit.",
+                    ),
                 ),
                 (
                     "max_start".to_owned(),
-                    ObjectField::optional(panel_bound_schema()),
+                    ObjectField::optional(panel_bound_schema()).with_doc(
+                        "Largest start-panel length a drag may propose, in logical pixels; defaults to 16,384.",
+                    ),
                 ),
                 (
                     "disabled".to_owned(),
-                    ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                    ObjectField::optional(ValueSchema::Bool)
+                        .with_default(UiValue::Bool(false))
+                        .with_doc("Ignores presses and hover, so the handle cannot be dragged."),
                 ),
                 (
                     "signal".to_owned(),
-                    ObjectField::required(ValueSchema::Signal),
+                    ObjectField::required(ValueSchema::Signal).with_doc(
+                        "Optional-float signal that receives the start-panel length to preview, in logical pixels, or `()` for none.",
+                    ),
                 ),
                 (
                     "group_ref".to_owned(),
-                    ObjectField::required(ValueSchema::Ref),
+                    ObjectField::required(ValueSchema::Ref).with_doc(
+                        "Ref to the element holding both panels and the handle; its length along the axis is what the ratio divides.",
+                    ),
                 ),
                 (
                     "start_ref".to_owned(),
-                    ObjectField::required(ValueSchema::Ref),
+                    ObjectField::required(ValueSchema::Ref).with_doc(
+                        "Ref to the start panel; its length when a drag begins is where the preview starts.",
+                    ),
                 ),
                 (
                     "on_resize".to_owned(),
-                    ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                    ObjectField::optional(ValueSchema::optional(ValueSchema::Callback))
+                        .with_doc("Called with the proposed start-panel ratio when a drag ends."),
                 ),
             ]);
             props.extend(crate::handle_state::decoration_props());
@@ -651,7 +672,10 @@ pub fn split_resize_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted once when a drag that moved ends; the payload is the next start-panel ratio, 0 to 1."
+                        .to_owned(),
+                ),
                 payload: ValueSchema::Number {
                     min: Some(0.0),
                     max: Some(1.0),

@@ -826,55 +826,84 @@ pub fn selection_area_primitive_descriptor() -> PrimitiveDescriptor {
                         values: Box::new(ValueSchema::UiValue),
                     }),
                     max_items: Some(10_000),
-                }),
+                })
+                .with_doc(
+                    "Selectable `{key, x, y, width, height, disabled}` rectangles in Canvas-local logical pixels; list order sets range and stacking.",
+                ),
             ),
             (
                 "selected_keys".to_owned(),
                 ObjectField::required(ValueSchema::Array {
                     items: Box::new(ValueSchema::string()),
                     max_items: Some(10_000),
-                }),
+                })
+                .with_doc(
+                    "Controlled keys of the selected targets; the caller stores the `selection_change` payload and passes it back.",
+                ),
             ),
             (
                 "active_key".to_owned(),
-                ObjectField::required(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::required(ValueSchema::optional(ValueSchema::string())).with_doc(
+                    "Controlled key of the active target that arrow keys move from and Space toggles, or `()`.",
+                ),
             ),
             (
                 "anchor_key".to_owned(),
-                ObjectField::required(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::required(ValueSchema::optional(ValueSchema::string()))
+                    .with_doc("Controlled key a Shift range extends from, or `()`."),
             ),
             (
                 "multiple".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(true))
+                    .with_doc(
+                        "Allows more than one selected key; `false` turns off toggle, range and additive marquee selection.",
+                    ),
             ),
             (
                 "marquee".to_owned(),
                 ObjectField::optional(ValueSchema::String {
                     allowed: vec!["intersect".to_owned(), "enclose".to_owned()],
                 })
-                .with_default(UiValue::String("intersect".to_owned())),
+                .with_default(UiValue::String("intersect".to_owned()))
+                .with_doc(
+                    "`intersect` selects targets the marquee touches; `enclose` only targets entirely inside it.",
+                ),
             ),
             (
                 "threshold".to_owned(),
-                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                    "Pointer movement in logical pixels before a press becomes a marquee; defaults to 4.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc(
+                        "Ignores presses and keys, cancels a running marquee and removes the area from the tab order.",
+                    ),
             ),
             (
                 "canvas_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
+                ObjectField::required(ValueSchema::Ref).with_doc(
+                    "Ref to the Canvas the targets live on; pointer positions go through its inverse transform, pan, zoom and rotation included.",
+                ),
             ),
             (
                 "on_selection_change".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the proposed selection on a click, a marquee release, or an arrow, Home, End or Space key.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "selection_change".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted on a click, a marquee release or a selection key; the payload is the next `selected_keys`, `active_key` and `anchor_key`."
+                        .to_owned(),
+                ),
                 payload: proposal_schema(),
             },
         )]),

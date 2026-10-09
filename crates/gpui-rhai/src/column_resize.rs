@@ -655,43 +655,63 @@ pub fn column_resize_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "column_key".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Key of the column this handle resizes; it is `key` in the `resize` payload.",
+                ),
             ),
             (
                 "source_kind".to_owned(),
                 ObjectField::required(ValueSchema::String {
                     allowed: vec!["fixed".to_owned(), "percent".to_owned(), "flex".to_owned()],
-                }),
+                })
+                .with_doc(
+                    "Kind of the column's controlled width; with `source_value` it identifies the source, and a change cancels a drag.",
+                ),
             ),
             (
                 "source_value".to_owned(),
-                ObjectField::required(ValueSchema::positive_number()),
+                ObjectField::required(ValueSchema::positive_number()).with_doc(
+                    "Value of the column's controlled width; a change cancels a drag and clears the preview.",
+                ),
             ),
             (
                 "min_width".to_owned(),
-                ObjectField::optional(resize_bound_schema()),
+                ObjectField::optional(resize_bound_schema()).with_doc(
+                    "Smallest width a drag or auto-fit may propose, in logical pixels; defaults to 48.",
+                ),
             ),
             (
                 "max_width".to_owned(),
-                ObjectField::optional(resize_bound_schema()),
+                ObjectField::optional(resize_bound_schema()).with_doc(
+                    "Largest width a drag or auto-fit may propose, in logical pixels; defaults to 16,384.",
+                ),
             ),
             (
                 "signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
+                ObjectField::required(ValueSchema::Signal).with_doc(
+                    "Optional-float signal for the previewed width, kept after release without `on_resize`; text measured with it as `group` sets auto-fit.",
+                ),
             ),
             (
                 "column_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
+                ObjectField::required(ValueSchema::Ref).with_doc(
+                    "Ref to the column's header cell; a drag starts from its width, and auto-fit uses it when no text was measured.",
+                ),
             ),
             (
                 "on_resize".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the proposed fixed width when a drag ends or a double-click auto-fits the column.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted when a drag ends or a double-click auto-fits the column; the payload is `key` and a `fixed` `width` in logical pixels."
+                        .to_owned(),
+                ),
                 payload: ValueSchema::object(BTreeMap::from([
                     (
                         "key".to_owned(),
@@ -735,15 +755,21 @@ pub(crate) fn intrinsic_text_measure_primitive_descriptor() -> PrimitiveDescript
         props: BTreeMap::from([
             (
                 "text".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Text measured as one line in the text style inherited here; place it inside the cell it measures.",
+                ),
             ),
             (
                 "group".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
+                ObjectField::required(ValueSchema::Signal).with_doc(
+                    "The column's optional-float signal, shared with its `ColumnResizePrimitive`; auto-fit takes the widest measure.",
+                ),
             ),
             (
                 "horizontal_padding".to_owned(),
-                ObjectField::optional(ValueSchema::Length),
+                ObjectField::optional(ValueSchema::Length).with_doc(
+                    "Padding added on both sides of the text, in pixels or rems, such as the cell's inset; 0 when omitted.",
+                ),
             ),
             (
                 "extra_width".to_owned(),
@@ -752,7 +778,10 @@ pub(crate) fn intrinsic_text_measure_primitive_descriptor() -> PrimitiveDescript
                     max: Some(MAX_COLUMN_WIDTH),
                     exclusive_min: None,
                     exclusive_max: None,
-                }),
+                })
+                .with_doc(
+                    "Logical pixels added once to the measured width, such as room for a sort icon; 0 when omitted.",
+                ),
             ),
         ]),
         events: BTreeMap::new(),

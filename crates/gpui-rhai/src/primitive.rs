@@ -1305,6 +1305,17 @@ impl fmt::Debug for PrimitiveRegistry {
 }
 
 impl PrimitiveRegistry {
+    /// The descriptors of every registered primitive, in id order.
+    #[must_use]
+    pub fn descriptors(&self) -> Vec<PrimitiveDescriptor> {
+        self.inner
+            .borrow()
+            .entries
+            .values()
+            .map(|entry| entry.descriptor.clone())
+            .collect()
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()

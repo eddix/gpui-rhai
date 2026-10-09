@@ -1215,6 +1215,7 @@ fn pixels_to_usize(value: f32) -> usize {
 ///
 /// Panics only if the static built-in primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_callback = || ObjectField::optional(ValueSchema::optional(ValueSchema::Callback));
     PrimitiveDescriptor {
@@ -1223,19 +1224,26 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "value".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "The field's text; controlled, so store each `change` payload here; more than `max_length` graphemes is an error.",
+                ),
             ),
             (
                 "placeholder".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::string()))
+                    .with_doc("Hint text shown in the `placeholder_style` color while `value` is empty."),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Blocks focus, clicks and edits and dims the field."),
             ),
             (
                 "read_only".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Keeps focus, selection and copy but blocks every edit."),
             ),
             (
                 "min_rows".to_owned(),
@@ -1243,7 +1251,10 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
                     Some(1),
                     Some(MAX_TEXTAREA_ROWS),
                 ))
-                .with_default(UiValue::Integer(3)),
+                .with_default(UiValue::Integer(3))
+                .with_doc(
+                    "Fewest visible rows when `rows` is unset; the field grows with its wrapped text from here up to `max_rows`.",
+                ),
             ),
             (
                 "max_rows".to_owned(),
@@ -1251,49 +1262,81 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
                     Some(1),
                     Some(MAX_TEXTAREA_ROWS),
                 ))
-                .with_default(UiValue::Integer(8)),
+                .with_default(UiValue::Integer(8))
+                .with_doc(
+                    "Most visible rows when `rows` is unset, at least `min_rows`; longer text scrolls vertically.",
+                ),
             ),
             (
                 "rows".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::bounded_integer(
                     Some(1),
                     Some(MAX_TEXTAREA_ROWS),
-                ))),
+                )))
+                .with_doc(
+                    "Fixed number of visible rows that overrides `min_rows` and `max_rows`; `()` lets the height follow the text.",
+                ),
             ),
             (
                 "max_length".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::bounded_integer(
                     Some(0),
                     Some(MAX_TEXTAREA_GRAPHEMES),
-                ))),
+                )))
+                .with_doc(
+                    "Most graphemes the text may hold; typing, pasting and IME commits are cut to fit, and `()` means no limit.",
+                ),
             ),
             (
                 "typography".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Theme typography role, such as `body`, that sets the font family, size, weight and row height.",
+                ),
             ),
             (
                 "autofocus".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Focuses the field once when it first mounts, unless it is disabled."),
             ),
             (
                 "placeholder_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Its text color, or else its background, colors the placeholder; theme `text_muted` when it sets neither.",
+                ),
             ),
             (
                 "selection_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Its background, or else its text color, fills selected text; a translucent theme `accent` when it sets neither.",
+                ),
             ),
             (
                 "caret_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Its background, or else its text color, colors the caret; theme `accent` when it sets neither.",
+                ),
             ),
             (
                 "scroll_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Its background, or else its text color, fills the scrolling text viewport; transparent when it sets neither.",
+                ),
             ),
-            ("on_change".to_owned(), optional_callback()),
-            ("on_focus".to_owned(), optional_callback()),
-            ("on_blur".to_owned(), optional_callback()),
+            (
+                "on_change".to_owned(),
+                optional_callback().with_doc(
+                    "Called with the full new text after each edit, newline, paste, cut, undo, redo or committed IME composition.",
+                ),
+            ),
+            (
+                "on_focus".to_owned(),
+                optional_callback().with_doc("Called when the field gains keyboard focus."),
+            ),
+            (
+                "on_blur".to_owned(),
+                optional_callback().with_doc("Called when the field loses keyboard focus."),
+            ),
         ]),
         events: text_area_events(),
         state: ComponentStateSchema::default(),
@@ -1307,21 +1350,26 @@ fn text_area_events() -> BTreeMap<String, EventSchema> {
         (
             "change".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted after each edit and when IME composition commits, not during it; the payload is the full new text."
+                        .to_owned(),
+                ),
                 payload: ValueSchema::string(),
             },
         ),
         (
             "focus".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted when the field gains keyboard focus; the payload is `()`.".to_owned(),
+                ),
                 payload: ValueSchema::Null,
             },
         ),
         (
             "blur".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some("Emitted when the field loses keyboard focus; the payload is `()`.".to_owned()),
                 payload: ValueSchema::Null,
             },
         ),

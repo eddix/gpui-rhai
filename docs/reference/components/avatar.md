@@ -15,7 +15,7 @@ avatar::Avatar(#{ name: "Ada Lovelace", initials: "AL", presence: "online" })
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `handle` | chart data or `()` | — | Image handle of the picture, shown in the circle instead of the initials. |
+| `handle` | `image` handle or `()` | — | Image handle of the picture, shown in the circle instead of the initials. |
 | `initials` | string or `()` | — | Text shown when there is no `handle`; defaults to the first character of `name`. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `name` | string | required | The person's name: the accessible name, and the source of the fallback initials. |

@@ -806,17 +806,46 @@ fn transform_schema() -> ValueSchema {
 
 fn pan_zoom_signal_props() -> BTreeMap<String, ObjectField> {
     [
-        "x_signal",
-        "y_signal",
-        "scale_x_signal",
-        "scale_y_signal",
-        "wheel_generation_signal",
-        "wheel_active_signal",
-        "wheel_pending_signal",
-        "source_token_signal",
+        (
+            "x_signal",
+            "Float signal that receives the previewed horizontal pan; bind it to the Canvas `translate_x`.",
+        ),
+        (
+            "y_signal",
+            "Float signal that receives the previewed vertical pan; bind it to the Canvas `translate_y`.",
+        ),
+        (
+            "scale_x_signal",
+            "Float signal that receives the previewed zoom factor; bind it to the Canvas `scale_x`.",
+        ),
+        (
+            "scale_y_signal",
+            "Float signal that receives the same previewed zoom factor; bind it to the Canvas `scale_y`.",
+        ),
+        (
+            "wheel_generation_signal",
+            "Integer signal that counts wheel bursts, so a delayed commit from an older burst is dropped.",
+        ),
+        (
+            "wheel_active_signal",
+            "Bool signal that is true while a trackpad wheel gesture with explicit phases is in progress.",
+        ),
+        (
+            "wheel_pending_signal",
+            "Bool signal that is true while a wheel zoom is previewed and not yet proposed.",
+        ),
+        (
+            "source_token_signal",
+            "String signal that keeps the last `source_token` shown, so a new source can be told from a rerender.",
+        ),
     ]
     .into_iter()
-    .map(|name| (name.to_owned(), ObjectField::required(ValueSchema::Signal)))
+    .map(|(name, doc)| {
+        (
+            name.to_owned(),
+            ObjectField::required(ValueSchema::Signal).with_doc(doc),
+        )
+    })
     .collect()
 }
 
@@ -826,25 +855,42 @@ fn pan_zoom_signal_props() -> BTreeMap<String, ObjectField> {
 ///
 /// Panics only if the static primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
     let mut props = BTreeMap::from([
         (
             "source_token".to_owned(),
-            ObjectField::required(ValueSchema::string()),
+            ObjectField::required(ValueSchema::string()).with_doc(
+                "Fingerprint of the controlled transform and settings; a new value cancels any gesture and shows `x`, `y`, `scale` again.",
+            ),
         ),
-        ("x".to_owned(), ObjectField::required(ValueSchema::number())),
-        ("y".to_owned(), ObjectField::required(ValueSchema::number())),
+        (
+            "x".to_owned(),
+            ObjectField::required(ValueSchema::number()).with_doc(
+                "Controlled horizontal pan in logical pixels, applied after scaling about the content's centre.",
+            ),
+        ),
+        (
+            "y".to_owned(),
+            ObjectField::required(ValueSchema::number()).with_doc(
+                "Controlled vertical pan in logical pixels, applied after scaling about the content's centre.",
+            ),
+        ),
         (
             "scale".to_owned(),
-            ObjectField::required(ValueSchema::positive_number()),
+            ObjectField::required(ValueSchema::positive_number()).with_doc(
+                "Controlled zoom factor, from `min_scale` to `max_scale`; 1 shows the content at its own size.",
+            ),
         ),
         (
             "min_scale".to_owned(),
-            ObjectField::required(ValueSchema::positive_number()),
+            ObjectField::required(ValueSchema::positive_number())
+                .with_doc("Smallest zoom factor the wheel and keys may reach; at most `scale`."),
         ),
         (
             "max_scale".to_owned(),
-            ObjectField::required(ValueSchema::positive_number()),
+            ObjectField::required(ValueSchema::positive_number())
+                .with_doc("Largest zoom factor the wheel and keys may reach; at least `scale`."),
         ),
     ]);
     props.extend(pan_zoom_signal_props());
@@ -858,49 +904,67 @@ pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
                     "vertical".to_owned(),
                 ],
             })
-            .with_default(UiValue::String("both".to_owned())),
+            .with_default(UiValue::String("both".to_owned()))
+            .with_doc("Directions a drag and the arrow keys pan: `both`, `horizontal` or `vertical`."),
         ),
         (
             "wheel_zoom".to_owned(),
             ObjectField::optional(ValueSchema::String {
                 allowed: vec!["off".to_owned(), "modifier".to_owned(), "always".to_owned()],
             })
-            .with_default(UiValue::String("modifier".to_owned())),
+            .with_default(UiValue::String("modifier".to_owned()))
+            .with_doc(
+                "When the wheel zooms: `off`, `modifier` (with Ctrl or Cmd held; other wheel input scrolls ancestors) or `always`.",
+            ),
         ),
         (
             "pan_button".to_owned(),
             ObjectField::optional(ValueSchema::String {
                 allowed: vec!["left".to_owned(), "middle".to_owned()],
             })
-            .with_default(UiValue::String("left".to_owned())),
+            .with_default(UiValue::String("left".to_owned()))
+            .with_doc("Mouse button that drags the view: `left` or `middle`."),
         ),
         (
             "threshold".to_owned(),
-            ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+            ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                "Pointer movement in logical pixels before a press becomes a pan; defaults to 4.",
+            ),
         ),
         (
             "keyboard_pan_step".to_owned(),
-            ObjectField::optional(ValueSchema::bounded_number(Some(0.1), Some(512.0))),
+            ObjectField::optional(ValueSchema::bounded_number(Some(0.1), Some(512.0))).with_doc(
+                "Logical pixels one arrow-key press pans; Shift multiplies it by four; defaults to 16.",
+            ),
         ),
         (
             "keyboard_zoom_factor".to_owned(),
-            ObjectField::optional(ValueSchema::bounded_number(Some(1.001), Some(4.0))),
+            ObjectField::optional(ValueSchema::bounded_number(Some(1.001), Some(4.0))).with_doc(
+                "Factor `+` multiplies and `-` divides the scale by, around the viewport centre; defaults to 1.2.",
+            ),
         ),
         (
             "disabled".to_owned(),
-            ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+            ObjectField::optional(ValueSchema::Bool)
+                .with_default(UiValue::Bool(false))
+                .with_doc("Ignores drags, the wheel and keys and removes the surface from the tab order."),
         ),
         (
             "viewport_ref".to_owned(),
-            ObjectField::required(ValueSchema::Ref),
+            ObjectField::required(ValueSchema::Ref)
+                .with_doc("Ref to the visible viewport; a pan starts only from a press inside its bounds."),
         ),
         (
             "content_ref".to_owned(),
-            ObjectField::required(ValueSchema::Ref),
+            ObjectField::required(ValueSchema::Ref).with_doc(
+                "Ref to the transformed Canvas; wheel zoom anchors at the pointer over it, key zoom at its centre.",
+            ),
         ),
         (
             "on_transform_change".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                "Called with the proposed `{x, y, scale}` when a pan ends, a wheel zoom settles or a key pans, zooms or resets.",
+            ),
         ),
     ]);
     PrimitiveDescriptor {
@@ -910,7 +974,10 @@ pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "transform_change".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted once when a pan ends, a wheel zoom settles or a key is pressed; the payload is the next `{x, y, scale}`."
+                        .to_owned(),
+                ),
                 payload: transform_schema(),
             },
         )]),

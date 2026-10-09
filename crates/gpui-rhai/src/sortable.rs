@@ -719,14 +719,20 @@ fn sortable_events() -> BTreeMap<String, EventSchema> {
         (
             "reorder".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted when a drop or an Alt-key move changes the order; the payload moves `source_key` `before` or `after` `anchor_key`."
+                        .to_owned(),
+                ),
                 payload: reorder_schema(),
             },
         ),
         (
             "tap".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted when `tap` is on and a press is released before it became a drag; the payload is `item_key`."
+                        .to_owned(),
+                ),
                 payload: ValueSchema::string(),
             },
         ),
@@ -739,6 +745,7 @@ fn sortable_events() -> BTreeMap<String, EventSchema> {
 ///
 /// Panics only if the static primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_string = || ValueSchema::optional(ValueSchema::string());
     PrimitiveDescriptor {
@@ -747,42 +754,59 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "list_id".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Identifier of the list the item belongs to; with `item_key` it names the item's native interaction.",
+                ),
             ),
             (
                 "collection_id".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Drag scope: items take drops only from items with the same id, and a virtual list pins the dragged row by it.",
+                ),
             ),
             (
                 "item_key".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Stable key of this item; it is the `source_key` or `anchor_key` of `reorder` and the `tap` payload.",
+                ),
             ),
             (
                 "source_index".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Integer {
                     min: Some(0),
                     max: None,
-                })),
+                }))
+                .with_doc(
+                    "Index of the item in a virtual collection, so its row stays realized while dragged out of view; `()` otherwise.",
+                ),
             ),
             (
                 "source_item".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::UiValue)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::UiValue)).with_doc(
+                    "The item's value in a virtual collection; with `source_index` it identifies the dragged row to keep realized.",
+                ),
             ),
             (
                 "previous_key".to_owned(),
-                ObjectField::required(optional_string()),
+                ObjectField::required(optional_string()).with_doc(
+                    "Key of the item before this one, or `()` for the first; drops next to it are no-ops and Alt+Up moves before it.",
+                ),
             ),
             (
                 "next_key".to_owned(),
-                ObjectField::required(optional_string()),
+                ObjectField::required(optional_string()).with_doc(
+                    "Key of the item after this one, or `()` for the last; drops next to it are no-ops and Alt+Down moves after it.",
+                ),
             ),
             (
                 "first_key".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Key of the first item in the list; Alt+Home moves this item before it."),
             ),
             (
                 "last_key".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Key of the last item in the list; Alt+End moves this item after it."),
             ),
             (
                 "direction".to_owned(),
@@ -792,35 +816,58 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
                         "horizontal".to_owned(),
                         "grid".to_owned(),
                     ],
-                }),
+                })
+                .with_doc(
+                    "`vertical` splits the item into top and bottom drop halves; `horizontal` and `grid` into left and right halves.",
+                ),
             ),
             (
                 "threshold".to_owned(),
-                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                    "Pointer movement in logical pixels before a press becomes a drag; defaults to 4.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc(
+                        "Stops this item from being dragged or moved by key; it still takes drops from other items.",
+                    ),
             ),
             (
                 "item_ref".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)).with_doc(
+                    "Ref to the element whose bounds hold the drop halves and the drag highlight; defaults to this primitive's bounds.",
+                ),
             ),
             (
                 "take_focus".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(true))
+                    .with_doc(
+                        "Whether a press focuses the item; `false` leaves focus alone, for items inside a control with one tab stop.",
+                    ),
             ),
             (
                 "tap".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc(
+                        "Whether a press released before the drag threshold emits `tap`, so the item can be clicked as well as dragged.",
+                    ),
             ),
             (
                 "on_reorder".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the proposed move when an item is dropped on this one, or this item moves by Alt+Arrow, Home or End.",
+                ),
             ),
             (
                 "on_tap".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with `item_key` when a press is released before it became a drag; needs `tap`.",
+                ),
             ),
         ]),
         events: sortable_events(),

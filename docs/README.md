@@ -17,6 +17,8 @@ is the shortest path to a running project.
 - [Official component catalog](components/catalog.md) and the generated
   [module reference](reference/README.md): props, events, slots and parts of
   every component, layout, pattern, motion and chart module
+- The generated [script API](reference/script-api.md): every native function,
+  `ctx`, node and style method, operator and primitive
 - [Gallery](gallery.md), the acceptance application, and
   [Theme Studio](theme-studio.md)
 - [Component authoring](component-authoring-guide.md)

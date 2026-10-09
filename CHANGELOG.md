@@ -208,6 +208,17 @@ and [docs/design/](docs/design/) for the specification.
   in component sources.
 - `docs/rhai.md` covers Rhai as gpui-rhai views use it; its snippets are run by
   the test suite, as is every documentation snippet marked `<!-- check: ... -->`.
+- The native functions and primitives scripts call are documented: a table in
+  `crates/gpui-rhai/src/script_docs/` gives every registered signature parameter
+  names and a doc, and every built-in primitive prop and event has a doc; tests
+  require both and reject stale entries (`ScriptApi`,
+  `PrimitiveRegistry::descriptors`). `RuntimeEngine::definition_source`, and so
+  `gpui-rhai metadata`, writes language-server definitions with parameter
+  names, doc comments and readable return types; Rhai's printer wrote `_` for
+  every name and `EvalAltResult>>` for fallible returns.
+- `docs/reference/script-api.md` lists every native function, method,
+  operator and primitive with its doc. The module reference no longer shows
+  element refs and handles as chart data (Icon `source`, Avatar `handle`).
 - `gpui-rhai init` makes the project depend on the CLI's own runtime line
   (`gpui-rhai = "0.2"` from a 0.2 CLI); it wrote a fixed `"0.1"`, which cannot
   load the Runtime API 3 components the same CLI copies.

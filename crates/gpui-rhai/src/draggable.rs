@@ -508,14 +508,25 @@ fn position_schema() -> ValueSchema {
 ///
 /// Panics only if the static built-in primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn draggable_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_number = || ObjectField::optional(ValueSchema::optional(ValueSchema::number()));
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.draggable").expect("static primitive ID"),
         export: "DraggablePrimitive".to_owned(),
         props: BTreeMap::from([
-            ("x".to_owned(), ObjectField::required(ValueSchema::number())),
-            ("y".to_owned(), ObjectField::required(ValueSchema::number())),
+            (
+                "x".to_owned(),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Controlled left edge of the object in `boundary_ref`'s local logical pixels.",
+                ),
+            ),
+            (
+                "y".to_owned(),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Controlled top edge of the object in `boundary_ref`'s local logical pixels.",
+                ),
+            ),
             (
                 "axes".to_owned(),
                 ObjectField::optional(ValueSchema::String {
@@ -525,55 +536,93 @@ pub fn draggable_primitive_descriptor() -> PrimitiveDescriptor {
                         "vertical".to_owned(),
                     ],
                 })
-                .with_default(UiValue::String("both".to_owned())),
+                .with_default(UiValue::String("both".to_owned()))
+                .with_doc("Directions the object moves in: `both`, `horizontal` or `vertical`."),
             ),
             (
                 "contain".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(true))
+                    .with_doc(
+                        "Keeps the object inside `boundary_ref`; presses are ignored while the controlled position lies outside it.",
+                    ),
             ),
             (
                 "threshold".to_owned(),
-                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                    "Pointer movement in logical pixels before a press becomes a drag; defaults to 4.",
+                ),
             ),
-            ("snap_x".to_owned(), optional_number()),
-            ("snap_y".to_owned(), optional_number()),
+            (
+                "snap_x".to_owned(),
+                optional_number().with_doc(
+                    "Grid step in logical pixels the left edge rounds to, or `()` to move freely.",
+                ),
+            ),
+            (
+                "snap_y".to_owned(),
+                optional_number().with_doc(
+                    "Grid step in logical pixels the top edge rounds to, or `()` to move freely.",
+                ),
+            ),
             (
                 "keyboard_step".to_owned(),
-                ObjectField::optional(ValueSchema::positive_number()),
+                ObjectField::optional(ValueSchema::positive_number()).with_doc(
+                    "Logical pixels one arrow-key press moves the object, up to 512; Shift multiplies it by four; defaults to 8.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc(
+                        "Ignores presses and arrow keys and removes the object from the tab order.",
+                    ),
             ),
             (
                 "boundary_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
+                ObjectField::required(ValueSchema::Ref).with_doc(
+                    "Ref to the container the position is local to; resizing it during a drag cancels the drag.",
+                ),
             ),
             (
                 "object_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
+                ObjectField::required(ValueSchema::Ref).with_doc(
+                    "Ref to the moved object; its size bounds `contain`, and without `handle_ref` a press on it starts a drag.",
+                ),
             ),
             (
                 "handle_ref".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)).with_doc(
+                    "Ref to a drag handle inside the object; when set, only presses inside it start a drag.",
+                ),
             ),
             (
                 "x_signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
+                ObjectField::required(ValueSchema::Signal).with_doc(
+                    "Optional-float signal that receives the previewed horizontal offset from `x` during a drag, or `()` when idle.",
+                ),
             ),
             (
                 "y_signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
+                ObjectField::required(ValueSchema::Signal).with_doc(
+                    "Optional-float signal that receives the previewed vertical offset from `y` during a drag, or `()` when idle.",
+                ),
             ),
             (
                 "on_move".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the proposed `{x, y}` when a drag ends or an arrow key is pressed.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "move".to_owned(),
             EventSchema {
-                doc: None,
+                doc: Some(
+                    "Emitted once when a drag ends or an arrow key moves the object; the payload is the next `{x, y}`."
+                        .to_owned(),
+                ),
                 payload: position_schema(),
             },
         )]),

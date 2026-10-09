@@ -959,6 +959,7 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
 ///
 /// Panics only if the static built-in primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_callback = || ObjectField::optional(ValueSchema::optional(ValueSchema::Callback));
     PrimitiveDescriptor {
@@ -967,59 +968,95 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "value".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "The field's text; controlled, so store each `change` payload here or the next render restores the old text.",
+                ),
             ),
             (
                 "placeholder".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::string()))
+                    .with_doc("Hint text shown dimmed while `value` is empty."),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Blocks focus, clicks and edits and dims the field."),
             ),
             (
                 "read_only".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Keeps focus, selection and copy but blocks every edit."),
             ),
             (
                 "autofocus".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Focuses the field once when it first mounts, unless it is disabled."),
             ),
             (
                 "typography".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Theme typography role, such as `control`, that sets the font family, size, weight and line height.",
+                ),
             ),
-            ("on_change".to_owned(), optional_callback()),
-            ("on_submit".to_owned(), optional_callback()),
-            ("on_focus".to_owned(), optional_callback()),
-            ("on_blur".to_owned(), optional_callback()),
+            (
+                "on_change".to_owned(),
+                optional_callback().with_doc(
+                    "Called with the full new text after each edit, paste, cut, undo, redo or IME composition step.",
+                ),
+            ),
+            (
+                "on_submit".to_owned(),
+                optional_callback()
+                    .with_doc("Called with the current text when Enter is pressed in an enabled field."),
+            ),
+            (
+                "on_focus".to_owned(),
+                optional_callback().with_doc("Called when the field gains keyboard focus."),
+            ),
+            (
+                "on_blur".to_owned(),
+                optional_callback().with_doc("Called when the field loses keyboard focus."),
+            ),
         ]),
         events: BTreeMap::from([
             (
                 "change".to_owned(),
                 EventSchema {
-                    doc: None,
+                    doc: Some(
+                        "Emitted after each edit, including IME composition, undo and redo; the payload is the full new text."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::string(),
                 },
             ),
             (
                 "submit".to_owned(),
                 EventSchema {
-                    doc: None,
+                    doc: Some(
+                        "Emitted when Enter is pressed in an enabled field; the payload is the current text."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::string(),
                 },
             ),
             (
                 "focus".to_owned(),
                 EventSchema {
-                    doc: None,
+                    doc: Some(
+                        "Emitted when the field gains keyboard focus; the payload is `()`.".to_owned(),
+                    ),
                     payload: ValueSchema::Null,
                 },
             ),
             (
                 "blur".to_owned(),
                 EventSchema {
-                    doc: None,
+                    doc: Some(
+                        "Emitted when the field loses keyboard focus; the payload is `()`.".to_owned(),
+                    ),
                     payload: ValueSchema::Null,
                 },
             ),
