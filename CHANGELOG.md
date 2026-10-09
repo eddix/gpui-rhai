@@ -185,13 +185,14 @@ and [docs/design/](docs/design/) for the specification.
   the window. They keep the proposed transform until the Host answers, return
   to the source when it rejects the proposal, and ask for a frame after the
   signal writes they make while a frame is drawn. Keyboard steps show at once.
-- Fields put their text closer to the frame: Input, Textarea, the Select,
-  Combobox and DatePicker triggers and InputGroup affixes take the new
-  `metrics.field_pad` (comfortable 5 / 7 / 10 / 12, compact 3 / 4 / 6 / 10 by
-  size) instead of the button padding `metrics.control_pad`, and Textarea's
-  vertical padding becomes `metrics.multiline_pad`. Medium fields start their
-  text on `metrics.inset`, like rows. Button, Tabs and ToggleGroup keep
-  `metrics.control_pad`.
+- Fields take their own side padding: Input, Textarea, the Select, Combobox
+  and DatePicker triggers and InputGroup affixes use the new
+  `metrics.field_pad` instead of the button padding `metrics.control_pad`.
+  Their text starts half the control height plus 1px from the outer edge
+  (comfortable 11 / 13 / 15 / 17, compact 9 / 11 / 13 / 15 by size), which
+  clears a capsule's ends in the round corner style, the same in every corner
+  style. Textarea's vertical padding becomes `metrics.multiline_pad`. Button,
+  Tabs and ToggleGroup keep `metrics.control_pad`.
 - Resize handles take a decorative grip (#83): SplitPane `handle` and Resizable
   `grips` (one node per handle) sit in a `grip` box centred on the handle and
   painted above the panes or content; pressing it anywhere it is visible and

@@ -53,17 +53,17 @@ fn tokens() {
                 comfortable: #{ xs: px(8), sm: px(12), md: px(16), lg: px(20) },
                 compact: #{ xs: px(8), sm: px(8), md: px(12), lg: px(16) },
             }),
-            // Fields put their text about 1.4 times the vertical gap from the frame
-            // (control height minus the 2px frames and the type size, halved), so the
-            // side space never reads as a typed space. md lands on metrics.inset, the
-            // text start of rows; compact md is nudged down to it, compact xs up to
-            // leave the caret room, lg down to the spacing scale.
+            // Fields start their text half the control height plus 1px from the outer edge
+            // (inside the 2px frame: height / 2 - 1), so in the round corner style the text
+            // and caret clear the capsule's ends; square and subtle use the same value, so
+            // switching corner style never moves a field's text.
             field_pad: by_env(["density", "size"], #{
-                comfortable: #{ xs: px(5), sm: px(7), md: px(10), lg: px(12) },
-                compact: #{ xs: px(3), sm: px(4), md: px(6), lg: px(10) },
+                comfortable: #{ xs: px(11), sm: px(13), md: px(15), lg: px(17) },
+                compact: #{ xs: px(9), sm: px(11), md: px(13), lg: px(15) },
             }),
-            // Multi-line fields keep field_pad's text column and take their vertical
-            // padding from the same ratio, less the half-leading of body text.
+            // Textarea's vertical padding: the space above the first line, kept from the
+            // ratio rule fields used before (field padding about 1.4 times the gap above
+            // the text, less the half-leading of body text). Corners do not reach it.
             multiline_pad: by_env(["density", "size"], #{
                 comfortable: #{ xs: px(0), sm: px(1), md: px(3), lg: px(5) },
                 compact: #{ xs: px(0), sm: px(0), md: px(0), lg: px(3) },

@@ -899,7 +899,7 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
 }
 
 #[test]
-fn field_padding_follows_the_vertical_gap_between_frame_and_text() {
+fn field_text_clears_a_capsule_end_in_every_corner_style() {
     use gpui_rhai::{ColorResolver, Length};
     let engine = RuntimeEngine::new();
     let (name, source) = BUNDLED_THEMES[0];
@@ -910,49 +910,30 @@ fn field_padding_follows_the_vertical_gap_between_frame_and_text() {
         Some(Length::Pixels(value)) => value,
         other => panic!("{token} {pairs:?}: {other:?}"),
     };
-    let type_size = |role: &str, pairs: &[(&str, &str)]| match theme
-        .resolve_typography_in(role, &environment(pairs))
-    {
-        Some(token) => match (token.size, token.line_height) {
-            (Length::Pixels(size), Length::Pixels(line_height)) => (size, line_height),
-            other => panic!("{role}: {other:?}"),
-        },
-        None => panic!("{role}: missing"),
-    };
-    // Fields have a 2px frame on each side.
+    // Fields have a 2px frame on each side; their text starts half the control height
+    // plus 1px from the outer edge, past a capsule's end, in every corner style.
     let frame = 2.0;
-    for density in ["comfortable", "compact"] {
-        for size in ["xs", "sm", "md", "lg"] {
-            let pairs = [("density", density), ("size", size)];
-            let (font, _) = type_size("control", &pairs);
-            let vertical = (pixels("metrics.control", &pairs) - 2.0 * frame - font) / 2.0;
-            let pad = pixels("metrics.field_pad", &pairs);
-            // About 1.4 times the vertical gap; the nudges stay within a pixel.
-            assert!(
-                (pad - 1.4 * vertical).abs() <= 1.0,
-                "{density} {size}: field_pad {pad} for a vertical gap of {vertical}"
-            );
-            assert!(pad >= 3.0, "{density} {size}: the caret needs room");
-            assert!(
-                pad < pixels("metrics.control_pad", &pairs),
-                "{density} {size}: fields stay tighter than buttons"
-            );
-            if size == "md" {
-                let inset = pixels("metrics.inset", &pairs);
+    // Textarea's vertical padding is kept from the earlier ratio rule.
+    let multiline = [
+        ("comfortable", [0.0, 1.0, 3.0, 5.0]),
+        ("compact", [0.0, 0.0, 0.0, 3.0]),
+    ];
+    for (density, vertical) in multiline {
+        for (size, expected) in ["xs", "sm", "md", "lg"].into_iter().zip(vertical) {
+            let base = pixels("metrics.control", &[("density", density), ("size", size)]);
+            for corners in ["square", "subtle", "round"] {
+                let pairs = [("density", density), ("size", size), ("corners", corners)];
+                let start = frame + pixels("metrics.field_pad", &pairs);
                 assert!(
-                    (frame + pad - inset).abs() < 0.01,
-                    "{density}: md field text starts at {}, rows at {inset}",
-                    frame + pad
+                    (start - (base / 2.0 + 1.0)).abs() < 0.01,
+                    "{density} {size} {corners}: text starts at {start} in a {base}px field"
                 );
             }
-            // Textarea: the same ratio, less the half-leading of its text role.
-            let role = if size == "xs" { "body_small" } else { "body" };
-            let (font, line_height) = type_size(role, &pairs);
-            let expected = (pad / 1.4 - (line_height - font) / 2.0).round().max(0.0);
-            let multiline = pixels("metrics.multiline_pad", &pairs);
+            let pairs = [("density", density), ("size", size)];
+            let pad = pixels("metrics.multiline_pad", &pairs);
             assert!(
-                (multiline - expected).abs() < 0.01,
-                "{density} {size}: multiline_pad {multiline}, expected {expected}"
+                (pad - expected).abs() < 0.01,
+                "{density} {size}: multiline_pad {pad}, expected {expected}"
             );
         }
     }
