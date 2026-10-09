@@ -7,7 +7,7 @@
   "dependencies": ["components/badge"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"],
-  "tokens": ["surface", "surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
+  "tokens": ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
   "environment": ["density"]
 }
 */
@@ -29,7 +29,7 @@ define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
-        tokens: ["surface", "surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
+        tokens: ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
         environment: ["density"],
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{
@@ -588,9 +588,10 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         } else { cell });
     }
     row(headers).with_key(`${props.key}-header`)
+        // Unfilled like the rows, so it takes the color of the layer the table sits on (a
+        // Dialog, Sheet or Popover is surface_raised); rows never scroll under it.
         .with_style(ctx.component_style("header", style().height(theme_length("metrics.row")).items_center()
-            .border_bottom(px(1)).border_color(theme_color("border"))
-            .background(theme_color("surface"))))
+            .border_bottom(px(1)).border_color(theme_color("border"))))
         .accessibility_role("row")
         .accessibility_row_index(1)
 }

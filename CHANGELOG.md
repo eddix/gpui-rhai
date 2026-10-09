@@ -253,6 +253,8 @@ and [docs/design/](docs/design/) for the specification.
   the selected one stays revealed; closable and dirty tabs, middle-press close,
   context requests, drag and Alt+Arrow reordering, an all-tabs menu and
   `start` / `end` slots. The keys move a cursor and Enter selects.
+- Table's header is unfilled like its rows, so on a raised layer (Dialog,
+  Sheet, Popover) it no longer shows a `surface` band (#129).
 
 ## 0.1.8 - 2026-10-04
 
