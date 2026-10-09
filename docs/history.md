@@ -51,5 +51,8 @@ Chinese and record what was true for that round, not the current API.
   implementation plan, the delivery order for 0.1.6 through 0.1.8.
 - [core-runtime-v2-audit.md](https://github.com/eddix/gpui-rhai/blob/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/core-runtime-v2-audit.md): the
   Core Runtime v2 evidence ledger for those releases.
+- [tests/visual/macos/README.md](https://github.com/eddix/gpui-rhai/blob/d20ca3b1e97afc62ea34abcef77ac6595d0fbc4c/tests/visual/macos/README.md)
+  as of `d20ca3b`: the 0.1.x capture sessions, the 0.1.8 Data Table
+  refresh and the interaction evidence of the first capture pass.
 - [release-checklist.md](https://github.com/eddix/gpui-rhai/blob/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/release-checklist.md): the release
   checklist with the gates specific to 0.1.0 through 0.1.8.

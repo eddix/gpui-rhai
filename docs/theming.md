@@ -5,14 +5,14 @@ contract; components never refer to palette-specific color names.
 
 ## Token layers
 
-Since 0.2.0 the runtime requires no fixed token set. A window's tokens come from
-three layers, lowest first (details in [design/themes.md](design/themes.md)):
-
-| Layer | Source | Owns |
-|---|---|---|
-| token base | `ui/tokens.rhai`, copied from `registry/tokens.rhai`; Hosts pass it with `.token_base(...)` | typography roles, spacing scale and relationship aliases, `metrics.*`, radius roles, derived colors, environment declarations (`density`, `size`) |
-| palette theme | `ui/theme.rhai`, `ui/themes/*.rhai` | the semantic colors |
-| Host overrides | `ThemeTokenOverrides` | user and platform preferences |
+Since 0.2.0 the runtime requires no fixed token set. A window's tokens come
+from three layers, lowest first: the token base (`ui/tokens.rhai`, copied from
+`registry/tokens.rhai`; Hosts pass it with `.token_base(...)`), the palette
+theme (`ui/theme.rhai`, `ui/themes/*.rhai`) and Host overrides
+(`ThemeTokenOverrides`). [Theme authoring](design/themes.md) specifies what
+each layer owns, the semantic colors, the derived tokens and the constraints a
+palette meets; the typography roles are in the
+[component contracts](design/atoms.md#3-typography).
 
 Each component declares the tokens and environment values it reads in its
 metadata. Preparation validates the active theme against the union of the
@@ -20,32 +20,10 @@ mounted components, so an application that brings its own design (see
 `examples/byod_treemap`) needs neither the token base nor the official color
 names. Official registry components require the token base.
 
-The default palette roles are:
-
-```text
-surface, surface_raised, surface_hover, text_primary, text_muted,
-accent, accent_hover, on_accent, danger, on_danger, warning, on_warning,
-success, on_success, border, focus_ring, selection, disabled
-```
-
-The `on_*` colors are foregrounds on the matching fill. The token base derives
-the rest from them: `text.accent`/`text.danger`/`text.warning`/`text.success`
-(the status color nudged toward `text_primary` until it reads at 4.5:1),
-`control.hover`, `tag.facet`, `table.selection` (28% accent over surface,
-precomposited so it stays stable in virtual paint layers), `tabs.foreground`,
-`scrollbar.thumb`, syntax and chart colors. A theme may override any derived
-token by name.
-
-Typography roles in the token base are CJK-aware (body 14/22, caption 12/18)
-plus the control roles `control_small` 13/16 and `control_regular` 14/20 and
-the mono `label` voice; weights are 400 and 600 only. Families default to the
-platform UI font and the system mono family (`Menlo`, then `DejaVu Sans Mono`).
-Components call `style().typography("body")`; explicit font properties chained
-afterward override individual values.
-
 Lengths can vary with an environment value: `by_env("density", #{ comfortable:
-px(32), compact: px(28) })`. They resolve during native rendering against the
-nearest `.env(#{ density })` ancestor, so one subtree can be compact inside a
+px(32), compact: px(28) })`. The token base declares three axes, `density`,
+`size` and `corners`; values resolve during native rendering against the
+nearest `.env(#{ ... })` ancestor, so one subtree can be compact inside a
 comfortable window.
 
 Motion has semantic duration (`instant`, `fast`, `normal`, `slow`, `ambient`),
@@ -60,8 +38,8 @@ the affected component sources and retargets from the current sample.
 `registry/themes/default_light.rhai` and `default_dark.rhai` demonstrate the
 serialized `ThemeVariant` shape.
 
-See [bundled themes](bundled-themes.md) for the installed catalog and source
-attribution.
+See [bundled themes](design/themes.md#6-bundled-themes) for the installed
+catalog and source attribution.
 
 ## Theme families
 

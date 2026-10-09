@@ -884,7 +884,7 @@ Theme Studio supports:
 
 The bundled catalog includes Default, Tokyo Night, Catppuccin, Ethereal,
 Everforest, Gruvbox, Hackerman, Nord, Retro 82, Hermarchy, Futurism, and
-Aetheria variants. See [Bundled themes](docs/bundled-themes.md),
+Aetheria variants. See [Bundled themes](docs/design/themes.md#6-bundled-themes),
 [Theming](docs/theming.md), and [Theme Studio](docs/theme-studio.md).
 
 ## 9.1 Native charts

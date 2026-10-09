@@ -41,8 +41,7 @@ bash scripts/release-smoke.sh
 ```
 
 The hosted workflow uses only a standard Linux runner and avoids duplicate
-push/PR runs. For a private repository this still consumes GitHub's included
-Actions allowance; it is not an unlimited free runner. Screenshot, platform
+push/PR runs. Screenshot, platform
 IME, native accessibility, and real pointer/keyboard certification remain local
 macOS gates.
 

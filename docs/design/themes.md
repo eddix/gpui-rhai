@@ -136,10 +136,24 @@ as text on graphite; components therefore use the derived `text.accent`
 
 ## 6. Bundled themes
 
-Tokyo Night/Storm and Catppuccin Latte/Mocha are project themes; Ethereal,
-Everforest, Gruvbox, Hackerman, Nord and Retro 82 are semantic adaptations of
-Omarchy themes; Hermarchy, Aetheria and Futurism are community adaptations.
-All bundled palettes contain colors only and satisfy section 4. Adaptations
-keep their source attribution at the top of the file. Where a source palette
-violates a semantic rule (for example an accent and a warning of the same
-hue), the adaptation adjusts the status color and records why in a comment.
+`gpui-rhai init` installs every bundled variant as editable Rhai source:
+`ui/theme.rhai` starts as Default Dark and the other variants live in
+`ui/themes/`, embedded only as ordinary project-owned files.
+
+| Variants | Origin |
+|---|---|
+| Default Light and Dark, Tokyo Night and Storm, Catppuccin Latte and Mocha | project themes |
+| Ethereal, Everforest, Gruvbox, Hackerman, Nord, Retro 82 | semantic adaptations of the themes in the MIT-licensed [Omarchy repository](https://github.com/basecamp/omarchy/tree/master/themes) |
+| Hermarchy | adapted from [Archer Clawbot's Hermarchy](https://github.com/archer-clawbot/omarchy-hermarchy-theme), MIT |
+| Aetheria | adapted from [Dizziee's Aetheria](https://github.com/JJDizz1L/aetheria), MIT |
+| Futurism | an original palette inspired by [Bjarne Øverli's Futurism](https://github.com/bjarneo/omarchy-futurism-theme); no source code or artwork from it is redistributed |
+
+All bundled palettes contain colors only and satisfy section 4. Source roles
+are translated into the semantic roles rather than copied mechanically: error,
+warning, success, focus and their foreground pairs keep their meaning and stay
+readable. Where a source palette violates a semantic rule (for example an
+accent and a warning of the same hue), the adaptation adjusts the status color
+and records why in a comment. Each adapted file repeats its short attribution
+at the top so it survives copying into an application; theme identity and
+runtime tokens carry no provenance metadata. Theme Studio renders the
+canonical component specimen under any variant.

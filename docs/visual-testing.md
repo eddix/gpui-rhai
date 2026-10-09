@@ -63,9 +63,8 @@ declared viewport sizes across the main matrix:
 
 Capture Theme Studio across all 15 bundled themes, plus its fixed open-Menu
 state, Arabic RTL directional Icon state, reduced-motion pointer-triggered
-Tooltip state, and New/Open/Import/Save editing paths. The unlocked 2026-09-05
-manual pass verified its independent editor/specimen scrolling and the shared
-specimen; checked-in Studio PNG expansion remains separate baseline work.
+Tooltip state, and New/Open/Import/Save editing paths. Theme Studio has no
+checked-in baselines yet.
 Capture `embedded_views` once with the small view's Combobox open and duplicate
 local Toast IDs visible in the shared Host queue.
 The Gallery baselines are rendered offscreen: `scripts/capture-macos-gallery-baselines.sh`
@@ -153,17 +152,10 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
 ## Automation split
 
 `scripts/release-smoke.sh` is the unattended local macOS gate: it verifies that
-all examples enter an event loop without panic. The hosted private-repository
-workflow intentionally runs its portable checks on a standard Linux runner,
-avoids the higher macOS multiplier, and cancels superseded runs. Private hosted
-Linux still consumes the account's included Actions allowance and will not
-start after that allowance is exhausted when spending is disabled. A public
-repository or a configured self-hosted runner is the permanently
-no-GitHub-charge path. See GitHub's
-[Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
-and [self-hosted runner](https://docs.github.com/en/actions/concepts/runners/self-hosted-runners)
-documentation. Screenshot and input certification requires an unlocked
-interactive Mac session. Computer Use must inspect fresh accessibility state
+all examples enter an event loop without panic. The hosted workflow runs its
+portable checks on a standard Linux runner and cancels superseded runs.
+Screenshot and input certification requires an unlocked interactive Mac
+session. Computer Use must inspect fresh accessibility state
 after every action and must not bypass the lock screen.
 
 `tests/native-keyboard` separately uses GPUI's non-release `test-support` window
@@ -176,8 +168,8 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The independent workspace currently has 65 tests spanning GPUI integration,
-native document/motion behavior, and embedded example preparation guards. It contains no
+The independent workspace spans GPUI integration, native document and motion
+behavior, and embedded example preparation guards. It contains no
 deleted Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
 The launch additions cover CommandDialog autofocus/filter/Enter execution,

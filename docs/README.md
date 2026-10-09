@@ -32,7 +32,7 @@ Complex component contracts: [Table](components/table.md),
 ## Build the interface
 
 - [Typed Style surface](style.md) and [component stylesheets](component-styles.md)
-- [Theming](theming.md) and [bundled themes](bundled-themes.md)
+- [Theming](theming.md) and [bundled themes](design/themes.md#6-bundled-themes)
 - [Locale and RTL](locale-and-rtl.md)
 - [Assets and fonts](assets.md) and [refreshing Host-owned images](asset-refresh-host.md)
 - [Retained Canvas scenes](canvas.md)
