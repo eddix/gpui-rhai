@@ -45,6 +45,7 @@ definitions for the runtime API.
 
 A view is a Rhai function that returns nodes; callbacks name functions:
 
+<!-- check: pass -->
 ```rhai
 import "components/button" as button;
 

@@ -33,6 +33,7 @@ Complex component contracts: [Table](components/table.md),
 
 ## Build the interface
 
+- [Rhai for gpui-rhai](rhai.md): the language as views use it, and the mistakes `check` catches
 - [Typed Style surface](style.md) and [component stylesheets](component-styles.md)
 - [Theming](theming.md) and [bundled themes](design/themes.md#6-bundled-themes)
 - [Locale and RTL](locale-and-rtl.md)

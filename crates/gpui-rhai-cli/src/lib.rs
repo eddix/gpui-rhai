@@ -23,6 +23,8 @@ use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
 pub mod acceptance;
+#[cfg(test)]
+mod doc_snippets;
 pub mod gallery;
 pub mod reference;
 pub mod theme_studio;

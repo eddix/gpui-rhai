@@ -206,6 +206,8 @@ and [docs/design/](docs/design/) for the specification.
   test keeps it current and another requires every official item to have a
   `doc`. `gpui-rhai check` requires a purpose comment instead of a `Props:` line
   in component sources.
+- `docs/rhai.md` covers Rhai as gpui-rhai views use it; its snippets are run by
+  the test suite, as is every documentation snippet marked `<!-- check: ... -->`.
 - `gpui-rhai init` makes the project depend on the CLI's own runtime line
   (`gpui-rhai = "0.2"` from a 0.2 CLI); it wrote a fixed `"0.1"`, which cannot
   load the Runtime API 3 components the same CLI copies.

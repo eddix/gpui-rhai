@@ -1322,6 +1322,7 @@ registration and source paths must not leak into release artifacts.
 
 The documentation index is [docs/README.md](docs/README.md). The
 [module reference](docs/reference/README.md) lists the props, events, slots and
-parts of every official module. Start with the architecture and embedding
-guides, then follow the component/theme/performance links relevant to the
-application you are building.
+parts of every official module; [Rhai for gpui-rhai](docs/rhai.md) covers the
+language as views use it. Start with the architecture and embedding guides,
+then follow the component/theme/performance links relevant to the application
+you are building.
