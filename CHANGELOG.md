@@ -224,6 +224,9 @@ and [docs/design/](docs/design/) for the specification.
   pixels, so the panel follows density; the measured height is read after
   layout (#127). A panel mounted open no longer grows in; toggles still
   animate from the current height.
+- Dialogs are as wide as they ask (420px by default): the 90% cap resolved
+  against the panel's own wrapper, so every dialog was 10% narrower. The
+  overlay now caps a dialog at 90% of the window.
 
 ## 0.1.8 - 2026-10-04
 

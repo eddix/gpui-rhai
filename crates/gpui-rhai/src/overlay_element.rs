@@ -790,6 +790,12 @@ impl ScriptOverlayElement {
         if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
             panel = panel.w_full();
         }
+        // The wrapper takes its content's width, so a percentage width inside it would
+        // resolve against itself; it caps the dialog at 90% of the backdrop instead, and the
+        // content may fill it (`max_width(relative(1.0))`).
+        if self.spec.kind == OverlayKind::Dialog {
+            panel = panel.max_w(relative(0.9));
+        }
 
         let overlay = if matches!(self.spec.kind, OverlayKind::Dialog | OverlayKind::Sheet) {
             self.build_modal_backdrop(panel, viewport)

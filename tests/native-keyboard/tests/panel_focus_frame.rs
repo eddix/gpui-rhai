@@ -217,3 +217,29 @@ fn a_dialog_opened_by_a_click_shows_the_frame_without_another_input(cx: &mut Tes
         "the frame shows on the frame after the dialog opened: {found:?}"
     );
 }
+
+#[gpui::test]
+fn a_dialog_is_as_wide_as_it_asks_and_at_most_ninety_percent_of_the_window(
+    cx: &mut TestAppContext,
+) {
+    // The panel asks for 420px; the overlay caps it at 90% of the backdrop. Before, the
+    // cap resolved against the panel's own wrapper and every dialog was 378px.
+    let (mut visual, view) = mount(
+        cx,
+        r#"dialog::Dialog(#{ key: "confirm", open: true, title: "Confirm",
+            content: text("Continue?") })"#,
+    );
+    let width = panel_width(&mut visual, &view, "dialog");
+    assert!((width - 420.0).abs() < 0.5, "dialog width {width}");
+    let (mut visual, view) = mount(
+        cx,
+        r#"dialog::Dialog(#{ key: "wide", open: true, title: "Wide",
+            content: text("Continue?"), part_styles: #{ panel: style().width(px(4000)) } })"#,
+    );
+    let width = panel_width(&mut visual, &view, "dialog");
+    let viewport = visual.update(|window, _| f32::from(window.viewport_size().width));
+    assert!(
+        (width - viewport * 0.9).abs() < 1.0,
+        "a dialog wider than the window: {width} in a {viewport} window"
+    );
+}

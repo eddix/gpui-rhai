@@ -125,7 +125,8 @@ fn render_Dialog(ctx, props) {
             style()
                 .relative()
                 .width(px(420))
-                .max_width(relative(0.9))
+                // The overlay caps the panel at 90% of the window; it may fill that.
+                .max_width(relative(1.0))
                 .padding(theme_spacing("xl"))
                 .gap(theme_length("space.group"))
                 .radius(theme_radius("lg"))

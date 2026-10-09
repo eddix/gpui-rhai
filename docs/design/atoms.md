@@ -343,7 +343,8 @@ Things you type into have a frame; things you press are blocks.
   hairline and `radius.lg`; no shadow. Menus and field panels align to their
   trigger's start edge (`align: "start"`, RTL-aware); Tooltips center.
 - Dialog and Sheet pad with `spacing.xl`; actions are separated by space, not
-  a rule. Sheets draw their hairline only on the edge facing the window.
+  a rule. Sheets draw their hairline only on the edge facing the window. A
+  Dialog is 420 wide, at most 90% of the window.
 - Tooltip inverts ink and paper (`text_primary` block, `surface` text, caption)
   and can show an action's key legend (`action` or `shortcut`).
 - Card is a `surface_raised` block (`variant: "outline"` for cards placed on a
