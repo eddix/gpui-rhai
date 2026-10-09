@@ -15,8 +15,8 @@
 */
 // Dialog presents controlled modal content through the native overlay layer.
 //
-// Props: key, open, title, content/actions slots, dismissal policy,
-//        on_open_change.
+// Props: key, open, title (also the accessible name), title_visible (default true),
+//        content/actions slots, dismissal policy, on_open_change.
 // Events: open_change(bool). State: controlled by the caller.
 // Parts: root, backdrop, panel, title, content, actions, focus_frame.
 // Example: Dialog(#{ key: "confirm", open: true, title: "Confirm", content: text("Continue?") })
@@ -40,6 +40,8 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
             title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            title_visible: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true } },
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             actions: #{
                 schema: #{ type: "array", items: #{ type: "node" }, max_items: 8 },
@@ -103,14 +105,16 @@ fn forward_open_change(ctx, open) {
 }
 
 fn render_Dialog(ctx, props) {
-    let children = [
-        text(props.title).with_style(ctx.component_style("title",
+    let children = [];
+    // A hidden title still names the dialog (accessibility_label below).
+    if optional_bool(props, "title_visible", true) {
+        children.push(text(props.title).with_style(ctx.component_style("title",
             style().typography("title")
                 .text_color(theme_color("text_primary"))
-        )),
-        props.content.with_style(ctx.component_style("content",
-            style().typography("body"))),
-    ];
+        )));
+    }
+    children.push(props.content.with_style(ctx.component_style("content",
+        style().typography("body"))));
     if "actions" in props && props.actions != () {
         children.push(
             row(props.actions)

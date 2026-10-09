@@ -344,7 +344,9 @@ Things you type into have a frame; things you press are blocks.
   trigger's start edge (`align: "start"`, RTL-aware); Tooltips center.
 - Dialog and Sheet pad with `spacing.xl`; actions are separated by space, not
   a rule. Sheets draw their hairline only on the edge facing the window. A
-  Dialog is 420 wide, at most 90% of the window.
+  Dialog is 420 wide, at most 90% of the window; `title_visible: false` hides
+  its title, which still names it (a command palette's search field is its
+  header).
 - Tooltip inverts ink and paper (`text_primary` block, `surface` text, caption)
   and can show an action's key legend (`action` or `shortcut`).
 - Card is a `surface_raised` block (`variant: "outline"` for cards placed on a

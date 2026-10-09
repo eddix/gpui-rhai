@@ -11,10 +11,16 @@
 }
 */
 // Controlled modal presentation of Command without registering a global shortcut.
-// Props: controlled Command props plus open, close_on_action, and on_open_change.
-// Events: query_change(string), active_change(string), action(string), and open_change(bool).
+// Props: controlled Command props plus open, close_on_action, on_open_change,
+//        title_visible (default true; the label always names the dialog), width,
+//        on_escape, command_part_styles and dialog_part_styles.
+// Events: query_change(string), active_change(string), action(string), open_change(bool),
+//         and escape(null) when on_escape is set.
 // State: caller owns open, query, and active_value.
-// Parts: root, dialog, command.
+// Parts: root, dialog, command. `command_part_styles` and `dialog_part_styles` reach the
+// inner Command (search, item, item_active, ...) and Dialog (panel, title, ...) parts.
+// With `on_escape` the dialog no longer closes on Escape: the caller sees it first and
+// closes through `open`, so a palette with levels can go back one level instead.
 // Example: CommandDialog(#{ key: "palette", open: open, query: query, active_value: active, label: "Commands", items: items, on_open_change: Fn("opened"), on_query_change: Fn("queried"), on_active_change: Fn("preview"), on_action: Fn("run") })
 
 import "components/command" as command;
@@ -59,6 +65,14 @@ define_component(#{
                 "default": #{ type: "bool", value: false } },
             close_on_action: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
+            title_visible: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true } },
+            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
+            command_part_styles: #{ schema: #{ type: "map", values: #{ type: "style" } },
+                required: false, sensitive: false, "default": #{ type: "map", value: #{} } },
+            dialog_part_styles: #{ schema: #{ type: "map", values: #{ type: "style" } },
+                required: false, sensitive: false, "default": #{ type: "map", value: #{} } },
+            on_escape: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
@@ -66,7 +80,7 @@ define_component(#{
         },
         state: #{ fields: #{} }, events: #{ query_change: #{ payload: #{ type: "string" } },
             active_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } },
-            open_change: #{ payload: #{ type: "bool" } } },
+            open_change: #{ payload: #{ type: "bool" } }, escape: #{ payload: #{ type: "null" } } },
         slots: #{}, parts: ["root", "dialog", "command"],
     },
     render: Fn("render_CommandDialog")
@@ -76,6 +90,7 @@ fn CommandDialog(props) { render_component("components/command_dialog", props) }
 fn query_action(ctx, query) { ctx.emit("query_change", query); }
 fn active_action(ctx, value) { ctx.emit("active_change", value); }
 fn open_action(ctx, open) { ctx.emit("open_change", open); }
+fn escape_action(ctx, payload) { ctx.emit("escape", ()); }
 fn command_action(close, ctx, value) {
     ctx.emit("action", value);
     if close { ctx.emit("open_change", false); }
@@ -92,9 +107,19 @@ fn render_CommandDialog(ctx, props) {
         autofocus: true,
         on_query_change: Fn("query_action"),
         on_active_change: Fn("active_action"),
-        on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)) })
+        on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)),
+        part_styles: prop_or(props, "command_part_styles", #{}) })
         .with_style(ctx.component_style("command", style().border(px(0)).padding_bottom(px(0))));
+    let escape = "on_escape" in props && props.on_escape != ();
+    if escape { list = list.on_key_value("escape", Fn("escape_action"), ()); }
+    let dialog_parts = prop_or(props, "dialog_part_styles", #{});
+    if "width" in props && props.width != () {
+        let panel = if "panel" in dialog_parts { dialog_parts.panel } else { style() };
+        dialog_parts.panel = panel.width(props.width);
+    }
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.label,
-        content: list, initial_focus: "first", on_open_change: Fn("open_action") })
+        title_visible: prop_or(props, "title_visible", true), dismiss_on_escape: !escape,
+        content: list, initial_focus: "first", on_open_change: Fn("open_action"),
+        part_styles: dialog_parts })
         .with_style(ctx.component_style("dialog", ctx.component_style("root", style())))
 }

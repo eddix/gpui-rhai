@@ -227,6 +227,12 @@ and [docs/design/](docs/design/) for the specification.
 - Dialogs are as wide as they ask (420px by default): the 90% cap resolved
   against the panel's own wrapper, so every dialog was 10% narrower. The
   overlay now caps a dialog at 90% of the window.
+- CommandDialog can replace a hand-built palette (#120): `title_visible:
+  false` hides the title (Dialog gains the same prop; the label still names
+  the dialog), `on_escape` receives Escape before the dialog closes so a
+  palette with levels can go back one, `width` sets the panel width, and
+  `command_part_styles` / `dialog_part_styles` reach the inner Command and
+  Dialog parts.
 
 ## 0.1.8 - 2026-10-04
 
