@@ -1,8 +1,9 @@
 //! Composition audit coverage and false positives found by the oh-my-byted
 //! upgrade: content behind an error boundary and in virtual lists is audited
 //! (#112); unrelated panes, a Badge's own gap, and content led by a view
-//! switcher or a heading drawn elsewhere are not reported (#114). Each false
-//! positive case has a positive control that must still be reported.
+//! switcher or a heading drawn elsewhere are not reported (#114); an absolutely
+//! positioned focus frame does not stack with the text of a panel it is drawn over.
+//! Each false positive case has a positive control that must still be reported.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -258,5 +259,30 @@ fn the_panes_of_a_split_are_not_one_stack(cx: &mut TestAppContext) {
     assert!(
         column.iter().any(|f| f.starts_with("text-edge-misaligned")),
         "{column:?}"
+    );
+}
+
+#[gpui::test]
+fn an_absolute_frame_does_not_stack_with_the_text_under_it(cx: &mut TestAppContext) {
+    // A panel's focus frame overhangs its hairline by 1px (left -1, a 2px border), so its
+    // edge sits 1px from a full-width line inside the panel, as with an embedded search.
+    let panel = |position: &str| {
+        format!(
+            r#"column([
+                row([text("Type a command")]).with_style(style().height(px(32)).border_bottom(px(1))),
+                row([]).with_style(style().{position}.left(offset_px(-1)).top(px(0))
+                    .width(px(40)).height(px(40)).border(px(2)).border_color(rgba(0x00000000))),
+            ]).with_style(style().relative().width(px(300)).border(px(1)))"#
+        )
+    };
+    let framed = audit(cx, &panel("absolute()"));
+    assert!(framed.is_empty(), "{framed:?}");
+    // The positive control: the same box in flow is a 1px near miss.
+    let in_flow = audit(cx, &panel("relative()"));
+    assert!(
+        in_flow
+            .iter()
+            .any(|f| f.starts_with("text-edge-misaligned")),
+        "{in_flow:?}"
     );
 }

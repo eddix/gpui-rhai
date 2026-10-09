@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     Align, ColorResolver, Environment, FlexDirection, GeometryBounds, GeometryRegistry,
-    InteractionState, Justify, Length, NodeId, RetainedUiTree, Rgba8, StyleProperties, Symbol,
-    UiNode, UiNodeKind, UiValue,
+    InteractionState, Justify, Length, NodeId, PositionMode, RetainedUiTree, Rgba8,
+    StyleProperties, Symbol, UiNode, UiNodeKind, UiValue,
 };
 
 /// One composition rule.
@@ -531,6 +531,11 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
             summary.text_start = bounds
                 .map(|bounds| self.start_edge(bounds))
                 .or(summary.text_start);
+        }
+        // An absolutely positioned node (a focus frame drawn over a panel's edge, an
+        // indicator) is out of flow: it does not stack with its siblings' text.
+        if style.position == Some(PositionMode::Absolute) {
+            summary.text_start = None;
         }
         summary
     }
