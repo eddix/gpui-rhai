@@ -9,7 +9,7 @@
   "tokens": [
     "space.group", "space.related", "metrics.inset", "metrics.control", "metrics.statusbar",
     "border", "text_primary", "text_muted", "typography.title",
-    "typography.caption"
+    "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
   "environment": ["density"]
 }
@@ -19,8 +19,10 @@
 //
 // Props: label (required), body (required), title (string or node), actions, toolbar,
 //        footer (status items), fill (default true), inset (default true), bleed,
-//        scroll (default false), external_title (default false).
-// Events/state: none. Parts: root, header, title, actions, body, footer.
+//        scroll (default false), scrollbar (auto|always|hidden, default auto),
+//        external_title (default false).
+// Events/state: none. Parts: root, header, title, actions, body, footer, scrollbar_track,
+//        scrollbar_thumb, scrollbar_thumb_hover.
 // Example: Region(#{ label: "Hosts", title: "Hosts", toolbar: toolbar_node, body: table_node,
 //              footer: [text("128 hosts")] })
 //
@@ -29,8 +31,8 @@
 // reach the region's sides, for tables and lists whose rows carry their own inset: their
 // text then starts on the same edge as the title.
 //
-// `scroll` makes the body scroll vertically when it is taller than the region; the header,
-// toolbar and footer stay put. Leave it off for bodies that scroll themselves (Table,
+// `scroll` makes the body scroll vertically when it is taller than the region, with the same
+// overlay scrollbar as ScrollArea (`scrollbar`); the header, toolbar and footer stay put. Leave it off for bodies that scroll themselves (Table,
 // VirtualList). `external_title` says the region's title is drawn elsewhere, in a TitleBar
 // or a tab: the region takes no `title`, and its parts are not held to a missing title.
 
@@ -42,7 +44,7 @@ define_component(#{
         tokens: [
             "space.group", "space.related", "metrics.inset", "metrics.control",
             "metrics.statusbar", "border", "text_primary", "text_muted",
-            "typography.title", "typography.caption"
+            "typography.title", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
         environment: ["density"],
     },
@@ -65,6 +67,8 @@ define_component(#{
                 "default": #{ type: "bool", value: false } },
             scroll: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
+            scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] },
+                required: false, sensitive: false, "default": #{ type: "string", value: "auto" } },
             external_title: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
         },
@@ -73,7 +77,8 @@ define_component(#{
             actions: #{ required: false, multiple: true }, toolbar: #{ required: false, multiple: false },
             body: #{ required: true, multiple: false }, footer: #{ required: false, multiple: true },
         },
-        parts: ["root", "header", "title", "actions", "body", "footer"],
+        parts: ["root", "header", "title", "actions", "body", "footer", "scrollbar_track",
+            "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Region")
 });
@@ -124,10 +129,24 @@ fn render_Region(ctx, props) {
     }
     let body_style = style().flex_col().flex_grow().min_height(px(0)).min_width(px(0));
     if !bleed { body_style = body_style.padding_x(side); }
-    // The body never draws or takes input outside its box; `scroll` makes it a viewport.
-    if "scroll" in props && props.scroll { body_style = body_style.overflow_y_scroll(); }
+    // The body never draws or takes input outside its box; `scroll` makes it a viewport with
+    // ScrollArea's overlay scrollbar.
+    let scroll = "scroll" in props && props.scroll;
+    if scroll { body_style = body_style.overflow_y_scroll().relative(); }
     else { body_style = body_style.clip(); }
-    children.push(column([props.body]).with_style(ctx.component_style("body", body_style)));
+    let body = column([props.body]).with_style(ctx.component_style("body", body_style));
+    if scroll {
+        let visibility = if "scrollbar" in props { props.scrollbar } else { "auto" };
+        body = body
+            .with_part_style("scrollbar_track", ctx.component_style("scrollbar_track",
+                style().background(rgba(0x00000000))))
+            .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb",
+                style().background(theme_color("scrollbar.thumb"))))
+            .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover",
+                style().background(theme_color("scrollbar.thumb_hover"))))
+            .scrollbars("hidden", visibility);
+    }
+    children.push(body);
     let footer = if "footer" in props { props.footer } else { [] };
     if footer.len > 0 {
         let footer_row = row(footer).with_style(ctx.component_style("footer", footer_style()));

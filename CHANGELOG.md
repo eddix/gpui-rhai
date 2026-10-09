@@ -216,6 +216,9 @@ and [docs/design/](docs/design/) for the specification.
   vertical fields with a description (#126).
 - SplitPane's panes are separate regions for the composition audit: no
   text-edge, row-height or mixed-type comparison crosses them (#114).
+- Region's scrolling body draws ScrollArea's overlay scrollbar, so it can be
+  seen and dragged; `scrollbar` (`auto`, `always`, `hidden`) and the
+  `scrollbar_*` parts style it like ScrollArea's (#121).
 
 ## 0.1.8 - 2026-10-04
 

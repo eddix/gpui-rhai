@@ -129,9 +129,10 @@ prefer the aliases over raw steps so the intent is readable.
   does not fit. In `filters`, `width: relative(1.0)` has nothing to resolve
   against: the filter group is as wide as its content.
 - **A long body scrolls only when asked.** A Region's body fills the region
-  and clips; `scroll: true` makes it scroll while the header, toolbar and
-  footer stay put. Tables and virtual lists scroll themselves; leave it off
-  for them.
+  and clips; `scroll: true` makes it scroll, with ScrollArea's overlay
+  scrollbar (`scrollbar: "auto" | "always" | "hidden"`), while the header,
+  toolbar and footer stay put. Tables and virtual lists scroll themselves;
+  leave it off for them.
 
 ## 4. Hierarchy
 
