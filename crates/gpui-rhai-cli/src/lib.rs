@@ -254,7 +254,7 @@ impl Project {
             let mut features = Array::new();
             features.push("dev-reload");
             let mut dependency = InlineTable::new();
-            dependency.insert("version", Value::from("0.1"));
+            dependency.insert("version", Value::from(runtime_requirement()));
             dependency.insert("features", Value::Array(features));
             cargo["dependencies"]["gpui-rhai"] = Item::Value(Value::InlineTable(dependency));
         }
@@ -1704,6 +1704,16 @@ fn starter_ui() -> String {
     .to_owned()
 }
 
+/// The runtime line a generated project depends on: the CLI's own major and
+/// minor version, since the CLI, runtime and registry are released together.
+fn runtime_requirement() -> String {
+    format!(
+        "{}.{}",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR")
+    )
+}
+
 fn app_manifest_source() -> Result<String, ProjectError> {
     Ok(toml::to_string_pretty(&AppManifest {
         entry: ModuleId::parse("main")?,
@@ -2302,6 +2312,25 @@ mod tests {
         assert!(!directory.path().join("ui/main.rhai").exists());
         drop(plan);
         assert!(!directory.path().join("ui/main.rhai").exists());
+    }
+
+    #[test]
+    fn init_depends_on_the_runtime_line_of_this_cli() {
+        let directory = fixture();
+        Project::new(directory.path())
+            .plan_init()
+            .unwrap()
+            .apply()
+            .unwrap();
+        let cargo: toml::Value =
+            toml::from_str(&std::fs::read_to_string(directory.path().join("Cargo.toml")).unwrap())
+                .unwrap();
+        // A 0.2 CLI copies Runtime API 3 components; a 0.1 runtime cannot load them.
+        let minor = env!("CARGO_PKG_VERSION").rsplit_once('.').unwrap().0;
+        assert_eq!(
+            cargo["dependencies"]["gpui-rhai"]["version"].as_str(),
+            Some(minor)
+        );
     }
 
     #[test]

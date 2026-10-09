@@ -193,6 +193,9 @@ and [docs/design/](docs/design/) for the specification.
   clears a capsule's ends in the round corner style, the same in every corner
   style. Textarea's vertical padding becomes `metrics.multiline_pad`. Button,
   Tabs and ToggleGroup keep `metrics.control_pad`.
+- `gpui-rhai init` makes the project depend on the CLI's own runtime line
+  (`gpui-rhai = "0.2"` from a 0.2 CLI); it wrote a fixed `"0.1"`, which cannot
+  load the Runtime API 3 components the same CLI copies.
 - SplitPane draws one line at the separator, the native one down the middle of
   the 8px grab zone; the zone's start edge drew a second, full-length line
   beside it. Collapsing one pane keeps the other mounted (its key no longer
