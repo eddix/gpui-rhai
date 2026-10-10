@@ -338,6 +338,20 @@ and [docs/design/](docs/design/) for the specification.
 - Store, locale, viewport, native collection and document reads register a
   dependency only while rendering; a read in a callback scheduled a needless
   rerender.
+- `self_start` and `self_end` keep their place in an RTL row: a row's cross
+  axis is vertical, so they mirror only across a column. A vertical Tabs list
+  sat at the bottom in Arabic, and so did a Checkbox, Switch or Radio in a
+  taller RTL row.
+- A merge gives the result of chaining the overlay: `padding(x)`, `margin(x)`,
+  `border(x)` and `radius(x)` in a stylesheet rule or `part_styles` clear the
+  part's logical edges as they do in a chain (`prefix: style().padding(px(0))`
+  left InputGroup's start padding in place), and a merged `background` replaces
+  a gradient and the reverse.
+- The Style documentation states what the code does: hover, active and focus
+  are paint refinements in GPUI's order (focus, then hover, then active),
+  `relative` lengths do not apply to borders, radii and type sizes, an unknown
+  typography role or token applies nothing, and a focused node's border takes
+  `focus_ring` unless its focus style sets a border color.
 
 ## 0.1.8 - 2026-10-04
 

@@ -202,7 +202,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "focus(_: &mut Style, _: Style) -> Style",
         params: &["style"],
-        doc: "Paints the nested style's background, border color (default `focus_ring`), text color and opacity while the node has keyboard focus.",
+        doc: "Paints the nested style's background, border color, text color and opacity while the node has keyboard focus. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width.",
     },
     ScriptFnDoc {
         signature: "focus_within(_: &mut Style, _: Style) -> Style",
@@ -732,12 +732,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "self_end(_: &mut Style) -> Style",
         params: &[],
-        doc: "Aligns this node to the end of its parent's cross axis, overriding `items_*`; start and end swap in RTL.",
+        doc: "Aligns this node to the end of its parent's cross axis, overriding `items_*`: the bottom in a row, the logical end in a column (left in RTL).",
     },
     ScriptFnDoc {
         signature: "self_start(_: &mut Style) -> Style",
         params: &[],
-        doc: "Aligns this node to the start of its parent's cross axis, overriding `items_*`; start and end swap in RTL.",
+        doc: "Aligns this node to the start of its parent's cross axis, overriding `items_*`: the top in a row, the logical start in a column (right in RTL).",
     },
     ScriptFnDoc {
         signature: "self_stretch(_: &mut Style) -> Style",

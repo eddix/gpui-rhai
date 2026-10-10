@@ -1601,6 +1601,11 @@ struct RenderEnvironment<'a, C> {
     /// This node stretches its own children, by its resolved style (interaction
     /// states included), so the hint follows what is actually laid out.
     stretch_children: bool,
+    /// The parent is a row, so this node's cross axis is vertical and
+    /// `self_start`/`self_end` keep their place in RTL; elsewhere they swap.
+    row_parent: bool,
+    /// This node lays its children out in a row.
+    row_children: bool,
     /// The overlays whose content this node is in, innermost first, so a
     /// `parent` key names the nearest enclosing overlay with that key.
     overlay_scope: Option<&'a OverlayScope<'a>>,
@@ -1638,6 +1643,8 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
             stretch_parent: false,
             stretch_children: style.direction != Some(FlexDirection::Row)
                 && matches!(style.align, None | Some(Align::Stretch)),
+            row_parent: false,
+            row_children: style.direction == Some(FlexDirection::Row),
             ..self.with_resolved_text_color(style)
         }
     }
@@ -1815,6 +1822,8 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            row_parent: false,
+            row_children: false,
             overlay_scope: None,
             hover_group: None,
         };
@@ -1901,6 +1910,8 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            row_parent: false,
+            row_children: false,
             overlay_scope: None,
             hover_group: None,
         };
@@ -1980,6 +1991,8 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            row_parent: false,
+            row_children: false,
             overlay_scope: None,
             hover_group: None,
         };
@@ -2051,6 +2064,8 @@ impl GpuiNodeRenderer {
             window_drag: false,
             stretch_parent: false,
             stretch_children: false,
+            row_parent: false,
+            row_children: false,
             overlay_scope: None,
             hover_group: None,
         };
@@ -2180,6 +2195,8 @@ impl GpuiNodeRenderer {
             window_drag: resources.window_drag,
             stretch_parent: false,
             stretch_children: false,
+            row_parent: false,
+            row_children: false,
             overlay_scope: None,
             hover_group: None,
         };
@@ -2251,6 +2268,8 @@ impl GpuiNodeRenderer {
             window_drag: resources.window_drag,
             stretch_parent: false,
             stretch_children: false,
+            row_parent: false,
+            row_children: false,
             overlay_scope: None,
             hover_group: None,
         };
@@ -2308,6 +2327,8 @@ impl GpuiNodeRenderer {
             window_drag: resources.window_drag,
             stretch_parent: false,
             stretch_children: false,
+            row_parent: false,
+            row_children: false,
             overlay_scope: None,
             hover_group: None,
         };
@@ -2366,6 +2387,10 @@ impl GpuiNodeRenderer {
                 environment.stretch_parent && environment.direction == TextDirection::RightToLeft,
             ),
             environment.stretch_parent,
+        );
+        mirror_self_alignment(
+            &mut resolved_style,
+            !environment.row_parent && environment.direction == TextDirection::RightToLeft,
         );
         normalize_text_content_layout(node, &mut resolved_style);
         let mut local_environment = environment.below(&resolved_style);
@@ -2711,6 +2736,7 @@ impl GpuiNodeRenderer {
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 let child_environment = RenderEnvironment {
                     stretch_parent: environment.stretch_children,
+                    row_parent: environment.row_children,
                     ..*environment
                 };
                 let children = render_flattened_children(
@@ -4137,6 +4163,18 @@ fn native_overlay_element<C: ColorResolver>(
 
 /// In an RTL stretching column, a child with a definite width belongs on the
 /// start (right) edge; `apply_flex_alignment` mirrors `Start` to the right.
+/// Swap `self_start` and `self_end` when `mirror`: they name the parent's cross
+/// axis, which runs along the text except in a row (a row's is vertical).
+fn mirror_self_alignment(style: &mut StyleProperties, mirror: bool) {
+    if mirror {
+        style.align_self = style.align_self.map(|align| match align {
+            Align::Start => Align::End,
+            Align::End => Align::Start,
+            other => other,
+        });
+    }
+}
+
 fn rtl_start_edge(mut style: StyleProperties, rtl_stretch_parent: bool) -> StyleProperties {
     if rtl_stretch_parent && style.align_self.is_none() && style.width.is_some() {
         style.align_self = Some(Align::Start);
@@ -5569,7 +5607,10 @@ pub(crate) fn apply_style_override_in(
     colors: &impl ColorResolver,
     direction: TextDirection,
 ) -> Div {
-    apply_style(element, &style.resolve(state), colors, direction)
+    let mut style = style.resolve(state);
+    // A part does not know its parent's axis; its self alignment mirrors in RTL.
+    mirror_self_alignment(&mut style, direction == TextDirection::RightToLeft);
+    apply_style(element, &style, colors, direction)
 }
 
 /// Center a part on an anchor point: a zero-size flex box whose overflowing
@@ -5671,15 +5712,6 @@ fn apply_flex_alignment(
         };
     }
     if let Some(align) = style.align_self {
-        let align = if text_direction == TextDirection::RightToLeft {
-            match align {
-                Align::Start => Align::End,
-                Align::End => Align::Start,
-                other => other,
-            }
-        } else {
-            align
-        };
         element.style().align_self = Some(match align {
             Align::Start => GpuiAlignSelf::Start,
             Align::Center => GpuiAlignSelf::Center,

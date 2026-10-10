@@ -422,7 +422,10 @@ layout shift:
 | `.focus_within(style)` | the node or a descendant has focus | InputGroup frame |
 | `.group_hover(style)` | the nearest ancestor declaring a `.hover` style is hovered (paint only: background, border, text, opacity) | TabBar close button and dirty mark |
 
-A focus owner that needs no visual of its own declares `.focus(style())`.
+A focus owner that needs no visual of its own declares `.focus(style())`. Every
+focused node's border takes `focus_ring` unless its focus style sets a border
+color, which shows only where the node has a border width: a focus owner that
+draws a border keeps its color with `.focus(style().border_color(<idle color>))`.
 The one field without a focus frame is the embedded search line (section 7):
 it holds focus for as long as its panel is open, so its caret shows focus.
 

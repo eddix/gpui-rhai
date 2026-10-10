@@ -383,7 +383,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.flex_shrink(shrink: bool) -> Style` | Sets whether the node may shrink below its flex basis when space runs out: `true` lets it, `false` forbids it. |
 | `style.flex_wrap() -> Style` | Lets a flex container wrap its children onto further lines. |
 | `style.flex_wrap_reverse() -> Style` | Lets a flex container wrap its children onto further lines, stacked in reverse cross-axis order. |
-| `style.focus(style: Style) -> Style` | Paints the nested style's background, border color (default `focus_ring`), text color and opacity while the node has keyboard focus. |
+| `style.focus(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the node has keyboard focus. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width. |
 | `style.focus_within(style: Style) -> Style` | Merges the nested style over the node while it or any descendant has keyboard focus. |
 | `style.font_fallbacks(families: Array) -> Style` | Sets the ordered fallback font families, 1 to 16 unique non-empty names, used for glyphs the primary font lacks. |
 | `style.font_family(family: String) -> Style` | Sets the font family by name, a system or registered font of at most 256 bytes; overrides the typography role's family. |
@@ -489,8 +489,8 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.right(inset: SignedLength) -> Style` | Sets the right inset of a positioned node to a signed `offset_*` length, which may be negative; `inset_start`/`inset_end` win there. |
 | `style.row_span(span: int) -> Style` | Makes a grid item span `span` rows, from 1 to 1024. |
 | `style.self_center() -> Style` | Centers this node on its parent's cross axis, overriding the parent's `items_*`. |
-| `style.self_end() -> Style` | Aligns this node to the end of its parent's cross axis, overriding `items_*`; start and end swap in RTL. |
-| `style.self_start() -> Style` | Aligns this node to the start of its parent's cross axis, overriding `items_*`; start and end swap in RTL. |
+| `style.self_end() -> Style` | Aligns this node to the end of its parent's cross axis, overriding `items_*`: the bottom in a row, the logical end in a column (left in RTL). |
+| `style.self_start() -> Style` | Aligns this node to the start of its parent's cross axis, overriding `items_*`: the top in a row, the logical start in a column (right in RTL). |
 | `style.self_stretch() -> Style` | Stretches this node across its parent's cross axis, overriding the parent's `items_*`. |
 | `style.shadow(shadow: ShadowSpec) -> Style` | Sets one box shadow from `shadow(#{x, y, blur, spread, color})`, in logical pixels, replacing an earlier one. |
 | `style.text_center() -> Style` | Centers text horizontally. |

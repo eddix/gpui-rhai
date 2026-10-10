@@ -255,3 +255,49 @@ fn a_signal_selected_style_stretches_like_the_same_static_style(cx: &mut TestApp
     println!("{text}");
     assert!(!text.contains("differs"), "{text}");
 }
+
+/// `self_start` and `self_end` name the parent's cross axis: a row's is
+/// vertical, so they keep their place in RTL; a column's runs along the text,
+/// so they mirror.
+#[gpui::test]
+fn self_alignment_mirrors_only_across_a_column(cx: &mut TestAppContext) {
+    for locale in ["en", "ar"] {
+        let source = format!(
+            r#"fn init(ctx) {{ ctx.set_locale("{locale}"); }}
+fn cell(id, align) {{
+    box([]).accessibility_role("group").test_id(id).with_style(align.width(px(40)).height(px(20)))
+}}
+fn view(ctx) {{
+    column([
+        row([cell("row-start", style().self_start()), cell("row-end", style().self_end())])
+            .accessibility_role("group").test_id("row")
+            .with_style(style().width(px(300)).height(px(100))),
+        column([cell("column-start", style().self_start()), cell("column-end", style().self_end())])
+            .accessibility_role("group").test_id("column").with_style(style().width(px(300))),
+    ])
+}}"#
+        );
+        let (window, view) = mount(cx, source);
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        let found = laid_out(&mut visual, &view);
+        let offset =
+            |id: &str, parent: &str| (found[id].x - found[parent].x, found[id].y - found[parent].y);
+        assert_eq!(offset("row-start", "row").1, 0.0, "{locale}: row start");
+        assert_eq!(offset("row-end", "row").1, 80.0, "{locale}: row end");
+        let (start, end) = if locale == "ar" {
+            (260.0, 0.0)
+        } else {
+            (0.0, 260.0)
+        };
+        assert_eq!(
+            offset("column-start", "column").0,
+            start,
+            "{locale}: column start"
+        );
+        assert_eq!(
+            offset("column-end", "column").0,
+            end,
+            "{locale}: column end"
+        );
+    }
+}

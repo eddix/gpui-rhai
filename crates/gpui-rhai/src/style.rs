@@ -1004,6 +1004,16 @@ impl EdgeLengths {
     }
 
     fn merge(&mut self, overlay: &Self) {
+        // Every physical edge set, as by `padding(x)`: the logical edges go too,
+        // as they do in a chain.
+        if overlay.top.is_some()
+            && overlay.right.is_some()
+            && overlay.bottom.is_some()
+            && overlay.left.is_some()
+        {
+            self.start = None;
+            self.end = None;
+        }
         merge_option(&mut self.top, overlay.top);
         merge_option(&mut self.right, overlay.right);
         merge_option(&mut self.bottom, overlay.bottom);
@@ -1061,6 +1071,16 @@ impl LayoutEdgeLengths {
     }
 
     fn merge(&mut self, overlay: &Self) {
+        // Every physical edge set, as by `padding(x)`: the logical edges go too,
+        // as they do in a chain.
+        if overlay.top.is_some()
+            && overlay.right.is_some()
+            && overlay.bottom.is_some()
+            && overlay.left.is_some()
+        {
+            self.start = None;
+            self.end = None;
+        }
         merge_option(&mut self.top, overlay.top);
         merge_option(&mut self.right, overlay.right);
         merge_option(&mut self.bottom, overlay.bottom);
@@ -1099,6 +1119,16 @@ impl CornerLengths {
     }
 
     fn merge(&mut self, overlay: &Self) {
+        // Every physical corner set, as by `radius(x)`: the logical corners go
+        // too, as they do in a chain.
+        if overlay.top_left.is_some()
+            && overlay.top_right.is_some()
+            && overlay.bottom_right.is_some()
+            && overlay.bottom_left.is_some()
+        {
+            self.start = None;
+            self.end = None;
+        }
         merge_option(&mut self.top_left, overlay.top_left);
         merge_option(&mut self.top_right, overlay.top_right);
         merge_option(&mut self.bottom_right, overlay.bottom_right);
@@ -1192,7 +1222,14 @@ impl StyleProperties {
         merge_option(&mut self.gap, overlay.gap);
         self.padding.merge(&overlay.padding);
         self.margin.merge(&overlay.margin);
-        merge_option(&mut self.background, overlay.background.clone());
+        // A background and a gradient replace each other, as their setters do.
+        if let Some(gradient) = &overlay.gradient {
+            self.gradient = Some(gradient.clone());
+            self.background = None;
+        } else if let Some(background) = &overlay.background {
+            self.background = Some(background.clone());
+            self.gradient = None;
+        }
         merge_option(&mut self.text_color, overlay.text_color.clone());
         merge_option(&mut self.border_color, overlay.border_color.clone());
         merge_option(&mut self.border_style, overlay.border_style);
@@ -1238,7 +1275,6 @@ impl StyleProperties {
         merge_option(&mut self.text_ellipsis, overlay.text_ellipsis);
         merge_option(&mut self.line_clamp, overlay.line_clamp);
         merge_option(&mut self.shadows, overlay.shadows.clone());
-        merge_option(&mut self.gradient, overlay.gradient.clone());
         merge_option(&mut self.translate_x, overlay.translate_x);
         merge_option(&mut self.translate_y, overlay.translate_y);
     }
@@ -3224,6 +3260,54 @@ mod tests {
 
         let encoded = serde_json::to_string(&weighted).unwrap();
         assert_eq!(serde_json::from_str::<Style>(&encoded).unwrap(), weighted);
+    }
+
+    #[test]
+    fn merging_an_all_edge_setter_replaces_logical_edges_as_a_chain_does() {
+        let base = Style::new()
+            .padding_start(Length::Pixels(4.0))
+            .radius_start(Length::Pixels(6.0))
+            .margin_end(Length::Pixels(2.0))
+            .border_start(Length::Pixels(1.0));
+        let overlay = Style::new()
+            .padding(Length::Pixels(20.0))
+            .radius(Length::Pixels(0.0))
+            .margin(Length::Pixels(0.0))
+            .border(Length::Pixels(3.0));
+        let chained = base
+            .clone()
+            .padding(Length::Pixels(20.0))
+            .radius(Length::Pixels(0.0))
+            .margin(Length::Pixels(0.0))
+            .border(Length::Pixels(3.0));
+        assert_eq!(base.clone().merged(&overlay).base, chained.base);
+        // One physical edge leaves the logical edge in place, in a chain and in a merge.
+        let one_edge = Style::new().padding_left(Length::Pixels(20.0));
+        assert_eq!(
+            base.clone().merged(&one_edge).base.padding.start,
+            Some(Length::Pixels(4.0))
+        );
+    }
+
+    #[test]
+    fn merging_a_background_replaces_a_gradient_and_back() {
+        let gradient = LinearGradientSpec::new(
+            90.0,
+            ColorValue::Literal(Rgba8::from_rgb_hex(0x0011_2233)),
+            ColorValue::Literal(Rgba8::from_rgb_hex(0x0044_5566)),
+        )
+        .unwrap();
+        let solid = ColorValue::Literal(Rgba8::from_rgb_hex(0x00aa_bbcc));
+        let merged = Style::new()
+            .linear_gradient(gradient.clone())
+            .merged(&Style::new().background(solid.clone()));
+        assert_eq!(merged.base.gradient, None);
+        assert_eq!(merged.base.background, Some(solid.clone()));
+        let merged = Style::new()
+            .background(solid)
+            .merged(&Style::new().linear_gradient(gradient.clone()));
+        assert_eq!(merged.base.gradient, Some(gradient));
+        assert_eq!(merged.base.background, None);
     }
 
     #[test]
