@@ -406,6 +406,11 @@ and [docs/design/](docs/design/) for the specification.
   over both (`base → hover → focus → active`). SplitPane's grab zone takes its
   hover and drag fill from the native handle's state signal: its `hover` style
   never applied, since the native handle takes the pointer.
+- Chart with `spec.brush`: a press becomes a brush once the pointer moves past
+  the drag threshold, so a click still selects a datum (`select`, on release).
+- TextInput emits `change` when IME composition commits, as Textarea does, not
+  at every composition step; a controlled render during composition keeps the
+  marked text.
 
 ## 0.1.8 - 2026-10-04
 

@@ -33,6 +33,9 @@ use crate::{
 };
 
 const WHEEL_COMMIT_DELAY: Duration = Duration::from_millis(80);
+/// Pointer travel, in logical pixels, before a press in the plot becomes a
+/// brush; the default `threshold` of the drag primitives.
+const BRUSH_THRESHOLD: f64 = 4.0;
 
 #[derive(Clone, Debug)]
 enum ChartDataInput {
@@ -1362,7 +1365,6 @@ impl ChartEntity {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.brush = Some((start, start));
         let entity = cx.weak_entity();
         let update_entity = entity.clone();
         let update =
@@ -1371,7 +1373,9 @@ impl ChartEntity {
                     if chart.activity != ChartActivity::Active {
                         return false;
                     }
-                    if let Some(end) = chart.local_point(gesture.current()) {
+                    if gesture.moved()
+                        && let Some(end) = chart.local_point(gesture.current())
+                    {
                         chart.brush = Some((start, end));
                         cx.notify();
                     }
@@ -1385,12 +1389,21 @@ impl ChartEntity {
             };
         let finish_entity = entity.clone();
         let finish =
-            move |_: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
                 let _ = finish_entity.update(cx, |chart, cx| {
-                    if let Some((start, end)) = chart.brush.take()
-                        && chart.activity == ChartActivity::Active
-                    {
-                        chart.emit_brush(start, end, window, cx);
+                    let brush = chart.brush.take();
+                    if chart.activity == ChartActivity::Active {
+                        if gesture.moved() {
+                            if let Some((start, end)) = brush {
+                                chart.emit_brush(start, end, window, cx);
+                            }
+                        } else if let Some(mark) = chart.hit_mark_at(gesture.start())
+                            && mark.role == ChartMarkRole::Data
+                        {
+                            // A release before the threshold is a click: it
+                            // selects as it does without a brush.
+                            chart.emit_select(&mark, window, cx);
+                        }
                     }
                     cx.notify();
                 });
@@ -1412,7 +1425,8 @@ impl ChartEntity {
                 update,
                 finish,
                 cancel,
-            ),
+            )
+            .with_threshold(BRUSH_THRESHOLD),
             window,
             cx,
         );
@@ -3373,7 +3387,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_select".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
-                    "Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, a press in the plot starts a brush instead, so only the keys select.",
+                    "Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, the click counts on release, since a press that moves more than 4 pixels starts a brush instead.",
                 ),
             ),
             (
@@ -3385,7 +3399,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_brush_change".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
-                    "Called with the brushed datum keys, references and rectangle when a brush drag ends.",
+                    "Called with the brushed datum keys, references and rectangle when a brush drag ends; a press in the plot becomes a brush once the pointer moves more than 4 pixels.",
                 ),
             ),
             (
@@ -3406,7 +3420,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                 "select".to_owned(),
                 EventSchema {
                     doc: Some(
-                        "Emitted when a data mark is clicked (while `spec.brush` is off) or activated by Enter or Space; the payload identifies the datum and its value."
+                        "Emitted when a data mark is clicked or activated by Enter or Space; the payload identifies the datum and its value. With `spec.brush` set, a click is a press released before the pointer moves more than 4 pixels."
                             .to_owned(),
                     ),
                     payload: ValueSchema::Object {

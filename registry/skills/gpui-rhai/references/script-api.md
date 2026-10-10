@@ -586,9 +586,9 @@ Official components wrap them; application components may too.
 | `hidden_series` | array of string (at most 10000) | `[]` | Series keys to hide; controlled, so update it from `legend_change` payloads. |
 | `key_dimension` | string or `()` | — | Inline-row field whose value keys each datum across replacement, selection, focus and motion. |
 | `on_annotation_activate` | callback or `()` | — | Called with the annotation's `key` and `label` when it is clicked or activated by Enter or Space. |
-| `on_brush_change` | callback or `()` | — | Called with the brushed datum keys, references and rectangle when a brush drag ends. |
+| `on_brush_change` | callback or `()` | — | Called with the brushed datum keys, references and rectangle when a brush drag ends; a press in the plot becomes a brush once the pointer moves more than 4 pixels. |
 | `on_legend_change` | callback or `()` | — | Called with `#{ series_key, visible }` when a legend entry is clicked; `visible` is the requested new state. |
-| `on_select` | callback or `()` | — | Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, a press in the plot starts a brush instead, so only the keys select. |
+| `on_select` | callback or `()` | — | Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, the click counts on release, since a press that moves more than 4 pixels starts a brush instead. |
 | `on_zoom_change` | callback or `()` | — | Called with the proposed camera, typed `viewport` and `viewport_revision` when a wheel zoom or pan commits. |
 | `pan_x` | number | `0.0` | Scalar camera offset along x in logical plot pixels; goes with `zoom`. |
 | `pan_y` | number | `0.0` | Scalar camera offset along y in logical plot pixels; goes with `zoom`. |
@@ -603,7 +603,7 @@ Official components wrap them; application components may too.
 | `annotation_activate` | object | Emitted when an annotation is clicked or activated by Enter or Space; the payload is its `key` and `label`. |
 | `brush_change` | object | Emitted when a brush drag ends; the payload lists the enclosed data and the rectangle in chart-local pixels. |
 | `legend_change` | object | Emitted when a legend entry is clicked; the payload names the series and its requested visibility. |
-| `select` | object | Emitted when a data mark is clicked (while `spec.brush` is off) or activated by Enter or Space; the payload identifies the datum and its value. |
+| `select` | object | Emitted when a data mark is clicked or activated by Enter or Space; the payload identifies the datum and its value. With `spec.brush` set, a click is a press released before the pointer moves more than 4 pixels. |
 | `zoom_change` | object | Emitted when a wheel zoom or a middle-button pan commits; the payload is the proposed camera and its new revision. |
 
 ### CodeViewPrimitive
@@ -984,18 +984,18 @@ Official components wrap them; application components may too.
 | `autofocus` | bool | `false` | Focuses the field once when it first mounts, unless it is disabled. |
 | `disabled` | bool | `false` | Blocks focus, clicks and edits and dims the field. |
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
-| `on_change` | callback or `()` | — | Called with the full new text after each edit, paste, cut, undo, redo or IME composition step. |
+| `on_change` | callback or `()` | — | Called with the full new text after each edit, paste, cut, undo, redo or committed IME composition. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
 | `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in an enabled field; without it, Enter reaches the field's ancestors. |
 | `placeholder` | string or `()` | — | Hint text shown dimmed while `value` is empty. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
 | `typography` | string | required | Theme typography role, such as `control`, that sets the font family, size, weight and line height. |
-| `value` | string | required | The field's text; controlled, so store each `change` payload here or the next render restores the old text. |
+| `value` | string | required | The field's text; controlled, so store each `change` payload here or the next render restores the old text; text still being composed with an IME stays until it commits. |
 
 | Event | Payload | Description |
 |---|---|---|
 | `blur` | none | Emitted when the field loses keyboard focus; the payload is `()`. |
-| `change` | string | Emitted after each edit, including IME composition, undo and redo; the payload is the full new text. |
+| `change` | string | Emitted after each edit, undo and redo and when IME composition commits, not during it; the payload is the full new text. |
 | `focus` | none | Emitted when the field gains keyboard focus; the payload is `()`. |
 | `submit` | string | Emitted when Enter is pressed in an enabled field; the payload is the current text. |
 

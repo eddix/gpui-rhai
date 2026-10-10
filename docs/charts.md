@@ -250,7 +250,10 @@ does no address geocoding. The application owns map acquisition and licensing.
 `annotations` supports `mark_point`, `mark_line`, `mark_area`,
 `threshold_band`, and `baseline`. Annotation activation emits its stable key
 and label. Cartesian brush modes are `x`, `y`, and `xy`; Geo supports declared
-rectangle/region selection. Freehand lasso is not part of 0.1.5.
+rectangle/region selection. Freehand lasso is not part of 0.1.5. With a brush
+mode set, a left press in the plot becomes a brush only after the pointer moves
+more than 4 logical pixels; a release before that is a click and emits `select`
+for the datum under the pointer, as without a brush.
 
 ## Rust extensions and export
 

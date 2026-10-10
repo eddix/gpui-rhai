@@ -93,7 +93,7 @@ define_component(#{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
-                doc: "Called with the full new text after each edit.",
+                doc: "Called with the full new text after each edit and when IME composition commits, not during it.",
             },
             on_submit: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
@@ -133,7 +133,7 @@ define_component(#{
         state: #{ fields: #{} },
         events: #{
             change: #{ payload: #{ type: "string" },
-                doc: "Emitted after each edit; the payload is the full new text." },
+                doc: "Emitted after each edit and when IME composition commits, not during it; the payload is the full new text." },
             submit: #{ payload: #{ type: "string" },
                 doc: "Emitted when Enter is pressed in a field that is not `disabled`; the payload is the current text." },
             focus: #{ payload: #{ type: "null" }, doc: "Emitted when the field gains keyboard focus." },

@@ -22,9 +22,9 @@ map_chart::MapChart(#{ key: "regions", data: rows, map: "world", encode: #{ name
 | `key_dimension` | string or `()` | — | Dimension whose values identify each datum across updates, selection, focus and motion; without it updates replace every datum. |
 | `map` | string or `()` | — | Id of the Host-registered geo map (`RuntimeEngine::register_chart_map`) when `spec` is absent; `"map"` when omitted. |
 | `on_annotation_activate` | callback or `()` | — | Called with the `charts/chart` `annotation_activate` payload when an annotation is clicked or activated from the keyboard. |
-| `on_brush_change` | callback or `()` | — | Called with the `charts/chart` `brush_change` payload when a brush drag ends; `spec.brush` turns brushing on. |
+| `on_brush_change` | callback or `()` | — | Called with the `charts/chart` `brush_change` payload when a brush drag ends; `spec.brush` turns brushing on, and a press in the plot becomes a brush once the pointer moves more than 4 pixels. |
 | `on_legend_change` | callback or `()` | — | Called with the `charts/chart` `legend_change` payload when a legend entry is clicked. |
-| `on_select` | callback or `()` | — | Called with the `charts/chart` `select` payload when a data mark is clicked (without `spec.brush`) or activated with Enter or Space. |
+| `on_select` | callback or `()` | — | Called with the `charts/chart` `select` payload when a data mark is clicked or activated with Enter or Space; with `spec.brush`, a press that moves more than 4 pixels brushes instead. |
 | `on_zoom_change` | callback or `()` | — | Called with the `charts/chart` `zoom_change` payload when a zoom or pan gesture commits. |
 | `pan_x` | number | `0.0` | Horizontal pan of the scalar camera in logical pixels. |
 | `pan_y` | number | `0.0` | Vertical pan of the scalar camera in logical pixels. |

@@ -26,7 +26,7 @@ input::Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_cha
 | `key` | string | required | Names the native editor, which keeps caret, selection and undo history across renders; a new key starts a fresh editor. |
 | `label` | string | required | Accessible name of the field; it is not drawn, so pair the input with a `Label` or a `FormField`. |
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
-| `on_change` | callback or `()` | — | Called with the full new text after each edit. |
+| `on_change` | callback or `()` | — | Called with the full new text after each edit and when IME composition commits, not during it. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
 | `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in a field that is not `disabled`; without it, Enter reaches the field's ancestors, such as a form's default action. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
@@ -41,7 +41,7 @@ input::Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_cha
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
 | `blur` | `on_blur` | none | Emitted when the field loses keyboard focus. |
-| `change` | `on_change` | string | Emitted after each edit; the payload is the full new text. |
+| `change` | `on_change` | string | Emitted after each edit and when IME composition commits, not during it; the payload is the full new text. |
 | `focus` | `on_focus` | none | Emitted when the field gains keyboard focus. |
 | `submit` | `on_submit` | string | Emitted when Enter is pressed in a field that is not `disabled`; the payload is the current text. |
 

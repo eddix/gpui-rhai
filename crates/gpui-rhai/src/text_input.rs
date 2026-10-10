@@ -205,7 +205,7 @@ impl TextInputEntity {
         callbacks: TextInputCallbacks,
         cx: &mut Context<Self>,
     ) {
-        self.buffer.set_controlled(&config.value);
+        sync_controlled(&mut self.buffer, &config.value);
         self.focus = self.focus.clone().tab_stop(!config.disabled);
         self.placeholder = config.placeholder.clone().into();
         self.disabled = config.disabled;
@@ -434,8 +434,13 @@ impl EntityInputHandler for TextInputEntity {
             .map(|range| self.buffer.range_to_utf16(range))
     }
 
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
+    fn unmark_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let was_marked = self.buffer.marked().is_some();
         self.buffer.unmark();
+        if was_marked {
+            self.emit_change(window, cx);
+            cx.notify();
+        }
     }
 
     fn replace_text_in_range(
@@ -458,15 +463,15 @@ impl EntityInputHandler for TextInputEntity {
         range_utf16: Option<Range<usize>>,
         text: &str,
         selected_utf16: Option<Range<usize>>,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.disabled || self.read_only {
             return;
         }
+        // Composition steps only show in the field; `change` waits for the commit.
         self.buffer
             .replace_and_mark(range_utf16.as_ref(), text, selected_utf16);
-        self.emit_change(window, cx);
         cx.notify();
     }
 
@@ -931,6 +936,14 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
     }
 }
 
+/// Applies the controlled value unless IME composition is in progress, so a
+/// re-render with the last committed value keeps the marked text.
+fn sync_controlled(buffer: &mut TextBuffer, value: &str) {
+    if buffer.marked().is_none() {
+        buffer.set_controlled(value);
+    }
+}
+
 fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
     let change_events = events.clone();
     let submit_events = events.clone();
@@ -972,7 +985,7 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "value".to_owned(),
                 ObjectField::required(ValueSchema::string()).with_doc(
-                    "The field's text; controlled, so store each `change` payload here or the next render restores the old text.",
+                    "The field's text; controlled, so store each `change` payload here or the next render restores the old text; text still being composed with an IME stays until it commits.",
                 ),
             ),
             (
@@ -1007,7 +1020,7 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_change".to_owned(),
                 optional_callback().with_doc(
-                    "Called with the full new text after each edit, paste, cut, undo, redo or IME composition step.",
+                    "Called with the full new text after each edit, paste, cut, undo, redo or committed IME composition.",
                 ),
             ),
             (
@@ -1030,7 +1043,7 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
                 "change".to_owned(),
                 EventSchema {
                     doc: Some(
-                        "Emitted after each edit, including IME composition, undo and redo; the payload is the full new text."
+                        "Emitted after each edit, undo and redo and when IME composition commits, not during it; the payload is the full new text."
                             .to_owned(),
                     ),
                     payload: ValueSchema::string(),
@@ -1119,5 +1132,20 @@ mod tests {
         buffer.replace(None, "日本");
         assert_eq!(buffer.content(), "日本");
         assert!(buffer.marked().is_none());
+    }
+
+    #[test]
+    fn controlled_render_during_ime_composition_keeps_the_marked_text() {
+        let mut buffer = TextBuffer::new("a");
+        buffer.move_to(1);
+        buffer.replace_and_mark(None, "に", Some(1..1));
+        sync_controlled(&mut buffer, "a");
+        assert_eq!(buffer.content(), "aに");
+        assert_eq!(buffer.marked(), Some(&(1..4)));
+        buffer.replace(None, "日本");
+        sync_controlled(&mut buffer, "a日本");
+        assert_eq!(buffer.content(), "a日本");
+        sync_controlled(&mut buffer, "b");
+        assert_eq!(buffer.content(), "b");
     }
 }
