@@ -1,0 +1,34 @@
+[
+  {
+    "line": 93,
+    "signature": "date_info(date: String) -> Dynamic>"
+  },
+  {
+    "line": 94,
+    "signature": "date_month_grid(date: String, first_weekday: String) -> Dynamic>"
+  },
+  {
+    "line": 121,
+    "signature": "motion_text_spans(text: String, config: Map) -> Dynamic>"
+  },
+  {
+    "line": 133,
+    "signature": "outline_projection(items: Array, expanded_keys: Array) -> Dynamic>"
+  },
+  {
+    "line": 153,
+    "signature": "ctx.actions() -> Dynamic>"
+  },
+  {
+    "line": 154,
+    "signature": "ctx.calendar() -> Dynamic>"
+  },
+  {
+    "line": 195,
+    "signature": "ctx.motion_spring(role: String) -> Dynamic>"
+  },
+  {
+    "line": 197,
+    "signature": "ctx.number() -> Dynamic>"
+  }
+]

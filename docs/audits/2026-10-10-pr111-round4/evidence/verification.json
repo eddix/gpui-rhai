@@ -1,0 +1,106 @@
+{
+  "reviewed_head": "95253c65d5f97a1e64ca51567255e6337ae02c96",
+  "previous_review_head": "2c5e8a079304bb0c8910ddbd73eca772f49fd453",
+  "base": "d87ebb9f781ecaaa53e265d39b9cacc7ded07f25",
+  "date": "2026-10-10",
+  "checks": {
+    "workspace": {
+      "passed": 695,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "native": {
+      "passed": 331,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "historical-probes": {
+      "passed": 10,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "probes": {
+      "passed": 2,
+      "failed": 8,
+      "ignored": 0,
+      "exit_code": 101
+    },
+    "fmt": {
+      "exit_code": 0
+    },
+    "clippy": {
+      "exit_code": 0
+    },
+    "diff-check": {
+      "exit_code": 0
+    },
+    "skill-frontmatter": {
+      "passed": 2
+    },
+    "skill-local-links": {
+      "checked": 167,
+      "broken": 0
+    },
+    "skill-local-anchors": {
+      "checked": 5,
+      "broken": 0
+    },
+    "registry-package-files": {
+      "skill_files": 105
+    }
+  },
+  "open_issues": [
+    83,
+    89,
+    91,
+    95,
+    109,
+    110,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    127,
+    128,
+    129,
+    130,
+    131
+  ],
+  "new_findings": {
+    "P1": [
+      "U1",
+      "U2"
+    ],
+    "P2": [
+      "U3",
+      "U4",
+      "U5"
+    ]
+  },
+  "unresolved_existing_issue": 131,
+  "issue119": "implemented but not fully accepted: U2",
+  "visuals": {
+    "stored_png_pairs": 57,
+    "rgb_changed": 43,
+    "fresh_capture": false
+  },
+  "ci": {
+    "run": 37952936385,
+    "conclusion": "FAILURE",
+    "stage": "Weston startup, before Wayland app launch"
+  }
+}

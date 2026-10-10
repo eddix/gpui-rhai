@@ -1,0 +1,91 @@
+Review target: 95253c65d5f97a1e64ca51567255e6337ae02c96
+probes a20f3632195e001f608b1fe795dc160321a6d5550ec6d4b12cd92d53d57bd4c8
+issue131 37dc4695f63333b448faa6827b42b5dbe5a9c4f1d33df8d8a524fe5ba6df0659
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/review-pr111-round4/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.37s
+     Running tests/audit_pr111_round4_issue131.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_round4_issue131-31c182151c0c681e)
+
+running 1 test
+test a_chart_on_a_raised_layer_has_no_block_of_another_surface ... 
+thread 'a_chart_on_a_raised_layer_has_no_block_of_another_surface' (16169756) panicked at tests/audit_pr111_round4_issue131.rs:109:5:
+nothing on the raised layer should be painted with `surface`, got [(600.0, 320.0), (596.0, 316.0)]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    a_chart_on_a_raised_layer_has_no_block_of_another_surface
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+
+error: test failed, to rerun pass `--test audit_pr111_round4_issue131`
+     Running tests/audit_pr111_round4_probes.rs (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/audit_pr111_round4_probes-d20cc118d6908cac)
+
+running 9 tests
+test closing_last_tab_commits_empty_state ... 
+thread 'closing_last_tab_commits_empty_state' (16169906) panicked at tests/audit_pr111_round4_probes.rs:175:5:
+closing final tab should commit: Some("failed to evaluate Rhai UI source: Runtime error: component `/View[tabs]/TabBar[files]` has no mounted element ref `cursor-tab` @ 'components/tab_bar' (line 203, position 34)\nin call to function 'reveal_start' (from 'components/tab_bar') (line 366, position 5)")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test disabled_tab_cannot_be_closed ... ok
+test empty_tab_bar_mounts_without_error ... 
+thread 'empty_tab_bar_mounts_without_error' (16169925) panicked at tests/audit_pr111_round4_probes.rs:88:14:
+called `Result::unwrap()` on an `Err` value: ScriptDiagnostic { message: "failed to evaluate Rhai UI source: Runtime error: component `/View[tabs]/TabBar[files]` has no mounted element ref `cursor-tab` @ 'components/tab_bar' (line 203, position 34)\nin call to function 'reveal_start' (from 'components/tab_bar') (line 366, position 5)", diagnostic: Diagnostic { severity: Error, code: ScriptEvaluate, message: "Runtime error: component `/View[tabs]/TabBar[files]` has no mounted element ref `cursor-tab` @ 'components/tab_bar' (line 203, position 34)\nin call to function 'reveal_start' (from 'components/tab_bar') (line 366, position 5)", source: Some("components/tab_bar"), line: Some(203), column: Some(34), component: Some("/View[tabs]"), key: Some("tabs"), stack: [DiagnosticFrame { kind: "function", name: "reveal_start", source: Some("components/tab_bar") }], error_kind: None, token: None, execution: Some(DiagnosticExecutionTiming { operation: Callback("reveal_start"), source: "main", duration_micros: 21, succeeded: false }), operation_budget: Some(DiagnosticOperationBudget { consumed: 7, maximum: 1000000, semantics_version: 2 }), component_state: [DiagnosticStateSnapshot { path: "/View[tabs]", fields: {"log": String(""), "value": String("")} }] } }
+FAILED
+test generated_definitions_use_script_collection_types ... date_info(date: String) -> Dynamic> // date_info(_: string) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>
+date_month_grid(date: String, first_weekday: String) -> Dynamic> // date_month_grid(_: string, _: string) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>
+ctx.actions() -> Dynamic> // actions(_: &mut UiContext) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>
+definitions: fn date_info(date: String) -> Dynamic>;
+fn date_month_grid(date: String, first_weekday: String) -> Dynamic>;
+fn motion_text_spans(text: String, config: Map) -> Dynamic>;
+fn outline_projection(items: Array, expanded_keys: Array) -> Dynamic>;
+fn actions(this: UiContext) -> Dynamic>;
+fn calendar(this: UiContext) -> Dynamic>;
+fn motion_spring(this: UiContext, role: String) -> Dynamic>;
+fn number(this: UiContext) -> Dynamic>;
+
+thread 'generated_definitions_use_script_collection_types' (16169931) panicked at tests/audit_pr111_round4_probes.rs:216:5:
+wrong script types: [ScriptFn { module: None, receiver: None, name: "date_info", params: [ScriptParam { name: "date", type_name: "String" }], return_type: "Dynamic>", doc: Some("Parses an ISO `YYYY-MM-DD` date into `#{ iso, year, month, day, weekday }`, `weekday` being a lowercase English name."), signature: "date_info(_: string) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>" }, ScriptFn { module: None, receiver: None, name: "date_month_grid", params: [ScriptParam { name: "date", type_name: "String" }, ScriptParam { name: "first_weekday", type_name: "String" }], return_type: "Dynamic>", doc: Some("Returns the 42 cells (six weeks) of the month containing `date`, weeks starting on `first_weekday`; each is `#{ date, day, outside, weekday }`."), signature: "date_month_grid(_: string, _: string) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>" }, ScriptFn { module: None, receiver: Some("UiContext"), name: "actions", params: [ScriptParam { name: "this", type_name: "UiContext" }], return_type: "Dynamic>", doc: Some("Lists every registered action as `#{ id, enabled, shortcut }` for a command palette; `shortcut` is `()` when unbound."), signature: "actions(_: &mut UiContext) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>" }]
+FAILED
+test installed_skill_recipes_pass_check_as_written ... skill snippet 0: Ok(CheckReport { components: 1, entry: ModuleId("main"), host_validation_required: false, initial_view_validated: true, warnings: [] })
+skill snippet 1: Err(Lifecycle(State(InvalidDefault { field: "locale", source: SchemaValidationError { issues: [SchemaIssue { path: "$", message: "expected one of [en, zh-CN, ar], got `__VISUAL_LOCALE__`" }] } })))
+skill snippet 2: Err(KnownCallLint(Parse { source_name: "ui/main.rhai", message: "Variable name is not proper: '__VISUAL_ACCEPTED__' (line 20, position 84)" }))
+skill snippet 3: Err(KnownCallLint(Parse { source_name: "ui/main.rhai", message: "Variable name is not proper: '__VISUAL_SELECTED__' (line 14, position 130)" }))
+skill snippet 4: Err(Lifecycle(Runtime(Evaluate(ErrorRuntime("locale `__VISUAL_LOCALE__` is not loaded", 34:9)))))
+
+thread 'installed_skill_recipes_pass_check_as_written' (16169934) panicked at tests/audit_pr111_round4_probes.rs:267:5:
+copied skill recipes failed: ["snippet 1: default for state field `locale` is invalid: $: expected one of [en, zh-CN, ar], got `__VISUAL_LOCALE__`", "snippet 2: failed to parse `ui/main.rhai` for known-call validation: Variable name is not proper: '__VISUAL_ACCEPTED__' (line 20, position 84)", "snippet 3: failed to parse `ui/main.rhai` for known-call validation: Variable name is not proper: '__VISUAL_SELECTED__' (line 14, position 130)", "snippet 4: failed to evaluate Rhai UI source: Runtime error: locale `__VISUAL_LOCALE__` is not loaded (line 34, position 9)"]
+FAILED
+test list_500_rows_with_20_selected_still_renders ... 
+thread 'list_500_rows_with_20_selected_still_renders' (16169941) panicked at tests/audit_pr111_round4_probes.rs:88:14:
+called `Result::unwrap()` on an `Err` value: ScriptDiagnostic { message: "failed to evaluate Rhai UI source: Size of array/BLOB too large", diagnostic: Diagnostic { severity: Error, code: ScriptEvaluate, message: "Size of array/BLOB too large", source: Some("main"), line: None, column: None, component: Some("/View[tabs]/List[rows]"), key: Some("rows"), stack: [], error_kind: None, token: None, execution: Some(DiagnosticExecutionTiming { operation: Render, source: "main", duration_micros: 82800, succeeded: false }), operation_budget: Some(DiagnosticOperationBudget { consumed: 156088, maximum: 1000000, semantics_version: 2 }), component_state: [] } }
+FAILED
+test list_500_selected_rows_do_not_expand_into_oversized_arrays ... 
+thread 'list_500_selected_rows_do_not_expand_into_oversized_arrays' (16169949) panicked at tests/audit_pr111_round4_probes.rs:88:14:
+called `Result::unwrap()` on an `Err` value: ScriptDiagnostic { message: "failed to evaluate Rhai UI source: Size of array/BLOB too large", diagnostic: Diagnostic { severity: Error, code: ScriptEvaluate, message: "Size of array/BLOB too large", source: Some("main"), line: None, column: None, component: Some("/View[tabs]/List[rows]"), key: Some("rows"), stack: [], error_kind: None, token: None, execution: Some(DiagnosticExecutionTiming { operation: Render, source: "main", duration_micros: 60777, succeeded: false }), operation_budget: Some(DiagnosticOperationBudget { consumed: 116492, maximum: 1000000, semantics_version: 2 }), component_state: [] } }
+FAILED
+test list_500_unselected_rows_control ... ok
+test reorder_keeps_selected_tab_in_view ... selection after order change: GeometryBounds { x: 1299.0, y: 0.0, width: 139.0, height: 32.0 }, strip GeometryBounds { x: 0.0, y: 0.0, width: 360.0, height: 32.0 }
+
+thread 'reorder_keeps_selected_tab_in_view' (16169968) panicked at tests/audit_pr111_round4_probes.rs:196:5:
+selected tab must stay revealed after order change: GeometryBounds { x: 1299.0, y: 0.0, width: 139.0, height: 32.0 } in GeometryBounds { x: 0.0, y: 0.0, width: 360.0, height: 32.0 }
+FAILED
+
+failures:
+
+failures:
+    closing_last_tab_commits_empty_state
+    empty_tab_bar_mounts_without_error
+    generated_definitions_use_script_collection_types
+    installed_skill_recipes_pass_check_as_written
+    list_500_rows_with_20_selected_still_renders
+    list_500_selected_rows_do_not_expand_into_oversized_arrays
+    reorder_keeps_selected_tab_in_view
+
+test result: FAILED. 2 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.74s
+
+error: test failed, to rerun pass `--test audit_pr111_round4_probes`
+error: 2 targets failed:
+    `--test audit_pr111_round4_issue131`
+    `--test audit_pr111_round4_probes`

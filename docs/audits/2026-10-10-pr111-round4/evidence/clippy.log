@@ -1,0 +1,5 @@
+    Checking rhai v1.26.0
+    Checking gpui-rhai-registry v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round4/gpui-rhai/registry)
+    Checking gpui-rhai v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round4/gpui-rhai/crates/gpui-rhai)
+    Checking gpui-rhai-cli v0.1.8 (/Users/eddix/.codex/worktrees/review-pr111-round4/gpui-rhai/crates/gpui-rhai-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 27.57s

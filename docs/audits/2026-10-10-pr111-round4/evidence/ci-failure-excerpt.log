@@ -1,0 +1,48 @@
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3374606Z ##[group]Run bash scripts/linux-window-smoke.sh
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3374993Z ^[[36;1mbash scripts/linux-window-smoke.sh^[[0m
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3417296Z shell: /usr/bin/bash -e {0}
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3417563Z env:
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3417776Z   CARGO_HOME: /home/runner/.cargo
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3418043Z   CARGO_INCREMENTAL: 0
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3418272Z   CARGO_TERM_COLOR: always
+portable	UNKNOWN STEP	2026-10-09T16:16:08.3418498Z ##[endgroup]
+portable	UNKNOWN STEP	2026-10-09T16:16:13.6838408Z Linux window smoke passed: X11
+portable	UNKNOWN STEP	2026-10-09T16:16:14.6058023Z libEGL warning: DRI3 error: Could not get DRI3 device
+portable	UNKNOWN STEP	2026-10-09T16:16:14.6058575Z libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7605345Z Weston did not create its Wayland socket
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7620739Z Date: 2026-10-09 UTC
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7621074Z [16:16:13.698] weston 13.0.0
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7626626Z                https://wayland.freedesktop.org
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7627143Z                Bug reports to: https://gitlab.freedesktop.org/wayland/weston/issues/
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7627520Z                Build: 13.0.0
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7628133Z [16:16:13.698] Command line: weston --backend=x11-backend.so --socket=wayland-gpui-rhai --idle-time=0 --width=1280 --height=720 --log=/tmp/tmp.XXg3EHdO91/weston.log
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7628855Z [16:16:13.698] OS: Linux, 6.17.0-1022-azure, #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026, x86_64
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7629246Z [16:16:13.698] Flight recorder: enabled
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7629528Z [16:16:13.698] Starting with no config file.
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7629826Z [16:16:13.700] Output repaint window is 7 ms maximum.
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7630378Z [16:16:13.700] Loading module '/usr/lib/x86_64-linux-gnu/libweston-13/x11-backend.so'
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7630843Z [16:16:14.585] Loading module '/usr/lib/x86_64-linux-gnu/libweston-13/gl-renderer.so'
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7631251Z [16:16:14.990] warning: failed to query rendering device from EGL
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7631569Z [16:16:14.990] EGL version: 1.5
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7631818Z [16:16:14.990] EGL vendor: Mesa Project
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7632402Z [16:16:14.990] EGL client APIs: OpenGL OpenGL_ES 
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7632948Z [16:16:14.990] warning: Disabling render GPU timeline and explicit synchronization due to missing EGL_ANDROID_native_fence_sync extension
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7633469Z [16:16:14.990] EGL features:
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7633712Z                EGL Wayland extension: no
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7633972Z                context priority: no
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7634221Z                buffer age: yes
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7634462Z                partial update: no
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7634714Z                swap buffers with damage: yes
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7634978Z                configless context: yes
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7635227Z                surfaceless context: yes
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7635481Z                dmabuf support: modifiers
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7635796Z [16:16:18.690] GL version: OpenGL ES 3.2 Mesa 25.2.8-0ubuntu0.24.04.4
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7636151Z [16:16:18.690] GLSL version: OpenGL ES GLSL ES 3.20
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7636432Z [16:16:18.690] GL vendor: Mesa
+portable	UNKNOWN STEP	2026-10-09T16:16:18.7636703Z [16:16:18.690] GL renderer: llvmpipe (LLVM 20.1.2, 256 bits)
+portable	UNKNOWN STEP	2026-10-09T16:16:19.1700869Z Failed to process Wayland connection: Broken pipe
+portable	UNKNOWN STEP	2026-10-09T16:16:19.1701272Z Failed to process Wayland connection: Broken pipe
+portable	UNKNOWN STEP	2026-10-09T16:16:19.2123503Z failed to create display: Broken pipe
+portable	UNKNOWN STEP	2026-10-09T16:16:19.2123934Z failed to create display: Broken pipe
+portable	UNKNOWN STEP	2026-10-09T16:16:19.2710291Z ##[error]Process completed with exit code 1.
+portable	UNKNOWN STEP	2026-10-09T16:16:19.3145738Z 
