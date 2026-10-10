@@ -63,4 +63,9 @@ define_component(#{
 });
 
 fn LineChart(props) { render_component("charts/line_chart", props) }
-fn render_LineChart(ctx, props) { chart::LineChart(props) }
+// The adapter's own root rule and caller style reach the chart as its root style.
+fn render_LineChart(ctx, props) {
+    let chart_props = props;
+    chart_props.style = ctx.component_style("root", style());
+    chart::LineChart(chart_props)
+}

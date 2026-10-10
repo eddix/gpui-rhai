@@ -66,7 +66,12 @@ fn render_Toggle(ctx, props) {
         hoverable: !props.pressed,
         on_click: if "on_pressed_change" in props && props.on_pressed_change != () {
             Fn("pressed_action").curry(!props.pressed)
-        } else { () }
+        } else { () },
+        part_styles: #{
+            label: ctx.component_style("label", style()),
+            prefix: ctx.component_style("prefix", style()),
+            suffix: ctx.component_style("suffix", style()),
+        }
     }).with_style(ctx.component_style("root", style()
         .background(fill)
         .border_color(fill)

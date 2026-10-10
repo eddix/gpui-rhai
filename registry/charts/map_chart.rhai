@@ -67,4 +67,9 @@ define_component(#{
 });
 
 fn MapChart(props) { render_component("charts/map_chart", props) }
-fn render_MapChart(ctx, props) { chart::MapChart(props) }
+// The adapter's own root rule and caller style reach the chart as its root style.
+fn render_MapChart(ctx, props) {
+    let chart_props = props;
+    chart_props.style = ctx.component_style("root", style());
+    chart::MapChart(chart_props)
+}

@@ -13,7 +13,8 @@
   "environment": ["density"]
 }
 */
-// Labelled desktop group surface for related controls or settings.
+// Labelled group of related controls or settings: a top hairline and a label-voice
+// heading on the parent's content edge, with no surface of its own.
 //
 // Example: GroupBox(#{ label: "Sync", content: text("Settings") })
 

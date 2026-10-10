@@ -79,7 +79,7 @@ define_component(#{
                 doc: "Rows the list shows before it scrolls; group headings count as rows." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Disables the search field and the list's arrow, Home, End and Enter keys." },
+                doc: "Disables the whole command: the search field, the rows and the list's keys." },
             autofocus: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Focuses the search field when the command first mounts." },
@@ -256,7 +256,7 @@ fn render_command_row(content, total_rows, ctx, payload) {
     }
 }
 
-fn array_command_model(items, query, row_height, stored) {
+fn array_command_model(ctx, items, query, row_height, stored) {
     let groups = [];
     let buckets = #{};
     let content = #{};
@@ -267,9 +267,13 @@ fn array_command_model(items, query, row_height, stored) {
             let group = item_group(item);
             if !(group in buckets) { groups.push(group); buckets[group] = []; }
             let bucket = buckets[group];
-            let ranked = #{ value: item.value, label: item.label, shortcut: prop_or(item, "shortcut", ""),
-                action: prop_or(item, "action", ()),
-                disabled: item_disabled(item), score: score, source_index: index };
+            let action = prop_or(item, "action", ());
+            // A row whose action is disabled is disabled for the keys too.
+            let ranked = #{ value: item.value, label: item.label,
+                shortcut: if "shortcut" in item && item.shortcut != () { item.shortcut } else { "" },
+                action: action,
+                disabled: item_disabled(item) || (action != () && !ctx.action_enabled(action)),
+                score: score, source_index: index };
             if "content" in item && item.content != () { content[item.value] = item.content; }
             bucket.push(ranked);
             buckets[group] = bucket;
@@ -330,7 +334,7 @@ fn render_Command(ctx, props) {
         native_command_model(props.items, query, row_height, stored)
     } else {
         validate_array_items(props.items);
-        array_command_model(props.items, query, row_height, stored)
+        array_command_model(ctx, props.items, query, row_height, stored)
     };
     let data = model.data;
     let active = model.active;
@@ -372,7 +376,9 @@ fn render_Command(ctx, props) {
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised"))))
         .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);
-    if !prop_or(props, "disabled", false) && model.enabled {
+    // A disabled container disables every row natively.
+    if prop_or(props, "disabled", false) { return root.disabled(true); }
+    if model.enabled {
         root.on_key_value("up", Fn("active_action").curry(active), model.previous)
             .on_key_value("down", Fn("active_action").curry(active), model.next)
             .on_key_value("home", Fn("active_action").curry(active), model.first)

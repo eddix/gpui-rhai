@@ -17,9 +17,10 @@
 //              sidebar: nav_node, main: region_node, status: #{ start: [text("Ready")] } })
 //
 // The sidebar and inspector are raised color blocks beside the main surface; no rules.
-// F6 and Shift+F6 move focus between the present regions; a region shows the 2px ink frame
-// while it holds focus itself, and Tab then enters it. The shell keeps the last region F6
-// moved to as its only state.
+// F6 and Shift+F6 move focus from the region that holds it to the next or previous present
+// region; a region shows the 2px ink frame while it holds focus itself, and Tab then enters
+// it. With focus outside every region they go on from the last region F6 moved to, which the
+// shell keeps as its only state.
 
 import "components/title_bar" as title_bar;
 import "components/status_bar" as status_bar;
@@ -69,13 +70,13 @@ define_component(#{
             inspector: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Raised region after the main area, and an F6 stop." },
             status: #{ schema: #{ type: "optional", value: #{ type: "object", allow_unknown: false, fields: #{
-                start: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
+                start: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
                     required: false, sensitive: false, "default": #{ type: "array", value: [] },
                     doc: "Fields at the start edge; they truncate when space runs out." },
-                center: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
+                center: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
                     required: false, sensitive: false, "default": #{ type: "array", value: [] },
                     doc: "Fields centered in the bar." },
-                end: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
+                end: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
                     required: false, sensitive: false, "default": #{ type: "array", value: [] },
                     doc: "Fields at the end edge; they keep their width." },
             } } }, required: false, sensitive: false,
@@ -111,7 +112,8 @@ fn move_region(ctx, target) {
 }
 
 // A keyboard region: focusable as a whole so F6 can land on it, framed while it holds
-// focus itself. It is not a tab stop; Tab from it enters its first control.
+// focus itself. It is also a tab stop, before its own controls: a node must be one to own
+// the focus its frame shows.
 fn region_pane(ctx, key, part, content, pane) {
     let frame = row([]).with_style(ctx.component_style("region_frame", style()
         .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
@@ -148,6 +150,14 @@ fn render_AppShell(ctx, props) {
             .background(theme_color("surface_raised"))));
         keys.push(key);
     }
+    let count = keys.len;
+    for index in 0..count {
+        let next = (index + 1) % count;
+        let previous = (index + count - 1) % count;
+        panes[index] = panes[index]
+            .on_key_value("f6", Fn("move_region"), #{ index: next, key: keys[next] })
+            .on_key_value("shift+f6", Fn("move_region"), #{ index: previous, key: keys[previous] });
+    }
     let children = [];
     if has(props, "title_bar") {
         let bar = props.title_bar;
@@ -161,7 +171,7 @@ fn render_AppShell(ctx, props) {
         children.push(status_bar::StatusBar(bar));
     }
     for overlay in if "overlays" in props { props.overlays } else { [] } { children.push(overlay); }
-    let count = keys.len;
+    // Focus outside the regions: the title bar, the status bar or an overlay.
     let current = ctx.get_state("region") % count;
     let next = (current + 1) % count;
     let previous = (current + count - 1) % count;

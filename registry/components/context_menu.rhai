@@ -116,6 +116,13 @@ fn render_ContextMenu(ctx, props) {
         on_context_request: Fn("pointer_open"),
         on_action: if "on_action" in props && props.on_action != () { Fn("forward_action") } else { () },
         on_active_change: if "on_active_change" in props && props.on_active_change != () { Fn("forward_active") } else { () },
-        on_open_change: if "on_open_change" in props && props.on_open_change != () { Fn("forward_open") } else { () }
+        on_open_change: if "on_open_change" in props && props.on_open_change != () { Fn("forward_open") } else { () },
+        part_styles: #{
+            content: ctx.component_style("content", style()),
+            item: ctx.component_style("item", style()),
+            separator: ctx.component_style("separator", style()),
+            shortcut: ctx.component_style("shortcut", style()),
+            submenu: ctx.component_style("submenu", style()),
+        }
     }).with_style(ctx.component_style("root", style()))
 }

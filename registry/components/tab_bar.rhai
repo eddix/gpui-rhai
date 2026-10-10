@@ -55,7 +55,7 @@ define_component(#{
             tabs: #{ schema: #{ type: "array", max_items: 256, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                        doc: "Identity of the tab, matched against `value` and reported by every callback." },
+                        doc: "Identity of the tab, matched against `value` and reported by every callback; unique among the tabs." },
                     label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                         doc: "Tab text and accessible name; past twice `metrics.label_column` the label truncates." },
                     icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,

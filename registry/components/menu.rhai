@@ -237,9 +237,21 @@ fn menu_item(ctx, props, item) {
     } else { row_node }
 }
 
-fn menu_activation(props, value) {
-    for item in props.items {
-        if "value" in item && item.value == value && !item_disabled(item) {
+// The keys treat a row whose action is disabled as disabled, as the row itself draws it.
+fn key_items(ctx, items) {
+    let result = [];
+    for item in items {
+        let action = item_action(item);
+        if action != () && !ctx.action_enabled(action) { item.disabled = true; }
+        result.push(item);
+    }
+    result
+}
+
+fn menu_activation(props, items, value) {
+    for item in items {
+        if "value" in item && item.value == value {
+            if item_disabled(item) { return (); }
             let action = item_action(item);
             if action != () {
                 return #{ handler: Fn("dispatch_item").curry(#{ action: action, value: value }), payload: () };
@@ -252,6 +264,7 @@ fn menu_activation(props, value) {
 
 fn render_Menu(ctx, props) {
     let active_change = if "on_active_change" in props { props.on_active_change } else { () };
+    let items = key_items(ctx, props.items);
     let children = [];
     for item in props.items {
         if item.kind == "separator" {
@@ -272,7 +285,7 @@ fn render_Menu(ctx, props) {
             children.push(menu_item(ctx, props, item));
         }
     }
-    let activation = if props.active_value != "" { menu_activation(props, props.active_value) } else { () };
+    let activation = if props.active_value != "" { menu_activation(props, items, props.active_value) } else { () };
     children.push(panel_focus_frame(ctx));
     let content = column(children)
         .with_key(`${props.key}-content`)
@@ -288,8 +301,8 @@ fn render_Menu(ctx, props) {
         .accessibility_label(props.label);
     if active_change != () {
         content = content
-            .on_key_value("up", active_change, next_item(props.items, props.active_value, -1))
-            .on_key_value("down", active_change, next_item(props.items, props.active_value, 1));
+            .on_key_value("up", active_change, next_item(items, props.active_value, -1))
+            .on_key_value("down", active_change, next_item(items, props.active_value, 1));
     }
     if activation != () {
         content = content.on_key_value("enter", activation.handler, activation.payload);
@@ -300,7 +313,7 @@ fn render_Menu(ctx, props) {
             "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"
         ] {
             content = content.on_key_value(
-                key, active_change, next_typeahead(props.items, props.active_value, key)
+                key, active_change, next_typeahead(items, props.active_value, key)
             );
         }
     }
@@ -330,8 +343,8 @@ fn render_Menu(ctx, props) {
     }
     if props.open && active_change != () {
         node = node
-            .on_key_value("up", active_change, next_item(props.items, props.active_value, -1))
-            .on_key_value("down", active_change, next_item(props.items, props.active_value, 1));
+            .on_key_value("up", active_change, next_item(items, props.active_value, -1))
+            .on_key_value("down", active_change, next_item(items, props.active_value, 1));
     }
     if props.open && activation != () {
         node = node.on_key_value("enter", activation.handler, activation.payload);
@@ -342,7 +355,7 @@ fn render_Menu(ctx, props) {
             "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"
         ] {
             node = node.on_key_value(
-                key, active_change, next_typeahead(props.items, props.active_value, key)
+                key, active_change, next_typeahead(items, props.active_value, key)
             );
         }
     }

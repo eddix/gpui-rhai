@@ -49,7 +49,6 @@ fn render_ButtonGroup(ctx, props) {
     for index in 0..props.buttons.len {
         let first = index == 0;
         let last = index == props.buttons.len - 1;
-        let part = if first { "first" } else if last { "last" } else { "item" };
         let joined = style().radius(px(0));
         if vertical {
             if first { joined = joined.radius_top_left(corner).radius_top_right(corner); }
@@ -58,8 +57,11 @@ fn render_ButtonGroup(ctx, props) {
             if first { joined = joined.radius_start(corner); }
             if last { joined = joined.radius_end(corner); }
         }
-        items.push(props.buttons[index].with_style(ctx.component_style(part,
-            ctx.component_style("item", joined))));
+        // Every button is an `item`; a lone button is both `first` and `last`.
+        let resolved = ctx.component_style("item", joined);
+        if first { resolved = ctx.component_style("first", resolved); }
+        if last { resolved = ctx.component_style("last", resolved); }
+        items.push(props.buttons[index].with_style(resolved));
     }
     // Joined blocks keep a 2px seam, so each button keeps its own focus border and
     // outline frames never double up.

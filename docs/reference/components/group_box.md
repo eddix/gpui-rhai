@@ -3,7 +3,7 @@
 `components/group_box` · export `GroupBox` · version 0.2.0. Generated from
 [`registry/components/group_box.rhai`](../../../registry/components/group_box.rhai); do not edit.
 
-Labelled desktop group surface for related controls or settings.
+Labelled group of related controls or settings: a top hairline and a label-voice heading on the parent's content edge, with no surface of its own.
 
 ```rhai
 import "components/group_box" as group_box;

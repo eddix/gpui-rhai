@@ -87,6 +87,7 @@ fn render_AlertDialog(ctx, props) {
         .with_style(ctx.component_style("confirm", style()));
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.title,
         content: column(body).with_style(style().gap(theme_length("space.related"))),
-        actions: [cancel, confirm], initial_focus: "first", on_open_change: Fn("open_action") })
+        actions: [cancel, confirm], initial_focus: "first", on_open_change: Fn("open_action"),
+        part_styles: #{ actions: ctx.component_style("actions", style()) } })
         .with_style(ctx.component_style("root", style()))
 }

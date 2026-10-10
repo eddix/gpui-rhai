@@ -20,7 +20,7 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Motion identity of the ticker; keep it stable so only a changed `value` replays the fade." },
             value: #{ schema: #{ type: "integer" }, required: true, sensitive: false,
-                doc: "Number shown in `display` typography; a new value fades in while the old one fades out." },
+                doc: "Number shown in `display` typography; each new value fades in on the same text, and the ticker fades out only when it is removed." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
     },

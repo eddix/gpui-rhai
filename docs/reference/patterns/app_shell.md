@@ -5,7 +5,7 @@
 
 AppShell is the window frame of a productivity tool: title bar, sidebar, main area, optional inspector, status bar, and keyboard regions.
 
-The sidebar and inspector are raised color blocks beside the main surface; no rules. F6 and Shift+F6 move focus between the present regions; a region shows the 2px ink frame while it holds focus itself, and Tab then enters it. The shell keeps the last region F6 moved to as its only state.
+The sidebar and inspector are raised color blocks beside the main surface; no rules. F6 and Shift+F6 move focus from the region that holds it to the next or previous present region; a region shows the 2px ink frame while it holds focus itself, and Tab then enters it. With focus outside every region they go on from the last region F6 moved to, which the shell keeps as its only state.
 
 ```rhai
 import "patterns/app_shell" as app_shell;
@@ -35,9 +35,9 @@ app_shell::AppShell(#{ key: "app", label: "Workbench", title_bar: #{ title: "Wor
 
 | Field | Type | Required or default | Description |
 |---|---|---|---|
-| `center` | array of node (at most 8) | `[]` | Fields centered in the bar. |
-| `end` | array of node (at most 8) | `[]` | Fields at the end edge; they keep their width. |
-| `start` | array of node (at most 8) | `[]` | Fields at the start edge; they truncate when space runs out. |
+| `center` | array of node (at most 16) | `[]` | Fields centered in the bar. |
+| `end` | array of node (at most 16) | `[]` | Fields at the end edge; they keep their width. |
+| `start` | array of node (at most 16) | `[]` | Fields at the start edge; they truncate when space runs out. |
 
 ### `title_bar` fields
 

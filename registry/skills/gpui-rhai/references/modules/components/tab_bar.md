@@ -45,7 +45,7 @@ tab_bar::TabBar(#{ key: "docs", label: "Open files", value: current, tabs: tabs,
 | `disabled` | bool | `false` | Whether the tab ignores the pointer; the keyboard cursor skips it. |
 | `icon` | node or `()` | — | Node drawn at icon size before the label. |
 | `label` | string | required | Tab text and accessible name; past twice `metrics.label_column` the label truncates. |
-| `value` | string | required | Identity of the tab, matched against `value` and reported by every callback. |
+| `value` | string | required | Identity of the tab, matched against `value` and reported by every callback; unique among the tabs. |
 
 ## Events
 

@@ -65,7 +65,7 @@ define_component(#{
                 doc: "Pressed state of a toggle; `ghost`, `outline` and `secondary` fill with `selection` and stop reacting to hover." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Blocks clicks and greys the icon; a disabled `action` disables it too." },
+                doc: "Blocks clicks and greys the icon but keeps the variant's silhouette, as on `Button`; a disabled `action` disables it too." },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Blocks clicks and shows the disabled look while work runs; it draws no spinner." },
@@ -115,6 +115,11 @@ fn render_IconButton(ctx, props) {
         .width(theme_length("metrics.control"))
         .height(theme_length("metrics.control"))
         .radius(theme_radius("md"));
+    // Disabled keeps the variant's silhouette, as on Button: blocks turn into a neutral
+    // block, an outline keeps its frame, a ghost stays bare, selected or not.
+    let bare = variant == "ghost" || variant == "outline";
+    let disabled_fill = if bare { rgba(0x00000000) } else { theme_color("surface_hover") };
+    let disabled_frame = if variant == "outline" { theme_color("border") } else { disabled_fill };
     base = base
         .border(px(2))
         .border_color(frame)
@@ -123,7 +128,8 @@ fn render_IconButton(ctx, props) {
         .focus(style().border_color(theme_color("focus_ring")))
         .active(style().opacity(0.86))
         .disabled(style()
-            .background(if variant == "ghost" { rgba(0x00000000) } else { theme_color("surface_hover") })
+            .background(disabled_fill)
+            .border_color(disabled_frame)
             .text_color(theme_color("disabled")));
     if hoverable && !disabled && !loading && !selected {
         base = base.hover(style().background(button::button_hover(variant)));

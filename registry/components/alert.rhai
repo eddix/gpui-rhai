@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "surface_raised", "accent", "success", "warning", "danger", "text_primary", "text_muted",
+    "surface_raised", "success", "warning", "danger", "text_primary", "text_muted",
     "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm", "space.related", "radius.lg",
     "typography.body"
   ],
@@ -22,7 +22,7 @@ define_component(#{
     metadata: #{ id: "components/alert", "export": "Alert", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
-            "surface_raised", "accent", "success", "warning", "danger", "text_primary",
+            "surface_raised", "success", "warning", "danger", "text_primary",
             "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm",
             "space.related", "radius.lg", "typography.body"
         ],
@@ -42,7 +42,7 @@ define_component(#{
                 doc: "Controls on the end side, `related` apart." },
             variant: #{ schema: #{ type: "string", allowed: ["info", "success", "warning", "danger"] },
                 required: false, sensitive: false, "default": #{ type: "string", value: "info" },
-                doc: "Lamp or icon color; `warning` and `danger` announce as an alert, the others as a status." },
+                doc: "Lamp or icon color, `text_muted` for `info` and the status color otherwise; `warning` and `danger` announce as an alert, the others as a status." },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
@@ -55,9 +55,11 @@ define_component(#{
     render: Fn("render_Alert")
 });
 
+// `info` is not a status color (accent marks action and selection): its lamp is muted
+// ink, like a neutral Badge.
 fn alert_color(variant) {
     if variant == "success" || variant == "warning" || variant == "danger" { theme_color(variant) }
-    else { theme_color("accent") }
+    else { theme_color("text_muted") }
 }
 
 fn alert_role(variant) {

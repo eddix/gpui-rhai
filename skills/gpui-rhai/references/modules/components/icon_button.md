@@ -18,7 +18,7 @@ icon_button::IconButton(#{ icon: svg(markup), label: "Close", variant: "ghost", 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `action` | string or `()` | — | Registered action dispatched on click, in place of `on_click`; it also sets the enabled state and the shortcut told to assistive tech. |
-| `disabled` | bool | `false` | Blocks clicks and greys the icon; a disabled `action` disables it too. |
+| `disabled` | bool | `false` | Blocks clicks and greys the icon but keeps the variant's silhouette, as on `Button`; a disabled `action` disables it too. |
 | `hoverable` | bool | `true` | Changes the fill on hover; `false` keeps it still. |
 | `icon` | node | required | Icon node, sized `metrics.icon` square and drawn in the button's text color. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |

@@ -52,7 +52,7 @@ define_component(#{
             doc:"Keyboard cursor row, kept in view; the caller stores the `active_change` payload. Without one the cursor is on the first enabled row."},
         selection_mode:#{schema:#{type:"string",allowed:["none","single","multiple"]},required:false,
             sensitive:false,"default":#{type:"string",value:"single"},
-            doc:"`single` selects the clicked row, `multiple` toggles it in the selection, `none` only moves the cursor."},
+            doc:"`single` selects the clicked row and a second click keeps it selected, `multiple` toggles it in the selection, `none` only moves the cursor."},
         estimated_row_height:#{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,
             "default":#{type:"float",value:32.0},
             doc:"Row height in logical pixels the virtual list assumes before rows are measured; rows draw at `metrics.row`."},

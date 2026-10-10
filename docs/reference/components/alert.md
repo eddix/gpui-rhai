@@ -23,7 +23,7 @@ alert::Alert(#{ title: "Saved", description: "Changes are live.", variant: "succ
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `style` | style | — | Style merged over the root part. |
 | `title` | string | required | The message in bold body text; also the alert's accessible name. |
-| `variant` | `"info"` or `"success"` or `"warning"` or `"danger"` | `"info"` | Lamp or icon color; `warning` and `danger` announce as an alert, the others as a status. |
+| `variant` | `"info"` or `"success"` or `"warning"` or `"danger"` | `"info"` | Lamp or icon color, `text_muted` for `info` and the status color otherwise; `warning` and `danger` announce as an alert, the others as a status. |
 
 ## Slots
 
@@ -39,5 +39,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `body`, `cont
 
 ## Theme
 
-- Tokens: `accent`, `danger`, `metrics.icon`, `metrics.inset`, `radius.lg`, `space.related`, `spacing.sm`, `spacing.xxs`, `success`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `warning`
+- Tokens: `danger`, `metrics.icon`, `metrics.inset`, `radius.lg`, `space.related`, `spacing.sm`, `spacing.xxs`, `success`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `warning`
 - Environment: `corners`, `density`

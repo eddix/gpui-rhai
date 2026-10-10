@@ -95,7 +95,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
 | `column_resize` | `on_column_resize` | object | Emitted when a header-edge drag ends, a double-click fits the column, or Left/Right on a handle steps it 8px; the payload is the new width. |
-| `context_request` | `on_context_request` | object | Emitted on a right press on a cell, after selecting its row unless the selection holds it, or Shift+F10 or the menu key on the current row. |
+| `context_request` | `on_context_request` | object | Emitted on a right press on a cell, after selecting its row unless the selection holds it, or on Shift+F10 or the menu key on the current row with a selection mode. |
 | `group_toggle` | `on_group_toggle` | string | Emitted when a group header is clicked, only with `on_group_toggle` set; the payload is the group value. |
 | `row_click` | `on_row_click` | string | Emitted when a row is clicked or Enter is pressed on the selected row; the payload is the row key. |
 | `selection_change` | `on_selection_change` | array of string (at most 100000) | Emitted when a click, Up, Down, Home, End or a context request selects rows; the payload is the next selection. |

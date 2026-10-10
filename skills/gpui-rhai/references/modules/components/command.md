@@ -19,7 +19,7 @@ command::Command(#{ key: "palette", label: "Commands", query: query, active_valu
 |---|---|---|---|
 | `active_value` | string | required | Highlighted command value; the caller stores the `active_change` payload. Other values show the first enabled match. |
 | `autofocus` | bool | `false` | Focuses the search field when the command first mounts. |
-| `disabled` | bool | `false` | Disables the search field and the list's arrow, Home, End and Enter keys. |
+| `disabled` | bool | `false` | Disables the whole command: the search field, the rows and the list's keys. |
 | `empty_text` | string | `"No commands found"` | Message shown in place of the list when no command matches. |
 | `items` | array of object (at most 4096) or native collection | required | Commands to rank: item maps, or a native collection keyed by value with the same fields but no `content` or `action`. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |

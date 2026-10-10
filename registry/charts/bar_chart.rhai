@@ -63,4 +63,9 @@ define_component(#{
 });
 
 fn BarChart(props) { render_component("charts/bar_chart", props) }
-fn render_BarChart(ctx, props) { chart::BarChart(props) }
+// The adapter's own root rule and caller style reach the chart as its root style.
+fn render_BarChart(ctx, props) {
+    let chart_props = props;
+    chart_props.style = ctx.component_style("root", style());
+    chart::BarChart(chart_props)
+}

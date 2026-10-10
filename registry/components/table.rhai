@@ -192,7 +192,7 @@ define_component(#{
                     doc: "Where to open a Menu: the pointer, or the current row's bounds (the table's when the row is not laid out)." },
                 source: #{ schema: #{ type: "string", allowed: ["pointer", "keyboard"] }, required: true, sensitive: false,
                     doc: "`pointer` for a right press, `keyboard` for Shift+F10 or the menu key." },
-            } }, doc: "Emitted on a right press on a cell, after selecting its row unless the selection holds it, or Shift+F10 or the menu key on the current row." },
+            } }, doc: "Emitted on a right press on a cell, after selecting its row unless the selection holds it, or on Shift+F10 or the menu key on the current row with a selection mode." },
             group_toggle: #{ payload: #{ type: "string" },
                 doc: "Emitted when a group header is clicked, only with `on_group_toggle` set; the payload is the group value." },
             column_resize: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
@@ -616,7 +616,9 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         }
         let content_style = style().flex_grow().min_width(px(0)).height(relative(1.0)).items_center()
             .gap(theme_spacing("xs"));
-        if optional_or(column, "align", "start") == "end" { content_style = content_style.justify_end(); }
+        let align = optional_or(column, "align", "start");
+        if align == "end" { content_style = content_style.justify_end(); }
+        else if align == "center" { content_style = content_style.justify_center(); }
         let children = [row(content).with_style(content_style)];
         let header_ref = refs[index];
         if index > 0 && prop_or(columns[index - 1], "resize_enabled", false) {
@@ -705,10 +707,11 @@ fn table_state_body(ctx,props,part,content) {
 
 fn render_Table(ctx, props) {
     let fill_height = prop_or(props, "fill_height", false);
-    if fill_height && "height" in props {
+    let has_height = optional_or(props, "height", ()) != ();
+    if fill_height && has_height {
         throw "Table accepts either height or fill_height, not both";
     }
-    if !fill_height && !("height" in props) {
+    if !fill_height && !has_height {
         throw "Table requires height or fill_height: true";
     }
     let current_sort = if "sort" in props { props.sort } else { () };

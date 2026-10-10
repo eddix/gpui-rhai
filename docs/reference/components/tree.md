@@ -29,7 +29,7 @@ tree::Tree(#{key:"files",label:"Files",items:items,expanded:[],selected_keys:[],
 | `on_selection_change` | callback or `()` | — | Called with the next selected keys when a row is clicked or Enter is pressed, unless `selection_mode` is `none`. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `selected_keys` | array of string (at most 10000) | required | Selected node keys; the caller stores the `selection_change` payload and passes it back. |
-| `selection_mode` | `"none"` or `"single"` or `"multiple"` | `"single"` | `single` selects the clicked row, `multiple` toggles it in the selection, `none` only moves the cursor. |
+| `selection_mode` | `"none"` or `"single"` or `"multiple"` | `"single"` | `single` selects the clicked row and a second click keeps it selected, `multiple` toggles it in the selection, `none` only moves the cursor. |
 | `style` | style | — | Style merged over the root part. |
 
 ### `items[]` fields

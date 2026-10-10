@@ -32,7 +32,7 @@ select::Select(#{ key: "country", label: "Country", options: countries, value: "
 | `placeholder` | string | `""` | Trigger text while nothing is selected. |
 | `placement` | `"top"` or `"bottom"` or `"left"` or `"right"` | `"bottom"` | Side of the trigger the list opens on. |
 | `query` | string | required | Search text that filters the options; the caller stores the `query_change` payload and passes it back. |
-| `search_placeholder` | string | `""` | Placeholder of the search field shown with `searchable`. |
+| `search_placeholder` | string | `"Search"` | Placeholder of the search field shown with `searchable`. |
 | `searchable` | bool | `false` | Shows a search field at the top of the list; without it, letter keys jump to matching options. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; leave unset to inherit the environment size. |
 | `style` | style | — | Style merged over the root part. |

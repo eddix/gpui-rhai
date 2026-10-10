@@ -63,4 +63,9 @@ define_component(#{
 });
 
 fn PieChart(props) { render_component("charts/pie_chart", props) }
-fn render_PieChart(ctx, props) { chart::PieChart(props) }
+// The adapter's own root rule and caller style reach the chart as its root style.
+fn render_PieChart(ctx, props) {
+    let chart_props = props;
+    chart_props.style = ctx.component_style("root", style());
+    chart::PieChart(chart_props)
+}

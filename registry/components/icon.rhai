@@ -88,7 +88,7 @@ fn icon_box(size) {
 fn Icon(props) { render_component("components/icon", props) }
 fn render_Icon(ctx, props) {
     let size = if "size" in props && props.size != () { props.size } else { () };
-    let label = if "label" in props { props.label } else { "" };
+    let label = if "label" in props && props.label != () { props.label } else { "" };
     let node = if "rtl_source" in props && props.rtl_source != () {
         directional_image_source(props.source, props.rtl_source)
     } else {

@@ -201,6 +201,16 @@ fn interactive_components_are_one_tab_stop_each(cx: &mut TestAppContext) {
             2,
         ),
         (
+            // Each region is a stop before its control: it owns the focus its frame shows.
+            "app_shell",
+            r#"import "patterns/app_shell" as c; import "components/button" as b;"#,
+            r#"c::AppShell(#{ key: "shell", label: "Tool",
+                sidebar: b::Button(#{ text: "Nav", on_click: Fn("noop") }),
+                main: b::Button(#{ text: "Main", on_click: Fn("noop") }),
+                inspector: b::Button(#{ text: "Info", on_click: Fn("noop") }) })"#,
+            6,
+        ),
+        (
             "tag_closable",
             r#"import "components/tag" as c;"#,
             r#"c::Tag(#{ text: "rust", closable: true, on_close: Fn("noop") })"#,

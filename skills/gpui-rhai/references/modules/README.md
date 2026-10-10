@@ -35,7 +35,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/drop_zone`](components/drop_zone.md) | `DropZone` | Typed same-Host application drop target. |
 | [`components/empty`](components/empty.md) | `Empty` | Consistent empty-state composition with optional icon, content, and actions. |
 | [`components/form_field`](components/form_field.md) | `FormField` | Associates label, control, description, required state, and error content. |
-| [`components/group_box`](components/group_box.md) | `GroupBox` | Labelled desktop group surface for related controls or settings. |
+| [`components/group_box`](components/group_box.md) | `GroupBox` | Labelled group of related controls or settings: a top hairline and a label-voice heading on the parent's content edge, with no surface of its own. |
 | [`components/icon`](components/icon.md) | `Icon` | Icon wraps a declarative AssetId or a runtime image handle with consistent sizing. |
 | [`components/icon_button`](components/icon_button.md) | `IconButton` | IconButton presents one icon in a square action target. |
 | [`components/input`](components/input.md) | `Input` | Input is a controlled single-line native text input. |

@@ -372,6 +372,29 @@ and [docs/design/](docs/design/) for the specification.
   optional-float signal. DropZone, DragSource, Sortable and SelectionArea
   declare the theme colors their primitives paint (`accent`, and `danger` for
   DropZone).
+- Official component fixes from a contract review:
+  - ContextMenu, Toggle, AlertDialog (`actions`) and the chart adapters
+    (`root`) apply the part styles they declare.
+  - Command's `disabled` disables the rows too; Command and Menu keys treat a
+    row whose action is disabled as disabled, and Enter no longer dispatches
+    it; an item's `shortcut: ()` no longer fails the first render.
+  - AppShell: F6 and Shift+F6 move on from the region that holds focus (they
+    used the last region F6 reached, so a press in the inspector and then F6
+    went to the main area); `status` takes 16 fields per edge like StatusBar.
+  - Table accepts `height: ()` beside `fill_height`, and a centered column
+    centers its header.
+  - Select's search field keeps the "Search" placeholder; it passed an empty
+    one down.
+  - Label's `required` part styles only the asterisk, now its own text.
+  - IconButton disabled keeps the variant's silhouette, as Button does; a
+    lone ButtonGroup button takes both the `first` and `last` part styles; an
+    Icon with `label: ()` is decorative instead of failing.
+  - Alert `info` marks itself with a neutral lamp (`text_muted`): accent marks
+    action and selection, not status.
+  - Corrected docs: TabBar values are unique, Tree keeps a selection on a
+    second click, NumberTicker fades each new value in, GroupBox draws a rule,
+    and a callback prop may be forwarded through formal components (it keeps
+    its caller's binding).
 
 ## 0.1.8 - 2026-10-04
 

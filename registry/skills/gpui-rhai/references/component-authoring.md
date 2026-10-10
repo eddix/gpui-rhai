@@ -354,10 +354,12 @@ action, emit an event, or call a manifest-declared capability. They may not
 access GPUI contexts. Pointer callbacks are handled by default; return
 `propagate()` to allow the normalized event to continue to an ancestor handler.
 
-Do not forward a callback prop through another formal component. Callback
-ownership is rebound at each formal boundary, so a two-hop pass-through can run
-against the intermediate component's state path. Instead, give the child a
-component-local named handler and emit the composite's declared event:
+A callback prop may be passed on as it is, to a node or to another formal
+component: it keeps the binding of the component that wrote it, so it runs in
+that caller's context however many components forward it. When the composite's
+event is not the child's (another payload, or an event the payload schema
+should check), give the child a component-local named handler and emit the
+composite's declared event:
 
 ```rhai
 fn option_selected(ctx, value) { ctx.emit("change", value); }

@@ -67,14 +67,19 @@ fn render_Label(ctx, props) {
     let required = if "required" in props { props.required } else { false };
     let description = if "description" in props { props.description } else { () };
     // Field labels are body text; weight stays 400 so labels never compete with
-    // titles. The required mark uses the readable danger text color.
+    // titles. The required mark is its own node in the readable danger text color,
+    // so the `required` part styles or hides only the mark.
+    let text_style = ctx.component_style("text", style()
+        .typography("body")
+        .text_color(theme_color("text_primary")));
     let title = if required {
-        text([span(props.text), span(" *").color(theme_color("text.danger"))])
-    } else { text([span(props.text)]) };
-    let children = [title.with_style(ctx.component_style("required",
-        ctx.component_style("text", style()
-            .typography("body")
-            .text_color(theme_color("text_primary")))))] ;
+        row([
+            text(props.text).with_style(style().min_width(px(0))),
+            text(" *").with_style(ctx.component_style("required", style()
+                .flex_shrink(false).text_color(theme_color("text.danger")))),
+        ]).with_style(text_style)
+    } else { text(props.text).with_style(text_style) };
+    let children = [title];
     if description != () {
         children.push(
             text(description)
