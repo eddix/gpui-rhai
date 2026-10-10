@@ -3116,10 +3116,8 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
                 } } }
                 fn opened(ctx, open) { ctx.set_state("open", open); }
                 fn activated(ctx, value) { ctx.set_state("active", value); }
-                fn acted(ctx, value) {
-                    ctx.set_state("action", value);
-                    ctx.set_state("open", false);
-                }
+                // The menu asks to close after the action, through `opened`.
+                fn acted(ctx, value) { ctx.set_state("action", value); }
                 fn view(ctx) {
                     menu::Menu(#{
                         key: "file", label: "File menu", trigger: text("File"),
@@ -3159,15 +3157,25 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
     let captured_engine = Rc::clone(&runtime_engine);
     let captured_errors = Rc::clone(&errors);
     let captured_events = Rc::clone(&events);
+    let captured_runtime = Rc::clone(&runtime);
     let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _, app| {
         captured_events
             .borrow_mut()
             .push((callback.name().to_owned(), payload.clone()));
         let result = {
             let engine = captured_engine.borrow();
-            captured_lifecycle
-                .borrow()
+            let lifecycle = captured_lifecycle.borrow();
+            // Menu reports row activations as component events, which the host delivers
+            // to the caller after the handler returns.
+            lifecycle
                 .invoke_callback_transactional(&engine, &callback, payload)
+                .and_then(|_| {
+                    let pending = captured_runtime.borrow_mut().drain_batch().events;
+                    for event in pending {
+                        lifecycle.invoke_component_event_transactional(&engine, event)?;
+                    }
+                    Ok(())
+                })
         };
         if let Err(error) = result {
             captured_errors.borrow_mut().push(error.to_string());

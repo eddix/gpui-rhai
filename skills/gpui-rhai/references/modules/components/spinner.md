@@ -21,7 +21,7 @@ spinner::Spinner(#{ key: "loading", label: "Loading" })
 | `label` | string | required | Accessible name saying what is in progress. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` | `"md"` | Diameter: `xs` 12, `sm` 14, `md` 18 and `lg` 22 logical pixels. |
-| `speed_ms` | integer 240–4000 | `850` | Duration of one full turn in milliseconds. |
+| `speed_ms` | integer 240–4000 or `()` | — | Duration of one full turn in milliseconds; unset, the theme's `ambient` motion duration. |
 | `style` | style | — | Style merged over the root part. |
 
 ## Parts

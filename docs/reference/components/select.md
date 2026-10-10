@@ -15,7 +15,7 @@ select::Select(#{ key: "country", label: "Country", options: countries, value: "
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `clear_label` | string | `"Clear"` | Accessible name of the clear button shown with `clearable`. |
+| `clear_label` | string or `()` | — | Accessible name of the clear button shown with `clearable`; unset, the localized `common.clear` text. |
 | `clearable` | bool | `false` | Shows a clear button in the trigger while a value is selected; clicking it emits `change` with `()`. |
 | `disabled` | bool | `false` | Disables the trigger so the list cannot open. |
 | `empty_text` | string | `""` | Text shown when no option matches; empty uses the localized `common.no_results` message. |

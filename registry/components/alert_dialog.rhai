@@ -10,7 +10,8 @@
   "environment": ["density"]
 }
 */
-// Controlled confirmation dialog with explicit cancel and confirm semantics.
+// Controlled confirmation dialog with explicit cancel and confirm semantics: every close
+// reports `confirm` or `cancel` first, Escape and backdrop presses `cancel`.
 // State: caller owns open state; the component retains no application value.
 // Example: AlertDialog(#{ key: "delete", open: true, title: "Delete item?", on_confirm: Fn("remove") })
 
@@ -47,7 +48,7 @@ define_component(#{
             on_confirm: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with `()` when the confirm button is pressed; `open_change` then asks to close." },
             on_cancel: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
-                doc: "Called with `()` when the cancel button is pressed; Escape and backdrop presses close without it." },
+                doc: "Called with `()` when the cancel button is pressed or Escape or a backdrop press dismisses the dialog; `open_change` then asks to close." },
             on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with `false` when either button is pressed or Escape or a backdrop press dismisses the dialog." },
         },
@@ -55,7 +56,7 @@ define_component(#{
         events: #{ confirm: #{ payload: #{ type: "null" },
                 doc: "Emitted when the confirm button is pressed, before `open_change`; the payload is `()`." },
             cancel: #{ payload: #{ type: "null" },
-                doc: "Emitted when the cancel button is pressed, before `open_change`; the payload is `()`." },
+                doc: "Emitted when the cancel button is pressed or Escape or a backdrop press dismisses the dialog, before `open_change`; the payload is `()`." },
             open_change: #{ payload: #{ type: "bool" },
                 doc: "Emitted when a button is pressed or the dialog is dismissed; the payload is the requested open state." } },
         slots: #{ content: #{ required: false, multiple: false, doc: "Extra content after the description." } },
@@ -67,7 +68,11 @@ define_component(#{
 fn AlertDialog(props) { render_component("components/alert_dialog", props) }
 fn confirm_action(ctx, payload) { ctx.emit("confirm", ()); ctx.emit("open_change", false); }
 fn cancel_action(ctx, payload) { ctx.emit("cancel", ()); ctx.emit("open_change", false); }
-fn open_action(ctx, open) { ctx.emit("open_change", open); }
+// Escape and backdrop presses close the dialog as the cancel button does.
+fn open_action(ctx, open) {
+    if !open { ctx.emit("cancel", ()); }
+    ctx.emit("open_change", open);
+}
 
 fn render_AlertDialog(ctx, props) {
     let body = [];

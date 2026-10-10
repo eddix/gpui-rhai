@@ -227,7 +227,9 @@ The list takes `selection_mode` (`none` default, `single`, `multiple`),
 `selected_keys`, `height` or `fill_height`, `dividers`, `badge_width` (pixels;
 one leading slot on every row, so titles align when badges differ), `empty_text` /
 `empty`, and emits `selection_change`, `row_click` and `context_request`
-(`#{ key, anchor, source }`, like Table's without a column).
+(`#{ key, anchor, source }`, like Table's without a column; without a selection
+mode, `on_context_request` alone makes the list a tab stop whose Shift+F10 asks
+for the whole list).
 
 Source: [list.rhai](../../registry/components/list.rhai).
 Runnable story: `gpui-rhai gallery --story components/list`.
@@ -431,9 +433,11 @@ resource limits and extension points.
 
 - `Popover` and `Tooltip` are anchored non-modal surfaces.
 - `Menu` is a trigger-based action menu; `ContextMenu` reuses the same item,
-  submenu, typeahead, and roving model while anchoring at a secondary click.
+  submenu, typeahead, and roving model while anchoring at a secondary click,
+  or at its trigger on Shift+F10 or the menu key. Activating any row closes
+  either menu.
 - `Dialog` is a general modal; `AlertDialog` adds explicit confirmation and
-  cancellation semantics.
+  cancellation semantics: Escape and backdrop presses report `cancel` too.
 - `Sheet` is a temporary modal attached to logical start/end or physical
   top/bottom. Persistent sidebars remain normal application layout.
 

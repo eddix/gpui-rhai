@@ -3,9 +3,9 @@
 `components/context_menu` · export `ContextMenu` · version 0.2.0. Generated from
 [`registry/components/context_menu.rhai`](../../../registry/components/context_menu.rhai); do not edit.
 
-Controlled pointer-anchored action menu sharing Menu items and keyboard behavior.
+Controlled action menu sharing Menu items and keyboard behavior, anchored at the pointer on a right-button press or at the trigger on Shift+F10 or the menu key.
 
-State: caller owns open/active values; component retains only the last pointer anchor.
+State: caller owns open/active values; component retains only the last anchor.
 
 ```rhai
 import "components/context_menu" as context_menu;
@@ -21,14 +21,14 @@ context_menu::ContextMenu(#{ key: "row-menu", label: "Row actions", trigger: row
 | `items` | array of object (at most 512) | required | Rows of the menu, in order, as in Menu. |
 | `key` | string | required | Stable identity of this instance; also the overlay id of its menu, which a submenu names in `parent_overlay`. |
 | `label` | string | required | Accessible name of the menu panel. |
-| `on_action` | callback or `()` | — | Called with the item `value` when a row is clicked or activated with Enter; rows without an `action` leave the menu open. |
+| `on_action` | callback or `()` | — | Called with the item `value` when a row is clicked or activated with Enter; the menu then asks to close, except after Enter on a `submenu` row. |
 | `on_active_change` | callback or `()` | — | Called with the item `value` to highlight on Up, Down or a letter key; store it as `active_value`. |
-| `on_open_change` | callback or `()` | — | Called with `true` on a right-button press on the trigger and `false` on dismissal or after an `action` row; store it as `open`. |
+| `on_open_change` | callback or `()` | — | Called with `true` on a right-button press on the trigger, or Shift+F10 or the menu key on it, and `false` on dismissal or after a row is activated; store it as `open`. Without it the trigger takes no keys. |
 | `open` | bool | required | Whether the menu is shown; the caller stores the `open_change` payload and passes it back. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
-| `placement` | `"top"` or `"bottom"` or `"left"` or `"right"` | `"bottom"` | Preferred side of the pointer position that the menu opens on. |
+| `placement` | `"top"` or `"bottom"` or `"left"` or `"right"` | `"bottom"` | Preferred side of the pointer position, or of the trigger when opened from the keyboard, that the menu opens on. |
 | `style` | style | — | Style merged over the root part. |
-| `trigger` | node | required | Area that opens the menu at the pointer on a right-button press; it takes no focus and ignores left clicks. |
+| `trigger` | node | required | Area that opens the menu at the pointer on a right-button press, or against its own bounds on Shift+F10 or the menu key while it or a control inside has focus; without a focusable control it is the tab stop itself. It ignores left clicks. |
 
 ### `items[]` fields
 
@@ -49,13 +49,13 @@ context_menu::ContextMenu(#{ key: "row-menu", label: "Row actions", trigger: row
 |---|---|---|---|
 | `action` | `on_action` | string | Emitted when a row is clicked or activated with Enter; the payload is the item `value`. |
 | `active_change` | `on_active_change` | string | Emitted when Up, Down or a letter key moves the highlight; the payload is the new item `value`. |
-| `open_change` | `on_open_change` | bool | Emitted when a right-button press opens the menu or it closes; the payload is the requested `open`. |
+| `open_change` | `on_open_change` | bool | Emitted when a right-button press, Shift+F10 or the menu key opens the menu, or it closes; the payload is the requested `open`. |
 
 ## Slots
 
 | Slot | Required | Multiple | Description |
 |---|---|---|---|
-| `trigger` | yes | no | Area that opens the menu on a right-button press. |
+| `trigger` | yes | no | Area that opens the menu on a right-button press, Shift+F10 or the menu key. |
 
 ## Parts
 

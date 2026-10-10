@@ -31,7 +31,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `loading` | bool | `false` | Shows `loading_content` below the header instead of the rows. |
 | `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted "Loading…" line. |
 | `on_column_resize` | callback or `()` | — | Called with `#{ key, width }` when a resize ends; with it the caller owns widths and writes `width` into the column. |
-| `on_context_request` | callback or `()` | — | Called with `#{ key, column, anchor, source }` on a context request; open a Menu at `anchor`, in window coordinates. |
+| `on_context_request` | callback or `()` | — | Called with `#{ key, column, anchor, source }` on a context request; open a Menu at `anchor`, in window coordinates. Without a selection mode it makes the table a tab stop for Shift+F10 and the menu key. |
 | `on_group_toggle` | callback or `()` | — | Called with the group value when a group header is clicked; without it group headers are not clickable. |
 | `on_row_click` | callback or `()` | — | Called with the row key when a row is clicked, or Enter is pressed on the selected row. |
 | `on_selection_change` | callback or `()` | — | Called with the next selected keys when a row is clicked, Up, Down, Home or End is pressed, or a context request selects a row. |
@@ -45,7 +45,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `rows` | array of map of any value (at most 100000) or native collection | required | Row maps keyed by field, or a NativeCollection that sorts, groups and filters in Rust; cells show values as strings. |
 | `search_fields` | array of string (at most 256) | `[]` | Row fields `query` searches; each is `row_key` or a declared column key. |
 | `selected_keys` | array of string (at most 100000) | `[]` | Selected row keys; the caller stores the `selection_change` payload and passes it back. |
-| `selection_mode` | `"none"` or `"single"` or `"multiple"` | `"none"` | `single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none` makes the table one tab stop. |
+| `selection_mode` | `"none"` or `"single"` or `"multiple"` | `"none"` | `single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none`, or `on_context_request`, makes the table one tab stop. |
 | `sort` | object or `()` | — | Current sort; the caller stores the `sort_change` payload. A NativeCollection is sorted by it; array rows keep the order given. |
 | `sticky_group_headers` | bool | `true` | Keeps the current group header pinned at the top of the rows while they scroll. |
 | `striped` | bool | `false` | Tints every second displayed row with `surface_raised`. |
@@ -95,7 +95,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
 | `column_resize` | `on_column_resize` | object | Emitted when a header-edge drag ends, a double-click fits the column, or Left/Right on a handle steps it 8px; the payload is the new width. |
-| `context_request` | `on_context_request` | object | Emitted on a right press on a cell, after selecting its row unless the selection holds it, or on Shift+F10 or the menu key on the current row with a selection mode. |
+| `context_request` | `on_context_request` | object | Emitted on a right press on a cell, after selecting its row unless the selection holds it, or on Shift+F10 or the menu key: for the current row with a selection mode, for the table without one. |
 | `group_toggle` | `on_group_toggle` | string | Emitted when a group header is clicked, only with `on_group_toggle` set; the payload is the group value. |
 | `row_click` | `on_row_click` | string | Emitted when a row is clicked or Enter is pressed on the selected row; the payload is the row key. |
 | `selection_change` | `on_selection_change` | array of string (at most 100000) | Emitted when a click, Up, Down, Home, End or a context request selects rows; the payload is the next selection. |
@@ -110,7 +110,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `body`, `cursor`, `empty`, `group_count`, `group_header`, `group_indicator`, `group_label`, `header`, `header_cell`, `indicator_bar`, `loading`, `resize_handle`, `root`, `row`, `row_selected`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `body`, `cursor`, `empty`, `focus_frame`, `group_count`, `group_header`, `group_indicator`, `group_label`, `header`, `header_cell`, `indicator_bar`, `loading`, `resize_handle`, `root`, `row`, `row_selected`.
 
 ## Theme
 

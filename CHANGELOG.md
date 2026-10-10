@@ -411,6 +411,26 @@ and [docs/design/](docs/design/) for the specification.
 - TextInput emits `change` when IME composition commits, as Textarea does, not
   at every composition step; a controlled render during composition keeps the
   marked text.
+- Menus and dialogs, as decided for 0.2.0:
+  - Activating any Menu or ContextMenu row closes the menu after `action`
+    (Enter on a `submenu` row keeps it open so the keys reach the submenu).
+  - ContextMenu opens from Shift+F10 or the menu key on its trigger, anchored
+    at the trigger; with `on_open_change` the trigger area is a tab stop.
+  - AlertDialog emits `cancel` before `open_change(false)` on Escape and on a
+    backdrop press.
+  - A Menu or ContextMenu that closes gives focus back to where it was when it
+    opened. Focus stayed on the closed panel, so the next key did nothing: an
+    overlay lost its element state each time its key handlers came and went
+    with `open`.
+- Table and List without a selection mode take Shift+F10 and the menu key when
+  they have `on_context_request`, for a menu for the whole collection. A focused
+  Table with no current row, and such a List, show the 2px container frame
+  (`focus_frame` part).
+- Button `loading` shows `loading_text` in place of the label, announced as the
+  button's name, and keeps the idle label's width unless the loading text is
+  wider. Avatar initials are the name's first grapheme, uppercased. Spinner
+  without `speed_ms` follows `motion_duration("ambient")`. Select and Combobox
+  name their clear button with the localized `common.clear`.
 
 ## 0.1.8 - 2026-10-04
 

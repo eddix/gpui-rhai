@@ -13,7 +13,7 @@ The functions, methods and native primitives a script calls are in the
 |---|---|---|
 | [`components/accordion`](components/accordion.md) | `Accordion` | Controlled single/multiple accordion with Rust-side clip motion. |
 | [`components/alert`](components/alert.md) | `Alert` | Persistent inline feedback with semantic variants and composable actions. |
-| [`components/alert_dialog`](components/alert_dialog.md) | `AlertDialog` | Controlled confirmation dialog with explicit cancel and confirm semantics. |
+| [`components/alert_dialog`](components/alert_dialog.md) | `AlertDialog` | Controlled confirmation dialog with explicit cancel and confirm semantics: every close reports `confirm` or `cancel` first, Escape and backdrop presses `cancel`. |
 | [`components/avatar`](components/avatar.md) | `Avatar` | Avatar displays an image handle or name-derived initials with presence. |
 | [`components/badge`](components/badge.md) | `Badge` | Badge marks a read-only status: a square lamp followed by its label. |
 | [`components/button`](components/button.md) | `Button` | Button presents a desktop action: a large block with a centered label. |
@@ -25,7 +25,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/combobox`](components/combobox.md) | `Combobox` | Public Rhai choice composition over Overlay, Input, and virtual_collection. |
 | [`components/command`](components/command.md) | `Command` | Embeddable keyboard-first command search with deterministic fuzzy ranking. |
 | [`components/command_dialog`](components/command_dialog.md) | `CommandDialog` | Controlled modal presentation of Command without registering a global shortcut. |
-| [`components/context_menu`](components/context_menu.md) | `ContextMenu` | Controlled pointer-anchored action menu sharing Menu items and keyboard behavior. |
+| [`components/context_menu`](components/context_menu.md) | `ContextMenu` | Controlled action menu sharing Menu items and keyboard behavior, anchored at the pointer on a right-button press or at the trigger on Shift+F10 or the menu key. |
 | [`components/date_picker`](components/date_picker.md) | `DatePicker` | Controlled single-date field composed from public date data helpers, atoms, and Overlay. |
 | [`components/dialog`](components/dialog.md) | `Dialog` | Dialog presents controlled modal content through the native overlay layer. |
 | [`components/diff_viewer`](components/diff_viewer.md) | `DiffViewer` | Neutral two-way, read-only source comparison over the native document surface. |

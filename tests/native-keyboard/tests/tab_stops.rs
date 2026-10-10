@@ -195,6 +195,44 @@ fn interactive_components_are_one_tab_stop_each(cx: &mut TestAppContext) {
             1,
         ),
         (
+            "table_none",
+            r#"import "components/table" as c;"#,
+            r#"c::Table(#{ key: "t", label: "Hosts", row_key: "id", height: 120, columns: [#{ key: "h", title: "Host", width: #{ kind: "flex", value: 1.0 } }], rows: [#{ id: "a", h: "a" }, #{ id: "b", h: "b" }] })"#,
+            0,
+        ),
+        (
+            // Shift+F10 and the menu key need a stop, even without a selection mode.
+            "table_none_context",
+            r#"import "components/table" as c;"#,
+            r#"c::Table(#{ key: "t", label: "Hosts", row_key: "id", height: 120, columns: [#{ key: "h", title: "Host", width: #{ kind: "flex", value: 1.0 } }], rows: [#{ id: "a", h: "a" }, #{ id: "b", h: "b" }], on_context_request: Fn("noop") })"#,
+            1,
+        ),
+        (
+            "list_none",
+            r#"import "components/list" as c;"#,
+            r#"c::List(#{ key: "l", label: "Tickets", height: 120.0, items: [#{ key: "a", title: "A" }, #{ key: "b", title: "B" }], on_row_click: Fn("noop") })"#,
+            0,
+        ),
+        (
+            "list_none_context",
+            r#"import "components/list" as c;"#,
+            r#"c::List(#{ key: "l", label: "Tickets", height: 120.0, items: [#{ key: "a", title: "A" }, #{ key: "b", title: "B" }], on_context_request: Fn("noop") })"#,
+            1,
+        ),
+        (
+            // The trigger area is the stop for Shift+F10 and the menu key.
+            "context_menu",
+            r#"import "components/context_menu" as c;"#,
+            r#"c::ContextMenu(#{ key: "m", label: "Row actions", trigger: row([text("Area")]), open: false, active_value: "", items: [#{ kind: "item", value: "a", label: "A" }], on_open_change: Fn("noop") })"#,
+            1,
+        ),
+        (
+            "context_menu_with_a_button",
+            r#"import "components/context_menu" as c; import "components/button" as b;"#,
+            r#"c::ContextMenu(#{ key: "m", label: "Row actions", trigger: b::Button(#{ text: "Deploy", on_click: Fn("noop") }), open: false, active_value: "", items: [#{ kind: "item", value: "a", label: "A" }], on_open_change: Fn("noop") })"#,
+            1,
+        ),
+        (
             "accordion",
             r#"import "components/accordion" as c;"#,
             r#"c::Accordion(#{ key: "a", expanded: [], items: [#{ key: "x", title: "X", content: text("x"), content_height: 20 }, #{ key: "y", title: "Y", content: text("y"), content_height: 20 }], on_change: Fn("noop") })"#,

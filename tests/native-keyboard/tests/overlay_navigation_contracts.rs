@@ -1,8 +1,9 @@
 //! Menu, ContextMenu, Command, AlertDialog, AppShell and AnimatedTabs keep the contracts
 //! their schemas declare: declared parts reach the node they name, a row whose action is
-//! disabled is disabled for the keys too, a disabled Command takes no input, F6 moves on
-//! from the region that holds focus, and a callback reaches its caller through a nested
-//! component.
+//! disabled is disabled for the keys too, every activated menu row closes the menu, a
+//! ContextMenu opens from the keyboard, an AlertDialog reports `cancel` when dismissed, a
+//! disabled Command takes no input, F6 moves on from the region that holds focus, and a
+//! callback reaches its caller through a nested component.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -435,5 +436,168 @@ fn tab_bar_rejects_two_tabs_with_one_value(cx: &mut TestAppContext) {
             .as_deref()
             .is_some_and(|error| error.contains("duplicate key `a`")),
         "{error:?}"
+    );
+}
+
+fn menu_script(active: &str) -> String {
+    format!(
+        r#"fn view(ctx) {{ column([
+    menu::Menu(#{{ key: "m", label: "Actions", trigger: text("Actions"), open: true,
+        active_value: "{active}", items: {MENU_ITEMS}, on_action: Fn("acted"),
+        on_active_change: Fn("moved"), on_open_change: Fn("opened") }}),
+    text(ctx.get_state("log")).test_id("log"),
+]).with_style(style().width(px(600)).height(px(400))) }}"#
+    )
+}
+
+#[gpui::test]
+fn a_menu_row_without_an_action_closes_the_menu_after_reporting_it(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, &menu_script(""));
+    let other = bounds(&mut visual, &view, "menuitem", "Other");
+    click(&mut visual, other);
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(log(&mut visual, &view), "action:other open:false");
+    // Enter on the highlighted row does the same.
+    let (mut visual, view) = mount(cx, &menu_script("other"));
+    keys(&mut visual, "enter");
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(log(&mut visual, &view), "action:other open:false");
+}
+
+#[gpui::test]
+fn enter_on_a_submenu_row_reports_it_and_keeps_the_menu_open(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(
+        cx,
+        r#"fn view(ctx) {
+    let child = menu::Menu(#{ key: "more", label: "More actions", parent_overlay: "m",
+        trigger: text("More"), open: false, active_value: "", placement: "right",
+        items: [#{ kind: "item", value: "export", label: "Export" }], on_action: Fn("acted") });
+    column([
+        menu::Menu(#{ key: "m", label: "Actions", trigger: text("Actions"), open: true,
+            active_value: "more", on_action: Fn("acted"), on_open_change: Fn("opened"),
+            items: [#{ kind: "item", value: "other", label: "Other" },
+                #{ kind: "submenu", value: "more", label: "More", submenu: child }] }),
+        text(ctx.get_state("log")).test_id("log"),
+    ]).with_style(style().width(px(600)).height(px(400)))
+}"#,
+    );
+    keys(&mut visual, "enter");
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(log(&mut visual, &view), "action:more");
+}
+
+#[gpui::test]
+fn context_menu_opens_from_the_keyboard_at_its_trigger(cx: &mut TestAppContext) {
+    for key in ["shift-f10", "menu"] {
+        let (mut visual, view) = mount(
+            cx,
+            &format!(
+                r#"fn view(ctx) {{ column([
+    context_menu::ContextMenu(#{{ key: "rows", label: "Row actions",
+        trigger: row([text("Area")]).with_style(style().width(px(200)).height(px(40)))
+            .accessibility_role("group").accessibility_label("Area target"),
+        open: ctx.get_state("log").ends_with("open:true"), active_value: "other",
+        items: {MENU_ITEMS}, on_action: Fn("acted"), on_open_change: Fn("opened") }}),
+    text(ctx.get_state("log")).test_id("log"),
+]).with_style(style().padding(px(24)).width(px(600)).height(px(400))) }}"#
+            ),
+        );
+        let area = bounds(&mut visual, &view, "group", "Area target");
+        // The trigger area is the tab stop; the key opens the menu against its bounds.
+        visual.update(|window, cx| window.focus_next(cx));
+        settle(&mut visual);
+        keys(&mut visual, key);
+        assert_eq!(last_error(&mut visual, &view), None);
+        assert_eq!(log(&mut visual, &view), "open:true", "{key}");
+        let anchor = visual.update(|_, cx| {
+            let root = view.root(cx).unwrap().unwrap();
+            let UiNodeKind::Box { children } = root.kind() else {
+                unreachable!()
+            };
+            let UiNodeKind::Overlay { spec, .. } = children[0].kind() else {
+                unreachable!()
+            };
+            spec.anchor.unwrap()
+        });
+        assert_eq!(
+            (anchor.x, anchor.y, anchor.width, anchor.height),
+            (area.x, area.y, area.width, area.height),
+            "{key}"
+        );
+        keys(&mut visual, "escape");
+        assert_eq!(log(&mut visual, &view), "open:true open:false", "{key}");
+    }
+}
+
+#[gpui::test]
+fn alert_dialog_dismissal_reports_cancel_before_closing(cx: &mut TestAppContext) {
+    let script = r#"fn cancelled(ctx, payload) { note(ctx, "cancel"); }
+fn confirmed(ctx, payload) { note(ctx, "confirm"); }
+fn view(ctx) { column([
+    alert_dialog::AlertDialog(#{ key: "confirm", open: true, title: "Delete?",
+        on_cancel: Fn("cancelled"), on_confirm: Fn("confirmed"), on_open_change: Fn("opened") }),
+    text(ctx.get_state("log")).test_id("log"),
+]).with_style(style().width(px(600)).height(px(400))) }"#;
+    let (mut visual, view) = mount(cx, script);
+    keys(&mut visual, "escape");
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(log(&mut visual, &view), "cancel open:false");
+    // A press on the backdrop, outside the centered panel.
+    let (mut visual, view) = mount(cx, script);
+    click(
+        &mut visual,
+        GeometryBounds {
+            x: 4.0,
+            y: 4.0,
+            width: 2.0,
+            height: 2.0,
+        },
+    );
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(log(&mut visual, &view), "cancel open:false");
+    // The buttons still report themselves once.
+    let (mut visual, view) = mount(cx, script);
+    let confirm = bounds(&mut visual, &view, "button", "Continue");
+    click(&mut visual, confirm);
+    assert_eq!(log(&mut visual, &view), "confirm open:false");
+}
+
+/// Escape closes a menu and gives focus back to where it was when the menu
+/// opened, so the same key opens it again.
+#[gpui::test]
+fn a_closed_menu_returns_focus_to_where_it_opened(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(
+        cx,
+        &format!(
+            r#"fn view(ctx) {{ column([
+    menu::Menu(#{{ key: "m", label: "Actions", trigger: text("Actions"),
+        open: ctx.get_state("log").ends_with("open:true"), active_value: "",
+        items: {MENU_ITEMS}, on_action: Fn("acted"), on_active_change: Fn("moved"),
+        on_open_change: Fn("opened") }}),
+    context_menu::ContextMenu(#{{ key: "rows", label: "Row actions",
+        trigger: row([text("Area")]).with_style(style().width(px(200)).height(px(40))),
+        open: ctx.get_state("log").ends_with("ctx:true"), active_value: "",
+        items: {MENU_ITEMS}, on_action: Fn("acted"), on_open_change: Fn("context_opened") }}),
+    text(ctx.get_state("log")).test_id("log"),
+]).with_style(style().padding(px(24)).width(px(600)).height(px(400))) }}
+fn context_opened(ctx, open) {{ note(ctx, `ctx:${{open}}`); }}"#
+        ),
+    );
+    visual.update(|window, cx| window.focus_next(cx));
+    settle(&mut visual);
+    keys(&mut visual, "enter");
+    keys(&mut visual, "escape");
+    keys(&mut visual, "enter");
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(log(&mut visual, &view), "open:true open:false open:true");
+    keys(&mut visual, "escape");
+    visual.update(|window, cx| window.focus_next(cx));
+    settle(&mut visual);
+    keys(&mut visual, "shift-f10");
+    keys(&mut visual, "escape");
+    keys(&mut visual, "shift-f10");
+    assert_eq!(
+        log(&mut visual, &view),
+        "open:true open:false open:true open:false ctx:true ctx:false ctx:true"
     );
 }

@@ -39,7 +39,7 @@ define_component(#{
             initials: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false, sensitive: false,
-                doc: "Text shown when there is no `handle`; defaults to the first character of `name`.",
+                doc: "Text shown as written when there is no `handle`; unset, the first grapheme (user-perceived character) of `name`, uppercased.",
             },
             size: #{
                 schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
@@ -66,13 +66,25 @@ fn presence_color(presence) {
     else { rgba(0x00000000) }
 }
 
+// The longest run of leading characters that still counts as one grapheme, so a
+// base letter keeps the combining marks that follow it.
+fn first_grapheme(value) {
+    let first = "";
+    for character in value {
+        let next = first + character;
+        if first != "" && grapheme_count(next) > 1 { break; }
+        first = next;
+    }
+    first
+}
+
 fn Avatar(props) { render_component("components/avatar", props) }
 fn render_Avatar(ctx, props) {
     let initials = if "initials" in props && props.initials != () {
         props.initials
-    } else if props.name.len > 0 {
-        props.name[0].to_string()
-    } else { "" };
+    } else {
+        first_grapheme(props.name).to_upper()
+    };
     // Avatars share the control height of their size, so they sit in toolbars and rows.
     let side = theme_length("metrics.control");
     let content = if "handle" in props && props.handle != () {

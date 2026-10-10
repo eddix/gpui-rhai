@@ -24,7 +24,7 @@ button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" })
 | `hoverable` | bool | `true` | Changes the fill on hover; `false` keeps it still. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `loading` | bool | `false` | Blocks clicks and shows the disabled look while work runs; it draws no spinner. |
-| `loading_text` | string | `""` | Text put before `text`, with a space, while `loading`; empty leaves the label as it is. |
+| `loading_text` | string | `""` | Replaces the label and the accessible name while `loading`; the button keeps the width of `text` unless this is wider. Empty leaves the label as it is. |
 | `on_click` | callback or `()` | — | Called when the button is pressed; not while disabled or loading, and not when `action` is set. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `prefix` | node or `()` | — | Node before the label, such as an icon, drawn in the button's text color. |
@@ -32,7 +32,7 @@ button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" })
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size of the button; unset, it inherits the `size` environment. |
 | `style` | style | — | Style merged over the root part. |
 | `suffix` | node or `()` | — | Node after the label, such as a disclosure chevron, drawn in the button's text color. |
-| `text` | string | required | Label of the button; also its accessible name. |
+| `text` | string | required | Label of the button; also its accessible name, except while `loading` shows `loading_text`. |
 | `variant` | `"primary"` or `"secondary"` or `"danger"` or `"warning"` or `"success"` or `"ghost"` or `"outline"` | `"secondary"` | Fill: `primary` accent, `danger`/`warning`/`success` status colors, `secondary` neutral, `ghost` bare, `outline` framed. |
 
 ## Events

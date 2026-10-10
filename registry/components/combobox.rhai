@@ -80,9 +80,8 @@ define_component(#{
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "No results" },
                 doc: "Text shown when no option matches; the `empty` slot replaces it." },
-            clear_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Clear selection" },
-                doc: "Accessible name of the clear button shown with `clearable`." },
+            clear_label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Accessible name of the clear button shown with `clearable`; unset, the localized `common.clear` text." },
             trigger: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Custom trigger that replaces the default field with its clear button and chevron; the panel then takes `width`." },
             header: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
@@ -411,6 +410,9 @@ fn render_Combobox(ctx, props) {
                     else { theme_color("text_primary") }))));
         let trigger_actions = [];
         if prop_or(props, "clearable", false) && selected.len > 0 {
+            let clear_label = if "clear_label" in props && props.clear_label != () {
+                props.clear_label
+            } else { ctx.t("common.clear") };
             let clear_style = ctx.component_style("clear", style()
                 .width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
                 .items_center().justify_center()
@@ -418,7 +420,7 @@ fn render_Combobox(ctx, props) {
                 .hover(style().background(theme_color("surface_hover"))));
             let clear = image_source(asset("app/icons/close"))
                 .with_key(`${props.key}-clear`).with_style(clear_style)
-                .accessibility_role("button").accessibility_label(prop_or(props, "clear_label", "Clear selection"))
+                .accessibility_role("button").accessibility_label(clear_label)
                 .on_click_value(Fn("clear_action"),
                     #{ changed: true, reset_query: reset_query });
             trigger_actions.push(clear);

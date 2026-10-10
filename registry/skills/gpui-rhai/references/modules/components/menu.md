@@ -24,10 +24,10 @@ menu::Menu(#{ key: "file", label: "File menu", trigger: text("File"), open: true
 | `items` | array of object (at most 512) | required | Rows of the menu, in order. |
 | `key` | string | required | Stable identity of this instance; also the overlay id a submenu names in `parent_overlay`. |
 | `label` | string | required | Accessible name of the menu panel. |
-| `on_action` | callback or `()` | — | Called with the item `value` when a row is clicked or activated with Enter; rows without an `action` leave the menu open. |
+| `on_action` | callback or `()` | — | Called with the item `value` when a row is clicked or activated with Enter; the menu then asks to close, except after Enter on a `submenu` row. |
 | `on_active_change` | callback or `()` | — | Called with the item `value` to highlight on Up, Down or a letter key; store it as `active_value`. |
 | `on_context_request` | callback or `()` | — | Called with the pointer event when the trigger is pressed with the right button. |
-| `on_open_change` | callback or `()` | — | Called with `true` when the trigger opens the menu and `false` on dismissal or after an `action` row; store it as `open`. |
+| `on_open_change` | callback or `()` | — | Called with `true` when the trigger opens the menu and `false` on dismissal or after a row is activated; store it as `open`. |
 | `open` | bool | required | Whether the menu is shown; the caller stores the `open_change` payload and passes it back. |
 | `parent_overlay` | string or `()` | — | `key` of the open menu this one is a submenu of; closing that menu closes this one too. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
@@ -61,7 +61,7 @@ menu::Menu(#{ key: "file", label: "File menu", trigger: text("File"), open: true
 
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
-| `action` | `on_action` | string | Emitted when a row is clicked or activated with Enter; the payload is the item `value`. |
+| `action` | `on_action` | string | Emitted when a row is clicked or activated with Enter, before `open_change` asks to close (not for Enter on a `submenu` row); the payload is the item `value`. |
 | `active_change` | `on_active_change` | string | Emitted when Up, Down or a letter key moves the highlight; the payload is the new item `value`. |
 | `context_request` | `on_context_request` | any value | Emitted on a right-button press on the trigger; the payload is the pointer event, with its `window` position. |
 | `open_change` | `on_open_change` | bool | Emitted when the menu asks to open or close; the payload is the requested `open`. |

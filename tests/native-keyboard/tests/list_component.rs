@@ -1,7 +1,8 @@
 //! List (#119): keyed rows on the row inset with Table's selection model. A click selects
 //! and opens a row, the list is one tab stop whose arrows move the selection and whose
 //! Enter opens the row, disabled rows take no input and are skipped, a right press asks
-//! for a context menu, and the roles follow the selection mode.
+//! for a context menu (Shift+F10 too, for the whole list without a selection mode), and
+//! the roles follow the selection mode.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -286,4 +287,34 @@ fn a_badge_width_lines_the_titles_up(cx: &mut TestAppContext) {
         (alpha - charlie).abs() < 0.5,
         "titles at {alpha} and {charlie}"
     );
+}
+
+#[gpui::test]
+fn without_a_selection_mode_shift_f10_asks_for_the_list(cx: &mut TestAppContext) {
+    let source = script("none", "").replace(
+        "ctx:${request.key}:${request.source}",
+        "ctx:${request.key}:${request.source}:${request.anchor.x},${request.anchor.y},${request.anchor.width},${request.anchor.height}",
+    );
+    let (mut visual, view) = mount(cx, source);
+    visual.update(|window, cx| window.focus_next(cx));
+    settle(&mut visual);
+    visual.simulate_keystrokes("shift-f10");
+    settle(&mut visual);
+    let list = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("list", "Tickets")
+            .next()
+            .and_then(|node| node.geometry)
+            .unwrap()
+            .visual
+    });
+    let request = format!(
+        "ctx::keyboard:{:?},{:?},{:?},{:?}",
+        list.x, list.y, list.width, list.height
+    );
+    assert_eq!(log(&mut visual, &view), request);
+    visual.simulate_keystrokes("menu");
+    settle(&mut visual);
+    assert_eq!(log(&mut visual, &view), format!("{request} {request}"));
 }

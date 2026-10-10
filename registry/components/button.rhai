@@ -45,7 +45,7 @@ define_component(#{
                 schema: #{ type: "string" },
                 required: true,
                 sensitive: false,
-                doc: "Label of the button; also its accessible name.",
+                doc: "Label of the button; also its accessible name, except while `loading` shows `loading_text`.",
             },
             prefix: #{
                 schema: #{ type: "optional", value: #{ type: "node" } },
@@ -100,7 +100,7 @@ define_component(#{
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "" },
-                doc: "Text put before `text`, with a space, while `loading`; empty leaves the label as it is.",
+                doc: "Replaces the label and the accessible name while `loading`; the button keeps the width of `text` unless this is wider. Empty leaves the label as it is.",
             },
             hoverable: #{
                 schema: #{ type: "bool" },
@@ -184,11 +184,7 @@ fn render_Button(ctx, props) {
     let hoverable = if "hoverable" in props { props.hoverable } else { true };
     let has_click = "on_click" in props && props.on_click != ();
     let interactive = !disabled && !loading && (has_click || action != ());
-    let label = if loading && loading_text != "" {
-        `${loading_text} ${props.text}`
-    } else {
-        props.text
-    };
+    let show_loading_text = loading && loading_text != "";
     // A caller-written shortcut gets the same platform legend as a bound action.
     let shortcut = if "shortcut" in props && props.shortcut != () {
         key_shortcut(props.shortcut)
@@ -233,7 +229,17 @@ fn render_Button(ctx, props) {
         children.push(props.prefix.with_style(ctx.component_style("prefix",
             style().text_color(foreground))));
     }
-    children.push(text(label).with_style(ctx.component_style("label", style())));
+    if show_loading_text {
+        // The idle label stays laid out at zero height and unpainted, so the
+        // label box is as wide as the wider of the two texts.
+        children.push(column([
+            text(loading_text),
+            text(props.text).with_style(style().height(px(0)).invisible())
+                .accessibility_role("presentation")
+        ]).with_style(ctx.component_style("label", style().items_center())));
+    } else {
+        children.push(text(props.text).with_style(ctx.component_style("label", style())));
+    }
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(ctx.component_style("suffix",
             style().text_color(foreground))));
@@ -248,7 +254,7 @@ fn render_Button(ctx, props) {
         .with_style(ctx.component_style("root", base))
         .disabled(disabled || loading)
         .accessibility_role("button")
-        .accessibility_label(props.text);
+        .accessibility_label(if show_loading_text { loading_text } else { props.text });
     if "size" in props && props.size != () {
         button = button.env(#{ size: props.size });
     }

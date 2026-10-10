@@ -30,9 +30,9 @@ define_component(#{
             size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false,
                 sensitive: false, "default": #{ type: "string", value: "md" },
                 doc: "Diameter: `xs` 12, `sm` 14, `md` 18 and `lg` 22 logical pixels." },
-            speed_ms: #{ schema: #{ type: "integer", min: 240, max: 4000 }, required: false,
-                sensitive: false, "default": #{ type: "integer", value: 850 },
-                doc: "Duration of one full turn in milliseconds." },
+            speed_ms: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 240, max: 4000 } },
+                required: false, sensitive: false,
+                doc: "Duration of one full turn in milliseconds; unset, the theme's `ambient` motion duration." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "indicator"],
     },
@@ -61,7 +61,8 @@ fn render_Spinner(ctx, props) {
         .with_style(ctx.component_style("root", ctx.component_style("indicator", style()
             .width(px(size)).height(px(size)))))
         .motion(motion_transition("rotate", 0.0, 360.0,
-            #{ duration_ms: if "speed_ms" in props { props.speed_ms } else { ctx.motion_duration("ambient") },
+            #{ duration_ms: if "speed_ms" in props && props.speed_ms != () { props.speed_ms }
+                else { ctx.motion_duration("ambient") },
                 easing: "linear", iterations: "infinite", intent: "essential" }))
         .accessibility_role("progressbar").accessibility_label(props.label)
         .accessibility_value("indeterminate")

@@ -289,8 +289,10 @@ relative/flex Combobox and Select layouts responsive without moving choice
 policy into Rust.
 
 An Overlay may use its trigger bounds or one validated event-coordinate anchor.
-ContextMenu records the last secondary-click point as component-local transient
-geometry. Sheet uses the same modal host and logical start/end placement but a
+ContextMenu records the last secondary-click point, or its trigger's bounds
+when Shift+F10 or the menu key opened it, as component-local transient geometry.
+A non-modal overlay that closes gives focus back to what held it when it
+opened. Sheet uses the same modal host and logical start/end placement but a
 viewport-edge surface rather than an anchored popup.
 
 Modal focus is a per-frame invariant rather than a one-shot mount side effect.

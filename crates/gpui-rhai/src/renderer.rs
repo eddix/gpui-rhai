@@ -3133,6 +3133,9 @@ enum Wrapped {
 fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> bool {
     needs & 0b10_1000 != 0
         || is_window_drag_area(node)
+        // An overlay keeps its element path whether or not its key handlers come
+        // and go with `open`, so its focus state survives opening and closing.
+        || matches!(node.kind(), UiNodeKind::Overlay { .. })
         || !disabled
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)

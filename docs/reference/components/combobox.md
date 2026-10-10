@@ -15,7 +15,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `clear_label` | string | `"Clear selection"` | Accessible name of the clear button shown with `clearable`. |
+| `clear_label` | string or `()` | — | Accessible name of the clear button shown with `clearable`; unset, the localized `common.clear` text. |
 | `clearable` | bool | `false` | Shows a clear button in the default trigger while something is selected; it emits `change` with `[]`. |
 | `disabled` | bool | `false` | Disables the trigger so the panel cannot open. |
 | `empty` | node or `()` | — | Content shown instead of `empty_text` when no option matches. |

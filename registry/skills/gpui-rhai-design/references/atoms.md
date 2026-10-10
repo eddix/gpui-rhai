@@ -297,7 +297,9 @@ navigation lists and Table rows share one row grammar:
 - Selection follows Table: `table.selection` and the indicator bar, the focus
   frame on the selected row while the list has focus, one tab stop whose
   arrows move the selection, Enter for `row_click`, `on_context_request` for
-  a caller menu. Roles are `listbox` / `option` with a selection mode and
+  a caller menu. Without a selection mode `on_context_request` makes the list
+  a tab stop for the keyboard request, framed while it holds focus
+  (`focus_frame`). Roles are `listbox` / `option` with a selection mode and
   `list` / `listitem` without.
 
 ### Table
@@ -316,7 +318,11 @@ navigation lists and Table rows share one row grammar:
 - With a selection mode the table is a tab stop: Up/Down/Home/End move the
   selection and keep it revealed, Enter emits `row_click`, and while the table
   has focus the selected row carries the focus frame (`cursor` part,
-  `group_focus`).
+  `group_focus`). Shift+F10 or the menu key asks for a context menu for that
+  row. Without a selection mode, `on_context_request` alone makes the table a
+  tab stop whose keyboard request is for the whole table. A focused table with
+  no current row (no selection mode, or nothing selected) shows the container
+  frame over its edge (`focus_frame` part).
 
 ## 7. Fields
 
@@ -431,7 +437,7 @@ it holds focus for as long as its panel is open, so its caret shows focus.
 
 **Containers that hold focus.** A container that can hold focus itself (an
 overlay panel of Dialog, Sheet, Popover, Menu, DatePicker or Combobox; an
-AppShell region) shows the same 2px `focus_ring` frame over its edge (part
+AppShell region; a Table or List with no current row) shows the same 2px `focus_ring` frame over its edge (part
 `focus_frame`; a panel's hairline takes the focus color and the frame adds the
 inner pixel, since a border paints over its children), only while it holds
 focus itself. Once a

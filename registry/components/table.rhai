@@ -127,7 +127,7 @@ define_component(#{
                 doc: "Tints every second displayed row with `surface_raised`." },
             selection_mode: #{ schema: #{ type: "string", allowed: ["none", "single", "multiple"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "none" },
-                doc: "`single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none` makes the table one tab stop." },
+                doc: "`single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none`, or `on_context_request`, makes the table one tab stop." },
             selected_keys: #{ schema: #{ type: "array", max_items: 100000, items: #{ type: "string" } }, required: false, sensitive: false,
                 "default": #{ type: "array", value: [] },
                 doc: "Selected row keys; the caller stores the `selection_change` payload and passes it back." },
@@ -160,7 +160,7 @@ define_component(#{
             on_column_resize: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with `#{ key, width }` when a resize ends; with it the caller owns widths and writes `width` into the column." },
             on_context_request: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
-                doc: "Called with `#{ key, column, anchor, source }` on a context request; open a Menu at `anchor`, in window coordinates." },
+                doc: "Called with `#{ key, column, anchor, source }` on a context request; open a Menu at `anchor`, in window coordinates. Without a selection mode it makes the table a tab stop for Shift+F10 and the menu key." },
         },
         state: #{ fields: #{} },
         events: #{
@@ -176,7 +176,7 @@ define_component(#{
                 doc: "Emitted when a row is clicked or Enter is pressed on the selected row; the payload is the row key." },
             context_request: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
                 key: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: true, sensitive: false,
-                    doc: "Row the menu is for; `()` from the keyboard when no row is selected." },
+                    doc: "Row the menu is for; `()` from the keyboard when no row is selected or without a selection mode, a menu for the whole table." },
                 column: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: true, sensitive: false,
                     doc: "Column key of the right-pressed cell; `()` from the keyboard." },
                 anchor: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
@@ -189,10 +189,10 @@ define_component(#{
                     height: #{ schema: #{ type: "number" }, required: true, sensitive: false,
                         doc: "Height in logical pixels; 0 for a pointer request." },
                 } }, required: true, sensitive: false,
-                    doc: "Where to open a Menu: the pointer, or the current row's bounds (the table's when the row is not laid out)." },
+                    doc: "Where to open a Menu: the pointer, or the current row's bounds (the table's when there is no current row or it is not laid out)." },
                 source: #{ schema: #{ type: "string", allowed: ["pointer", "keyboard"] }, required: true, sensitive: false,
                     doc: "`pointer` for a right press, `keyboard` for Shift+F10 or the menu key." },
-            } }, doc: "Emitted on a right press on a cell, after selecting its row unless the selection holds it, or on Shift+F10 or the menu key on the current row with a selection mode." },
+            } }, doc: "Emitted on a right press on a cell, after selecting its row unless the selection holds it, or on Shift+F10 or the menu key: for the current row with a selection mode, for the table without one." },
             group_toggle: #{ payload: #{ type: "string" },
                 doc: "Emitted when a group header is clicked, only with `on_group_toggle` set; the payload is the group value." },
             column_resize: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
@@ -212,7 +212,7 @@ define_component(#{
             empty: #{ required: false, multiple: false,
                 doc: "Node shown instead of `empty_text` when no row is left to show." },
         },
-        parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header", "indicator_bar", "cursor",
+        parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header", "indicator_bar", "cursor", "focus_frame",
             "group_indicator", "group_label", "group_count", "row", "row_selected",
             "loading", "empty"],
     },
@@ -656,14 +656,24 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         .accessibility_row_index(1)
 }
 
-fn table_shell(ctx,props,columns,signals,header,body,row_count) {
+fn table_shell(ctx,props,columns,signals,header,body,row_count,framed) {
     let root_style=if prop_or(props,"fill_height",false) {
         style().flex_col().flex_grow().min_width(px(0)).min_height(px(0)).overflow_x_scroll()
     }else{style().flex_col().min_width(px(0)).overflow_x_scroll()};
-    box([header,body]).with_key(props.key).with_table_track(columns,signals)
-        .with_style(ctx.component_style("root",root_style.focus(style())))
+    box([header,body,table_focus_frame(ctx,framed)]).with_key(props.key).with_table_track(columns,signals)
+        .with_style(ctx.component_style("root",root_style.relative().focus(style())))
         .accessibility_role("table").accessibility_label(props.label)
         .accessibility_row_count(row_count).accessibility_column_count(columns.len)
+}
+
+// The 2px container frame over the table's edge while the table holds focus with no
+// current row to show where the keys act (no selection mode, or nothing selected); a
+// current row shows its own cursor instead.
+fn table_focus_frame(ctx, framed) {
+    let frame = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+        .border(px(2)).border_color(rgba(0x00000000));
+    if framed { frame = frame.group_focus(style().border_color(theme_color("focus_ring"))); }
+    row([]).with_style(ctx.component_style("focus_frame", frame))
 }
 
 // One tab stop for the rows: arrows move the selection, Enter activates the row.
@@ -723,12 +733,12 @@ fn render_Table(ctx, props) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
         } else { text("Loading…") };
-        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"loading",loading),1);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"loading",loading),1,false);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1,false);
     }
 
     let selected = prop_or(props, "selected_keys", []);
@@ -824,7 +834,7 @@ fn render_Table(ctx, props) {
     if data.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1,false);
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,
@@ -855,11 +865,20 @@ fn render_Table(ctx, props) {
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns))
             .curry(column_typography(columns)).curry(context).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
-    let table = with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1), neighbors);
+    let framed = if selection_mode == "none" { context }
+        else { neighbors != () && neighbors.first != () && neighbors.current == () };
+    let table = with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1,framed), neighbors);
     if context && neighbors != () && neighbors.first != () {
         let target = #{ key: neighbors.current, collection: collection.key,
             index: if native_data { neighbors.current_index } else { row_index(data, neighbors.current) } };
         table = table.on_key_value("shift+f10", Fn("keyboard_context"), target)
+            .on_key_value("menu", Fn("keyboard_context"), target);
+    } else if context && selection_mode == "none" {
+        // Without a selection mode there is no current row: the table is a tab stop for the
+        // keyboard request alone, which is for the whole table.
+        let target = #{ key: (), collection: collection.key, index: () };
+        table = table.tab_stop(true)
+            .on_key_value("shift+f10", Fn("keyboard_context"), target)
             .on_key_value("menu", Fn("keyboard_context"), target);
     }
     table

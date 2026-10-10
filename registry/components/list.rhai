@@ -21,7 +21,8 @@
 // Rows carry metrics.inset, so their text starts on the edge of a bled DataView or Region
 // body. With a selection mode the list is one tab stop: Up/Down/Home/End move the selection
 // and keep it revealed, Enter emits row_click, and the selected row shows the focus frame
-// while the list has focus. Items are data, like Table cells: a leading status `badge`
+// while the list has focus. Without one, on_context_request alone makes it a tab stop for
+// Shift+F10 and the menu key. Items are data, like Table cells: a leading status `badge`
 // (#{ text, variant, dot }), the `title`, a muted `secondary` line (beside the title or
 // below it) and trailing `meta` such as a time or a count. Badges of different widths push
 // the titles apart; `badge_width` reserves one slot on every row so the titles align.
@@ -71,7 +72,7 @@ define_component(#{
                 } } }, required: true, sensitive: false, doc: "Rows in display order." },
             selection_mode: #{ schema: #{ type: "string", allowed: ["none", "single", "multiple"] },
                 required: false, sensitive: false, "default": #{ type: "string", value: "none" },
-                doc: "`single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none` makes the list one tab stop." },
+                doc: "`single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none`, or `on_context_request`, makes the list one tab stop." },
             selected_keys: #{ schema: #{ type: "array", max_items: 10000, items: #{ type: "string" } },
                 required: false, sensitive: false, "default": #{ type: "array", value: [] },
                 doc: "Selected row keys; the caller stores the `selection_change` payload and passes it back." },
@@ -99,7 +100,7 @@ define_component(#{
             on_row_click: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with the row key when an enabled row is clicked, or Enter is pressed on the selected row." },
             on_context_request: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
-                doc: "Called with `#{ key, anchor, source }` when a row is right-pressed or Shift+F10 or the menu key is pressed." },
+                doc: "Called with `#{ key, anchor, source }` when a row is right-pressed or Shift+F10 or the menu key is pressed; without a selection mode it makes the list a tab stop for those keys." },
         },
         state: #{ fields: #{} },
         events: #{
@@ -109,7 +110,7 @@ define_component(#{
                 doc: "Emitted when an enabled row is clicked or Enter is pressed on the selected row; the payload is the row key." },
             context_request: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
                 key: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: true, sensitive: false,
-                    doc: "Row the menu is for; `()` from the keyboard when no row is selected." },
+                    doc: "Row the menu is for; `()` from the keyboard when no row is selected or without a selection mode, a menu for the whole list." },
                 anchor: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
                     x: #{ schema: #{ type: "number" }, required: true, sensitive: false,
                         doc: "Left edge in window coordinates, in logical pixels." },
@@ -120,15 +121,15 @@ define_component(#{
                     height: #{ schema: #{ type: "number" }, required: true, sensitive: false,
                         doc: "Height in logical pixels; 0 for a pointer request." },
                 } }, required: true, sensitive: false,
-                    doc: "Where to open a Menu: the pointer, or the selected row's bounds (the list's when the row is not laid out)." },
+                    doc: "Where to open a Menu: the pointer, or the selected row's bounds (the list's when no row is selected or it is not laid out)." },
                 source: #{ schema: #{ type: "string", allowed: ["pointer", "keyboard"] }, required: true, sensitive: false,
                     doc: "`pointer` for a right press, `keyboard` for Shift+F10 or the menu key." },
-            } }, doc: "Emitted on a right press on a row, after selecting it unless the selection holds it, or on Shift+F10 or the menu key with a selection mode." },
+            } }, doc: "Emitted on a right press on a row, after selecting it unless the selection holds it, or on Shift+F10 or the menu key: for the selected row with a selection mode, for the list without one." },
         },
         slots: #{ empty: #{ required: false, multiple: false,
             doc: "Node shown instead of `empty_text` when `items` is empty." } },
         parts: ["root", "row", "row_selected", "badge", "title", "secondary", "meta", "indicator_bar",
-            "cursor", "empty"],
+            "cursor", "focus_frame", "empty"],
     },
     render: Fn("render_List")
 });
@@ -316,14 +317,33 @@ fn render_List(ctx, props) {
         if neighbors.current != () { collection.reveal_key = neighbors.current; }
     }
     let context = "on_context_request" in props && props.on_context_request != ();
-    let root = virtual_collection(collection,
+    let rows = virtual_collection(collection,
         Fn("render_list_row").curry(below).curry(prop_or(props, "dividers", false))
-            .curry(prop_or(props, "badge_width", ())).curry(context).curry(data.len))
-        .with_key(props.key)
+            .curry(prop_or(props, "badge_width", ())).curry(context).curry(data.len));
+    if mode == "none" && context {
+        // Without a selection mode there is no current row: the list is a tab stop for the
+        // keyboard request alone, which is for the whole list. A wrapper holds that focus and
+        // draws the 2px container frame over the list's edge while it does.
+        let target = #{ key: (), collection: collection.key, index: () };
+        let frame = row([]).with_style(ctx.component_style("focus_frame", style().absolute()
+            .left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .border(px(2)).border_color(rgba(0x00000000))
+            .group_focus(style().border_color(theme_color("focus_ring")))));
+        let fill = if fill_height { style().flex_grow().min_height(px(0)) }
+            else { style().height(px(props.height)) };
+        return column([rows.with_style(fill.min_width(px(0))), frame]).with_key(props.key)
+            .with_style(ctx.component_style("root", size.min_width(px(0)).relative().focus(style())))
+            .accessibility_role("list").accessibility_label(props.label)
+            .tab_stop(true)
+            .on_key_value("shift+f10", Fn("keyboard_context"), target)
+            .on_key_value("menu", Fn("keyboard_context"), target);
+    }
+    let root = rows.with_key(props.key)
         .with_style(ctx.component_style("root", size.min_width(px(0)).focus(style())))
         .accessibility_role(if mode == "none" { "list" } else { "listbox" })
         .accessibility_label(props.label);
-    if neighbors == () || neighbors.first == () { return root; }
+    if mode == "none" { return root; }
+    if neighbors.first == () { return root; }
     root = root.tab_stop(true)
         .on_key_value("up", Fn("keyboard_select"), neighbors.previous)
         .on_key_value("down", Fn("keyboard_select"), neighbors.next)

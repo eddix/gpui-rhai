@@ -68,7 +68,7 @@ fn menu_page(h, v) {
 }
 
 fn context_menu_page(h, v) {
-    let target = row([text("Right-click this row")]).with_style(style().min_height(theme_length("metrics.row"))
+    let target = row([text("Right-click this row, or focus it and press Shift+F10")]).with_style(style().min_height(theme_length("metrics.row"))
         .padding_x(theme_length("metrics.inset")).items_center().background(theme_color("surface_raised")));
     kit::page(h, v, "context_menu", "ContextMenu", "A menu anchored at the pointer.", [
         kit::sec("Target", context_menu::ContextMenu(#{ key: "context-menu", label: "Row actions", trigger: target,

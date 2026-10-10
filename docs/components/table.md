@@ -203,6 +203,9 @@ The request is `#{ key, column, anchor, source }`:
   Table (`source: "keyboard"`) asks for the current row: `column` is `()` and
   `anchor` the row's bounds. With no current row `key` is `()` and the anchor
   is the table.
+- Without a `selection_mode` there is no current row: `on_context_request`
+  alone makes the table one tab stop, and Shift+F10 or the menu key asks for
+  the whole table (`key` and `column` are `()`, `anchor` is the table).
 
 Both data sources behave the same; a NativeCollection finds the current row
 in native code. `ctx.virtual_item_bounds(collection_key, index)` is the

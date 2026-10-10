@@ -97,18 +97,18 @@ define_component(#{
             } }, required: true, sensitive: false,
                 doc: "Rows of the menu, in order." },
             on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
-                doc: "Called with the item `value` when a row is clicked or activated with Enter; rows without an `action` leave the menu open." },
+                doc: "Called with the item `value` when a row is clicked or activated with Enter; the menu then asks to close, except after Enter on a `submenu` row." },
             on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with the item `value` to highlight on Up, Down or a letter key; store it as `active_value`." },
             on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
-                doc: "Called with `true` when the trigger opens the menu and `false` on dismissal or after an `action` row; store it as `open`." },
+                doc: "Called with `true` when the trigger opens the menu and `false` on dismissal or after a row is activated; store it as `open`." },
             on_context_request: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with the pointer event when the trigger is pressed with the right button." },
         },
         state: #{ fields: #{} },
         events: #{
             action: #{ payload: #{ type: "string" },
-                doc: "Emitted when a row is clicked or activated with Enter; the payload is the item `value`." },
+                doc: "Emitted when a row is clicked or activated with Enter, before `open_change` asks to close (not for Enter on a `submenu` row); the payload is the item `value`." },
             active_change: #{ payload: #{ type: "string" },
                 doc: "Emitted when Up, Down or a letter key moves the highlight; the payload is the new item `value`." },
             open_change: #{ payload: #{ type: "bool" },
@@ -134,6 +134,13 @@ fn dispatch_item(spec, ctx, payload) {
     if spec.value != () { ctx.emit("action", spec.value); }
     ctx.emit("open_change", false);
 }
+// Other items report the activation and close the menu.
+fn activate_item(ctx, value) {
+    ctx.emit("action", value);
+    ctx.emit("open_change", false);
+}
+// Enter on a submenu row is only reported, so the caller can open the submenu.
+fn report_item(ctx, value) { ctx.emit("action", value); }
 fn active_index(items, value) {
     let result = 0;
     for index in 0..items.len { if selectable(items[index]) && items[index].value == value { result = index; } }
@@ -233,7 +240,7 @@ fn menu_item(ctx, props, item) {
         row_node.on_click(Fn("dispatch_item").curry(#{ action: action,
             value: if "value" in item { item.value } else { () } }))
     } else if "on_action" in props && props.on_action != () && "value" in item && item.value != () {
-        row_node.on_click_value(props.on_action, item.value)
+        row_node.on_click_value(Fn("activate_item"), item.value)
     } else { row_node }
 }
 
@@ -256,9 +263,12 @@ fn menu_activation(props, items, value) {
             if action != () {
                 return #{ handler: Fn("dispatch_item").curry(#{ action: action, value: value }), payload: () };
             }
+            if item.kind == "submenu" && "on_action" in props && props.on_action != () {
+                return #{ handler: Fn("report_item"), payload: value };
+            }
         }
     }
-    if "on_action" in props && props.on_action != () { #{ handler: props.on_action, payload: value } }
+    if "on_action" in props && props.on_action != () { #{ handler: Fn("activate_item"), payload: value } }
     else { () }
 }
 

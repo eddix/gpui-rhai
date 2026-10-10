@@ -3,7 +3,7 @@
 `components/alert_dialog` · export `AlertDialog` · version 0.2.0. Generated from
 [`registry/components/alert_dialog.rhai`](../../../registry/components/alert_dialog.rhai); do not edit.
 
-Controlled confirmation dialog with explicit cancel and confirm semantics. State: caller owns open state; the component retains no application value.
+Controlled confirmation dialog with explicit cancel and confirm semantics: every close reports `confirm` or `cancel` first, Escape and backdrop presses `cancel`. State: caller owns open state; the component retains no application value.
 
 ```rhai
 import "components/alert_dialog" as alert_dialog;
@@ -21,7 +21,7 @@ alert_dialog::AlertDialog(#{ key: "delete", open: true, title: "Delete item?", o
 | `content` | node or `()` | — | Extra content after the description. |
 | `description` | string or `()` | — | Muted text under the title. |
 | `key` | string | required | Identity of the dialog and the id of its overlay; keep it unique among open overlays. |
-| `on_cancel` | callback or `()` | — | Called with `()` when the cancel button is pressed; Escape and backdrop presses close without it. |
+| `on_cancel` | callback or `()` | — | Called with `()` when the cancel button is pressed or Escape or a backdrop press dismisses the dialog; `open_change` then asks to close. |
 | `on_confirm` | callback or `()` | — | Called with `()` when the confirm button is pressed; `open_change` then asks to close. |
 | `on_open_change` | callback or `()` | — | Called with `false` when either button is pressed or Escape or a backdrop press dismisses the dialog. |
 | `open` | bool | required | Whether the dialog is open; the caller stores the `open_change` payload and passes it back. |
@@ -33,7 +33,7 @@ alert_dialog::AlertDialog(#{ key: "delete", open: true, title: "Delete item?", o
 
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
-| `cancel` | `on_cancel` | none | Emitted when the cancel button is pressed, before `open_change`; the payload is `()`. |
+| `cancel` | `on_cancel` | none | Emitted when the cancel button is pressed or Escape or a backdrop press dismisses the dialog, before `open_change`; the payload is `()`. |
 | `confirm` | `on_confirm` | none | Emitted when the confirm button is pressed, before `open_change`; the payload is `()`. |
 | `open_change` | `on_open_change` | bool | Emitted when a button is pressed or the dialog is dismissed; the payload is the requested open state. |
 

@@ -60,7 +60,7 @@ fn button_page(h, v) {
     ]);
     let states = kit::line([
         button::Button(#{ key: "btn-disabled", text: "Disabled", disabled: true }),
-        button::Button(#{ key: "btn-loading", text: "Saving", loading: true, loading_text: "…" }),
+        button::Button(#{ key: "btn-loading", text: "Save", loading: true, loading_text: "Saving…" }),
         button::Button(#{ key: "btn-shortcut", text: "Search", shortcut: "⌘K", on_click: h.noop }),
         button::Button(#{ key: "btn-cjk", text: "部署到生产", on_click: h.noop }),
     ]);

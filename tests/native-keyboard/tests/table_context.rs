@@ -1,6 +1,7 @@
 //! Table context requests (#89), for array rows and a NativeCollection alike: a
 //! right press on a cell selects its row (unless the selection holds it) and
-//! asks for a menu at the pointer; Shift+F10 asks for one at the current row.
+//! asks for a menu at the pointer; Shift+F10 asks for one at the current row, or for
+//! the table without a selection mode.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -240,6 +241,35 @@ fn shift_f10_asks_at_the_current_row(cx: &mut TestAppContext) {
                 bravo.x, bravo.y, bravo.width, bravo.height
             ),
             "native {native}"
+        );
+    }
+}
+
+#[gpui::test]
+fn without_a_selection_mode_shift_f10_asks_for_the_table(cx: &mut TestAppContext) {
+    for (native, key) in [(false, "shift-f10"), (true, "shift-f10"), (false, "menu")] {
+        let (mut visual, view) = mount(cx, script(native, "none", ""));
+        visual.update(|window, cx| window.focus_next(cx));
+        settle(&mut visual);
+        visual.simulate_keystrokes(key);
+        settle(&mut visual);
+        let table = visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("table", "Rows")
+                .next()
+                .and_then(|node| node.geometry)
+                .unwrap()
+                .visual
+        });
+        // Nothing is selected and the request is for the table, at its bounds.
+        assert_eq!(
+            state(&mut visual, &view),
+            format!(
+                "#||keyboard|{:?},{:?},{:?},{:?}",
+                table.x, table.y, table.width, table.height
+            ),
+            "native {native}, {key}"
         );
     }
 }

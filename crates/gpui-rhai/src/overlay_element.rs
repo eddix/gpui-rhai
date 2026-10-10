@@ -621,7 +621,18 @@ impl ScriptOverlayElement {
                     previous.focus(window, cx);
                 }
             } else {
-                state.trigger_focus.focus(window, cx);
+                // Back to where focus was when the menu opened (the trigger's own
+                // focusable content, a table row, a field), whose keys open it again;
+                // the trigger wrapper only when that is gone or was in the panel.
+                let previous = state
+                    .previous_focus
+                    .take()
+                    .and_then(|focus| focus.upgrade())
+                    .filter(|focus| !state.panel_focus.contains(focus, window));
+                match previous {
+                    Some(previous) => previous.focus(window, cx),
+                    None => state.trigger_focus.focus(window, cx),
+                }
             }
         }
         if self.spec.open && self.spec.modal && !state.panel_focus.contains_focused(window, cx) {
