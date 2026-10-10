@@ -575,20 +575,15 @@ impl CodeViewerEntity {
             DocumentWrap::None => None,
             DocumentWrap::Column(columns) => Some(columns.max(1)),
             DocumentWrap::Viewport => self.viewport.map(|bounds| {
-                let gutter = if self.config.show_line_numbers {
-                    72.0
-                } else {
-                    16.0
-                };
-                let available = (f64::from(bounds.size.width) - gutter).max(20.0);
+                let line_digits = self.prepared.as_ref().map_or(1, |document| {
+                    document.lines().len().max(1).to_string().len()
+                });
                 let (text_size, _) = document_text_metrics(&self.config.text_style, &self.theme);
-                let character_width = (f64::from(text_size) * 0.604).max(1.0);
-                (available / character_width)
-                    .floor()
-                    .to_string()
-                    .parse()
-                    .unwrap_or(80)
-                    .max(1)
+                viewport_wrap_columns(
+                    f64::from(bounds.size.width),
+                    line_digits,
+                    f64::from(text_size),
+                )
             }),
         }
     }
@@ -1199,7 +1194,7 @@ fn code_line_element(
         disabled,
     };
     let (text_size, line_height) = document_text_metrics(&config.text_style, theme);
-    let gutter_width = (usize_f32(line_digits) * 8.0 + 20.0).max(42.0);
+    let gutter_width = code_gutter_width(line_digits);
     let gutter = crate::renderer::apply_style_override(
         div()
             .w(px(gutter_width))
@@ -1256,6 +1251,24 @@ fn code_line_element(
         theme.direction(),
     )
     .into_any_element()
+}
+
+/// Width of a `CodeViewer` row's gutter; it is drawn, empty, when line numbers are off.
+fn code_gutter_width(line_digits: usize) -> f32 {
+    (usize_f32(line_digits) * 8.0 + 20.0).max(42.0)
+}
+
+/// Columns that fit beside the gutter when lines wrap at the viewport width.
+fn viewport_wrap_columns(viewport_width: f64, line_digits: usize, text_size: f64) -> usize {
+    let reserved = (f64::from(code_gutter_width(line_digits)) + 16.0).max(72.0);
+    let available = (viewport_width - reserved).max(20.0);
+    let character_width = (text_size * 0.604).max(1.0);
+    (available / character_width)
+        .floor()
+        .to_string()
+        .parse()
+        .unwrap_or(80)
+        .max(1)
 }
 
 struct InteractiveDocumentText {
@@ -1865,7 +1878,9 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                 "show_line_numbers".to_owned(),
                 ObjectField::optional(ValueSchema::Bool)
                     .with_default(UiValue::Bool(true))
-                    .with_doc("Shows 1-based line numbers in the gutter on the first row of each line."),
+                    .with_doc(
+                        "Shows 1-based line numbers in the gutter on the first row of each line; with `false` the gutter stays, empty.",
+                    ),
             ),
             (
                 "wrap".to_owned(),
@@ -3888,7 +3903,7 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
             ]))
             .with_default(UiValue::String("exact".to_owned()))
             .with_doc(
-                "`exact` compares lines as they are, `ignore_changes` collapses and trims whitespace, `ignore_all` drops it all.",
+                "`exact` compares lines as they are, `ignore_changes` collapses and trims whitespace, `ignore_all` drops it all; a unified patch copied with Option-Cmd-C always compares exactly.",
             ),
         ),
         (
@@ -4031,6 +4046,20 @@ mod tests {
             matches!(source, ValueSchema::OneOf { variants } if variants.contains(&ValueSchema::Document))
         );
         assert!(descriptor.lifecycle);
+    }
+
+    #[test]
+    fn viewport_wrapping_leaves_room_for_the_drawn_gutter() {
+        let text_size = 12.0;
+        let character_width = text_size * 0.604;
+        for line_digits in [1, 3, 7] {
+            let columns = viewport_wrap_columns(400.0, line_digits, text_size);
+            let used = f64::from(code_gutter_width(line_digits));
+            assert!(
+                f64::from(usize_f32(columns)) * character_width + used <= 400.0,
+                "{line_digits} digits wrap at {columns} columns"
+            );
+        }
     }
 
     #[test]

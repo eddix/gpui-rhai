@@ -22,7 +22,7 @@ pan_zoom::PanZoom(#{ key:"map", label:"Map", transform:viewport, content:canvas_
 | `keyboard_pan_step` | number 0.1–512 | `16.0` | Logical pixels one arrow-key press pans; Shift pans four times as far. |
 | `keyboard_zoom_factor` | number 1.001–4 | `1.2` | Zoom multiplier of one `+` or `-` press, about the viewport centre; `0` resets to scale 1 at the origin. |
 | `label` | string | required | Accessible name of the viewport region. |
-| `max_scale` | number > 0 | `8.0` | Largest zoom factor a wheel or key zoom may propose; at least `min_scale`. |
+| `max_scale` | number > 0, ≤ 1000000 | `8.0` | Largest zoom factor a wheel or key zoom may propose; at least `min_scale`. |
 | `min_scale` | number > 0 | `0.25` | Smallest zoom factor a wheel or key zoom may propose. |
 | `on_transform_change` | callback or `()` | — | Called with the proposed `{x, y, scale}` when a pan ends, a wheel zoom settles or a key pans or zooms. |
 | `pan_button` | `"left"` or `"middle"` | `"left"` | Mouse button that pans when dragged. |
@@ -37,8 +37,8 @@ pan_zoom::PanZoom(#{ key:"map", label:"Map", transform:viewport, content:canvas_
 | Field | Type | Required or default | Description |
 |---|---|---|---|
 | `scale` | number > 0 | required | Zoom factor about the viewport centre, 1 for natural size; within `min_scale` and `max_scale`. |
-| `x` | number | required | Horizontal offset of the content, in logical pixels. |
-| `y` | number | required | Vertical offset of the content, in logical pixels. |
+| `x` | number -1000000–1000000 | required | Horizontal offset of the content, in logical pixels. |
+| `y` | number -1000000–1000000 | required | Vertical offset of the content, in logical pixels. |
 
 ## Events
 

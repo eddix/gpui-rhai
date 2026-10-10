@@ -3373,7 +3373,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_select".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
-                    "Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space.",
+                    "Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, a press in the plot starts a brush instead, so only the keys select.",
                 ),
             ),
             (
@@ -3406,7 +3406,7 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                 "select".to_owned(),
                 EventSchema {
                     doc: Some(
-                        "Emitted when a data mark is clicked or activated by Enter or Space; the payload identifies the datum and its value."
+                        "Emitted when a data mark is clicked (while `spec.brush` is off) or activated by Enter or Space; the payload identifies the datum and its value."
                             .to_owned(),
                     ),
                     payload: ValueSchema::Object {

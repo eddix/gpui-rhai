@@ -25,7 +25,7 @@ diff_viewer::DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A"
 | `show_line_numbers` | bool | `true` | Shows the line-number gutters. |
 | `style` | style | — | Style merged over the root part. |
 | `tab_size` | integer 1–16 | `4` | Columns between tab stops when tabs are expanded for display. |
-| `whitespace` | `"exact"` or `"ignore_changes"` or `"ignore_all"` | `"exact"` | `exact` compares lines as written, `ignore_changes` collapses runs of whitespace, `ignore_all` drops all whitespace. |
+| `whitespace` | `"exact"` or `"ignore_changes"` or `"ignore_all"` | `"exact"` | `exact` compares lines as written, `ignore_changes` collapses runs of whitespace, `ignore_all` drops all whitespace; a patch copied with Option-Cmd-C always compares exactly, so it applies. |
 | `wrap` | `"none"` or `"viewport"` or `"column"` | `"none"` | `none` scrolls long lines sideways, `viewport` wraps them at the pane width, `column` at `wrap_column`. |
 | `wrap_column` | integer 20–500 | `100` | Display column at which lines wrap when `wrap` is `column`. |
 

@@ -48,7 +48,7 @@ define_component(#{
         max: #{schema:#{type:"number"},required:false,sensitive:false,"default":#{type:"float",value:100.0},
             doc:"Highest value, at the end of the track; must be above `min`."},
         step: #{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,"default":#{type:"float",value:1.0},
-            doc:"Distance between accepted values, counted from `min`; one arrow key moves a thumb one step. At most `max - min`."},
+            doc:"Distance between accepted values, counted from `min`; one arrow key moves a thumb one step. At most `max - min`; when `max - min` is not a multiple of it, the last step below `max` is the highest value."},
         minimum_gap: #{schema:#{type:"number",min:0.0},required:false,sensitive:false,"default":#{type:"float",value:0.0},
             doc:"Smallest distance kept between `low` and `high`; a thumb stops there. At most `max - min`."},
         orientation: #{schema:#{type:"string",allowed:["horizontal","vertical"]},required:false,
@@ -59,11 +59,11 @@ define_component(#{
         disabled: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false},
             doc:"Blocks pointer and keyboard input and greys the thumbs."},
         on_change: #{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false,
-            doc:"Called with `#{ low, high }` when an arrow, Home or End key moves a thumb and when a drag ends."},
+            doc:"Called with `#{ low, high }` when an arrow, Home or End key or a drag moves a thumb."},
     }, state:#{fields:#{}}, events:#{change:#{payload:#{type:"object",allow_unknown:false,fields:#{
         low:#{schema:#{type:"number"},required:true,sensitive:false,doc:"New value of the low thumb."},
         high:#{schema:#{type:"number"},required:true,sensitive:false,doc:"New value of the high thumb."},
-    }},doc:"Emitted when a key moves a thumb and when a drag ends, not during it; the payload is the new range, snapped to `step`."}},
+    }},doc:"Emitted when a key or a finished drag moves a thumb, not during the drag; the payload is the new range, snapped to `step`."}},
     slots:#{}, parts:["root","header","label","value","control","track","fill","thumb"] },
     render:Fn("render_RangeSlider")
 });

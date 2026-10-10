@@ -3,7 +3,7 @@
 `components/sortable` · export `Sortable` · version 0.2.0. Generated from
 [`registry/components/sortable.rhai`](../../../registry/components/sortable.rhai); do not edit.
 
-Controlled keyed ordering with native pointer targets and keyboard moves. State: order is caller-owned; native state contains only one transient drag. Keyboard: focus a handle, then Option/Alt+Arrow, Home, or End.
+Controlled keyed ordering with native pointer targets and keyboard moves. State: order is caller-owned; native state contains only one transient drag. Keyboard: focus a handle, then press Option/Alt with an arrow, Home or End (all three need Option/Alt). A horizontal row follows the reading direction, so in RTL Option/Alt+Left moves a row towards the end.
 
 ```rhai
 import "components/sortable" as sortable;
@@ -30,7 +30,7 @@ sortable::Sortable(#{ key:"queue", label:"Queue", items:items, on_reorder:Fn("re
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `style` | style | — | Style merged over the root part. |
 | `threshold` | number 0–64 | `4.0` | Pointer travel in logical pixels before a press becomes a drag. |
-| `virtual_data` | array of map of any value (at most 10000) or native collection or `()` | — | Virtualized rows: maps with a string `key`, a `label_key` field and an optional `disabled`. |
+| `virtual_data` | array of map of any value (at most 10000) or native collection or `()` | — | Virtualized rows: maps with a string `key`, a `label_key` field and an optional `disabled`; each row shows its label as text and drags from anywhere on it. |
 
 ### `items[]` fields
 
@@ -53,5 +53,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `handle`, `ha
 
 ## Theme
 
-- Tokens: `border`, `focus_ring`, `metrics.control`, `metrics.inset`, `metrics.row`, `spacing.xs`, `surface`, `text_muted`, `typography.body`
+- Tokens: `accent`, `border`, `focus_ring`, `metrics.control`, `metrics.inset`, `metrics.row`, `spacing.xs`, `surface`, `text_muted`, `typography.body`
 - Environment: `density`

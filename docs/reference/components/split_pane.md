@@ -20,7 +20,7 @@ split_pane::SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `disabled` | bool | `false` | Ignores drags and removes the separator from the tab order. |
+| `disabled` | bool | `false` | Ignores drags and key steps and removes the separator from the tab order. |
 | `end` | node | required | Content of the end pane: the trailing side, or the bottom when `vertical`. |
 | `end_collapsed` | bool | `false` | Hides the end pane and the separator so the start pane fills the group; not with `start_collapsed`. |
 | `end_key` | string | `"end"` | Key of the end pane's wrapper; keep it stable so the pane is not remounted. |
@@ -33,7 +33,7 @@ split_pane::SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 | `max_start` | number 0–16384 | `16384.0` | Largest start-pane length a drag or key step may propose, in logical pixels; at least `min_start`. |
 | `min_end` | number 0–16384 | `120.0` | Smallest end-pane length a drag or key step may leave, in logical pixels. |
 | `min_start` | number 0–16384 | `120.0` | Smallest start-pane length a drag or key step may propose, in logical pixels. |
-| `on_resize` | callback or `()` | — | Called with the proposed start-pane ratio when a drag ends or an arrow key is pressed. |
+| `on_resize` | callback or `()` | — | Called with the proposed start-pane ratio when a drag ends or an arrow key moves the separator. |
 | `orientation` | `"horizontal"` or `"vertical"` | `"horizontal"` | `horizontal` puts the panes side by side; `vertical` stacks them. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `size` | number 0–1 | required | Start-pane share of the group's length; the caller stores the `resize` payload and passes it back. |
@@ -46,7 +46,7 @@ split_pane::SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
-| `resize` | `on_resize` | number 0–1 | Emitted once when a drag ends or a key step is requested; the payload is the next `size`. |
+| `resize` | `on_resize` | number 0–1 | Emitted once when a drag ends or a key step moves the separator; a drag or step that leaves it in place emits nothing. The payload is the next `size`. |
 
 ## Parts
 

@@ -601,6 +601,9 @@ fn parse_config(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<Resize
         .signal("signal")
         .cloned()
         .ok_or_else(|| "column resize handle requires signal".to_owned())?;
+    if signal.id().kind() != SignalKind::OptionalFloat {
+        return Err("column resize signal must be optional_float".to_owned());
+    }
     let reference = props
         .element_ref("column_ref")
         .cloned()
@@ -802,6 +805,41 @@ mod tests {
             SignalKind::OptionalFloat,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn the_preview_signal_must_be_an_optional_float() {
+        let component = crate::ComponentInstancePath::root("Table", "users");
+        let props = |kind| {
+            PrimitiveProps::new()
+                .with(
+                    "column_key",
+                    PrimitiveValue::Data(UiValue::String("name".to_owned())),
+                )
+                .with(
+                    "source_kind",
+                    PrimitiveValue::Data(UiValue::String("fixed".to_owned())),
+                )
+                .with("source_value", PrimitiveValue::Data(UiValue::Float(120.0)))
+                .with(
+                    "signal",
+                    PrimitiveValue::Signal(crate::NativeSignal::new(
+                        SignalId::new(component.clone(), "width", kind).unwrap(),
+                    )),
+                )
+                .with(
+                    "column_ref",
+                    PrimitiveValue::Ref(crate::ElementRef::new(
+                        crate::ElementRefId::new(component.clone(), "header").unwrap(),
+                    )),
+                )
+        };
+        let theme = PrimitiveTheme::default();
+        assert!(parse_config(&props(SignalKind::OptionalFloat), &theme).is_ok());
+        assert_eq!(
+            parse_config(&props(SignalKind::Float), &theme).err(),
+            Some("column resize signal must be optional_float".to_owned())
+        );
     }
 
     #[test]

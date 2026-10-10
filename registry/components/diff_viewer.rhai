@@ -49,7 +49,7 @@ define_component(#{
                 doc: "`unified` interleaves both sides in one column; `split` aligns them side by side with one scroll position." },
             whitespace: #{ schema: #{ type: "string", allowed: ["exact", "ignore_changes", "ignore_all"] },
                 required: false, sensitive: false, "default": #{ type: "string", value: "exact" },
-                doc: "`exact` compares lines as written, `ignore_changes` collapses runs of whitespace, `ignore_all` drops all whitespace." },
+                doc: "`exact` compares lines as written, `ignore_changes` collapses runs of whitespace, `ignore_all` drops all whitespace; a patch copied with Option-Cmd-C always compares exactly, so it applies." },
             context_lines: #{ schema: #{ type: "one_of", variants: [
                 #{ type: "integer", min: 0, max: 100 }, #{ type: "string", allowed: ["all"] }
             ] }, required: false, sensitive: false, "default": #{ type: "integer", value: 3 },

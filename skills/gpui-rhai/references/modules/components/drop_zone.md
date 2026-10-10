@@ -37,3 +37,7 @@ drop_zone::DropZone(#{ key:"lane", label:"Server lane", target_id:"lane-a",
 ## Parts
 
 Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `interaction`, `root`.
+
+## Theme
+
+- Tokens: `accent`, `danger`

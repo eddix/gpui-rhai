@@ -42,4 +42,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `interaction`
 
 ## Theme
 
-- Tokens: `focus_ring`
+- Tokens: `accent`, `focus_ring`

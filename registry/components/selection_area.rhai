@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["border", "surface", "focus_ring"],
+  "tokens": ["border", "surface", "focus_ring", "accent"],
   "environment": []
 }
 */
@@ -16,7 +16,7 @@
 define_component(#{
     metadata:#{id:"components/selection_area","export":"SelectionArea",version: "0.2.0",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{},
-        tokens: ["border", "surface", "focus_ring"],
+        tokens: ["border", "surface", "focus_ring", "accent"],
         environment: []},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false},

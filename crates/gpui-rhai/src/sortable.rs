@@ -40,6 +40,12 @@ impl SortDirection {
     }
 }
 
+/// Whether `placement` is the item's physical far half (the bottom, or the right); in a
+/// mirrored row `before` is the right half.
+fn far_half(mirrored: bool, placement: Placement) -> bool {
+    (placement == Placement::After) != mirrored
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Placement {
     Before,
@@ -77,7 +83,16 @@ struct SortableConfig {
     /// A release before the drag threshold proposes `tap` with the item key, so the
     /// item can be pressed as well as dragged.
     tap: bool,
+    text_direction: crate::TextDirection,
     accent: Rgba8,
+}
+
+impl SortableConfig {
+    /// A horizontal row runs right to left in RTL; a grid keeps its left-to-right layout.
+    fn mirrored(&self) -> bool {
+        self.direction == SortDirection::Horizontal
+            && self.text_direction == crate::TextDirection::RightToLeft
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -199,11 +214,11 @@ impl Element for SortableElement {
         SortablePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::Normal),
             before_hitbox: window.insert_hitbox(
-                target_half(item_bounds, self.config.direction, Placement::Before),
+                target_half(item_bounds, &self.config, Placement::Before),
                 HitboxBehavior::Normal,
             ),
             after_hitbox: window.insert_hitbox(
-                target_half(item_bounds, self.config.direction, Placement::After),
+                target_half(item_bounds, &self.config, Placement::After),
                 HitboxBehavior::Normal,
             ),
             item_bounds,
@@ -302,20 +317,16 @@ fn drag_spec(
 
 fn target_half(
     bounds: Bounds<Pixels>,
-    direction: SortDirection,
+    config: &SortableConfig,
     placement: Placement,
 ) -> Bounds<Pixels> {
-    if direction.uses_vertical_targets() {
+    let far = far_half(config.mirrored(), placement);
+    if config.direction.uses_vertical_targets() {
         let half = bounds.size.height / 2.0;
         Bounds::new(
             point(
                 bounds.origin.x,
-                bounds.origin.y
-                    + if placement == Placement::After {
-                        half
-                    } else {
-                        px(0.0)
-                    },
+                bounds.origin.y + if far { half } else { px(0.0) },
             ),
             size(bounds.size.width, half),
         )
@@ -323,12 +334,7 @@ fn target_half(
         let half = bounds.size.width / 2.0;
         Bounds::new(
             point(
-                bounds.origin.x
-                    + if placement == Placement::After {
-                        half
-                    } else {
-                        px(0.0)
-                    },
+                bounds.origin.x + if far { half } else { px(0.0) },
                 bounds.origin.y,
             ),
             size(half, bounds.size.height),
@@ -344,7 +350,7 @@ fn register_target(
     hitbox: Hitbox,
     window: &mut Window,
 ) {
-    let half = target_half(bounds, config.direction, placement);
+    let half = target_half(bounds, config, placement);
     let Ok(bounds) = GeometryBounds::new(
         f64::from(half.origin.x),
         f64::from(half.origin.y),
@@ -470,18 +476,19 @@ fn paint_sortable_feedback(
         {
             continue;
         }
+        let far = far_half(config.mirrored(), placement);
         let indicator = if config.direction.uses_vertical_targets() {
-            let y = if placement == Placement::Before {
-                bounds.top()
-            } else {
+            let y = if far {
                 bounds.bottom() - px(2.0)
+            } else {
+                bounds.top()
             };
             Bounds::new(point(bounds.left(), y), size(bounds.size.width, px(2.0)))
         } else {
-            let x = if placement == Placement::Before {
-                bounds.left()
-            } else {
+            let x = if far {
                 bounds.right() - px(2.0)
+            } else {
+                bounds.left()
             };
             Bounds::new(point(x, bounds.top()), size(px(2.0), bounds.size.height))
         };
@@ -523,7 +530,13 @@ impl SortableEntity {
         if self.config.disabled || !event.keystroke.modifiers.alt {
             return;
         }
-        let target = match event.keystroke.key.as_str() {
+        // In a mirrored row, Left points towards the next item.
+        let key = match (event.keystroke.key.as_str(), self.config.mirrored()) {
+            ("left", true) => "right",
+            ("right", true) => "left",
+            (key, _) => key,
+        };
+        let target = match key {
             "up" | "left" => self
                 .config
                 .previous_key
@@ -652,6 +665,7 @@ fn parse_config(
         focus,
         take_focus: props.boolean("take_focus").unwrap_or(true),
         tap: props.boolean("tap").unwrap_or(false),
+        text_direction: theme.direction(),
         accent: theme
             .color("accent")
             .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
@@ -889,6 +903,16 @@ fn f64_to_f32(value: f64) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use super::{Placement, far_half};
+
+    #[test]
+    fn a_mirrored_row_swaps_its_before_and_after_halves() {
+        assert!(far_half(false, Placement::After));
+        assert!(!far_half(false, Placement::Before));
+        assert!(far_half(true, Placement::Before));
+        assert!(!far_half(true, Placement::After));
+    }
+
     #[test]
     fn adjacent_and_self_moves_are_no_ops() {
         let before = |source: &str, anchor: &str, previous: Option<&str>| {

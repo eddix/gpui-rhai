@@ -779,6 +779,10 @@ fn contains(bounds: crate::GeometryBounds, point: Point<Pixels>) -> bool {
     x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height
 }
 
+fn translation_schema() -> ValueSchema {
+    ValueSchema::bounded_number(Some(-MAX_TRANSLATION), Some(MAX_TRANSLATION))
+}
+
 fn transform_changed(left: ViewTransform, right: ViewTransform) -> bool {
     (left.x - right.x).abs() > f64::EPSILON
         || (left.y - right.y).abs() > f64::EPSILON
@@ -866,13 +870,13 @@ pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
         ),
         (
             "x".to_owned(),
-            ObjectField::required(ValueSchema::number()).with_doc(
+            ObjectField::required(translation_schema()).with_doc(
                 "Controlled horizontal pan in logical pixels, applied after scaling about the content's centre.",
             ),
         ),
         (
             "y".to_owned(),
-            ObjectField::required(ValueSchema::number()).with_doc(
+            ObjectField::required(translation_schema()).with_doc(
                 "Controlled vertical pan in logical pixels, applied after scaling about the content's centre.",
             ),
         ),
@@ -889,7 +893,12 @@ pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
         ),
         (
             "max_scale".to_owned(),
-            ObjectField::required(ValueSchema::positive_number())
+            ObjectField::required(ValueSchema::Number {
+                min: None,
+                max: Some(MAX_RENDER_SCALE),
+                exclusive_min: Some(0.0),
+                exclusive_max: None,
+            })
                 .with_doc("Largest zoom factor the wheel and keys may reach; at least `scale`."),
         ),
     ]);
@@ -990,6 +999,20 @@ pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_schema_rejects_what_the_handler_rejects() {
+        let props = pan_zoom_primitive_descriptor().props;
+        let accepts = |name: &str, value: f64| {
+            props[name]
+                .schema
+                .validate_ui_value(&UiValue::Float(value))
+                .is_ok()
+        };
+        assert!(accepts("x", MAX_TRANSLATION) && !accepts("x", 2_000_000.0));
+        assert!(!accepts("y", -2_000_000.0));
+        assert!(accepts("max_scale", 8.0) && !accepts("max_scale", 2_000_000.0));
+    }
 
     #[test]
     fn pointer_anchored_zoom_preserves_the_content_point() {

@@ -34,7 +34,7 @@ define_component(#{
                 doc: "Syntax to highlight, such as `\"rhai\"`; takes precedence over `file_name`, and unknown names show plain text." },
             show_line_numbers: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
-                doc: "Shows the line-number gutter." },
+                doc: "Shows 1-based line numbers in the gutter; with `false` the gutter stays, empty." },
             wrap: #{ schema: #{ type: "string", allowed: ["none", "viewport", "column"] }, required: false,
                 sensitive: false, "default": #{ type: "string", value: "none" },
                 doc: "`none` scrolls long lines sideways, `viewport` wraps them at the viewer width, `column` at `wrap_column`." },

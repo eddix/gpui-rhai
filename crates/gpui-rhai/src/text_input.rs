@@ -940,9 +940,12 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
         change: Some(Rc::new(move |value, window, cx| {
             let _ = change_events.emit("change", UiValue::String(value), window, cx);
         })),
-        submit: Some(Rc::new(move |value, window, cx| {
-            let _ = submit_events.emit("submit", UiValue::String(value), window, cx);
-        })),
+        // Without a submit handler the field leaves Enter to its ancestors.
+        submit: events.observes("submit").then(|| {
+            Rc::new(move |value, window: &mut Window, cx: &mut App| {
+                let _ = submit_events.emit("submit", UiValue::String(value), window, cx);
+            }) as TextValueHandler
+        }),
         focus: Some(Rc::new(move |window, cx| {
             let _ = focus_events.emit("focus", UiValue::Null, window, cx);
         })),
@@ -1009,8 +1012,9 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             ),
             (
                 "on_submit".to_owned(),
-                optional_callback()
-                    .with_doc("Called with the current text when Enter is pressed in an enabled field."),
+                optional_callback().with_doc(
+                    "Called with the current text when Enter is pressed in an enabled field; without it, Enter reaches the field's ancestors.",
+                ),
             ),
             (
                 "on_focus".to_owned(),

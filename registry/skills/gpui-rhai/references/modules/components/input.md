@@ -28,7 +28,7 @@ input::Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_cha
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
-| `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in a field that is not `disabled`. |
+| `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in a field that is not `disabled`; without it, Enter reaches the field's ancestors, such as a form's default action. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `placeholder` | string or `()` | — | Muted hint shown while `value` is empty. |
 | `read_only` | bool | `false` | Keeps the text focusable, selectable and copyable but blocks edits; the text turns `text_muted`. |

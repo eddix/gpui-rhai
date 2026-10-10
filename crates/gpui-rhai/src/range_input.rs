@@ -163,7 +163,9 @@ impl RangeInputEntity {
                     }
                     input.preview = input.value_at(gesture.current());
                     input.dragging = false;
-                    input.emit_change(input.preview, window, cx);
+                    if input.preview.to_bits() != input.controlled.to_bits() {
+                        input.emit_change(input.preview, window, cx);
+                    }
                     cx.notify();
                 });
             };
@@ -212,8 +214,11 @@ impl RangeInputEntity {
             delta.map(|delta| self.preview + delta)
         };
         if let Some(next) = next {
+            let before = self.preview;
             self.preview = normalize_value(next, self.min, self.max, self.step);
-            self.emit_change(self.preview, window, cx);
+            if self.preview.to_bits() != before.to_bits() {
+                self.emit_change(self.preview, window, cx);
+            }
             cx.stop_propagation();
             cx.notify();
         }
@@ -435,8 +440,11 @@ impl PrimitiveHandler for RangeInputPrimitiveHandler {
                 },
                 _ => return Err("unsupported range input accessibility action".to_owned()),
             };
+            let before = input.preview;
             input.preview = normalize_value(requested, input.min, input.max, input.step);
-            input.emit_change(input.preview, window, cx);
+            if input.preview.to_bits() != before.to_bits() {
+                input.emit_change(input.preview, window, cx);
+            }
             cx.notify();
             Ok(())
         })
@@ -590,7 +598,7 @@ pub fn range_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "step".to_owned(),
                 ObjectField::required(ValueSchema::number()).with_doc(
-                    "Positive increment the value snaps to, counted from `min`, and the arrow-key step; at most `max - min`.",
+                    "Positive increment the value snaps to, counted from `min`, and the arrow-key step; at most `max - min`. When `max - min` is not a multiple of it, the last step below `max` is the highest value.",
                 ),
             ),
             (
@@ -629,7 +637,7 @@ pub fn range_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_change".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
-                    "Called with the snapped value when a drag ends or an arrow, Home or End key or an accessibility action moves it.",
+                    "Called with the snapped value when a drag, an arrow, Home or End key or an accessibility action changes it.",
                 ),
             ),
         ]),
@@ -637,7 +645,7 @@ pub fn range_input_primitive_descriptor() -> PrimitiveDescriptor {
             "change".to_owned(),
             EventSchema {
                 doc: Some(
-                    "Emitted when a drag ends or on an arrow, Home or End key; the payload is the proposed snapped value."
+                    "Emitted when a drag ends or an arrow, Home or End key acts, if the value changes; the payload is the proposed snapped value."
                         .to_owned(),
                 ),
                 payload: ValueSchema::number(),

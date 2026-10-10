@@ -33,8 +33,8 @@ rotatable::Rotatable(#{key:"dial",label:"Rotate dial",angle:0.0,pivot:#{x:100.0,
 
 | Field | Type | Required or default | Description |
 |---|---|---|---|
-| `x` | number | required | Pivot distance from the content's left edge, in logical pixels. |
-| `y` | number | required | Pivot distance from the content's top edge, in logical pixels. |
+| `x` | number -1000000–1000000 | required | Pivot distance from the content's left edge, in logical pixels. |
+| `y` | number -1000000–1000000 | required | Pivot distance from the content's top edge, in logical pixels. |
 
 ## Events
 

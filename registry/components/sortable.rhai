@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "border", "surface", "focus_ring", "text_muted", "metrics.row", "metrics.control",
+    "border", "surface", "focus_ring", "text_muted", "accent", "metrics.row", "metrics.control",
     "metrics.inset", "typography.body", "spacing.xs"
   ],
   "environment": ["density"]
@@ -15,15 +15,17 @@
 */
 // Controlled keyed ordering with native pointer targets and keyboard moves.
 // State: order is caller-owned; native state contains only one transient drag.
-// Keyboard: focus a handle, then Option/Alt+Arrow, Home, or End.
+// Keyboard: focus a handle, then press Option/Alt with an arrow, Home or End (all three need
+// Option/Alt). A horizontal row follows the reading direction, so in RTL Option/Alt+Left
+// moves a row towards the end.
 // Example: Sortable(#{ key:"queue", label:"Queue", items:items, on_reorder:Fn("reordered") })
 
 define_component(#{
     metadata: #{ id:"components/sortable", "export":"Sortable", version: "0.2.0",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
         tokens: [
-            "border", "surface", "focus_ring", "text_muted", "metrics.row", "metrics.control",
-            "metrics.inset", "typography.body", "spacing.xs"
+            "border", "surface", "focus_ring", "text_muted", "accent", "metrics.row",
+            "metrics.control", "metrics.inset", "typography.body", "spacing.xs"
         ],
         environment: ["density"] },
     schema: #{ props: #{
@@ -48,7 +50,7 @@ define_component(#{
             #{type:"array",max_items:10000,items:#{type:"map",values:#{type:"ui_value"}}},
             #{type:"collection"}
         ]}}, required:false, sensitive:false,
-            doc:"Virtualized rows: maps with a string `key`, a `label_key` field and an optional `disabled`." },
+            doc:"Virtualized rows: maps with a string `key`, a `label_key` field and an optional `disabled`; each row shows its label as text and drags from anywhere on it." },
         label_key: #{schema:#{type:"string"},required:false,sensitive:false,
             "default":#{type:"string",value:"label"},
             doc:"Field of a `virtual_data` row shown as its text and used as its accessible name."},

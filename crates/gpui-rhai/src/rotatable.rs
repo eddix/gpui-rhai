@@ -313,8 +313,8 @@ fn parse_config(
         Some(_) => Some(required_number(props, "snap")?),
     };
     if snap.is_some_and(|snap| snap <= 0.0 || snap > 360.0)
-        || pivot.0.abs() > 1_000_000.0
-        || pivot.1.abs() > 1_000_000.0
+        || pivot.0.abs() > MAX_PIVOT
+        || pivot.1.abs() > MAX_PIVOT
     {
         return Err("rotatable pivot or snap is invalid".to_owned());
     }
@@ -353,6 +353,8 @@ fn parse_config(
         focus,
     })
 }
+
+const MAX_PIVOT: f64 = 1_000_000.0;
 
 fn required_number(props: &PrimitiveProps, name: &str) -> Result<f64, String> {
     props
@@ -575,19 +577,27 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
         ),
         (
             "pivot_x".to_owned(),
-            ObjectField::required(ValueSchema::number()).with_doc(
+            ObjectField::required(ValueSchema::bounded_number(Some(-MAX_PIVOT), Some(MAX_PIVOT)))
+                .with_doc(
                 "Horizontal position of the pivot in `content_ref`'s local logical pixels.",
             ),
         ),
         (
             "pivot_y".to_owned(),
-            ObjectField::required(ValueSchema::number()).with_doc(
+            ObjectField::required(ValueSchema::bounded_number(Some(-MAX_PIVOT), Some(MAX_PIVOT)))
+                .with_doc(
                 "Vertical position of the pivot in `content_ref`'s local logical pixels.",
             ),
         ),
         (
             "snap".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::number())).with_doc(
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Number {
+                min: None,
+                max: Some(360.0),
+                exclusive_min: Some(0.0),
+                exclusive_max: None,
+            }))
+            .with_doc(
                 "Step in degrees, up to 360, that angles round to and keys turn by; `()` turns snapping off.",
             ),
         ),
@@ -646,6 +656,20 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_schema_rejects_what_the_handler_rejects() {
+        let props = rotatable_primitive_descriptor().props;
+        let accepts = |name: &str, value: f64| {
+            props[name]
+                .schema
+                .validate_ui_value(&UiValue::Float(value))
+                .is_ok()
+        };
+        assert!(accepts("pivot_x", MAX_PIVOT) && !accepts("pivot_x", 2_000_000.0));
+        assert!(!accepts("pivot_y", -2_000_000.0));
+        assert!(accepts("snap", 360.0) && !accepts("snap", 361.0) && !accepts("snap", 0.0));
+    }
 
     #[test]
     fn arbitrary_pivot_stays_fixed_under_rotation_compensation() {

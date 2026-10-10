@@ -26,9 +26,9 @@ define_component(#{
         angle:#{schema:#{type:"number"},required:true,sensitive:false,
             doc:"Clockwise rotation in degrees; the caller stores the `rotate` payload and passes it back."},
         pivot:#{schema:#{type:"object",allow_unknown:false,fields:#{
-            x:#{schema:#{type:"number"},required:true,sensitive:false,
+            x:#{schema:#{type:"number",min:-1000000.0,max:1000000.0},required:true,sensitive:false,
                 doc:"Pivot distance from the content's left edge, in logical pixels."},
-            y:#{schema:#{type:"number"},required:true,sensitive:false,
+            y:#{schema:#{type:"number",min:-1000000.0,max:1000000.0},required:true,sensitive:false,
                 doc:"Pivot distance from the content's top edge, in logical pixels."},
         }},required:true,sensitive:false,
             doc:"Point the content turns around, in logical pixels from the content's top-left corner."},

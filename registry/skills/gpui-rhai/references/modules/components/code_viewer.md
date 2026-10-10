@@ -21,7 +21,7 @@ code_viewer::CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai sour
 | `language` | string or `()` | — | Syntax to highlight, such as `"rhai"`; takes precedence over `file_name`, and unknown names show plain text. |
 | `on_location_activate` | callback or `()` | — | Called with `#{ line, column }` when the text is double-clicked or Enter is pressed in it. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
-| `show_line_numbers` | bool | `true` | Shows the line-number gutter. |
+| `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter; with `false` the gutter stays, empty. |
 | `source` | string or native document | required | Text to show: a string, or a Host-owned `NativeTextDocument` from `ctx.get_native_text_document`. |
 | `style` | style | — | Style merged over the root part. |
 | `tab_size` | integer 1–16 | `4` | Columns between tab stops when tabs are expanded for display. |

@@ -283,15 +283,36 @@ fn drag_position(
     boundary: (f64, f64),
     object: (f64, f64),
 ) -> (f64, f64) {
+    moved_position(config, delta, boundary, object, |source, delta, step| {
+        snap(source + delta, step)
+    })
+}
+
+/// The position after an arrow key. A key always reaches at least the next grid line in
+/// its direction, so a snap step larger than the key step still moves the object.
+fn key_position(
+    config: &DragConfig,
+    delta: (f64, f64),
+    boundary: (f64, f64),
+    object: (f64, f64),
+) -> (f64, f64) {
+    moved_position(config, delta, boundary, object, snap_toward)
+}
+
+fn moved_position(
+    config: &DragConfig,
+    delta: (f64, f64),
+    boundary: (f64, f64),
+    object: (f64, f64),
+    axis: impl Fn(f64, f64, Option<f64>) -> f64,
+) -> (f64, f64) {
     let mut x = config.source_x;
     let mut y = config.source_y;
     if matches!(config.axes, DragAxes::Both | DragAxes::Horizontal) {
-        x += delta.0;
-        x = snap(x, config.snap_x);
+        x = axis(x, delta.0, config.snap_x);
     }
     if matches!(config.axes, DragAxes::Both | DragAxes::Vertical) {
-        y += delta.1;
-        y = snap(y, config.snap_y);
+        y = axis(y, delta.1, config.snap_y);
     }
     if config.contain {
         x = x.clamp(0.0, (boundary.0 - object.0).max(0.0));
@@ -302,6 +323,15 @@ fn drag_position(
 
 fn snap(value: f64, step: Option<f64>) -> f64 {
     step.map_or(value, |step| (value / step).round() * step)
+}
+
+fn snap_toward(source: f64, delta: f64, step: Option<f64>) -> f64 {
+    let next = snap(source + delta, step);
+    match step {
+        Some(step) if delta > 0.0 && next <= source => (source / step).floor().mul_add(step, step),
+        Some(step) if delta < 0.0 && next >= source => (source / step).ceil().mul_add(step, -step),
+        _ => next,
+    }
 }
 
 fn write_preview(
@@ -388,7 +418,7 @@ impl PrimitiveHandler for DraggablePrimitiveHandler {
                 ) else {
                     return;
                 };
-                let next = drag_position(
+                let next = key_position(
                     &key_config,
                     delta,
                     (boundary.width, boundary.height),
@@ -495,6 +525,10 @@ fn optional_float_signal(
     Ok(signal)
 }
 
+fn position_bound_schema() -> ValueSchema {
+    ValueSchema::bounded_number(Some(-MAX_POSITION), Some(MAX_POSITION))
+}
+
 fn position_schema() -> ValueSchema {
     ValueSchema::object(BTreeMap::from([
         ("x".to_owned(), ObjectField::required(ValueSchema::number())),
@@ -510,20 +544,21 @@ fn position_schema() -> ValueSchema {
 #[must_use]
 #[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn draggable_primitive_descriptor() -> PrimitiveDescriptor {
-    let optional_number = || ObjectField::optional(ValueSchema::optional(ValueSchema::number()));
+    let optional_step =
+        || ObjectField::optional(ValueSchema::optional(ValueSchema::positive_number()));
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.draggable").expect("static primitive ID"),
         export: "DraggablePrimitive".to_owned(),
         props: BTreeMap::from([
             (
                 "x".to_owned(),
-                ObjectField::required(ValueSchema::number()).with_doc(
+                ObjectField::required(position_bound_schema()).with_doc(
                     "Controlled left edge of the object in `boundary_ref`'s local logical pixels.",
                 ),
             ),
             (
                 "y".to_owned(),
-                ObjectField::required(ValueSchema::number()).with_doc(
+                ObjectField::required(position_bound_schema()).with_doc(
                     "Controlled top edge of the object in `boundary_ref`'s local logical pixels.",
                 ),
             ),
@@ -555,20 +590,26 @@ pub fn draggable_primitive_descriptor() -> PrimitiveDescriptor {
             ),
             (
                 "snap_x".to_owned(),
-                optional_number().with_doc(
+                optional_step().with_doc(
                     "Grid step in logical pixels the left edge rounds to, or `()` to move freely.",
                 ),
             ),
             (
                 "snap_y".to_owned(),
-                optional_number().with_doc(
+                optional_step().with_doc(
                     "Grid step in logical pixels the top edge rounds to, or `()` to move freely.",
                 ),
             ),
             (
                 "keyboard_step".to_owned(),
-                ObjectField::optional(ValueSchema::positive_number()).with_doc(
-                    "Logical pixels one arrow-key press moves the object, up to 512; Shift multiplies it by four; defaults to 8.",
+                ObjectField::optional(ValueSchema::Number {
+                    min: None,
+                    max: Some(512.0),
+                    exclusive_min: Some(0.0),
+                    exclusive_max: None,
+                })
+                .with_doc(
+                    "Logical pixels one arrow-key press moves the object, up to 512; Shift multiplies it by four; with a larger snap step a press moves to the next grid line; defaults to 8.",
                 ),
             ),
             (
@@ -636,6 +677,21 @@ pub fn draggable_primitive_descriptor() -> PrimitiveDescriptor {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_schema_rejects_what_the_handler_rejects() {
+        let props = draggable_primitive_descriptor().props;
+        let accepts = |name: &str, value: f64| {
+            props[name]
+                .schema
+                .validate_ui_value(&UiValue::Float(value))
+                .is_ok()
+        };
+        assert!(accepts("x", -MAX_POSITION) && !accepts("x", 2_000_000.0));
+        assert!(!accepts("y", -2_000_000.0));
+        assert!(accepts("keyboard_step", 512.0) && !accepts("keyboard_step", 513.0));
+        assert!(!accepts("keyboard_step", 0.0) && !accepts("snap_x", -1.0));
+    }
+
     fn config(axes: DragAxes) -> DragConfig {
         let component = crate::ComponentInstancePath::root("Draggable", "card");
         DragConfig {
@@ -686,5 +742,27 @@ mod tests {
             ),
             (70.0, 30.0)
         );
+    }
+
+    #[test]
+    fn arrow_keys_reach_the_next_grid_line_when_the_snap_step_is_larger() {
+        let mut config = config(DragAxes::Horizontal);
+        config.source_x = 0.0;
+        config.snap_x = Some(50.0);
+        let key = |config: &DragConfig, delta| {
+            key_position(config, (delta, 0.0), (400.0, 90.0), (30.0, 20.0)).0
+        };
+        assert!((key(&config, 8.0) - 50.0).abs() < f64::EPSILON);
+        assert!(key(&config, -8.0).abs() < f64::EPSILON);
+        config.source_x = 50.0;
+        assert!((key(&config, 8.0) - 100.0).abs() < f64::EPSILON);
+        assert!(key(&config, -8.0).abs() < f64::EPSILON);
+        config.source_x = 30.0;
+        assert!((key(&config, 8.0) - 50.0).abs() < f64::EPSILON);
+        assert!(key(&config, -8.0).abs() < f64::EPSILON);
+        // A key step past a grid line rounds as a drag does.
+        config.snap_x = Some(10.0);
+        config.source_x = 20.0;
+        assert!((key(&config, 32.0) - 50.0).abs() < f64::EPSILON);
     }
 }

@@ -1423,13 +1423,15 @@ fn view(ctx){let value=ctx.get_state("range");column([
         px((control.x + control.width * 0.8) as f32),
         px((control.y + control.height * 0.7) as f32),
     );
+    // A click on the high thumb at its own value focuses it and proposes nothing.
     visual.simulate_mouse_down(high_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(high_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
+    assert!(status(&mut visual).ends_with(",1"));
     visual.simulate_keystrokes("left");
     visual.run_until_parked();
     let keyboard = status(&mut visual);
-    assert_eq!(keyboard, "50.0,75.0,3", "status={keyboard}");
+    assert_eq!(keyboard, "50.0,75.0,2", "status={keyboard}");
 }
 
 #[gpui::test]

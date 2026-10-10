@@ -239,7 +239,9 @@ impl RangeSliderEntity {
                 finish_entity.update(cx, |slider, cx| {
                     if !slider.disabled && slider.revision == revision {
                         slider.set_active_value(slider.value_at(gesture.current()));
-                        slider.emit_change(window, cx);
+                        if slider.preview != slider.controlled {
+                            slider.emit_change(window, cx);
+                        }
                     }
                     slider.dragging = false;
                     slider.preview = slider.controlled;
@@ -752,7 +754,7 @@ pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "step".to_owned(),
                 ObjectField::required(ValueSchema::positive_number()).with_doc(
-                    "Increment both values snap to, counted from `min`, and the arrow-key step.",
+                    "Increment both values snap to, counted from `min`, and the arrow-key step; when `max - min` is not a multiple of it, the last step below `max` is the highest value.",
                 ),
             ),
             (
@@ -807,7 +809,7 @@ pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_change".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
-                    "Called with `#{ low, high }` when a drag ends or an arrow, Home or End key moves a thumb.",
+                    "Called with `#{ low, high }` when a drag or an arrow, Home or End key moves a thumb.",
                 ),
             ),
         ]),
@@ -815,7 +817,7 @@ pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
             "change".to_owned(),
             EventSchema {
                 doc: Some(
-                    "Emitted when a drag ends or a key moves a thumb; the payload is the proposed `#{ low, high }`, snapped and gapped."
+                    "Emitted when a drag ends or a key acts, if a thumb moved; the payload is the proposed `#{ low, high }`, snapped and gapped."
                         .to_owned(),
                 ),
                 payload: pair_schema(),

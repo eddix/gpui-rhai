@@ -289,6 +289,7 @@ fn register_pointer_listeners(
 ) {
     let view = window.current_view();
     let hitbox = prepaint.hitbox.clone();
+    let state = prepaint.state.clone();
     let down_config = config.clone();
     let down_events = events.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
@@ -343,9 +344,16 @@ fn register_pointer_listeners(
             };
         let finish_config = down_config.clone();
         let finish_events = down_events.clone();
+        let finish_state = state.clone();
         let finish =
             move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
-                clear_preview(&finish_events, &finish_config.signal, window, cx);
+                restore_controlled(
+                    &finish_events,
+                    &finish_config.signal,
+                    &finish_state,
+                    window,
+                    cx,
+                );
                 if !gesture.moved() || group_size <= 0.0 {
                     return;
                 }
@@ -357,6 +365,10 @@ fn register_pointer_listeners(
                 );
                 let size =
                     clamp_start_size(start_size + delta, group_size, handle_size, &finish_config);
+                // A drag that ends where it started, or against a limit, proposes nothing.
+                if (size - start_size).abs() <= 0.5 {
+                    return;
+                }
                 finish_events.propose(
                     "resize",
                     UiValue::Float((size / group_size).clamp(0.0, 1.0)),
@@ -366,8 +378,9 @@ fn register_pointer_listeners(
             };
         let cancel_signal = down_config.signal.clone();
         let cancel_events = down_events.clone();
+        let cancel_state = state.clone();
         let cancel = move |window: &mut Window, cx: &mut App| {
-            clear_preview(&cancel_events, &cancel_signal, window, cx);
+            restore_controlled(&cancel_events, &cancel_signal, &cancel_state, window, cx);
         };
         let owner = down_events.interaction_owner(&down_config.id);
         down_events.begin_interaction(
@@ -386,12 +399,17 @@ fn register_pointer_listeners(
     });
 }
 
-fn clear_preview(
+/// End a gesture's preview. Forgetting the constraint preview makes the next
+/// prepaint write it again, so a controlled ratio outside the constraints shows
+/// clamped rather than raw once the drag preview is gone.
+fn restore_controlled(
     events: &PrimitiveContext,
     signal: &crate::NativeSignal,
+    state: &SplitResizeState,
     window: &mut Window,
     cx: &mut App,
 ) {
+    state.0.borrow_mut().constraint_preview = None;
     write_preview(events, signal, None, window, cx);
 }
 
@@ -663,7 +681,7 @@ pub fn split_resize_primitive_descriptor() -> PrimitiveDescriptor {
                 (
                     "on_resize".to_owned(),
                     ObjectField::optional(ValueSchema::optional(ValueSchema::Callback))
-                        .with_doc("Called with the proposed start-panel ratio when a drag ends."),
+                        .with_doc("Called with the proposed start-panel ratio when a drag that moved the handle ends."),
                 ),
             ]);
             props.extend(crate::handle_state::decoration_props());
@@ -673,7 +691,7 @@ pub fn split_resize_primitive_descriptor() -> PrimitiveDescriptor {
             "resize".to_owned(),
             EventSchema {
                 doc: Some(
-                    "Emitted once when a drag that moved ends; the payload is the next start-panel ratio, 0 to 1."
+                    "Emitted once when a drag that moved the handle ends; the payload is the next start-panel ratio, 0 to 1."
                         .to_owned(),
                 ),
                 payload: ValueSchema::Number {

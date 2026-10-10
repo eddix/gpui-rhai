@@ -586,7 +586,7 @@ Official components wrap them; application components may too.
 | `on_annotation_activate` | callback or `()` | — | Called with the annotation's `key` and `label` when it is clicked or activated by Enter or Space. |
 | `on_brush_change` | callback or `()` | — | Called with the brushed datum keys, references and rectangle when a brush drag ends. |
 | `on_legend_change` | callback or `()` | — | Called with `#{ series_key, visible }` when a legend entry is clicked; `visible` is the requested new state. |
-| `on_select` | callback or `()` | — | Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space. |
+| `on_select` | callback or `()` | — | Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, a press in the plot starts a brush instead, so only the keys select. |
 | `on_zoom_change` | callback or `()` | — | Called with the proposed camera, typed `viewport` and `viewport_revision` when a wheel zoom or pan commits. |
 | `pan_x` | number | `0.0` | Scalar camera offset along x in logical plot pixels; goes with `zoom`. |
 | `pan_y` | number | `0.0` | Scalar camera offset along y in logical plot pixels; goes with `zoom`. |
@@ -601,7 +601,7 @@ Official components wrap them; application components may too.
 | `annotation_activate` | object | Emitted when an annotation is clicked or activated by Enter or Space; the payload is its `key` and `label`. |
 | `brush_change` | object | Emitted when a brush drag ends; the payload lists the enclosed data and the rectangle in chart-local pixels. |
 | `legend_change` | object | Emitted when a legend entry is clicked; the payload names the series and its requested visibility. |
-| `select` | object | Emitted when a data mark is clicked or activated by Enter or Space; the payload identifies the datum and its value. |
+| `select` | object | Emitted when a data mark is clicked (while `spec.brush` is off) or activated by Enter or Space; the payload identifies the datum and its value. |
 | `zoom_change` | object | Emitted when a wheel zoom or a middle-button pan commits; the payload is the proposed camera and its new revision. |
 
 ### CodeViewPrimitive
@@ -619,7 +619,7 @@ Official components wrap them; application components may too.
 | `loading_style` | style | required | Style of the placeholder shown while the document is first prepared in the background. |
 | `on_location_activate` | callback or `()` | — | Called with the 1-based `#{ line, column }` when the text is double-clicked or Enter is pressed. |
 | `search_style` | style | required | Style of the find bar that Cmd-F opens. |
-| `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter on the first row of each line. |
+| `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter on the first row of each line; with `false` the gutter stays, empty. |
 | `source` | string or native document | required | The document: an inline string or a `NativeTextDocument` from `ctx.get_native_text_document`. |
 | `tab_size` | integer 1–16 | `4` | Columns between tab stops; a tab expands to the next stop for display and wrapping. |
 | `text_style` | style | required | Style of each row's text; its `typography`, font size and line height set the row height. |
@@ -677,7 +677,7 @@ Official components wrap them; application components may too.
 | `status_style` | style | required | Style of the bottom status bar that shows the current change and the change-navigation keys. |
 | `tab_size` | integer 1–16 | `4` | Columns between tab stops; a tab expands to the next stop for display and wrapping. |
 | `text_style` | style | required | Style of each row's text; its `typography`, font size and line height set the row height. |
-| `whitespace` | `"exact"` or `"ignore_changes"` or `"ignore_all"` | `"exact"` | `exact` compares lines as they are, `ignore_changes` collapses and trims whitespace, `ignore_all` drops it all. |
+| `whitespace` | `"exact"` or `"ignore_changes"` or `"ignore_all"` | `"exact"` | `exact` compares lines as they are, `ignore_changes` collapses and trims whitespace, `ignore_all` drops it all; a unified patch copied with Option-Cmd-C always compares exactly. |
 | `wrap` | `"none"` or `"viewport"` or `"column"` | `"none"` | `none` keeps each line on one row, `viewport` wraps at the pane width, `column` at `wrap_column` characters. |
 | `wrap_column` | integer 20–500 | `100` | Character column where lines wrap when `wrap` is `column`; ignored otherwise. |
 
@@ -715,15 +715,15 @@ Official components wrap them; application components may too.
 | `contain` | bool | `true` | Keeps the object inside `boundary_ref`; presses are ignored while the controlled position lies outside it. |
 | `disabled` | bool | `false` | Ignores presses and arrow keys and removes the object from the tab order. |
 | `handle_ref` | element ref or `()` | — | Ref to a drag handle inside the object; when set, only presses inside it start a drag. |
-| `keyboard_step` | number > 0 | — | Logical pixels one arrow-key press moves the object, up to 512; Shift multiplies it by four; defaults to 8. |
+| `keyboard_step` | number > 0, ≤ 512 | — | Logical pixels one arrow-key press moves the object, up to 512; Shift multiplies it by four; with a larger snap step a press moves to the next grid line; defaults to 8. |
 | `object_ref` | element ref | required | Ref to the moved object; its size bounds `contain`, and without `handle_ref` a press on it starts a drag. |
 | `on_move` | callback or `()` | — | Called with the proposed `{x, y}` when a drag ends or an arrow key is pressed. |
-| `snap_x` | number or `()` | — | Grid step in logical pixels the left edge rounds to, or `()` to move freely. |
-| `snap_y` | number or `()` | — | Grid step in logical pixels the top edge rounds to, or `()` to move freely. |
+| `snap_x` | number > 0 or `()` | — | Grid step in logical pixels the left edge rounds to, or `()` to move freely. |
+| `snap_y` | number > 0 or `()` | — | Grid step in logical pixels the top edge rounds to, or `()` to move freely. |
 | `threshold` | number 0–64 | — | Pointer movement in logical pixels before a press becomes a drag; defaults to 4. |
-| `x` | number | required | Controlled left edge of the object in `boundary_ref`'s local logical pixels. |
+| `x` | number -1000000–1000000 | required | Controlled left edge of the object in `boundary_ref`'s local logical pixels. |
 | `x_signal` | signal | required | Optional-float signal that receives the previewed horizontal offset from `x` during a drag, or `()` when idle. |
-| `y` | number | required | Controlled top edge of the object in `boundary_ref`'s local logical pixels. |
+| `y` | number -1000000–1000000 | required | Controlled top edge of the object in `boundary_ref`'s local logical pixels. |
 | `y_signal` | signal | required | Optional-float signal that receives the previewed vertical offset from `y` during a drag, or `()` when idle. |
 
 | Event | Payload | Description |
@@ -769,7 +769,7 @@ Official components wrap them; application components may too.
 | `disabled` | bool | `false` | Ignores drags, the wheel and keys and removes the surface from the tab order. |
 | `keyboard_pan_step` | number 0.1–512 | — | Logical pixels one arrow-key press pans; Shift multiplies it by four; defaults to 16. |
 | `keyboard_zoom_factor` | number 1.001–4 | — | Factor `+` multiplies and `-` divides the scale by, around the viewport centre; defaults to 1.2. |
-| `max_scale` | number > 0 | required | Largest zoom factor the wheel and keys may reach; at least `scale`. |
+| `max_scale` | number > 0, ≤ 1000000 | required | Largest zoom factor the wheel and keys may reach; at least `scale`. |
 | `min_scale` | number > 0 | required | Smallest zoom factor the wheel and keys may reach; at most `scale`. |
 | `on_transform_change` | callback or `()` | — | Called with the proposed `{x, y, scale}` when a pan ends, a wheel zoom settles or a key pans, zooms or resets. |
 | `pan_button` | `"left"` or `"middle"` | `"left"` | Mouse button that drags the view: `left` or `middle`. |
@@ -784,9 +784,9 @@ Official components wrap them; application components may too.
 | `wheel_generation_signal` | signal | required | Integer signal that counts wheel bursts, so a delayed commit from an older burst is dropped. |
 | `wheel_pending_signal` | signal | required | Bool signal that is true while a wheel zoom is previewed and not yet proposed. |
 | `wheel_zoom` | `"off"` or `"modifier"` or `"always"` | `"modifier"` | When the wheel zooms: `off`, `modifier` (with Ctrl or Cmd held; other wheel input scrolls ancestors) or `always`. |
-| `x` | number | required | Controlled horizontal pan in logical pixels, applied after scaling about the content's centre. |
+| `x` | number -1000000–1000000 | required | Controlled horizontal pan in logical pixels, applied after scaling about the content's centre. |
 | `x_signal` | signal | required | Float signal that receives the previewed horizontal pan; bind it to the Canvas `translate_x`. |
-| `y` | number | required | Controlled vertical pan in logical pixels, applied after scaling about the content's centre. |
+| `y` | number -1000000–1000000 | required | Controlled vertical pan in logical pixels, applied after scaling about the content's centre. |
 | `y_signal` | signal | required | Float signal that receives the previewed vertical pan; bind it to the Canvas `translate_y`. |
 
 | Event | Payload | Description |
@@ -803,16 +803,16 @@ Official components wrap them; application components may too.
 | `fill_style` | style | required | Style of the fill from `min` to the thumb; its length along the track is set natively from the value. |
 | `max` | number | required | Value at the end of the track; must be greater than `min`. |
 | `min` | number | required | Value at the start of the track: the leading edge, or the bottom when vertical; must be less than `max`. |
-| `on_change` | callback or `()` | — | Called with the snapped value when a drag ends or an arrow, Home or End key or an accessibility action moves it. |
+| `on_change` | callback or `()` | — | Called with the snapped value when a drag, an arrow, Home or End key or an accessibility action changes it. |
 | `orientation` | `"horizontal"` or `"vertical"` | required | `horizontal` runs the track in the reading direction (mirrored in RTL); `vertical` runs it bottom to top. |
-| `step` | number | required | Positive increment the value snaps to, counted from `min`, and the arrow-key step; at most `max - min`. |
+| `step` | number | required | Positive increment the value snaps to, counted from `min`, and the arrow-key step; at most `max - min`. When `max - min` is not a multiple of it, the last step below `max` is the highest value. |
 | `thumb_style` | style | required | Style of the thumb centered on the value; its `focus` and `disabled` states apply. |
 | `track_style` | style | required | Style of the track that holds the fill and thumb; give it its size here, such as full width by 4px. |
 | `value` | number | required | The selected value, snapped to `step` from `min`; controlled, so store each `change` payload or the thumb snaps back. |
 
 | Event | Payload | Description |
 |---|---|---|
-| `change` | number | Emitted when a drag ends or on an arrow, Home or End key; the payload is the proposed snapped value. |
+| `change` | number | Emitted when a drag ends or an arrow, Home or End key acts, if the value changes; the payload is the proposed snapped value. |
 
 ### RangeSliderPrimitive
 
@@ -829,15 +829,15 @@ Official components wrap them; application components may too.
 | `max` | number | required | Value at the end of the track; must be greater than `min`. |
 | `min` | number | required | Value at the start of the track: the leading edge, or the bottom when vertical; must be less than `max`. |
 | `minimum_gap` | number ≥ 0 | — | Smallest allowed distance between `low` and `high`, at most `max - min`; 0 when omitted. |
-| `on_change` | callback or `()` | — | Called with `#{ low, high }` when a drag ends or an arrow, Home or End key moves a thumb. |
+| `on_change` | callback or `()` | — | Called with `#{ low, high }` when a drag or an arrow, Home or End key moves a thumb. |
 | `orientation` | `"horizontal"` or `"vertical"` | required | `horizontal` runs the track in the reading direction (mirrored in RTL); `vertical` runs it bottom to top. |
-| `step` | number > 0 | required | Increment both values snap to, counted from `min`, and the arrow-key step. |
+| `step` | number > 0 | required | Increment both values snap to, counted from `min`, and the arrow-key step; when `max - min` is not a multiple of it, the last step below `max` is the highest value. |
 | `thumb_style` | style | required | Style of both thumbs, each centered on its value; its `focus` and `disabled` states apply per thumb. |
 | `track_style` | style | required | Style of the track that holds the fill and thumbs; give it its size here, such as full width by 4px. |
 
 | Event | Payload | Description |
 |---|---|---|
-| `change` | object | Emitted when a drag ends or a key moves a thumb; the payload is the proposed `#{ low, high }`, snapped and gapped. |
+| `change` | object | Emitted when a drag ends or a key acts, if a thumb moved; the payload is the proposed `#{ low, high }`, snapped and gapped. |
 
 ### ResizableHandlePrimitive
 
@@ -885,9 +885,9 @@ Official components wrap them; application components may too.
 | `disabled` | bool | `false` | Ignores presses and keys and removes the handle from the tab order. |
 | `keyboard_step` | number 0.1–180 | — | Degrees one arrow-key press turns when `snap` is unset; Shift multiplies it by four; defaults to 5. |
 | `on_rotate` | callback or `()` | — | Called with the proposed angle when a rotation drag ends or an arrow key or Home is pressed. |
-| `pivot_x` | number | required | Horizontal position of the pivot in `content_ref`'s local logical pixels. |
-| `pivot_y` | number | required | Vertical position of the pivot in `content_ref`'s local logical pixels. |
-| `snap` | number or `()` | — | Step in degrees, up to 360, that angles round to and keys turn by; `()` turns snapping off. |
+| `pivot_x` | number -1000000–1000000 | required | Horizontal position of the pivot in `content_ref`'s local logical pixels. |
+| `pivot_y` | number -1000000–1000000 | required | Vertical position of the pivot in `content_ref`'s local logical pixels. |
+| `snap` | number > 0, ≤ 360 or `()` | — | Step in degrees, up to 360, that angles round to and keys turn by; `()` turns snapping off. |
 | `source_token` | string | required | Fingerprint of the controlled angle, pivot and settings; when it changes, the preview returns to `angle`. |
 | `source_token_signal` | signal | required | String signal that keeps the source last shown or proposed, so a rerender with the same source reads as a rejection. |
 | `threshold` | number 0–64 | — | Pointer movement in logical pixels before a press becomes a rotation; defaults to 4. |
@@ -910,14 +910,14 @@ Official components wrap them; application components may too.
 | `disabled` | bool | `false` | Ignores presses and keys, cancels a running marquee and removes the area from the tab order. |
 | `marquee` | `"intersect"` or `"enclose"` | `"intersect"` | `intersect` selects targets the marquee touches; `enclose` only targets entirely inside it. |
 | `multiple` | bool | `true` | Allows more than one selected key; `false` turns off toggle, range and additive marquee selection. |
-| `on_selection_change` | callback or `()` | — | Called with the proposed selection on a click, a marquee release, or an arrow, Home, End or Space key. |
+| `on_selection_change` | callback or `()` | — | Called with the proposed selection when a click, a marquee release, or an arrow, Home, End or Space key changes it. |
 | `selected_keys` | array of string (at most 10000) | required | Controlled keys of the selected targets; the caller stores the `selection_change` payload and passes it back. |
 | `targets` | array of map of any value (at most 10000) | required | Selectable `{key, x, y, width, height, disabled}` rectangles in Canvas-local logical pixels; list order sets range and stacking. |
 | `threshold` | number 0–64 | — | Pointer movement in logical pixels before a press becomes a marquee; defaults to 4. |
 
 | Event | Payload | Description |
 |---|---|---|
-| `selection_change` | object | Emitted on a click, a marquee release or a selection key; the payload is the next `selected_keys`, `active_key` and `anchor_key`. |
+| `selection_change` | object | Emitted when a click, a marquee release or a selection key changes the selection; the payload is the next `selected_keys`, `active_key` and `anchor_key`. |
 
 ### SortableItemPrimitive
 
@@ -962,7 +962,7 @@ Official components wrap them; application components may too.
 | `max_start` | number 0–16384 | — | Largest start-panel length a drag may propose, in logical pixels; defaults to 16,384. |
 | `min_end` | number 0–16384 | — | Smallest end-panel length a drag may leave, in logical pixels; it wins when both minimums cannot fit. |
 | `min_start` | number 0–16384 | — | Smallest start-panel length a drag may propose, in logical pixels; defaults to 0. |
-| `on_resize` | callback or `()` | — | Called with the proposed start-panel ratio when a drag ends. |
+| `on_resize` | callback or `()` | — | Called with the proposed start-panel ratio when a drag that moved the handle ends. |
 | `orientation` | `"horizontal"` or `"vertical"` | required | `horizontal` resizes the start panel's width (panels side by side); `vertical` resizes its height. |
 | `signal` | signal | required | Optional-float signal that receives the start-panel length to preview, in logical pixels, or `()` for none. |
 | `source_ratio` | number 0–1 | required | Controlled start-panel share of the group's length, 0 to 1; the caller stores the `resize` payload here. |
@@ -971,7 +971,7 @@ Official components wrap them; application components may too.
 
 | Event | Payload | Description |
 |---|---|---|
-| `resize` | number 0–1 | Emitted once when a drag that moved ends; the payload is the next start-panel ratio, 0 to 1. |
+| `resize` | number 0–1 | Emitted once when a drag that moved the handle ends; the payload is the next start-panel ratio, 0 to 1. |
 
 ### TextInputPrimitive
 
@@ -984,7 +984,7 @@ Official components wrap them; application components may too.
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, paste, cut, undo, redo or IME composition step. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
-| `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in an enabled field. |
+| `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in an enabled field; without it, Enter reaches the field's ancestors. |
 | `placeholder` | string or `()` | — | Hint text shown dimmed while `value` is empty. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
 | `typography` | string | required | Theme typography role, such as `control`, that sets the font family, size, weight and line height. |

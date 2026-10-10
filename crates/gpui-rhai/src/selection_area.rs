@@ -119,12 +119,7 @@ impl SelectionAreaEntity {
                     };
                     selection.marquee_window = None;
                     if let Some(proposal) = proposal {
-                        selection.context.propose(
-                            "selection_change",
-                            proposal_value(proposal),
-                            window,
-                            cx,
-                        );
+                        selection.emit(proposal, window, cx);
                     }
                     cx.notify();
                 });
@@ -213,6 +208,7 @@ impl SelectionAreaEntity {
         cx.stop_propagation();
     }
 
+    /// Propose `proposal` unless it equals the controlled selection.
     fn emit(&self, proposal: SelectionProposal, window: &mut Window, cx: &mut App) {
         if proposal.selected != self.config.selected
             || proposal.active != self.config.active
@@ -893,7 +889,7 @@ pub fn selection_area_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_selection_change".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
-                    "Called with the proposed selection on a click, a marquee release, or an arrow, Home, End or Space key.",
+                    "Called with the proposed selection when a click, a marquee release, or an arrow, Home, End or Space key changes it.",
                 ),
             ),
         ]),
@@ -901,7 +897,7 @@ pub fn selection_area_primitive_descriptor() -> PrimitiveDescriptor {
             "selection_change".to_owned(),
             EventSchema {
                 doc: Some(
-                    "Emitted on a click, a marquee release or a selection key; the payload is the next `selected_keys`, `active_key` and `anchor_key`."
+                    "Emitted when a click, a marquee release or a selection key changes the selection; the payload is the next `selected_keys`, `active_key` and `anchor_key`."
                         .to_owned(),
                 ),
                 payload: proposal_schema(),

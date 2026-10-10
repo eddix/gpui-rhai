@@ -99,7 +99,7 @@ define_component(#{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
                 sensitive: false,
-                doc: "Called with the current text when Enter is pressed in a field that is not `disabled`.",
+                doc: "Called with the current text when Enter is pressed in a field that is not `disabled`; without it, Enter reaches the field's ancestors, such as a form's default action.",
             },
             on_focus: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },

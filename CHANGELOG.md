@@ -352,6 +352,26 @@ and [docs/design/](docs/design/) for the specification.
   `relative` lengths do not apply to borders, radii and type sizes, an unknown
   typography role or token applies nothing, and a focused node's border takes
   `focus_ring` unless its focus style sets a border color.
+- Native controls propose nothing when nothing changes: SplitPane against a
+  limit or after a drag that ends where it started, Slider and RangeSlider keys
+  and clicks at the current value, and a SelectionArea click on the selection
+  it already has. A ratio outside the constraints shows clamped once a drag
+  ends or is cancelled.
+- Draggable arrow keys reach the next grid line when the snap step is larger
+  than the key step; they stayed in place.
+- A horizontal Sortable (and TabBar) in RTL drops on the side the pointer is
+  on and moves the way Alt+Left and Alt+Right point; both were reversed.
+- Input without `on_submit` leaves Enter to its ancestors, so a dialog's or
+  panel's Enter handler sees it; a searchable Combobox now selects the active
+  option on Enter in its search field.
+- CodeViewer with line numbers off wraps inside the gutter it still draws; lines
+  ran about 19px past the edge.
+- Schemas accept what the handlers accept: Draggable, PanZoom and Rotatable
+  positions within 1e6 either way, `keyboard_step` up to 512, positive snap
+  steps, a Rotatable snap up to 360 degrees; ColumnResize requires an
+  optional-float signal. DropZone, DragSource, Sortable and SelectionArea
+  declare the theme colors their primitives paint (`accent`, and `danger` for
+  DropZone).
 
 ## 0.1.8 - 2026-10-04
 

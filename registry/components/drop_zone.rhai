@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": [],
+  "tokens": ["accent", "danger"],
   "environment": []
 }
 */
@@ -18,7 +18,7 @@
 define_component(#{
     metadata: #{ id:"components/drop_zone", "export":"DropZone", version: "0.2.0",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
-        tokens: [],
+        tokens: ["accent", "danger"],
         environment: [] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },

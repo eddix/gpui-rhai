@@ -48,4 +48,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `interaction`
 
 ## Theme
 
-- Tokens: `border`, `focus_ring`, `surface`
+- Tokens: `accent`, `border`, `focus_ring`, `surface`

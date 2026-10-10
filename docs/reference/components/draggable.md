@@ -22,7 +22,7 @@ draggable::Draggable(#{ key:"card", label:"Move card", position:#{x:0,y:0},
 | `disabled` | bool | `false` | Ignores pointer and keyboard input and removes the object from the tab order. |
 | `handle` | node or `()` | — | Node above `content` that alone starts a drag; without it the whole object does. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
-| `keyboard_step` | number > 0, ≤ 512 | `8.0` | Logical pixels one arrow-key press moves the object; Shift moves four times as far. |
+| `keyboard_step` | number > 0, ≤ 512 | `8.0` | Logical pixels one arrow-key press moves the object; Shift moves four times as far. With a larger snap step, a press moves to the next grid line. |
 | `label` | string | required | Accessible name of the movable object. |
 | `on_move` | callback or `()` | — | Called with the proposed `{x, y}` when a drag ends or an arrow key moves the object. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
@@ -36,8 +36,8 @@ draggable::Draggable(#{ key:"card", label:"Move card", position:#{x:0,y:0},
 
 | Field | Type | Required or default | Description |
 |---|---|---|---|
-| `x` | number | required | Distance from the root's left edge, in logical pixels. |
-| `y` | number | required | Distance from the root's top edge, in logical pixels. |
+| `x` | number -1000000–1000000 | required | Distance from the root's left edge, in logical pixels. |
+| `y` | number -1000000–1000000 | required | Distance from the root's top edge, in logical pixels. |
 
 ## Events
 

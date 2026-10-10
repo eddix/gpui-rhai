@@ -72,7 +72,7 @@ define_component(#{
                 doc: "Logical pixels one arrow-key press on the focused separator moves it." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Ignores drags and removes the separator from the tab order." },
+                doc: "Ignores drags and key steps and removes the separator from the tab order." },
             handle: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Decorative grip node centred on the separator above both panes; pressing it starts the drag." },
             line: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -83,11 +83,11 @@ define_component(#{
                 doc: "How far the native line stops short of each end of the separator, in logical pixels." },
             on_resize: #{ schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false, sensitive: false,
-                doc: "Called with the proposed start-pane ratio when a drag ends or an arrow key is pressed." },
+                doc: "Called with the proposed start-pane ratio when a drag ends or an arrow key moves the separator." },
         },
         state: #{ fields: #{} },
         events: #{ resize: #{ payload: #{ type: "number", min: 0.0, max: 1.0 },
-            doc: "Emitted once when a drag ends or a key step is requested; the payload is the next `size`." } },
+            doc: "Emitted once when a drag ends or a key step moves the separator; a drag or step that leaves it in place emits nothing. The payload is the next `size`." } },
         slots: #{}, parts: ["root", "start", "handle", "end", "grip", "grip_hover", "grip_drag",
             "grip_focus", "grip_disabled"],
     },
@@ -139,6 +139,8 @@ fn split_key(ctx, payload) {
     let next = if start_size + delta < minimum { minimum }
         else if start_size + delta > maximum { maximum }
         else { start_size + delta };
+    // A step against a limit changes nothing and proposes nothing.
+    if (next - start_size).abs() <= 0.5 { return; }
     ctx.emit("resize", if next <= 0.0 { 0.0 } else { next / group_size });
 }
 
