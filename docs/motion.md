@@ -5,8 +5,9 @@ sources and control intent; Rust samples frames, reads geometry and scroll
 state, enforces budgets, and paints. Rhai is never called from layout,
 prepaint, paint, or a per-frame callback.
 
-Runtime API 2 deliberately removes the old `transition`, `spring`,
-`loop_transition`, and `.animate(...)` API. There are no compatibility aliases.
+Since 0.1.3 (Runtime API 2) the old `transition`, `spring`,
+`loop_transition`, and `.animate(...)` API is gone. There are no compatibility
+aliases.
 
 ## Property sources
 
@@ -95,7 +96,9 @@ still expose `movement`, `velocity`, and timestamps for seeding inertia.
 
 ## Enter, exit, layout, and shared layout
 
-`.enter_motion(source)` runs on a real keyed mount or changed replay key.
+`.enter_motion(source)` is `.motion(source)` under a name that states the
+intent: a property source plays from its start value when the keyed node
+mounts or its replay key changes.
 `.exit_motion(source)` creates an immutable paint ghost after the real node has
 left layout, hit testing, focus, accessibility, callbacks, and resource
 ownership. Text, RichText, Canvas, SVG, images, and boxes/fragments composed
@@ -115,8 +118,11 @@ motion_group("cards", [
 ])
 ```
 
-`motion_group` is a layout-transparent fragment. Shared IDs are unique inside
-one view/window presentation domain. Direct window, splitter, Table-column,
+`motion_group` is a layout-transparent fragment. A shared-layout group belongs
+to the component instance that named it (the one calling `motion_group` or
+`.shared_layout(group, id)`), so two instances of a component keep separate
+identities; within one instance a group and id are unique in the view/window
+presentation domain. Direct window, splitter, Table-column,
 and other pointer-following resize remains immediate. The generic GPUI 0.2.2
 FLIP layer guarantees positional transforms; typed Canvas/path primitives own
 scale and rotation.

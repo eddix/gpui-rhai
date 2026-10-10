@@ -17,7 +17,7 @@ const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.r
 const MAIN: &str = r#"
 define_component(#{
     metadata: #{ id: "examples/ticker", "export": "Ticker", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{ "app.ticker": "*" } },
     schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
         state: #{ fields: #{ tick: #{ schema: #{ type: "integer" },
@@ -261,6 +261,7 @@ fn main() {
         .expect("static host slot name");
 
     EmbeddedScriptView::new(entry, scripts, DEFAULT_DARK)
+        .token_base(include_str!("../../../registry/tokens.rhai"))
         .extension(DemoExtension)
         .extension(host_slots)
         .manifest(manifest)

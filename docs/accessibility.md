@@ -27,8 +27,10 @@ Accessibility and keyboard operation are release requirements.
   arrow plus Home/End keyboard control.
 - Command exposes listbox/option/group semantics, skips disabled commands, and
   shares the same keyboard model for Array and NativeCollection data.
-- ContextMenu reuses Menu semantics at a secondary-click anchor; Sheet and
-  AlertDialog use the modal focus boundary.
+- ContextMenu reuses Menu semantics at a secondary-click anchor, or at its
+  trigger for Shift+F10 and the menu key; Sheet and AlertDialog use the modal
+  focus boundary. Closing a Menu or ContextMenu returns focus to where it was
+  when the menu opened.
 - Motion respects one central `MotionPreference`. Hosts may set it with
   `.motion_preference(...)`, applications may call
   `ctx.set_reduced_motion(bool)`, and `GPUI_RHAI_REDUCED_MOTION=1` provides a

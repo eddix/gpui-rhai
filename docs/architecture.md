@@ -44,8 +44,9 @@ drag surfaces.
 
 `text("plain")` keeps the cheap uniform path. `text([span(...), ...])` retains
 typed inline runs and renders one GPUI `StyledText` with byte-correct highlight
-ranges; Span currently exposes color, bold, and italic without splitting text
-into layout boxes or invoking Rhai during text layout.
+ranges; Span exposes color, background, a typography role's face (family and
+weight; size and line height stay the paragraph's), bold, and italic without
+splitting text into layout boxes or invoking Rhai during text layout.
 
 `canvas(canvas_scene([...]))` retains a keyed vector command list. Rect, circle,
 line, and arbitrary move/line/quadratic/cubic/close paths validate finite
@@ -183,9 +184,10 @@ queries it by role/name or semantic ID; the pinned GPUI platform bridge remains
 the final forwarding boundary.
 Per-axis `Style.overflow_x_scroll/y_scroll` creates a retained GPUI
 `ScrollHandle` for keyed ref nodes. `ctx.scroll_to(ref, x, y)` queues positive
-visible offsets and applies them only after transaction commit. Ref descendants
-also retain a GPUI `ScrollAnchor` for nearest-ancestor `scroll_into_view`
-without assuming they are direct children.
+visible offsets and applies them only after transaction commit. `scroll_into_view` reveals a
+direct child of the scroll ancestor with `ScrollHandle::scroll_to_item` (minimal,
+resolved in the next prepaint) and other ref descendants through a retained
+GPUI `ScrollAnchor`, without assuming they are direct children.
 
 The generic `scrollbars(horizontal, vertical)` node decoration overlays themed
 tracks and draggable thumbs on that same ScrollHandle. `auto`, `always`, and
@@ -287,8 +289,10 @@ relative/flex Combobox and Select layouts responsive without moving choice
 policy into Rust.
 
 An Overlay may use its trigger bounds or one validated event-coordinate anchor.
-ContextMenu records the last secondary-click point as component-local transient
-geometry. Sheet uses the same modal host and logical start/end placement but a
+ContextMenu records the last secondary-click point, or its trigger's bounds
+when Shift+F10 or the menu key opened it, as component-local transient geometry.
+A non-modal overlay that closes gives focus back to what held it when it
+opened. Sheet uses the same modal host and logical start/end placement but a
 viewport-edge surface rather than an anchored popup.
 
 Modal focus is a per-frame invariant rather than a one-shot mount side effect.

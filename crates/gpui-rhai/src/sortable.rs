@@ -40,6 +40,12 @@ impl SortDirection {
     }
 }
 
+/// Whether `placement` is the item's physical far half (the bottom, or the right); in a
+/// mirrored row `before` is the right half.
+fn far_half(mirrored: bool, placement: Placement) -> bool {
+    (placement == Placement::After) != mirrored
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Placement {
     Before,
@@ -71,7 +77,22 @@ struct SortableConfig {
     disabled: bool,
     item_ref: Option<crate::ElementRef>,
     focus: Option<FocusHandle>,
+    /// A press focuses the item (false: the press leaves focus where it is, for items
+    /// inside a control that keeps one tab stop, such as the tabs of a `TabBar`).
+    take_focus: bool,
+    /// A release before the drag threshold proposes `tap` with the item key, so the
+    /// item can be pressed as well as dragged.
+    tap: bool,
+    text_direction: crate::TextDirection,
     accent: Rgba8,
+}
+
+impl SortableConfig {
+    /// A horizontal row runs right to left in RTL; a grid keeps its left-to-right layout.
+    fn mirrored(&self) -> bool {
+        self.direction == SortDirection::Horizontal
+            && self.text_direction == crate::TextDirection::RightToLeft
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -193,11 +214,11 @@ impl Element for SortableElement {
         SortablePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::Normal),
             before_hitbox: window.insert_hitbox(
-                target_half(item_bounds, self.config.direction, Placement::Before),
+                target_half(item_bounds, &self.config, Placement::Before),
                 HitboxBehavior::Normal,
             ),
             after_hitbox: window.insert_hitbox(
-                target_half(item_bounds, self.config.direction, Placement::After),
+                target_half(item_bounds, &self.config, Placement::After),
                 HitboxBehavior::Normal,
             ),
             item_bounds,
@@ -296,20 +317,16 @@ fn drag_spec(
 
 fn target_half(
     bounds: Bounds<Pixels>,
-    direction: SortDirection,
+    config: &SortableConfig,
     placement: Placement,
 ) -> Bounds<Pixels> {
-    if direction.uses_vertical_targets() {
+    let far = far_half(config.mirrored(), placement);
+    if config.direction.uses_vertical_targets() {
         let half = bounds.size.height / 2.0;
         Bounds::new(
             point(
                 bounds.origin.x,
-                bounds.origin.y
-                    + if placement == Placement::After {
-                        half
-                    } else {
-                        px(0.0)
-                    },
+                bounds.origin.y + if far { half } else { px(0.0) },
             ),
             size(bounds.size.width, half),
         )
@@ -317,12 +334,7 @@ fn target_half(
         let half = bounds.size.width / 2.0;
         Bounds::new(
             point(
-                bounds.origin.x
-                    + if placement == Placement::After {
-                        half
-                    } else {
-                        px(0.0)
-                    },
+                bounds.origin.x + if far { half } else { px(0.0) },
                 bounds.origin.y,
             ),
             size(half, bounds.size.height),
@@ -338,7 +350,7 @@ fn register_target(
     hitbox: Hitbox,
     window: &mut Window,
 ) {
-    let half = target_half(bounds, config.direction, placement);
+    let half = target_half(bounds, config, placement);
     let Ok(bounds) = GeometryBounds::new(
         f64::from(half.origin.x),
         f64::from(half.origin.y),
@@ -398,15 +410,25 @@ fn register_pointer_source(
         {
             return;
         }
-        if let Some(focus) = config.focus.as_ref() {
+        if config.take_focus
+            && let Some(focus) = config.focus.as_ref()
+        {
             focus.focus(window, cx);
         }
         let spec = drag_spec(&context, &config, view);
+        let on_tap: Option<crate::interaction::TapHandler> = config.tap.then(|| {
+            let tap_context = context.clone();
+            let key = config.item_key.clone();
+            Rc::new(move |window: &mut Window, cx: &mut App| {
+                tap_context.propose("tap", UiValue::String(key.clone()), window, cx);
+            }) as crate::interaction::TapHandler
+        });
         context.begin_application_drag(
             spec,
             event.position,
             config.threshold,
             |_, _, _, _| {},
+            on_tap,
             window,
             cx,
         );
@@ -454,18 +476,19 @@ fn paint_sortable_feedback(
         {
             continue;
         }
+        let far = far_half(config.mirrored(), placement);
         let indicator = if config.direction.uses_vertical_targets() {
-            let y = if placement == Placement::Before {
-                bounds.top()
-            } else {
+            let y = if far {
                 bounds.bottom() - px(2.0)
+            } else {
+                bounds.top()
             };
             Bounds::new(point(bounds.left(), y), size(bounds.size.width, px(2.0)))
         } else {
-            let x = if placement == Placement::Before {
-                bounds.left()
-            } else {
+            let x = if far {
                 bounds.right() - px(2.0)
+            } else {
+                bounds.left()
             };
             Bounds::new(point(x, bounds.top()), size(px(2.0), bounds.size.height))
         };
@@ -507,7 +530,13 @@ impl SortableEntity {
         if self.config.disabled || !event.keystroke.modifiers.alt {
             return;
         }
-        let target = match event.keystroke.key.as_str() {
+        // In a mirrored row, Left points towards the next item.
+        let key = match (event.keystroke.key.as_str(), self.config.mirrored()) {
+            ("left", true) => "right",
+            ("right", true) => "left",
+            (key, _) => key,
+        };
+        let target = match key {
             "up" | "left" => self
                 .config
                 .previous_key
@@ -634,6 +663,9 @@ fn parse_config(
         disabled: props.boolean("disabled").unwrap_or(false),
         item_ref: props.element_ref("item_ref").cloned(),
         focus,
+        take_focus: props.boolean("take_focus").unwrap_or(true),
+        tap: props.boolean("tap").unwrap_or(false),
+        text_direction: theme.direction(),
         accent: theme
             .color("accent")
             .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
@@ -695,12 +727,39 @@ fn reorder_schema() -> ValueSchema {
     ]))
 }
 
+/// `reorder` from a drop or Alt+Arrow, `tap` from a press released before it dragged.
+fn sortable_events() -> BTreeMap<String, EventSchema> {
+    BTreeMap::from([
+        (
+            "reorder".to_owned(),
+            EventSchema {
+                doc: Some(
+                    "Emitted when a drop or an Alt-key move changes the order; the payload moves `source_key` `before` or `after` `anchor_key`."
+                        .to_owned(),
+                ),
+                payload: reorder_schema(),
+            },
+        ),
+        (
+            "tap".to_owned(),
+            EventSchema {
+                doc: Some(
+                    "Emitted when `tap` is on and a press is released before it became a drag; the payload is `item_key`."
+                        .to_owned(),
+                ),
+                payload: ValueSchema::string(),
+            },
+        ),
+    ])
+}
+
 /// Build the native keyed sortable-item interaction schema.
 ///
 /// # Panics
 ///
 /// Panics only if the static primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_string = || ValueSchema::optional(ValueSchema::string());
     PrimitiveDescriptor {
@@ -709,42 +768,59 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "list_id".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Identifier of the list the item belongs to; with `item_key` it names the item's native interaction.",
+                ),
             ),
             (
                 "collection_id".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Drag scope: items take drops only from items with the same id, and a virtual list pins the dragged row by it.",
+                ),
             ),
             (
                 "item_key".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Stable key of this item; it is the `source_key` or `anchor_key` of `reorder` and the `tap` payload.",
+                ),
             ),
             (
                 "source_index".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Integer {
                     min: Some(0),
                     max: None,
-                })),
+                }))
+                .with_doc(
+                    "Index of the item in a virtual collection, so its row stays realized while dragged out of view; `()` otherwise.",
+                ),
             ),
             (
                 "source_item".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::UiValue)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::UiValue)).with_doc(
+                    "The item's value in a virtual collection; with `source_index` it identifies the dragged row to keep realized.",
+                ),
             ),
             (
                 "previous_key".to_owned(),
-                ObjectField::required(optional_string()),
+                ObjectField::required(optional_string()).with_doc(
+                    "Key of the item before this one, or `()` for the first; drops next to it are no-ops and Alt+Up moves before it.",
+                ),
             ),
             (
                 "next_key".to_owned(),
-                ObjectField::required(optional_string()),
+                ObjectField::required(optional_string()).with_doc(
+                    "Key of the item after this one, or `()` for the last; drops next to it are no-ops and Alt+Down moves after it.",
+                ),
             ),
             (
                 "first_key".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Key of the first item in the list; Alt+Home moves this item before it."),
             ),
             (
                 "last_key".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Key of the last item in the list; Alt+End moves this item after it."),
             ),
             (
                 "direction".to_owned(),
@@ -754,31 +830,61 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
                         "horizontal".to_owned(),
                         "grid".to_owned(),
                     ],
-                }),
+                })
+                .with_doc(
+                    "`vertical` splits the item into top and bottom drop halves; `horizontal` and `grid` into left and right halves.",
+                ),
             ),
             (
                 "threshold".to_owned(),
-                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                    "Pointer movement in logical pixels before a press becomes a drag; defaults to 4.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc(
+                        "Stops this item from being dragged or moved by key; it still takes drops from other items.",
+                    ),
             ),
             (
                 "item_ref".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)).with_doc(
+                    "Ref to the element whose bounds hold the drop halves and the drag highlight; defaults to this primitive's bounds.",
+                ),
+            ),
+            (
+                "take_focus".to_owned(),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(true))
+                    .with_doc(
+                        "Whether a press focuses the item; `false` leaves focus alone, for items inside a control with one tab stop.",
+                    ),
+            ),
+            (
+                "tap".to_owned(),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc(
+                        "Whether a press released before the drag threshold emits `tap`, so the item can be clicked as well as dragged.",
+                    ),
             ),
             (
                 "on_reorder".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the proposed move when an item is dropped on this one, or this item moves by Alt+Arrow, Home or End.",
+                ),
+            ),
+            (
+                "on_tap".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with `item_key` when a press is released before it became a drag; needs `tap`.",
+                ),
             ),
         ]),
-        events: BTreeMap::from([(
-            "reorder".to_owned(),
-            EventSchema {
-                payload: reorder_schema(),
-            },
-        )]),
+        events: sortable_events(),
         state: ComponentStateSchema::default(),
         lifecycle: true,
         effect: None,
@@ -797,6 +903,16 @@ fn f64_to_f32(value: f64) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use super::{Placement, far_half};
+
+    #[test]
+    fn a_mirrored_row_swaps_its_before_and_after_halves() {
+        assert!(far_half(false, Placement::After));
+        assert!(!far_half(false, Placement::Before));
+        assert!(far_half(true, Placement::Before));
+        assert!(!far_half(true, Placement::After));
+    }
+
     #[test]
     fn adjacent_and_self_moves_are_no_ops() {
         let before = |source: &str, anchor: &str, previous: Option<&str>| {

@@ -1,4 +1,0 @@
-    Checking gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.61s
-warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
-note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`

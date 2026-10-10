@@ -81,7 +81,7 @@ fn descriptor(id: &str, method: &str, input: ValueSchema) -> CapabilityDescripto
 const SOURCE: &str = r#"
 define_component(#{
     metadata: #{ id: "tests/window-deliveries", "export": "Probe", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [],
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [],
         capabilities: #{ "app.echo": "*", "app.push": "*" } },
     schema: #{
         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -165,6 +165,7 @@ fn prepared(source: &str, ready: Sender<SubscriptionEmitter>) -> PreparedScriptV
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .manifest(manifest)
     .extension(Extension(ready))
     .runtime_clock(ManualRuntimeClock::new(Instant::now()).clock())

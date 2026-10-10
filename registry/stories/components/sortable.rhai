@@ -12,17 +12,17 @@ fn state_schema() { #{ fields: #{
     status: #{ schema:#{type:"string"}, "default":#{type:"string",value:"Ready"} },
 } } }
 
-fn index_of(values, key) {
+fn order_position(values, key) {
     for index in 0..values.len { if values[index] == key { return index; } }
     -1
 }
 
 fn reordered(ctx, value) {
     let order = ctx.get_state("order");
-    let source_index = index_of(order, value.source_key);
+    let source_index = order_position(order, value.source_key);
     if source_index < 0 { return; }
     let moved = order.remove(source_index);
-    let anchor_index = index_of(order, value.anchor_key);
+    let anchor_index = order_position(order, value.anchor_key);
     if anchor_index < 0 { return; }
     let insertion = if value.placement == "after" { anchor_index + 1 } else { anchor_index };
     order.insert(insertion, moved);

@@ -2,8 +2,22 @@
 
 `Style` is a validated runtime value, not a GPUI handle or CSS string. Explicit
 merge, the application component stylesheet, and component parts determine
-precedence; pseudo refinements resolve in
-`base → hover → active → focus → disabled` order.
+precedence. On ordinary nodes `hover`, `active` and `focus` are paint
+refinements: only background, border color, text color and opacity apply, in
+the order `base → hover → focus → active`: while a node holds keyboard focus,
+its focus paint wins over hover paint on a property both set, and active paint
+wins over both. `group_hover` paints over focus. `group_focus`, `focus_within`
+and `disabled` merge the whole nested style before paint; while a node is
+disabled its pointer and focus paints stop. A pseudo style nested inside a
+pseudo style is ignored.
+
+A merge (`merge`, a stylesheet rule, `part_styles`) gives the same result as
+chaining the overlay's setters: `padding(x)`, `margin(x)`, `border(x)` and
+`radius(x)` replace the logical edges too, and `background` and
+`linear_gradient` replace each other. A logical edge (`*_start`, `*_end`,
+`inset_start`, `inset_end`) wins over a physical one on the same side in any
+order and any layer; to change a component's logical edge from a stylesheet,
+set that logical edge or use the all-edge setter.
 
 Formal component authors resolve every public part through
 `ctx.component_style("part", base)`. The runtime merges the matching
@@ -26,8 +40,10 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
 - explicit `occlude()` or `occlude_except_scroll()` hitbox policy for blocking
   pointer input to painted elements behind a node;
 - font family, ordered fallback stack, bounded OpenType feature tags, numeric
-  weight, normal/italic style, size/line height, logical text alignment,
-  whitespace, ellipsis, and bounded line clamp.
+  weight, normal/italic style, size/line height, logical text alignment
+  (`text_start`, `text_center`, `text_end`; `text_left` and `text_right` are
+  the same as `text_start` and `text_end` and mirror in RTL), whitespace,
+  ellipsis, and bounded line clamp.
 
 `style().flex_grow()` uses GPUI's ordinary factor of 1. The overloaded
 `style().flex_grow(weight)` accepts a positive integer or float and preserves
@@ -42,12 +58,23 @@ style().flex_basis(relative(0)).flex_grow(2).min_width(px(0))
 `relative(2)` is not a grow weight; relative lengths are fractions of the
 containing size and remain bounded to their own length contract.
 
-`style().typography("body")` applies one of the theme's eight validated semantic
-roles (`caption`, `body_small`, `body`, `subtitle`, `title`, `heading`,
-`display`, `display_large`). Resolution happens against the active theme during
-render, so a live theme switch updates text without recompiling Rhai. Explicit
-family, fallbacks, size, line height, or weight chained onto the style override
-that field while retaining the rest of the role.
+`style().typography("body")` applies a typography role from the token base
+(`caption`, `body_small`, `body`, `subtitle`, `title`, `heading`, `display`,
+`display_large`, the mono `label` voice and `code`, the `control` roles) or one
+an application adds; components declare the roles they read. A role may carry
+its own family and fallbacks: `code` is the monospace face for identifiers,
+paths and commands (`Menlo`, then `DejaVu Sans Mono`, `Liberation Mono`). A Host
+changes it with `ThemeTokenOverrides` or an application with `ui/tokens.rhai`;
+palette themes contain colors only, so switching palette never changes a face.
+Resolution happens during render, so a live change updates text without
+recompiling Rhai. Explicit family, fallbacks, size, line height, or weight
+chained onto the style override that field while retaining the rest of the
+role.
+
+A role the active theme does not define applies nothing and raises no error:
+the text keeps its inherited font, so a view also runs without a token base.
+Only a malformed role name is rejected when the style is built. An unresolved
+`theme_color` or length token behaves the same way: the property stays unset.
 
 ```rhai
 style()
@@ -72,6 +99,10 @@ style()
     .opacity(0.92).cursor_pointer()
 ```
 
+`radius_start` and `radius_end` round both corners on one logical inline side
+and mirror in RTL, like `padding_start`; the first and last items of a joined
+group use them so only the group's outer corners are rounded.
+
 `shadow` and `linear_gradient` reject unknown fields. Opacity, grid counts,
 font weights, line clamps, translations, lengths, and shadow geometry are
 bounded before a GPUI element is built. Occlusion forces a retained interactive
@@ -79,8 +110,10 @@ wrapper even without callbacks; disabled nodes may still deliberately occlude.
 Theme-backed colors resolve through the
 same `ColorValue` path as solid fills and Canvas.
 
-`px/rem/relative` remain non-negative `Length` values and are accepted by every
-compatible layout/paint property. `auto()` is a separate `AutoLength` accepted
+`px` and `rem` are non-negative `Length` values accepted by every length
+property. A `relative` fraction is honored by sizes, flex-basis, gap, padding,
+margin and insets; border widths, corner radii, font size and line height have
+no fraction in GPUI and ignore it, also when a length token resolves to one. `auto()` is a separate `AutoLength` accepted
 only by size, flex-basis, margin, and inset methods. `offset_px`, `offset_rem`,
 and bounded `offset_relative` return `SignedLength`, accepted only by margins
 and insets; passing one to padding, border, radius, gap, font size, or width is a

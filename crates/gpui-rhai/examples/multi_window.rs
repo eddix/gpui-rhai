@@ -139,6 +139,7 @@ fn main() {
         module("components/dialog", DIALOG),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
+        .token_base(include_str!("../../../registry/tokens.rhai"))
         .extension(MultiWindowStores)
         .theme_sources([(
             "themes/default_light.rhai".to_owned(),

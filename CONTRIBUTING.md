@@ -1,8 +1,9 @@
 # Contributing to GPUI Rhai
 
-GPUI Rhai is being built against the contracts in `INTENT.md` and the delivery
-order in `IMPLEMENTATION_PLAN.md`. Changes should move those contracts forward
-without exposing GPUI context or element types to Rhai.
+GPUI Rhai is built against the contracts in `INTENT.md`, the decision records
+in `docs/adr/` and the design specification in `docs/design/`. Changes should
+move those contracts forward without exposing GPUI context or element types to
+Rhai.
 
 ## Local requirements
 
@@ -40,11 +41,12 @@ bash scripts/release-smoke.sh
 ```
 
 The hosted workflow uses only a standard Linux runner and avoids duplicate
-push/PR runs. For a private repository this still consumes GitHub's included
-Actions allowance; it is not an unlimited free runner. Screenshot, platform
+push/PR runs. Screenshot, platform
 IME, native accessibility, and real pointer/keyboard certification remain local
 macOS gates.
 
-Public runtime decisions listed in the ADR section of
-`IMPLEMENTATION_PLAN.md` require a short decision record before their API is
-treated as stable.
+A public runtime decision needs a short record in `docs/adr/` before its API is
+treated as stable; a design-system decision goes to `docs/design/decisions.md`.
+Audits, plans and other records of a working round are not kept in the tree:
+merge what lasts into the maintained documents and list the round in
+`docs/history.md`.

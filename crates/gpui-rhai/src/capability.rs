@@ -74,6 +74,60 @@ pub struct CapabilityDescriptor {
     pub methods: BTreeMap<String, CapabilityMethod>,
 }
 
+/// What a script invocation runs in response to.
+///
+/// The runtime sets it on each dispatch path; script code called from that
+/// callback (including component events it emits and the render it causes)
+/// shares it. Work that completes later carries the root that started it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum InvocationOrigin {
+    /// A platform input event dispatched to the view (`click`, `pointer_down`,
+    /// `key_down`, ...), a Host key-binding action, or a window close.
+    UserInput { event: String },
+    /// An automation command (`AutomationCommand::Dispatch`, `Action`, ...).
+    Automation,
+    /// A timer that the root origin scheduled.
+    Timer { started_by: Box<InvocationOrigin> },
+    /// A task or asset load completing; `started_by` is the root origin.
+    TaskCompletion { started_by: Box<InvocationOrigin> },
+    /// A subscription delivering a value.
+    Subscription,
+    /// An effect's start or cleanup, or a motion timeline callback.
+    Effect,
+    /// Initialization, suspend, resume, reload or disposal.
+    #[default]
+    Lifecycle,
+}
+
+impl InvocationOrigin {
+    /// The origin with timers and task completions followed back to what
+    /// started them.
+    #[must_use]
+    pub fn root(&self) -> &Self {
+        match self {
+            Self::Timer { started_by } | Self::TaskCompletion { started_by } => started_by.root(),
+            other => other,
+        }
+    }
+
+    /// Whether the root origin is user input: the signal a Host gates
+    /// user-activated capabilities on.
+    #[must_use]
+    pub fn is_user_input(&self) -> bool {
+        matches!(self.root(), Self::UserInput { .. })
+    }
+}
+
+/// The context of one capability call.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InvocationContext {
+    pub origin: InvocationOrigin,
+    /// The view whose script made the call, when it runs in one.
+    pub view_id: Option<String>,
+    /// The component instance that made the call.
+    pub component: crate::ComponentInstancePath,
+}
+
 pub trait CapabilityHandler {
     /// Execute a schema-validated capability method.
     ///
@@ -82,6 +136,24 @@ pub trait CapabilityHandler {
     /// Returns a human-readable handler error. The registry validates the
     /// returned value against the declared output schema.
     fn call(&mut self, method: &str, input: UiValue) -> Result<UiValue, String>;
+
+    /// Execute a method with the context of the call: what it runs in
+    /// response to, the view and the component. Override it to gate a method
+    /// on user input (`context.origin.is_user_input()`); the default forwards
+    /// to [`Self::call`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::call`].
+    fn call_with(
+        &mut self,
+        context: &InvocationContext,
+        method: &str,
+        input: UiValue,
+    ) -> Result<UiValue, String> {
+        let _ = context;
+        self.call(method, input)
+    }
 }
 
 pub struct TaskWork {
@@ -328,6 +400,26 @@ impl CapabilityRegistry {
         method: &str,
         input: UiValue,
     ) -> Result<UiValue, CapabilityError> {
+        let context = InvocationContext {
+            origin: InvocationOrigin::default(),
+            view_id: None,
+            component: crate::ComponentInstancePath::root("App", "root"),
+        };
+        self.call_with(&context, id, method, input)
+    }
+
+    /// Invoke an activated method with the context of the call.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::call`].
+    pub fn call_with(
+        &mut self,
+        context: &InvocationContext,
+        id: &CapabilityId,
+        method: &str,
+        input: UiValue,
+    ) -> Result<UiValue, CapabilityError> {
         if !self.active.contains(id) {
             return Err(CapabilityError::NotDeclared(id.clone()));
         }
@@ -357,7 +449,7 @@ impl CapabilityRegistry {
             .as_mut()
             .ok_or(CapabilityError::UnsupportedMode("sync"))?;
         let output = handler
-            .call(method, input)
+            .call_with(context, method, input)
             .map_err(|message| CapabilityError::Handler {
                 id: id.clone(),
                 method: method.to_owned(),
@@ -713,13 +805,15 @@ mod tests {
                 id: ModuleId::parse("components/remote_status").unwrap(),
                 export: "RemoteStatus".to_owned(),
                 version: Version::new(0, 1, 0),
-                runtime_api: RuntimeApiRange::new(2, 3),
+                runtime_api: RuntimeApiRange::new(3, 4),
                 dependencies: BTreeSet::new(),
                 capabilities: BTreeMap::from([(
                     "app.echo".to_owned(),
                     VersionReq::parse("^1.0").unwrap(),
                 )]),
                 assets: BTreeSet::new(),
+                tokens: std::collections::BTreeSet::new(),
+                environment: std::collections::BTreeSet::new(),
             },
             ComponentSchema::default(),
         )

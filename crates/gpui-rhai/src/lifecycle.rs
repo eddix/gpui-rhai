@@ -33,6 +33,8 @@ pub struct ScriptLifecycle {
     retained: crate::RetainedUiTree,
     semantics: crate::CommittedSemanticFrame,
     suspended_at: Option<std::time::Instant>,
+    /// Advances whenever a new retained tree is committed (or restored).
+    revision: u64,
 }
 
 #[derive(Clone)]
@@ -71,6 +73,7 @@ impl ScriptLifecycle {
         self.root = checkpoint.root;
         self.retained = checkpoint.retained;
         self.semantics = checkpoint.semantics;
+        self.revision = self.revision.wrapping_add(1);
         self.suspended_at = checkpoint.suspended_at;
     }
 
@@ -111,7 +114,15 @@ impl ScriptLifecycle {
             retained: crate::RetainedUiTree::new(),
             semantics: crate::CommittedSemanticFrame::default(),
             suspended_at: None,
+            revision: 0,
         })
+    }
+
+    /// The revision of the committed retained tree; it advances on every
+    /// commit, so observers can skip work when nothing new was rendered.
+    #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
     }
 
     #[must_use]
@@ -258,6 +269,7 @@ impl ScriptLifecycle {
                 self.trace_reconcile("full", retained.last_report());
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
                 self.commit_runtime_transaction()?;
@@ -354,6 +366,7 @@ impl ScriptLifecycle {
                 self.root = Some(Rc::new(root));
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.commit_runtime_transaction()?;
                 Ok(true)
@@ -462,13 +475,15 @@ impl ScriptLifecycle {
                 if previous_indices == indices {
                     continue;
                 }
-                let inherited_motion_group = root
-                    .virtual_collection_spec(&id)
-                    .and_then(|spec| spec.inherited_motion_group.clone());
+                let inherited_motion_group = root.virtual_collection_spec(&id).and_then(|spec| {
+                    spec.inherited_motion_group
+                        .clone()
+                        .map(|group| (group, spec.inherited_motion_scope.clone()))
+                });
                 items = engine.realize_virtual_collection(&id, &indices, &items)?;
-                if let Some(group) = inherited_motion_group {
+                if let Some((group, scope)) = inherited_motion_group {
                     for node in items.values_mut() {
-                        crate::node::apply_motion_group(node, &group);
+                        crate::node::apply_motion_group(node, &group, scope.as_deref());
                     }
                 }
                 if !root.replace_virtual_collection_items(&id, items.clone()) {
@@ -505,6 +520,7 @@ impl ScriptLifecycle {
                     self.root = Some(Rc::new(root));
                     self.retained = retained;
                     self.semantics = semantics;
+                    self.revision = self.revision.wrapping_add(1);
                 }
                 self.commit_runtime_transaction()?;
                 Ok(changed)
@@ -805,6 +821,7 @@ impl ScriptLifecycle {
             .unwrap_or_else(|| self.root_path.clone());
         let events = delivery.callback.events().clone();
         let scope = delivery.scope.clone();
+        let origin = delivery.origin.clone();
         let context = UiContext::new(
             Rc::clone(&self.runtime),
             component,
@@ -816,11 +833,33 @@ impl ScriptLifecycle {
         .with_generation(self.compiled.generation())
         .with_native_context(delivery.callback.native_context().cloned())
         .with_async_scope(scope);
-        Ok(engine.invoke_callback(
-            &self.compiled,
-            &delivery.callback,
-            (context, delivery.payload.into_dynamic()),
-        )?)
+        self.with_origin(origin, || {
+            Ok(engine.invoke_callback(
+                &self.compiled,
+                &delivery.callback,
+                (context, delivery.payload.into_dynamic()),
+            )?)
+        })
+    }
+
+    /// Run `invoke` with `origin` as the running invocation's origin, then
+    /// restore the previous one.
+    pub(crate) fn with_origin<T>(
+        &self,
+        origin: crate::InvocationOrigin,
+        invoke: impl FnOnce() -> Result<T, LifecycleError>,
+    ) -> Result<T, LifecycleError> {
+        let previous = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .replace_origin(origin);
+        let result = invoke();
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .replace_origin(previous);
+        result
     }
 
     /// Deliver async work with the same UI-state rollback as foreground events.
@@ -935,6 +974,7 @@ impl ScriptLifecycle {
                 self.compiled = candidate;
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
                 self.commit_runtime_transaction()?;
@@ -1040,6 +1080,7 @@ impl ScriptLifecycle {
                 self.compiled = candidate;
                 self.retained = retained;
                 self.semantics = semantics;
+                self.revision = self.revision.wrapping_add(1);
                 self.root = Some(Rc::new(root));
                 self.suspended_at = None;
                 self.state = LifecycleState::Running;
@@ -1466,12 +1507,14 @@ impl ScriptLifecycle {
             })
             .with_native_context(callback.native_context().cloned())
             .with_async_scope(scope);
-        let _ = engine.invoke_callback_for_generation(
-            compiled,
-            callback,
-            (context, dependencies.into_dynamic()),
-        )?;
-        Ok(())
+        self.with_origin(crate::InvocationOrigin::Effect, || {
+            let _ = engine.invoke_callback_for_generation(
+                compiled,
+                callback,
+                (context, dependencies.into_dynamic()),
+            )?;
+            Ok(())
+        })
     }
 
     fn validate_callback_owner(&self, callback: &ScriptCallback) -> Result<(), LifecycleError> {
@@ -1504,6 +1547,9 @@ impl ScriptLifecycle {
         while let Some(node) = pending.pop() {
             for (_, signal) in node.signal_bindings() {
                 let _ = runtime.signals.read(signal)?;
+            }
+            if let Some(style) = node.signal_style() {
+                let _ = runtime.signals.read(&style.signal)?;
             }
             for (_, children) in node.retained_child_groups() {
                 pending.extend(children);
@@ -1807,7 +1853,7 @@ mod tests {
     const STREAM_COMPONENT_APP: &str = r#"
         define_component(#{
             metadata: #{ id: "test/stream", "export": "StreamProbe", version: "0.1.0",
-                runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                 dependencies: [], capabilities: #{ "app.stream": "*" } },
             schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                 state: #{ fields: #{ phase: #{ schema: #{ type: "string" },
@@ -2778,7 +2824,7 @@ mod tests {
             let source = r#"
             define_component(#{
                 metadata: #{id:"test/virtual_counter", "export":"Counter", version:"0.1.8",
-                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                 schema: #{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
                     state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:7}}}},
                     events:#{},slots:#{},parts:[],effects:["keep"]},render:Fn("render_counter")
@@ -2796,7 +2842,7 @@ mod tests {
             }
             define_component(#{
                 metadata:#{id:"test/wrapper","export":"Wrapper",version:"0.1.8",
-                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                 schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},
                     depth:#{schema:#{type:"integer"},required:true,sensitive:false}},
                     state:#{fields:#{}},events:#{},slots:#{},parts:[]},render:Fn("render_wrapper")
@@ -2951,7 +2997,7 @@ mod tests {
         let compiled = engine.compile(r#"
             define_component(#{
                 metadata:#{id:"test/panel","export":"Panel",version:"0.1.8",
-                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                 schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
                     state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:7}}}},
                     events:#{},slots:#{},parts:[]},render:Fn("render_panel")
@@ -3456,6 +3502,47 @@ mod tests {
     }
 
     #[test]
+    fn hot_reload_keeps_a_disabled_action_disabled() {
+        let source = r#"
+            fn init(ctx) { ctx.register_action("document.save", Fn("save")); }
+            fn save(ctx, payload) {}
+            fn disable(ctx, payload) { ctx.set_action_enabled("document.save", false); }
+            fn view(ctx) { text("actions") }
+        "#;
+        let mut engine = RuntimeEngine::new();
+        let active = engine.compile(source).unwrap();
+        let disable = engine.callback(&active, "disable").unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let mut lifecycle = ScriptLifecycle::new(
+            active,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "root"),
+            None,
+            BTreeMap::new(),
+            &state_schema(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let id = crate::ActionId::parse("document.save").unwrap();
+        assert_eq!(runtime.borrow().actions.is_enabled(&id), Some(true));
+        let _ = lifecycle
+            .invoke_callback(&engine, &disable, UiValue::Null)
+            .unwrap();
+        assert_eq!(runtime.borrow().actions.is_enabled(&id), Some(false));
+
+        let candidate = engine.compile(source).unwrap();
+        let generation = candidate.generation();
+        lifecycle
+            .reload(&mut engine, candidate, &state_schema())
+            .unwrap();
+        let mut runtime = runtime.borrow_mut();
+        assert_eq!(runtime.actions.is_enabled(&id), Some(false));
+        runtime.actions.set_enabled(&id, true).unwrap();
+        let invocation = runtime.actions.dispatch(&id, UiValue::Null).unwrap();
+        assert_eq!(invocation.callback.generation(), generation);
+    }
+
+    #[test]
     fn hot_reload_rolls_back_engine_generation_after_retained_validation_failure() {
         let mut engine = RuntimeEngine::new();
         let active = engine
@@ -3884,7 +3971,7 @@ mod tests {
             let source = r#"
                 define_component(#{
                     metadata:#{id:"tests/table_panel","export":"Panel",version:"0.1.8",
-                        runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                        runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                     schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
                         state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},
                         events:#{},slots:#{},parts:[]},render:Fn("render_panel")

@@ -61,7 +61,7 @@ fn same_finite_work_exceeds_default_and_obeys_raised_and_lowered_quotas() {
 
 const FORMAL: &str = r#"
 define_component(#{metadata:#{id:"tests/heavy", "export":"Heavy", version:"0.1.8",
- runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+ runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
  schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},
  iterations:#{schema:#{type:"integer"},required:true,sensitive:false},
  nested:#{schema:#{type:"bool"},required:true,sensitive:false}},
@@ -223,6 +223,7 @@ fn delayed(ctx,payload){let n=0;for i in 0..100000{n+=1;}n}
                     callback: callback.clone(),
                     payload: UiValue::Null,
                     scope: AsyncScope::App,
+                    origin: gpui_rhai::InvocationOrigin::Subscription,
                 },
             )
             .unwrap();
@@ -313,6 +314,7 @@ fn embedded(source: &str) -> EmbeddedScriptView {
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         THEME,
     )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
 }
 
 fn file(source: &str) -> (tempfile::TempDir, FileScriptView) {
@@ -321,7 +323,7 @@ fn file(source: &str) -> (tempfile::TempDir, FileScriptView) {
     std::fs::write(dir.path().join("theme.rhai"), THEME).unwrap();
     std::fs::write(
         dir.path().join("app.toml"),
-        "entry = \"main\"\nruntime_api = 2\n",
+        "entry = \"main\"\nruntime_api = 3\n",
     )
     .unwrap();
     let builder = FileScriptView::new(dir.path().join("main.rhai")).development(false);

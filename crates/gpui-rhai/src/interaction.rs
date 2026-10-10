@@ -308,6 +308,9 @@ pub(crate) struct ApplicationDropResult {
 
 type ApplicationDragEndHandler = dyn Fn(ApplicationDropResult, bool, &mut Window, &mut App);
 
+/// Runs when a press is released before it became a drag.
+pub(crate) type TapHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
 pub(crate) fn application_drag_gesture(
     coordinator: WindowInteractionCoordinator,
     start: Point<Pixels>,
@@ -315,6 +318,7 @@ pub(crate) fn application_drag_gesture(
     spec: ApplicationDragSpec,
     threshold: f64,
     on_end: impl Fn(ApplicationDropResult, bool, &mut Window, &mut App) + 'static,
+    on_tap: Option<TapHandler>,
 ) -> NativeGesture {
     let owner = spec.source.clone();
     let started = Rc::new(std::cell::Cell::new(false));
@@ -335,7 +339,11 @@ pub(crate) fn application_drag_gesture(
     let finish_coordinator = coordinator.clone();
     let finish_handler = Rc::clone(&on_end);
     let finish = move |gesture: GestureUpdate, window: &mut Window, cx: &mut App| {
+        // A release before the threshold was crossed is a tap, not a drag.
         if !finish_started.get() {
+            if let Some(tap) = &on_tap {
+                tap(window, cx);
+            }
             return;
         }
         if let Some(result) = finish_coordinator.finish_app_drag(gesture.current(), window, cx) {

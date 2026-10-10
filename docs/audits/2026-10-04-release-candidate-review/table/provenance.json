@@ -1,9 +1,0 @@
-{
-  "head": "736025a8b2b1ac44d41d893bc9a929c990b97532",
-  "historical_probe": "docs/audits/2026-10-02-interaction-0.1.8-round7/resize-controls/probe.rs",
-  "historical_sha256": "162603d2788114deebcca62f7595427fdf8dd741d0628bc3764b7ad7958af51a",
-  "replay_sha256": "162603d2788114deebcca62f7595427fdf8dd741d0628bc3764b7ad7958af51a",
-  "old_probe_bytes_unchanged": true,
-  "target": "tests/native-keyboard/target",
-  "test_target": "table_round8"
-}

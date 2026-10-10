@@ -2,40 +2,65 @@
 {
   "id": "components/radio",
   "export": "Radio",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "accent", "border", "surface_raised", "surface_hover", "focus_ring", "text_primary",
+    "disabled", "metrics.mark", "metrics.control", "spacing.sm", "typography.control"
+  ],
+  "environment": ["size", "density"]
 }
 */
 // Controlled radio option. RadioGroup owns roving keyboard behavior.
-// Props: value, selected, label, disabled, on_select.
-// Events: select(string). Parts: root, indicator, label.
 // State: controlled by the selected prop.
 // Example: Radio(#{ value: "team", selected: true, label: "Team", on_select: Fn("selected") })
 
 define_component(#{
     metadata: #{
-        id: "components/radio", "export": "Radio", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        id: "components/radio", "export": "Radio", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
+        tokens: [
+            "accent", "border", "surface_raised", "surface_hover", "focus_ring", "text_primary",
+            "disabled", "metrics.mark", "metrics.control", "spacing.sm", "typography.control"
+        ],
+        environment: ["size", "density"],
     },
     schema: #{
         props: #{
-            value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            selected: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            value: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Value this option stands for; passed to `on_select` and used as the option's key.",
+            },
+            selected: #{
+                schema: #{ type: "bool" }, required: true, sensitive: false,
+                doc: "Whether this is the chosen option; the caller derives it from the value it stores.",
+            },
+            label: #{
+                schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Text beside the circle; also the accessible name.",
+            },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
+                doc: "Blocks clicks and shows the disabled style.",
             },
             on_select: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false, sensitive: false,
+                doc: "Called with `value` when the option is clicked, even if it is already selected.",
+            },
+            focus_mark: #{
+                schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true },
+                doc: "Whether focus shows the ring on this option's circle; RadioGroup sets it only on its keyboard cursor.",
             },
         },
         state: #{ fields: #{} },
-        events: #{ select: #{ payload: #{ type: "string" } } },
+        events: #{ select: #{ payload: #{ type: "string" },
+            doc: "Emitted when the option is clicked, even if it is already selected; the payload is `value`." } },
         slots: #{}, parts: ["root", "indicator", "label"],
     },
     render: Fn("render_Radio")
@@ -44,26 +69,30 @@ define_component(#{
 fn Radio(props) { render_component("components/radio", props) }
 fn render_Radio(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
+    let focus_mark = if "focus_mark" in props { props.focus_mark } else { true };
+    // The ring is a semantic circle; the 6px dot is a structural constant.
     let dot = row([]).with_style(style()
         .width(px(6)).height(px(6)).radius(px(3))
-        .background(if props.selected { theme_color("accent") } else { rgba(0x00000000) }));
-    let indicator = row([dot]).with_style(ctx.component_style("indicator",
-        style().width(px(16)).height(px(16)).radius(px(8))
-            .items_center().justify_center().border(px(1))
-            .border_color(if props.selected { theme_color("accent") }
-                else { theme_color("border") }).background(theme_color("surface"))));
+        .background(if props.selected { theme_color("accent") } else { rgba(0x00000000) })
+        .disabled(style().background(if props.selected { theme_color("disabled") } else { rgba(0x00000000) })));
+    let indicator = row([dot]).with_style(ctx.component_style("indicator", style()
+        .width(theme_length("metrics.mark")).height(theme_length("metrics.mark"))
+        .radius(theme_length("metrics.mark") * 0.5)
+        .items_center().justify_center().border(px(2))
+        .border_color(if props.selected { theme_color("accent") } else { theme_color("border") })
+        .background(theme_color("surface_raised"))
+        .group_focus(if focus_mark { style().border_color(theme_color("focus_ring")) } else { style() })
+        .disabled(style().border_color(theme_color("border")).background(theme_color("surface_hover")))));
     let node = row([indicator, text(props.label).with_style(ctx.component_style("label", style()))])
         .with_key(props.value)
         .with_style(ctx.component_style("root",
-        style().gap(theme_spacing("sm")).items_center().self_start().padding(theme_spacing("xxs"))
-                .radius(theme_radius("sm"))
-                .border(px(1)).border_color(rgba(0x00000000))
-                .typography("body")
-                .text_color(if disabled { theme_color("disabled") } else { theme_color("text_primary") })
-                .hover(style().background(theme_color("surface_hover")))
-                .focus(style().border_color(theme_color("focus_ring")))
-                .active(style().opacity(0.82))
-                .disabled(style().opacity(0.72))
+            style().min_height(theme_length("metrics.control")).gap(theme_spacing("sm"))
+                .items_center().self_start()
+                .typography("control")
+                .text_color(theme_color("text_primary"))
+                // Owns the focus state shown by the mark (group_focus).
+                .focus(style())
+                .disabled(style().text_color(theme_color("disabled")))
         ))
         .disabled(disabled)
         .accessibility_role("radio")

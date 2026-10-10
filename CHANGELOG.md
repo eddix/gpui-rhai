@@ -5,6 +5,433 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.2.0 - Unreleased
+
+Runtime API 3. A design system for productivity tools, separated from a neutral
+runtime. See the [0.2.0 release notes](docs/releases/0.2.0.md) for migration
+and [docs/design/](docs/design/) for the specification.
+
+- **Breaking:** the runtime no longer hard-codes design tokens. Themes are an
+  open token registry; components declare the tokens (`tokens`) and environment
+  values (`environment`) they read, and preparation validates the active theme
+  against the mounted components. Typography roles and lengths are open names;
+  lengths may vary with environment values set by `.env(#{ ... })` and resolved
+  during native rendering; `mix`/`alpha`/`readable` color expressions evaluate
+  after the token base, palette and Host layers merge.
+- **Breaking:** the design language moves to the token base
+  `registry/tokens.rhai` (`TOKEN_BASE_SOURCE`, `ui/tokens.rhai`), which official
+  components require. Bundled palettes contain colors only; Default Light/Dark
+  use the paper, ink and cobalt palette.
+- **Breaking:** all 62 components are rebuilt on the 0.2 contracts. Button
+  defaults to `secondary`; Badge shows its square lamp by default and gains
+  `emphasis`; Card `elevated` becomes `variant: "outline"`; Combobox
+  `row_height`/`trigger_height` and Command `row_height` are removed in favor of
+  `size`, density and `metrics.*`. Button, IconButton, Menu, ContextMenu,
+  Command and Tooltip bind `action`; Tag gains a `facet` segment; Kbd gains
+  keycaps; Tabs can be a view switcher.
+- Adds `layouts/` (Stack, Inline, Toolbar, Region) and `patterns/` (Section,
+  DescriptionList, Stat, FormLayout, InlineState, DataView, ListDetail, AppShell
+  with F6 / Shift+F6 regions).
+- Adds the composition audit (`ScriptViewHandle::composition_audit`,
+  `composition_audit_with`) and application profiles (`ui/profile.rhai`,
+  `EmbeddedScriptView::profile_source`, `gpui-rhai init --profile
+  productivity`); `gpui-rhai check` reports literal geometry under a profile.
+  Nodes opt out of a rule with `.audit_allow([...])`.
+- Runtime hooks: `group_focus` and `focus_within` styles; focus-styled nodes
+  honor their tab-stop policy; cross-axis overlay `align`; modifier-qualified
+  key handler names (`shift+f6`); deferred first reveal for fill-height virtual
+  lists; `justify_start`/`justify_end` follow the flex direction, so they mirror
+  in RTL rows.
+- Table with a selection mode is keyboard operable (arrows, Home/End, Enter);
+  a column with no value of its own shows only its adornments.
+- **Breaking:** `gpui-rhai gallery` opens the new Gallery, a Rhai application on
+  AppShell (`registry/gallery/`, `GALLERY_SOURCES_BY_ID`) with 83 pages, four
+  keyboard scenes and a live audit count; every page passes the productivity
+  audit in both densities. `--page`, `--density`, `--theme`, `--locale` select
+  the launch; `--story` opens a development story in a standalone window;
+  `--list` prefixes lines with `page`/`story`. The Rust Gallery shell
+  (`gallery_app`) and `GALLERY_NAVIGATION_SOURCE`/`GALLERY_SOURCE_VIEW_SOURCE`
+  are removed; the `test-support` feature remains and gates nothing.
+- Gallery baselines are rendered offscreen with the real macOS renderer
+  (`scripts/capture-macos-gallery-baselines.sh`); 19 captures replace the 31
+  story-shell captures.
+- Adds `examples/byod_treemap`, an application with its own palette and no token
+  base or official components.
+- Every interactive component is one tab stop: overlay trigger wrappers, key
+  routing containers and tooltip panels no longer take focus (Select, Combobox,
+  Popover, Tooltip, DatePicker, ToggleGroup and closed Dialogs had phantom stops).
+- RTL: definite-width children of stretching columns sit on the start edge; the
+  audit compares right edges in RTL views.
+- Performance: a stretched child of a column renders with a definite width, so
+  Taffy no longer lays out nested columns twice per level (Gallery frames went
+  from 20-52 ms to about 2 ms, pixel-identical); `ScriptViewHandle::committed_revision`
+  lets Hosts skip work on repaint-only frames, and the composition audit caches
+  system font names (the Gallery no longer runs a 100 ms audit per frame).
+  `UiNode` is a shared copy-on-write handle, which halves Rhai render time;
+  `UiNode::kind_tag` and `UiNode::element_ref` are no longer `const`.
+- The five visual examples are rewritten with the 0.2 layouts and patterns and
+  pass the productivity audit; their 38 baselines are recaptured offscreen
+  (`scripts/capture-macos-example-baselines.sh`).
+- **Breaking:** a failed callback, delivery or render stays reported until a
+  successful reload, the banner's Dismiss button, or the new
+  `ScriptViewHandle::clear_error`. A later successful transaction no longer
+  clears it, so a failure that rolled back one event is readable instead of
+  flashing away. Automation commands still report only their own failures.
+- **Breaking:** Resizable's `resize` payload is `{x,y,width,height}`, exactly the
+  next `rect`; the `handle` field is removed. Storing the payload as the rect
+  used to fail validation and roll the drag back.
+- Gallery: PanZoom shows a plane larger than the viewport, the transform and a
+  Reset view button; Rotatable takes the drag anywhere in its area.
+- Corners are an environment axis (`corners`: `square` default, `subtle`,
+  `round`) and radius roles depend on it; a new `radius.xs` role keeps
+  Checkbox and Kbd boxes. `round` makes controls and markers capsules and
+  square controls circles; panels stay at 8px. Square output is unchanged.
+  Style gains logical `radius_start` / `radius_end`, and joined groups
+  (ToggleGroup, ButtonGroup, a Tag facet) round only their outer corners.
+  **Breaking** for copied token bases: components that read radius tokens
+  declare the `corners` environment value.
+- `.window_drag_area()` and TitleBar/AppShell `window_drag` let a Rhai title
+  bar replace the platform one: its background moves the window, a double press
+  runs the platform title-bar action. Drag areas are inert unless the Host
+  allows them (`ScriptViewConfig::window_drag_areas`,
+  `ScriptApplication::window_drag_areas`). On macOS the Gallery uses it.
+- `ctx.theme_variants()` lists the loaded theme variants. The Gallery title bar
+  picks any of them and launches with any bundled theme slug; it also switches
+  the corner style.
+- `gpui-rhai check` warns (`builtin-shadow`) about entry functions that take
+  over a built-in: `fn f(a, b)` captures method calls `x.f(a, b)` and direct
+  calls `f(a, b)`, also inside imported components
+  (`RuntimeEngine::lint_shadowed_builtins`, `ShadowedBuiltin`). The Gallery's
+  locale callback, two stories and two examples were renamed.
+- Review fixes before release: a stretched child with a horizontal margin lays
+  out like an explicit stretch; hot-reloaded tokens and scripts are checked
+  against component token requirements like preparation and commit together
+  or not at all; Table keyboard navigation works for NativeCollection data
+  (`native_table_neighbors`) and Table rows are no longer tab stops; key
+  handlers match `key:shift+f6` in the capture phase too; a `by_env` table
+  must cover every declared combination (**breaking** for incomplete tables).
+- A style a signal selects (`.signal_style`) and motion or signal sizes are
+  merged before the stretch rules read a node's style, so margins, alignment
+  and position from them stretch like the same static style, and a
+  signal-sized child of an RTL column sits on the start edge.
+- Slot content (virtual list rows) no longer tracks its focus owner's handle,
+  which made the last realized row receive a Table's keys.
+- A caller-written `shortcut` (`cmd-p`) shows the platform legend (`⌘P`) on
+  Button, Menu, Command and Tooltip, like an action's; text that is already a
+  legend stays. `key_shortcut(text)` exposes the formatting. Button draws the
+  legend in the label voice of Menu and Command's inline Kbd.
+- A sticky group header that the next one pushes out no longer paints over or
+  takes clicks from the column header (virtual lists clip to their viewport).
+- The composition audit covers content behind `error_boundary`, Layer content
+  and realized virtual rows. It no longer compares controls across unrelated
+  panes, checks a Badge's own gap, or limits content led by a view switcher;
+  `.heading_elsewhere()` marks a container whose heading is drawn outside.
+- Toolbar gains a `fill` slot: one field that takes the width between the
+  start and end groups, at least `metrics.label_column` wide, so the bar wraps
+  only when that minimum does not fit. DataView passes `toolbar.fill` and
+  `toolbar.size` through and takes Region's `inset`.
+- Region gains `scroll` (the body scrolls, header and footer stay; otherwise
+  the body clips) and `external_title` (the title is drawn elsewhere;
+  exclusive with `title`).
+- Table group headers use the label voice (mono, uppercase, muted), like the
+  column headers.
+- Overlay panels that hold focus themselves show the 2px focus frame over their
+  edge (part `focus_frame`; the hairline turns the focus color and the frame
+  adds the inner pixel): Dialog, Sheet and Popover, which showed nothing, and
+  Menu, DatePicker and Combobox, which showed a 1px border. The view owns an
+  overlay's panel focus handle, so `group_focus` styles in the panel content
+  see the panel holding focus.
+- Identifiers (#95): a Table column's `typography` (`"code"`) sets its cells'
+  role, for array rows and NativeCollection data; spans take
+  `typography(role)` (the role's family and weight, the paragraph's size) and
+  `background(color)` for inline code. The monospace face is the token base's
+  `code` role; Hosts and `ui/tokens.rhai` change it, palettes do not.
+- **Breaking:** components rendered inside a virtual item get an
+  `Item[<item key>]` path segment
+  (`.../VirtualCollection[rows]/Item[r5]/Badge[...]`). Keys inside an item only
+  need to be unique within it, and a keyless component in a newly realized row
+  can no longer take a retained row's path (#110). Component state inside
+  virtual rows resets once on upgrade.
+- **Breaking:** an overlay's identity is (declaring component instance, key)
+  (#109). Two instances of one component with a Select of the same key each
+  open and close their own; before, every dismissal went to the instance
+  rendered last. `parent_overlay` names the nearest enclosing overlay with that
+  key. `ScriptViewHost::overlay_placement` returns
+  `Result<Option<PlacementResult>, OverlayLookupError>` and reports an
+  ambiguous key; `overlay_placement_in(view_id, instance_path, key)` names the
+  instance. Layers are scoped the same way, and a shared-layout group belongs
+  to the instance that named it. `OverlayNodeSpec` and `LayerNodeSpec` gain
+  `owner`, `VirtualCollectionNodeSpec` gains `inherited_motion_scope`.
+- Capability handlers can see what a call responds to (#91):
+  `CapabilityHandler::call_with(&InvocationContext, method, input)` (default:
+  `call`) receives the `InvocationOrigin` (user input with the event name,
+  automation, timer, task completion, subscription, effect, lifecycle), the
+  view and the calling component. Timers and task completions carry the root
+  origin that started them; `is_user_input()` follows it.
+  `CapabilityRegistry::call_with` passes a context; `AsyncDelivery` gains
+  `origin` (**breaking** for code that builds deliveries). An action
+  dispatched or an event emitted during an invocation runs with that
+  invocation's origin, also when it runs after a task completion, timer,
+  subscription or effect has returned: `ActionInvocation` and `PendingEvent`
+  gain `origin` (**breaking** for code that builds them).
+- Table `on_context_request` (#89): a right press on a cell selects its row
+  (unless the selection holds it) and emits `#{ key, column, anchor, source }`
+  with the pointer as anchor; Shift+F10 or the menu key emits it for the
+  current row with the row's bounds. The caller shows a Menu at `anchor`.
+  `ctx.virtual_item_bounds(collection_key, index)` reads a laid-out virtual
+  item's window bounds at event time.
+- PanZoom and Rotatable keep showing a pan, zoom or turn after release: the
+  content no longer jumps back to its old place until some other input redraws
+  the window. They keep the proposed transform until the Host answers, return
+  to the source when it rejects the proposal, and ask for a frame after the
+  signal writes they make while a frame is drawn. Keyboard steps show at once.
+- Fields take their own side padding: Input, Textarea, the Select, Combobox
+  and DatePicker triggers and InputGroup affixes use the new
+  `metrics.field_pad` instead of the button padding `metrics.control_pad`.
+  Their text starts half the control height plus 1px from the outer edge
+  (comfortable 11 / 13 / 15 / 17, compact 9 / 11 / 13 / 15 by size), which
+  clears a capsule's ends in the round corner style, the same in every corner
+  style. Textarea's vertical padding becomes `metrics.multiline_pad`. Button,
+  Tabs and ToggleGroup keep `metrics.control_pad`.
+- **Breaking (Rust):** component schemas take an optional `doc` on props, object
+  fields, events and slots (`ObjectField::doc`, `EventSchema::doc`,
+  `SlotSchema::doc`; `EventSchema::new`, `with_doc`). It has no runtime effect
+  and appears in exported metadata. Rust code that builds these structs with a
+  literal adds `doc: None`. The standard `key`, `style` and `part_styles` props
+  get a doc from the runtime.
+- Every official module documents each prop, object field, event and slot, and
+  its header comment keeps the purpose, notes and an example (the prop, event
+  and part lists are gone; the schema states them). `docs/reference/` is
+  generated from them: one page per module with types, defaults and meaning; a
+  test keeps it current and another requires every official item to have a
+  `doc`. `gpui-rhai check` requires a purpose comment instead of a `Props:` line
+  in component sources.
+- `docs/rhai.md` covers Rhai as gpui-rhai views use it; its snippets are run by
+  the test suite, as is every documentation snippet marked `<!-- check: ... -->`.
+- The native functions and primitives scripts call are documented: a table in
+  `crates/gpui-rhai/src/script_docs/` gives every registered signature parameter
+  names and a doc, and every built-in primitive prop and event has a doc; tests
+  require both and reject stale entries (`ScriptApi`,
+  `PrimitiveRegistry::descriptors`). `RuntimeEngine::definition_source`, and so
+  `gpui-rhai metadata`, writes language-server definitions with parameter
+  names, doc comments and readable return types; Rhai's printer wrote `_` for
+  every name and `EvalAltResult>>` for fallible returns.
+- `docs/reference/script-api.md` lists every native function, method,
+  operator and primitive with its doc. The module reference no longer shows
+  element refs and handles as chart data (Icon `source`, Avatar `handle`).
+- Two agent skills: `skills/gpui-rhai` (Rhai for gpui-rhai, the script API, the
+  module reference, recipes from the tested examples, the user guide, component
+  authoring and embedding) and `skills/gpui-rhai-design` (the design
+  specification). They are generated from the documentation and kept current
+  by a test. `npx skills add eddix/gpui-rhai` installs them from the
+  repository; `gpui-rhai skills <directory>` writes the copy bundled with the
+  CLI (`BUNDLED_SKILL_FILES` in the registry crate) into `.claude/skills`,
+  `.agents/skills` or another directory, and refreshes it when run again.
+- `gpui-rhai init` makes the project depend on the CLI's own runtime line
+  (`gpui-rhai = "0.2"` from a 0.2 CLI); it wrote a fixed `"0.1"`, which cannot
+  load the Runtime API 3 components the same CLI copies.
+- SplitPane draws one line at the separator, the native one down the middle of
+  the 8px grab zone; the zone's start edge drew a second, full-length line
+  beside it. Collapsing one pane keeps the other mounted (its key no longer
+  changes), so its scroll position and component state survive.
+- TitleBar, StatusBar and Region's header, toolbar and footer keep their
+  height beside content taller than the window. A flex column took a share of
+  the overflow from them: a long page squeezed the title bar from 36 to 23
+  and a two-line region header by 10.
+- The Gallery shows the source beside the page in a SplitPane instead of a
+  fixed 320px inspector: drag the divider to widen it; a bar shows on the
+  divider under the pointer.
+- Input gains `appearance: "embedded"` for the search or filter line that
+  heads a panel: no frame or well, a 1px `border` line under it (`danger`
+  while invalid), text on `metrics.inset` like the rows below; its caret shows
+  focus. Command, CommandDialog and a searchable Combobox panel use it: the
+  search spans the panel at the top instead of a framed field inside it.
+  Command's search is the `lg` size (36 / 32) with an `xs` gap above the rows;
+  CommandDialog's panel has no padding by default (`dialog_part_styles.panel`
+  still overrides it) and a visible title sits on `metrics.inset`.
+- Resize handles take a decorative grip (#83): SplitPane `handle` and Resizable
+  `grips` (one node per handle) sit in a `grip` box centred on the handle and
+  painted above the panes or content; pressing it anywhere it is visible and
+  not covered, overhang included, starts the drag, while keyboard steps, the
+  separator role and the tab stop stay on the native handle. A node with an
+  element ref takes part in hit testing in its place in paint order, so
+  clipping and `.occlude()` content in front apply to it. The grip takes `grip_hover`, `grip_drag`,
+  `grip_focus` or `grip_disabled` from a native state signal. `line: false`
+  drops the native line and `line_inset` sets its end inset. The general
+  `.signal_style(signal, #{ state: style() })` picks a style variant by a
+  string signal without a Rhai render; primitives can ask whether their host
+  node has focus (`PrimitiveContext::is_focused`).
+- InlineState draws `detail` in the stale and refreshing states too, under the
+  line (#122); Alert and InlineState text wraps in a narrow container instead
+  of running past it (#123).
+- Toolbar groups shrink below their content, so a view switcher or field in
+  `filters` scrolls or shrinks inside the bar; an empty end group is left out
+  and no longer adds a second line (#124).
+- Section keeps at least a label column for its heading beside the actions and
+  wraps the actions below the heading when both do not fit (#125).
+- FormLayout no longer reports `spacing-not-nested` on its own submit row or on
+  vertical fields with a description (#126).
+- SplitPane's panes are separate regions for the composition audit: no
+  text-edge, row-height or mixed-type comparison crosses them (#114).
+- The composition audit leaves absolutely positioned nodes (an overlay
+  panel's focus frame, an indicator) out of `text-edge-misaligned`: they are
+  out of flow and do not stack with the text under them.
+- Region's scrolling body draws ScrollArea's overlay scrollbar, so it can be
+  seen and dragged; `scrollbar` (`auto`, `always`, `hidden`) and the
+  `scrollbar_*` parts style it like ScrollArea's (#121).
+- Collapsible and Accordion items fit their content when `content_height` is
+  omitted, and take a Length (`theme_length("metrics.row") * 3`) as well as
+  pixels, so the panel follows density; the measured height is read after
+  layout (#127). A panel mounted open no longer grows in; toggles still
+  animate from the current height.
+- Dialogs are as wide as they ask (420px by default): the 90% cap resolved
+  against the panel's own wrapper, so every dialog was 10% narrower. The
+  overlay now caps a dialog at 90% of the window.
+- CommandDialog can replace a hand-built palette (#120): `title_visible:
+  false` hides the title (Dialog gains the same prop; the label still names
+  the dialog), `on_escape` receives Escape before the dialog closes so a
+  palette with levels can go back one, `width` sets the panel width, and
+  `command_part_styles` / `dialog_part_styles` reach the inner Command and
+  Dialog parts.
+- Adds `List` (#119): keyed, virtualized rows with a status badge, title,
+  secondary text (beside or below the title) and meta, on the row inset, with
+  Table's selection, keyboard and context-request model; `badge_width` lines
+  the titles up when badges differ. DataView gains `bleed` (default true) for
+  bodies that keep the inset.
+- Runtime: `.group_hover(style)` paints a node while its nearest hover-styled
+  ancestor is hovered; `.translate_wheel()` lets a one-axis scroll container
+  take the other wheel axis; `ctx.scroll_into_view` reveals a direct child of
+  the scroll container minimally (it aligned it to the start), waits a frame
+  for a node mounted in the same transaction (it reported an error) and drops
+  a request whose node was unmounted. The sortable item primitive gains
+  `take_focus` and `tap` (`on_tap`). Rhai builds at `opt-level = 1` in dev
+  profiles, giving deep views stack headroom in debug test threads.
+- Adds `TabBar`: document tabs that belong to the panel under them. The
+  selected tab takes `tabbar.active` (a new token, the panel's surface) and
+  covers the bar's line, square in every corner style, with no start line on
+  the bar's edge; tabs scroll sideways, also under a vertical wheel, and
+  the selected one stays revealed; closable and dirty tabs, middle-press close,
+  context requests, drag and Alt+Arrow reordering, an all-tabs menu and
+  `start` / `end` slots. The keys move a cursor and Enter selects.
+- Table's header is unfilled like its rows, so on a raised layer (Dialog,
+  Sheet, Popover) it no longer shows a `surface` band (#129).
+- Numeric script arguments take integers as well as floats, in any mix:
+  `canvas_rect`, `canvas_circle`, `canvas_line`, the `path_*` segments,
+  `CanvasCommand` `translate`, `clip_rect`, `scale` and `rotate`, stroke widths,
+  `motion_transition`, `motion_spring`, `motion_inertia` and `ctx.scroll_to`;
+  `canvas_rect(0, 0, 10, 10, c)` failed with "Function not found".
+- Each value handler keeps its own payload: a second `on_click_value`,
+  `on_key_value` or `on_hover_value` on a node no longer replaces the payload
+  of the node's other handlers (a plain `on_click` received the value, and
+  every `on_hover_change` handler a `#{ hovered, value }` map).
+  `UiEventBinding::with_value` and `UiNode::with_value_handler` carry it.
+- `node.bind_parent_signal(ctx, property, key)` works in virtual item renderers,
+  where it is documented: it binds the nearest ancestor that declares `key`,
+  in this render pass or committed. It made up a signal id for the collection
+  and failed when the frame committed; a misspelled key now fails at once.
+- `ctx.cancel_task`, `cancel_subscription` and `cancel_image_decode` reject a
+  handle another component instance owns with
+  `UiContextError::ForeignAsyncHandle` (**breaking** for an exhaustive match);
+  a component could cancel another's work. Application- and window-scoped work
+  stays cancellable. `start_image_decode` refuses to start while the view
+  suspends or disposes, as `start_task` does.
+- Store, locale, viewport, native collection and document reads register a
+  dependency only while rendering; a read in a callback scheduled a needless
+  rerender.
+- `self_start` and `self_end` keep their place in an RTL row: a row's cross
+  axis is vertical, so they mirror only across a column. A vertical Tabs list
+  sat at the bottom in Arabic, and so did a Checkbox, Switch or Radio in a
+  taller RTL row.
+- A merge gives the result of chaining the overlay: `padding(x)`, `margin(x)`,
+  `border(x)` and `radius(x)` in a stylesheet rule or `part_styles` clear the
+  part's logical edges as they do in a chain (`prefix: style().padding(px(0))`
+  left InputGroup's start padding in place), and a merged `background` replaces
+  a gradient and the reverse.
+- The Style documentation states what the code does: hover, active and focus
+  are paint refinements in GPUI's order (focus, then hover, then active),
+  `relative` lengths do not apply to borders, radii and type sizes, an unknown
+  typography role or token applies nothing, and a focused node's border takes
+  `focus_ring` unless its focus style sets a border color.
+- Native controls propose nothing when nothing changes: SplitPane against a
+  limit or after a drag that ends where it started, Slider and RangeSlider keys
+  and clicks at the current value, and a SelectionArea click on the selection
+  it already has. A ratio outside the constraints shows clamped once a drag
+  ends or is cancelled.
+- Draggable arrow keys reach the next grid line when the snap step is larger
+  than the key step; they stayed in place.
+- A horizontal Sortable (and TabBar) in RTL drops on the side the pointer is
+  on and moves the way Alt+Left and Alt+Right point; both were reversed.
+- Input without `on_submit` leaves Enter to its ancestors, so a dialog's or
+  panel's Enter handler sees it; a searchable Combobox now selects the active
+  option on Enter in its search field.
+- CodeViewer with line numbers off wraps inside the gutter it still draws; lines
+  ran about 19px past the edge.
+- Schemas accept what the handlers accept: Draggable, PanZoom and Rotatable
+  positions within 1e6 either way, `keyboard_step` up to 512, positive snap
+  steps, a Rotatable snap up to 360 degrees; ColumnResize requires an
+  optional-float signal. DropZone, DragSource, Sortable and SelectionArea
+  declare the theme colors their primitives paint (`accent`, and `danger` for
+  DropZone).
+- Official component fixes from a contract review:
+  - ContextMenu, Toggle, AlertDialog (`actions`) and the chart adapters
+    (`root`) apply the part styles they declare.
+  - Command's `disabled` disables the rows too; Command and Menu keys treat a
+    row whose action is disabled as disabled, and Enter no longer dispatches
+    it; an item's `shortcut: ()` no longer fails the first render.
+  - AppShell: F6 and Shift+F6 move on from the region that holds focus (they
+    used the last region F6 reached, so a press in the inspector and then F6
+    went to the main area); `status` takes 16 fields per edge like StatusBar.
+  - Table accepts `height: ()` beside `fill_height`, and a centered column
+    centers its header.
+  - Select's search field keeps the "Search" placeholder; it passed an empty
+    one down.
+  - Label's `required` part styles only the asterisk, now its own text.
+  - IconButton disabled keeps the variant's silhouette, as Button does; a
+    lone ButtonGroup button takes both the `first` and `last` part styles; an
+    Icon with `label: ()` is decorative instead of failing.
+  - Alert `info` marks itself with a neutral lamp (`text_muted`): accent marks
+    action and selection, not status.
+  - Corrected docs: TabBar values are unique, Tree keeps a selection on a
+    second click, NumberTicker fades each new value in, GroupBox draws a rule,
+    and a callback prop may be forwarded through formal components (it keeps
+    its caller's binding).
+- Re-registering an action keeps its enabled state, so a hot reload no longer
+  re-enables an action the script turned off; `image(handle)` and
+  `directional_image` reject a handle of another kind when called, and
+  `theme_color` checks the token path syntax as the length functions do.
+- `text_start()` and `text_end()` name logical text alignment;
+  `text_left()` and `text_right()` remain as synonyms that mirror in RTL.
+  `cursor_move()` shows the open hand, like an idle Draggable.
+- On a focused node the focus paint covers hover paint; a press still paints
+  over both (`base → hover → focus → active`). SplitPane's grab zone takes its
+  hover and drag fill from the native handle's state signal: its `hover` style
+  never applied, since the native handle takes the pointer.
+- Chart with `spec.brush`: a press becomes a brush once the pointer moves past
+  the drag threshold, so a click still selects a datum (`select`, on release).
+- TextInput emits `change` when IME composition commits, as Textarea does, not
+  at every composition step; a controlled render during composition keeps the
+  marked text.
+- Menus and dialogs, as decided for 0.2.0:
+  - Activating any Menu or ContextMenu row closes the menu after `action`
+    (Enter on a `submenu` row keeps it open so the keys reach the submenu).
+  - ContextMenu opens from Shift+F10 or the menu key on its trigger, anchored
+    at the trigger; with `on_open_change` the trigger area is a tab stop.
+  - AlertDialog emits `cancel` before `open_change(false)` on Escape and on a
+    backdrop press.
+  - A Menu or ContextMenu that closes gives focus back to where it was when it
+    opened. Focus stayed on the closed panel, so the next key did nothing: an
+    overlay lost its element state each time its key handlers came and went
+    with `open`.
+- Table and List without a selection mode take Shift+F10 and the menu key when
+  they have `on_context_request`, for a menu for the whole collection. A focused
+  Table with no current row, and such a List, show the 2px container frame
+  (`focus_frame` part).
+- Button `loading` shows `loading_text` in place of the label, announced as the
+  button's name, and keeps the idle label's width unless the loading text is
+  wider. Avatar initials are the name's first grapheme, uppercased. Spinner
+  without `speed_ms` follows `motion_duration("ambient")`. Select and Combobox
+  name their clear button with the localized `common.clear`.
+
 ## 0.1.8 - 2026-10-04
 
 - Qualifies queued window commands by their original mount, independently of

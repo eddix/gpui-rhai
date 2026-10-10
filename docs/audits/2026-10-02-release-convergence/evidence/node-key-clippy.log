@@ -1,5 +1,0 @@
-    Checking gpui-rhai-registry v0.1.8 (/Users/eddix/.codex/worktrees/node-key-contract-018/gpui-rhai/registry)
-    Checking gpui-rhai v0.1.8 (/Users/eddix/.codex/worktrees/node-key-contract-018/gpui-rhai/crates/gpui-rhai)
-    Checking gpui-rhai-cli v0.1.8 (/Users/eddix/.codex/worktrees/node-key-contract-018/gpui-rhai/crates/gpui-rhai-cli)
-    Checking gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/.codex/worktrees/node-key-contract-018/gpui-rhai/tests/native-keyboard)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 18.09s

@@ -53,6 +53,16 @@ pub struct ComponentMetadata {
     pub capabilities: BTreeMap<String, VersionReq>,
     #[serde(default)]
     pub assets: BTreeSet<String>,
+    /// Theme tokens this component reads: bare names are semantic colors;
+    /// `spacing.*`, `radius.*` and `namespace.name` are lengths or namespaced
+    /// tokens; `typography.<role>` are roles. Preparation checks every loaded
+    /// theme against the union of mounted components.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub tokens: BTreeSet<String>,
+    /// Environment values this component responds to, such as `density` and
+    /// `size`. Each must be declared by the token base.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub environment: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -74,6 +84,22 @@ pub struct ComponentSchema {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EventSchema {
     pub payload: ValueSchema,
+    /// One-sentence description for references and editor tooling; no runtime effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
+}
+
+impl EventSchema {
+    #[must_use]
+    pub fn new(payload: ValueSchema) -> Self {
+        Self { payload, doc: None }
+    }
+
+    #[must_use]
+    pub fn with_doc(mut self, doc: impl Into<String>) -> Self {
+        self.doc = Some(doc.into());
+        self
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -82,6 +108,9 @@ pub struct SlotSchema {
     pub required: bool,
     #[serde(default)]
     pub multiple: bool,
+    /// One-sentence description for references and editor tooling; no runtime effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -214,34 +243,55 @@ impl ComponentDefinition {
     }
 }
 
+const KEY_DOC: &str =
+    "Stable identity of this instance among its siblings; keeps its state across renders.";
+const STYLE_DOC: &str = "Style merged over the root part.";
+const PART_STYLES_DOC: &str = "Styles merged over named parts, keyed by part name.";
+
 fn install_standard_style_props(schema: &mut ComponentSchema) -> Result<(), ComponentError> {
-    match schema.props.get("key") {
+    match schema.props.get_mut("key") {
         Some(field) if !matches!(field.schema, ValueSchema::String { .. }) => {
             return Err(ComponentError::InvalidStandardKeyProp);
         }
-        Some(_) => {}
+        Some(field) => {
+            field.doc.get_or_insert_with(|| KEY_DOC.to_owned());
+        }
         None => {
             schema.props.insert(
                 "key".to_owned(),
-                ObjectField::optional(ValueSchema::string()),
+                ObjectField::optional(ValueSchema::string()).with_doc(KEY_DOC),
             );
         }
     }
     let standard = [
-        ("style", ObjectField::optional(ValueSchema::Style)),
+        (
+            "style",
+            ObjectField::optional(ValueSchema::Style).with_doc(STYLE_DOC),
+        ),
         (
             "part_styles",
             ObjectField::optional(ValueSchema::Map {
                 values: Box::new(ValueSchema::Style),
-            }),
+            })
+            .with_doc(PART_STYLES_DOC),
         ),
     ];
     for (name, expected) in standard {
-        match schema.props.get(name) {
-            Some(actual) if actual != &expected => {
+        match schema.props.get_mut(name) {
+            // A component may restate a standard prop, with its own doc, but not change it.
+            Some(actual)
+                if actual.schema != expected.schema
+                    || actual.required != expected.required
+                    || actual.sensitive != expected.sensitive
+                    || actual.default != expected.default =>
+            {
                 return Err(ComponentError::InvalidStandardStyleProp(name.to_owned()));
             }
-            Some(_) => {}
+            Some(actual) => {
+                actual
+                    .doc
+                    .get_or_insert_with(|| expected.doc.clone().unwrap_or_default());
+            }
             None => {
                 schema.props.insert(name.to_owned(), expected);
             }
@@ -675,6 +725,21 @@ fn validate_metadata(metadata: &ComponentMetadata) -> Result<(), ComponentError>
             return Err(ComponentError::InvalidAsset(asset.clone()));
         }
     }
+    for token in &metadata.tokens {
+        let valid = if token.contains('.') {
+            crate::token::validate_token_path(token).is_ok()
+        } else {
+            crate::token::valid_token_segment(token)
+        };
+        if !valid {
+            return Err(ComponentError::InvalidToken(token.clone()));
+        }
+    }
+    for name in &metadata.environment {
+        if !crate::token::valid_token_segment(name) {
+            return Err(ComponentError::InvalidEnvironment(name.clone()));
+        }
+    }
     Ok(())
 }
 
@@ -827,6 +892,10 @@ fn is_component_asset_path(value: &str) -> bool {
 
 #[derive(Debug, Error)]
 pub enum ComponentError {
+    #[error("component token requirement `{0}` must be a snake_case name or `namespace.name` path")]
+    InvalidToken(String),
+    #[error("component environment value `{0}` must be a snake_case name")]
+    InvalidEnvironment(String),
     #[error("component export `{0}` must be a PascalCase identifier")]
     InvalidExport(String),
     #[error("runtime API range {0:?} is empty")]
@@ -945,10 +1014,12 @@ mod tests {
             id: ModuleId::parse(id).unwrap(),
             export: export.to_owned(),
             version: Version::new(0, 1, 0),
-            runtime_api: RuntimeApiRange::new(2, 3),
+            runtime_api: RuntimeApiRange::new(3, 4),
             dependencies: BTreeSet::new(),
             capabilities: BTreeMap::new(),
             assets: BTreeSet::new(),
+            tokens: std::collections::BTreeSet::new(),
+            environment: std::collections::BTreeSet::new(),
         }
     }
 
@@ -974,6 +1045,7 @@ mod tests {
                 events: BTreeMap::from([(
                     "click".to_owned(),
                     EventSchema {
+                        doc: None,
                         payload: ValueSchema::Null,
                     },
                 )]),
@@ -1143,7 +1215,7 @@ mod tests {
   "id": "components/button",
   "export": "Button",
   "version": "0.1.0",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "assets": []

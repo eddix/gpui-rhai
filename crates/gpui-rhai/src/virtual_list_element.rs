@@ -200,6 +200,21 @@ struct VirtualListView {
     runtime: NodeSlotRuntime,
     scroll: ListState,
     frame_indices: Rc<RefCell<BTreeSet<usize>>>,
+    /// A fill-height list cannot judge visibility before its viewport is
+    /// measured; the reveal waits for the first measured frame.
+    pending_reveal: bool,
+    /// The item-bounds reader this list installed in the runtime registry.
+    bounds_reader: Option<crate::virtual_list::ItemBoundsReader>,
+}
+
+impl Drop for VirtualListView {
+    fn drop(&mut self) {
+        if let Some(reader) = self.bounds_reader.take() {
+            self.runtime
+                .virtual_requests
+                .remove_item_bounds_reader(&self.content.id, &reader);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -217,6 +232,8 @@ impl VirtualListView {
             runtime,
             scroll,
             frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
+            pending_reveal: false,
+            bounds_reader: None,
         };
         this.reveal_controlled_target();
         this.install_metrics_handler();
@@ -229,9 +246,14 @@ impl VirtualListView {
         runtime: NodeSlotRuntime,
         cx: &mut Context<Self>,
     ) {
-        let changed = self.content != content;
+        // Row heights come from measuring rendered rows; a new environment or
+        // theme can change every row's geometry, so cached heights are stale.
+        let geometry_changed = self.runtime.environment != runtime.environment
+            || self.runtime.inherited_disabled != runtime.inherited_disabled
+            || !self.runtime.colors.same_tokens(&runtime.colors);
+        let changed = self.content != content || geometry_changed;
         let recreate = collection_requires_recreation(&self.content, &content);
-        let reset = collection_requires_reset(&self.content, &content);
+        let reset = collection_requires_reset(&self.content, &content) || geometry_changed;
         let reveal_changed = self.content.reveal_key != content.reveal_key;
         self.content = content;
         self.runtime = runtime;
@@ -275,6 +297,9 @@ impl VirtualListView {
             // Before GPUI's first measurement there are no item bounds. Keep
             // the natural top when the configured viewport already contains
             // the target instead of top-aligning (and hiding) its predecessors.
+        } else if viewport.size.height <= px(0.0) && self.content.height.is_none() {
+            // A fill-height viewport has no configured size to estimate with.
+            self.pending_reveal = true;
         } else {
             // GPUI's variable list cannot infer the height of an unmeasured
             // offscreen item. Top-aligning its logical index gives the next
@@ -286,9 +311,20 @@ impl VirtualListView {
         }
     }
 
-    fn install_metrics_handler(&self) {
+    fn install_metrics_handler(&mut self) {
         let metrics = self.runtime.virtual_requests.clone();
         let id = self.content.id.clone();
+        let scroll = self.scroll.clone();
+        self.bounds_reader = Some(metrics.set_item_bounds_reader(id.clone(), move |index| {
+            scroll
+                .bounds_for_item(index)
+                .map(|bounds| crate::GeometryBounds {
+                    x: f64::from(bounds.origin.x),
+                    y: f64::from(bounds.origin.y),
+                    width: f64::from(bounds.size.width),
+                    height: f64::from(bounds.size.height),
+                })
+        }));
         self.scroll.set_scroll_handler(move |event, _, _| {
             metrics.report_scroll(&id, event.visible_range.clone(), event.is_scrolled);
         });
@@ -307,6 +343,10 @@ fn estimated_target_is_initially_visible(
 
 impl Render for VirtualListView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        if self.pending_reveal && self.scroll.viewport_bounds().size.height > px(0.0) {
+            self.pending_reveal = false;
+            self.reveal_controlled_target();
+        }
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
         let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);
@@ -343,10 +383,14 @@ impl Render for VirtualListView {
         });
         let root_selector = format!("virtual-list:{}", self.content.id.key);
         let sticky_selector = format!("virtual-list-sticky:{}", self.content.id.key);
+        // Clipped to the list: a sticky header the next one pushes out slides
+        // above the top edge and must not paint over (or take clicks from) what
+        // sits above the list, such as a table's column header.
         div()
             .relative()
             .flex()
             .flex_col()
+            .overflow_hidden()
             .id(SharedString::from(format!(
                 "virtual-list-root-{}",
                 self.content.id.key
@@ -603,6 +647,7 @@ mod tests {
             reveal_key: None,
             sticky_headers: std::sync::Arc::new(BTreeSet::new()),
             inherited_motion_group: None,
+            inherited_motion_scope: None,
         };
         assert!(estimated_target_is_initially_visible(&content, 1));
         assert!(estimated_target_is_initially_visible(&content, 11));

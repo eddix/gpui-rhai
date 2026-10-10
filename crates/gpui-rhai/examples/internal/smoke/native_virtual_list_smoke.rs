@@ -28,6 +28,7 @@ fn main() {
     let entry = ModuleId::parse("main").expect("static module ID");
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), MAIN.to_owned())]));
     EmbeddedScriptView::new(entry, scripts, THEME)
+        .token_base(include_str!("../../../../../registry/tokens.rhai"))
         .prepare()
         .and_then(|prepared| {
             ScriptApplication::new(prepared)

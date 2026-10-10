@@ -187,6 +187,7 @@ fn register_source_pointer(
             move |result, cancelled, window, cx| {
                 finish_context.propose("drag_end", drag_end_value(&result, cancelled), window, cx);
             },
+            None,
             window,
             cx,
         );
@@ -692,42 +693,63 @@ pub fn drag_source_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "source_id".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Stable identifier of the dragged item; it is `source_id` in the target's `drop` payload.",
+                ),
             ),
             (
                 "payload_type".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Type name of the payload; only drop zones that list it in `payload_types` accept the drag.",
+                ),
             ),
             (
                 "payload".to_owned(),
-                ObjectField::required(ValueSchema::UiValue),
+                ObjectField::required(ValueSchema::UiValue).with_doc(
+                    "Bounded application data the drag carries; the drop zone gets it back in its `drop` payload.",
+                ),
             ),
             (
                 "operation".to_owned(),
                 ObjectField::required(ValueSchema::String {
                     allowed: vec!["copy".to_owned(), "move".to_owned()],
-                }),
+                })
+                .with_doc(
+                    "Whether dropping copies or moves the item; only drop zones that list it in `operations` accept the drag.",
+                ),
             ),
             (
                 "threshold".to_owned(),
-                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                    "Pointer movement in logical pixels before a press becomes a drag; defaults to 4.",
+                ),
             ),
             (
                 "keyboard_target".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc(
+                    "`target_id` of the drop zone that Enter or Space on the focused source drops onto; `()` for no keyboard drop.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Ignores presses and keys and removes the source from the tab order."),
             ),
             (
                 "on_drag_end".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the outcome when a started drag is dropped or cancelled, or a keyboard drop runs.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "drag_end".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted when a started drag ends or a keyboard drop runs; the payload says whether and where it was accepted, or cancelled."
+                        .to_owned(),
+                ),
                 payload: drag_end_schema(),
             },
         )]),
@@ -750,14 +772,19 @@ pub fn drop_zone_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "target_id".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Stable identifier of this zone; it is `target_id` in `drop` and in the source's `drag_end`.",
+                ),
             ),
             (
                 "payload_types".to_owned(),
                 ObjectField::required(ValueSchema::Array {
                     items: Box::new(ValueSchema::string()),
                     max_items: Some(32),
-                }),
+                })
+                .with_doc(
+                    "Payload types this zone accepts; a drag of another type shows the invalid highlight and cannot drop.",
+                ),
             ),
             (
                 "operations".to_owned(),
@@ -766,24 +793,35 @@ pub fn drop_zone_primitive_descriptor() -> PrimitiveDescriptor {
                         allowed: vec!["copy".to_owned(), "move".to_owned()],
                     }),
                     max_items: Some(2),
-                }),
+                })
+                .with_doc("Operations this zone accepts, `copy`, `move` or both; other drags cannot drop here."),
             ),
             (
                 "priority".to_owned(),
-                ObjectField::optional(ValueSchema::integer()),
+                ObjectField::optional(ValueSchema::integer()).with_doc(
+                    "Rank among overlapping zones: the highest wins, then the smallest area; defaults to 0.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Takes the zone out of drag targeting, so it neither highlights nor accepts drops."),
             ),
             (
                 "on_drop".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the drop proposal when an accepted drag is released over this zone or a keyboard drop targets it.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "drop".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted when an accepted drag drops here by pointer or key; the payload is the source, its payload and operation, and window `x`, `y`."
+                        .to_owned(),
+                ),
                 payload: drop_schema(),
             },
         )]),

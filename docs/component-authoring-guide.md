@@ -2,23 +2,41 @@
 
 An official or application component is a Rhai module with three parts:
 
-1. a structured `/* gpui-rhai ... */` JSON header;
+1. a structured `/* gpui-rhai ... */` JSON header, followed by a `//` comment
+   with the component's purpose, any notes on state and behavior, and an
+   `Example:` call;
 2. a `define_component` schema and render declaration;
 3. a PascalCase constructor accepting one props map and a named
    `render_Name(ctx, props)` function.
+
+The comment does not list props, events or parts: the schema states them, and
+the [module reference](reference/README.md) is generated from it.
 
 Use `registry/components/label.rhai` as the smallest complete reference.
 
 ## Metadata
 
-The header declares component ID, source version, runtime API range,
-dependencies, capabilities, and component-owned asset paths. The same metadata appears in
-`define_component`; `gpui-rhai check` rejects disagreement.
+The header declares component ID, source version, runtime API range (official
+0.2 components declare `{ "min_inclusive": 3, "max_exclusive": 4 }`),
+dependencies, capabilities, component-owned asset paths, the tokens the
+component reads (`tokens`) and the environment values it reads
+(`environment`, e.g. `["size", "density"]`). The same metadata appears in
+`define_component`; `gpui-rhai check` rejects disagreement, and preparation
+validates the active theme against the tokens of every mounted component.
+Declare every token read through `theme_color`, `theme_length`,
+`theme_spacing`, `theme_radius` and `.typography(...)`; the registry lint
+fails on an undeclared read.
 
 Asset paths are provider-relative files under `ui/assets`, such as
 `icons/chevron_next.svg`. Component source addresses an installed asset through
 the application namespace, for example `asset("app/icons/chevron_next")`. The
 CLI copies declared assets and records their pristine baselines with the source.
+Only declared assets are preloaded: drawing an undeclared asset with `asset(...)`
+renders an image error, because declarative images never load during render.
+
+Component contracts (size and density, content inset, intrinsic width, focus,
+parts) are specified in [design/atoms.md](design/atoms.md); its checklist is the
+review list for a new component.
 
 Module IDs are lowercase logical paths such as `components/form_field`.
 Components are imported under an explicit alias:
@@ -39,7 +57,20 @@ lifecycle/event callbacks and component-owned work in a declared effect.
 ## Schema
 
 Declare every prop, local state field, semantic event, slot, styleable part,
-and effect key.
+and effect key. Give each prop, object field, event and slot a one-sentence
+`doc` saying what it means and does (units, who owns a controlled value, when
+an event fires); the type, required flag and default are rendered next to it.
+`doc` has no runtime effect. Official components document every item, and a
+test enforces it.
+
+```rhai
+props: #{
+    size: #{ schema: #{ type: "number", min: 0.0, max: 1.0 }, required: true, sensitive: false,
+        doc: "Start-pane ratio; the caller stores the `resize` payload and passes it back." },
+},
+events: #{ resize: #{ payload: #{ type: "number" }, doc: "Emitted once when a drag ends or a key steps the separator." } },
+```
+
 Unknown props are errors. Defaults must satisfy their own schemas. Every event
 named `change` requires an optional callback prop named `on_change`.
 
@@ -223,6 +254,21 @@ ineligible for automatic bailout, because signal reads intentionally create no
 dirty edge. Prefer `bind_signal` for visual properties; reserve `get_signal`
 for event handlers.
 
+`.signal_style(signal, #{ state: style(), ... })` picks a whole style variant by
+the current value of a string signal and merges it over the node's style, as a
+state style does. A native primitive that writes such a signal drives the look
+of a node it does not own without a Rhai render: SplitPane's and Resizable's
+resize handles publish `idle`, `hover`, `drag`, `focus` or `disabled`, and their
+grips take the matching `grip_<state>` part:
+
+```rhai
+let state = signal("handle-state", "idle");
+box([node]).signal_style(state, #{
+    hover: style().border_color(theme_color("accent")),
+    drag: style().border_color(theme_color("accent")),
+})
+```
+
 ## Styling
 
 Use semantic theme tokens and the typed `Style` builder. Merge order is:
@@ -265,9 +311,12 @@ signals, attributes, motion, or refs. `row`, `column`, and `stack` are Box
 helpers, not distinct privileged node kinds.
 
 Use `text([span("Label ").bold(), span(value).color(theme_color("accent"))])`
-for inline runs. Span is an immutable inline value, not a child node; current
-run refinements are color, bold, and italic and render through one GPUI
-`StyledText`.
+for inline runs. Span is an immutable inline value, not a child node; run
+refinements are color, `background(color)`, `typography(role)`, bold, and
+italic, and render through one GPUI `StyledText`. A span's `typography` takes
+the role's family and weight only: inline code is
+`span("cargo run").typography("code").background(theme_color("surface_raised"))`
+and stays on the paragraph's line.
 
 Use `canvas(canvas_scene([...]))` for retained vector drawing. Commands currently
 include rect/circle/line plus typed fill/stroke paths with quadratic/cubic
@@ -305,10 +354,12 @@ action, emit an event, or call a manifest-declared capability. They may not
 access GPUI contexts. Pointer callbacks are handled by default; return
 `propagate()` to allow the normalized event to continue to an ancestor handler.
 
-Do not forward a callback prop through another formal component. Callback
-ownership is rebound at each formal boundary, so a two-hop pass-through can run
-against the intermediate component's state path. Instead, give the child a
-component-local named handler and emit the composite's declared event:
+A callback prop may be passed on as it is, to a node or to another formal
+component: it keeps the binding of the component that wrote it, so it runs in
+that caller's context however many components forward it. When the composite's
+event is not the child's (another payload, or an event the payload schema
+should check), give the child a component-local named handler and emit the
+composite's declared event:
 
 ```rhai
 fn option_selected(ctx, value) { ctx.emit("change", value); }
@@ -319,6 +370,13 @@ radio::Radio(#{ on_select: Fn("option_selected"), /* ... */ })
 The runtime validates the emitted payload and invokes the caller's `on_change`
 in the caller context. Use the same forwarding action for pointer and keyboard
 paths so their semantics cannot diverge.
+
+A controlled component's change event carries exactly the next value of the
+prop it controls: `move` sends a `position`, `transform_change` a `transform`,
+`resize` a `rect`. Callers store the payload as is (`ctx.set_state("rect",
+value)`); an extra field such as the dragged handle fails the prop schema on
+the next render and rolls the change back. Put extra information in a separate
+event.
 
 `on(event, handler)`, `on_capture(event, handler)`, and
 `on_bubble(event, handler)` append ordered handlers; they do not replace a prior
@@ -392,8 +450,14 @@ Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,
 `overflow_y_scroll()`, or `overflow_scroll()`. Handlers call
 `ctx.scroll_to(ref, x, y)` with finite non-negative visible offsets.
 For a retained descendant, `ctx.scroll_into_view(ref)` (or its component-local
-ref key) uses a GPUI `ScrollAnchor` tied to the nearest retained scrollable
-ancestor and applies the minimal native reveal on the next frame.
+ref key) reveals it in the nearest retained scrollable ancestor on the next
+frame: a direct child scrolls the minimal amount that shows it (also when it
+was laid out for the first time), a deeper descendant aligns through a GPUI
+`ScrollAnchor`. A request for a node mounted or ref'd in the same transaction
+waits one frame; a request whose node is unmounted before it runs is dropped.
+A one-axis scroll container that should also take the other wheel axis (a
+horizontal tab strip under a vertical mouse wheel) declares
+`.translate_wheel()`.
 
 Declare one-shot foreground callbacks during formal render with
 `timeout(key, delay_ms, paused, Fn("callback"), payload)`. Keys are local to the

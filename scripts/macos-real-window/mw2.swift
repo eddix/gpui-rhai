@@ -1,0 +1,11 @@
+let ws = windows(owner: "multi_window")
+guard let settings = ws.first(where: { $0.bounds.minX >= 0 }) else { exit(1) }
+activate(settings.pid)
+usleep(300_000)
+shot(settings, "/tmp/rw/f0.png")
+mouse(.mouseMoved, CGPoint(x: settings.bounds.minX + 300, y: settings.bounds.minY + 700)); usleep(300_000)
+shot(settings, "/tmp/rw/f1.png")
+key(kTab); usleep(400_000)
+shot(settings, "/tmp/rw/f2.png")
+key(kTab, .maskShift); usleep(400_000)
+shot(settings, "/tmp/rw/f3.png")

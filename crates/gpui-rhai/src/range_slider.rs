@@ -239,7 +239,9 @@ impl RangeSliderEntity {
                 finish_entity.update(cx, |slider, cx| {
                     if !slider.disabled && slider.revision == revision {
                         slider.set_active_value(slider.value_at(gesture.current()));
-                        slider.emit_change(window, cx);
+                        if slider.preview != slider.controlled {
+                            slider.emit_change(window, cx);
+                        }
                     }
                     slider.dragging = false;
                     slider.preview = slider.controlled;
@@ -347,8 +349,8 @@ impl Render for RangeSliderEntity {
             &self.theme,
             direction,
         );
-        let low_thumb = self.thumb(RangeThumb::Low, low_ratio, cx);
-        let high_thumb = self.thumb(RangeThumb::High, high_ratio, cx);
+        let low_thumb = self.thumb(RangeThumb::Low, low_ratio, window, cx);
+        let high_thumb = self.thumb(RangeThumb::High, high_ratio, window, cx);
         let track = match self.orientation {
             RangeOrientation::Horizontal => {
                 let low_visual = horizontal_thumb_ratio(low_ratio, direction);
@@ -397,35 +399,35 @@ impl RangeSliderEntity {
         &self,
         thumb: RangeThumb,
         ratio: f64,
+        window: &Window,
         cx: &mut Context<Self>,
-    ) -> gpui::Stateful<gpui::Div> {
-        let mut element = crate::renderer::apply_style_override(
-            div().absolute(),
-            &self.thumb_style,
-            &self.theme,
-            self.theme.direction(),
-        );
-        element = match self.orientation {
-            RangeOrientation::Horizontal => element
-                .left(relative(fraction_f32(horizontal_thumb_ratio(
-                    ratio,
-                    self.theme.direction(),
-                ))))
-                .top(relative(0.5))
-                .ml(px(-7.0))
-                .mt(px(-7.0)),
-            RangeOrientation::Vertical => element
-                .bottom(relative(fraction_f32(ratio)))
-                .left(relative(0.5))
-                .mb(px(-7.0))
-                .ml(px(-7.0)),
-        };
+    ) -> gpui::Div {
         let (focus, label, value) = match thumb {
             RangeThumb::Low => (&self.low_focus, self.low_label.clone(), self.preview.low),
             RangeThumb::High => (&self.high_focus, self.high_label.clone(), self.preview.high),
         };
+        let element = crate::renderer::apply_style_override_in(
+            div().flex_none(),
+            &self.thumb_style,
+            &crate::renderer::part_interaction(focus.is_focused(window), self.disabled),
+            &self.theme,
+            self.theme.direction(),
+        );
+        let anchor = match self.orientation {
+            RangeOrientation::Horizontal => div()
+                .absolute()
+                .left(relative(fraction_f32(horizontal_thumb_ratio(
+                    ratio,
+                    self.theme.direction(),
+                ))))
+                .top(relative(0.5)),
+            RangeOrientation::Vertical => div()
+                .absolute()
+                .bottom(relative(fraction_f32(ratio)))
+                .left(relative(0.5)),
+        };
         let entity = cx.entity();
-        element
+        let element = element
             .id(match thumb {
                 RangeThumb::Low => "gpui-rhai-range-slider-low",
                 RangeThumb::High => "gpui-rhai-range-slider-high",
@@ -441,7 +443,8 @@ impl RangeSliderEntity {
                 entity.update(cx, |slider, cx| {
                     slider.keyboard(thumb, event, window, cx);
                 });
-            })
+            });
+        crate::renderer::centered_on_anchor(anchor, element)
     }
 }
 
@@ -719,6 +722,7 @@ fn pair_schema() -> ValueSchema {
 ///
 /// Panics only if the static primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.range_slider").expect("static primitive ID"),
@@ -726,66 +730,96 @@ pub fn range_slider_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "low".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Lower selected value; controlled, so store `change.low` here. At least `min` and `minimum_gap` below `high`.",
+                ),
             ),
             (
                 "high".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Upper selected value; controlled, so store `change.high` here. At most `max` and `minimum_gap` above `low`.",
+                ),
             ),
             (
                 "min".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Value at the start of the track: the leading edge, or the bottom when vertical; must be less than `max`.",
+                ),
             ),
             (
                 "max".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number())
+                    .with_doc("Value at the end of the track; must be greater than `min`."),
             ),
             (
                 "step".to_owned(),
-                ObjectField::required(ValueSchema::positive_number()),
+                ObjectField::required(ValueSchema::positive_number()).with_doc(
+                    "Increment both values snap to, counted from `min`, and the arrow-key step; when `max - min` is not a multiple of it, the last step below `max` is the highest value.",
+                ),
             ),
             (
                 "minimum_gap".to_owned(),
-                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), None)),
+                ObjectField::optional(ValueSchema::bounded_number(Some(0.0), None)).with_doc(
+                    "Smallest allowed distance between `low` and `high`, at most `max - min`; 0 when omitted.",
+                ),
             ),
             (
                 "orientation".to_owned(),
                 ObjectField::required(ValueSchema::String {
                     allowed: vec!["horizontal".to_owned(), "vertical".to_owned()],
-                }),
+                })
+                .with_doc(
+                    "`horizontal` runs the track in the reading direction (mirrored in RTL); `vertical` runs it bottom to top.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Blocks pointer and keyboard input, takes both thumbs out of the tab order and dims the control."),
             ),
             (
                 "low_label".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Accessible name of the lower thumb, such as `Minimum price`."),
             ),
             (
                 "high_label".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string())
+                    .with_doc("Accessible name of the upper thumb, such as `Maximum price`."),
             ),
             (
                 "track_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the track that holds the fill and thumbs; give it its size here, such as full width by 4px.",
+                ),
             ),
             (
                 "fill_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the fill between the two thumbs; its position and length are set natively from the values.",
+                ),
             ),
             (
                 "thumb_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of both thumbs, each centered on its value; its `focus` and `disabled` states apply per thumb.",
+                ),
             ),
             (
                 "on_change".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with `#{ low, high }` when a drag or an arrow, Home or End key moves a thumb.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "change".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted when a drag ends or a key acts, if a thumb moved; the payload is the proposed `#{ low, high }`, snapped and gapped."
+                        .to_owned(),
+                ),
                 payload: pair_schema(),
             },
         )]),

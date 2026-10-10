@@ -324,6 +324,41 @@ impl NativeCollection {
             .ok_or(NativeCollectionError::CorruptOrder(enabled[next]))
     }
 
+    /// Keyboard targets of a table view, by the same rule as an array Table:
+    /// the current row is the first displayed row in `selected`; Up and Down
+    /// move one row and stop at the ends; with no current row both go to the
+    /// first. Group headers are skipped. One scan in native code, so a key
+    /// press does not enumerate the collection in Rhai.
+    pub(crate) fn table_neighbors(&self, selected: &BTreeSet<String>) -> TableNeighbors {
+        // (display index, key) of each displayed row; group headers take display
+        // indices too.
+        let rows = self
+            .order
+            .iter()
+            .enumerate()
+            .filter_map(|(display, entry)| match entry {
+                NativeCollectionEntry::Row(index) => {
+                    self.source.keys.get(*index).map(|key| (display, key))
+                }
+                NativeCollectionEntry::Group(_) => None,
+            })
+            .collect::<Vec<_>>();
+        let current = rows
+            .iter()
+            .position(|(_, key)| selected.contains(key.as_str()));
+        let at = |index: usize| rows.get(index).map(|(_, key)| (*key).clone());
+        let last = rows.len().saturating_sub(1);
+        TableNeighbors {
+            first: at(0),
+            last: at(last),
+            previous: at(current.map_or(0, |current| current.saturating_sub(1))),
+            next: at(current.map_or(0, |current| (current + 1).min(last))),
+            current: current.and_then(at),
+            current_index: current
+                .and_then(|current| rows.get(current).map(|(display, _)| *display)),
+        }
+    }
+
     fn fuzzy_projection(&self) -> Result<&FuzzyProjection, NativeCollectionError> {
         match self.projection.as_deref() {
             Some(CollectionProjection::Fuzzy(projection)) => Ok(projection),
@@ -473,6 +508,18 @@ pub(crate) fn register_native_collection_api(engine: &mut rhai::Engine) {
                 })
             },
         );
+    FuncRegistration::new("native_table_neighbors")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |collection: NativeCollection, selected: rhai::Array| -> Map {
+                let selected = selected
+                    .into_iter()
+                    .filter_map(|key| key.into_string().ok())
+                    .collect::<BTreeSet<_>>();
+                collection.table_neighbors(&selected).into_map()
+            },
+        );
     FuncRegistration::new("native_fuzzy_view")
         .in_global_namespace()
         .register_into_engine(
@@ -512,6 +559,38 @@ pub(crate) fn register_native_collection_api(engine: &mut rhai::Engine) {
                     .map_err(|error| Box::new(native_collection_runtime_error(&error)))
             },
         );
+}
+
+/// The row keys a Table's navigation keys move to; `None` when the view has
+/// no rows (or no current row).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct TableNeighbors {
+    pub first: Option<String>,
+    pub last: Option<String>,
+    pub previous: Option<String>,
+    pub next: Option<String>,
+    pub current: Option<String>,
+    /// The current row's index among the displayed items.
+    pub current_index: Option<usize>,
+}
+
+impl TableNeighbors {
+    fn into_map(self) -> Map {
+        let key = |value: Option<String>| value.map_or(Dynamic::UNIT, Dynamic::from);
+        Map::from([
+            ("first".into(), key(self.first)),
+            ("last".into(), key(self.last)),
+            ("previous".into(), key(self.previous)),
+            ("next".into(), key(self.next)),
+            ("current".into(), key(self.current)),
+            (
+                "current_index".into(),
+                self.current_index
+                    .and_then(|index| rhai::INT::try_from(index).ok())
+                    .map_or(Dynamic::UNIT, Dynamic::from),
+            ),
+        ])
+    }
 }
 
 fn native_collection_runtime_error(error: &NativeCollectionError) -> EvalAltResult {
@@ -1325,6 +1404,8 @@ impl TableColumn {
         };
         for normalized_only in [
             "title",
+            "numeric",
+            "typography",
             "sortable",
             "resize_enabled",
             "resize_ref_key",
@@ -1708,24 +1789,28 @@ impl NativeCollectionRegistry {
         track_missing: bool,
     ) -> Result<NativeCollection, NativeCollectionError> {
         self.read_dependency(
-            &crate::read_dependency::ReadDependency::component(reader),
+            Some(&crate::read_dependency::ReadDependency::component(reader)),
             name,
             track_missing,
         )
     }
 
+    /// Read a collection, subscribing `reader` when there is one.
     pub(crate) fn read_dependency(
         &mut self,
-        reader: &crate::read_dependency::ReadDependency,
+        reader: Option<&crate::read_dependency::ReadDependency>,
         name: &str,
         track_missing: bool,
     ) -> Result<NativeCollection, NativeCollectionError> {
         validate_name(name, "collection name")?;
         let Some(collection) = self.collections.get(name).cloned() else {
-            if track_missing {
+            if track_missing && let Some(reader) = reader {
                 self.track_missing_reader(reader, name)?;
             }
             return Err(NativeCollectionError::UnknownCollection(name.to_owned()));
+        };
+        let Some(reader) = reader else {
+            return Ok(collection);
         };
         if let Some(readers) = self.missing_readers.get_mut(name) {
             readers.remove(reader);

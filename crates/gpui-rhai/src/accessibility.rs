@@ -367,13 +367,31 @@ fn semantic_node(
         column_index: usize_attribute(node, "column_index"),
         row_count: usize_attribute(node, "row_count"),
         column_count: usize_attribute(node, "column_count"),
-        disabled: bool_attribute(node, "disabled"),
+        disabled: disabled_in_tree(tree, node),
         read_only: bool_attribute(node, "read_only"),
         invalid: bool_attribute(node, "invalid"),
         required: bool_attribute(node, "required"),
         geometry: retained_geometry(tree, node, geometry),
         children: Vec::new(),
     }))
+}
+
+/// A node is disabled when it or any retained ancestor is disabled.
+fn disabled_in_tree(tree: &RetainedUiTree, node: &RetainedNode) -> bool {
+    if bool_attribute(node, "disabled") {
+        return true;
+    }
+    let mut current = node.parent();
+    while let Some(id) = current {
+        let Some(ancestor) = tree.node(id) else {
+            return false;
+        };
+        if bool_attribute(ancestor, "disabled") {
+            return true;
+        }
+        current = ancestor.parent();
+    }
+    false
 }
 
 fn project_committed_node(

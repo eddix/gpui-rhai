@@ -494,7 +494,7 @@ fn length_pixels(value: Option<Length>, width: f64, rem: f64) -> f64 {
         Length::Pixels(value) => value,
         Length::Rems(value) => value * rem,
         Length::Relative(value) => value * width,
-        _ => 0.0,
+        Length::Token(_) => 0.0,
     })
 }
 

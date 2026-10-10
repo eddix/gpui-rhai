@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use gpui::{
-    Context, IntoElement, Modifiers, Render, ScrollDelta, ScrollWheelEvent, TestAppContext,
-    VisualTestContext, Window, WindowHandle, point, px,
+    Context, IntoElement, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent,
+    TestAppContext, VisualTestContext, Window, WindowHandle, point, px,
 };
 use gpui_rhai::*;
 use gpui_rhai_cli::gallery::{GalleryLaunch, prepare as prepare_gallery};
@@ -70,6 +70,7 @@ fn mount(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .motion_preference(MotionPreference::None)
     .prepare()
     .unwrap();
@@ -632,6 +633,46 @@ fn chart_business_key_cannot_become_a_control_role(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn chart_brush_starts_past_the_drag_threshold_and_a_click_still_selects(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"import "charts/chart" as chart;
+ fn state_schema(){#{fields:#{s:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},b:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+ fn select(ctx,p){ctx.set_state("s",ctx.get_state("s")+1);} fn brushed(ctx,p){ctx.set_state("b",ctx.get_state("b")+1);}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("s")}|${ctx.get_state("b")}`),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"a",x:"A",y:1}],spec:#{title:"Control",brush:"xy",legend:#{visible:false},series:[#{key:"s",kind:"bar",encode:#{x:"x",y:"y"}}]},on_select:Fn("select"),on_brush_change:Fn("brushed")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let (window, view) = mount(cx, script, "chart-brush-threshold");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let bounds = chart_bounds(&mut visual, &view);
+    let bar = point(px((bounds.x + 200.0) as f32), px((bounds.y + 150.0) as f32));
+    let nearby = point(px((bounds.x + 202.0) as f32), px((bounds.y + 151.0) as f32));
+    let far = point(px((bounds.x + 260.0) as f32), px((bounds.y + 200.0) as f32));
+
+    visual.simulate_click(bar, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual, &view), "1|0", "a click selects the bar");
+
+    visual.simulate_mouse_down(bar, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(nearby, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(nearby, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(
+        status(&mut visual, &view),
+        "2|0",
+        "a press that moves less than the threshold is still a click"
+    );
+
+    visual.simulate_mouse_down(bar, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(far, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(far, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(
+        status(&mut visual, &view),
+        "2|1",
+        "a drag past the threshold brushes without selecting"
+    );
+}
+
+#[gpui::test]
 fn invalid_chart_candidate_reaches_view_error_and_keeps_last_good_scene(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let script = r#"
@@ -794,6 +835,7 @@ fn mount_with_layout_counter(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(CountExtension(counter))
     .motion_preference(MotionPreference::None)
     .prepare()
@@ -833,6 +875,7 @@ fn mount_streaming_chart(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(StreamExtension { data, counter })
     .motion_preference(MotionPreference::None)
     .prepare()
@@ -1032,6 +1075,7 @@ fn mount_extended_chart(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(extension)
     .runtime_clock(clock)
     .motion_preference(preference)

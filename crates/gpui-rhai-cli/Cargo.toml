@@ -13,6 +13,8 @@ keywords = ["gpui", "rhai", "cli", "components", "themes"]
 categories = ["gui", "development-tools"]
 
 [features]
+# Gates nothing since 0.2.0 (the Rust Gallery shell was removed); kept so that
+# dependents enabling it keep building.
 test-support = []
 
 [[bin]]

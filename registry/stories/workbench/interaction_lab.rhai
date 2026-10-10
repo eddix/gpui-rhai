@@ -46,9 +46,9 @@ fn set_angle(ctx,value){ctx.set_state("angle",value);}fn set_range(ctx,value){ct
 fn set_selection(ctx,value){ctx.set_state("selected",value.selected_keys);ctx.set_state("selection_active",value.active_key);ctx.set_state("selection_anchor",value.anchor_key);}
 fn set_expanded(ctx,value){ctx.set_state("expanded",value);}fn set_tree_selected(ctx,value){ctx.set_state("tree_selected",value);}
 fn set_tree_active(ctx,value){ctx.set_state("tree_active",value);}
-fn index_of(values,key){for index in 0..values.len{if values[index]==key{return index;}}-1}
-fn set_order(ctx,value){let order=ctx.get_state("order");let source=index_of(order,value.source_key);if source<0{return;}
-    let moved=order.remove(source);let anchor=index_of(order,value.anchor_key);if anchor<0{return;}
+fn order_position(values,key){for index in 0..values.len{if values[index]==key{return index;}}-1}
+fn set_order(ctx,value){let order=ctx.get_state("order");let source=order_position(order,value.source_key);if source<0{return;}
+    let moved=order.remove(source);let anchor=order_position(order,value.anchor_key);if anchor<0{return;}
     order.insert(if value.placement=="after"{anchor+1}else{anchor},moved);ctx.set_state("order",order);ctx.set_state("status","Pipeline reordered");}
 fn dropped(ctx,value){ctx.set_state("artifact_lane",value.target_id);ctx.set_state("status",`Artifact moved to ${value.target_id}`);}
 

@@ -38,6 +38,10 @@ component source defaults
 → explicit instance style / part_styles
 ```
 
+Each step merges like chaining its setters onto the one before, so a rule's
+`padding(px(0))` also clears a part's `padding_start`; a logical edge set by the
+rule itself wins over a physical one ([Style](style.md)).
+
 The final step remains ordinary application code rather than another global
 style layer. It is useful for a deliberate one-off, while `styles.rhai` is the
 place for a coherent application skin.

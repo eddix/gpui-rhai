@@ -1,8 +1,0 @@
-source=/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/collection_projection.rs sha256=b5e3ac5091855e858d8fa060d82d85cf74e5c2694b9f3a9caacfdc382b718024
-collapsed chain count=100 elapsed=525.416µs result=Ok(1)
-collapsed chain count=1000 elapsed=62.515333ms result=Ok(1)
-collapsed chain count=3000 elapsed=591.192417ms result=Ok(1)
-collapsed chain count=6000 elapsed=2.66161s result=Ok(1)
-collapsed chain count=10000 elapsed=8.770200333s result=Ok(1)
-depth257 collapsed: Ok(1)
-depth257 expanded: Err("outline cycle or depth limit at `k00257`")

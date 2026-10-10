@@ -2,63 +2,93 @@
 {
   "id": "components/sortable",
   "export": "Sortable",
-  "version": "0.1.8",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "border", "surface", "focus_ring", "text_muted", "accent", "metrics.row", "metrics.control",
+    "metrics.inset", "typography.body", "spacing.xs"
+  ],
+  "environment": ["density"]
 }
 */
 // Controlled keyed ordering with native pointer targets and keyboard moves.
-// Props: key, label, items[{key,label,content,disabled?}], direction,
-// grid_columns, gap, threshold, disabled, on_reorder.
-// Events: reorder({source_key,anchor_key,placement,x,y}).
 // State: order is caller-owned; native state contains only one transient drag.
-// Parts: root, item, item_disabled, handle, handle_icon, content.
-// Keyboard: focus a handle, then Option/Alt+Arrow, Home, or End.
+// Keyboard: focus a handle, then press Option/Alt with an arrow, Home or End (all three need
+// Option/Alt). A horizontal row follows the reading direction, so in RTL Option/Alt+Left
+// moves a row towards the end.
 // Example: Sortable(#{ key:"queue", label:"Queue", items:items, on_reorder:Fn("reordered") })
 
 define_component(#{
-    metadata: #{ id:"components/sortable", "export":"Sortable", version:"0.1.8",
-        runtime_api:#{min_inclusive:2,max_exclusive:3}, dependencies:[], capabilities:#{} },
+    metadata: #{ id:"components/sortable", "export":"Sortable", version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
+        tokens: [
+            "border", "surface", "focus_ring", "text_muted", "accent", "metrics.row",
+            "metrics.control", "metrics.inset", "typography.body", "spacing.xs"
+        ],
+        environment: ["density"] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
-        label: #{ schema:#{type:"string"}, required:true, sensitive:false },
+        label: #{ schema:#{type:"string"}, required:true, sensitive:false,
+            doc:"Accessible name of the list." },
         items: #{ schema:#{type:"optional",value:#{type:"array",max_items:512,items:#{
             type:"object",allow_unknown:false,fields:#{
-                key:#{schema:#{type:"string"},required:true,sensitive:false},
-                label:#{schema:#{type:"string"},required:true,sensitive:false},
-                content:#{schema:#{type:"node"},required:true,sensitive:false},
+                key:#{schema:#{type:"string"},required:true,sensitive:false,
+                    doc:"Identity of the row, unique in the list; `reorder` reports it."},
+                label:#{schema:#{type:"string"},required:true,sensitive:false,
+                    doc:"Accessible name of the row; its handle reads `Reorder <label>`."},
+                content:#{schema:#{type:"node"},required:true,sensitive:false,
+                    doc:"Node shown beside the drag handle."},
                 disabled:#{schema:#{type:"bool"},required:false,sensitive:false,
-                    "default":#{type:"bool",value:false}},
+                    "default":#{type:"bool",value:false},
+                    doc:"Keeps the row from being dragged or moved by key; rows can still drop beside it."},
             }
-        }}}, required:false, sensitive:false },
+        }}}, required:false, sensitive:false,
+            doc:"Rows in their current order, owned by the caller; give exactly one of `items` and `virtual_data`." },
         virtual_data: #{ schema:#{type:"optional",value:#{type:"one_of",variants:[
             #{type:"array",max_items:10000,items:#{type:"map",values:#{type:"ui_value"}}},
             #{type:"collection"}
-        ]}}, required:false, sensitive:false },
+        ]}}, required:false, sensitive:false,
+            doc:"Virtualized rows: maps with a string `key`, a `label_key` field and an optional `disabled`; each row shows its label as text and drags from anywhere on it." },
         label_key: #{schema:#{type:"string"},required:false,sensitive:false,
-            "default":#{type:"string",value:"label"}},
+            "default":#{type:"string",value:"label"},
+            doc:"Field of a `virtual_data` row shown as its text and used as its accessible name."},
         estimated_row_height: #{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,
-            "default":#{type:"float",value:40.0}},
-        height: #{schema:#{type:"optional",value:#{type:"number",exclusive_min:0.0}},required:false,sensitive:false},
-        fill_height: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false}},
+            "default":#{type:"float",value:40.0},
+            doc:"Row height the virtual list assumes before rows are measured, in logical pixels."},
+        height: #{schema:#{type:"optional",value:#{type:"number",exclusive_min:0.0}},required:false,sensitive:false,
+            doc:"Viewport height of the virtual list, in logical pixels; give exactly one of `height` and `fill_height`."},
+        fill_height: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false},
+            doc:"Lets the virtual list fill its parent's height; give exactly one of `height` and `fill_height`."},
         direction: #{ schema:#{type:"string",allowed:["vertical","horizontal","grid"]},
-            required:false,sensitive:false,"default":#{type:"string",value:"vertical"} },
+            required:false,sensitive:false,"default":#{type:"string",value:"vertical"},
+            doc:"Lays rows out as a column, a scrolling row or a grid of `grid_columns`; `virtual_data` needs `vertical`." },
         grid_columns: #{ schema:#{type:"integer",min:1,max:64},required:false,sensitive:false,
-            "default":#{type:"integer",value:3} },
-        gap: #{ schema:#{type:"optional",value:#{type:"length"}},required:false,sensitive:false },
+            "default":#{type:"integer",value:3},
+            doc:"Number of columns when `direction` is `grid`." },
+        gap: #{ schema:#{type:"optional",value:#{type:"length"}},required:false,sensitive:false,
+            doc:"Space between rows, `spacing.xs` when unset; ignored with `virtual_data`." },
         threshold: #{ schema:#{type:"number",min:0.0,max:64.0},required:false,sensitive:false,
-            "default":#{type:"float",value:4.0} },
+            "default":#{type:"float",value:4.0},
+            doc:"Pointer travel in logical pixels before a press becomes a drag." },
         disabled: #{ schema:#{type:"bool"},required:false,sensitive:false,
-            "default":#{type:"bool",value:false} },
-        on_reorder: #{ schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false },
+            "default":#{type:"bool",value:false},
+            doc:"Disables dragging and keyboard moves for every row." },
+        on_reorder: #{ schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false,
+            doc:"Called with the `reorder` payload when a row is dropped or moved with Option/Alt and an arrow, Home or End." },
     }, state:#{fields:#{}}, events:#{ reorder:#{payload:#{type:"object",allow_unknown:false,fields:#{
-        source_key:#{schema:#{type:"string"},required:true,sensitive:false},
-        anchor_key:#{schema:#{type:"string"},required:true,sensitive:false},
-        placement:#{schema:#{type:"string",allowed:["before","after"]},required:true,sensitive:false},
-        x:#{schema:#{type:"number"},required:true,sensitive:false},
-        y:#{schema:#{type:"number"},required:true,sensitive:false},
-    }}} }, slots:#{}, parts:["root","item","item_disabled","handle","handle_icon","content"] },
+        source_key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Key of the row that moves."},
+        anchor_key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Key of the row it lands next to."},
+        placement:#{schema:#{type:"string",allowed:["before","after"]},required:true,sensitive:false,
+            doc:"Whether the moving row goes before or after the anchor row."},
+        x:#{schema:#{type:"number"},required:true,sensitive:false,
+            doc:"Pointer x at the drop in window coordinates, in logical pixels; 0 for keyboard moves."},
+        y:#{schema:#{type:"number"},required:true,sensitive:false,
+            doc:"Pointer y at the drop in window coordinates, in logical pixels; 0 for keyboard moves."},
+    }},
+        doc:"Emitted when a row is dropped or moved by key; the payload names the move, and the caller reorders its rows."} },
+        slots:#{}, parts:["root","item","item_disabled","handle","handle_icon","content"] },
     render:Fn("render_Sortable")
 });
 
@@ -72,15 +102,17 @@ fn sortable_item_node(ctx,list_id,collection_id,item,previous_key,next_key,first
         item_key:item.key,previous_key:previous_key,next_key:next_key,first_key:first_key,last_key:last_key,
         direction:direction,threshold:threshold,disabled:disabled,item_ref:item_ref,on_reorder:Fn("sortable_commit")};
     let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${item.key}-interaction`)
-        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)))
+        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .border(px(2)).border_color(rgba(0x00000000)).focus(style().border_color(theme_color("focus_ring"))))
         .disabled(disabled).tab_stop(!disabled).accessibility_role("button").accessibility_label(`Reorder ${item.label}`);
-    let handle_style=style().relative().width(px(28)).min_height(px(28)).flex_shrink(false)
-        .items_center().justify_center().cursor_move().focus(style().background(theme_color("selection")));
+    let handle_style=style().relative().width(theme_length("metrics.control")).min_height(theme_length("metrics.row"))
+        .flex_shrink(false).items_center().justify_center().cursor_move();
     let handle=box([text("≡").with_style(ctx.component_style("handle_icon",style().typography("body")
         .text_color(theme_color("text_muted")))),interaction]).with_key(`${list_id}-${item.key}-handle`)
         .with_style(ctx.component_style("handle",handle_style)).disabled(disabled);
-    let item_style=style().min_width(px(0)).items_center().border(px(1)).border_color(theme_color("border"))
-        .background(theme_color("surface"));let resolved=ctx.component_style("item",item_style);
+    // Sortable items are list rows separated by hairlines.
+    let item_style=style().min_width(px(0)).min_height(theme_length("metrics.row")).items_center()
+        .border_bottom(px(1)).border_color(theme_color("border")).background(theme_color("surface"));let resolved=ctx.component_style("item",item_style);
     if disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
     row([handle,item.content.with_key(`${list_id}-${item.key}-content`)
         .with_style(ctx.component_style("content",style().min_width(px(0)).flex_grow()))])
@@ -97,14 +129,15 @@ fn sortable_virtual_row(list_id,collection_id,label_key,direction,threshold,disa
         last_key:payload.last_key,direction:direction,threshold:threshold,disabled:item_disabled,
         on_reorder:Fn("sortable_commit")};
     let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${payload.key}-interaction`)
-        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)))
+        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .border(px(2)).border_color(rgba(0x00000000)).focus(style().border_color(theme_color("focus_ring"))))
         .disabled(item_disabled).tab_stop(!item_disabled).accessibility_role("button")
         .accessibility_label(`Reorder ${label}`);
-    let resolved=ctx.component_style("item",style().relative().height(px(40)).min_width(px(0))
-        .items_center().padding_end(theme_spacing("sm")).border(px(1)).border_color(theme_color("border"))
-        .background(theme_color("surface")).focus(style().background(theme_color("selection"))));
+    let resolved=ctx.component_style("item",style().relative().height(theme_length("metrics.row")).min_width(px(0))
+        .items_center().padding_end(theme_length("metrics.inset")).border_bottom(px(1)).border_color(theme_color("border"))
+        .background(theme_color("surface")));
     if item_disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
-    row([text("≡").with_style(ctx.component_style("handle_icon",style().width(px(28)).text_center()
+    row([text("≡").with_style(ctx.component_style("handle_icon",style().width(theme_length("metrics.control")).text_center()
         .text_color(theme_color("text_muted")))),text(label).with_style(ctx.component_style("content",style().flex_grow())),
         interaction]).with_key(`${list_id}-item-${payload.key}`).with_style(resolved)
         .accessibility_role("listitem").accessibility_label(label)

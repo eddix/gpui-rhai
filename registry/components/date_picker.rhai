@@ -2,58 +2,88 @@
 {
   "id": "components/date_picker",
   "export": "DatePicker",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"]
+  "assets": ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
+  "tokens": [
+    "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
+    "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
+    "disabled", "metrics.control", "metrics.control_pad", "metrics.field_pad", "metrics.icon", "metrics.marker",
+    "metrics.inset", "spacing.xs", "spacing.sm", "radius.md", "radius.lg",
+    "typography.control", "typography.body", "typography.label"
+  ],
+  "environment": ["size", "density", "corners"]
 }
 */
 // Controlled single-date field composed from public date data helpers, atoms, and Overlay.
-// Props: key, label, optional strict ISO value/min/max, localized presentation, presets, and on_change.
-// Events: change(optional<string>). State: keyed open/visible-month/focused-date transients.
+// State: keyed open/visible-month/focused-date transients.
 // Example: DatePicker(#{ key: "appointment", label: "Appointment date", value: "2026-09-01", on_change: Fn("changed") })
 
 define_component(#{
     metadata: #{
-        id: "components/date_picker", "export": "DatePicker", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        id: "components/date_picker", "export": "DatePicker", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
+            "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
+            "disabled", "metrics.control", "metrics.control_pad", "metrics.field_pad", "metrics.icon",
+            "metrics.marker", "metrics.inset", "spacing.xs", "spacing.sm", "radius.md",
+            "radius.lg", "typography.control", "typography.body", "typography.label"
+        ],
+        environment: ["size", "density", "corners"],
         assets: ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            parent_overlay: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            value: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            min_date: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            max_date: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Identity of the picker; also its overlay id and the prefix of its inner keys (`<key>-trigger`, `<key>-panel`)." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the trigger." },
+            parent_overlay: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Key of the open overlay this one nests in, such as a Dialog; the calendar stacks above it and closes with it." },
+            value: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Selected date as strict ISO `YYYY-MM-DD`, or `()` for none; the caller stores the `change` payload and passes it back." },
+            min_date: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Earliest selectable date, strict ISO `YYYY-MM-DD`, inclusive; earlier days are disabled and `value` must not be earlier." },
+            max_date: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Latest selectable date, strict ISO `YYYY-MM-DD`, inclusive; not before `min_date`, and `value` must not be later." },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "" } },
+                "default": #{ type: "string", value: "" }, doc: "Trigger text while no date is selected." },
             display_style: #{ schema: #{ type: "string", allowed: ["short", "medium", "long"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "short" } },
+                "default": #{ type: "string", value: "short" },
+                doc: "Length of the trigger's date text, formatted for the current locale." },
             clearable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Shows a clear button in the trigger while a date is set; it emits `change` with `()`." },
             presets: #{ schema: #{ type: "array", max_items: 32, items: #{
                 type: "object", allow_unknown: false, fields: #{
-                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Button text; must not be blank." },
+                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Strict ISO `YYYY-MM-DD` date the preset picks; must be unique among the presets." },
                     disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
+                        "default": #{ type: "bool", value: false }, doc: "Shows the preset but blocks picking it." },
                 },
             } }, required: false, sensitive: false,
-                "default": #{ type: "array", value: [] } },
+                "default": #{ type: "array", value: [] },
+                doc: "Quick-pick buttons in the calendar footer; a preset outside `min_date` to `max_date` is disabled." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false }, doc: "Disables the trigger so the calendar cannot open." },
             error: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
-            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Marks the value invalid: the trigger border turns `danger` and accessibility reports it invalid." },
+            size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                required: false, sensitive: false,
+                doc: "Control size; leave unset to inherit the environment size. The preset footer is always `xs`." },
+            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "Width of the trigger; unset is 280 logical pixels." },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "bottom" } },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "string", value: "bottom" }, doc: "Side of the trigger the calendar opens on." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the picked ISO date, or `()` when the date is cleared." },
         },
         state: #{ fields: #{
             open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
@@ -61,26 +91,31 @@ define_component(#{
             focused_date: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
             anchor_date: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         } },
-        events: #{ change: #{ payload: #{ type: "optional", value: #{ type: "string" } } } },
+        events: #{ change: #{ payload: #{ type: "optional", value: #{ type: "string" } },
+            doc: "Emitted when a day or preset other than `value` is picked, or the date is cleared; the payload is the ISO date or `()`." } },
         slots: #{},
         parts: ["root", "trigger", "trigger_value", "trigger_icon", "panel", "header",
             "month_title", "previous", "next", "weekdays", "weekday", "grid", "week",
             "day", "day_outside", "day_today", "day_selected", "day_focused",
-            "day_disabled", "footer", "preset", "clear"],
+            "day_disabled", "footer", "preset", "clear", "focus_frame"],
         effects: ["controlled_anchor"],
     },
     render: Fn("render_DatePicker")
 });
 
 fn DatePicker(props) { render_component("components/date_picker", props) }
+
+// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
+// panel's hairline (painted over its children) turns the focus color and this frame adds
+// the inner pixel. A control inside shows its own frame instead.
+fn panel_focus_frame(ctx) {
+    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
+        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
+        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
+        .group_focus(style().border_color(theme_color("focus_ring")))))
+}
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn optional_prop(props, name) { if name in props && props[name] != () { props[name] } else { () } }
-fn date_picker_size(size) {
-    if size == "xs" { 24 }
-    else if size == "sm" { 28 }
-    else if size == "lg" { 36 }
-    else { 32 }
-}
 fn weekday_index(name) {
     if name == "monday" { 1 }
     else if name == "tuesday" { 2 }
@@ -174,10 +209,34 @@ fn week_target(value, first_weekday, end, min_date, max_date) {
     if target == () { value } else { date_clamp(target, min_date, max_date) }
 }
 
-fn icon_node(source, rtl_source, label, size, part_style) {
+fn icon_node(source, rtl_source, label, part_style) {
     directional_image_source(asset(source), asset(rtl_source))
-        .with_style(part_style.width(px(size)).height(px(size)))
+        .with_style(part_style.width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))
         .accessibility_role("image").accessibility_label(label)
+}
+
+// Presets are xs secondary blocks.
+fn preset_style() {
+    let preset = style()
+        .min_height(theme_length("metrics.control")).padding_x(theme_length("metrics.control_pad"))
+        .items_center().typography("control");
+    preset
+        .border(px(2)).border_color(theme_color("surface_hover"))
+        .background(theme_color("surface_hover")).radius(theme_radius("md"))
+        .hover(style().background(theme_color("control.hover")))
+        .focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().text_color(theme_color("disabled")))
+}
+
+// Month steppers are square ghost controls.
+fn month_button_style() {
+    style()
+        .width(theme_length("metrics.control")).height(theme_length("metrics.control"))
+        .items_center().justify_center()
+        .border(px(2)).border_color(rgba(0x00000000)).radius(theme_radius("md"))
+        .hover(style().background(theme_color("surface_hover")))
+        .focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().text_color(theme_color("disabled")))
 }
 
 fn render_DatePicker(ctx, props) {
@@ -198,9 +257,7 @@ fn render_DatePicker(ctx, props) {
     } else { stored_month };
     let focused_date = if stored_focus == "" || anchor_changed { anchor } else { stored_focus };
     let calendar = ctx.calendar();
-    let size = date_picker_size(prop_or(props, "size", "md"));
     let width = if "width" in props && props.width != () { props.width } else { px(280) };
-    let panel_width = size * 7 + 32;
     let placeholder = prop_or(props, "placeholder", "");
     let display = if value == () { placeholder }
         else { ctx.format_date(value, prop_or(props, "display_style", "short")) };
@@ -212,35 +269,34 @@ fn render_DatePicker(ctx, props) {
     let trigger_actions = [];
     if prop_or(props, "clearable", false) && value != () {
         trigger_actions.push(row([image_source(asset("app/icons/close"))
-            .with_style(style().width(px(12)).height(px(12))
-                .text_color(theme_color("text_primary")))])
+            .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
+                .text_color(theme_color("text_muted")))])
             .with_style(ctx.component_style("clear", style()
-                .width(px(20)).height(px(20)).items_center().justify_center()
-                .radius(theme_radius("sm"))
+                .items_center().justify_center()
                 .hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("button").accessibility_label(ctx.t("calendar.clear"))
             .on_click_value(Fn("clear_date"), #{ changed: true }));
     }
     trigger_actions.push(row([image_source(asset("app/icons/calendar"))
-        .with_style(style().width(px(14)).height(px(14))
+        .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
             .text_color(theme_color("text_muted")))])
         .with_style(ctx.component_style("trigger_icon", style()
-            .width(px(20)).height(px(20)).items_center().justify_center()
+            .items_center().justify_center()
             .text_color(theme_color("text_muted"))))
         .accessibility_role("image").accessibility_label(ctx.t("calendar.open")));
     let trigger_children = [trigger_value, row(trigger_actions)
             .with_style(style().gap(theme_spacing("xs")).items_center())];
-    let trigger_border = if error { theme_color("danger") }
-        else if open { theme_color("focus_ring") } else { theme_color("border") };
-    let trigger_style = style().width(width).height(px(size)).padding_x(theme_spacing("sm")).gap(theme_spacing("sm"))
-        .items_center().border(px(1)).border_color(trigger_border)
-        .radius(theme_radius("md"))
-        .background(if open { theme_color("surface_raised") } else { theme_color("surface") })
-        .typography("body")
-        .hover(style().background(theme_color("surface_raised")))
+    // The trigger is a field; while focused or open the focus color owns the frame.
+    let trigger_border = if open { theme_color("focus_ring") }
+        else if error { theme_color("danger") } else { theme_color("border") };
+    let trigger_style = style().width(width).min_height(theme_length("metrics.control"))
+        .padding_x(theme_length("metrics.field_pad")).gap(theme_spacing("sm")).items_center();
+    trigger_style = trigger_style
+        .border(px(2)).border_color(trigger_border)
+        .radius(theme_radius("md")).background(theme_color("surface_raised"))
+        .typography("control")
         .focus(style().border_color(theme_color("focus_ring")))
-        .disabled(style().background(theme_color("surface_raised"))
-            .text_color(theme_color("disabled")).opacity(0.72));
+        .disabled(style().text_color(theme_color("disabled")).opacity(0.72));
     let trigger = row(trigger_children).with_key(`${props.key}-trigger`)
         .with_style(ctx.component_style("trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
@@ -253,28 +309,18 @@ fn render_DatePicker(ctx, props) {
     let can_previous = previous != () && date_month_intersects(previous, min_date, max_date);
     let can_next = next != () && date_month_intersects(next, min_date, max_date);
     let previous_node = row([icon_node(
-        "app/icons/date_previous", "app/icons/date_next", ctx.t("calendar.previous_month"), 16,
+        "app/icons/date_previous", "app/icons/date_next", ctx.t("calendar.previous_month"),
         ctx.component_style("previous", style().text_color(theme_color("text_muted")))
-    )]).with_key(`${props.key}-previous`).with_style(style()
-        .width(px(28)).height(px(28)).items_center().justify_center()
-        .border(px(1)).border_color(rgba(0x00000000)).radius(theme_radius("sm"))
-        .hover(style().background(theme_color("surface_hover")))
-        .focus(style().border_color(theme_color("focus_ring")))
-        .disabled(style().opacity(0.55))).disabled(!can_previous)
+    )]).with_key(`${props.key}-previous`).with_style(month_button_style()).disabled(!can_previous)
         .accessibility_role("button").accessibility_label(ctx.t("calendar.previous_month"));
     if can_previous {
         previous_node = previous_node.on_click_value(Fn("move_month"),
             #{ date: month_target(focused_date, -1, min_date, max_date) });
     }
     let next_node = row([icon_node(
-        "app/icons/date_next", "app/icons/date_previous", ctx.t("calendar.next_month"), 16,
+        "app/icons/date_next", "app/icons/date_previous", ctx.t("calendar.next_month"),
         ctx.component_style("next", style().text_color(theme_color("text_muted")))
-    )]).with_key(`${props.key}-next`).with_style(style()
-        .width(px(28)).height(px(28)).items_center().justify_center()
-        .border(px(1)).border_color(rgba(0x00000000)).radius(theme_radius("sm"))
-        .hover(style().background(theme_color("surface_hover")))
-        .focus(style().border_color(theme_color("focus_ring")))
-        .disabled(style().opacity(0.55))).disabled(!can_next)
+    )]).with_key(`${props.key}-next`).with_style(month_button_style()).disabled(!can_next)
         .accessibility_role("button").accessibility_label(ctx.t("calendar.next_month"));
     if can_next {
         next_node = next_node.on_click_value(Fn("move_month"),
@@ -284,19 +330,20 @@ fn render_DatePicker(ctx, props) {
         previous_node,
         text(ctx.format_month_year(visible_month))
             .with_style(ctx.component_style("month_title",
-                style().typography("body").font_weight(700))),
+                style().typography("body").font_weight(600))),
         next_node,
     ]).with_style(ctx.component_style("header",
-        style().items_center().justify_between().padding_x(theme_spacing("xs"))));
+        style().items_center().justify_between()));
 
     let weekday_nodes = [];
     let first_weekday = weekday_index(calendar.first_weekday);
     for offset in 0..7 {
         let label = calendar.weekdays.short[(first_weekday + offset) % 7];
-        weekday_nodes.push(text(label)
+        weekday_nodes.push(row([text(label.to_upper())])
             .with_style(ctx.component_style("weekday",
-                style().width(px(size)).height(px(24)).items_center().justify_center()
-                    .typography("caption").font_weight(700)
+                style().width(theme_length("metrics.control")).height(theme_length("metrics.marker"))
+                    .items_center().justify_center()
+                    .typography("label")
                     .text_color(theme_color("text_muted"))))
             .accessibility_role("columnheader").accessibility_label(label));
     }
@@ -313,32 +360,32 @@ fn render_DatePicker(ctx, props) {
             let selected = cell.date != () && cell.date == value;
             let is_today = cell.date != () && cell.date == today;
             let is_focused = cell.date != () && cell.date == focused_date;
+            // Day cells are square controls. The keyboard cursor is the 2px ink
+            // frame; today is accent text; the chosen day is the accent block.
             let day_style = ctx.component_style("day",
-                style().width(px(size)).height(px(size)).items_center().justify_center()
-                    .radius(theme_radius("sm")).typography("body_small")
-                    .border(px(1)).border_color(rgba(0x00000000))
-                    .hover(style().background(theme_color("surface_hover")))
-                    .focus(style().border_color(theme_color("focus_ring"))));
+                style().width(theme_length("metrics.control")).height(theme_length("metrics.control"))
+                    .items_center().justify_center()
+                    .radius(theme_radius("md")).typography("control")
+                    .border(px(2)).border_color(rgba(0x00000000))
+                    .hover(style().background(theme_color("surface_hover"))));
             let day_style = if cell.outside {
-                ctx.component_style("day_outside",
-                    day_style.text_color(theme_color("text_muted")).opacity(0.62))
+                ctx.component_style("day_outside", day_style.text_color(theme_color("text_muted")))
             } else { day_style };
             let day_style = if is_today {
                 ctx.component_style("day_today",
-                    day_style.border(px(1)).border_color(theme_color("accent")))
-            } else { day_style };
-            let day_style = if is_focused {
-                ctx.component_style("day_focused",
-                    day_style.border(px(1)).border_color(theme_color("focus_ring")))
+                    day_style.text_color(theme_color("text.accent")).font_weight(600))
             } else { day_style };
             let day_style = if selected {
                 ctx.component_style("day_selected",
-                    day_style.background(theme_color("accent")).border_color(theme_color("accent"))
-                        .text_color(theme_color("on_accent"))
+                    day_style.background(theme_color("accent")).text_color(theme_color("on_accent"))
                         .hover(style().background(theme_color("accent_hover"))))
             } else { day_style };
+            let day_style = if is_focused {
+                ctx.component_style("day_focused", day_style.border_color(theme_color("focus_ring")))
+            } else { day_style };
             let day_style = if disabled {
-                ctx.component_style("day_disabled", day_style.text_color(theme_color("disabled")))
+                ctx.component_style("day_disabled", day_style.text_color(theme_color("disabled"))
+                    .hover(style()))
             } else { day_style };
             let label = if cell.date == () { "" } else { ctx.format_date(cell.date, "long") };
             let day = row([text(if cell.day == () { "" }
@@ -363,12 +410,8 @@ fn render_DatePicker(ctx, props) {
     for preset in prop_or(props, "presets", []) {
         let preset_disabled = prop_or(preset, "disabled", false)
             || !date_enabled(preset.value, min_date, max_date);
-        let preset_node = text(preset.label).with_key(`preset-${preset.value}`)
-            .with_style(ctx.component_style("preset", style()
-                    .height(px(28)).padding_x(theme_spacing("sm")).items_center()
-                .typography("body_small").border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))
-                .disabled(style().opacity(0.55))))
+        let preset_node = row([text(preset.label)]).with_key(`preset-${preset.value}`)
+            .with_style(ctx.component_style("preset", preset_style()))
             .disabled(preset_disabled).accessibility_role("button")
             .accessibility_label(preset.label).accessibility_value(preset.value);
         if !preset_disabled {
@@ -381,13 +424,15 @@ fn render_DatePicker(ctx, props) {
     if footer_nodes.len > 0 {
         panel_children.push(row(footer_nodes)
             .with_style(ctx.component_style("footer", style().gap(theme_spacing("xs"))
-                .padding_top(theme_spacing("xs")).border_top(px(1)).border_color(theme_color("border")))));
+                .padding_top(theme_spacing("sm")).border_top(px(1)).border_color(theme_color("border"))))
+            .env(#{ size: "xs" }));
     }
+    panel_children.push(panel_focus_frame(ctx));
     let panel = column(panel_children).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().width(px(panel_width)).gap(theme_spacing("xs")).padding(theme_spacing("sm"))
+            style().relative().gap(theme_spacing("xs")).padding(theme_length("metrics.inset"))
                 .border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("md")).background(theme_color("surface"))
+                .radius(theme_radius("lg")).background(theme_color("surface_raised"))
                 .typography("body")
                 .focus(style().border_color(theme_color("focus_ring")))))
         .tab_stop(true).accessibility_role("dialog")
@@ -416,10 +461,11 @@ fn render_DatePicker(ctx, props) {
             #{ date: focused_date, changed: focused_date != value });
 
     let config = #{ id: props.key, kind: "popover", open: open,
-        placement: prop_or(props, "placement", "bottom"), gap: 4,
+        placement: prop_or(props, "placement", "bottom"), align: "start", gap: 4,
         modal: false, dismiss_on_escape: true, dismiss_on_outside: true };
     if "parent_overlay" in props && props.parent_overlay != () { config.parent = props.parent_overlay; }
-    overlay(trigger, panel, config).with_key(props.key)
+    let root = overlay(trigger, panel, config).with_key(props.key)
         .with_style(ctx.component_style("root", style()))
-        .on_open_change(Fn("set_open"))
+        .on_open_change(Fn("set_open"));
+    if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }
 }

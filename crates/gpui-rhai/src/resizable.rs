@@ -64,19 +64,6 @@ impl ResizeHandle {
         }
     }
 
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::North => "n",
-            Self::South => "s",
-            Self::East => "e",
-            Self::West => "w",
-            Self::NorthEast => "ne",
-            Self::NorthWest => "nw",
-            Self::SouthEast => "se",
-            Self::SouthWest => "sw",
-        }
-    }
-
     const fn moves_west(self) -> bool {
         matches!(self, Self::West | Self::NorthWest | Self::SouthWest)
     }
@@ -138,6 +125,14 @@ struct ResizableConfig {
     idle_color: Rgba8,
     active_color: Rgba8,
     focus: Option<FocusHandle>,
+    /// Paint the native edge line or corner mark; off when a grip draws its own.
+    line: bool,
+    /// How far an edge line stops short of each end of the handle.
+    line_inset: f64,
+    /// A string signal that receives the handle's state for a grip's `signal_style`.
+    state_signal: Option<crate::NativeSignal>,
+    /// A grip node whose bounds also start a drag.
+    handle_ref: Option<crate::ElementRef>,
 }
 
 #[derive(Clone)]
@@ -148,6 +143,7 @@ struct ResizableStateInner {
     source: ResizeRect,
     constraints: ResizeConstraints,
     signals: [crate::SignalId; 4],
+    written_state: Option<&'static str>,
 }
 
 impl ResizableState {
@@ -156,6 +152,7 @@ impl ResizableState {
             source: config.source,
             constraints: config.constraints,
             signals: signal_ids(config),
+            written_state: None,
         })))
     }
 }
@@ -171,6 +168,7 @@ fn signal_ids(config: &ResizableConfig) -> [crate::SignalId; 4] {
 
 struct ResizablePrepaint {
     hitbox: Hitbox,
+    state: ResizableState,
 }
 
 struct ResizableHandleElement {
@@ -255,6 +253,7 @@ impl Element for ResizableHandleElement {
         }
         ResizablePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::BlockMouseExceptScroll),
+            state,
         }
     }
 
@@ -266,18 +265,53 @@ impl Element for ResizableHandleElement {
         (): &mut Self::RequestLayoutState,
         prepaint: &mut Self::PrepaintState,
         window: &mut Window,
-        _: &mut App,
+        cx: &mut App,
     ) {
         let owner = self.events.interaction_owner(&self.config.id);
         self.events.present_interaction(owner.clone());
         let dragging = self.events.interaction_is_active(&owner);
-        let hovered = !self.config.disabled && prepaint.hitbox.is_hovered(window);
-        let color = if dragging || hovered {
-            self.config.active_color
-        } else {
-            self.config.idle_color
-        };
-        paint_handle(bounds, self.config.handle, color, dragging, window);
+        let grip = self
+            .config
+            .handle_ref
+            .as_ref()
+            .and_then(|reference| self.events.element_hitbox(reference, cx));
+        let hovered = !self.config.disabled
+            && crate::handle_state::over_handle(&prepaint.hitbox, grip, window);
+        if self.config.line {
+            let color = if dragging || hovered {
+                self.config.active_color
+            } else {
+                self.config.idle_color
+            };
+            paint_handle(bounds, &self.config, color, dragging, window);
+        }
+        if let Some(signal) = &self.config.state_signal {
+            let focused = self
+                .config
+                .focus
+                .as_ref()
+                .is_some_and(|focus| focus.is_focused(window));
+            let state =
+                crate::handle_state::handle_state(self.config.disabled, dragging, hovered, focused);
+            let mut inner = prepaint.state.0.borrow_mut();
+            crate::handle_state::publish_state(
+                &self.events,
+                signal,
+                &mut inner.written_state,
+                state,
+                window,
+                cx,
+            );
+        }
+        if !self.config.disabled {
+            crate::handle_state::track_hover(
+                &prepaint.hitbox,
+                self.config.handle_ref.as_ref(),
+                &self.events,
+                hovered,
+                window,
+            );
+        }
         if !self.config.disabled {
             window.set_cursor_style(self.config.handle.cursor(), &prepaint.hitbox);
         }
@@ -287,12 +321,15 @@ impl Element for ResizableHandleElement {
 
 fn paint_handle(
     bounds: Bounds<Pixels>,
-    handle: ResizeHandle,
+    config: &ResizableConfig,
     color: Rgba8,
     dragging: bool,
     window: &mut Window,
 ) {
+    let handle = config.handle;
     let thickness = if dragging { px(2.0) } else { px(1.0) };
+    #[allow(clippy::cast_possible_truncation)]
+    let inset = px(config.line_inset as f32);
     let visual = if handle.moves_horizontal() && handle.moves_vertical() {
         let side = if dragging { px(7.0) } else { px(5.0) };
         Bounds::new(
@@ -306,17 +343,17 @@ fn paint_handle(
         Bounds::new(
             point(
                 bounds.origin.x + (bounds.size.width - thickness) / 2.0,
-                bounds.origin.y + px(4.0),
+                bounds.origin.y + inset,
             ),
-            size(thickness, (bounds.size.height - px(8.0)).max(px(1.0))),
+            size(thickness, (bounds.size.height - inset * 2.0).max(px(1.0))),
         )
     } else {
         Bounds::new(
             point(
-                bounds.origin.x + px(4.0),
+                bounds.origin.x + inset,
                 bounds.origin.y + (bounds.size.height - thickness) / 2.0,
             ),
-            size((bounds.size.width - px(8.0)).max(px(1.0)), thickness),
+            size((bounds.size.width - inset * 2.0).max(px(1.0)), thickness),
         )
     };
     window.paint_quad(fill(visual, rgba(color.as_rgba_hex())));
@@ -337,8 +374,14 @@ fn register_pointer_listeners(
         if phase != DispatchPhase::Bubble
             || event.button != MouseButton::Left
             || down_config.disabled
-            || !hitbox.is_hovered(window)
         {
+            return;
+        }
+        let grip = down_config
+            .handle_ref
+            .as_ref()
+            .and_then(|reference| down_events.element_hitbox(reference, cx));
+        if !crate::handle_state::over_handle(&hitbox, grip, window) {
             return;
         }
         let Some(boundary) = down_events.element_bounds(&down_config.boundary_ref, cx) else {
@@ -406,12 +449,7 @@ fn register_pointer_listeners(
                     finish_config.constraints,
                     boundary_size,
                 );
-                finish_events.propose(
-                    "resize",
-                    resize_payload(rect, finish_config.handle),
-                    window,
-                    cx,
-                );
+                finish_events.propose("resize", resize_payload(rect), window, cx);
             };
         let cancel_config = down_config.clone();
         let cancel_events = down_events.clone();
@@ -643,16 +681,13 @@ fn rect_within_boundary(rect: ResizeRect, boundary: (f64, f64)) -> bool {
         && rect.bottom() <= boundary.1 + 0.5
 }
 
-fn resize_payload(rect: ResizeRect, handle: ResizeHandle) -> UiValue {
+/// The proposal is exactly the next `rect`, so a caller can store it as is.
+fn resize_payload(rect: ResizeRect) -> UiValue {
     UiValue::Map(BTreeMap::from([
         ("x".to_owned(), UiValue::Float(rect.x)),
         ("y".to_owned(), UiValue::Float(rect.y)),
         ("width".to_owned(), UiValue::Float(rect.width)),
         ("height".to_owned(), UiValue::Float(rect.height)),
-        (
-            "handle".to_owned(),
-            UiValue::String(handle.as_str().to_owned()),
-        ),
     ]))
 }
 
@@ -683,7 +718,7 @@ fn keyboard_resize_payload(config: &ResizableConfig, key: &str, shift: bool) -> 
         config.constraints,
         boundary,
     );
-    Some(resize_payload(rect, config.handle))
+    Some(resize_payload(rect))
 }
 
 impl PrimitiveHandler for ResizablePrimitiveHandler {
@@ -783,6 +818,17 @@ fn parse_config(
     let y_signal = required_optional_float_signal(props, "y_signal")?;
     let width_signal = required_optional_float_signal(props, "width_signal")?;
     let height_signal = required_optional_float_signal(props, "height_signal")?;
+    let state_signal = props.signal("state_signal").cloned();
+    if state_signal
+        .as_ref()
+        .is_some_and(|signal| signal.id().kind() != SignalKind::String)
+    {
+        return Err("resizable state_signal must be a string signal".to_owned());
+    }
+    let line_inset = props.number("line_inset").unwrap_or(4.0);
+    if !line_inset.is_finite() || line_inset < 0.0 {
+        return Err("resizable line_inset must be finite and non-negative".to_owned());
+    }
     let keyboard_step = props.number("keyboard_step").unwrap_or(8.0);
     if !keyboard_step.is_finite() || !(0.0..=512.0).contains(&keyboard_step) || keyboard_step == 0.0
     {
@@ -815,6 +861,10 @@ fn parse_config(
             .color("accent")
             .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
         focus,
+        line: props.boolean("line").unwrap_or(true),
+        line_inset,
+        state_signal,
+        handle_ref: props.element_ref("handle_ref").cloned(),
     })
 }
 
@@ -889,21 +939,6 @@ fn rect_schema() -> ValueSchema {
             "height".to_owned(),
             ObjectField::required(ValueSchema::positive_number()),
         ),
-        (
-            "handle".to_owned(),
-            ObjectField::required(ValueSchema::String {
-                allowed: vec![
-                    "n".to_owned(),
-                    "s".to_owned(),
-                    "e".to_owned(),
-                    "w".to_owned(),
-                    "ne".to_owned(),
-                    "nw".to_owned(),
-                    "se".to_owned(),
-                    "sw".to_owned(),
-                ],
-            }),
-        ),
     ]))
 }
 
@@ -922,99 +957,161 @@ fn bounded_dimension_schema() -> ValueSchema {
 ///
 /// Panics only if the static built-in primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_number = || ObjectField::optional(ValueSchema::optional(ValueSchema::number()));
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.resizable_handle").expect("static primitive ID"),
         export: "ResizableHandlePrimitive".to_owned(),
-        props: BTreeMap::from([
-            (
-                "handle".to_owned(),
-                ObjectField::required(ValueSchema::String {
-                    allowed: vec![
-                        "n".to_owned(),
-                        "s".to_owned(),
-                        "e".to_owned(),
-                        "w".to_owned(),
-                        "ne".to_owned(),
-                        "nw".to_owned(),
-                        "se".to_owned(),
-                        "sw".to_owned(),
-                    ],
+        props: {
+            let mut props = BTreeMap::from([
+                (
+                    "handle".to_owned(),
+                    ObjectField::required(ValueSchema::String {
+                        allowed: vec![
+                            "n".to_owned(),
+                            "s".to_owned(),
+                            "e".to_owned(),
+                            "w".to_owned(),
+                            "ne".to_owned(),
+                            "nw".to_owned(),
+                            "se".to_owned(),
+                            "sw".to_owned(),
+                        ],
+                    })
+                    .with_doc(
+                        "Physical edge (`n`, `s`, `e`, `w`) or corner (`ne`, `nw`, `se`, `sw`) this handle drags; it does not flip in RTL.",
+                    ),
+                ),
+                (
+                    "x".to_owned(),
+                    ObjectField::required(ValueSchema::number()).with_doc(
+                        "Controlled left edge of the rectangle in `boundary_ref`'s local logical pixels.",
+                    ),
+                ),
+                (
+                    "y".to_owned(),
+                    ObjectField::required(ValueSchema::number()).with_doc(
+                        "Controlled top edge of the rectangle in `boundary_ref`'s local logical pixels.",
+                    ),
+                ),
+                (
+                    "width".to_owned(),
+                    ObjectField::required(ValueSchema::positive_number())
+                        .with_doc("Controlled width of the rectangle in logical pixels."),
+                ),
+                (
+                    "height".to_owned(),
+                    ObjectField::required(ValueSchema::positive_number())
+                        .with_doc("Controlled height of the rectangle in logical pixels."),
+                ),
+                (
+                    "min_width".to_owned(),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Smallest width a resize may propose, in logical pixels; defaults to 24.",
+                    ),
+                ),
+                (
+                    "min_height".to_owned(),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Smallest height a resize may propose, in logical pixels; defaults to 24.",
+                    ),
+                ),
+                (
+                    "max_width".to_owned(),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Largest width a resize may propose, in logical pixels; defaults to 16,384.",
+                    ),
+                ),
+                (
+                    "max_height".to_owned(),
+                    ObjectField::optional(bounded_dimension_schema()).with_doc(
+                        "Largest height a resize may propose, in logical pixels; defaults to 16,384.",
+                    ),
+                ),
+                (
+                    "aspect_ratio".to_owned(),
+                    optional_number().with_doc(
+                        "Width-to-height ratio a resize keeps, or `()` to resize each axis freely.",
+                    ),
+                ),
+                (
+                    "contain".to_owned(),
+                    ObjectField::optional(ValueSchema::Bool)
+                        .with_default(UiValue::Bool(true))
+                        .with_doc(
+                            "Keeps the rectangle inside `boundary_ref`; presses are ignored while the controlled rectangle lies outside it.",
+                        ),
+                ),
+                (
+                    "keyboard_step".to_owned(),
+                    ObjectField::optional(ValueSchema::Number {
+                        min: None,
+                        max: Some(512.0),
+                        exclusive_min: Some(0.0),
+                        exclusive_max: None,
+                    })
+                    .with_doc(
+                        "Logical pixels one arrow-key press moves the dragged edge; Shift multiplies it by four; defaults to 8.",
+                    ),
+                ),
+                (
+                    "disabled".to_owned(),
+                    ObjectField::optional(ValueSchema::Bool)
+                        .with_default(UiValue::Bool(false))
+                        .with_doc(
+                            "Ignores presses and arrow keys and removes the handle from the tab order.",
+                        ),
+                ),
+                (
+                    "boundary_ref".to_owned(),
+                    ObjectField::required(ValueSchema::Ref).with_doc(
+                        "Ref to the container the rectangle is local to; resizing it during a drag cancels the drag.",
+                    ),
+                ),
+                (
+                    "on_resize".to_owned(),
+                    ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                        "Called with the proposed `{x, y, width, height}` when a drag ends or an arrow key is pressed.",
+                    ),
+                ),
+            ]);
+            props.extend(
+                [
+                    (
+                        "x_signal",
+                        "Optional-float signal that receives the previewed horizontal offset from `x` during a drag, or `()` when idle.",
+                    ),
+                    (
+                        "y_signal",
+                        "Optional-float signal that receives the previewed vertical offset from `y` during a drag, or `()` when idle.",
+                    ),
+                    (
+                        "width_signal",
+                        "Optional-float signal that receives the previewed width during a drag, or `()` when idle.",
+                    ),
+                    (
+                        "height_signal",
+                        "Optional-float signal that receives the previewed height during a drag, or `()` when idle.",
+                    ),
+                ]
+                .map(|(name, doc)| {
+                    (
+                        name.to_owned(),
+                        ObjectField::required(ValueSchema::Signal).with_doc(doc),
+                    )
                 }),
-            ),
-            ("x".to_owned(), ObjectField::required(ValueSchema::number())),
-            ("y".to_owned(), ObjectField::required(ValueSchema::number())),
-            (
-                "width".to_owned(),
-                ObjectField::required(ValueSchema::positive_number()),
-            ),
-            (
-                "height".to_owned(),
-                ObjectField::required(ValueSchema::positive_number()),
-            ),
-            (
-                "min_width".to_owned(),
-                ObjectField::optional(bounded_dimension_schema()),
-            ),
-            (
-                "min_height".to_owned(),
-                ObjectField::optional(bounded_dimension_schema()),
-            ),
-            (
-                "max_width".to_owned(),
-                ObjectField::optional(bounded_dimension_schema()),
-            ),
-            (
-                "max_height".to_owned(),
-                ObjectField::optional(bounded_dimension_schema()),
-            ),
-            ("aspect_ratio".to_owned(), optional_number()),
-            (
-                "contain".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
-            ),
-            (
-                "keyboard_step".to_owned(),
-                ObjectField::optional(ValueSchema::Number {
-                    min: None,
-                    max: Some(512.0),
-                    exclusive_min: Some(0.0),
-                    exclusive_max: None,
-                }),
-            ),
-            (
-                "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
-            ),
-            (
-                "boundary_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
-            ),
-            (
-                "x_signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
-            ),
-            (
-                "y_signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
-            ),
-            (
-                "width_signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
-            ),
-            (
-                "height_signal".to_owned(),
-                ObjectField::required(ValueSchema::Signal),
-            ),
-            (
-                "on_resize".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
-            ),
-        ]),
+            );
+            props.extend(crate::handle_state::decoration_props());
+            props
+        },
         events: BTreeMap::from([(
             "resize".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted once when a drag ends or an arrow key is pressed; the payload is the next rectangle, shaped like the controlled one."
+                        .to_owned(),
+                ),
                 payload: rect_schema(),
             },
         )]),

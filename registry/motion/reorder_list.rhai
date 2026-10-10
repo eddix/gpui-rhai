@@ -3,25 +3,29 @@
   "id": "motion/reorder_list",
   "export": "ReorderList",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
 */
-// Props: key and ordered keyed labels. State: controlled order. Emits no events.
+// ReorderList slides its rows to their new places when the caller reorders `items`.
+// State: controlled order. Emits no events.
 // Example: ReorderList(#{ key: "queue", items: [#{ key: "a", label: "A" }] })
 
 define_component(#{
     metadata: #{ id: "motion/reorder_list", "export": "ReorderList", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
     schema: #{ props: #{
-        key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+        key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+            doc: "Motion identity of the list; keep it stable so rows animate between renders." },
         items: #{ schema: #{ type: "array", max_items: 256, items: #{
             type: "object", allow_unknown: false, fields: #{
-                key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                    doc: "Row identity that its motion follows; unique within the list." },
+                label: #{ schema: #{ type: "string" }, required: true, sensitive: false, doc: "Row text." },
             }
-        } }, required: true, sensitive: false },
+        } }, required: true, sensitive: false,
+            doc: "Rows in display order; reorder the array and each row slides to its new place." },
     }, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "item"] },
     render: Fn("render_ReorderList")
 });

@@ -163,7 +163,9 @@ impl RangeInputEntity {
                     }
                     input.preview = input.value_at(gesture.current());
                     input.dragging = false;
-                    input.emit_change(input.preview, window, cx);
+                    if input.preview.to_bits() != input.controlled.to_bits() {
+                        input.emit_change(input.preview, window, cx);
+                    }
                     cx.notify();
                 });
             };
@@ -212,8 +214,11 @@ impl RangeInputEntity {
             delta.map(|delta| self.preview + delta)
         };
         if let Some(next) = next {
+            let before = self.preview;
             self.preview = normalize_value(next, self.min, self.max, self.step);
-            self.emit_change(self.preview, window, cx);
+            if self.preview.to_bits() != before.to_bits() {
+                self.emit_change(self.preview, window, cx);
+            }
             cx.stop_propagation();
             cx.notify();
         }
@@ -240,9 +245,10 @@ impl Render for RangeInputEntity {
             &self.theme,
             direction,
         );
-        let mut thumb = crate::renderer::apply_style_override(
-            div().absolute(),
+        let thumb = crate::renderer::apply_style_override_in(
+            div().flex_none(),
             &self.thumb_style,
+            &crate::renderer::part_interaction(self.focus.is_focused(window), self.disabled),
             &self.theme,
             direction,
         );
@@ -261,12 +267,13 @@ impl Render for RangeInputEntity {
                 } else {
                     fill.left(px(0.0)).w(relative(fraction_f32(ratio)))
                 };
-                thumb = thumb
+                let anchor = div()
+                    .absolute()
                     .left(relative(fraction_f32(visual_ratio)))
-                    .top(relative(0.5))
-                    .ml(px(-7.0))
-                    .mt(px(-7.0));
-                track.child(fill).child(thumb)
+                    .top(relative(0.5));
+                track
+                    .child(fill)
+                    .child(crate::renderer::centered_on_anchor(anchor, thumb))
             }
             RangeOrientation::Vertical => {
                 fill = fill
@@ -274,12 +281,13 @@ impl Render for RangeInputEntity {
                     .right(px(0.0))
                     .bottom(px(0.0))
                     .h(relative(fraction_f32(ratio)));
-                thumb = thumb
+                let anchor = div()
+                    .absolute()
                     .bottom(relative(fraction_f32(ratio)))
-                    .left(relative(0.5))
-                    .mb(px(-7.0))
-                    .ml(px(-7.0));
-                track.child(fill).child(thumb)
+                    .left(relative(0.5));
+                track
+                    .child(fill)
+                    .child(crate::renderer::centered_on_anchor(anchor, thumb))
             }
         };
         div()
@@ -432,8 +440,11 @@ impl PrimitiveHandler for RangeInputPrimitiveHandler {
                 },
                 _ => return Err("unsupported range input accessibility action".to_owned()),
             };
+            let before = input.preview;
             input.preview = normalize_value(requested, input.min, input.max, input.step);
-            input.emit_change(input.preview, window, cx);
+            if input.preview.to_bits() != before.to_bits() {
+                input.emit_change(input.preview, window, cx);
+            }
             cx.notify();
             Ok(())
         })
@@ -569,50 +580,74 @@ pub fn range_input_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "value".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "The selected value, snapped to `step` from `min`; controlled, so store each `change` payload or the thumb snaps back.",
+                ),
             ),
             (
                 "min".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Value at the start of the track: the leading edge, or the bottom when vertical; must be less than `max`.",
+                ),
             ),
             (
                 "max".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number())
+                    .with_doc("Value at the end of the track; must be greater than `min`."),
             ),
             (
                 "step".to_owned(),
-                ObjectField::required(ValueSchema::number()),
+                ObjectField::required(ValueSchema::number()).with_doc(
+                    "Positive increment the value snaps to, counted from `min`, and the arrow-key step; at most `max - min`. When `max - min` is not a multiple of it, the last step below `max` is the highest value.",
+                ),
             ),
             (
                 "orientation".to_owned(),
                 ObjectField::required(ValueSchema::String {
                     allowed: vec!["horizontal".to_owned(), "vertical".to_owned()],
-                }),
+                })
+                .with_doc(
+                    "`horizontal` runs the track in the reading direction (mirrored in RTL); `vertical` runs it bottom to top.",
+                ),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Blocks pointer and keyboard input, leaves the tab order and dims the control."),
             ),
             (
                 "track_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the track that holds the fill and thumb; give it its size here, such as full width by 4px.",
+                ),
             ),
             (
                 "fill_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the fill from `min` to the thumb; its length along the track is set natively from the value.",
+                ),
             ),
             (
                 "thumb_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the thumb centered on the value; its `focus` and `disabled` states apply.",
+                ),
             ),
             (
                 "on_change".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the snapped value when a drag, an arrow, Home or End key or an accessibility action changes it.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "change".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted when a drag ends or an arrow, Home or End key acts, if the value changes; the payload is the proposed snapped value."
+                        .to_owned(),
+                ),
                 payload: ValueSchema::number(),
             },
         )]),

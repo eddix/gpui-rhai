@@ -1,5 +1,7 @@
 // Tokyo Night Night semantic adaptation.
 // Upstream: https://github.com/folke/tokyonight.nvim (Apache-2.0)
+// Adjusted for the design-system palette constraints (docs/design/themes.md):
+// - selection tinted toward the accent so it differs from hover.
 fn theme() {
     #{
         family: "Tokyo Night",
@@ -23,40 +25,8 @@ fn theme() {
                 on_success: 0x1a1b26ff,
                 border: 0x3b4261ff,
                 focus_ring: 0x7dcfffff,
-                selection: 0x292e42ff,
+                selection: 0x333c58ff,
                 disabled: 0x565f89ff,
-            },
-            spacing: #{
-                xxs: #{ unit: "pixels", value: 2.0 },
-                xs: #{ unit: "pixels", value: 4.0 },
-                sm: #{ unit: "pixels", value: 8.0 },
-                md: #{ unit: "pixels", value: 12.0 },
-                lg: #{ unit: "pixels", value: 16.0 },
-            },
-            radii: #{
-                sm: #{ unit: "pixels", value: 0.0 },
-                md: #{ unit: "pixels", value: 0.0 },
-                lg: #{ unit: "pixels", value: 0.0 },
-            },
-            typography: #{
-                roles: #{
-                    caption: #{ size: #{ unit: "pixels", value: 11.0 },
-                        line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
-                    body_small: #{ size: #{ unit: "pixels", value: 12.0 },
-                        line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
-                    body: #{ size: #{ unit: "pixels", value: 13.0 },
-                        line_height: #{ unit: "pixels", value: 18.0 }, weight: 400 },
-                    subtitle: #{ size: #{ unit: "pixels", value: 14.0 },
-                        line_height: #{ unit: "pixels", value: 20.0 }, weight: 400 },
-                    title: #{ size: #{ unit: "pixels", value: 16.0 },
-                        line_height: #{ unit: "pixels", value: 22.0 }, weight: 700 },
-                    heading: #{ size: #{ unit: "pixels", value: 18.0 },
-                        line_height: #{ unit: "pixels", value: 24.0 }, weight: 700 },
-                    display: #{ size: #{ unit: "pixels", value: 24.0 },
-                        line_height: #{ unit: "pixels", value: 32.0 }, weight: 700 },
-                    display_large: #{ size: #{ unit: "pixels", value: 28.0 },
-                        line_height: #{ unit: "pixels", value: 36.0 }, weight: 700 },
-                },
             },
         },
     }

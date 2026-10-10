@@ -3,59 +3,28 @@
 Themes are editable Rhai source. Rust defines and validates the semantic token
 contract; components never refer to palette-specific color names.
 
-## Required initial tokens
+## Token layers
 
-Colors:
+Since 0.2.0 the runtime requires no fixed token set. A window's tokens come
+from three layers, lowest first: the token base (`ui/tokens.rhai`, copied from
+`registry/tokens.rhai`; Hosts pass it with `.token_base(...)`), the palette
+theme (`ui/theme.rhai`, `ui/themes/*.rhai`) and Host overrides
+(`ThemeTokenOverrides`). [Theme authoring](design/themes.md) specifies what
+each layer owns, the semantic colors, the derived tokens and the constraints a
+palette meets; the typography roles are in the
+[component contracts](design/atoms.md#3-typography).
 
-```text
-surface, surface_raised, surface_hover, text_primary, text_muted,
-accent, accent_hover, on_accent, danger, on_danger, warning, on_warning,
-success, on_success, border, focus_ring, selection, disabled
-```
+Each component declares the tokens and environment values it reads in its
+metadata. Preparation validates the active theme against the union of the
+mounted components, so an application that brings its own design (see
+`examples/byod_treemap`) needs neither the token base nor the official color
+names. Official registry components require the token base.
 
-The `on_*` colors are foregrounds for text and marks rendered on their matching
-filled semantic color. Themes choose them independently; deriving them from
-`text_primary` is not reliably accessible across light and dark palettes.
-
-Spacing uses `xxs`, `xs`, `sm`, `md`, and `lg`; `xxs` is the compact 2px
-structural gap/inset used by dense controls. Radii use `sm`, `md`, and `lg`.
-Official themes map all three radii to `0px`: rectangular controls and panels
-are square by default. Components give explicit half-size radii only to
-semantic circles such as Avatar, Radio, presence dots, and slider thumbs.
-
-The runtime derives `table.selection` as an opaque 28% accent / 72% surface mix
-unless the theme supplies an explicit namespaced override. Precompositing keeps
-the result stable inside virtualized paint layers. Table uses this stronger
-component selection surface without changing the global text/input `selection`
-role.
-
-Enabled Tabs use the derived `tabs.foreground` role on `surface_hover`. The
-runtime keeps `text_muted` when that pair reaches 4.5:1 and otherwise mixes
-toward `text_primary` only as far as needed. Themes may override the namespaced
-role explicitly.
-
-Validated custom namespace colors are preserved in ordinary, virtual, overlay,
-and native-primitive theme snapshots. Native extensions may therefore read a
-Host token such as `brand.tint` through `PrimitiveTheme::color` without adding
-the token name to gpui-rhai itself.
-
-Typography requires eight semantic roles:
-
-| Role | Size / line | Weight |
-|---|---:|---:|
-| `caption` | `11 / 16px` | 400 |
-| `body_small` | `12 / 16px` | 400 |
-| `body` | `13 / 18px` | 400 |
-| `subtitle` | `14 / 20px` | 400 |
-| `title` | `16 / 22px` | 700 |
-| `heading` | `18 / 24px` | 700 |
-| `display` | `24 / 32px` | 700 |
-| `display_large` | `28 / 36px` | 700 |
-
-The typography block may also select one shared `family` and ordered
-`fallbacks`. Built-in themes leave both unset so the host's platform font
-policy remains intact. Components call `style().typography("body")`; explicit
-font properties chained afterward override individual role values.
+Lengths can vary with an environment value: `by_env("density", #{ comfortable:
+px(32), compact: px(28) })`. The token base declares three axes, `density`,
+`size` and `corners`; values resolve during native rendering against the
+nearest `.env(#{ ... })` ancestor, so one subtree can be compact inside a
+comfortable window.
 
 Motion has semantic duration (`instant`, `fast`, `normal`, `slow`, `ambient`),
 easing (`standard`, `entrance`, `exit`, `emphasized`), spring (`responsive`,
@@ -69,8 +38,8 @@ the affected component sources and retargets from the current sample.
 `registry/themes/default_light.rhai` and `default_dark.rhai` demonstrate the
 serialized `ThemeVariant` shape.
 
-See [bundled themes](bundled-themes.md) for the installed catalog and source
-attribution.
+See [bundled themes](design/themes.md#6-bundled-themes) for the installed
+catalog and source attribution.
 
 ## Theme families
 
@@ -133,6 +102,10 @@ fn render_Palette(ctx, props) {
 }
 ```
 
+`ctx.theme_variants()` lists every loaded variant as the same maps, ordered by
+family and name, for a theme picker; the Gallery's title bar builds its theme
+Select from it and calls `set_theme` on change.
+
 Declare that effect in the formal component schema. Its start callback receives
 the same metadata as deps and restarts only when they change. Event-time reads
 are imperative, not subscriptions. Rust uses lightweight `ThemeVariantInfo` or
@@ -159,10 +132,11 @@ should use `theme_color("semantic_name")`.
 
 ## Token and component-style boundary
 
-Themes own values whose meaning crosses component boundaries: semantic colors,
-the standard spacing and radius scales, and typography. They must not grow one
-required token for every row height, calendar cell, or control-specific width.
-Adding a component must not force unrelated application themes to migrate.
+Tokens hold values whose meaning crosses component boundaries: semantic colors
+(palette), the spacing scale, shared metrics such as `metrics.control` and
+`metrics.row`, radius roles and typography (token base). They must not grow one
+token for every calendar cell or control-specific width. Adding a component
+must not force unrelated application themes to migrate.
 
 Source-owned `.rhai` components define their sound structural defaults.
 Application-wide visual changes belong in `ui/styles.rhai`, whose typed rules

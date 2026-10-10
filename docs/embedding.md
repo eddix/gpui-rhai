@@ -219,9 +219,19 @@ flip/clamp against window edges. `ScriptViewHost::set_overlay_viewport` may set
 an explicit absolute rectangle for an intentionally isolated domain.
 
 Every local Overlay, Tooltip, Layer, and focus ID is internally namespaced by
-`view_id`. Rhai callbacks continue to receive their original local IDs. Toast
-items remain owned and limited by their source component; only their generic
+`view_id` and by the component instance that declared it, so two instances of
+one component may use the same overlay key. Rhai callbacks continue to receive
+their original local IDs. An overlay's `parent` (`parent_overlay`) names the
+nearest enclosing overlay with that key, so a submenu or a Combobox inside a
+Popover finds its parent even when another component declared it. Toast items
+remain owned and limited by their source component; only their generic
 positioned Layer elements share the Host portal.
+
+`ScriptViewHost::overlay_placement(view_id, key)` returns the placement of the
+overlay a view rendered with that key in the last frame. When several instances
+declare the key it returns `OverlayLookupError::Ambiguous` with their instance
+paths; `overlay_placement_in(view_id, instance_path, key)` names one
+(`/View[main]/Filter[eu]/Select[region]/Combobox[region-combobox]`).
 
 Non-modal outside clicks dismiss the topmost Host overlay during native capture
 and continue to the clicked sibling control. Modal backdrops consume the click.
@@ -293,7 +303,29 @@ ScriptApplication::new(prepared)
 ```
 
 The callback receives the normal centered defaults, so it can change only the
-policies it owns or replace the options entirely.
+policies it owns or replace the options entirely. To draw the title bar in
+Rhai, hide the platform bar there and let the view's drag areas move the
+window:
+
+```rust
+ScriptApplication::new(prepared)
+    .window_options(|mut options, _cx| {
+        options.titlebar = Some(TitlebarOptions {
+            title: Some("Workbench".into()),
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(12.0), px(11.0))),
+        });
+        options.app_owns_titlebar_drag = true;
+        options
+    })
+    .window_drag_areas(true)
+    .run()?;
+```
+
+Rhai then renders `TitleBar(#{ ..., inset_start: 72, window_drag: true })`, or
+calls `.window_drag_area()` on its own node. Embedded hosts use
+`ScriptViewConfig::window_drag_areas(true)` for the view that draws the bar;
+every other view keeps drag areas inert.
 
 ## Key bindings
 
@@ -385,13 +417,14 @@ temporary page does not dispose it.
 
 ## Last-good trees and host-visible failures
 
-Rendering is transactional. When a callback, delivery, or rerender fails,
-`ScriptViewHandle::root` continues to return the last successfully committed
-tree so the host never observes a partial candidate. Embedding hosts must pair
-that snapshot with `ScriptViewHandle::last_error`: a non-`None` error means the
-tree is last-good fallback state rather than the result of the latest attempted
-update. Successful script work clears the error; native-only repaint and
-animation frames do not hide it.
+Rendering is transactional. When a callback, delivery, or rerender fails, the
+transaction rolls back and `ScriptViewHandle::root` continues to return the last
+successfully committed tree, so the host never observes a partial candidate.
+`ScriptViewHandle::last_error` reports the failure until the source reloads
+successfully or someone acknowledges it (the banner's Dismiss button, or
+`ScriptViewHandle::clear_error` from a host-owned error panel). Later successful
+events do not clear it: the view keeps working after a rollback, and an error
+that vanished on the next event would never be read.
 
 The built-in banner is monospace and selectable through the normal Host copy
 action. An application with its own error panel may opt out per mounted view:

@@ -1,8 +1,0 @@
-     Locking 732 packages to latest Rust 1.95.0 compatible versions
-      Adding wasm-bindgen v0.2.127 (available: v0.2.129)
-      Adding wasm-bindgen-macro v0.2.127 (available: v0.2.129)
-      Adding wasm-bindgen-macro-support v0.2.127 (available: v0.2.129)
-      Adding wasm-bindgen-shared v0.2.127 (available: v0.2.129)
-   Compiling gpui-rhai-018-fixture v0.1.0 (/tmp/gpui-rhai-018-cli-final.6HrsCz)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.36s
-embedded-empty-strict-prepare-ok

@@ -2,18 +2,20 @@
 {
   "id": "components/pagination",
   "export": "Pagination",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/icon", "components/select"],
   "capabilities": {},
-  "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"]
+  "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"],
+  "tokens": [
+    "selection", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+    "typography.body"
+  ],
+  "environment": ["size", "density"]
 }
 */
 // Pagination is a stateless Rhai composition for one-based controlled page state.
 //
-// Props: key, label, total_items, current_page, page_size/options, boundary/sibling counts,
-//        summary visibility, size, and atomic on_change.
-// Events: change({ current_page, page_size }).
 // Example: Pagination(#{ key: "users-pages", label: "Users pagination", total_items: 128, current_page: 3, page_size: 10, on_change: Fn("page_changed") })
 
 import "components/button" as button;
@@ -21,37 +23,54 @@ import "components/icon" as icon;
 import "components/select" as select;
 
 define_component(#{
-    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
+        tokens: [
+            "selection", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+            "typography.body"
+        ],
+        environment: ["size", "density"],
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            total_items: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
-            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable identity of this instance; must not be empty, and keys the per-page Select as `<key>-page-size`." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the navigation landmark." },
+            total_items: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false,
+                doc: "Number of items across all pages; the page count is this over `page_size` rounded up, at least 1." },
+            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "One-based page shown, at most the page count; the caller stores it from the `change` payload." },
+            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Items per page; the caller stores it from the `change` payload together with `current_page`." },
             page_size_options: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "integer", min: 1 } }, required: false, sensitive: false,
-                "default": #{ type: "array", value: [] } },
+                "default": #{ type: "array", value: [] },
+                doc: "Choices of the per-page Select, without duplicates and including `page_size`; empty hides the Select." },
             boundary_count: #{ schema: #{ type: "integer", min: 1, max: 3 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 1 } },
+                "default": #{ type: "integer", value: 1 }, doc: "Pages always shown at each end of the range." },
             sibling_count: #{ schema: #{ type: "integer", min: 0, max: 3 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 1 } },
+                "default": #{ type: "integer", value: 1 },
+                doc: "Pages shown on each side of the current page; a gap of more than one page becomes an ellipsis." },
             show_summary: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
-            size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: true },
+                doc: "Shows the item count and the current page out of the page count before the controls." },
+            size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                required: false, sensitive: false,
+                doc: "Size of the buttons and the per-page Select; `()` follows the `size` environment." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the next `#{ current_page, page_size }` when a page, Previous, Next or a page size is picked." },
         },
         state: #{ fields: #{
             page_size_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
             page_size_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         } },
         events: #{ change: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
-            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-        } } } },
+            current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Next one-based page; 1 after a page-size change." },
+            page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Page size to show; differs from the prop only after a page-size change." },
+        } }, doc: "Emitted when a page, Previous, Next or a page size is picked; the payload carries the next page and page size together." } },
         slots: #{},
         parts: ["root", "summary", "controls", "previous", "next", "page", "page_current", "ellipsis", "page_size", "page_size_label"],
     },
@@ -106,11 +125,15 @@ fn pagination_size(ctx, value) {
 
 fn page_button(ctx, page, current, page_size, size, callback) {
     let selected = page == current;
+    // The current page is a selection block, not a primary action.
+    let current_style = if selected {
+        style().background(theme_color("selection")).border_color(theme_color("selection"))
+    } else { style() };
     let node = button::Button(#{
-        text: `${page}`, size: size,
-        variant: if selected { "primary" } else { "outline" },
+        text: `${page}`, size: size, variant: "ghost",
         hoverable: !selected,
-    }).with_style(ctx.component_style(if selected { "page_current" } else { "page" }, style()));
+    }).with_style(ctx.component_style(if selected { "page_current" } else { "page" },
+        current_style.font_feature("tnum", 1)));
     if selected { node.tab_stop(false).accessibility_current("page") }
     else if callback == () { node }
     else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: page_size }) }
@@ -136,7 +159,7 @@ fn render_Pagination(ctx, props) {
     if options.len > 0 && !(props.page_size in options) {
         throw "Pagination page_size_options must contain page_size";
     }
-    let size = prop_or(props, "size", "md");
+    let size = prop_or(props, "size", ());
     let callback = if "on_change" in props { props.on_change } else { () };
     let controls = [];
     let previous_icon = icon::Icon(#{
@@ -146,7 +169,7 @@ fn render_Pagination(ctx, props) {
     });
     let previous = button::Button(#{
         text: ctx.t("pagination.previous"), prefix: previous_icon,
-        size: size, variant: "outline", disabled: props.current_page == 1,
+        size: size, variant: "ghost", disabled: props.current_page == 1,
     }).with_style(ctx.component_style("previous", style()));
     controls.push(if callback == () { previous } else {
         previous.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page - 1, page_size: props.page_size })
@@ -170,7 +193,7 @@ fn render_Pagination(ctx, props) {
     });
     let next = button::Button(#{
         text: ctx.t("pagination.next"), suffix: next_icon,
-        size: size, variant: "outline", disabled: props.current_page == pages,
+        size: size, variant: "ghost", disabled: props.current_page == pages,
     }).with_style(ctx.component_style("next", style()));
     controls.push(if callback == () { next } else {
         next.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page + 1, page_size: props.page_size })
@@ -180,10 +203,10 @@ fn render_Pagination(ctx, props) {
     if prop_or(props, "show_summary", true) {
         children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t("pagination.items")} · ${ctx.t("pagination.page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
             .with_style(ctx.component_style("summary", style()
-                .typography("body_small").text_color(theme_color("text_muted")))));
+                .typography("body").font_feature("tnum", 1).text_color(theme_color("text_muted")))));
     }
     children.push(row(controls).with_style(ctx.component_style("controls",
-        style().gap(theme_spacing("xs")).items_center())));
+        style().gap(theme_spacing("xxs")).items_center())));
     if options.len > 0 {
         let select_options = [];
         for option in options {
@@ -198,12 +221,12 @@ fn render_Pagination(ctx, props) {
                 on_change: Fn("pagination_size"), on_open_change: Fn("page_size_open"),
                 on_query_change: Fn("page_size_query")
             }).with_style(ctx.component_style("page_size", style()))
-        ]).with_style(style().gap(theme_spacing("xs")).items_center()
-            .typography("body_small")));
+        ]).with_style(style().gap(theme_spacing("sm")).items_center()
+            .text_color(theme_color("text_muted"))));
     }
     row(children).with_key(props.key)
         .with_style(ctx.component_style("root", style()
-            .items_center().justify_between().gap(theme_spacing("sm"))
+            .items_center().justify_between().gap(theme_length("space.group"))
             .typography("body")))
         .accessibility_role("navigation")
         .accessibility_label(props.label)

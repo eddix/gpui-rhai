@@ -154,6 +154,63 @@ Each divider is a focusable vertical separator. Logical Left/Right changes the
 width by 8px and emits the same committed event; RTL reverses physical pointer
 and arrow direction while preserving logical increase/decrease semantics.
 
+## Context menus
+
+`on_context_request` asks the caller for a row menu. Table draws none itself;
+show a `Menu` at the request's `anchor`:
+
+```rhai
+import "components/table" as table;
+import "components/menu" as menu;
+
+fn noop(ctx, value) {}
+fn selected(ctx, keys) { ctx.set_state("selected", keys); }
+fn asked(ctx, request) { ctx.set_state("request", request); }
+fn closed(ctx, open) { if !open { ctx.set_state("request", ()); } }
+fn chosen(ctx, value) {
+    let request = ctx.get_state("request");
+    ctx.set_state("request", ());
+    if value == "open" { ctx.dispatch_action("hosts.open", request.key); }
+}
+
+// State fields: `selected` (array of keys), `request` (the last request or ()).
+fn hosts(ctx, rows, columns) {
+    let request = ctx.get_state("request");
+    column([
+        table::Table(#{ key: "hosts", label: "Hosts", row_key: "id", height: 320,
+            rows: rows, columns: columns, selection_mode: "single",
+            selected_keys: ctx.get_state("selected"),
+            on_selection_change: Fn("selected"), on_context_request: Fn("asked") }),
+        menu::Menu(#{ key: "host-menu", label: "Host actions", trigger: row([]),
+            open: request != (), anchor: if request != () { request.anchor } else { () },
+            activate_on_trigger: false, active_value: "open",
+            items: [#{ kind: "item", value: "open", label: "Open" },
+                #{ kind: "item", value: "copy", label: "Copy host name" }],
+            on_action: Fn("chosen"), on_open_change: Fn("closed"),
+            on_active_change: Fn("noop") }),
+    ])
+}
+```
+
+The request is `#{ key, column, anchor, source }`:
+
+- A right press on a cell (`source: "pointer"`) selects the cell's row first,
+  through `selection_change`, unless the selection already holds it (a
+  multi-selection stays as it is); without a `selection_mode` nothing is
+  selected. `column` is the cell's column key and `anchor` the pointer, a
+  zero-size rectangle in window coordinates.
+- Shift+F10, or the menu key where the platform reports one, on a focused
+  Table (`source: "keyboard"`) asks for the current row: `column` is `()` and
+  `anchor` the row's bounds. With no current row `key` is `()` and the anchor
+  is the table.
+- Without a `selection_mode` there is no current row: `on_context_request`
+  alone makes the table one tab stop, and Shift+F10 or the menu key asks for
+  the whole table (`key` and `column` are `()`, `anchor` is the table).
+
+Both data sources behave the same; a NativeCollection finds the current row
+in native code. `ctx.virtual_item_bounds(collection_key, index)` is the
+event-time read Table uses for the row's bounds.
+
 Table exposes source parts for `root`, `header`, `header_cell`, `resize_handle`, `body`,
 `group_header`, `group_indicator`, `group_label`, `group_count`, `loading`, and
 `empty`. Lazy ordinary row/cell part overrides require the future structural

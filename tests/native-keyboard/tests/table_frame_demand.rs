@@ -46,6 +46,7 @@ fn view(ctx){column([
             EmbeddedScriptSource::new(modules),
             std::fs::read_to_string(format!("{REPO}/registry/themes/default_dark.rhai")).unwrap(),
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .asset_sources(
             [
                 "disclosure_down",
@@ -177,11 +178,11 @@ fn view(ctx){column([
             widths(cx, &view)
         );
         assert!(
-            (actual[1] - 149.0).abs() < 0.6,
+            (actual[1] - 150.0).abs() < 0.6,
             "percent column must use measured viewport"
         );
         assert!(
-            (actual[2] - 29.0).abs() < 0.6,
+            (actual[2] - 30.0).abs() < 0.6,
             "flex column must use measured viewport"
         );
     }
@@ -195,7 +196,7 @@ fn view(ctx){column([
             cx.update(|_| ());
             cx.run_until_parked();
         }
-        assert!((widths(cx, &view)[1] - 149.0).abs() < 0.6);
+        assert!((widths(cx, &view)[1] - 150.0).abs() < 0.6);
         window
             .update(cx, |_, window, cx| {
                 view.automate(
@@ -240,14 +241,14 @@ fn view(ctx){column([
         cx.run_until_parked();
         let control = widths(cx, &view);
         println!("explicit extra refresh driver control: {control:?}");
-        assert!((control[1] - 249.0).abs() < 0.6);
-        assert!((control[2] - 129.0).abs() < 0.6);
+        assert!((control[1] - 250.0).abs() < 0.6);
+        assert!((control[2] - 130.0).abs() < 0.6);
         assert!(
-            (actual[1] - 249.0).abs() < 0.6,
+            (actual[1] - 250.0).abs() < 0.6,
             "percent column must use new measured viewport"
         );
         assert!(
-            (actual[2] - 129.0).abs() < 0.6,
+            (actual[2] - 130.0).abs() < 0.6,
             "flex column must use new measured viewport"
         );
     }

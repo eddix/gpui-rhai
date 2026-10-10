@@ -2,46 +2,58 @@
 {
   "id": "components/code_viewer",
   "export": "CodeViewer",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["surface", "surface_raised"],
+  "environment": []
 }
 */
 // Native, virtualized, selectable read-only source document surface.
-// Props: key, source (string or NativeTextDocument), label, language/file hints,
-// wrapping, line-number policy, tab size, styles, and location activation.
-// Events: location_activate(#{ line, column }).
-// Parts: root, gutter, line, text, loading, error, search.
 // Example: CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai source", language: "rhai" })
 
 define_component(#{
-    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["surface", "surface_raised"],
+        environment: [] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable viewer identity; keeps scroll, selection and search across renders, also when an inline `source` changes." },
             source: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "document" }] },
-                required: true, sensitive: false },
+                required: true, sensitive: false,
+                doc: "Text to show: a string, or a Host-owned `NativeTextDocument` from `ctx.get_native_text_document`." },
             label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Code" } },
-            file_name: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            language: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                "default": #{ type: "string", value: "Code" },
+                doc: "Accessible name of the document surface." },
+            file_name: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "File name whose extension picks the syntax when `language` is not set." },
+            language: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Syntax to highlight, such as `\"rhai\"`; takes precedence over `file_name`, and unknown names show plain text." },
             show_line_numbers: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Shows 1-based line numbers in the gutter; with `false` the gutter stays, empty." },
             wrap: #{ schema: #{ type: "string", allowed: ["none", "viewport", "column"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "none" } },
+                sensitive: false, "default": #{ type: "string", value: "none" },
+                doc: "`none` scrolls long lines sideways, `viewport` wraps them at the viewer width, `column` at `wrap_column`." },
             wrap_column: #{ schema: #{ type: "integer", min: 20, max: 500 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 100 } },
+                "default": #{ type: "integer", value: 100 },
+                doc: "Display column at which lines wrap when `wrap` is `column`." },
             tab_size: #{ schema: #{ type: "integer", min: 1, max: 16 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 4 } },
-            on_location_activate: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "integer", value: 4 },
+                doc: "Columns between tab stops when tabs are expanded for display." },
+            on_location_activate: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with `#{ line, column }` when the text is double-clicked or Enter is pressed in it." },
         },
         state: #{ fields: #{} },
         events: #{ location_activate: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
-            line: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            column: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-        } } } },
+            line: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "One-based source line." },
+            column: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "One-based column, counted in characters from the start of the line." },
+        } }, doc: "Emitted on a double-click or Enter in the text; the payload is the one-based source location." } },
         slots: #{}, parts: ["root", "gutter", "line", "text", "loading", "error", "search"],
     },
     render: Fn("render_CodeViewer")
@@ -54,7 +66,7 @@ fn location_activate(ctx, payload) { ctx.emit("location_activate", payload); }
 fn render_CodeViewer(ctx, props) {
     let root_style = ctx.component_style("root", style()
         .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
-        .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));
+        .background(theme_color("surface")));
     gpui_rhai::CodeViewPrimitive(#{
         key: props.key,
         source: props.source,

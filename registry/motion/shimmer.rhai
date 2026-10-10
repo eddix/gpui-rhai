@@ -3,22 +3,26 @@
   "id": "motion/shimmer",
   "export": "Shimmer",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
 */
-// Props: key, width, and height. State: stateless. Emits no events.
+// Shimmer is a loading placeholder that a beam sweeps across in an endless loop.
+// State: stateless. Emits no events.
 // Example: Shimmer(#{ key: "loading", width: 220, height: 72 })
 
 define_component(#{
     metadata: #{ id: "motion/shimmer", "export": "Shimmer", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            width: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
-            height: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Motion identity of the shimmer; keep it stable so the sweep keeps its progress across renders." },
+            width: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Width of the placeholder in logical pixels; the beam is a third as wide." },
+            height: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "Height of the placeholder and the beam in logical pixels." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "beam"],
     },

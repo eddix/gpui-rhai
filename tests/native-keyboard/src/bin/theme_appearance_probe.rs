@@ -33,7 +33,7 @@ fn state_schema(){#{fields:#{init_count:#{schema:#{type:"integer"},"default":#{t
 fn init(ctx){ctx.set_state("init_count",ctx.get_state("init_count")+1);ctx.set_state("init_mode",ctx.theme_variant().mode);ctx.call_capability("app.probe","record",`init:${ctx.window_id()}:${ctx.get_state("init_count")}:${ctx.get_state("init_mode")}`);}
 fn increment(ctx,payload){ctx.set_state("marker",ctx.get_state("marker")+1);}
 fn open(ctx,payload){ctx.open_window("child","Owned appearance child",400,240,false);}
-define_component(#{metadata:#{id:"probe/theme_reader","export":"ThemeReader",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{"app.probe":"*"}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{starts:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},events:#{},slots:#{},parts:[],effects:["theme"]},render:Fn("reader")});
+define_component(#{metadata:#{id:"probe/theme_reader","export":"ThemeReader",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{"app.probe":"*"}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{starts:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},events:#{},slots:#{},parts:[],effects:["theme"]},render:Fn("reader")});
 fn start(ctx,deps){let starts=ctx.get_state("starts")+1;ctx.set_state("starts",starts);ctx.call_capability("app.probe","record",`effect:${ctx.window_id()}:${starts}:${deps.mode}`);}
 fn stop(ctx,deps){}
 fn reader(ctx,props){effect("theme",ctx.theme_variant(),Fn("start"),Fn("stop"));text(`effect:${ctx.get_state("starts")}`).accessibility_role("status")}
@@ -145,6 +145,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
             EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), SOURCE.into())])),
             include_str!("../../../../registry/themes/default_dark.rhai"),
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources([(
             "light".into(),
             include_str!("../../../../registry/themes/default_light.rhai").into(),

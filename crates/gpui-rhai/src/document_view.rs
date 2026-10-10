@@ -575,20 +575,15 @@ impl CodeViewerEntity {
             DocumentWrap::None => None,
             DocumentWrap::Column(columns) => Some(columns.max(1)),
             DocumentWrap::Viewport => self.viewport.map(|bounds| {
-                let gutter = if self.config.show_line_numbers {
-                    72.0
-                } else {
-                    16.0
-                };
-                let available = (f64::from(bounds.size.width) - gutter).max(20.0);
+                let line_digits = self.prepared.as_ref().map_or(1, |document| {
+                    document.lines().len().max(1).to_string().len()
+                });
                 let (text_size, _) = document_text_metrics(&self.config.text_style, &self.theme);
-                let character_width = (f64::from(text_size) * 0.604).max(1.0);
-                (available / character_width)
-                    .floor()
-                    .to_string()
-                    .parse()
-                    .unwrap_or(80)
-                    .max(1)
+                viewport_wrap_columns(
+                    f64::from(bounds.size.width),
+                    line_digits,
+                    f64::from(text_size),
+                )
             }),
         }
     }
@@ -1199,7 +1194,7 @@ fn code_line_element(
         disabled,
     };
     let (text_size, line_height) = document_text_metrics(&config.text_style, theme);
-    let gutter_width = (usize_f32(line_digits) * 8.0 + 20.0).max(42.0);
+    let gutter_width = code_gutter_width(line_digits);
     let gutter = crate::renderer::apply_style_override(
         div()
             .w(px(gutter_width))
@@ -1256,6 +1251,24 @@ fn code_line_element(
         theme.direction(),
     )
     .into_any_element()
+}
+
+/// Width of a `CodeViewer` row's gutter; it is drawn, empty, when line numbers are off.
+fn code_gutter_width(line_digits: usize) -> f32 {
+    (usize_f32(line_digits) * 8.0 + 20.0).max(42.0)
+}
+
+/// Columns that fit beside the gutter when lines wrap at the viewport width.
+fn viewport_wrap_columns(viewport_width: f64, line_digits: usize, text_size: f64) -> usize {
+    let reserved = (f64::from(code_gutter_width(line_digits)) + 16.0).max(72.0);
+    let available = (viewport_width - reserved).max(20.0);
+    let character_width = (text_size * 0.604).max(1.0);
+    (available / character_width)
+        .floor()
+        .to_string()
+        .parse()
+        .unwrap_or(80)
+        .max(1)
 }
 
 struct InteractiveDocumentText {
@@ -1827,6 +1840,7 @@ fn location_schema(include_side: bool) -> ValueSchema {
 /// # Panics
 ///
 /// Panics only if its compile-time primitive ID becomes invalid.
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.code_viewer").expect("static primitive ID"),
@@ -1837,71 +1851,105 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                 ObjectField::required(ValueSchema::one_of([
                     ValueSchema::string(),
                     ValueSchema::Document,
-                ])),
+                ]))
+                .with_doc(
+                    "The document: an inline string or a `NativeTextDocument` from `ctx.get_native_text_document`.",
+                ),
             ),
             (
                 "label".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Human-readable document name; the native view does not show it, so also pass it to `accessibility_label`.",
+                ),
             ),
             (
                 "file_name".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc(
+                    "File name, such as `service.toml`, whose extension picks the syntax when `language` does not.",
+                ),
             ),
             (
                 "language".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc(
+                    "Syntax name or extension, such as `rust`, ahead of `file_name`; unknown ones fall back to it, then plain text.",
+                ),
             ),
             (
                 "show_line_numbers".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(true))
+                    .with_doc(
+                        "Shows 1-based line numbers in the gutter on the first row of each line; with `false` the gutter stays, empty.",
+                    ),
             ),
             (
                 "wrap".to_owned(),
                 ObjectField::optional(ValueSchema::enumeration(["none", "viewport", "column"]))
-                    .with_default(UiValue::String("none".to_owned())),
+                    .with_default(UiValue::String("none".to_owned()))
+                    .with_doc(
+                        "`none` keeps each line on one row, `viewport` wraps at the visible width, `column` at `wrap_column` characters.",
+                    ),
             ),
             (
                 "wrap_column".to_owned(),
                 ObjectField::optional(ValueSchema::bounded_integer(Some(20), Some(500)))
-                    .with_default(UiValue::Integer(100)),
+                    .with_default(UiValue::Integer(100))
+                    .with_doc("Character column where lines wrap when `wrap` is `column`; ignored otherwise."),
             ),
             (
                 "tab_size".to_owned(),
                 ObjectField::optional(ValueSchema::bounded_integer(Some(1), Some(16)))
-                    .with_default(UiValue::Integer(4)),
+                    .with_default(UiValue::Integer(4))
+                    .with_doc("Columns between tab stops; a tab expands to the next stop for display and wrapping."),
             ),
             (
                 "gutter_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of each row's line-number gutter; its font defaults to the platform monospace family.",
+                ),
             ),
             (
                 "line_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style)
+                    .with_doc("Style of each whole row, gutter and text together."),
             ),
             (
                 "text_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of each row's text; its `typography`, font size and line height set the row height.",
+                ),
             ),
             (
                 "loading_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the placeholder shown while the document is first prepared in the background.",
+                ),
             ),
             (
                 "error_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style).with_doc(
+                    "Style of the message that replaces the view when preparing fails, for example past a size limit.",
+                ),
             ),
             (
                 "search_style".to_owned(),
-                ObjectField::required(ValueSchema::Style),
+                ObjectField::required(ValueSchema::Style)
+                    .with_doc("Style of the find bar that Cmd-F opens."),
             ),
             (
                 "on_location_activate".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the 1-based `#{ line, column }` when the text is double-clicked or Enter is pressed.",
+                ),
             ),
         ]),
         events: BTreeMap::from([(
             "location_activate".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted on a double-click in the text or Enter at the selection; the payload is the 1-based `line` and `column`."
+                        .to_owned(),
+                ),
                 payload: location_schema(false),
             },
         )]),
@@ -3800,19 +3848,28 @@ fn optional_document_fields(prefix: &str) -> Vec<(String, ObjectField)> {
             ObjectField::required(ValueSchema::one_of([
                 ValueSchema::string(),
                 ValueSchema::Document,
-            ])),
+            ]))
+            .with_doc(format!(
+                "The {prefix} document: an inline string or a `NativeTextDocument`; left and right are neutral, not old and new."
+            )),
         ),
         (
             format!("{prefix}_label"),
-            ObjectField::required(ValueSchema::string()),
+            ObjectField::required(ValueSchema::string()).with_doc(format!(
+                "Name of the {prefix} side in the header, and its file name in a unified patch copied with Option-Cmd-C."
+            )),
         ),
         (
             format!("{prefix}_file_name"),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc(format!(
+                "File name whose extension picks the {prefix} side's syntax when `{prefix}_language` does not."
+            )),
         ),
         (
             format!("{prefix}_language"),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc(format!(
+                "Syntax name or extension for the {prefix} side, ahead of `{prefix}_file_name`; unknown ones fall back to it."
+            )),
         ),
     ]
 }
@@ -3832,7 +3889,10 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         (
             "mode".to_owned(),
             ObjectField::optional(ValueSchema::enumeration(["unified", "split"]))
-                .with_default(UiValue::String("unified".to_owned())),
+                .with_default(UiValue::String("unified".to_owned()))
+                .with_doc(
+                    "`unified` interleaves both sides in one column; `split` shows left and right side by side on aligned rows.",
+                ),
         ),
         (
             "whitespace".to_owned(),
@@ -3841,7 +3901,10 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                 "ignore_changes",
                 "ignore_all",
             ]))
-            .with_default(UiValue::String("exact".to_owned())),
+            .with_default(UiValue::String("exact".to_owned()))
+            .with_doc(
+                "`exact` compares lines as they are, `ignore_changes` collapses and trims whitespace, `ignore_all` drops it all; a unified patch copied with Option-Cmd-C always compares exactly.",
+            ),
         ),
         (
             "context_lines".to_owned(),
@@ -3849,66 +3912,93 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                 ValueSchema::bounded_integer(Some(0), Some(100)),
                 ValueSchema::enumeration(["all"]),
             ]))
-            .with_default(UiValue::Integer(3)),
+            .with_default(UiValue::Integer(3))
+            .with_doc(
+                "Unchanged lines kept around each change; longer equal runs fold into an expandable row, and `all` never folds.",
+            ),
         ),
         (
             "show_line_numbers".to_owned(),
-            ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+            ObjectField::optional(ValueSchema::Bool)
+                .with_default(UiValue::Bool(true))
+                .with_doc("Shows each side's 1-based line numbers in the gutter."),
         ),
         (
             "wrap".to_owned(),
             ObjectField::optional(ValueSchema::enumeration(["none", "viewport", "column"]))
-                .with_default(UiValue::String("none".to_owned())),
+                .with_default(UiValue::String("none".to_owned()))
+                .with_doc(
+                    "`none` keeps each line on one row, `viewport` wraps at the pane width, `column` at `wrap_column` characters.",
+                ),
         ),
         (
             "wrap_column".to_owned(),
             ObjectField::optional(ValueSchema::bounded_integer(Some(20), Some(500)))
-                .with_default(UiValue::Integer(100)),
+                .with_default(UiValue::Integer(100))
+                .with_doc("Character column where lines wrap when `wrap` is `column`; ignored otherwise."),
         ),
         (
             "tab_size".to_owned(),
             ObjectField::optional(ValueSchema::bounded_integer(Some(1), Some(16)))
-                .with_default(UiValue::Integer(4)),
+                .with_default(UiValue::Integer(4))
+                .with_doc("Columns between tab stops; a tab expands to the next stop for display and wrapping."),
         ),
         (
             "header_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style)
+                .with_doc("Style of the header bar that shows `left_label` and `right_label`."),
         ),
         (
             "gutter_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style).with_doc(
+                "Style of each row's line-number gutter; its font defaults to the platform monospace family.",
+            ),
         ),
         (
             "line_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style)
+                .with_doc("Style of each whole diff row, gutters and text together."),
         ),
         (
             "text_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style).with_doc(
+                "Style of each row's text; its `typography`, font size and line height set the row height.",
+            ),
         ),
         (
             "fold_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style).with_doc(
+                "Style of the row that stands for folded unchanged lines; clicking it expands them.",
+            ),
         ),
         (
             "loading_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style).with_doc(
+                "Style of the placeholder shown while the comparison is first calculated in the background.",
+            ),
         ),
         (
             "error_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style).with_doc(
+                "Style of the message that replaces the view when preparing fails, for example past a size limit.",
+            ),
         ),
         (
             "search_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style)
+                .with_doc("Style of the find bar that Cmd-F opens; it searches both documents."),
         ),
         (
             "status_style".to_owned(),
-            ObjectField::required(ValueSchema::Style),
+            ObjectField::required(ValueSchema::Style).with_doc(
+                "Style of the bottom status bar that shows the current change and the change-navigation keys.",
+            ),
         ),
         (
             "on_location_activate".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                "Called with the 1-based `#{ side, line, column }` when the text is double-clicked or Enter is pressed.",
+            ),
         ),
     ]);
     PrimitiveDescriptor {
@@ -3918,6 +4008,10 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "location_activate".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted on a double-click in either pane or Enter at the selection; the payload is the `side` and 1-based position."
+                        .to_owned(),
+                ),
                 payload: location_schema(true),
             },
         )]),
@@ -3952,6 +4046,20 @@ mod tests {
             matches!(source, ValueSchema::OneOf { variants } if variants.contains(&ValueSchema::Document))
         );
         assert!(descriptor.lifecycle);
+    }
+
+    #[test]
+    fn viewport_wrapping_leaves_room_for_the_drawn_gutter() {
+        let text_size = 12.0;
+        let character_width = text_size * 0.604;
+        for line_digits in [1, 3, 7] {
+            let columns = viewport_wrap_columns(400.0, line_digits, text_size);
+            let used = f64::from(code_gutter_width(line_digits));
+            assert!(
+                f64::from(usize_f32(columns)) * character_width + used <= 400.0,
+                "{line_digits} digits wrap at {columns} columns"
+            );
+        }
     }
 
     #[test]

@@ -2,44 +2,64 @@
 {
   "id": "components/tooltip",
   "export": "Tooltip",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg", "typography.caption",
+    "typography.label"
+  ],
+  "environment": ["corners"]
 }
 */
 // Native delayed tooltip using the per-window overlay scheduler.
-// Props: key, label, trigger/content slots, placement, show/hide delay, disabled.
-// Parts: root, trigger, content.
-// State/events: stateless delayed overlay; emits no semantic events.
+//
+// State: stateless; the overlay scheduler owns the delay.
 // Example: Tooltip(#{ key: "help", label: "Help", trigger: text("?"), content: text("Help") })
 
 define_component(#{
     metadata: #{
-        id: "components/tooltip", "export": "Tooltip", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
+        id: "components/tooltip", "export": "Tooltip", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [
+            "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg",
+            "typography.caption", "typography.label"
+        ],
+        environment: ["corners"],
     },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the tooltip, usually the words of `content`." },
+            trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Element whose hover shows the tooltip after `show_delay_ms`." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Hint shown in the tooltip, in inverted colors and at most 320 px wide." },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "top" } },
+                "default": #{ type: "string", value: "top" },
+                doc: "Preferred side of the trigger the tooltip appears on." },
             show_delay_ms: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 500 } },
+                "default": #{ type: "integer", value: 500 },
+                doc: "Hover time before the tooltip appears, in milliseconds." },
             hide_delay_ms: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 100 } },
+                "default": #{ type: "integer", value: 100 },
+                doc: "Time the tooltip stays after the pointer leaves the trigger and the tooltip, in milliseconds." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Renders the trigger alone, with no tooltip." },
+            action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Registered action whose bound shortcut is shown after the hint; `shortcut` takes precedence." },
+            shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Key legend shown after the hint, written like `cmd-d` and formatted for the platform." },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
-            trigger: #{ required: true, multiple: false },
-            content: #{ required: true, multiple: false },
+            trigger: #{ required: true, multiple: false, doc: "Element whose hover shows the tooltip." },
+            content: #{ required: true, multiple: false, doc: "Hint shown in the tooltip." },
         },
-        parts: ["root", "trigger", "content"],
+        parts: ["root", "trigger", "content", "shortcut"],
     },
     render: Fn("render_Tooltip")
 });
@@ -49,9 +69,21 @@ fn render_Tooltip(ctx, props) {
     if "disabled" in props && props.disabled { return props.trigger; }
     let show_delay = if "show_delay_ms" in props && props.show_delay_ms > 0 { props.show_delay_ms } else { 0 };
     let hide_delay = if "hide_delay_ms" in props && props.hide_delay_ms > 0 { props.hide_delay_ms } else { 0 };
-    let content = row([props.content]).with_style(ctx.component_style("content",
-        style().max_width(px(320)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xs"))
-            .radius(theme_radius("sm")).typography("body_small")
+    let shortcut = if "shortcut" in props && props.shortcut != () { key_shortcut(props.shortcut).label }
+        else if "action" in props && props.action != () {
+            let bound = ctx.action_shortcut(props.action);
+            if bound == () { "" } else { bound.label }
+        } else { "" };
+    let children = [props.content];
+    if shortcut != "" {
+        children.push(text(shortcut).with_style(ctx.component_style("shortcut",
+            style().typography("label").opacity(0.7))));
+    }
+    // Tooltips invert ink and paper; a key legend follows the hint.
+    let content = row(children).with_style(ctx.component_style("content",
+        style().max_width(px(320)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xxs"))
+            .gap(theme_spacing("sm")).items_center()
+            .radius(theme_radius("lg")).typography("caption")
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
     )).accessibility_role("tooltip").accessibility_label(props.label);

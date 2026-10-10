@@ -52,10 +52,10 @@
     "owned_test_processes_remaining": 0,
     "preexisting_test_process_preserved": true
   },
-  "evidence_root": "../../../../docs/audits/2026-10-04-table-local-fixes/evidence/table-native",
+  "evidence_root": "https://github.com/eddix/gpui-rhai/tree/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/audits/2026-10-04-table-local-fixes/evidence/table-native",
   "independent_review": {
     "status": "approve_five_table_visual_baselines_only",
-    "report": "../../../../docs/audits/2026-10-04-table-local-fixes/visual-review.zh-CN.md"
+    "report": "https://github.com/eddix/gpui-rhai/blob/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/audits/2026-10-04-table-local-fixes/visual-review.zh-CN.md"
   },
   "cases": [
     {

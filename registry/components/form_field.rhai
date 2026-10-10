@@ -2,37 +2,47 @@
 {
   "id": "components/form_field",
   "export": "FormField",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/label"],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["text_muted", "text.danger", "spacing.xs", "typography.caption"],
+  "environment": []
 }
 */
 // Associates label, control, description, required state, and error content.
-// Props: stable id, label, control slot, description, error, required. Parts mirror these fields.
-// State/events: stateless association wrapper; emits no events.
+//
+// State: stateless association wrapper.
 // Example: FormField(#{ id: "name", label: "Name", control: input_node, required: true })
 
 import "components/label" as label_component;
 
 define_component(#{
     metadata: #{
-        id: "components/form_field", "export": "FormField", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        id: "components/form_field", "export": "FormField", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/label"], capabilities: #{},
+        tokens: ["text_muted", "text.danger", "spacing.xs", "typography.caption"],
+        environment: [],
     },
     schema: #{
         props: #{
-            id: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            control: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-            error: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            id: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable id of the field; it keys the root and prefixes the accessibility ids `<id>-label`, `<id>-description` and `<id>-error`." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Text of the `Label` above the control; it names the control and the group." },
+            control: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "The control the field describes; it is labelled by the label and described by the error or description." },
+            description: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Helper text in caption type under the control; it describes the control while there is no `error`." },
+            error: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                doc: "Message in `text.danger` under the control, announced as an alert; also set the control's own `error` for its frame." },
             required: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Adds a `text.danger` asterisk to the label and marks the control required for assistive tech." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ control: #{ required: true, multiple: false } },
+        slots: #{ control: #{ required: true, multiple: false, doc: "The control under the label." } },
         parts: ["root", "label", "control", "description", "error"],
     },
     render: Fn("render_FormField")
@@ -62,14 +72,14 @@ fn render_FormField(ctx, props) {
     if description != () {
         children.push(text(description)
             .with_style(ctx.component_style("description",
-                style().typography("body_small")
+                style().typography("caption")
                     .text_color(theme_color("text_muted"))))
             .accessibility_id(description_id));
     }
     if error != () {
         children.push(text(error).with_style(ctx.component_style("error",
-            style().typography("body_small")
-                .text_color(theme_color("danger"))))
+            style().typography("caption")
+                .text_color(theme_color("text.danger"))))
             .accessibility_id(error_id).accessibility_role("alert"));
     }
     column(children).with_key(props.id)

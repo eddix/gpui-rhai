@@ -3,25 +3,30 @@
   "id": "motion/marquee",
   "export": "Marquee",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
 */
-// Props: key, content node, and pixel distance. State: stateless. Emits no events.
+// Marquee scrolls its content horizontally in a loop.
+// State: stateless. Emits no events.
 // Example: Marquee(#{ key: "news", content: text("News"), distance: 320 })
 
 define_component(#{
     metadata: #{ id: "motion/marquee", "export": "Marquee", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            distance: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Motion identity of the marquee; keep it stable so the loop keeps its progress across renders." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Node that scrolls inside the clipped root." },
+            distance: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
+                doc: "How far the content moves left in one loop, in logical pixels; a loop lasts six `ambient` motion durations." },
         },
         state: #{ fields: #{} }, events: #{},
-        slots: #{ content: #{ required: true, multiple: false } }, parts: ["root", "content"],
+        slots: #{ content: #{ required: true, multiple: false,
+            doc: "The scrolling content, passed as the `content` prop." } }, parts: ["root", "content"],
     },
     render: Fn("render_Marquee")
 });

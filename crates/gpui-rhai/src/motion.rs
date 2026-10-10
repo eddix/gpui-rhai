@@ -2543,6 +2543,18 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
     Ok(values)
 }
 
+/// A node's shared-layout group as one window-wide name: the group scoped by
+/// the component instance that declared it, when it has one.
+pub(crate) fn scoped_shared_layout_group(node: &UiNode) -> Option<String> {
+    let crate::UiValue::String(group) = node.attributes().get("shared_layout_group")? else {
+        return None;
+    };
+    Some(match node.attributes().get("shared_layout_scope") {
+        Some(crate::UiValue::String(scope)) => format!("{scope}::{group}"),
+        _ => group.clone(),
+    })
+}
+
 fn validate_shared_layout_ids(root: &UiNode) -> Result<(), MotionError> {
     shared_layout_ids(root).map(|_| ())
 }
@@ -2558,9 +2570,10 @@ pub(crate) fn shared_layout_ids(root: &UiNode) -> Result<BTreeSet<(String, Strin
                         "shared layout group and id must be non-empty".to_owned(),
                     ));
                 }
-                if !seen.insert((group.clone(), id.clone())) {
+                let scoped = scoped_shared_layout_group(node).unwrap_or_else(|| group.clone());
+                if !seen.insert((scoped.clone(), id.clone())) {
                     return Err(MotionError::DuplicateSharedLayout {
-                        group: group.clone(),
+                        group: scoped,
                         id: id.clone(),
                     });
                 }
@@ -3662,6 +3675,7 @@ pub(crate) fn register_motion_api(engine: &mut Engine) {
     FuncRegistration::new("motion_inertia")
         .in_global_namespace()
         .register_into_engine(engine, motion_inertia_from_script);
+    register_mixed_number_motion_api(engine);
     FuncRegistration::new("motion_path_follow")
         .in_global_namespace()
         .register_into_engine(engine, motion_path_follow_from_script);
@@ -3717,6 +3731,72 @@ pub(crate) fn register_motion_api(engine: &mut Engine) {
     FuncRegistration::new("motion_timeline")
         .in_global_namespace()
         .register_into_engine(engine, motion_timeline_from_script);
+}
+
+/// Overloads that take `from`, `to` and `velocity` as an integer or a float,
+/// so `motion_transition("opacity", 0, 1, #{})` works; an all-float call still
+/// resolves to the typed function.
+fn register_mixed_number_motion_api(engine: &mut Engine) {
+    FuncRegistration::new("motion_transition")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |property: &str,
+             from: Dynamic,
+             to: Dynamic,
+             config: Map|
+             -> Result<MotionSource, Box<EvalAltResult>> {
+                motion_transition_from_script(
+                    property,
+                    motion_number("from", &from)?,
+                    motion_number("to", &to)?,
+                    config,
+                )
+            },
+        );
+    FuncRegistration::new("motion_spring")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |property: &str,
+             from: Dynamic,
+             to: Dynamic,
+             config: Map|
+             -> Result<MotionSource, Box<EvalAltResult>> {
+                motion_spring_from_script(
+                    property,
+                    motion_number("from", &from)?,
+                    motion_number("to", &to)?,
+                    config,
+                )
+            },
+        );
+    FuncRegistration::new("motion_inertia")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |property: &str,
+             from: Dynamic,
+             velocity: Dynamic,
+             config: Map|
+             -> Result<MotionSource, Box<EvalAltResult>> {
+                motion_inertia_from_script(
+                    property,
+                    motion_number("from", &from)?,
+                    motion_number("velocity", &velocity)?,
+                    config,
+                )
+            },
+        );
+}
+
+fn motion_number(name: &str, value: &Dynamic) -> Result<f64, Box<EvalAltResult>> {
+    crate::value::script_number(value).ok_or_else(|| {
+        script_boxed_error(format!(
+            "motion `{name}` must be a number, got {}",
+            value.type_name()
+        ))
+    })
 }
 
 fn motion_text_spans_from_script(text: &str, mut config: Map) -> Result<Array, Box<EvalAltResult>> {
@@ -4237,6 +4317,44 @@ mod tests {
         };
         spec.iterations = None;
         MotionSource::Transition(spec)
+    }
+
+    #[test]
+    fn source_constructors_take_integer_and_mixed_numbers() {
+        let runtime = crate::RuntimeEngine::new();
+        let sources = runtime
+            .engine()
+            .eval::<Array>(
+                r#"[
+                    motion_transition("opacity", 0, 1, #{}),
+                    motion_spring("translate_y", 12, 0.5, #{}),
+                    motion_inertia("translate_x", 0.0, 40, #{}),
+                ]"#,
+            )
+            .unwrap()
+            .into_iter()
+            .map(Dynamic::cast::<MotionSource>)
+            .collect::<Vec<_>>();
+        let [
+            MotionSource::Transition(transition),
+            MotionSource::Spring(spring),
+            MotionSource::Inertia(inertia),
+        ] = sources.as_slice()
+        else {
+            panic!("unexpected sources: {sources:?}");
+        };
+        assert!((transition.to - 1.0).abs() < f64::EPSILON);
+        assert!((spring.from - 12.0).abs() < f64::EPSILON);
+        assert!((spring.to - 0.5).abs() < f64::EPSILON);
+        assert!((inertia.velocity - 40.0).abs() < f64::EPSILON);
+        let error = runtime
+            .engine()
+            .eval::<MotionSource>(r#"motion_transition("opacity", "0", 1, #{})"#)
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("motion `from` must be a number"),
+            "{error}"
+        );
     }
 
     #[test]

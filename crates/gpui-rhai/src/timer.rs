@@ -115,6 +115,8 @@ impl From<&TimerDescriptor> for TimerSignature {
 #[derive(Clone, Debug)]
 struct TimerEntry {
     descriptor: TimerDescriptor,
+    /// The root origin of the invocation that scheduled the timer.
+    started_by: crate::InvocationOrigin,
     signature: TimerSignature,
     deadline: Instant,
     remaining: Option<Duration>,
@@ -136,13 +138,14 @@ pub struct TimerSnapshot {
 }
 
 impl TimerEntry {
-    fn new(descriptor: TimerDescriptor, now: Instant) -> Self {
+    fn new(descriptor: TimerDescriptor, now: Instant, started_by: crate::InvocationOrigin) -> Self {
         let signature = TimerSignature::from(&descriptor);
         let declaration_paused = descriptor.paused;
         let remaining = descriptor.paused.then_some(descriptor.delay);
         Self {
             deadline: now + descriptor.delay,
             descriptor,
+            started_by,
             signature,
             remaining,
             declaration_paused,
@@ -175,12 +178,19 @@ impl TimerEntry {
 pub struct TimerRegistry {
     entries: BTreeMap<TimerId, TimerEntry>,
     completed: BTreeMap<TimerId, TimerSignature>,
+    /// The root origin of the current invocation, recorded on timers it
+    /// schedules.
+    origin_root: crate::InvocationOrigin,
 }
 
 impl TimerRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn set_origin_root(&mut self, origin: &crate::InvocationOrigin) {
+        self.origin_root = origin.root().clone();
     }
 
     /// Reconcile one component subtree's timer declarations atomically.
@@ -202,9 +212,12 @@ impl TimerRegistry {
             self.completed.remove(&id);
             match self.entries.get_mut(&id) {
                 Some(entry) if entry.signature == signature => entry.synchronize(descriptor, now),
-                Some(entry) => *entry = TimerEntry::new(descriptor, now),
+                Some(entry) => {
+                    *entry = TimerEntry::new(descriptor, now, self.origin_root.clone());
+                }
                 None => {
-                    self.entries.insert(id, TimerEntry::new(descriptor, now));
+                    let entry = TimerEntry::new(descriptor, now, self.origin_root.clone());
+                    self.entries.insert(id, entry);
                 }
             }
         }
@@ -257,6 +270,9 @@ impl TimerRegistry {
                     callback: entry.descriptor.callback,
                     payload: entry.descriptor.payload,
                     scope: AsyncScope::Component(entry.descriptor.id.component),
+                    origin: crate::InvocationOrigin::Timer {
+                        started_by: Box::new(entry.started_by),
+                    },
                 })
             })
             .collect()

@@ -125,6 +125,12 @@ bundled_components!(
         "../components/selection_area.rhai"
     ),
     (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
+    (LIST_SOURCE, "components/list", "../components/list.rhai"),
+    (
+        TAB_BAR_SOURCE,
+        "components/tab_bar",
+        "../components/tab_bar.rhai"
+    ),
     (
         PAGINATION_SOURCE,
         "components/pagination",
@@ -427,6 +433,103 @@ bundled_assets!(
     (HELP_SVG, "icons/help.svg", "../assets/icons/help.svg"),
 );
 
+/// Visually neutral layout components (`layouts/*`).
+pub const BUNDLED_LAYOUT_SOURCES_BY_ID: &[(&str, &str)] = &[
+    ("layouts/stack", include_str!("../layouts/stack.rhai")),
+    ("layouts/inline", include_str!("../layouts/inline.rhai")),
+    ("layouts/toolbar", include_str!("../layouts/toolbar.rhai")),
+    ("layouts/region", include_str!("../layouts/region.rhai")),
+];
+
+/// Opinionated composite components (`patterns/*`).
+pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
+    ("patterns/section", include_str!("../patterns/section.rhai")),
+    (
+        "patterns/description_list",
+        include_str!("../patterns/description_list.rhai"),
+    ),
+    ("patterns/stat", include_str!("../patterns/stat.rhai")),
+    (
+        "patterns/form_layout",
+        include_str!("../patterns/form_layout.rhai"),
+    ),
+    (
+        "patterns/inline_state",
+        include_str!("../patterns/inline_state.rhai"),
+    ),
+    (
+        "patterns/data_view",
+        include_str!("../patterns/data_view.rhai"),
+    ),
+    (
+        "patterns/list_detail",
+        include_str!("../patterns/list_detail.rhai"),
+    ),
+    (
+        "patterns/app_shell",
+        include_str!("../patterns/app_shell.rhai"),
+    ),
+];
+
+/// The Gallery acceptance application (`gpui-rhai gallery`), keyed by module ID.
+/// `gallery/main` is the entry module.
+pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
+    ("gallery/main", include_str!("../gallery/main.rhai")),
+    ("gallery/kit", include_str!("../gallery/kit.rhai")),
+    (
+        "gallery/pages/foundations",
+        include_str!("../gallery/pages/foundations.rhai"),
+    ),
+    (
+        "gallery/pages/markers",
+        include_str!("../gallery/pages/markers.rhai"),
+    ),
+    (
+        "gallery/pages/fields",
+        include_str!("../gallery/pages/fields.rhai"),
+    ),
+    (
+        "gallery/pages/lists",
+        include_str!("../gallery/pages/lists.rhai"),
+    ),
+    (
+        "gallery/pages/overlays",
+        include_str!("../gallery/pages/overlays.rhai"),
+    ),
+    (
+        "gallery/pages/containers",
+        include_str!("../gallery/pages/containers.rhai"),
+    ),
+    (
+        "gallery/pages/display",
+        include_str!("../gallery/pages/display.rhai"),
+    ),
+    (
+        "gallery/pages/interaction",
+        include_str!("../gallery/pages/interaction.rhai"),
+    ),
+    (
+        "gallery/pages/composition",
+        include_str!("../gallery/pages/composition.rhai"),
+    ),
+    (
+        "gallery/pages/scenes",
+        include_str!("../gallery/pages/scenes.rhai"),
+    ),
+    (
+        "gallery/pages/effects",
+        include_str!("../gallery/pages/effects.rhai"),
+    ),
+];
+
+/// Bundled application profiles, installed by `gpui-rhai init --profile`.
+pub const BUNDLED_PROFILES: &[(&str, &str)] = &[(
+    "productivity",
+    include_str!("../profiles/productivity.rhai"),
+)];
+
+/// The design-language token base, installed as `ui/tokens.rhai`.
+pub const TOKEN_BASE_SOURCE: &str = include_str!("../tokens.rhai");
 pub const DEFAULT_THEME: &str = include_str!("../themes/default_dark.rhai");
 pub const DEFAULT_LIGHT_THEME: &str = include_str!("../themes/default_light.rhai");
 pub const TOKYO_NIGHT_THEME: &str = include_str!("../themes/tokyo_night.rhai");
@@ -491,6 +594,8 @@ pub const ROTATABLE_STORY_SOURCE: &str = include_str!("../stories/components/rot
 pub const SELECTION_AREA_STORY_SOURCE: &str =
     include_str!("../stories/components/selection_area.rhai");
 pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
+pub const LIST_STORY_SOURCE: &str = include_str!("../stories/components/list.rhai");
+pub const TAB_BAR_STORY_SOURCE: &str = include_str!("../stories/components/tab_bar.rhai");
 pub const INTERACTION_LAB_STORY_SOURCE: &str =
     include_str!("../stories/workbench/interaction_lab.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
@@ -500,8 +605,6 @@ pub const MOTION_CATALOG_STORY_SOURCE: &str = include_str!("../stories/motion/ca
 pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
 pub const HOST_EMBEDDING_STORY_SOURCE: &str = include_str!("../stories/apps/host_embedding.rhai");
 pub const HOST_RESIDENT_STORY_SOURCE: &str = include_str!("../stories/apps/host_resident.rhai");
-pub const GALLERY_NAVIGATION_SOURCE: &str = include_str!("../stories/gallery/navigation.rhai");
-pub const GALLERY_SOURCE_VIEW_SOURCE: &str = include_str!("../stories/gallery/source.rhai");
 
 const BASIC_CASE: &[StoryCase] = &[StoryCase {
     id: "basic",
@@ -912,6 +1015,40 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/list",
+        title: "List",
+        purpose: "Select and open keyed rows with a status badge, a title, a secondary line and meta.",
+        category: "navigation",
+        keywords: &["list", "rows", "selection", "virtual", "keyboard"],
+        module_ids: &["components/list", "components/badge"],
+        source_module: "stories/components/list",
+        source: LIST_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#list",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/tab-bar",
+        title: "TabBar",
+        purpose: "Switch, close and reorder document tabs that belong to the panel under them.",
+        category: "navigation",
+        keywords: &["tabs", "documents", "panel", "close", "reorder", "scroll"],
+        module_ids: &["components/tab_bar", "components/menu"],
+        source_module: "stories/components/tab_bar",
+        source: TAB_BAR_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#tabbar",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "workbench/interaction-lab",
         title: "Interaction Workbench",
         purpose: "Exercise the complete 0.1.8 direct-manipulation stack in one stateful application scene.",
@@ -1128,21 +1265,147 @@ pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
     ("aetheria.rhai", AETHERIA_THEME),
 ];
 
+mod skills;
+
+pub use skills::BUNDLED_SKILL_FILES;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    /// Quoted strings of a `"tokens": [...]`-style list starting after `key`.
+    fn declared_list(header: &str, key: &str) -> BTreeSet<String> {
+        let Some(start) = header.find(key) else {
+            return BTreeSet::new();
+        };
+        let rest = &header[start + key.len()..];
+        let open = rest.find('[').unwrap();
+        let close = rest.find(']').unwrap();
+        rest[open + 1..close]
+            .split(',')
+            .map(|item| item.trim().trim_matches('"').to_owned())
+            .filter(|item| !item.is_empty())
+            .collect()
+    }
+
+    /// Literal string arguments of `call("...")` occurrences, mapped through `prefix`.
+    fn literal_arguments(source: &str, call: &str, prefix: &str) -> BTreeSet<String> {
+        source
+            .match_indices(call)
+            .filter_map(|(index, _)| {
+                let rest = source[index + call.len()..].strip_prefix('"')?;
+                let end = rest.find('"')?;
+                Some(format!("{prefix}{}", &rest[..end]))
+            })
+            .collect()
+    }
+
+    fn code_lines(source: &str) -> impl Iterator<Item = &str> {
+        source
+            .split("*/")
+            .nth(1)
+            .unwrap_or(source)
+            .lines()
+            .map(|line| line.split("//").next().unwrap_or(line))
+    }
+
+    /// Component contract C7 and the geometry rules of docs/design/atoms.md, checked on
+    /// source text: every literal token a component reads is declared, the header and
+    /// the runtime metadata agree, and literal sizes are only structural constants.
+    #[test]
+    fn components_declare_what_they_read_and_keep_geometry_in_tokens() {
+        let mut problems = Vec::new();
+        for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+            .iter()
+            .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
+            .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
+        {
+            let (header, body) = source.split_once("*/").unwrap();
+            let tokens = declared_list(header, "\"tokens\":");
+            let metadata = body.split("schema:").next().unwrap();
+            if tokens != declared_list(metadata, "tokens:") {
+                problems.push(format!("{id}: header and metadata token lists differ"));
+            }
+            if declared_list(header, "\"environment\":") != declared_list(metadata, "environment:")
+            {
+                problems.push(format!(
+                    "{id}: header and metadata environment lists differ"
+                ));
+            }
+            let code = code_lines(source).collect::<Vec<_>>().join("\n");
+            let mut read = literal_arguments(&code, "theme_color(", "");
+            read.extend(literal_arguments(&code, "theme_length(", ""));
+            read.extend(literal_arguments(&code, "theme_spacing(", "spacing."));
+            read.extend(literal_arguments(&code, "theme_radius(", "radius."));
+            read.extend(literal_arguments(&code, ".typography(", "typography."));
+            let undeclared = read.difference(&tokens).collect::<Vec<_>>();
+            if !undeclared.is_empty() {
+                problems.push(format!("{id} reads undeclared tokens: {undeclared:?}"));
+            }
+            for line in code_lines(source) {
+                for call in [
+                    ".height(px(",
+                    "min_height(px(",
+                    ".width(px(",
+                    "font_size(px(",
+                ] {
+                    for (index, _) in line.match_indices(call) {
+                        let number = line[index + call.len()..]
+                            .chars()
+                            .take_while(char::is_ascii_digit)
+                            .collect::<String>();
+                        let Ok(value) = number.parse::<u32>() else {
+                            continue;
+                        };
+                        let structural = call != "font_size(px(" && value <= 14;
+                        // Width literals above 14px are layout widths (dialogs,
+                        // popovers, toasts), not geometry rhythm.
+                        let layout_width = call == ".width(px(" && value >= 240;
+                        if !(value == 0 || structural || layout_width) {
+                            problems.push(format!(
+                                "{id} hard-codes {call}{value}): use a metrics token"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(problems.is_empty(), "{}", problems.join("\n"));
+    }
+
+    /// Declarative assets are preloaded only when a module declares them, so an
+    /// undeclared bundled asset cannot be drawn with `asset(...)` at all.
+    #[test]
+    fn every_bundled_asset_is_declared_by_a_module() {
+        let mut declared = BTreeSet::new();
+        for (_, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+            .iter()
+            .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
+            .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
+        {
+            let (header, _) = source.split_once("*/").unwrap();
+            declared.extend(declared_list(header, "\"assets\":"));
+        }
+        let orphans = BUNDLED_ASSET_SOURCES
+            .iter()
+            .map(|(path, _)| (*path).to_owned())
+            .filter(|path| !declared.contains(path))
+            .collect::<Vec<_>>();
+        assert!(orphans.is_empty(), "undeclared bundled assets: {orphans:?}");
+    }
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 62);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 62);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 64);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 64);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 22);
+        assert_eq!(BUNDLED_STORIES.len(), 24);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

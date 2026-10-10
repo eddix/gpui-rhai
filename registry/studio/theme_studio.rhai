@@ -32,6 +32,8 @@ import "components/pan_zoom" as pan_zoom;
 import "components/rotatable" as rotatable;
 import "components/selection_area" as selection_area;
 import "components/tree" as tree;
+import "components/list" as list;
+import "components/tab_bar" as tab_bar;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -269,7 +271,7 @@ fn set_specimen_accordion(ctx, value) { ctx.set_state("specimen_accordion", valu
 fn set_specimen_collapsible(ctx, value) { ctx.set_state("specimen_collapsible", value); record_value("Release details", ctx, value); }
 fn set_specimen_split_size(ctx, value) { ctx.set_state("specimen_split_size", value); record_action("Split resized", ctx, ()); }
 fn set_specimen_resizable(ctx, value) {
-    ctx.set_state("specimen_resizable_rect", #{ x:value.x, y:value.y, width:value.width, height:value.height });
+    ctx.set_state("specimen_resizable_rect", value);
     record_action("Rectangle resized", ctx, ());
 }
 fn set_specimen_draggable(ctx, value) {
@@ -661,7 +663,12 @@ fn specimen_navigation(ctx) {
             #{key:"light",parent:"root",label:"light.rhai"}],expanded:ctx.get_state("specimen_tree_expanded"),
             selected_keys:ctx.get_state("specimen_tree_selected"),active_key:ctx.get_state("specimen_tree_active"),height:112.0,
             on_expanded_change:Fn("set_specimen_tree_expanded"),on_selection_change:Fn("set_specimen_tree_selected"),
-            on_active_change:Fn("set_specimen_tree_active")})
+            on_active_change:Fn("set_specimen_tree_active")}),
+        list::List(#{key:"specimen-list",label:"Theme releases",height:96.0,items:[
+            #{key:"r2",title:"Paper 2.1",meta:"Today",badge:#{text:"Draft",variant:"accent"}},
+            #{key:"r1",title:"Paper 2.0",secondary:"published",meta:"Mon"}]}),
+        tab_bar::TabBar(#{key:"specimen-tab-bar",label:"Theme files",value:"dark",tabs:[
+            #{value:"dark",label:"dark.rhai",closable:true},#{value:"light",label:"light.rhai",dirty:true}]})
     ]).with_style(style().gap(px(7)))
 }
 
@@ -856,7 +863,7 @@ fn specimen_p0(ctx) {
                 minimum_gap:10.0, on_change:Fn("set_specimen_range") })
         ]).with_style(style().gap(px(10)).items_center().flex_wrap()),
         row([
-            card::Card(#{ header: text("Card"), content: text("Composable content surface"), elevated: true }),
+            card::Card(#{ header: text("Card"), content: text("Composable content surface") }),
             group_box::GroupBox(#{ label: "Group box", description: "Related desktop controls",
                 content: text("Persistent layout content") }),
             empty::Empty(#{ title: "Nothing here", description: "An empty state with a clear next action.",
@@ -984,7 +991,7 @@ fn gallery_title_bar(ctx) {
     let themes = combobox::Combobox(#{ key: "gallery-theme", label: "Gallery theme", options: gallery_theme_options(), mode: "single",
             selected: [ctx.get_state("gallery_theme")], open: ctx.get_state("gallery_theme_open"),
             query: ctx.get_state("gallery_theme_query"), searchable: true, placeholder: "Theme",
-            width: px(if compact { 150 } else { 240 }), trigger_height: 26,
+            width: px(if compact { 150 } else { 240 }), size: "xs",
             on_change: Fn("set_gallery_theme"), on_open_change: Fn("set_gallery_theme_open"),
             on_query_change: Fn("set_gallery_theme_query") });
     let breadcrumb = row([

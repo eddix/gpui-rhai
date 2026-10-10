@@ -1,6 +1,7 @@
 {
   "examples": [
     "artistic_showcase",
+    "byod_treemap",
     "code_viewer",
     "dashboard_layout",
     "data_table",

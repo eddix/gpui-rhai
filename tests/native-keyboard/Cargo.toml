@@ -8,9 +8,19 @@ publish = false
 
 [dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.7", default-features = false, features = ["font-kit", "test-support"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11", "test-support"] }
 gpui-rhai = { path = "../../crates/gpui-rhai", features = ["charts"] }
 gpui-rhai-cli = { path = "../../crates/gpui-rhai-cli", features = ["test-support"] }
 gpui-rhai-registry = { path = "../../registry" }
+image = { version = "0.25", default-features = false, features = ["png"] }
 semver = "1"
 serde_json = "1"
+
+[features]
+# Mounted hot-reload tests: `cargo test --features dev-reload --test token_reload`.
+dev-reload = ["gpui-rhai/dev-reload"]
+
+# As in the main workspace: unoptimized Rhai frames are large, and stories that render every
+# official component come close to a 2MB test-thread stack in debug builds.
+[profile.dev.package.rhai]
+opt-level = 1

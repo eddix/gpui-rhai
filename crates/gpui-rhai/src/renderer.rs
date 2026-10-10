@@ -22,13 +22,16 @@ use crate::{
     Align, AssetRegistry, ColorValue, CursorKind, DisplayMode, EventPropagation, EventResponse,
     FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior, ImageSourceSpec, InteractionState,
     Justify, LayoutLength, Length, MotionKey, MotionProperty, NodeId, OverflowMode,
-    OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree,
-    Rgba8, ScriptCallback, SignedLength, SpacingToken, Style, StyleProperties, TextAlignMode,
-    TextDirection, UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
+    OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RetainedUiTree, Rgba8,
+    ScriptCallback, SignedLength, Style, StyleProperties, TextAlignMode, TextDirection,
+    UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
 };
 
+/// A script callback for one UI event: the callback, the event name, the
+/// payload and the target's bounds.
 type DispatchFn = dyn Fn(
     ScriptCallback,
+    &str,
     UiValue,
     Option<crate::GeometryBounds>,
     &mut Window,
@@ -50,6 +53,7 @@ type SignalReadFn =
     dyn Fn(&crate::NativeSignal, &App) -> Result<crate::SignalValue, crate::SignalError>;
 type ElementBoundsFn = dyn Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds>;
 type CanvasLocalPointFn = dyn Fn(&crate::ElementRef, (f64, f64), &App) -> Option<(f64, f64)>;
+type ElementHitboxFn = dyn Fn(&crate::ElementRef, &App) -> Option<gpui::HitboxId>;
 
 #[derive(Clone)]
 pub struct NodeEventDispatcher {
@@ -58,6 +62,7 @@ pub struct NodeEventDispatcher {
     signal_write: Rc<SignalWriteFn>,
     signal_read: Rc<SignalReadFn>,
     element_bounds: Rc<ElementBoundsFn>,
+    element_hitbox: Rc<ElementHitboxFn>,
     canvas_bounds: Rc<ElementBoundsFn>,
     canvas_local_point: Rc<CanvasLocalPointFn>,
 }
@@ -77,9 +82,30 @@ impl NodeEventDispatcher {
     where
         R: Into<EventResponse>,
     {
+        Self::with_event_names(move |callback, _, payload, target, window, app| {
+            dispatch(callback, payload, target, window, app)
+        })
+    }
+
+    /// A dispatcher whose script callback also receives the UI event name.
+    #[must_use]
+    pub(crate) fn with_event_names<R>(
+        dispatch: impl Fn(
+            ScriptCallback,
+            &str,
+            UiValue,
+            Option<crate::GeometryBounds>,
+            &mut Window,
+            &mut App,
+        ) -> R
+        + 'static,
+    ) -> Self
+    where
+        R: Into<EventResponse>,
+    {
         Self {
-            script: Rc::new(move |callback, payload, target, window, app| {
-                dispatch(callback, payload, target, window, app).into()
+            script: Rc::new(move |callback, event, payload, target, window, app| {
+                dispatch(callback, event, payload, target, window, app).into()
             }),
             native: Rc::new(|_, _, _, _, _, _| EventResponse::new().stop()),
             signal_write: Rc::new(|updates, _| {
@@ -89,6 +115,7 @@ impl NodeEventDispatcher {
             }),
             signal_read: Rc::new(|signal, _| Err(crate::SignalError::Stale(signal.id().clone()))),
             element_bounds: Rc::new(|_, _| None),
+            element_hitbox: Rc::new(|_, _| None),
             canvas_bounds: Rc::new(|_, _| None),
             canvas_local_point: Rc::new(|_, _, _| None),
         }
@@ -145,6 +172,14 @@ impl NodeEventDispatcher {
         self
     }
 
+    pub(crate) fn with_element_hitbox(
+        mut self,
+        read: impl Fn(&crate::ElementRef, &App) -> Option<gpui::HitboxId> + 'static,
+    ) -> Self {
+        self.element_hitbox = Rc::new(read);
+        self
+    }
+
     pub(crate) fn with_canvas_local_point(
         mut self,
         read: impl Fn(&crate::ElementRef, (f64, f64), &App) -> Option<(f64, f64)> + 'static,
@@ -172,12 +207,13 @@ impl NodeEventDispatcher {
     pub(crate) fn dispatch(
         &self,
         callback: ScriptCallback,
+        event: &str,
         payload: UiValue,
         target: Option<crate::GeometryBounds>,
         window: &mut Window,
         cx: &mut App,
     ) -> EventResponse {
-        (self.script)(callback, payload, target, window, cx)
+        (self.script)(callback, event, payload, target, window, cx)
     }
 
     pub(crate) fn dispatch_native(
@@ -228,6 +264,14 @@ impl NodeEventDispatcher {
         (self.element_bounds)(reference, app)
     }
 
+    pub(crate) fn element_hitbox(
+        &self,
+        reference: &crate::ElementRef,
+        app: &App,
+    ) -> Option<gpui::HitboxId> {
+        (self.element_hitbox)(reference, app)
+    }
+
     pub(crate) fn canvas_local_point(
         &self,
         reference: &crate::ElementRef,
@@ -250,7 +294,7 @@ fn dispatch_ui_event(
     match handler {
         UiEventHandler::Script(callback) => script_dispatcher.map_or_else(
             || EventResponse::new().stop(),
-            |dispatcher| dispatcher.dispatch(callback.clone(), payload, target, window, app),
+            |dispatcher| dispatcher.dispatch(callback.clone(), event, payload, target, window, app),
         ),
         UiEventHandler::Host(callback) => callback.invoke(payload, window, app),
         UiEventHandler::Native(reference) => script_dispatcher.map_or_else(
@@ -304,11 +348,33 @@ impl<'a> EventRoute<'a> {
     }
 }
 
+/// A handler declared with its own value receives that value; the others
+/// receive the event's payload.
 fn dispatch_ui_handler_phases(
     bindings: &[crate::UiEventBinding],
     event: &str,
     phases: &[crate::EventPhase],
     payload: &UiValue,
+    route: EventRoute<'_>,
+    window: &mut Window,
+    app: &mut App,
+) -> EventResponse {
+    dispatch_ui_handler_phases_with(
+        bindings,
+        event,
+        phases,
+        |binding| binding.value().unwrap_or(payload).clone(),
+        route,
+        window,
+        app,
+    )
+}
+
+fn dispatch_ui_handler_phases_with(
+    bindings: &[crate::UiEventBinding],
+    event: &str,
+    phases: &[crate::EventPhase],
+    payload: impl Fn(&crate::UiEventBinding) -> UiValue,
     route: EventRoute<'_>,
     window: &mut Window,
     app: &mut App,
@@ -320,7 +386,7 @@ fn dispatch_ui_handler_phases(
             let response = dispatch_ui_event(
                 binding.handler(),
                 event,
-                payload.clone(),
+                payload(binding),
                 route.target,
                 window,
                 app,
@@ -373,8 +439,35 @@ fn apply_pointer_response(
     apply_event_response(response, window, app);
 }
 
-fn key_handler_bindings(node: &UiNode) -> BTreeMap<String, (Vec<crate::UiEventBinding>, UiValue)> {
-    if is_disabled(node) {
+/// The handler a key press reaches, in every phase: a modifier-qualified name
+/// (`shift+f6`) wins, and a plain handler still fires whatever modifiers are
+/// held.
+fn key_handler_for<'a, V>(
+    handlers: &'a BTreeMap<String, V>,
+    event: &gpui::KeyDownEvent,
+    direction: TextDirection,
+) -> Option<&'a V> {
+    let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
+    let modifiers = &event.keystroke.modifiers;
+    let qualified = crate::node::canonical_key_name(
+        [
+            modifiers.control,
+            modifiers.alt,
+            modifiers.shift,
+            modifiers.platform,
+        ],
+        key,
+    );
+    handlers
+        .get(qualified.as_str())
+        .or_else(|| handlers.get(key))
+}
+
+fn key_handler_bindings(
+    node: &UiNode,
+    disabled: bool,
+) -> BTreeMap<String, (Vec<crate::UiEventBinding>, UiValue)> {
+    if disabled {
         return BTreeMap::new();
     }
     node.handlers()
@@ -385,9 +478,7 @@ fn key_handler_bindings(node: &UiNode) -> BTreeMap<String, (Vec<crate::UiEventBi
                     key.to_owned(),
                     (
                         bindings.clone(),
-                        node.handler_payload(event)
-                            .cloned()
-                            .unwrap_or(UiValue::Null),
+                        node.node_payload(event).cloned().unwrap_or(UiValue::Null),
                     ),
                 )
             })
@@ -583,8 +674,10 @@ fn apply_scroll_behavior(
     }
     // GPUI translates an unsupported wheel axis onto the one scrollable axis
     // by default. Ordinary one-axis UI containers promise a stricter contract;
-    // two-axis canvases retain GPUI's native gesture handling.
-    if scrolls_x ^ scrolls_y {
+    // two-axis canvases retain GPUI's native gesture handling, and a node can ask
+    // for the translation (`.translate_wheel()`, a horizontal tab strip).
+    let translate = node.attributes().get("translate_wheel") == Some(&UiValue::Bool(true));
+    if scrolls_x ^ scrolls_y && !translate {
         element = element.restrict_scroll_to_axis();
     }
     if let Some(handle) = retained_id.and_then(|node| handles.get(&node)) {
@@ -628,23 +721,27 @@ fn apply_hover_handler(
 ) -> Stateful<Div> {
     element.on_hover(move |hovered, window, cx| {
         if let Some((bindings, value)) = &hover {
-            let payload = value.as_ref().map_or_else(
-                || UiValue::Bool(*hovered),
-                |value| {
-                    UiValue::Map(BTreeMap::from([
-                        ("hovered".to_owned(), UiValue::Bool(*hovered)),
-                        ("value".to_owned(), value.clone()),
-                    ]))
-                },
-            );
-            let response = dispatch_ui_handlers(
+            // A handler with a value, its own or the node's, receives
+            // `#{ hovered, value }`; a plain handler receives the bool.
+            let payload = |binding: &crate::UiEventBinding| {
+                binding.value().or(value.as_ref()).map_or_else(
+                    || UiValue::Bool(*hovered),
+                    |value| {
+                        UiValue::Map(BTreeMap::from([
+                            ("hovered".to_owned(), UiValue::Bool(*hovered)),
+                            ("value".to_owned(), value.clone()),
+                        ]))
+                    },
+                )
+            };
+            let response = dispatch_ui_handler_phases_with(
                 bindings,
                 "hover_change",
-                &payload,
-                target.snapshot(),
+                &[crate::EventPhase::Target],
+                payload,
+                EventRoute::new(target.snapshot(), dispatcher.as_ref()),
                 window,
                 cx,
-                dispatcher.as_ref(),
             );
             apply_event_response(response, window, cx);
         }
@@ -1227,28 +1324,61 @@ fn retained_handlers(
         .collect()
 }
 
+/// Resolves symbolic style values against a theme.
+///
+/// Implementors provide token leaves; expressions, environment variants and
+/// scaled lengths are handled by the provided methods.
 pub trait ColorResolver {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8>;
+    /// Look up one color token by name or `namespace.name` path.
+    fn resolve_token(&self, token: &str) -> Option<Rgba8>;
 
+    /// Resolve a color value, evaluating expressions over token leaves.
+    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
+        color.resolve_with(&mut |token| self.resolve_token(token))
+    }
+
+    /// Every color token this resolver knows, for snapshot capture.
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
-        crate::primitive::RUNTIME_THEME_COLOR_TOKENS
-            .iter()
-            .filter_map(|token| {
-                self.resolve(&ColorValue::Token((*token).to_owned()))
-                    .map(|value| ((*token).to_owned(), value))
-            })
-            .collect()
+        BTreeMap::new()
     }
 
-    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
-        default_typography(role)
+    /// The environment this resolver is bound to.
+    fn environment(&self) -> crate::Environment {
+        crate::Environment::EMPTY
     }
 
+    /// Resolve a length token against an explicit environment.
+    fn resolve_length_in(
+        &self,
+        length: Length,
+        _environment: &crate::Environment,
+    ) -> Option<Length> {
+        (!length.is_theme_token()).then_some(length)
+    }
+
+    /// Resolve a length token against the bound environment.
     fn resolve_length(&self, length: Length) -> Option<Length> {
-        match length {
-            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
-            Length::ThemeSpacing(_) | Length::ThemeRadius(_) => None,
-        }
+        self.resolve_length_in(length, &self.environment())
+    }
+
+    /// Resolve a typography role against an explicit environment.
+    fn resolve_typography_in(
+        &self,
+        _role: &str,
+        _environment: &crate::Environment,
+    ) -> Option<crate::ResolvedTypography> {
+        None
+    }
+
+    /// Resolve a typography role against the bound environment.
+    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        self.resolve_typography_in(role, &self.environment())
+    }
+
+    /// The complete token set, when the resolver is backed by one. Snapshots
+    /// keep it so nested environments can still resolve variants.
+    fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
+        None
     }
 
     fn resolve_motion(&self) -> crate::ThemeMotion {
@@ -1256,112 +1386,150 @@ pub trait ColorResolver {
     }
 }
 
-fn default_typography(role: &str) -> Option<crate::ResolvedTypography> {
-    let (size, line_height, weight) = match role {
-        "caption" => (11.0, 16.0, 400),
-        "body_small" => (12.0, 16.0, 400),
-        "body" => (13.0, 18.0, 400),
-        "subtitle" => (14.0, 20.0, 400),
-        "title" => (16.0, 22.0, 700),
-        "heading" => (18.0, 24.0, 700),
-        "display" => (24.0, 32.0, 700),
-        "display_large" => (28.0, 36.0, 700),
-        _ => return None,
-    };
-    Some(crate::ResolvedTypography {
-        family: None,
-        fallbacks: Vec::new(),
-        size: Length::Pixels(size),
-        line_height: Length::Pixels(line_height),
-        weight,
-    })
+/// A resolver bound to the environment inherited by one rendered subtree.
+#[derive(Clone, Copy)]
+pub(crate) struct EnvironmentScoped<'a, C: ?Sized> {
+    inner: &'a C,
+    environment: crate::Environment,
+}
+
+impl<'a, C: ColorResolver + ?Sized> EnvironmentScoped<'a, C> {
+    pub(crate) const fn new(inner: &'a C, environment: crate::Environment) -> Self {
+        Self { inner, environment }
+    }
+}
+
+impl<C: ColorResolver + ?Sized> ColorResolver for EnvironmentScoped<'_, C> {
+    fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+        self.inner.resolve_token(token)
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        self.inner.color_snapshot()
+    }
+
+    fn environment(&self) -> crate::Environment {
+        self.environment
+    }
+
+    fn resolve_length_in(
+        &self,
+        length: Length,
+        environment: &crate::Environment,
+    ) -> Option<Length> {
+        self.inner.resolve_length_in(length, environment)
+    }
+
+    fn resolve_typography_in(
+        &self,
+        role: &str,
+        environment: &crate::Environment,
+    ) -> Option<crate::ResolvedTypography> {
+        self.inner.resolve_typography_in(role, environment)
+    }
+
+    fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
+        self.inner.token_set()
+    }
+
+    fn resolve_motion(&self) -> crate::ThemeMotion {
+        self.inner.resolve_motion()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LiteralColorResolver;
 
 impl ColorResolver for LiteralColorResolver {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        match color {
-            ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(_) => None,
-        }
+    fn resolve_token(&self, _token: &str) -> Option<Rgba8> {
+        None
     }
 }
 
+/// An owned theme capture for deferred rendering boundaries (slot runtimes,
+/// canvas, overlay backdrops). It keeps the full token set when available so
+/// environment variants still resolve inside the boundary.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OwnedColorResolver {
-    tokens: BTreeMap<String, Rgba8>,
-    spacing: BTreeMap<SpacingToken, Length>,
-    radii: BTreeMap<RadiusToken, Length>,
-    typography: BTreeMap<String, crate::ResolvedTypography>,
+    tokens: Option<std::sync::Arc<crate::ThemeTokens>>,
+    colors: BTreeMap<String, Rgba8>,
+    environment: crate::Environment,
     motion: crate::ThemeMotion,
 }
 
 impl OwnedColorResolver {
-    fn capture(colors: &impl ColorResolver) -> Self {
-        let spacing = crate::primitive::RUNTIME_THEME_SPACING_TOKENS
-            .iter()
-            .copied()
-            .filter_map(|token| {
-                colors
-                    .resolve_length(Length::ThemeSpacing(token))
-                    .map(|value| (token, value))
-            })
-            .collect();
-        let radii = crate::primitive::RUNTIME_THEME_RADIUS_TOKENS
-            .iter()
-            .copied()
-            .filter_map(|token| {
-                colors
-                    .resolve_length(Length::ThemeRadius(token))
-                    .map(|value| (token, value))
-            })
-            .collect();
-        let typography = crate::REQUIRED_TYPOGRAPHY
-            .iter()
-            .filter_map(|role| {
-                colors
-                    .resolve_typography(role)
-                    .map(|value| ((*role).to_owned(), value))
-            })
-            .collect();
+    pub(crate) fn capture(colors: &(impl ColorResolver + ?Sized)) -> Self {
+        let tokens = colors.token_set();
         Self {
-            tokens: colors.color_snapshot(),
-            spacing,
-            radii,
-            typography,
+            colors: if tokens.is_some() {
+                BTreeMap::new()
+            } else {
+                colors.color_snapshot()
+            },
+            tokens,
+            environment: colors.environment(),
             motion: colors.resolve_motion(),
         }
     }
 }
 
-impl ColorResolver for OwnedColorResolver {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        match color {
-            ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(token) => self.tokens.get(token).copied(),
+impl OwnedColorResolver {
+    /// Whether both captures share the same token set.
+    pub(crate) fn same_tokens(&self, other: &Self) -> bool {
+        match (&self.tokens, &other.tokens) {
+            (Some(left), Some(right)) => std::sync::Arc::ptr_eq(left, right),
+            (None, None) => self.colors == other.colors,
+            _ => false,
         }
     }
+}
 
-    fn resolve_length(&self, length: Length) -> Option<Length> {
-        match length {
-            Length::ThemeSpacing(token) => self.spacing.get(&token).copied(),
-            Length::ThemeRadius(token) => self.radii.get(&token).copied(),
-            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
+impl ColorResolver for OwnedColorResolver {
+    fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+        match &self.tokens {
+            Some(tokens) => tokens.color(token),
+            None => self.colors.get(token).copied(),
         }
     }
 
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        match &self.tokens {
+            Some(tokens) => tokens.color_snapshot(),
+            None => self.colors.clone(),
+        }
+    }
+
+    fn environment(&self) -> crate::Environment {
+        self.environment
+    }
+
+    fn resolve_length_in(
+        &self,
+        length: Length,
+        environment: &crate::Environment,
+    ) -> Option<Length> {
+        match &self.tokens {
+            Some(tokens) => tokens.resolve_length(length, environment),
+            None => (!length.is_theme_token()).then_some(length),
+        }
+    }
+
+    fn resolve_typography_in(
+        &self,
+        role: &str,
+        environment: &crate::Environment,
+    ) -> Option<crate::ResolvedTypography> {
+        self.tokens
+            .as_ref()
+            .and_then(|tokens| tokens.resolve_typography(role, environment))
+    }
+
+    fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
         self.tokens.clone()
     }
 
     fn resolve_motion(&self) -> crate::ThemeMotion {
         self.motion.clone()
-    }
-
-    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
-        self.typography.get(role).cloned()
     }
 }
 
@@ -1369,7 +1537,16 @@ impl ColorResolver for OwnedColorResolver {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuiNodeRenderer;
 
+#[derive(Clone, Copy, Default)]
+struct NodeFocus {
+    /// The nearest focus owner ancestor-or-self holds focus.
+    owner: bool,
+    /// This node or a descendant holds focus.
+    within: bool,
+}
+
 #[derive(Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)]
 struct RenderEnvironment<'a, C> {
     now: Instant,
     clock: &'a crate::RuntimeClock,
@@ -1387,6 +1564,11 @@ struct RenderEnvironment<'a, C> {
     geometry: &'a crate::GeometryRegistry,
     pointer_capture: &'a crate::PointerCaptureRegistry,
     focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
+    /// For slot content rendered without its retained tree: the focus owner of
+    /// each node (its nearest focus-styled ancestor), consulted only by native
+    /// controls that share their owner's focus. Other nodes track only their
+    /// own handle.
+    focus_owners: &'a BTreeMap<NodeId, FocusHandle>,
     scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     virtual_requests: &'a crate::VirtualRequestRegistry,
@@ -1396,19 +1578,122 @@ struct RenderEnvironment<'a, C> {
     locale: &'a str,
     number: Option<&'a crate::NumberMetadata>,
     ambient_text_color: Option<Rgba8>,
+    /// Environment values inherited from ancestors (`.env(...)`).
+    environment: crate::Environment,
+    /// Whether an ancestor is disabled.
+    inherited_disabled: bool,
+    /// The retained node whose focus handle has keyboard focus this frame,
+    /// followed by its ancestors.
+    focus_path: &'a [NodeId],
+    /// Focus state seen by `group_focus` and `focus_within` styles.
+    focus: NodeFocus,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
     semantics: Option<&'a crate::CommittedSemanticFrame>,
     a11y_active: bool,
+    /// The Host lets window drag areas in this view move the window.
+    window_drag: bool,
+    /// The parent stacks its children vertically and stretches them: a child
+    /// without a width of its own is as wide as the parent, and in an RTL view a
+    /// child with a definite width sits on the start (right) edge.
+    stretch_parent: bool,
+    /// This node stretches its own children, by its resolved style (interaction
+    /// states included), so the hint follows what is actually laid out.
+    stretch_children: bool,
+    /// The parent is a row, so this node's cross axis is vertical and
+    /// `self_start`/`self_end` keep their place in RTL; elsewhere they swap.
+    row_parent: bool,
+    /// This node lays its children out in a row.
+    row_children: bool,
+    /// The overlays whose content this node is in, innermost first, so a
+    /// `parent` key names the nearest enclosing overlay with that key.
+    overlay_scope: Option<&'a OverlayScope<'a>>,
+    /// The nearest ancestor declaring a `hover` style: its GPUI group drives
+    /// `group_hover` paint below it.
+    hover_group: Option<NodeId>,
 }
 
-impl<C: ColorResolver> RenderEnvironment<'_, C> {
+/// An overlay whose content is being rendered: its script key and its
+/// window-wide id, linked to the overlay around it.
+struct OverlayScope<'a> {
+    local: &'a crate::OverlayId,
+    id: crate::OverlayId,
+    outer: Option<&'a OverlayScope<'a>>,
+}
+
+impl OverlayScope<'_> {
+    fn find(&self, local: &crate::OverlayId) -> Option<&crate::OverlayId> {
+        let mut cursor = Some(self);
+        while let Some(scope) = cursor {
+            if scope.local == local {
+                return Some(&scope.id);
+            }
+            cursor = scope.outer;
+        }
+        None
+    }
+}
+
+impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
+    /// The environment of a node's own content: its resolved text color, and
+    /// no stretch hint (a Box sets that again for its own children).
+    fn below(&self, style: &StyleProperties) -> Self {
+        Self {
+            stretch_parent: false,
+            stretch_children: style.direction != Some(FlexDirection::Row)
+                && matches!(style.align, None | Some(Align::Stretch)),
+            row_parent: false,
+            row_children: style.direction == Some(FlexDirection::Row),
+            ..self.with_resolved_text_color(style)
+        }
+    }
+
+    /// The theme resolver bound to this subtree's inherited environment.
+    fn resolver(&self) -> EnvironmentScoped<'a, C> {
+        EnvironmentScoped::new(self.colors, self.environment)
+    }
+
+    /// Apply a node's own environment overrides and disabled state; the
+    /// result is the scope of the node itself and of its descendants.
+    fn with_node_scope(&self, node: &UiNode) -> Self {
+        let mut environment = self.environment;
+        if let Some(UiValue::Map(values)) = node.attributes().get("environment") {
+            for (name, value) in values {
+                if let UiValue::String(value) = value {
+                    environment = environment
+                        .with(crate::Symbol::intern(name), crate::Symbol::intern(value))
+                        .unwrap_or(environment);
+                }
+            }
+        }
+        Self {
+            environment,
+            inherited_disabled: self.inherited_disabled || is_disabled(node),
+            ..*self
+        }
+    }
+
+    /// A focusable node that declares a focus style owns the focus state seen
+    /// by `group_focus` styles in its subtree; `tab_stop(false)` children of a
+    /// roving group leave ownership with the group. `focus_within` is per node.
+    fn with_focus_scope(mut self, node: &UiNode, retained_id: Option<NodeId>) -> Self {
+        self.focus.within = retained_id.is_some_and(|id| self.focus_path.contains(&id));
+        if let Some(id) = retained_id
+            && node.style().focus.is_some()
+            && node_tab_stop(node)
+            && self.focus_handles.contains_key(&id)
+        {
+            self.focus.owner = self.focus_path.first() == Some(&id);
+        }
+        self
+    }
+
     fn with_resolved_text_color(&self, style: &StyleProperties) -> Self {
         Self {
             ambient_text_color: resolve_ambient_text_color(
                 style,
-                self.colors,
+                &self.resolver(),
                 self.ambient_text_color,
             ),
             ..*self
@@ -1416,6 +1701,7 @@ impl<C: ColorResolver> RenderEnvironment<'_, C> {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct WindowRenderResources<'a> {
     pub now: Instant,
     pub clock: &'a crate::RuntimeClock,
@@ -1430,6 +1716,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub geometry: &'a crate::GeometryRegistry,
     pub pointer_capture: &'a crate::PointerCaptureRegistry,
     pub focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
+    pub focus_owners: &'a BTreeMap<NodeId, FocusHandle>,
     pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     pub scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     pub virtual_requests: &'a crate::VirtualRequestRegistry,
@@ -1439,10 +1726,17 @@ pub(crate) struct WindowRenderResources<'a> {
     pub locale: &'a str,
     pub number: Option<&'a crate::NumberMetadata>,
     pub ambient_text_color: Option<Rgba8>,
+    pub environment: crate::Environment,
+    pub inherited_disabled: bool,
+    pub focus_path: &'a [NodeId],
+    pub owner_focused: bool,
     pub root_path: &'a str,
     pub view_id: &'a str,
     pub semantics: &'a crate::CommittedSemanticFrame,
     pub a11y_active: bool,
+    /// Whether `window_drag_area()` nodes move the window
+    /// (`ScriptViewConfig::window_drag_areas`).
+    pub window_drag: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1506,6 +1800,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1515,11 +1810,22 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: None,
             retained_links: None,
             semantics: None,
             a11y_active: false,
+            window_drag: false,
+            stretch_parent: false,
+            stretch_children: false,
+            row_parent: false,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1582,6 +1888,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1591,11 +1898,22 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
             semantics: Some(semantics),
             a11y_active,
+            window_drag: false,
+            stretch_parent: false,
+            stretch_children: false,
+            row_parent: false,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: None,
         };
         tree.root().map_or_else(
             || {
@@ -1651,6 +1969,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1660,11 +1979,22 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
             semantics: Some(&semantics),
             a11y_active: false,
+            window_drag: false,
+            stretch_parent: false,
+            stretch_children: false,
+            row_parent: false,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: None,
         };
         tree.root().map_or_else(
             || {
@@ -1712,6 +2042,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1721,11 +2052,22 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: None,
             retained_links: None,
             semantics: None,
             a11y_active: false,
+            window_drag: false,
+            stretch_parent: false,
+            stretch_children: false,
+            row_parent: false,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1764,6 +2106,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
@@ -1773,10 +2116,15 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
+            focus_path: &[],
+            owner_focused: false,
             root_path: "root",
             view_id: "standalone",
             semantics: &crate::CommittedSemanticFrame::default(),
             a11y_active: false,
+            window_drag: false,
         };
         Self::render_with_window_runtime(node, colors, interaction, primitives, &resources)
     }
@@ -1822,6 +2170,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
@@ -1831,11 +2180,25 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
+            environment: resources.environment,
+            inherited_disabled: resources.inherited_disabled,
+            focus_path: resources.focus_path,
+            focus: NodeFocus {
+                owner: resources.owner_focused,
+                within: false,
+            },
             view_id: resources.view_id,
             retained: Some(tree),
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            window_drag: resources.window_drag,
+            stretch_parent: false,
+            stretch_children: false,
+            row_parent: false,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: None,
         };
         tree.root().map_or_else(
             || {
@@ -1880,6 +2243,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
@@ -1889,11 +2253,25 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
+            environment: resources.environment,
+            inherited_disabled: resources.inherited_disabled,
+            focus_path: resources.focus_path,
+            focus: NodeFocus {
+                owner: resources.owner_focused,
+                within: false,
+            },
             view_id: resources.view_id,
             retained: None,
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            window_drag: resources.window_drag,
+            stretch_parent: false,
+            stretch_children: false,
+            row_parent: false,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -1924,6 +2302,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
@@ -1933,15 +2312,30 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
+            environment: resources.environment,
+            inherited_disabled: resources.inherited_disabled,
+            focus_path: resources.focus_path,
+            focus: NodeFocus {
+                owner: resources.owner_focused,
+                within: false,
+            },
             view_id: resources.view_id,
             retained: None,
             retained_links: Some(retained.links),
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            window_drag: resources.window_drag,
+            stretch_parent: false,
+            stretch_children: false,
+            row_parent: false,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: None,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render_internal<C: ColorResolver>(
         node: &UiNode,
         environment: &RenderEnvironment<'_, C>,
@@ -1949,14 +2343,14 @@ impl GpuiNodeRenderer {
         path: &str,
         retained_id: Option<NodeId>,
     ) -> AnyElement {
+        let node_environment = environment
+            .with_node_scope(node)
+            .with_focus_scope(node, retained_id);
+        let environment = &node_environment;
         if let Some(table) = render_table_layout(node, environment, path, retained_id) {
             return table;
         }
-        let local_interaction = if is_disabled(node) {
-            environment.interaction.clone().with(PseudoState::Disabled)
-        } else {
-            environment.interaction.clone()
-        };
+        let local_interaction = scoped_interaction(environment);
         let motion_path = retained_id.map_or_else(
             || path.to_owned(),
             |node| crate::motion::retained_node_path(path, node),
@@ -1981,15 +2375,32 @@ impl GpuiNodeRenderer {
                     .update_canvas_transform(retained_id, animation.canvas_transform());
             }
         }
+        // Every layer that can set a width, margin, alignment or position is
+        // merged before the stretch rules read the style.
         let mut resolved_style = node.style().resolve(&local_interaction);
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
+        apply_signal_state_style(&mut resolved_style, environment.signals, node);
+        let mut resolved_style = definite_stretch(
+            rtl_start_edge(
+                resolved_style,
+                environment.stretch_parent && environment.direction == TextDirection::RightToLeft,
+            ),
+            environment.stretch_parent,
+        );
+        mirror_self_alignment(
+            &mut resolved_style,
+            !environment.row_parent && environment.direction == TextDirection::RightToLeft,
+        );
         normalize_text_content_layout(node, &mut resolved_style);
-        let local_environment = environment.with_resolved_text_color(&resolved_style);
+        let mut local_environment = environment.below(&resolved_style);
+        if node.style().hover.is_some() && retained_id.is_some() {
+            local_environment.hover_group = retained_id;
+        }
         let mut element = apply_style(
             div(),
             &resolved_style,
-            environment.colors,
+            &environment.resolver(),
             environment.direction,
         );
         if matches!(
@@ -1998,8 +2409,10 @@ impl GpuiNodeRenderer {
         ) {
             element = element.flex_1().min_h(px(0.0));
         }
-        let focus_handle =
-            retained_id.and_then(|node| environment.focus_handles.get(&node).cloned());
+        // An overlay's handle is its panel's, tracked by the overlay element.
+        let focus_handle = retained_id
+            .filter(|_| !matches!(node.kind(), UiNodeKind::Overlay { .. }))
+            .and_then(|node| environment.focus_handles.get(&node).cloned());
         element =
             apply_node_focus_tracking(element, node, focus_handle.as_ref(), environment.primitives);
         if let Some(opacity) = signals.opacity.or(animation.opacity) {
@@ -2029,9 +2442,10 @@ impl GpuiNodeRenderer {
         let layout_motion = layout_motion_spec(node, environment.now);
         let progress_motions = node.progress_motions().to_vec();
         match retained_id {
-            Some(node) => GeometryTrackedElement {
+            Some(retained) => GeometryTrackedElement {
                 child: Some(element),
-                node,
+                node: retained,
+                hit_area: node.element_ref().is_some(),
                 registry: environment.geometry.clone(),
                 translate_x: translate_x.unwrap_or(0.0),
                 translate_y: translate_y.unwrap_or(0.0),
@@ -2051,7 +2465,6 @@ impl GpuiNodeRenderer {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     fn populate_with_interactions<C: ColorResolver>(
         element: Div,
         node: &UiNode,
@@ -2061,21 +2474,55 @@ impl GpuiNodeRenderer {
         retained_id: Option<NodeId>,
         motion: NodeMotionValues,
     ) -> AnyElement {
-        let click = (!is_disabled(node) && !node.event_handlers("click").is_empty()).then(|| {
+        // The interaction wrapper is built in its own frame, which is gone
+        // before the children render: the recursion carries only this frame.
+        match Self::wrap_interactions(element, node, environment, path, retained_id) {
+            Wrapped::Interactive(element) => Self::populate(
+                element,
+                node,
+                environment,
+                boundary_fallback,
+                path,
+                retained_id,
+                motion,
+            ),
+            Wrapped::Plain(element) => Self::populate(
+                element,
+                node,
+                environment,
+                boundary_fallback,
+                path,
+                retained_id,
+                motion,
+            ),
+        }
+    }
+
+    /// Attach the node's handlers, focus and semantics, or return the element
+    /// unchanged when the node needs no interaction wrapper.
+    #[inline(never)]
+    #[allow(clippy::too_many_lines)]
+    fn wrap_interactions<C: ColorResolver>(
+        element: Div,
+        node: &UiNode,
+        environment: &RenderEnvironment<'_, C>,
+        path: &str,
+        retained_id: Option<NodeId>,
+    ) -> Wrapped {
+        let disabled = environment.inherited_disabled;
+        let click = (!disabled && !node.event_handlers("click").is_empty()).then(|| {
             (
                 node.event_handlers("click").to_vec(),
-                node.handler_payload("click")
-                    .cloned()
-                    .unwrap_or(UiValue::Null),
+                node.node_payload("click").cloned().unwrap_or(UiValue::Null),
             )
         });
-        let hover = (!node.event_handlers("hover_change").is_empty()).then(|| {
+        let hover = (!disabled && !node.event_handlers("hover_change").is_empty()).then(|| {
             (
                 node.event_handlers("hover_change").to_vec(),
-                node.handler_payload("hover_change").cloned(),
+                node.node_payload("hover_change").cloned(),
             )
         });
-        let key_handlers = key_handler_bindings(node);
+        let key_handlers = key_handler_bindings(node, disabled);
         let hit_test = resolved_hit_test(node, environment);
         let semantic = environment
             .a11y_active
@@ -2103,16 +2550,8 @@ impl GpuiNodeRenderer {
                 )
             })) << 4
             | u8::from(semantic.is_some()) << 5;
-        if !node_needs_interaction_wrapper(node, needs) {
-            return Self::populate(
-                element,
-                node,
-                environment,
-                boundary_fallback,
-                path,
-                retained_id,
-                motion,
-            );
+        if !node_needs_interaction_wrapper(node, needs, disabled) {
+            return Wrapped::Plain(element);
         }
 
         let click_dispatcher = environment.dispatcher.cloned();
@@ -2126,13 +2565,19 @@ impl GpuiNodeRenderer {
         let text_direction = environment.direction;
         let stable_id = interaction_element_id(retained_id, path);
         let debug_path = path.to_owned();
-        let element = apply_pseudo_backgrounds(
+        let element = element
+            .id(SharedString::from(stable_id))
+            .debug_selector(move || debug_path.clone());
+        // A disabled node keeps its resolved disabled paint; pointer states
+        // must not repaint it.
+        let element = if disabled {
             element
-                .id(SharedString::from(stable_id))
-                .debug_selector(move || debug_path.clone()),
-            node.style(),
-            environment.colors,
-        );
+        } else {
+            let focused =
+                retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref();
+            apply_pseudo_backgrounds(element, node.style(), &environment.resolver(), focused)
+        };
+        let element = apply_hover_group(element, node, retained_id, environment, disabled);
         let element = apply_native_semantics(element, semantic.as_ref());
         let element = apply_primitive_accessibility_actions(
             element,
@@ -2142,8 +2587,31 @@ impl GpuiNodeRenderer {
             environment,
         );
         let element = apply_hit_test(element, hit_test);
-        let element =
-            apply_tab_behavior(element, node, click.is_some() || !key_handlers.is_empty());
+        let element = if environment.window_drag {
+            apply_window_drag_area(element, node)
+        } else {
+            element
+        };
+        let ancestor_disabled = disabled && !is_disabled(node);
+        let persistent_focus = retained_id
+            .and_then(|id| environment.focus_handles.get(&id))
+            .filter(|_| {
+                !matches!(node.kind(), UiNodeKind::Overlay { .. })
+                    && !matches!(node.kind(), UiNodeKind::Custom { primitive }
+                    if environment.primitives.uses_primary_focus(&primitive.primitive))
+            });
+        // Key handlers on a container that holds focusable children route keys
+        // bubbling from those children (roving groups, overlay roots); only a
+        // click target or a key target without focusable content is a stop.
+        let implicit_tab_stop =
+            click.is_some() || !key_handlers.is_empty() && !children_take_focus(node, disabled);
+        let element = apply_tab_behavior(
+            element,
+            node,
+            implicit_tab_stop,
+            ancestor_disabled,
+            persistent_focus,
+        );
         let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = apply_motion_trigger_handlers(
             element,
@@ -2180,8 +2648,8 @@ impl GpuiNodeRenderer {
             let dispatcher = keyboard_dispatcher.clone();
             let target = keyboard_target.clone();
             element.capture_key_down(move |event, window, cx| {
-                let key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-                if let Some((bindings, payload)) = handlers.get(key) {
+                if let Some((bindings, payload)) = key_handler_for(&handlers, event, text_direction)
+                {
                     let response = dispatch_ui_handler_phases(
                         bindings,
                         "key",
@@ -2198,8 +2666,7 @@ impl GpuiNodeRenderer {
             element
         };
         let element = element.on_key_down(move |event, window, cx| {
-            let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-            let explicit = key_handlers.get(semantic_key);
+            let explicit = key_handler_for(&key_handlers, event, text_direction);
             let semantic = explicit.or_else(|| {
                 matches!(event.keystroke.key.as_str(), "enter" | "space")
                     .then_some(())
@@ -2225,16 +2692,12 @@ impl GpuiNodeRenderer {
                 apply_event_response(response, window, cx);
             }
         });
-        let element = apply_environment_raw_pointer(element, node, retained_id, environment);
-        Self::populate(
-            element,
-            node,
-            environment,
-            boundary_fallback,
-            path,
-            retained_id,
-            motion,
-        )
+        let element = if disabled {
+            element
+        } else {
+            apply_environment_raw_pointer(element, node, retained_id, environment)
+        };
+        Wrapped::Interactive(element)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -2255,7 +2718,7 @@ impl GpuiNodeRenderer {
                 .child(styled_text(
                     text.as_str(),
                     spans,
-                    environment.colors,
+                    &environment.resolver(),
                     environment.motions,
                     &retained_id.map_or_else(
                         || path.to_owned(),
@@ -2266,16 +2729,21 @@ impl GpuiNodeRenderer {
             UiNodeKind::Canvas { scene } => render_canvas(
                 element,
                 scene,
-                environment.colors,
+                &environment.resolver(),
                 motion,
                 retained_id,
                 environment.geometry,
             ),
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                let child_environment = RenderEnvironment {
+                    stretch_parent: environment.stretch_children,
+                    row_parent: environment.row_children,
+                    ..*environment
+                };
                 let children = render_flattened_children(
                     children,
-                    environment,
+                    &child_environment,
                     boundary_fallback,
                     path,
                     retained_id,
@@ -2302,7 +2770,7 @@ impl GpuiNodeRenderer {
             UiNodeKind::Custom { primitive } => element
                 .child(
                     environment.primitives.element(
-                        primitive.clone(),
+                        inherit_primitive_disabled(primitive, environment.inherited_disabled),
                         retained_id.zip(node.key().map(|key| key.as_str().to_owned())),
                         environment
                             .primitives
@@ -2313,6 +2781,10 @@ impl GpuiNodeRenderer {
                                     retained_id,
                                     environment.focus_handles,
                                 )
+                                .or_else(|| {
+                                    retained_id
+                                        .and_then(|id| environment.focus_owners.get(&id).cloned())
+                                })
                             })
                             .flatten(),
                         boundary_fallback.cloned(),
@@ -2327,14 +2799,15 @@ impl GpuiNodeRenderer {
                             environment.view_id,
                         ),
                         crate::PrimitiveTheme::capture_with_environment(
-                            environment.colors,
+                            &environment.resolver(),
                             environment.direction,
                             environment.locale,
                             environment.number,
                             environment.clock.clone(),
                             environment.motion_preference,
                             environment.motion_quality,
-                        ),
+                        )
+                        .with_inherited_disabled(environment.inherited_disabled),
                     ),
                 )
                 .into_any_element(),
@@ -2532,9 +3005,9 @@ where
                     .resolve(&InteractionState::default())
                     .background
                     .as_ref()
-                    .and_then(|color| environment.colors.resolve(color))
+                    .and_then(|color| environment.resolver().resolve(color))
             })
-            .unwrap_or_else(|| semantic_color(environment.colors, token, fallback))
+            .unwrap_or_else(|| semantic_color(&environment.resolver(), token, fallback))
     };
     element.child(crate::scrollbar::ThemedScrollbar::new(
         format!("{path}/scrollbars"),
@@ -2651,16 +3124,51 @@ fn render_flattened_children<C: ColorResolver>(
     rendered
 }
 
-fn node_needs_interaction_wrapper(node: &UiNode, needs: u8) -> bool {
+/// A node's element with or without its interaction wrapper.
+enum Wrapped {
+    Interactive(Stateful<Div>),
+    Plain(Div),
+}
+
+fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> bool {
     needs & 0b10_1000 != 0
-        || !is_disabled(node)
+        || is_window_drag_area(node)
+        // An overlay keeps its element path whether or not its key handlers come
+        // and go with `open`, so its focus state survives opening and closing.
+        || matches!(node.kind(), UiNodeKind::Overlay { .. })
+        || !disabled
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)
                 || node.style().hover.is_some()
+                || node.style().group_hover.is_some()
                 || node.style().active.is_some()
                 || node.style().focus.is_some()
                 || node_has_raw_pointer_handlers(node)
                 || node_scrollable(node))
+}
+
+fn is_window_drag_area(node: &UiNode) -> bool {
+    node.attributes().get("window_drag_area") == Some(&UiValue::Bool(true))
+}
+
+/// A window drag area: a press that no focusable control inside it took (they
+/// prevent default when they take focus) moves the window, and a double press
+/// runs the platform title-bar action (zoom or minimize on macOS). Window moves
+/// are platform drags on macOS and Linux.
+fn apply_window_drag_area(element: Stateful<Div>, node: &UiNode) -> Stateful<Div> {
+    if !is_window_drag_area(node) {
+        return element;
+    }
+    element.on_mouse_down(MouseButton::Left, |event, window, _| {
+        if window.default_prevented() {
+            return;
+        }
+        if event.click_count == 2 {
+            window.titlebar_double_click();
+        } else {
+            window.start_window_move();
+        }
+    })
 }
 
 fn apply_native_semantics(
@@ -2903,16 +3411,30 @@ fn accessibility_value_text(value: &UiValue) -> Option<String> {
     }
 }
 
+/// The interaction state of a node scope, with `Disabled` applied when the
+/// node or an ancestor is disabled.
+fn scoped_interaction<C>(environment: &RenderEnvironment<'_, C>) -> InteractionState {
+    let mut interaction = environment.interaction.clone();
+    if environment.focus.owner {
+        interaction = interaction.with(PseudoState::GroupFocused);
+    }
+    if environment.focus.within {
+        interaction = interaction.with(PseudoState::FocusWithin);
+    }
+    if environment.inherited_disabled {
+        interaction.with(PseudoState::Disabled)
+    } else {
+        interaction
+    }
+}
+
 fn resolved_hit_test<C: ColorResolver>(
     node: &UiNode,
     environment: &RenderEnvironment<'_, C>,
 ) -> Option<HitTestBehavior> {
-    let interaction = if is_disabled(node) {
-        environment.interaction.clone().with(PseudoState::Disabled)
-    } else {
-        environment.interaction.clone()
-    };
-    node.style().resolve(&interaction).hit_test
+    node.style()
+        .resolve(&scoped_interaction(environment))
+        .hit_test
 }
 
 fn apply_hit_test(element: Stateful<Div>, hit_test: Option<HitTestBehavior>) -> Stateful<Div> {
@@ -2990,15 +3512,30 @@ fn apply_tab_behavior(
     mut element: Stateful<Div>,
     node: &UiNode,
     implicit_tab_stop: bool,
+    ancestor_disabled: bool,
+    persistent: Option<&FocusHandle>,
 ) -> Stateful<Div> {
-    element =
-        element
-            .tab_index(node_tab_index(node))
-            .tab_stop(if node_has_focus_declaration(node) {
-                node_tab_stop(node)
-            } else {
-                implicit_tab_stop
-            });
+    // A node's own explicit focus declaration wins over its own `disabled`
+    // (focusable disabled menu items), but a disabled ancestor removes every
+    // descendant from the tab order.
+    let tab_stop = if ancestor_disabled {
+        false
+    } else if node_has_focus_declaration(node) {
+        node_tab_stop(node)
+    } else {
+        implicit_tab_stop
+    };
+    element = element.tab_index(node_tab_index(node)).tab_stop(tab_stop);
+    // GPUI applies the element tab policy only to handles it creates itself; a
+    // tracked persistent handle carries its own policy.
+    if let Some(handle) = persistent {
+        element = element.track_focus(
+            &handle
+                .clone()
+                .tab_stop(tab_stop)
+                .tab_index(node_tab_index(node)),
+        );
+    }
     if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
         element = element.tab_group();
     }
@@ -3044,15 +3581,31 @@ fn styled_text(
     path: &str,
 ) -> StyledText {
     let mut offset = 0usize;
+    let mut families = Vec::new();
     let highlights = spans.iter().filter_map(|span| {
         let start = offset;
         offset = offset.saturating_add(span.text().len());
+        // A span role changes the face only: size and line height stay the paragraph's.
+        let role = span
+            .typography_role()
+            .and_then(|role| colors.resolve_typography(role));
+        if let Some(family) = role.as_ref().and_then(|role| role.family.clone()) {
+            families.push((start..offset, SharedString::from(family)));
+        }
         let style = HighlightStyle {
             color: span
                 .color_value()
                 .and_then(|color| colors.resolve(color))
                 .map(|color| rgba(color.as_rgba_hex()).into()),
-            font_weight: span.is_bold().then_some(FontWeight::BOLD),
+            background_color: span
+                .background_value()
+                .and_then(|color| colors.resolve(color))
+                .map(|color| rgba(color.as_rgba_hex()).into()),
+            font_weight: if span.is_bold() {
+                Some(FontWeight::BOLD)
+            } else {
+                role.as_ref().map(|role| FontWeight(f32::from(role.weight)))
+            },
             font_style: span.is_italic().then_some(FontStyle::Italic),
             fade_out: span.key().and_then(|key| {
                 motions
@@ -3066,7 +3619,13 @@ fn styled_text(
         };
         (style != HighlightStyle::default()).then_some((start..offset, style))
     });
-    StyledText::new(text.to_owned()).with_highlights(highlights)
+    let highlights = highlights.collect::<Vec<_>>();
+    let styled = StyledText::new(text.to_owned()).with_highlights(highlights);
+    if families.is_empty() {
+        styled
+    } else {
+        styled.with_font_family_overrides(families)
+    }
 }
 
 fn render_canvas(
@@ -3408,12 +3967,7 @@ fn render_inline_svg<C: ColorResolver>(
     source: &crate::InlineSvg,
     environment: &RenderEnvironment<'_, C>,
 ) -> AnyElement {
-    let interaction = if is_disabled(node) {
-        environment.interaction.clone().with(PseudoState::Disabled)
-    } else {
-        environment.interaction.clone()
-    };
-    let resolved_style = node.style().resolve(&interaction);
+    let resolved_style = node.style().resolve(&scoped_interaction(environment));
     let color = environment.ambient_text_color;
     let fills_styled_box = resolved_style.width.is_some() || resolved_style.height.is_some();
     let image = environment.assets.map_or_else(
@@ -3434,17 +3988,24 @@ fn inline_svg_image(source: impl Into<gpui::ImageSource>, fills_styled_box: bool
     }
 }
 
+/// The rendered spec: window-wide ids and physical edges. The overlay is
+/// scoped by the instance that declared it; a `parent` key names the nearest
+/// enclosing overlay with that key, else one the same instance declared.
 fn scoped_overlay_spec(
     spec: &OverlayNodeSpec,
     view_id: &str,
     direction: TextDirection,
+    enclosing: Option<&OverlayScope<'_>>,
 ) -> OverlayNodeSpec {
     let mut rendered = spec.clone();
-    rendered.id = WindowOverlayCoordinator::scoped_id(view_id, &rendered.id);
-    rendered.parent = rendered
-        .parent
-        .as_ref()
-        .map(|parent| WindowOverlayCoordinator::scoped_id(view_id, parent));
+    let owner = spec.owner.as_ref();
+    rendered.id = WindowOverlayCoordinator::scoped_id(view_id, owner, &rendered.id);
+    rendered.parent = rendered.parent.as_ref().map(|parent| {
+        enclosing
+            .and_then(|scope| scope.find(parent))
+            .cloned()
+            .unwrap_or_else(|| WindowOverlayCoordinator::scoped_id(view_id, owner, parent))
+    });
     rendered.placement = match (rendered.placement, direction) {
         (crate::OverlayPlacement::Start, TextDirection::LeftToRight)
         | (crate::OverlayPlacement::End, TextDirection::RightToLeft) => {
@@ -3456,7 +4017,42 @@ fn scoped_overlay_spec(
         }
         (placement, _) => placement,
     };
+    // Logical alignment along a horizontal cross axis follows the text direction.
+    let horizontal_cross = matches!(
+        rendered.placement,
+        crate::OverlayPlacement::Top | crate::OverlayPlacement::Bottom
+    );
+    if horizontal_cross && direction == TextDirection::RightToLeft {
+        rendered.align = match rendered.align {
+            crate::OverlayAlign::Start => crate::OverlayAlign::End,
+            crate::OverlayAlign::End => crate::OverlayAlign::Start,
+            crate::OverlayAlign::Center => crate::OverlayAlign::Center,
+        };
+    }
     rendered
+}
+
+/// The overlay's `open_change` handler as the native element calls it.
+fn overlay_open_change<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+    target: EventTargetContext,
+) -> Option<crate::overlay_element::OpenChangeHandler> {
+    node.handler("open_change").map(|handler| {
+        let handler = handler.clone();
+        let dispatcher = environment.dispatcher.cloned();
+        Rc::new(move |open, window: &mut Window, cx: &mut App| {
+            dispatch_ui_event(
+                &handler,
+                "open_change",
+                UiValue::Bool(open),
+                target.snapshot(),
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
+        }) as crate::overlay_element::OpenChangeHandler
+    })
 }
 
 fn native_overlay_element<C: ColorResolver>(
@@ -3468,7 +4064,13 @@ fn native_overlay_element<C: ColorResolver>(
     boundary_fallback: Option<&UiNode>,
     (path, retained_id): (&str, Option<NodeId>),
 ) -> ScriptOverlayElement {
-    let mut rendered_spec = scoped_overlay_spec(spec, environment.view_id, environment.direction);
+    let trigger_focusable = subtree_takes_focus(trigger, environment.inherited_disabled);
+    let mut rendered_spec = scoped_overlay_spec(
+        spec,
+        environment.view_id,
+        environment.direction,
+        environment.overlay_scope,
+    );
     if rendered_spec.kind == crate::OverlayKind::Tooltip {
         rendered_spec.open = environment
             .overlays
@@ -3487,9 +4089,25 @@ fn native_overlay_element<C: ColorResolver>(
             0,
         ),
     );
+    // The panel holding focus itself is seen by `group_focus` styles in its
+    // content (a panel's focus frame), as a focusable node's is in its subtree.
+    let panel_focus = retained_id.and_then(|id| environment.focus_handles.get(&id).cloned());
+    let scope = OverlayScope {
+        local: &spec.id,
+        id: rendered_spec.id.clone(),
+        outer: environment.overlay_scope,
+    };
+    let content_environment = RenderEnvironment {
+        focus: NodeFocus {
+            owner: retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref(),
+            ..environment.focus
+        },
+        overlay_scope: Some(&scope),
+        ..*environment
+    };
     let content = GpuiNodeRenderer::render_internal(
         content,
-        environment,
+        &content_environment,
         boundary_fallback,
         &format!("{path}/content"),
         retained_child_id(
@@ -3501,22 +4119,7 @@ fn native_overlay_element<C: ColorResolver>(
         ),
     );
     let event_target = EventTargetContext::new(retained_id, environment.geometry.clone());
-    let open_target = event_target.clone();
-    let open_change = node.handler("open_change").map(|handler| {
-        let handler = handler.clone();
-        let dispatcher = environment.dispatcher.cloned();
-        Rc::new(move |open, window: &mut Window, cx: &mut App| {
-            dispatch_ui_event(
-                &handler,
-                "open_change",
-                UiValue::Bool(open),
-                open_target.snapshot(),
-                window,
-                cx,
-                dispatcher.as_ref(),
-            );
-        }) as crate::overlay_element::OpenChangeHandler
-    });
+    let open_change = overlay_open_change(node, environment, event_target.clone());
     let panel_key = overlay_panel_key(
         node,
         environment.dispatcher,
@@ -3536,7 +4139,7 @@ fn native_overlay_element<C: ColorResolver>(
     );
     let backdrop_style = node.part_style("backdrop").map(|style| {
         let style = style.clone();
-        let colors = OwnedColorResolver::capture(environment.colors);
+        let colors = OwnedColorResolver::capture(&environment.resolver());
         let direction = environment.direction;
         Rc::new(move |backdrop: Div| apply_style_override(backdrop, &style, &colors, direction))
             as crate::overlay_element::BackdropStyleHandler
@@ -3544,12 +4147,112 @@ fn native_overlay_element<C: ColorResolver>(
     overlay
         .with_backdrop_style(backdrop_style)
         .with_focus_ring(semantic_color(
-            environment.colors,
+            &environment.resolver(),
             "focus_ring",
             0x003b_82f6,
         ))
-        .with_focus_surface(semantic_color(environment.colors, "surface", 0x0018_181b))
+        .with_focus_surface(semantic_color(
+            &environment.resolver(),
+            "surface",
+            0x0018_181b,
+        ))
         .restore_focus_on_close(restore_focus_on_close)
+        .with_trigger_focusable(trigger_focusable)
+        .with_panel_focus(panel_focus)
+        .with_identity(crate::overlay_element::OverlayIdentity {
+            view_id: environment.view_id.to_owned(),
+            owner: spec.owner.as_ref().map(ToString::to_string),
+            local: spec.id.clone(),
+        })
+}
+
+/// In an RTL stretching column, a child with a definite width belongs on the
+/// start (right) edge; `apply_flex_alignment` mirrors `Start` to the right.
+/// Swap `self_start` and `self_end` when `mirror`: they name the parent's cross
+/// axis, which runs along the text except in a row (a row's is vertical).
+fn mirror_self_alignment(style: &mut StyleProperties, mirror: bool) {
+    if mirror {
+        style.align_self = style.align_self.map(|align| match align {
+            Align::Start => Align::End,
+            Align::End => Align::Start,
+            other => other,
+        });
+    }
+}
+
+fn rtl_start_edge(mut style: StyleProperties, rtl_stretch_parent: bool) -> StyleProperties {
+    if rtl_stretch_parent && style.align_self.is_none() && style.width.is_some() {
+        style.align_self = Some(Align::Start);
+    }
+    style
+}
+
+/// A stretched child takes its stretched width as a definite width.
+///
+/// Stretching is a property of the parent; without a definite width Taffy
+/// first measures such a child at its content width and then lays it out again
+/// at the stretched width, and the two passes compound at every nesting level
+/// (a 28 ms frame for a `ListDetail` inside an `AppShell` became 0.4 ms).
+///
+/// Only where the two are the same box: a horizontal margin (auto or not)
+/// takes its share out of the stretched width, which `width: 100%` would not.
+fn definite_stretch(mut style: StyleProperties, stretch_parent: bool) -> StyleProperties {
+    let margin = &style.margin;
+    let horizontal_margin = [margin.left, margin.right, margin.start, margin.end]
+        .into_iter()
+        .flatten()
+        .any(|value| !is_zero_length(value));
+    if stretch_parent
+        && !horizontal_margin
+        && style.width.is_none()
+        && style.align_self.is_none()
+        && style.position != Some(PositionMode::Absolute)
+    {
+        style.width = Some(Length::Relative(1.0).into());
+    }
+    style
+}
+
+fn is_zero_length(value: crate::LayoutLength) -> bool {
+    match value {
+        crate::LayoutLength::Definite(Length::Pixels(pixels) | Length::Rems(pixels))
+        | crate::LayoutLength::Signed(
+            crate::SignedLength::Pixels(pixels) | crate::SignedLength::Rems(pixels),
+        ) => pixels.abs() <= f64::EPSILON,
+        _ => false,
+    }
+}
+
+fn children_take_focus(node: &UiNode, disabled: bool) -> bool {
+    match node.kind() {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
+            .iter()
+            .any(|child| subtree_takes_focus(child, disabled)),
+        UiNodeKind::Overlay { trigger, .. } => subtree_takes_focus(trigger, disabled),
+        UiNodeKind::ErrorBoundary { child, .. } => subtree_takes_focus(child, disabled),
+        _ => false,
+    }
+}
+
+/// Whether rendering `node` puts a tab stop anywhere in its subtree, by the same
+/// policy as `apply_tab_behavior`: an explicit declaration wins, otherwise a click
+/// or key handler makes a node a stop, and native primitives own their focus.
+fn subtree_takes_focus(node: &UiNode, disabled: bool) -> bool {
+    let disabled = disabled || is_disabled(node);
+    if disabled {
+        return false;
+    }
+    if matches!(node.kind(), UiNodeKind::Custom { .. }) {
+        return true;
+    }
+    if node_has_focus_declaration(node) && node_tab_stop(node) {
+        return true;
+    }
+    if !node_has_focus_declaration(node) && !node.event_handlers("click").is_empty() {
+        return true;
+    }
+    let children = children_take_focus(node, disabled);
+    children || !node_has_focus_declaration(node) && !key_handler_bindings(node, false).is_empty()
 }
 
 fn overlay_panel_key(
@@ -3560,39 +4263,32 @@ fn overlay_panel_key(
 ) -> Option<crate::overlay_element::PanelKeyHandler> {
     let handlers = node
         .handlers()
-        .keys()
-        .filter_map(|event| {
-            event.strip_prefix("key:").and_then(|key| {
-                node.handler(event)
-                    .cloned()
-                    .map(|handler| (key.to_owned(), handler))
-            })
+        .iter()
+        .filter_map(|(event, bindings)| {
+            let key = event.strip_prefix("key:")?;
+            let binding = bindings
+                .iter()
+                .find(|binding| binding.phase() == crate::EventPhase::Target)?;
+            let payload = binding
+                .value()
+                .or_else(|| node.node_payload(event))
+                .cloned()
+                .unwrap_or(UiValue::Null);
+            Some((key.to_owned(), (binding.handler().clone(), payload)))
         })
         .collect::<BTreeMap<_, _>>();
     (!handlers.is_empty()).then(|| {
         let dispatcher = dispatcher.cloned();
-        let payloads = node
-            .handlers()
-            .keys()
-            .filter_map(|event| {
-                event
-                    .strip_prefix("key:")
-                    .map(|key| (key.to_owned(), node.handler_payload(event).cloned()))
-            })
-            .collect::<BTreeMap<_, _>>();
         Rc::new(
             move |event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App| {
                 let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
-                let Some(callback) = handlers.get(key) else {
+                let Some((callback, payload)) = handlers.get(key) else {
                     return false;
                 };
                 dispatch_ui_event(
                     callback,
                     "key",
-                    payloads
-                        .get(key)
-                        .and_then(Clone::clone)
-                        .unwrap_or(UiValue::Null),
+                    payload.clone(),
                     target.snapshot(),
                     window,
                     cx,
@@ -3637,7 +4333,11 @@ fn owned_slot_runtime<C: ColorResolver>(
         environment.retained_links,
         retained_roots.values().copied(),
     );
-    let mut focus_handles = environment.focus_handles.clone();
+    // Owners go to their own map: in `focus_handles` every slot node would
+    // track its owner's handle, and the owner's focus would resolve to the
+    // last of them (a Table row took the table's keys).
+    let focus_handles = environment.focus_handles.clone();
+    let mut focus_owners = environment.focus_owners.clone();
     if let Some(tree) = environment.retained {
         let nodes = retained_links
             .iter()
@@ -3649,14 +4349,14 @@ fn owned_slot_runtime<C: ColorResolver>(
             if let Some(focus) =
                 primitive_focus_owner(Some(tree), Some(node), environment.focus_handles)
             {
-                focus_handles.insert(node, focus);
+                focus_owners.insert(node, focus);
             }
         }
     }
     NodeSlotRuntime {
         now: environment.now,
         clock: environment.clock.clone(),
-        colors: OwnedColorResolver::capture(environment.colors),
+        colors: OwnedColorResolver::capture(&environment.resolver()),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
         dispatcher: environment
@@ -3672,6 +4372,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles,
+        focus_owners,
         scroll_handles: environment.scroll_handles.clone(),
         scroll_anchors: environment.scroll_anchors.clone(),
         virtual_requests: environment.virtual_requests.clone(),
@@ -3681,10 +4382,15 @@ fn owned_slot_runtime<C: ColorResolver>(
         locale: environment.locale.to_owned(),
         number: environment.number.cloned(),
         ambient_text_color: environment.ambient_text_color,
+        environment: environment.environment,
+        inherited_disabled: environment.inherited_disabled,
+        focus_path: environment.focus_path.to_vec(),
+        owner_focused: environment.focus.owner,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
         semantics: environment.semantics.cloned().unwrap_or_default(),
         a11y_active: environment.a11y_active,
+        window_drag: environment.window_drag,
         retained_roots,
         retained_links,
     }
@@ -3702,7 +4408,7 @@ fn render_table_layout<C: ColorResolver>(
     let mut columns = columns.clone();
     collect_table_column_minima(node, &mut columns, environment, true);
     let mut style = node.style().resolve(environment.interaction);
-    resolve_style_lengths(&mut style, environment.colors);
+    resolve_style_lengths(&mut style, &environment.resolver());
     let roots = retained_id
         .into_iter()
         .map(|root| ("table".to_owned(), root))
@@ -3739,7 +4445,7 @@ fn collect_table_column_minima<C: ColorResolver>(
     }
     if let Some(column) = node.table_column().and_then(|index| columns.get_mut(index)) {
         let mut style = node.style().resolve(environment.interaction);
-        resolve_style_lengths(&mut style, environment.colors);
+        resolve_style_lengths(&mut style, &environment.resolver());
         column.include_minimum_style(&style, environment.direction);
     }
     match node.kind() {
@@ -3928,6 +4634,22 @@ fn apply_canvas_signal_transform(
     motion.scale_x = signals.scale_x.or(motion.scale_x);
     motion.scale_y = signals.scale_y.or(motion.scale_y);
     motion
+}
+
+/// Merge the variant a node's string signal currently selects.
+fn apply_signal_state_style(
+    style: &mut StyleProperties,
+    registry: &crate::SignalRegistry,
+    node: &UiNode,
+) {
+    let Some(signal_style) = node.signal_style() else {
+        return;
+    };
+    if let Ok(crate::SignalValue::String(state)) = registry.read(&signal_style.signal)
+        && let Some(variant) = signal_style.states.get(&state)
+    {
+        style.merge(&variant.base);
+    }
 }
 
 fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
@@ -4331,12 +5053,10 @@ fn layout_motion_spec(node: &UiNode, now: Instant) -> Option<LayoutMotionRenderS
         _ => crate::MotionEasing::EaseOut,
     };
     let shared = match (
-        node.attributes().get("shared_layout_group"),
+        crate::motion::scoped_shared_layout_group(node),
         node.attributes().get("shared_layout_id"),
     ) {
-        (Some(UiValue::String(group)), Some(UiValue::String(id))) => {
-            Some((group.clone(), id.clone()))
-        }
+        (Some(group), Some(UiValue::String(id))) => Some((group, id.clone())),
         _ => None,
     };
     Some(LayoutMotionRenderSpec {
@@ -4350,6 +5070,9 @@ fn layout_motion_spec(node: &UiNode, now: Instant) -> Option<LayoutMotionRenderS
 struct GeometryTrackedElement {
     child: Option<AnyElement>,
     node: NodeId,
+    /// The node has an element ref: it records a hitbox over its visual
+    /// bounds, under its ancestors' clip and in its place in paint order.
+    hit_area: bool,
     registry: crate::GeometryRegistry,
     translate_x: f64,
     translate_y: f64,
@@ -4523,16 +5246,17 @@ impl Element for GeometryTrackedElement {
             if sample.active {
                 window.request_animation_frame();
             }
+            let visual = crate::GeometryBounds {
+                x: layout.x + self.translate_x + sample.offset_x,
+                y: layout.y + self.translate_y + sample.offset_y,
+                width: layout.width * sample.scale_x,
+                height: layout.height * sample.scale_y,
+            };
             self.registry.update(
                 self.node,
                 crate::ElementGeometry {
                     layout,
-                    visual: crate::GeometryBounds {
-                        x: layout.x + self.translate_x + sample.offset_x,
-                        y: layout.y + self.translate_y + sample.offset_y,
-                        width: layout.width * sample.scale_x,
-                        height: layout.height * sample.scale_y,
-                    },
+                    visual,
                     clip: None,
                 },
             );
@@ -4540,10 +5264,23 @@ impl Element for GeometryTrackedElement {
                 px(f64_to_f32(sample.offset_x)),
                 px(f64_to_f32(sample.offset_y)),
             );
-            if offset != Point::default() {
+            if offset == Point::default() {
+                child.prepaint(window, cx);
+            } else {
                 window.with_element_offset(offset, |window| child.prepaint(window, cx));
-                return;
             }
+            // After the content, so the node's own children do not cover it.
+            if self.hit_area {
+                let hitbox = window.insert_hitbox(
+                    Bounds::new(
+                        point(px(f64_to_f32(visual.x)), px(f64_to_f32(visual.y))),
+                        gpui::size(px(f64_to_f32(visual.width)), px(f64_to_f32(visual.height))),
+                    ),
+                    gpui::HitboxBehavior::Normal,
+                );
+                self.registry.record_hitbox(self.node, hitbox.id);
+            }
+            return;
         }
         child.prepaint(window, cx);
     }
@@ -4642,6 +5379,18 @@ struct PseudoPaint {
     opacity: Option<f32>,
 }
 
+impl PseudoPaint {
+    /// `self` with every field `top` sets replaced by `top`'s.
+    fn under(self, top: Self) -> Self {
+        Self {
+            background: top.background.or(self.background),
+            border: top.border.or(self.border),
+            text: top.text.or(self.text),
+            opacity: top.opacity.or(self.opacity),
+        }
+    }
+}
+
 fn pseudo_paint(properties: Option<&StyleProperties>, colors: &impl ColorResolver) -> PseudoPaint {
     let Some(properties) = properties else {
         return PseudoPaint::default();
@@ -4684,16 +5433,50 @@ fn apply_pseudo_paint(
     style
 }
 
+/// A node with a `hover` style names a GPUI group; a `group_hover` style below it paints
+/// while that group is hovered.
+fn apply_hover_group<C: ColorResolver>(
+    mut element: Stateful<Div>,
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    environment: &RenderEnvironment<'_, C>,
+    disabled: bool,
+) -> Stateful<Div> {
+    if let Some(id) = retained_id.filter(|_| node.style().hover.is_some()) {
+        element = element.group(hover_group_name(id));
+    }
+    if !disabled
+        && let (Some(group), Some(style)) = (environment.hover_group, &node.style().group_hover)
+    {
+        let paint = pseudo_paint(Some(style), &environment.resolver());
+        element = element.group_hover(hover_group_name(group), move |style| {
+            apply_pseudo_paint(style, paint)
+        });
+    }
+    element
+}
+
+fn hover_group_name(id: NodeId) -> SharedString {
+    SharedString::from(format!("gpui-rhai-hover-{}", id.get()))
+}
+
+/// GPUI refines `focus`, then `hover`, then `active`; while the node holds
+/// focus the hover paint carries the focus paint on top, so the order is
+/// `hover → focus → active`.
 fn apply_pseudo_backgrounds(
     mut element: Stateful<Div>,
     style: &Style,
     colors: &impl ColorResolver,
+    focused: bool,
 ) -> Stateful<Div> {
-    let hover = pseudo_paint(style.hover.as_ref(), colors);
+    let mut hover = pseudo_paint(style.hover.as_ref(), colors);
     let active = pseudo_paint(style.active.as_ref(), colors);
     let mut focus = pseudo_paint(style.focus.as_ref(), colors);
     if focus.border.is_none() {
         focus.border = Some(semantic_color(colors, "focus_ring", 0x003b_82f6));
+    }
+    if focused {
+        hover = hover.under(focus);
     }
     element = element.hover(move |style| apply_pseudo_paint(style, hover));
     element = element.active(move |style| apply_pseudo_paint(style, active));
@@ -4703,6 +5486,21 @@ fn apply_pseudo_backgrounds(
 
 fn is_disabled(node: &UiNode) -> bool {
     node.attributes().get("disabled") == Some(&UiValue::Bool(true))
+}
+
+/// A primitive under a disabled ancestor receives `disabled: true` when its
+/// descriptor declares a `disabled` prop (present after defaulting).
+fn inherit_primitive_disabled(
+    primitive: &crate::PrimitiveNode,
+    inherited_disabled: bool,
+) -> crate::PrimitiveNode {
+    let mut primitive = primitive.clone();
+    if inherited_disabled && primitive.props.get("disabled").is_some() {
+        primitive.props = primitive
+            .props
+            .with("disabled", crate::PrimitiveValue::Data(UiValue::Bool(true)));
+    }
+    primitive
 }
 
 fn apply_style(
@@ -4800,6 +5598,8 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.radii.top_right,
         &mut style.radii.bottom_right,
         &mut style.radii.bottom_left,
+        &mut style.radii.start,
+        &mut style.radii.end,
         &mut style.font_size,
         &mut style.line_height,
     ] {
@@ -4813,12 +5613,54 @@ pub(crate) fn apply_style_override(
     colors: &impl ColorResolver,
     direction: TextDirection,
 ) -> Div {
-    apply_style(
+    apply_style_override_in(
         element,
-        &style.resolve(&InteractionState::default()),
+        style,
+        &InteractionState::default(),
         colors,
         direction,
     )
+}
+
+/// Apply a primitive part style resolved for an explicit interaction state,
+/// such as a focused slider thumb.
+pub(crate) fn apply_style_override_in(
+    element: Div,
+    style: &Style,
+    state: &InteractionState,
+    colors: &impl ColorResolver,
+    direction: TextDirection,
+) -> Div {
+    let mut style = style.resolve(state);
+    // A part does not know its parent's axis; its self alignment mirrors in RTL.
+    mirror_self_alignment(&mut style, direction == TextDirection::RightToLeft);
+    apply_style(element, &style, colors, direction)
+}
+
+/// Center a part on an anchor point: a zero-size flex box whose overflowing
+/// child stays centered, so the part may have any size.
+pub(crate) fn centered_on_anchor(anchor: Div, child: impl IntoElement) -> Div {
+    anchor
+        .w(px(0.0))
+        .h(px(0.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(child)
+}
+
+/// The interaction state of a focusable primitive part.
+pub(crate) fn part_interaction(focused: bool, disabled: bool) -> InteractionState {
+    let mut state = InteractionState::default();
+    if focused {
+        state = state
+            .with(PseudoState::Focused)
+            .with(PseudoState::GroupFocused);
+    }
+    if disabled {
+        state = state.with(PseudoState::Disabled);
+    }
+    state
 }
 
 fn apply_layout(element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
@@ -4894,15 +5736,6 @@ fn apply_flex_alignment(
         };
     }
     if let Some(align) = style.align_self {
-        let align = if text_direction == TextDirection::RightToLeft {
-            match align {
-                Align::Start => Align::End,
-                Align::End => Align::Start,
-                other => other,
-            }
-        } else {
-            align
-        };
         element.style().align_self = Some(match align {
             Align::Start => GpuiAlignSelf::Start,
             Align::Center => GpuiAlignSelf::Center,
@@ -4931,9 +5764,18 @@ fn apply_flex_alignment(
     }
     if let Some(justify) = style.justify {
         element = match justify {
-            Justify::Start => element.justify_start(),
+            // Start and end follow the flex direction, which RTL rows reverse.
+            // GPUI's `justify_start`/`justify_end` are the writing-mode `start`
+            // and `end`, which stay physical left/right under `row-reverse`.
+            Justify::Start => {
+                element.style().justify_content = Some(gpui::AlignContent::FlexStart);
+                element
+            }
             Justify::Center => element.justify_center(),
-            Justify::End => element.justify_end(),
+            Justify::End => {
+                element.style().justify_content = Some(gpui::AlignContent::FlexEnd);
+                element
+            }
             Justify::Between => element.justify_between(),
             Justify::Around => element.justify_around(),
         };
@@ -5082,6 +5924,41 @@ fn apply_paint_and_text(
     apply_shadows(element, style, colors)
 }
 
+/// Physical corner radii, with the logical start and end corners mirrored in RTL.
+fn apply_corner_radii(
+    mut element: Div,
+    radii: &crate::CornerLengths,
+    direction: TextDirection,
+) -> Div {
+    let (top_left, top_right) = logical_horizontal_edges(
+        radii.top_left,
+        radii.top_right,
+        radii.start,
+        radii.end,
+        direction,
+    );
+    let (bottom_left, bottom_right) = logical_horizontal_edges(
+        radii.bottom_left,
+        radii.bottom_right,
+        radii.start,
+        radii.end,
+        direction,
+    );
+    if let Some(value) = top_left {
+        element = radius_top_left(element, value);
+    }
+    if let Some(value) = top_right {
+        element = radius_top_right(element, value);
+    }
+    if let Some(value) = bottom_right {
+        element = radius_bottom_right(element, value);
+    }
+    if let Some(value) = bottom_left {
+        element = radius_bottom_left(element, value);
+    }
+    element
+}
+
 fn apply_paint(
     mut element: Div,
     style: &StyleProperties,
@@ -5147,18 +6024,7 @@ fn apply_paint(
     if let Some(value) = border_left_value {
         element = border_left(element, value);
     }
-    if let Some(value) = style.radii.top_left {
-        element = radius_top_left(element, value);
-    }
-    if let Some(value) = style.radii.top_right {
-        element = radius_top_right(element, value);
-    }
-    if let Some(value) = style.radii.bottom_right {
-        element = radius_bottom_right(element, value);
-    }
-    if let Some(value) = style.radii.bottom_left {
-        element = radius_bottom_left(element, value);
-    }
+    element = apply_corner_radii(element, &style.radii, direction);
     if let Some(value) = style.font_size {
         element = font_size(element, value);
     }
@@ -5257,7 +6123,7 @@ macro_rules! definite_length_fn {
                 Length::Pixels(value) => element.$method(px(to_f32(value))),
                 Length::Rems(value) => element.$method(rems(to_f32(value))),
                 Length::Relative(value) => element.$method(relative(to_f32(value))),
-                Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+                Length::Token(_) => element,
             }
         }
     };
@@ -5288,7 +6154,7 @@ macro_rules! layout_length_fn {
                     element.$method(relative(f64_to_f32(value)))
                 }
                 LayoutLength::Auto => element.$method(auto()),
-                LayoutLength::Definite(Length::ThemeSpacing(_) | Length::ThemeRadius(_)) => element,
+                LayoutLength::Definite(Length::Token(_)) => element,
             }
         }
     };
@@ -5316,7 +6182,7 @@ macro_rules! absolute_length_fn {
             match value {
                 Length::Pixels(value) => element.$method(px(to_f32(value))),
                 Length::Rems(value) => element.$method(rems(to_f32(value))),
-                Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+                Length::Relative(_) | Length::Token(_) => element,
             }
         }
     };
@@ -5335,7 +6201,7 @@ fn font_size(element: Div, value: Length) -> Div {
     match value {
         Length::Pixels(value) => element.text_size(px(to_f32(value))),
         Length::Rems(value) => element.text_size(rems(to_f32(value))),
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+        Length::Relative(_) | Length::Token(_) => element,
     }
 }
 
@@ -5343,7 +6209,7 @@ fn line_height(element: Div, value: Length) -> Div {
     match value {
         Length::Pixels(value) => element.line_height(px(to_f32(value))),
         Length::Rems(value) => element.line_height(rems(to_f32(value))),
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+        Length::Relative(_) | Length::Token(_) => element,
     }
 }
 
@@ -5352,7 +6218,7 @@ const fn gpui_cursor(cursor: CursorKind) -> CursorStyle {
         CursorKind::Default => CursorStyle::Arrow,
         CursorKind::Pointer => CursorStyle::PointingHand,
         CursorKind::Text => CursorStyle::IBeam,
-        CursorKind::Move => CursorStyle::ClosedHand,
+        CursorKind::Move => CursorStyle::OpenHand,
         CursorKind::Crosshair => CursorStyle::Crosshair,
         CursorKind::NotAllowed => CursorStyle::OperationNotAllowed,
         CursorKind::ResizeHorizontal => CursorStyle::ResizeLeftRight,
@@ -5475,11 +6341,15 @@ mod tests {
     struct TypographyResolver;
 
     impl ColorResolver for TypographyResolver {
-        fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-            LiteralColorResolver.resolve(color)
+        fn resolve_token(&self, _token: &str) -> Option<Rgba8> {
+            None
         }
 
-        fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        fn resolve_typography_in(
+            &self,
+            role: &str,
+            _environment: &crate::Environment,
+        ) -> Option<crate::ResolvedTypography> {
             (role == "body").then(|| crate::ResolvedTypography {
                 family: Some("JetBrains Mono".to_owned()),
                 fallbacks: vec!["PingFang SC".to_owned()],
@@ -5493,17 +6363,28 @@ mod tests {
     #[test]
     fn owned_color_snapshot_matches_the_native_primitive_theme_surface() {
         let engine = crate::RuntimeEngine::new();
-        let mut theme = crate::load_theme_source(
+        let mut theme = crate::load_theme_with_layers(
             engine.engine(),
+            Some(
+                &crate::load_token_base(
+                    engine.engine(),
+                    "tokens.rhai",
+                    include_str!("../../../registry/tokens.rhai"),
+                )
+                .unwrap(),
+            ),
             "default_light.rhai",
             include_str!("../../../registry/themes/default_light.rhai"),
+            &crate::ThemeTokenOverrides::default(),
         )
         .unwrap();
         let custom = Rgba8::from_rgba_hex(0x55aa_ccff);
-        theme.tokens.namespaces.insert(
-            "brand".to_owned(),
-            BTreeMap::from([("tint".to_owned(), crate::ThemeTokenValue::Color(custom))]),
-        );
+        std::sync::Arc::make_mut(&mut theme.tokens)
+            .namespaces
+            .insert(
+                "brand".to_owned(),
+                BTreeMap::from([("tint".to_owned(), crate::ThemeTokenValue::Color(custom))]),
+            );
         let snapshot = OwnedColorResolver::capture(&theme);
         assert_eq!(
             snapshot.resolve(&ColorValue::Token("selection".to_owned())),
@@ -5514,8 +6395,8 @@ mod tests {
             theme.tokens.color("table.selection")
         );
         assert_eq!(
-            snapshot.resolve_length(Length::ThemeSpacing(SpacingToken::Xxs)),
-            theme.tokens.spacing.get("xxs").copied()
+            snapshot.resolve_length(Length::theme_spacing("xxs").unwrap()),
+            Some(Length::Pixels(2.0))
         );
         assert_eq!(
             snapshot.resolve(&ColorValue::Token("brand.tint".to_owned())),
@@ -5646,6 +6527,32 @@ mod tests {
         assert_eq!(paint.border, Some(Rgba8::from_rgb_hex(0x0044_5566)));
         assert_eq!(paint.text, Some(Rgba8::from_rgb_hex(0x0077_8899)));
         assert_eq!(paint.opacity, Some(0.625));
+    }
+
+    #[test]
+    fn cursor_move_shows_the_open_hand() {
+        assert_eq!(gpui_cursor(CursorKind::Move), CursorStyle::OpenHand);
+    }
+
+    #[test]
+    fn focus_paint_covers_hover_paint_only_where_it_sets_a_field() {
+        let hover = PseudoPaint {
+            background: Some(Rgba8::from_rgb_hex(0x0000_00ff)),
+            border: Some(Rgba8::from_rgb_hex(0x0000_ff00)),
+            text: None,
+            opacity: Some(0.5),
+        };
+        let focus = PseudoPaint {
+            background: Some(Rgba8::from_rgb_hex(0x00ff_0000)),
+            border: None,
+            text: Some(Rgba8::from_rgb_hex(0x00ff_ffff)),
+            opacity: None,
+        };
+        let painted = hover.under(focus);
+        assert_eq!(painted.background, focus.background);
+        assert_eq!(painted.border, hover.border);
+        assert_eq!(painted.text, focus.text);
+        assert_eq!(painted.opacity, Some(0.5));
     }
 
     #[test]
@@ -5912,6 +6819,34 @@ mod tests {
     }
 
     #[test]
+    fn logical_corners_round_the_inline_start_and_mirror_in_rtl() {
+        let style = Style::new()
+            .radius(Length::Pixels(0.0))
+            .radius_start(Length::Pixels(6.0));
+        let corners = |direction| {
+            let mut element = apply_paint(div(), &style.base, &TypographyResolver, direction);
+            let radii = element.style().corner_radii.clone();
+            [
+                radii.top_left,
+                radii.top_right,
+                radii.bottom_right,
+                radii.bottom_left,
+            ]
+            .map(|corner| corner.map(|value| format!("{value:?}")))
+        };
+        let six = Some(format!("{:?}", gpui::AbsoluteLength::Pixels(px(6.0))));
+        let zero = Some(format!("{:?}", gpui::AbsoluteLength::Pixels(px(0.0))));
+        assert_eq!(
+            corners(TextDirection::LeftToRight),
+            [six.clone(), zero.clone(), zero.clone(), six.clone()]
+        );
+        assert_eq!(
+            corners(TextDirection::RightToLeft),
+            [zero.clone(), six.clone(), six, zero]
+        );
+    }
+
+    #[test]
     fn rtl_keyboard_navigation_maps_physical_arrows_to_logical_handlers() {
         assert_eq!(
             logical_keyboard_key("left", TextDirection::RightToLeft),
@@ -5935,9 +6870,11 @@ mod tests {
     fn logical_overlay_edges_resolve_against_text_direction() {
         let spec = |placement| crate::OverlayNodeSpec {
             id: crate::OverlayId::new("logical-sheet"),
+            owner: None,
             parent: None,
             kind: crate::OverlayKind::Sheet,
             placement,
+            align: crate::OverlayAlign::Center,
             anchor: None,
             open: true,
             gap: 0.0,
@@ -5956,6 +6893,7 @@ mod tests {
                 &spec(crate::OverlayPlacement::Start),
                 "view",
                 TextDirection::RightToLeft,
+                None,
             )
             .placement,
             crate::OverlayPlacement::Right
@@ -5965,6 +6903,7 @@ mod tests {
                 &spec(crate::OverlayPlacement::End),
                 "view",
                 TextDirection::RightToLeft,
+                None,
             )
             .placement,
             crate::OverlayPlacement::Left

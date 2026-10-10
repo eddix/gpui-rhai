@@ -50,37 +50,25 @@ data_table_cases=(
   default-light.en.loading
 )
 gallery_cases=(
-  charts-catalog.catppuccin-mocha.ar.normal
-  charts-catalog.catppuccin-mocha.ar.reduced
-  charts-catalog.default-dark.en.none
-  charts-catalog.default-dark.en.normal
-  charts-catalog.default-light.en.normal
-  charts-interaction.diagnostics.default-dark.en.normal
-  components-catalog.documents.default-dark.en.normal
-  components-catalog.documents.default-light.en.normal
-  components-catalog.forms.catppuccin-mocha.ar.normal
-  components-catalog.forms.default-dark.en.normal
-  components-catalog.forms.default-light.en.normal
-  components-catalog.foundations.default-dark.en.normal
-  components-catalog.foundations.default-light.en.normal
-  components-catalog.navigation.default-dark.en.normal
-  components-catalog.navigation.default-light.en.normal
-  components-catalog.overlays.default-dark.en.normal
-  components-catalog.overlays.default-light.en.normal
-  components-catalog.overlays.tokyo-night.en.reduced
-  host-embedding.default-dark.en.normal
-  motion-catalog.default-dark.en.none
-  resizable.default-dark.en.normal
-  split-pane.default-dark.en.normal
-  operations.command-dialog.default-dark.en.normal
-  operations.config-diff.default-light.en.normal
-  operations.dashboard.default-dark.en.normal
-  operations.dashboard.default-light.en.normal
-  operations.empty.default-dark.en.normal
-  operations.failure-terminal.default-dark.en.normal
-  operations.failure.default-dark.en.normal
-  operations.large.default-dark.en.normal
-  operations.loading.default-light.en.normal
+  button.comfortable.default-dark.en
+  button.comfortable.default-light.en
+  button.compact.default-dark.en
+  button.compact.default-light.en
+  description-list.compact.default-light.zh-CN
+  scene-form.comfortable.default-dark.en
+  scene-form.comfortable.default-light.en
+  scene-form.compact.default-dark.en
+  scene-form.compact.default-light.en
+  scene-operations.comfortable.default-dark.ar
+  scene-operations.comfortable.default-dark.en
+  scene-operations.comfortable.default-light.en
+  scene-operations.compact.default-dark.en
+  scene-operations.compact.default-light.en
+  scene-settings.comfortable.default-dark.en
+  scene-settings.comfortable.default-light.en
+  scene-settings.compact.default-dark.en
+  scene-settings.compact.default-light.en
+  table.comfortable.default-dark.zh-CN
 )
 
 check_case() {
@@ -142,28 +130,30 @@ PY
   fi
 }
 
+# All baselines are offscreen captures in device pixels: twice the window size.
 for case_name in "${settings_cases[@]}"; do
-  check_case "tests/visual/macos/settings_panel/${case_name}.png" 640 552
+  check_case "tests/visual/macos/settings_panel/${case_name}.png" 1280 1040
 done
 for case_name in "${dashboard_cases[@]}"; do
-  check_case "tests/visual/macos/dashboard_layout/${case_name}.png" 760 592
+  check_case "tests/visual/macos/dashboard_layout/${case_name}.png" 1520 1120
 done
 for case_name in "${form_cases[@]}"; do
-  check_case "tests/visual/macos/form_showcase/${case_name}.png" 760 752
+  check_case "tests/visual/macos/form_showcase/${case_name}.png" 1520 1440
 done
 for case_name in "${data_table_cases[@]}"; do
-  check_case "tests/visual/macos/data_table/${case_name}.png" 980 752
+  check_case "tests/visual/macos/data_table/${case_name}.png" 1960 1440
 done
 for case_name in "${embedded_view_cases[@]}"; do
-  check_case "tests/visual/macos/embedded_views/${case_name}.png" 900 452
+  check_case "tests/visual/macos/embedded_views/${case_name}.png" 1800 840
 done
 for case_name in "${gallery_cases[@]}"; do
-  check_case "tests/visual/macos/gallery/${case_name}.png" 1181 820
+  # Offscreen captures in device pixels: the 1280 x 860 Gallery at 2x.
+  check_case "tests/visual/macos/gallery/${case_name}.png" 2560 1720
 done
 
 actual_count="$(find tests/visual/macos -type f -name '*.png' | wc -l | tr -d ' ')"
-if [[ "${actual_count}" != "69" ]]; then
-  echo "unexpected visual baseline count: ${actual_count} (expected 69)" >&2
+if [[ "${actual_count}" != "57" ]]; then
+  echo "unexpected visual baseline count: ${actual_count} (expected 57)" >&2
   exit 1
 fi
 

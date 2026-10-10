@@ -2,31 +2,39 @@
 {
   "id": "components/skeleton",
   "export": "Skeleton",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["surface_hover"],
+  "environment": []
 }
 */
 // Content placeholder with optional Rust-side pulse animation.
-// Props: key, width, height, radius, animated. Parts: root.
-// State/events: stateless; Rust owns pulse frames and no events are emitted.
+//
 // Example: Skeleton(#{ key: "avatar", width: 40, height: 40, animated: true })
 
 define_component(#{
     metadata: #{
-        id: "components/skeleton", "export": "Skeleton", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
+        id: "components/skeleton", "export": "Skeleton", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["surface_hover"],
+        environment: [],
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            width: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
-            height: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable identity of the placeholder; keeps its pulse continuous across renders." },
+            width: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false,
+                doc: "Width in logical pixels." },
+            height: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false,
+                doc: "Height in logical pixels." },
             radius: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 0 } },
+                "default": #{ type: "integer", value: 0 },
+                doc: "Corner radius in logical pixels." },
             animated: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Pulses the placeholder's opacity on the `ambient` motion duration." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
     },

@@ -13,7 +13,12 @@ keywords = ["gpui", "rhai", "components", "themes", "registry"]
 categories = ["gui", "development-tools"]
 include = [
     "src/**/*.rs",
+    "tokens.rhai",
     "components/**/*.rhai",
+    "layouts/**/*.rhai",
+    "patterns/**/*.rhai",
+    "profiles/**/*.rhai",
+    "gallery/**/*.rhai",
     "motion/**/*.rhai",
     "charts/**/*.rhai",
     "themes/**/*.rhai",
@@ -21,6 +26,7 @@ include = [
     "studio/**/*.rhai",
     "stories/**/*.rhai",
     "assets/**/*.svg",
+    "skills/**/*.md",
     "README.md",
     "LICENSE-*",
     "Cargo.toml",

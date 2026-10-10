@@ -24,9 +24,15 @@ pub enum ImageSourceSpec {
 #[derive(Clone, Debug, PartialEq)]
 pub struct OverlayNodeSpec {
     pub id: OverlayId,
+    /// The component instance that declared the overlay, set when its render
+    /// binds the node. With `id` it is the overlay's identity, so two
+    /// instances of one component do not share an overlay.
+    pub owner: Option<crate::ComponentInstancePath>,
     pub parent: Option<OverlayId>,
     pub kind: OverlayKind,
     pub placement: OverlayPlacement,
+    /// Cross-axis alignment against the trigger; logical `Start`/`End`.
+    pub align: crate::OverlayAlign,
     pub anchor: Option<crate::OverlayBounds>,
     pub open: bool,
     pub gap: f64,
@@ -78,6 +84,8 @@ pub enum LayerPlacement {
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayerNodeSpec {
     pub id: OverlayId,
+    /// The declaring component instance, as for overlays.
+    pub owner: Option<crate::ComponentInstancePath>,
     pub placement: LayerPlacement,
     pub inset: f64,
     pub priority: usize,
@@ -123,6 +131,8 @@ pub struct Span {
     text: ImmutableString,
     key: Option<ImmutableString>,
     color: Option<crate::ColorValue>,
+    background: Option<crate::ColorValue>,
+    typography: Option<ImmutableString>,
     bold: bool,
     italic: bool,
     motions: Vec<MotionSource>,
@@ -135,10 +145,27 @@ impl Span {
             text: text.into(),
             key: None,
             color: None,
+            background: None,
+            typography: None,
             bold: false,
             italic: false,
             motions: Vec::new(),
         }
+    }
+
+    /// A background behind the span's text (inline code).
+    #[must_use]
+    pub fn background(mut self, color: crate::ColorValue) -> Self {
+        self.background = Some(color);
+        self
+    }
+
+    /// The family and weight of a typography role; the size and line height
+    /// stay the paragraph's, so the span sits on its line.
+    #[must_use]
+    pub fn typography(mut self, role: impl Into<ImmutableString>) -> Self {
+        self.typography = Some(role.into());
+        self
     }
 
     #[must_use]
@@ -194,6 +221,16 @@ impl Span {
     }
 
     #[must_use]
+    pub const fn background_value(&self) -> Option<&crate::ColorValue> {
+        self.background.as_ref()
+    }
+
+    #[must_use]
+    pub fn typography_role(&self) -> Option<&str> {
+        self.typography.as_deref()
+    }
+
+    #[must_use]
     pub const fn is_bold(&self) -> bool {
         self.bold
     }
@@ -213,6 +250,12 @@ impl CustomType for Span {
             })
             .with_fn("color", |span: &mut Self, color: crate::ColorValue| {
                 span.clone().color(color)
+            })
+            .with_fn("background", |span: &mut Self, color: crate::ColorValue| {
+                span.clone().background(color)
+            })
+            .with_fn("typography", |span: &mut Self, role: ImmutableString| {
+                span.clone().typography(role)
             })
             .with_fn("motion", |span: &mut Self, source: MotionSource| {
                 span.clone().motion(source)
@@ -291,8 +334,57 @@ pub enum UiNodeKindTag {
 
 /// A stable declarative UI node. Script-produced nodes contain no GPUI values
 /// or lifetimes; trusted Rust Hosts may attach opaque foreground callbacks.
+///
+/// A node is a shared, copy-on-write handle: Rhai passes nodes by value
+/// (variables, arrays, arguments), so a clone must not copy the subtree.
+#[derive(Clone)]
+pub struct UiNode(Rc<UiNodeData>);
+
+impl std::fmt::Debug for UiNode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl PartialEq for UiNode {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0) || self.0 == other.0
+    }
+}
+
+impl std::ops::Deref for UiNode {
+    type Target = UiNodeData;
+
+    fn deref(&self) -> &UiNodeData {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for UiNode {
+    fn deref_mut(&mut self) -> &mut UiNodeData {
+        Rc::make_mut(&mut self.0)
+    }
+}
+
+impl From<UiNodeData> for UiNode {
+    fn from(data: UiNodeData) -> Self {
+        Self(Rc::new(data))
+    }
+}
+
+/// Style variants chosen by the value of a native string signal, such as the
+/// `idle`/`hover`/`drag`/`focus`/`disabled` state a resize primitive writes.
+/// Pointer moves change the signal, never the Rhai tree.
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiNode {
+pub struct SignalStyle {
+    pub signal: crate::NativeSignal,
+    pub states: BTreeMap<String, Style>,
+}
+
+/// The contents of a [`UiNode`]; reached only through the node's methods.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiNodeData {
     kind: UiNodeKind,
     key: Option<NodeKey>,
     style: Rc<Style>,
@@ -307,6 +399,7 @@ pub struct UiNode {
     progress_motions: Vec<crate::MotionProgressBinding>,
     timelines: Vec<crate::MotionTimeline>,
     signal_bindings: BTreeMap<crate::SignalProperty, crate::NativeSignal>,
+    signal_style: Option<Rc<SignalStyle>>,
     table_layout: Option<Rc<crate::table_layout::TableLayout>>,
     table_column: Option<usize>,
     element_ref: Option<crate::ElementRef>,
@@ -406,6 +499,7 @@ enum NodePresentationMutation {
     Style(Rc<Style>),
     PartStyles(Rc<BTreeMap<String, Style>>),
     Signal(crate::SignalProperty, crate::NativeSignal),
+    SignalStyle(Rc<SignalStyle>),
     TableTrack(Rc<crate::table_layout::TableLayout>),
     TableColumn(usize),
     ElementRef(crate::ElementRef),
@@ -416,7 +510,9 @@ enum NodePresentationMutation {
     ExitMotion(MotionSource),
     ProgressMotion(crate::MotionProgressBinding),
     Timeline(Box<crate::MotionTimeline>),
-    MotionGroup(String),
+    /// A surrounding `motion_group`: its name and, once bound, the component
+    /// instance that declared it.
+    MotionGroup(String, Option<String>),
 }
 
 impl NodePresentationMutation {
@@ -428,6 +524,7 @@ impl NodePresentationMutation {
             Self::Signal(property, signal) => {
                 node.signal_bindings.insert(*property, signal.clone());
             }
+            Self::SignalStyle(style) => node.signal_style = Some(Rc::clone(style)),
             Self::TableTrack(layout) => node.table_layout = Some(Rc::clone(layout)),
             Self::TableColumn(index) => node.table_column = Some(*index),
             Self::ElementRef(reference) => node.element_ref = Some(reference.clone()),
@@ -463,7 +560,9 @@ impl NodePresentationMutation {
                     .retain(|existing| existing.name != timeline.name);
                 node.timelines.push(timeline.as_ref().clone());
             }
-            Self::MotionGroup(group) => apply_motion_group_contents(node, group),
+            Self::MotionGroup(group, scope) => {
+                apply_motion_group_contents(node, group, scope.as_deref());
+            }
         }
     }
 
@@ -497,6 +596,10 @@ impl NodePresentationMutation {
             }
             Self::Timeline(timeline) => {
                 timeline.bind_component_scope(component, incarnation, events, native_context);
+            }
+            // Replays after the declaring component's render keep its scope.
+            Self::MotionGroup(_, scope) => {
+                scope.get_or_insert_with(|| component.to_string());
             }
             _ => {}
         }
@@ -660,7 +763,7 @@ impl ComponentSubtreeIndex {
 impl UiNode {
     #[must_use]
     pub fn text(text: impl Into<ImmutableString>) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Text { text: text.into() },
             key: None,
             style: default_node_style(),
@@ -675,18 +778,20 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn rich_text(spans: Vec<Span>) -> Self {
         let text = spans.iter().map(Span::text).collect::<String>().into();
-        Self {
+        UiNodeData {
             kind: UiNodeKind::RichText { text, spans },
             key: None,
             style: default_node_style(),
@@ -701,12 +806,14 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
@@ -732,7 +839,7 @@ impl UiNode {
 
     #[must_use]
     pub fn box_node(children: Vec<Self>) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Box { children },
             key: None,
             style: default_node_style(),
@@ -747,21 +854,20 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn fragment(children: Vec<Self>) -> Self {
-        let mut node = Self::box_node(children);
-        node.kind = match node.kind {
-            UiNodeKind::Box { children } => UiNodeKind::Fragment { children },
-            _ => unreachable!(),
-        };
+        let mut node = Self::box_node(Vec::new());
+        node.kind = UiNodeKind::Fragment { children };
         node
     }
 
@@ -778,7 +884,7 @@ impl UiNode {
     #[must_use]
     pub fn custom(primitive: PrimitiveNode) -> Self {
         let key = primitive.key.as_ref().map(NodeKey::new);
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Custom { primitive },
             key,
             style: default_node_style(),
@@ -793,17 +899,19 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn error_boundary(child: Self, fallback: Self) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::ErrorBoundary {
                 child: Box::new(child),
                 fallback: Box::new(fallback),
@@ -821,12 +929,14 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
@@ -840,7 +950,7 @@ impl UiNode {
     }
 
     fn image_source(source: ImageSourceSpec) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Image { source },
             key: None,
             style: default_node_style(),
@@ -855,12 +965,14 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
@@ -883,7 +995,7 @@ impl UiNode {
         left_to_right: ImageSourceSpec,
         right_to_left: ImageSourceSpec,
     ) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::DirectionalImage {
                 left_to_right,
                 right_to_left,
@@ -901,17 +1013,19 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn overlay(trigger: Self, content: Self, spec: OverlayNodeSpec) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Overlay {
                 trigger: Box::new(trigger),
                 content: Box::new(content),
@@ -930,18 +1044,20 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn layer(content: Self, spec: LayerNodeSpec) -> Self {
         let key = spec.id.as_str().to_owned();
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Layer {
                 content: Box::new(content),
                 spec,
@@ -959,18 +1075,20 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn virtual_collection(spec: crate::VirtualCollectionNodeSpec) -> Self {
         let key = spec.id.key.clone();
-        Self {
+        UiNodeData {
             kind: UiNodeKind::VirtualCollection { spec },
             key: Some(NodeKey::new(key)),
             style: default_node_style(),
@@ -985,12 +1103,14 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            signal_style: None,
             table_layout: None,
             table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     fn apply_presentation_mutation(&mut self, mutation: NodePresentationMutation) {
@@ -1045,6 +1165,35 @@ impl UiNode {
         }
         self.apply_presentation_mutation(NodePresentationMutation::Signal(property, signal));
         Ok(self)
+    }
+
+    /// Merge `states[value]` into this node's style, where `value` is the
+    /// current value of a string signal.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::SignalError::TypeMismatch`] for a signal that is not a
+    /// string signal.
+    pub fn with_signal_style(
+        mut self,
+        signal: crate::NativeSignal,
+        states: BTreeMap<String, Style>,
+    ) -> Result<Self, crate::SignalError> {
+        if signal.id().kind() != crate::SignalKind::String {
+            return Err(crate::SignalError::TypeMismatch {
+                expected: crate::SignalKind::String,
+                actual: signal.id().kind(),
+            });
+        }
+        self.apply_presentation_mutation(NodePresentationMutation::SignalStyle(Rc::new(
+            SignalStyle { signal, states },
+        )));
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn signal_style(&self) -> Option<&SignalStyle> {
+        self.signal_style.as_deref()
     }
 
     #[must_use]
@@ -1383,6 +1532,42 @@ impl UiNode {
         }
     }
 
+    /// Set environment values inherited by this node's subtree, merging with
+    /// values set earlier on the same node. Names and values are `snake_case`
+    /// strings; whether they are declared is decided by the active token base.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message for non-string or malformed entries, or more than
+    /// [`crate::token::MAX_ENVIRONMENT_VALUES`] names.
+    pub fn with_environment(self, values: &Map) -> Result<Self, String> {
+        let mut merged = match self.attributes.get("environment") {
+            Some(UiValue::Map(existing)) => existing.clone(),
+            _ => BTreeMap::new(),
+        };
+        for (name, value) in values {
+            let value = value
+                .clone()
+                .into_string()
+                .map_err(|_| format!("environment value `{name}` must be a string"))?;
+            if !crate::token::valid_token_segment(name)
+                || !crate::token::valid_token_segment(&value)
+            {
+                return Err(format!(
+                    "environment `{name}: {value}` must use snake_case names and values"
+                ));
+            }
+            merged.insert(name.to_string(), UiValue::String(value));
+        }
+        if merged.len() > crate::token::MAX_ENVIRONMENT_VALUES {
+            return Err(format!(
+                "a node can set at most {} environment values",
+                crate::token::MAX_ENVIRONMENT_VALUES
+            ));
+        }
+        Ok(self.with_attribute("environment", UiValue::Map(merged)))
+    }
+
     #[must_use]
     pub fn with_attribute(mut self, name: impl Into<String>, value: UiValue) -> Self {
         self.apply_presentation_mutation(NodePresentationMutation::Attribute(name.into(), value));
@@ -1412,6 +1597,22 @@ impl UiNode {
         self.apply_presentation_mutation(NodePresentationMutation::Handler(
             event.into(),
             UiEventBinding::new(phase, handler),
+        ));
+        self
+    }
+
+    /// Append a handler that receives `value` as its payload; the node's other
+    /// handlers for `event` keep their own payloads.
+    #[must_use]
+    pub fn with_value_handler(
+        mut self,
+        event: impl Into<String>,
+        handler: impl Into<UiEventHandler>,
+        value: UiValue,
+    ) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Handler(
+            event.into(),
+            UiEventBinding::new(crate::EventPhase::Target, handler).with_value(value),
         ));
         self
     }
@@ -1528,13 +1729,27 @@ impl UiNode {
         self.handlers.get(event).map_or(&[], Vec::as_slice)
     }
 
+    /// The payload set for `event` with [`Self::with_handler_payload`], else
+    /// the value of the last handler declared with one.
     #[must_use]
     pub fn handler_payload(&self, event: &str) -> Option<&UiValue> {
+        self.handler_payloads.get(event).or_else(|| {
+            self.event_handlers(event)
+                .iter()
+                .rev()
+                .find_map(UiEventBinding::value)
+        })
+    }
+
+    /// The payload set for `event` on the node itself, which handlers without
+    /// their own value receive.
+    #[must_use]
+    pub(crate) fn node_payload(&self, event: &str) -> Option<&UiValue> {
         self.handler_payloads.get(event)
     }
 
     #[must_use]
-    pub(crate) const fn handler_payloads(&self) -> &BTreeMap<String, UiValue> {
+    pub(crate) fn handler_payloads(&self) -> &BTreeMap<String, UiValue> {
         &self.handler_payloads
     }
 
@@ -1674,6 +1889,16 @@ impl UiNode {
         events: &BTreeMap<String, crate::EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
+        // A shared-layout group belongs to the instance that named it, so two
+        // instances of one component do not share an identity.
+        if self.attributes.contains_key("shared_layout_group")
+            && !self.attributes.contains_key("shared_layout_scope")
+        {
+            self.attributes.insert(
+                "shared_layout_scope".to_owned(),
+                UiValue::String(component.to_string()),
+            );
+        }
         for bindings in self.handlers.values_mut() {
             for binding in bindings {
                 if let Some(callback) = binding.handler_mut().as_script_mut() {
@@ -1709,15 +1934,22 @@ impl UiNode {
                 fallback.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::Overlay {
-                trigger, content, ..
+                trigger,
+                content,
+                spec,
             } => {
+                spec.owner.get_or_insert_with(|| component.clone());
                 trigger.bind_component_scope(component, incarnation, events, native_context);
                 content.bind_component_scope(component, incarnation, events, native_context);
             }
-            UiNodeKind::Layer { content, .. } => {
+            UiNodeKind::Layer { content, spec } => {
+                spec.owner.get_or_insert_with(|| component.clone());
                 content.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::VirtualCollection { spec } => {
+                if spec.inherited_motion_group.is_some() && spec.inherited_motion_scope.is_none() {
+                    spec.inherited_motion_scope = Some(component.to_string());
+                }
                 for item in spec.realized.values_mut() {
                     item.bind_component_scope(component, incarnation, events, native_context);
                 }
@@ -1737,7 +1969,7 @@ impl UiNode {
     }
 
     #[must_use]
-    pub const fn kind_tag(&self) -> UiNodeKindTag {
+    pub fn kind_tag(&self) -> UiNodeKindTag {
         match self.kind {
             UiNodeKind::Text { .. } | UiNodeKind::RichText { .. } => UiNodeKindTag::Text,
             UiNodeKind::Canvas { .. } => UiNodeKindTag::Canvas,
@@ -1846,7 +2078,7 @@ impl UiNode {
     }
 
     #[must_use]
-    pub const fn element_ref(&self) -> Option<&crate::ElementRef> {
+    pub fn element_ref(&self) -> Option<&crate::ElementRef> {
         self.element_ref.as_ref()
     }
 
@@ -1854,7 +2086,7 @@ impl UiNode {
         self.table_layout.as_deref()
     }
 
-    pub(crate) const fn table_column(&self) -> Option<usize> {
+    pub(crate) fn table_column(&self) -> Option<usize> {
         self.table_column
     }
 
@@ -1925,6 +2157,31 @@ fn replace_in_nodes<'a>(
     false
 }
 
+/// `node.signal_style(signal, #{ state: style() })`.
+fn node_signal_style(
+    node: &mut UiNode,
+    signal: crate::NativeSignal,
+    states: Map,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    let states = states
+        .into_iter()
+        .map(|(state, style)| {
+            style
+                .try_cast::<Style>()
+                .map(|style| (state.to_string(), style))
+                .ok_or_else(|| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        format!("signal_style state `{state}` must be a style()").into(),
+                        Position::NONE,
+                    ))
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    node.clone()
+        .with_signal_style(signal, states)
+        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
+}
+
 impl CustomType for UiNode {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
@@ -1984,28 +2241,7 @@ impl CustomType for UiNode {
                         .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
                 },
             )
-            .with_fn(
-                "bind_parent_signal",
-                |node: &mut Self,
-                 context: crate::UiContext,
-                 property: ImmutableString,
-                 key: ImmutableString|
-                 -> Result<Self, Box<EvalAltResult>> {
-                    let property = crate::SignalProperty::parse(property.as_str())
-                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
-                    if property.signal_kind() != crate::SignalKind::OptionalFloat {
-                        return Err(Box::new(crate::signal::signal_runtime_error(
-                            &"parent signal binding currently supports optional-float properties",
-                        )));
-                    }
-                    let signal = context
-                        .parent_optional_float_signal_ref(key.as_str())
-                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
-                    node.clone()
-                        .with_signal_binding(property, signal)
-                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
-                },
-            )
+            .with_fn("signal_style", node_signal_style)
             .with_fn(
                 "with_ref",
                 |node: &mut Self, reference: crate::ElementRef| {
@@ -2103,10 +2339,62 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
             node.clone()
                 .with_attribute("disabled", UiValue::Bool(disabled))
         })
+        .with_fn(
+            "env",
+            |node: &mut UiNode, values: Map| -> Result<UiNode, Box<EvalAltResult>> {
+                node.clone().with_environment(&values).map_err(|message| {
+                    Box::new(EvalAltResult::ErrorRuntime(message.into(), Position::NONE))
+                })
+            },
+        )
         .with_fn("tab_stop", |node: &mut UiNode, tab_stop: bool| {
             node.clone()
                 .with_attribute("tab_stop", UiValue::Bool(tab_stop))
         })
+        // The container's heading is drawn elsewhere (a host's panel header):
+        // composition checks treat it like a container that starts with one.
+        .with_fn("heading_elsewhere", |node: &mut UiNode| {
+            node.clone()
+                .with_attribute("heading_elsewhere", UiValue::Bool(true))
+        })
+        // A container that scrolls on one axis also takes wheel deltas of the other axis
+        // on it: a horizontal tab strip scrolls with a vertical mouse wheel.
+        .with_fn("translate_wheel", |node: &mut UiNode| {
+            node.clone()
+                .with_attribute("translate_wheel", UiValue::Bool(true))
+        })
+        // Pressing the node itself (not a focusable control inside it) moves
+        // the window, and a double press runs the platform title-bar action.
+        .with_fn("window_drag_area", |node: &mut UiNode| {
+            node.clone()
+                .with_attribute("window_drag_area", UiValue::Bool(true))
+        })
+        // A deliberate, greppable exception: this node opts out of the named
+        // composition audit rules (for example a figure and its unit).
+        .with_fn(
+            "audit_allow",
+            |node: &mut UiNode, rules: rhai::Array| -> Result<UiNode, Box<EvalAltResult>> {
+                let mut ids = Vec::with_capacity(rules.len());
+                for rule in rules {
+                    let id = rule.into_string().map_err(|_| {
+                        Box::new(EvalAltResult::ErrorRuntime(
+                            "audit_allow expects an array of rule identifiers".into(),
+                            Position::NONE,
+                        ))
+                    })?;
+                    if crate::AuditRule::parse(&id).is_none() {
+                        return Err(Box::new(EvalAltResult::ErrorRuntime(
+                            format!("unknown audit rule `{id}`").into(),
+                            Position::NONE,
+                        )));
+                    }
+                    ids.push(UiValue::String(id));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute("audit_allow", UiValue::Array(ids)))
+            },
+        )
         .with_fn(
             "selectable",
             |node: &mut UiNode, selectable: bool| -> Result<UiNode, Box<EvalAltResult>> {
@@ -2167,11 +2455,11 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
                         Position::NONE,
                     ))
                 })?;
-                let event = format!("key:{key}");
-                Ok(node
-                    .clone()
-                    .with_handler(event.clone(), retained_script_callback(&call, callback)?)
-                    .with_handler_payload(event, payload))
+                Ok(node.clone().with_value_handler(
+                    format!("key:{key}"),
+                    retained_script_callback(&call, callback)?,
+                    payload,
+                ))
             },
         );
 }
@@ -2186,10 +2474,11 @@ fn register_value_event_methods(builder: &mut TypeBuilder<UiNode>) {
              payload: Dynamic|
              -> Result<UiNode, Box<EvalAltResult>> {
                 let payload = dynamic_ui_value(payload)?;
-                Ok(node
-                    .clone()
-                    .with_handler("click", retained_script_callback(&call, callback)?)
-                    .with_handler_payload("click", payload))
+                Ok(node.clone().with_value_handler(
+                    "click",
+                    retained_script_callback(&call, callback)?,
+                    payload,
+                ))
             },
         )
         .with_fn(
@@ -2200,10 +2489,11 @@ fn register_value_event_methods(builder: &mut TypeBuilder<UiNode>) {
              payload: Dynamic|
              -> Result<UiNode, Box<EvalAltResult>> {
                 let payload = dynamic_ui_value(payload)?;
-                Ok(node
-                    .clone()
-                    .with_handler("hover_change", retained_script_callback(&call, callback)?)
-                    .with_handler_payload("hover_change", payload))
+                Ok(node.clone().with_value_handler(
+                    "hover_change",
+                    retained_script_callback(&call, callback)?,
+                    payload,
+                ))
             },
         );
 }
@@ -2297,8 +2587,7 @@ fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
                 })?;
                 Ok(node
                     .clone()
-                    .with_handler("click", handler)
-                    .with_handler_payload("click", dynamic_ui_value(payload)?))
+                    .with_value_handler("click", handler, dynamic_ui_value(payload)?))
             },
         )
         .with_fn(
@@ -2380,20 +2669,60 @@ fn normalize_node_event_name(event: &str) -> Result<String, Box<EvalAltResult>> 
 /// One grammar and normalization for every Rhai node-key registration entry.
 /// The `key:` prefix consumes four bytes of the 64-byte event-name budget.
 fn normalize_key_handler_name(key: &str) -> Result<String, Box<EvalAltResult>> {
-    let named = key
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
-    let punctuation =
-        key.len() == 1 && key.as_bytes()[0].is_ascii_punctuation() && key.as_bytes()[0] != b':';
-    if (1..=60).contains(&key.len()) && (named || punctuation) {
-        Ok(key.to_ascii_lowercase())
-    } else {
-        Err(Box::new(EvalAltResult::ErrorRuntime(
-            "key handler name must be 1-60 ASCII letters, digits or `_`, or one ASCII punctuation character other than `:`; whitespace and chords are not accepted"
+    let invalid = || {
+        Box::new(EvalAltResult::ErrorRuntime(
+            "key handler name must be 1-60 ASCII letters, digits or `_`, or one ASCII punctuation character other than `:`, optionally preceded by distinct `ctrl+`, `alt+`, `shift+` or `cmd+` modifiers; whitespace and multi-key chords are not accepted"
                 .into(),
             Position::NONE,
-        )))
+        ))
+    };
+    if key.len() > 60 {
+        return Err(invalid());
     }
+    // A lone `+` is the plus key, not a modifier separator.
+    let (modifiers, base) = match key.rsplit_once('+') {
+        Some((modifiers, base)) if !base.is_empty() => (Some(modifiers), base),
+        _ => (None, key),
+    };
+    let named = !base.is_empty()
+        && base
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+    let punctuation =
+        base.len() == 1 && base.as_bytes()[0].is_ascii_punctuation() && base.as_bytes()[0] != b':';
+    if !(named || punctuation) {
+        return Err(invalid());
+    }
+    let mut present = [false; 4];
+    if let Some(modifiers) = modifiers {
+        for modifier in modifiers.split('+') {
+            let index = KEY_MODIFIERS
+                .iter()
+                .position(|name| modifier.eq_ignore_ascii_case(name))
+                .ok_or_else(invalid)?;
+            if present[index] {
+                return Err(invalid());
+            }
+            present[index] = true;
+        }
+    }
+    Ok(canonical_key_name(present, &base.to_ascii_lowercase()))
+}
+
+/// Modifier names in canonical order for key handler names.
+pub(crate) const KEY_MODIFIERS: [&str; 4] = ["ctrl", "alt", "shift", "cmd"];
+
+/// `ctrl+alt+shift+cmd+key`, listing only the present modifiers.
+pub(crate) fn canonical_key_name(present: [bool; 4], key: &str) -> String {
+    let mut name = String::new();
+    for (modifier, on) in KEY_MODIFIERS.iter().zip(present) {
+        if on {
+            name.push_str(modifier);
+            name.push('+');
+        }
+    }
+    name.push_str(key);
+    name
 }
 
 fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
@@ -2877,19 +3206,25 @@ pub(crate) fn motion_group_node(
         )));
     }
     let mut node = fragment_node(call, children)?;
-    apply_motion_group(&mut node, &id);
+    apply_motion_group(&mut node, &id, None);
     Ok(node)
 }
 
-pub(crate) fn apply_motion_group(node: &mut UiNode, group: &str) {
+/// Give the nodes that declare only a shared-layout id this group. `scope` is
+/// the declaring instance when known; otherwise the next component binding
+/// supplies it.
+pub(crate) fn apply_motion_group(node: &mut UiNode, group: &str, scope: Option<&str>) {
     if node.component_root.is_some() {
-        node.apply_presentation_mutation(NodePresentationMutation::MotionGroup(group.to_owned()));
+        node.apply_presentation_mutation(NodePresentationMutation::MotionGroup(
+            group.to_owned(),
+            scope.map(str::to_owned),
+        ));
     } else {
-        apply_motion_group_contents(node, group);
+        apply_motion_group_contents(node, group, scope);
     }
 }
 
-fn apply_motion_group_contents(node: &mut UiNode, group: &str) {
+fn apply_motion_group_contents(node: &mut UiNode, group: &str, scope: Option<&str>) {
     if node.attributes.contains_key("shared_layout_id")
         && !node.attributes.contains_key("shared_layout_group")
     {
@@ -2897,30 +3232,37 @@ fn apply_motion_group_contents(node: &mut UiNode, group: &str) {
             "shared_layout_group".to_owned(),
             UiValue::String(group.to_owned()),
         );
+        if let Some(scope) = scope {
+            node.attributes.insert(
+                "shared_layout_scope".to_owned(),
+                UiValue::String(scope.to_owned()),
+            );
+        }
     }
     match &mut node.kind {
         UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
             for child in children {
-                apply_motion_group(child, group);
+                apply_motion_group(child, group, scope);
             }
         }
         UiNodeKind::Overlay {
             trigger, content, ..
         } => {
-            apply_motion_group(trigger, group);
-            apply_motion_group(content, group);
+            apply_motion_group(trigger, group, scope);
+            apply_motion_group(content, group, scope);
         }
-        UiNodeKind::Layer { content, .. } => apply_motion_group(content, group),
+        UiNodeKind::Layer { content, .. } => apply_motion_group(content, group, scope),
         UiNodeKind::ErrorBoundary { child, fallback } => {
-            apply_motion_group(child, group);
-            apply_motion_group(fallback, group);
+            apply_motion_group(child, group, scope);
+            apply_motion_group(fallback, group, scope);
         }
         UiNodeKind::VirtualCollection { spec } => {
             if spec.inherited_motion_group.is_none() {
                 spec.inherited_motion_group = Some(group.to_owned());
+                spec.inherited_motion_scope = scope.map(str::to_owned);
             }
             for child in spec.realized.values_mut() {
-                apply_motion_group(child, group);
+                apply_motion_group(child, group, scope);
             }
         }
         UiNodeKind::Text { .. }
@@ -2989,8 +3331,14 @@ pub(crate) fn lazy_error_boundary_node(
     }
 }
 
-pub(crate) fn image_node(call: NativeCallContext<'_>, handle: OpaqueHandle) -> UiNode {
-    with_call_source(UiNode::image(handle), call)
+pub(crate) fn image_node(
+    call: NativeCallContext<'_>,
+    handle: OpaqueHandle,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    Ok(with_call_source(
+        UiNode::image_source(image_handle_source(handle)?),
+        call,
+    ))
 }
 
 pub(crate) fn asset_image_node(call: NativeCallContext<'_>, asset: AssetId) -> UiNode {
@@ -3011,11 +3359,14 @@ pub(crate) fn directional_image_node(
     call: NativeCallContext<'_>,
     left_to_right: OpaqueHandle,
     right_to_left: OpaqueHandle,
-) -> UiNode {
-    with_call_source(
-        UiNode::directional_image(left_to_right, right_to_left),
+) -> Result<UiNode, Box<EvalAltResult>> {
+    Ok(with_call_source(
+        UiNode::directional_image_sources(
+            image_handle_source(left_to_right)?,
+            image_handle_source(right_to_left)?,
+        ),
         call,
-    )
+    ))
 }
 
 pub(crate) fn directional_asset_image_node(
@@ -3047,24 +3398,27 @@ fn parse_image_source(source: Dynamic) -> Result<ImageSourceSpec, Box<EvalAltRes
     if source.is::<AssetId>() {
         Ok(ImageSourceSpec::Asset(source.cast::<AssetId>()))
     } else if source.is::<OpaqueHandle>() {
-        let handle = source.cast::<OpaqueHandle>();
-        if handle.kind() == "image" {
-            Ok(ImageSourceSpec::Handle(handle))
-        } else {
-            Err(Box::new(EvalAltResult::ErrorRuntime(
-                format!(
-                    "image source handle must have kind `image`, got `{}`",
-                    handle.kind()
-                )
-                .into(),
-                Position::NONE,
-            )))
-        }
+        image_handle_source(source.cast::<OpaqueHandle>())
     } else {
         Err(Box::new(EvalAltResult::ErrorRuntime(
             format!(
                 "image source must be an AssetId or image handle, got {}",
                 source.type_name()
+            )
+            .into(),
+            Position::NONE,
+        )))
+    }
+}
+
+fn image_handle_source(handle: OpaqueHandle) -> Result<ImageSourceSpec, Box<EvalAltResult>> {
+    if handle.kind() == "image" {
+        Ok(ImageSourceSpec::Handle(handle))
+    } else {
+        Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!(
+                "image source handle must have kind `image`, got `{}`",
+                handle.kind()
             )
             .into(),
             Position::NONE,
@@ -3102,6 +3456,16 @@ pub(crate) fn overlay_node(
         Some("center") => OverlayPlacement::Center,
         Some(other) => {
             return overlay_config_error(format!("unknown overlay placement `{other}`"));
+        }
+    };
+    let align = match optional_string(&mut config, "align")?.as_deref() {
+        None | Some("center") => crate::OverlayAlign::Center,
+        Some("start") => crate::OverlayAlign::Start,
+        Some("end") => crate::OverlayAlign::End,
+        Some(other) => {
+            return overlay_config_error(format!(
+                "unknown overlay align `{other}` (expected `start`, `center` or `end`)"
+            ));
         }
     };
     let open = optional_bool(&mut config, "open")?.unwrap_or(false);
@@ -3144,9 +3508,11 @@ pub(crate) fn overlay_node(
             overlay_content,
             OverlayNodeSpec {
                 id: OverlayId::new(id),
+                owner: None,
                 parent: parent.map(OverlayId::new),
                 kind,
                 placement,
+                align,
                 anchor,
                 open,
                 gap,
@@ -3199,6 +3565,7 @@ pub(crate) fn layer_node(
             content,
             LayerNodeSpec {
                 id: OverlayId::new(id),
+                owner: None,
                 placement,
                 inset,
                 priority,
@@ -3428,6 +3795,38 @@ mod tests {
     }
 
     #[test]
+    fn image_functions_reject_handles_of_another_kind_when_called() {
+        let runtime = crate::RuntimeEngine::new();
+        let mut scope = rhai::Scope::new();
+        scope.push("task", OpaqueHandle::new("task", 1));
+        scope.push("picture", OpaqueHandle::new("image", 2));
+        for script in [
+            "image(task)",
+            "directional_image(task, picture)",
+            "directional_image(picture, task)",
+            "image_source(task)",
+            "directional_image_source(picture, task)",
+        ] {
+            let error = runtime
+                .engine()
+                .eval_with_scope::<UiNode>(&mut scope, script)
+                .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("image source handle must have kind `image`, got `task`"),
+                "{script}: {error}"
+            );
+        }
+        for script in ["image(picture)", "directional_image(picture, picture)"] {
+            runtime
+                .engine()
+                .eval_with_scope::<UiNode>(&mut scope, script)
+                .unwrap_or_else(|error| panic!("{script}: {error}"));
+        }
+    }
+
+    #[test]
     fn selectable_rejects_non_text_nodes_at_the_script_boundary() {
         let mut runtime = crate::RuntimeEngine::new();
         let compiled = runtime
@@ -3535,7 +3934,7 @@ mod tests {
             .with_component_root(inner.clone());
         let mut root = UiNode::column(vec![inner_node]).with_component_root(outer);
 
-        apply_motion_group(&mut root, "outer-group");
+        apply_motion_group(&mut root, "outer-group", None);
         let UiNodeKind::Box { children } = root.kind() else {
             panic!("expected component column");
         };
@@ -3589,6 +3988,7 @@ mod tests {
                 reveal_key: None,
                 sticky_headers: std::sync::Arc::new(std::collections::BTreeSet::new()),
                 inherited_motion_group: None,
+                inherited_motion_scope: None,
             })
         };
         let siblings = || {
@@ -3728,13 +4128,49 @@ mod tests {
                 assert_eq!(node.handlers().len(), 1, "{method}, {key:?}");
                 assert_eq!(node.event_handlers(&event)[0].phase(), phase);
                 if method == "on_key_value" {
-                    assert_eq!(node.handler_payload(&event), Some(&UiValue::Integer(7)));
+                    assert_eq!(
+                        node.event_handlers(&event)[0].value(),
+                        Some(&UiValue::Integer(7))
+                    );
                 }
+            }
+            for (key, canonical) in [
+                ("Shift+F6", "shift+f6"),
+                ("cmd+shift+k", "shift+cmd+k"),
+                ("ctrl+alt+/", "ctrl+alt+/"),
+                ("+", "+"),
+            ] {
+                let mut runtime = crate::RuntimeEngine::new();
+                let compiled = runtime
+                    .compile_named("key_contract.rhai", &key_registration_script(method, key))
+                    .unwrap();
+                let node = runtime.render(&compiled).unwrap();
+                let event = format!("key:{canonical}");
+                assert_eq!(node.event_handlers(&event)[0].phase(), phase, "{key:?}");
             }
             let long = "a".repeat(61);
             for key in [
-                "", " ", " escape", "escape ", "\t", "\n", "\0", ":", "a:b", "中文", "é", "cmd-s",
-                "shift-/", "??", "[]", &long,
+                "",
+                " ",
+                " escape",
+                "escape ",
+                "\t",
+                "\n",
+                "\0",
+                ":",
+                "a:b",
+                "中文",
+                "é",
+                "cmd-s",
+                "shift-/",
+                "??",
+                "[]",
+                &long,
+                "shift+shift+a",
+                "hyper+a",
+                "shift+",
+                "+a",
+                "ctrl++",
             ] {
                 let mut runtime = crate::RuntimeEngine::new();
                 let compiled = runtime

@@ -1,8 +1,0 @@
-ProductName:		macOS
-ProductVersion:		27.0.1
-BuildVersion:		26A434
-arm64
-rustc 1.95.0 (59807616e 2026-04-14)
-d63dfa1ae9fb7e51a7896f86922b7fd86ad48f7555e6208683336390dda5f85c  tests/native-keyboard/src/bin/theme_appearance_probe.rs
-5982c26d12d65e54dd79a3f40e1dc95c07684bea8b6d1bbeea550d093e0042e9  tests/native-keyboard/target/debug/theme_appearance_probe
-4785703fb43c7c75516ff2ab960de7341a58d983

@@ -1,10 +1,15 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
+const REGION: &str = include_str!("../../../registry/layouts/region.rhai");
+const STACK: &str = include_str!("../../../registry/layouts/stack.rhai");
+const FORM_LAYOUT: &str = include_str!("../../../registry/patterns/form_layout.rhai");
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
+const ICON_BUTTON: &str = include_str!("../../../registry/components/icon_button.rhai");
+const ICON: &str = include_str!("../../../registry/components/icon.rhai");
+const TOGGLE_GROUP: &str = include_str!("../../../registry/components/toggle_group.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
-const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
@@ -32,13 +37,17 @@ const ZH_CN: &str = include_str!("../../../registry/locales/zh_cn.rhai");
 const AR: &str = include_str!("../../../registry/locales/ar.rhai");
 
 const MAIN: &str = r#"
+import "layouts/region" as region;
+import "layouts/stack" as stack;
+import "patterns/form_layout" as form_layout;
 import "components/button" as button;
-import "components/label" as label;
-import "components/divider" as divider;
+import "components/icon_button" as icon_button;
+import "components/icon" as icon;
 import "components/combobox" as combobox_component;
 import "components/popover" as popover;
 import "components/switch" as switch_component;
 import "components/radio_group" as radio_group;
+import "components/toggle_group" as toggle_group;
 import "components/accordion" as accordion;
 
 fn state_schema() {
@@ -108,182 +117,114 @@ fn choose_theme(ctx, values) {
 fn set_theme_open(ctx, open) { ctx.set_state("theme_open", open); }
 fn set_theme_query(ctx, query) { ctx.set_state("theme_query", query); }
 fn set_help_open(ctx, open) { ctx.set_state("help_open", open); }
+fn open_help(ctx, payload) { ctx.set_state("help_open", true); }
 fn reset_theme(ctx, payload) { choose_theme(ctx, ["default-dark"]); }
-fn use_english(ctx, payload) {
-    ctx.set_locale("en");
-    ctx.set_state("locale", "en");
-}
-fn use_chinese(ctx, payload) {
-    ctx.set_locale("zh-CN");
-    ctx.set_state("locale", "zh-CN");
+fn set_language(ctx, values) {
+    if values.len == 0 { return; }
+    ctx.set_locale(values[0]);
+    ctx.set_state("locale", values[0]);
 }
 fn set_notifications(ctx, checked) { ctx.set_state("notifications", checked); }
 fn set_density(ctx, value) { ctx.set_state("density", value); }
 fn set_expanded(ctx, values) { ctx.set_state("expanded", values); }
-
-fn help_trigger() {
-    row([image_source(asset("app/icons/help")).with_style(style()
-            .width(px(16)).height(px(16)))])
-        .with_style(style().width(px(28)).height(px(28)).items_center().justify_center()
-            .text_color(theme_color("text_muted"))
-            .radius(px(14)).background(theme_color("surface_raised")))
-        .with_key("help-trigger")
-        .accessibility_role("button").accessibility_label("Help")
-}
 
 fn init(ctx) {
     choose_theme(ctx, ["__VISUAL_THEME__"]);
     ctx.set_locale("__VISUAL_LOCALE__");
 }
 
-fn view(ctx) {
-    let help_opacity = if ctx.get_state("help_open") { 1.0 } else { 0.65 };
-    column([
-        row([
-            label::Label(#{
-                text: "Settings",
-                description: "Source-owned components backed by native GPUI mechanisms"
-            }),
-            popover::Popover(#{
-                key: "settings-help",
-                label: "Settings help",
-                trigger: help_trigger()
-                    .motion(motion_transition("opacity", 0.65, help_opacity,
-                        #{ duration_ms: 180, easing: "ease_out", intent: "feedback" })),
-                content: text("Theme changes preserve keyed state and the compiled Rhai AST."),
-                open: ctx.get_state("help_open"),
-                placement: "left",
-                on_open_change: Fn("set_help_open")
-            })
-        ]).with_style(style().justify_between().items_center()),
-        divider::Divider(#{}),
-        label::Label(#{
-            text: "Color theme",
-            description: "Search or use arrows, Enter, Escape, Home and End"
+fn theme_options() {
+    [
+        #{ value: "default-light", label: "Default Light", keywords: ["light"] },
+        #{ value: "default-dark", label: "Default Dark", keywords: ["dark"] },
+        #{ value: "tokyo-night", label: "Tokyo Night", keywords: ["dark", "blue"] },
+        #{ value: "tokyo-storm", label: "Tokyo Storm", keywords: ["dark", "blue"] },
+        #{ value: "catppuccin-latte", label: "Catppuccin Latte", keywords: ["light"] },
+        #{ value: "catppuccin-mocha", label: "Catppuccin Mocha", keywords: ["dark"] },
+        #{ value: "ethereal", label: "Ethereal", keywords: ["dark", "blue"] },
+        #{ value: "everforest", label: "Everforest", keywords: ["dark", "green"] },
+        #{ value: "gruvbox", label: "Gruvbox", keywords: ["dark", "warm"] },
+        #{ value: "hackerman", label: "Hackerman", keywords: ["dark", "green"] },
+        #{ value: "nord", label: "Nord", keywords: ["dark", "blue"] },
+        #{ value: "retro-82", label: "Retro 82", keywords: ["dark", "retro"] },
+        #{ value: "hermarchy", label: "Hermarchy", keywords: ["dark", "cyan"] },
+        #{ value: "futurism", label: "Futurism", keywords: ["dark", "magenta"] },
+        #{ value: "aetheria", label: "Aetheria", keywords: ["dark", "teal"] }
+    ]
+}
+
+fn help(ctx) {
+    popover::Popover(#{
+        key: "settings-help", label: "Settings help", placement: "bottom", align: "end",
+        trigger: icon_button::IconButton(#{
+            key: "help-trigger", label: "Help", variant: "ghost",
+            icon: icon::Icon(#{ source: asset("app/icons/help") }), on_click: Fn("open_help")
         }),
-        combobox_component::Combobox(#{
-            key: "theme-picker",
-            label: "Color theme",
-            options: [
-                #{ value: "default-light", label: "Default Light", keywords: ["light"] },
-                #{ value: "default-dark", label: "Default Dark", keywords: ["dark"] },
-                #{ value: "tokyo-night", label: "Tokyo Night", keywords: ["dark", "blue"] },
-                #{ value: "tokyo-storm", label: "Tokyo Storm", keywords: ["dark", "blue"] },
-                #{ value: "catppuccin-latte", label: "Catppuccin Latte", keywords: ["light"] },
-                #{ value: "catppuccin-mocha", label: "Catppuccin Mocha", keywords: ["dark"] },
-                #{ value: "ethereal", label: "Ethereal", keywords: ["dark", "blue"] },
-                #{ value: "everforest", label: "Everforest", keywords: ["dark", "green"] },
-                #{ value: "gruvbox", label: "Gruvbox", keywords: ["dark", "warm"] },
-                #{ value: "hackerman", label: "Hackerman", keywords: ["dark", "green"] },
-                #{ value: "nord", label: "Nord", keywords: ["dark", "blue"] },
-                #{ value: "retro-82", label: "Retro 82", keywords: ["dark", "retro"] },
-                #{ value: "hermarchy", label: "Hermarchy", keywords: ["dark", "cyan"] },
-                #{ value: "futurism", label: "Futurism", keywords: ["dark", "magenta"] },
-                #{ value: "aetheria", label: "Aetheria", keywords: ["dark", "teal"] }
-            ],
-            mode: "single",
-            selected: ctx.get_state("theme"),
-            open: ctx.get_state("theme_open"),
-            searchable: true,
-            query: ctx.get_state("theme_query"),
-            placeholder: "Choose a theme",
-            search_placeholder: "Search themes",
-            empty_text: ctx.t("common.no_results"),
-            trigger: row([
-                text("Theme palette"),
-                text("⌄").with_style(style().text_color(theme_color("text_muted")))
-            ]).with_style(
-                style()
-                    .width(px(280))
-                    .height(px(32))
-                    .padding_x(px(8))
-                    .justify_between()
-                    .items_center()
-                    .radius(px(6))
-                    .border(px(1))
-                    .border_color(theme_color("border"))
-                    .background(theme_color("surface_raised"))
-            ),
-            header: text("Available themes")
-                .with_style(style().padding(px(6)).text_color(theme_color("text_muted"))),
-            footer: text("Selection is stored by stable value")
-                .with_style(style().padding(px(6)).text_color(theme_color("text_muted"))),
-            empty: text("No theme matches this query")
-                .with_style(style().padding(px(8)).text_color(theme_color("warning"))),
-            max_visible: 6,
-            on_change: Fn("choose_theme"),
-            on_open_change: Fn("set_theme_open"),
-            on_query_change: Fn("set_theme_query")
-        }),
-        divider::Divider(#{}),
-        label::Label(#{
-            text: "Language / 语言",
-            description: ctx.t("common.loading")
-        }),
-        row([
-            button::Button(#{
-                text: "English",
-                variant: "secondary",
-                size: "sm",
-                on_click: Fn("use_english")
-            }),
-            button::Button(#{
-                text: "简体中文",
-                variant: "secondary",
-                size: "sm",
-                on_click: Fn("use_chinese")
-            })
-        ]).with_style(style().gap(px(8))),
-        divider::Divider(#{}),
-        switch_component::Switch(#{
-            checked: ctx.get_state("notifications"),
-            label: "Notifications",
-            on_change: Fn("set_notifications")
-        }),
-        radio_group::RadioGroup(#{
-            value: ctx.get_state("density"),
-            label: "Interface density",
-            orientation: "horizontal",
-            options: [
-                #{ value: "comfortable", label: "Comfortable" },
-                #{ value: "compact", label: "Compact" }
-            ],
+        content: text("Theme changes keep component state and the compiled Rhai AST."),
+        open: ctx.get_state("help_open"), on_open_change: Fn("set_help_open")
+    })
+}
+
+fn appearance(ctx) {
+    #{ title: "Appearance", fields: [
+        #{ label: "Color theme", description: "Search, or use the arrow keys, Enter and Escape.",
+            control: combobox_component::Combobox(#{
+                key: "theme-picker", label: "Color theme", options: theme_options(),
+                mode: "single", selected: ctx.get_state("theme"), open: ctx.get_state("theme_open"),
+                searchable: true, query: ctx.get_state("theme_query"), width: px(240),
+                placeholder: "Choose a theme", search_placeholder: "Search themes",
+                empty_text: ctx.t("common.no_results"), max_visible: 6,
+                on_change: Fn("choose_theme"), on_open_change: Fn("set_theme_open"),
+                on_query_change: Fn("set_theme_query")
+            }) },
+        #{ label: "Language / 语言", control: toggle_group::ToggleGroup(#{
+            key: "language", label: "Language", values: [ctx.get_state("locale")],
+            items: [#{ value: "en", label: "English" }, #{ value: "zh-CN", label: "简体中文" }],
+            allow_empty: false, on_change: Fn("set_language")
+        }) },
+        #{ label: "Density", control: radio_group::RadioGroup(#{
+            value: ctx.get_state("density"), label: "Interface density", orientation: "horizontal",
+            options: [#{ value: "comfortable", label: "Comfortable" }, #{ value: "compact", label: "Compact" }],
             on_change: Fn("set_density")
-        }),
-        accordion::Accordion(#{
-            key: "advanced-settings",
-            expanded: ctx.get_state("expanded"),
-            mode: "multiple",
-            items: [
-                #{
-                    key: "behavior", title: "Behavior", content_height: 44,
-                    content: text("Notifications and density remain keyed Rhai state.")
-                },
-                #{
-                    key: "appearance", title: "Appearance", content_height: 44,
-                    content: text("Theme changes do not recompile scripts.")
-                }
-            ],
-            on_change: Fn("set_expanded")
-        }),
-        divider::Divider(#{}),
-        row([
-            text("Changes apply immediately without recompilation.")
-                .with_style(style().text_color(theme_color("text_muted"))),
-            button::Button(#{
-                text: "Reset",
-                variant: "secondary",
-                size: "sm",
-                on_click: Fn("reset_theme")
-            })
-        ]).with_style(style().justify_between().items_center())
-    ]).with_style(
-        style()
-            .width(px(560))
-            .padding(px(24))
-            .gap(px(16))
-            .background(theme_color("surface"))
-    )
+        }) },
+    ] }
+}
+
+fn notifications(ctx) {
+    #{ title: "Notifications", fields: [
+        #{ label: "Deploys", control: switch_component::Switch(#{
+            checked: ctx.get_state("notifications"), label: "Notify when a deploy finishes",
+            on_change: Fn("set_notifications")
+        }) },
+    ] }
+}
+
+fn advanced(ctx) {
+    accordion::Accordion(#{
+        key: "advanced-settings", expanded: ctx.get_state("expanded"), mode: "multiple",
+        items: [
+            #{ key: "behavior", title: "Behavior", content_height: 44,
+                content: text("Notifications and density are keyed Rhai state.") },
+            #{ key: "appearance", title: "Appearance", content_height: 44,
+                content: text("Theme changes do not recompile scripts.") }
+        ],
+        on_change: Fn("set_expanded")
+    })
+}
+
+fn view(ctx) {
+    let form = form_layout::FormLayout(#{
+        key: "settings-form", label: "Preferences", groups: [appearance(ctx), notifications(ctx)],
+        submit: [button::Button(#{ key: "reset", text: "Reset theme", on_click: Fn("reset_theme") })]
+    });
+    let body = column([stack::Stack(#{ gap: "section", children: [form, advanced(ctx)] })])
+        .with_style(style().flex_col().flex_grow().min_height(px(0)).overflow_y_scroll());
+    // The region fills the window, so its footer sits at the bottom.
+    column([region::Region(#{
+        label: "Settings", title: "Settings", actions: [help(ctx)], body: body,
+        footer: [text("Changes apply immediately, without recompiling.")]
+    })]).with_style(style().flex_col().width(relative(1.0)).height(relative(1.0)))
+        .env(#{ density: ctx.get_state("density") })
 }
 "#;
 
@@ -294,48 +235,62 @@ fn module(name: &str, source: &str) -> (ModuleId, String) {
     )
 }
 
-fn main() {
-    let visual_theme = std::env::var("GPUI_RHAI_VISUAL_THEME")
-        .ok()
-        .filter(|theme| {
-            matches!(
-                theme.as_str(),
-                "default-light"
-                    | "default-dark"
-                    | "tokyo-night"
-                    | "tokyo-storm"
-                    | "catppuccin-latte"
-                    | "catppuccin-mocha"
-                    | "ethereal"
-                    | "everforest"
-                    | "gruvbox"
-                    | "hackerman"
-                    | "nord"
-                    | "retro-82"
-                    | "hermarchy"
-                    | "futurism"
-                    | "aetheria"
-            )
-        })
-        .unwrap_or_else(|| "default-dark".to_owned());
-    let visual_locale = std::env::var("GPUI_RHAI_VISUAL_LOCALE")
-        .ok()
-        .filter(|locale| matches!(locale.as_str(), "en" | "zh-CN" | "ar"))
-        .unwrap_or_else(|| "en".to_owned());
+/// Logical window size of the example.
+pub const WINDOW: (f32, f32) = (640.0, 520.0);
+
+const THEMES: &[&str] = &[
+    "default-light",
+    "default-dark",
+    "tokyo-night",
+    "tokyo-storm",
+    "catppuccin-latte",
+    "catppuccin-mocha",
+    "ethereal",
+    "everforest",
+    "gruvbox",
+    "hackerman",
+    "nord",
+    "retro-82",
+    "hermarchy",
+    "futurism",
+    "aetheria",
+];
+
+/// Assemble the settings panel for one theme slug and locale.
+///
+/// # Panics
+///
+/// Panics only if a static module ID is invalid.
+pub fn view(theme: &str, locale: &str) -> EmbeddedScriptView {
+    let theme = if THEMES.contains(&theme) {
+        theme
+    } else {
+        "default-dark"
+    };
+    let locale = if matches!(locale, "en" | "zh-CN" | "ar") {
+        locale
+    } else {
+        "en"
+    };
     let main_source = MAIN
-        .replace("__VISUAL_THEME__", &visual_theme)
-        .replace("__VISUAL_LOCALE__", &visual_locale);
+        .replace("__VISUAL_THEME__", theme)
+        .replace("__VISUAL_LOCALE__", locale);
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         module("main", &main_source),
+        module("layouts/region", REGION),
+        module("layouts/stack", STACK),
+        module("patterns/form_layout", FORM_LAYOUT),
         module("components/button", BUTTON),
+        module("components/icon_button", ICON_BUTTON),
+        module("components/icon", ICON),
         module("components/label", LABEL),
-        module("components/divider", DIVIDER),
         module("components/input", INPUT),
         module("components/combobox", COMBOBOX),
         module("components/popover", POPOVER),
         module("components/switch", SWITCH),
         module("components/radio", RADIO),
         module("components/radio_group", RADIO_GROUP),
+        module("components/toggle_group", TOGGLE_GROUP),
         module("components/accordion", ACCORDION),
     ]));
     EmbeddedScriptView::new(
@@ -343,6 +298,7 @@ fn main() {
         scripts,
         DEFAULT_DARK,
     )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
     .theme_sources([
         ("default_light.rhai".to_owned(), DEFAULT_LIGHT.to_owned()),
         ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
@@ -370,56 +326,22 @@ fn main() {
         ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
         ("ar.rhai".to_owned(), AR.to_owned()),
     ])
-    .asset_sources(settings_assets())
-    .development(true)
-    .prepare()
-    .and_then(|prepared| {
-        ScriptApplication::new(prepared)
-            .window_size(640.0, 520.0)
-            .run()
-    })
-    .expect("settings_panel failed");
+    .asset_sources(registry_icons())
 }
 
-fn svg(bytes: &[u8]) -> AssetData {
-    AssetData {
-        mime_type: "image/svg+xml".to_owned(),
-        bytes: bytes.to_vec(),
-    }
+#[allow(dead_code)]
+fn main() {
+    let theme = std::env::var("GPUI_RHAI_VISUAL_THEME").unwrap_or_default();
+    let locale = std::env::var("GPUI_RHAI_VISUAL_LOCALE").unwrap_or_default();
+    view(&theme, &locale)
+        .development(true)
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(WINDOW.0, WINDOW.1)
+                .run()
+        })
+        .expect("settings_panel failed");
 }
 
-fn settings_assets() -> Vec<(String, AssetData)> {
-    [
-        (
-            "check",
-            include_bytes!("../../../registry/assets/icons/check.svg").as_slice(),
-        ),
-        (
-            "close",
-            include_bytes!("../../../registry/assets/icons/close.svg").as_slice(),
-        ),
-        (
-            "chevron_down",
-            include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice(),
-        ),
-        (
-            "chevron_up",
-            include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice(),
-        ),
-        (
-            "minus",
-            include_bytes!("../../../registry/assets/icons/minus.svg").as_slice(),
-        ),
-        (
-            "plus",
-            include_bytes!("../../../registry/assets/icons/plus.svg").as_slice(),
-        ),
-        (
-            "help",
-            include_bytes!("../../../registry/assets/icons/help.svg").as_slice(),
-        ),
-    ]
-    .into_iter()
-    .map(|(name, bytes)| (format!("icons/{name}"), svg(bytes)))
-    .collect()
-}
+include!("support/icons.rs");

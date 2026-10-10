@@ -2,53 +2,75 @@
 {
   "id": "components/toggle_group",
   "export": "ToggleGroup",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
-  "dependencies": ["components/button_group", "components/toggle"],
-  "capabilities": {}
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
+  "dependencies": [],
+  "capabilities": {},
+  "tokens": [
+    "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
+    "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "radius.lg", "typography.control"
+  ],
+  "environment": ["size", "density", "corners"]
 }
 */
-// Controlled single/multiple pressed-button group with roving arrow navigation.
-// Props: key, label, items, values, mode, orientation, allow_empty, disabled, and on_change.
-// Events: change(array<string>).
+// ToggleGroup holds pressed tool state: equal-height segments joined inside one frame.
+//
 // State: caller owns values; component owns only the roving active item.
-// Parts: root, item.
 // Example: ToggleGroup(#{ key: "align", label: "Alignment", values: ["left"], items: items, on_change: Fn("changed") })
-
-import "components/button_group" as button_group;
-import "components/toggle" as toggle;
+//
+// Keyboard: one tab stop on the active segment; arrows move focus between enabled
+// segments; Enter or Space toggles the focused segment.
 
 define_component(#{
-    metadata: #{ id: "components/toggle_group", "export": "ToggleGroup", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
-        dependencies: ["components/button_group", "components/toggle"], capabilities: #{} },
+    metadata: #{ id: "components/toggle_group", "export": "ToggleGroup", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
+        dependencies: [], capabilities: #{},
+        tokens: [
+            "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
+            "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "radius.lg", "typography.control"
+        ],
+        environment: ["size", "density", "corners"] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Identity of the group and prefix of its segment keys (`<key>-<value>`), which arrow keys focus." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the group." },
             items: #{ schema: #{ type: "array", max_items: 64, items: #{
                 type: "object", allow_unknown: false, fields: #{
-                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Value this segment adds to or removes from `values`." },
+                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Segment text; also its accessible name." },
                     disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
+                        "default": #{ type: "bool", value: false },
+                        doc: "Blocks clicks on this segment; arrow keys skip it." },
                 }
-            } }, required: true, sensitive: false },
+            } }, required: true, sensitive: false, doc: "Segments in display order." },
             values: #{ schema: #{ type: "array", max_items: 64, items: #{ type: "string" } },
-                required: true, sensitive: false },
+                required: true, sensitive: false,
+                doc: "Pressed segment values, at most one in `single` mode; the caller stores the `change` payload and passes it back." },
             mode: #{ schema: #{ type: "string", allowed: ["single", "multiple"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "single" } },
+                sensitive: false, "default": #{ type: "string", value: "single" },
+                doc: "With `single`, one segment is pressed at a time; with `multiple`, each segment toggles on its own." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "horizontal" } },
+                sensitive: false, "default": #{ type: "string", value: "horizontal" },
+                doc: "Joins segments in a row or a column; arrow keys follow it (left and right, or up and down)." },
             allow_empty: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "In `single` mode, whether clicking the pressed segment unpresses it; `multiple` mode ignores it." },
+            size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                required: false, sensitive: false, doc: "Control size; leave unset to inherit the environment size." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
-            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+                "default": #{ type: "bool", value: false },
+                doc: "Disables every segment and the arrow-key navigation." },
+            on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the next `values` array when a segment is clicked or activated from the keyboard." },
         },
         state: #{ fields: #{ active: #{ schema: #{ type: "string" },
             "default": #{ type: "string", value: "" } } } },
-        events: #{ change: #{ payload: #{ type: "array", max_items: 64, items: #{ type: "string" } } } },
+        events: #{ change: #{ payload: #{ type: "array", max_items: 64, items: #{ type: "string" } },
+            doc: "Emitted when a segment is clicked or activated; the payload is the full next `values` array." } },
         slots: #{}, parts: ["root", "item"],
     },
     render: Fn("render_ToggleGroup")
@@ -83,50 +105,112 @@ fn adjacent(values, active, step) {
     if step > 0 { values[(index + 1) % values.len] }
     else { values[(index + values.len - 1) % values.len] }
 }
-fn active_action(ctx, value) { ctx.set_state("active", value); }
-fn change_action(values, ctx, payload) { ctx.emit("change", values); }
+fn segment_key(group, value) { `${group}-${value}` }
+fn move_action(ctx, target) {
+    ctx.set_state("active", target.value);
+    // Headless lifecycles have no window to move focus in; the roving state still moves.
+    try { ctx.focus(target.key); } catch { }
+}
+fn press_action(spec, ctx, payload) {
+    ctx.set_state("active", spec.value);
+    if spec.emit { ctx.emit("change", spec.next); }
+}
 
 fn render_ToggleGroup(ctx, props) {
     let mode = if "mode" in props { props.mode } else { "single" };
     if mode == "single" && props.values.len > 1 { throw "single toggle group accepts at most one value"; }
+    let allow_empty = if "allow_empty" in props { props.allow_empty } else { true };
     let enabled = enabled_values(props.items);
     let stored_active = ctx.get_state("active");
     let active = if includes(enabled, stored_active) { stored_active }
         else if props.values.len > 0 && includes(enabled, props.values[0]) { props.values[0] }
         else if enabled.len > 0 { enabled[0] } else { "" };
     let disabled = "disabled" in props && props.disabled;
-    let controls = [];
-    for item in props.items {
+    let vertical = "orientation" in props && props.orientation == "vertical";
+    let can_change = "on_change" in props && props.on_change != ();
+    let count = props.items.len;
+
+    // A horizontal group is a capsule with round corners; a vertical one rounds like a
+    // panel. The outer segments carry the frame's corners, so a pressed fill never
+    // pokes past them (clipping is rectangular).
+    let corner = theme_radius(if vertical { "lg" } else { "md" });
+    let segments = [];
+    for index in 0..count {
+        let item = props.items[index];
         let pressed = includes(props.values, item.value);
-        let next = selected_next(props.values, item.value, mode,
-            if "allow_empty" in props { props.allow_empty } else { true });
-        controls.push(toggle::Toggle(#{ text: item.label, pressed: pressed,
-            disabled: disabled || item_disabled(item),
-            on_pressed_change: if "on_change" in props && props.on_change != () {
-                Fn("change_action").curry(next)
-            } else { () }
-        }).with_style(ctx.component_style("item", style())).tab_stop(false));
-    }
-    let orientation = if "orientation" in props { props.orientation } else { "horizontal" };
-    let active_next = if active == "" { props.values }
-        else { selected_next(props.values, active, mode,
-            if "allow_empty" in props { props.allow_empty } else { true }) };
-    let root = button_group::ButtonGroup(#{ label: props.label, buttons: controls, orientation: orientation })
-        .with_key(props.key).with_style(ctx.component_style("root", style()))
-        .tab_stop(!disabled && enabled.len > 0)
-        .accessibility_role("group").accessibility_label(props.label)
-        .accessibility_orientation(orientation);
-    if !disabled && enabled.len > 0 {
-        let previous = adjacent(enabled, active, -1);
-        let next = adjacent(enabled, active, 1);
-        root = root.on_key_value("enter", Fn("change_action").curry(active_next), ())
-            .on_key_value("space", Fn("change_action").curry(active_next), ());
-        if orientation == "horizontal" {
-            root.on_key_value("left", Fn("active_action"), previous)
-                .on_key_value("right", Fn("active_action"), next)
+        let unavailable = disabled || item_disabled(item);
+        let fill = if pressed { theme_color("selection") } else { rgba(0x00000000) };
+        // Segments overlap the 2px group frame by -2px on its sides, so a pressed fill
+        // and the focus border sit flush with the outer edge.
+        let segment = style()
+            .flex_row().items_center().justify_center().self_stretch()
+            .min_height(theme_length("metrics.control"))
+            .padding_x(theme_length("metrics.control_pad"))
+            .border(px(2)).border_color(fill)
+            .background(fill)
+            .text_color(if pressed { theme_color("text_primary") } else { theme_color("text_muted") })
+            .focus(style().border_color(theme_color("focus_ring")))
+            .disabled(style().text_color(theme_color("disabled")));
+        if vertical {
+            segment = segment.margin_x(offset_px(-2));
+            if index == 0 {
+                segment = segment.margin_top(offset_px(-2)).radius_top_left(corner).radius_top_right(corner);
+            }
+            if index == count - 1 {
+                segment = segment.margin_bottom(offset_px(-2))
+                    .radius_bottom_left(corner).radius_bottom_right(corner);
+            }
         } else {
-            root.on_key_value("up", Fn("active_action"), previous)
-                .on_key_value("down", Fn("active_action"), next)
+            segment = segment.margin_y(offset_px(-2));
+            if index == 0 { segment = segment.margin_start(offset_px(-2)).radius_start(corner); }
+            if index == count - 1 { segment = segment.margin_end(offset_px(-2)).radius_end(corner); }
         }
-    } else { root }
+        if !pressed && !unavailable {
+            segment = segment.hover(style().background(theme_color("surface_hover"))
+                .text_color(theme_color("text_primary")));
+        }
+        let key = segment_key(props.key, item.value);
+        let node = row([text(item.label)])
+            .with_key(key)
+            .with_ref(element_ref(key))
+            .with_style(ctx.component_style("item", segment))
+            .disabled(unavailable)
+            .tab_stop(!unavailable && item.value == active)
+            .accessibility_role("button")
+            .accessibility_label(item.label)
+            .accessibility_pressed(pressed);
+        if !unavailable {
+            node = node.on_click(Fn("press_action").curry(#{
+                value: item.value,
+                emit: can_change,
+                next: selected_next(props.values, item.value, mode, allow_empty),
+            }));
+        }
+        segments.push(node);
+    }
+
+    let frame = style()
+        .border(px(2)).border_color(theme_color("border"))
+        .radius(corner).clip()
+        .typography("control");
+    let root = if vertical { column(segments) } else { row(segments) };
+    root = root
+        .with_style(ctx.component_style("root", frame))
+        .disabled(disabled)
+        .accessibility_role("group")
+        .accessibility_label(props.label)
+        .accessibility_orientation(if vertical { "vertical" } else { "horizontal" });
+    if "size" in props && props.size != () { root = root.env(#{ size: props.size }); }
+    if disabled || enabled.len == 0 { return root; }
+    let previous = adjacent(enabled, active, -1);
+    let next = adjacent(enabled, active, 1);
+    let to_previous = #{ value: previous, key: segment_key(props.key, previous) };
+    let to_next = #{ value: next, key: segment_key(props.key, next) };
+    if vertical {
+        root.on_key_value("up", Fn("move_action"), to_previous)
+            .on_key_value("down", Fn("move_action"), to_next)
+    } else {
+        root.on_key_value("left", Fn("move_action"), to_previous)
+            .on_key_value("right", Fn("move_action"), to_next)
+    }
 }

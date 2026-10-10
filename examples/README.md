@@ -32,6 +32,7 @@ These Cargo examples demonstrate Host integration patterns worth copying:
 | `variable_height_chat` | Variable-height virtual collection | — |
 | `artistic_showcase` | Canvas, SVG, type, and visual primitives | — |
 | `mini_timeline` | Compact timeline composition | — |
+| `byod_treemap` | Bring your own design: own palette and lengths, no token base or official components | `examples/byod_treemap/` |
 
 Run one with:
 

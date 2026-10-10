@@ -4,13 +4,12 @@ Visual baselines supplement logic and semantic tests; they never replace
 keyboard, focus, or accessibility assertions. Theme Studio owns one dense,
 canonical matrix for every official component: actions, form controls, choices,
 status/loading, navigation, data/virtualization, assets, and overlays. The
-default metrics and state vocabulary are defined in
-`registry-design-system.md`.
+default metrics and state vocabulary are defined in the
+[design specification](design/).
 
 ## Tabs, Button, and Badge control baseline
 
-The maintained [registry visual system](registry-design-system.md) defines
-control appearance; the [Tabs contract](components/catalog.md#tabs) defines
+The [component contracts](design/atoms.md) define control appearance; the [Tabs contract](components/catalog.md#tabs) defines
 its public props, semantics, and style parts.
 
 Maintain one contextual specimen containing:
@@ -46,10 +45,9 @@ pair for every state, including enabled but unselected Tabs.
 Third-party reference screenshots are not project assets. Keep requirement
 documents text-only; any product captures used during an audit remain outside
 the repository unless their inclusion is explicitly approved for baselines.
-Automatic selected-tab reveal, adaptive tab height for larger fonts, and the
-future ToggleGroup appearance remain
-[known gaps](registry-design-system.md#known-implementation-gaps), not certified
-behavior. Add their geometry and interaction assertions when implemented.
+Tabs does not reveal an offscreen selected tab and does not grow with larger
+fonts; neither is certified behavior. Add their geometry and interaction
+assertions when they are implemented.
 Do not replace those assertions with snapshot-only tests.
 
 ## Deterministic matrix
@@ -65,28 +63,29 @@ declared viewport sizes across the main matrix:
 
 Capture Theme Studio across all 15 bundled themes, plus its fixed open-Menu
 state, Arabic RTL directional Icon state, reduced-motion pointer-triggered
-Tooltip state, and New/Open/Import/Save editing paths. The unlocked 2026-09-05
-manual pass verified its independent editor/specimen scrolling and the shared
-specimen; checked-in Studio PNG expansion remains separate baseline work.
+Tooltip state, and New/Open/Import/Save editing paths. Theme Studio has no
+checked-in baselines yet.
 Capture `embedded_views` once with the small view's Combobox open and duplicate
 local Toast IDs visible in the shared Host queue.
-Capture `components/catalog` in every case under Default Light/Dark, one
-community theme, reduced motion, and Arabic RTL. Gallery controls must switch
-all visible components without recompiling or resetting controlled state.
-The 2026-09-05 manual pass covered every category, all 15 themes, 560-point
-compact and 900-point regular windows, Arabic RTL, reduced motion, Sheet,
-CommandDialog, and AlertDialog. Reproduce deterministic launch states with:
+The Gallery baselines are rendered offscreen: `scripts/capture-macos-gallery-baselines.sh`
+runs `tests/native-keyboard/src/bin/gallery_baselines.rs`, which mounts the
+Gallery in a GPUI `VisualTestAppContext` window at (-10000, -10000) and reads
+the frame back from the Metal texture with `Window::render_to_image`. Window
+managers, other windows and the screen-recording permission therefore never
+enter a baseline, and the window keeps its 1280 × 860-point size even under a
+tiling window manager. Images are stored in device pixels (2560 × 1720 on a
+Retina display). The matrix is four pages (Button, `scene.operations`,
+`scene.form`, `scene.settings`) in comfortable and compact, Default Light and
+Dark, plus `scene.operations` in Arabic RTL and `table` and `description_list`
+in Simplified Chinese. `--pages [density] [theme] [locale]` renders every page
+for a review sweep without writing baselines.
+
+Stories remain available for manual checks in a standalone window:
 
 ```sh
 bash scripts/build-macos-gallery-app.sh components/catalog forms default-light en
 bash scripts/build-macos-gallery-app.sh components/catalog forms catppuccin-mocha ar
-bash scripts/build-macos-gallery-app.sh components/catalog overlays tokyo-night en
 ```
-
-The 2026-09-27 checked-in Gallery matrix records all five catalog cases in
-Default Light/Dark, Catppuccin Mocha Arabic RTL, and Tokyo Night Reduced. The
-1181×820 files are content-only captures: macOS window chrome is excluded so
-the active screen-control privacy indicator cannot enter a product baseline.
 
 Capture `charts/catalog` after every built-in series has installed its prepared
 scene, including Default Light/Dark, one community theme, Arabic RTL, normal,
@@ -153,17 +152,10 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
 ## Automation split
 
 `scripts/release-smoke.sh` is the unattended local macOS gate: it verifies that
-all examples enter an event loop without panic. The hosted private-repository
-workflow intentionally runs its portable checks on a standard Linux runner,
-avoids the higher macOS multiplier, and cancels superseded runs. Private hosted
-Linux still consumes the account's included Actions allowance and will not
-start after that allowance is exhausted when spending is disabled. A public
-repository or a configured self-hosted runner is the permanently
-no-GitHub-charge path. See GitHub's
-[Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
-and [self-hosted runner](https://docs.github.com/en/actions/concepts/runners/self-hosted-runners)
-documentation. Screenshot and input certification requires an unlocked
-interactive Mac session. Computer Use must inspect fresh accessibility state
+all examples enter an event loop without panic. The hosted workflow runs its
+portable checks on a standard Linux runner and cancels superseded runs.
+Screenshot and input certification requires an unlocked interactive Mac
+session. Computer Use must inspect fresh accessibility state
 after every action and must not bypass the lock screen.
 
 `tests/native-keyboard` separately uses GPUI's non-release `test-support` window
@@ -176,8 +168,8 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The independent workspace currently has 65 tests spanning GPUI integration,
-native document/motion behavior, and embedded example preparation guards. It contains no
+The independent workspace spans GPUI integration, native document and motion
+behavior, and embedded example preparation guards. It contains no
 deleted Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
 The launch additions cover CommandDialog autofocus/filter/Enter execution,
@@ -221,13 +213,15 @@ bash scripts/build-macos-theme-studio-app.sh
 bash scripts/build-macos-test-app.sh data_table default-dark en selected
 bash scripts/build-macos-test-app.sh form_showcase default-light zh-CN date-picker
 bash scripts/build-macos-gallery-app.sh components/split-pane basic default-dark en normal
-bash scripts/capture-macos-gallery-baselines.sh
 ```
 
 The command prints the unique temporary bundle path. It never replaces an
 existing application or baseline. The optional theme, locale, state, and motion
 arguments are consumed only by examples that opt into deterministic
 visual-test startup; normal runs preserve their documented defaults.
-The Gallery capture manifest uses deterministic story cases and motion policy,
-waits for background document preparation, excludes the native titlebar, and
-normalizes Retina captures to the maintained 1181×820 content baseline.
+Baselines need no bundle: `bash scripts/capture-macos-gallery-baselines.sh`
+and `bash scripts/capture-macos-example-baselines.sh` render them offscreen as
+described above. The example tool compiles the five examples in as modules and
+calls their `view(...)` builders, so a capture is exactly what the example runs;
+focus states are scripted keystrokes and normal-motion cases use a manual clock.
+The app wrappers above remain for manual interaction checks.

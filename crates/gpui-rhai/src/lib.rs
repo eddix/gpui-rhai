@@ -3,6 +3,7 @@
 pub mod column_resize;
 pub mod component;
 pub mod component_styles;
+pub mod composition_audit;
 pub mod context;
 pub mod date;
 pub mod dependency;
@@ -19,6 +20,7 @@ mod environment_dependency;
 pub mod event;
 pub mod font;
 pub mod geometry;
+mod handle_state;
 pub mod host_slot;
 pub mod inline_svg;
 mod interaction;
@@ -42,6 +44,7 @@ pub mod responsive;
 pub mod retained;
 pub mod rotatable;
 pub mod schema;
+pub mod script_docs;
 mod script_lint;
 pub mod script_source;
 pub mod scrollbar;
@@ -59,7 +62,9 @@ pub mod text_area;
 mod text_edit;
 pub mod text_input;
 pub mod theme;
+mod theme_source;
 pub mod timer;
+pub mod token;
 pub mod value;
 pub mod virtual_list;
 mod virtual_list_element;
@@ -89,7 +94,8 @@ pub use accessibility::{
     AccessibilityError, AccessibilityNode, AccessibilityTree, CommittedSemanticFrame,
 };
 pub use action::{
-    ActionError, ActionId, ActionInvocation, ActionRegistry, DispatchScriptAction, KeyBindingSpec,
+    ActionError, ActionId, ActionInvocation, ActionRegistry, ActionShortcut, DispatchScriptAction,
+    KeyBindingSpec, KeyChord,
 };
 pub use app::{
     EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
@@ -117,8 +123,8 @@ pub use canvas::{
 };
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,
-    CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,
-    SubscriptionWork, TaskWork,
+    CapabilityId, CapabilityMethod, CapabilityRegistry, InvocationContext, InvocationOrigin,
+    SubscriptionCapabilityHandler, SubscriptionWork, TaskWork,
 };
 #[cfg(feature = "charts")]
 pub use chart::*;
@@ -131,6 +137,9 @@ pub use component::{
     EventSchema, RuntimeApiRange, SlotSchema, parse_component_header,
 };
 pub use component_styles::{ComponentStyleError, ComponentStyleSheet, load_component_styles};
+pub use composition_audit::{
+    AuditFinding, AuditRule, AuditRules, Profile, STATIC_RULES, load_profile_source,
+};
 pub use context::{
     ComponentIncarnation, ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch,
     UiRuntimeState, UiStateSnapshot, UiTransactionError,
@@ -213,8 +222,9 @@ pub use node::{
     UiNode, UiNodeKind, UiNodeKindTag,
 };
 pub use overlay::{
-    DismissReport, FocusToken, OverlayBounds, OverlayError, OverlayId, OverlayKind, OverlayManager,
-    OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler, TooltipTransition,
+    DismissReport, FocusToken, OverlayAlign, OverlayBounds, OverlayError, OverlayId, OverlayKind,
+    OverlayLookupError, OverlayManager, OverlayPlacement, OverlaySpec, PlacementResult,
+    TooltipScheduler, TooltipTransition,
 };
 pub use pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 pub use primitive::{
@@ -241,7 +251,7 @@ pub use rotatable::{RotatablePrimitiveHandler, rotatable_primitive_descriptor};
 pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };
-pub use script_lint::{KnownCallDiagnostic, KnownCallLintError};
+pub use script_lint::{KnownCallDiagnostic, KnownCallLintError, ShadowedBuiltin};
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
@@ -263,22 +273,27 @@ pub use style::{
     Align, AutoLength, BorderLineStyle, ColorParseError, ColorValue, CornerLengths, CursorKind,
     DisplayMode, EdgeLengths, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior,
     InteractionState, Justify, LayoutEdgeLengths, LayoutLength, Length, LengthError,
-    LinearGradientSpec, OverflowMode, PositionMode, PseudoState, RadiusToken, Rgba8, ShadowSpec,
-    SignedLength, SpacingToken, Style, StyleProperties, StyleValueError, TextAlignMode,
-    WhiteSpaceMode,
+    LinearGradientSpec, OverflowMode, PositionMode, PseudoState, Rgba8, ShadowSpec, SignedLength,
+    Style, StyleProperties, StyleValueError, TextAlignMode, WhiteSpaceMode,
 };
 pub use text_area::{TextAreaPrimitiveHandler, init_text_area, text_area_primitive_descriptor};
 pub use text_input::{
     TextBuffer, TextInputPrimitiveHandler, init_text_input, text_input_primitive_descriptor,
 };
 pub use theme::{
-    REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
-    ThemeFamily, ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring,
-    ThemePreference, ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue,
-    ThemeTokens, ThemeTypography, ThemeTypographyOverrides, ThemeVariant, ThemeVariantInfo,
-    TypographyToken, load_theme_source,
+    ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError, ThemeFamily, ThemeLength,
+    ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring, ThemePreference,
+    ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue, ThemeTokens,
+    ThemeTypography, ThemeTypographyOverrides, ThemeVariant, ThemeVariantInfo, TokenLayer,
+    TypographyRole, TypographyToken, contrast_ratio, load_theme_source, load_theme_with_layers,
+    load_token_base,
 };
+pub use theme_source::EnvTableSource;
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
+pub use token::{
+    EnvTable, Environment, EnvironmentDeclaration, EnvironmentDeclarations, LengthToken, Symbol,
+    TokenError, Variable,
+};
 pub use value::{
     OpaqueHandle, UiValue, UiValueError, UiValuePath, UiValuePathError, UiValuePathSegment,
 };
@@ -291,5 +306,6 @@ pub use window::{
     WindowCommandRegistry,
 };
 
-/// The first runtime API generation understood by component source.
-pub const RUNTIME_API_VERSION: u32 = 2;
+/// The runtime API generation understood by component source. Generation 3
+/// adds component token and environment declarations.
+pub const RUNTIME_API_VERSION: u32 = 3;

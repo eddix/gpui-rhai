@@ -1,8 +1,0 @@
- Documenting gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.52s
-   Generated /Users/eddix/Codes/github.com/eddix/gpui-rhai/target/doc/gpui_rhai/index.html
-    Checking gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
-    Checking gpui-rhai-registry v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/registry)
- Documenting gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 19.33s
-   Generated /Users/eddix/Codes/github.com/eddix/gpui-rhai/target/doc/gpui_rhai_cli/index.html

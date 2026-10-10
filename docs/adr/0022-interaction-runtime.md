@@ -15,9 +15,10 @@ separate state machines.
 The 0.1.8 component scope adds Draggable, DragSource, DropZone, Sortable,
 PanZoom, SelectionArea, Rotatable, RangeSlider and Tree. Implementing them as
 new isolated primitives would duplicate gesture ownership, coordinate
-conversion, constraints, preview/commit state and lifecycle cleanup. The audit
-in `docs/audits/2026-09-28-interaction-foundation/` records the existing
-duplication and migration boundaries.
+conversion, constraints, preview/commit state and lifecycle cleanup. The
+[interaction-foundation audit](https://github.com/eddix/gpui-rhai/tree/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/audits/2026-09-28-interaction-foundation)
+(see [History](../history.md)) records the existing duplication and migration
+boundaries.
 
 ## Decision
 

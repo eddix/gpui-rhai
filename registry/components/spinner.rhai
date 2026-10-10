@@ -2,29 +2,37 @@
 {
   "id": "components/spinner",
   "export": "Spinner",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["accent"],
+  "environment": []
 }
 */
 // Compact indeterminate activity indicator animated by the native runtime clock.
-// Props: key, label, size, and speed_ms.
-// Events/state: stateless and emits no events; reduced motion settles to a visible frame.
-// Parts: root, indicator.
+//
 // Example: Spinner(#{ key: "loading", label: "Loading" })
+//
+// With reduced motion the spinner stops turning and settles on a visible frame.
 
 define_component(#{
-    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["accent"],
+        environment: [] },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Stable identity of the spinner; keeps its rotation continuous across renders." },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name saying what is in progress." },
             size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false,
-                sensitive: false, "default": #{ type: "string", value: "md" } },
-            speed_ms: #{ schema: #{ type: "integer", min: 240, max: 4000 }, required: false,
-                sensitive: false, "default": #{ type: "integer", value: 850 } },
+                sensitive: false, "default": #{ type: "string", value: "md" },
+                doc: "Diameter: `xs` 12, `sm` 14, `md` 18 and `lg` 22 logical pixels." },
+            speed_ms: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 240, max: 4000 } },
+                required: false, sensitive: false,
+                doc: "Duration of one full turn in milliseconds; unset, the theme's `ambient` motion duration." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "indicator"],
     },
@@ -53,7 +61,8 @@ fn render_Spinner(ctx, props) {
         .with_style(ctx.component_style("root", ctx.component_style("indicator", style()
             .width(px(size)).height(px(size)))))
         .motion(motion_transition("rotate", 0.0, 360.0,
-            #{ duration_ms: if "speed_ms" in props { props.speed_ms } else { ctx.motion_duration("ambient") },
+            #{ duration_ms: if "speed_ms" in props && props.speed_ms != () { props.speed_ms }
+                else { ctx.motion_duration("ambient") },
                 easing: "linear", iterations: "infinite", intent: "essential" }))
         .accessibility_role("progressbar").accessibility_label(props.label)
         .accessibility_value("indeterminate")

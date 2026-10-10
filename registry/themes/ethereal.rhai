@@ -1,5 +1,7 @@
 // Semantic adaptation of Omarchy Ethereal (MIT).
 // Source: https://github.com/basecamp/omarchy/tree/master/themes/ethereal
+// Adjusted for the design-system palette constraints (docs/design/themes.md):
+// - selection tinted toward the accent so it differs from hover.
 fn theme() {
     #{ family: "Ethereal", name: "Dark", mode: "dark", tokens: #{
         colors: #{
@@ -10,36 +12,7 @@ fn theme() {
             warning: 0xe9bb4fff, on_warning: 0x060b1eff,
             success: 0x92a593ff, on_success: 0x060b1eff,
             border: 0x4a5685ff, focus_ring: 0xa3bfd1ff,
-            selection: 0x252e56ff, disabled: 0x6d7db6ff,
-        },
-        spacing: #{
-            xxs: #{ unit: "pixels", value: 2.0 },
-            xs: #{ unit: "pixels", value: 4.0 }, sm: #{ unit: "pixels", value: 8.0 },
-            md: #{ unit: "pixels", value: 12.0 }, lg: #{ unit: "pixels", value: 16.0 },
-        },
-        radii: #{
-            sm: #{ unit: "pixels", value: 0.0 }, md: #{ unit: "pixels", value: 0.0 },
-            lg: #{ unit: "pixels", value: 0.0 },
-        },
-        typography: #{
-            roles: #{
-                caption: #{ size: #{ unit: "pixels", value: 11.0 },
-                    line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
-                body_small: #{ size: #{ unit: "pixels", value: 12.0 },
-                    line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
-                body: #{ size: #{ unit: "pixels", value: 13.0 },
-                    line_height: #{ unit: "pixels", value: 18.0 }, weight: 400 },
-                subtitle: #{ size: #{ unit: "pixels", value: 14.0 },
-                    line_height: #{ unit: "pixels", value: 20.0 }, weight: 400 },
-                title: #{ size: #{ unit: "pixels", value: 16.0 },
-                    line_height: #{ unit: "pixels", value: 22.0 }, weight: 700 },
-                heading: #{ size: #{ unit: "pixels", value: 18.0 },
-                    line_height: #{ unit: "pixels", value: 24.0 }, weight: 700 },
-                display: #{ size: #{ unit: "pixels", value: 24.0 },
-                    line_height: #{ unit: "pixels", value: 32.0 }, weight: 700 },
-                display_large: #{ size: #{ unit: "pixels", value: 28.0 },
-                    line_height: #{ unit: "pixels", value: 36.0 }, weight: 700 },
-            },
+            selection: 0x303866ff, disabled: 0x6d7db6ff,
         },
     } }
 }

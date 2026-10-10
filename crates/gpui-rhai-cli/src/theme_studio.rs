@@ -7,9 +7,9 @@ use std::rc::Rc;
 
 use gpui_rhai::{
     AssetData, ColorValue, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView,
-    EventResponse, Length, ModuleId, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, Rgba8,
-    RuntimeEngine, ScriptApplication, ScriptViewExtension, ThemeMode, ThemeMotion, ThemeTokenValue,
-    ThemeTypography, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, load_theme_source,
+    EventResponse, ModuleId, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, Rgba8,
+    RuntimeEngine, ScriptApplication, ScriptViewExtension, ThemeMode, ThemeVariant, UiRuntimeState,
+    UiValue, ValueSchema, load_theme_source,
 };
 
 use super::{
@@ -48,13 +48,13 @@ struct StudioSession {
 }
 
 impl StudioSession {
+    /// The edited palette over the design-language token base, under the
+    /// identity the specimen is previewing.
     fn preview(&self) -> ThemeVariant {
-        ThemeVariant {
-            family: self.preview_family.clone(),
-            name: self.preview_variant.clone(),
-            mode: self.document.mode,
-            tokens: self.document.tokens.clone(),
-        }
+        let mut variant = with_token_base(&self.document);
+        variant.family.clone_from(&self.preview_family);
+        variant.name.clone_from(&self.preview_variant);
+        variant
     }
 
     fn path_text(&self) -> String {
@@ -225,7 +225,9 @@ fn color_handler(session: Rc<RefCell<StudioSession>>, token: String) -> Handler 
             Ok(color) => {
                 let preview = {
                     let mut session = session.borrow_mut();
-                    session.document.tokens.colors.insert(token.clone(), color);
+                    std::sync::Arc::make_mut(&mut session.document.tokens)
+                        .colors
+                        .insert(token.clone(), color);
                     session.preview()
                 };
                 runtime
@@ -433,7 +435,7 @@ fn set_status(runtime: &mut UiRuntimeState, status: String) -> Result<(), String
 fn parse_color(value: &str) -> Result<Rgba8, String> {
     match ColorValue::parse(value).map_err(|error| error.to_string())? {
         ColorValue::Literal(color) => Ok(color),
-        ColorValue::Token(_) => Err("theme token references are not colors".to_owned()),
+        _ => Err("theme token references are not colors".to_owned()),
     }
 }
 
@@ -460,16 +462,28 @@ fn validation_status(theme: &ThemeVariant) -> String {
         ("on_success", "success"),
     ] {
         let ratio = contrast(
-            theme.tokens.colors[foreground],
-            theme.tokens.colors[background],
+            theme
+                .tokens
+                .color(foreground)
+                .unwrap_or(Rgba8::from_rgba_hex(0)),
+            theme
+                .tokens
+                .color(background)
+                .unwrap_or(Rgba8::from_rgba_hex(0)),
         );
         if ratio < 4.5 {
             warnings.push(format!("{foreground}/{background} {ratio:.2}:1"));
         }
     }
     let focus = contrast(
-        theme.tokens.colors["focus_ring"],
-        theme.tokens.colors["surface"],
+        theme
+            .tokens
+            .color("focus_ring")
+            .unwrap_or(Rgba8::from_rgba_hex(0)),
+        theme
+            .tokens
+            .color("surface")
+            .unwrap_or(Rgba8::from_rgba_hex(0)),
     );
     if focus < 3.0 {
         warnings.push(format!("focus_ring/surface {focus:.2}:1"));
@@ -524,47 +538,32 @@ fn readable_on(color: Rgba8) -> Rgba8 {
 }
 
 fn derive_semantic_colors(theme: &mut ThemeVariant) {
-    let surface = theme.tokens.colors["surface"];
-    let text = theme.tokens.colors["text_primary"];
-    let accent = theme.tokens.colors["accent"];
-    theme
-        .tokens
-        .colors
-        .insert("surface_raised".to_owned(), mix(surface, text, 6));
-    theme
-        .tokens
-        .colors
-        .insert("surface_hover".to_owned(), mix(surface, text, 12));
-    theme
-        .tokens
-        .colors
-        .insert("text_muted".to_owned(), mix(surface, text, 68));
-    theme
-        .tokens
-        .colors
-        .insert("disabled".to_owned(), mix(surface, text, 48));
-    theme
-        .tokens
-        .colors
-        .insert("border".to_owned(), mix(surface, text, 24));
-    theme.tokens.colors.insert(
+    let colors = &mut std::sync::Arc::make_mut(&mut theme.tokens).colors;
+    let color = |colors: &BTreeMap<String, Rgba8>, name: &str| {
+        colors.get(name).copied().unwrap_or(Rgba8::from_rgba_hex(0))
+    };
+    let surface = color(colors, "surface");
+    let text = color(colors, "text_primary");
+    let accent = color(colors, "accent");
+    colors.insert("surface_raised".to_owned(), mix(surface, text, 6));
+    colors.insert("surface_hover".to_owned(), mix(surface, text, 12));
+    colors.insert("text_muted".to_owned(), mix(surface, text, 68));
+    colors.insert("disabled".to_owned(), mix(surface, text, 48));
+    colors.insert("border".to_owned(), mix(surface, text, 24));
+    colors.insert(
         "accent_hover".to_owned(),
         mix(accent, readable_on(accent), 14),
     );
-    theme
-        .tokens
-        .colors
-        .insert("on_accent".to_owned(), readable_on(accent));
-    theme.tokens.colors.insert("focus_ring".to_owned(), accent);
+    colors.insert("on_accent".to_owned(), readable_on(accent));
+    // Focus is drawn in the ink color so it never collides with accent fills.
+    colors.insert("focus_ring".to_owned(), text);
     for (fill, foreground) in [
         ("danger", "on_danger"),
         ("warning", "on_warning"),
         ("success", "on_success"),
     ] {
-        theme.tokens.colors.insert(
-            foreground.to_owned(),
-            readable_on(theme.tokens.colors[fill]),
-        );
+        let fill = color(colors, fill);
+        colors.insert(foreground.to_owned(), readable_on(fill));
     }
 }
 
@@ -577,6 +576,9 @@ fn leading_attribution(source: &str) -> Vec<String> {
         .collect()
 }
 
+/// Serialize a palette theme. Palettes own colors only: typography,
+/// spacing, metrics and radius belong to the token base, so saving never
+/// writes layout tokens.
 fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
     let mut output = String::new();
     for line in attribution {
@@ -597,137 +599,55 @@ fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
         }
     );
     output.push_str("        tokens: #{\n            colors: #{\n");
-    for &token in COLOR_TOKENS {
+    let colors = theme.tokens.color_snapshot();
+    let ordered = COLOR_TOKENS
+        .iter()
+        .filter_map(|token| {
+            colors
+                .get(*token)
+                .map(|color| ((*token).to_owned(), *color))
+        })
+        .chain(
+            colors
+                .iter()
+                .filter(|(token, _)| !COLOR_TOKENS.contains(&token.as_str()))
+                .map(|(token, color)| (token.clone(), *color)),
+        );
+    for (token, color) in ordered {
+        let key = if token.contains('.') {
+            json_string(&token)
+        } else {
+            token
+        };
         let _ = writeln!(
             output,
-            "                {token}: 0x{:08x},",
-            theme.tokens.colors[token].as_rgba_hex()
+            "                {key}: 0x{:08x},",
+            color.as_rgba_hex()
         );
     }
-    output.push_str("            },\n");
-    write_length_map(&mut output, "spacing", &theme.tokens.spacing);
-    write_length_map(&mut output, "radii", &theme.tokens.radii);
-    write_typography(&mut output, &theme.tokens.typography);
-    write_motion(&mut output, &theme.tokens.motion);
-    if !theme.tokens.namespaces.is_empty() {
-        output.push_str("            namespaces: #{\n");
-        for (namespace, tokens) in &theme.tokens.namespaces {
-            let _ = writeln!(output, "                {namespace}: #{{");
-            for (name, value) in tokens {
-                let encoded = match value {
-                    ThemeTokenValue::Color(color) => {
-                        format!(
-                            "#{{ type: \"color\", value: 0x{:08x} }}",
-                            color.as_rgba_hex()
-                        )
-                    }
-                    ThemeTokenValue::Length(length) => format!(
-                        "#{{ type: \"length\", value: {} }}",
-                        encoded_length(*length)
-                    ),
-                    ThemeTokenValue::Number(number) => {
-                        format!("#{{ type: \"number\", value: {number:?} }}")
-                    }
-                    ThemeTokenValue::String(value) => {
-                        format!("#{{ type: \"string\", value: {} }}", json_string(value))
-                    }
-                };
-                let _ = writeln!(output, "                    {name}: {encoded},");
-            }
-            output.push_str("                },\n");
-        }
-        output.push_str("            },\n");
-    }
-    output.push_str("        },\n    }\n}\n");
+    output.push_str("            },\n        },\n    }\n}\n");
     output
 }
 
-fn write_motion(output: &mut String, motion: &ThemeMotion) {
-    output.push_str("            motion: #{\n");
-    output.push_str("                durations_ms: #{\n");
-    for (name, value) in &motion.durations_ms {
-        let _ = writeln!(output, "                    {name}: {value},");
-    }
-    output.push_str("                },\n                easings: #{\n");
-    for (name, value) in &motion.easings {
-        let _ = writeln!(
-            output,
-            "                    {name}: {},",
-            json_string(value.as_str())
-        );
-    }
-    output.push_str("                },\n                springs: #{\n");
-    for (name, value) in &motion.springs {
-        let _ = writeln!(
-            output,
-            "                    {name}: #{{ stiffness: {:?}, damping: {:?}, mass: {:?} }},",
-            value.stiffness, value.damping, value.mass
-        );
-    }
-    output.push_str("                },\n                distances: #{\n");
-    for (name, value) in &motion.distances {
-        let _ = writeln!(output, "                    {name}: {value:?},");
-    }
-    output.push_str("                },\n                staggers_ms: #{\n");
-    for (name, value) in &motion.staggers_ms {
-        let _ = writeln!(output, "                    {name}: {value},");
-    }
-    output.push_str("                },\n            },\n");
-}
-
-fn write_typography(output: &mut String, typography: &ThemeTypography) {
-    output.push_str("            typography: #{\n");
-    if let Some(family) = &typography.family {
-        let _ = writeln!(output, "                family: {},", json_string(family));
-    }
-    if !typography.fallbacks.is_empty() {
-        let fallbacks = typography
-            .fallbacks
-            .iter()
-            .map(|family| json_string(family))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let _ = writeln!(output, "                fallbacks: [{fallbacks}],");
-    }
-    output.push_str("                roles: #{\n");
-    for role in gpui_rhai::REQUIRED_TYPOGRAPHY {
-        let token = &typography.roles[*role];
-        let _ = writeln!(
-            output,
-            "                    {role}: #{{ size: {}, line_height: {}, weight: {} }},",
-            encoded_length(token.size),
-            encoded_length(token.line_height),
-            token.weight
-        );
-    }
-    output.push_str("                },\n            },\n");
-}
-
-fn write_length_map(output: &mut String, name: &str, values: &BTreeMap<String, Length>) {
-    let _ = writeln!(output, "            {name}: #{{");
-    for (token, value) in values {
-        let _ = writeln!(
-            output,
-            "                {token}: {},",
-            encoded_length(*value)
-        );
-    }
-    output.push_str("            },\n");
-}
-
-fn encoded_length(length: Length) -> String {
-    match length {
-        Length::Pixels(value) => {
-            format!("#{{ unit: \"pixels\", value: {value:?} }}")
-        }
-        Length::Rems(value) => format!("#{{ unit: \"rems\", value: {value:?} }}"),
-        Length::Relative(value) => {
-            format!("#{{ unit: \"relative\", value: {value:?} }}")
-        }
-        Length::ThemeSpacing(_) | Length::ThemeRadius(_) => {
-            unreachable!("validated theme documents cannot nest length tokens")
-        }
-    }
+/// Merge a palette document over the bundled token base. Palettes contain
+/// colors only, so the document is serialized and reloaded with the base.
+fn with_token_base(document: &ThemeVariant) -> ThemeVariant {
+    let engine = RuntimeEngine::new();
+    gpui_rhai::load_token_base(
+        engine.engine(),
+        "tokens.rhai",
+        gpui_rhai_registry::TOKEN_BASE_SOURCE,
+    )
+    .and_then(|base| {
+        gpui_rhai::load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
+            "<studio-preview>",
+            &canonical_source(document, &[]),
+            &gpui_rhai::ThemeTokenOverrides::default(),
+        )
+    })
+    .unwrap_or_else(|_| document.clone())
 }
 
 fn default_draft() -> Result<ThemeVariant, String> {
@@ -976,6 +896,7 @@ fn launch(
         .collect::<Vec<_>>();
     let entry = ModuleId::parse("main").map_err(|error| error.to_string())?;
     EmbeddedScriptView::new(entry, scripts, primary)
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources(additional_themes)
         .locale_sources([
             ("en.rhai".to_owned(), EN_LOCALE.to_owned()),
@@ -1007,43 +928,30 @@ mod tests {
     #[test]
     fn canonical_theme_round_trips_and_preserves_attribution() {
         let mut theme = default_draft().unwrap();
-        theme
-            .tokens
-            .spacing
-            .insert("xs".to_owned(), Length::Rems(0.25));
-        theme.tokens.namespaces.insert(
-            "charts".to_owned(),
-            BTreeMap::from([
-                (
+        std::sync::Arc::make_mut(&mut theme.tokens)
+            .namespaces
+            .insert(
+                "charts".to_owned(),
+                BTreeMap::from([(
                     "series_a".to_owned(),
-                    ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x0033_66ff)),
-                ),
-                (
-                    "stroke".to_owned(),
-                    ThemeTokenValue::Length(Length::Pixels(2.0)),
-                ),
-                ("alpha".to_owned(), ThemeTokenValue::Number(0.6)),
-                (
-                    "label".to_owned(),
-                    ThemeTokenValue::String("Primary".to_owned()),
-                ),
-            ]),
-        );
-        let theme = gpui_rhai::ThemeManager::from_variants(
-            [theme],
-            gpui_rhai::ThemeSelection::new("Default", "Dark"),
-        )
-        .unwrap()
-        .resolve(None, None, gpui_rhai::SystemAppearance::Dark)
-        .unwrap()
-        .variant()
-        .clone();
+                    gpui_rhai::ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x0033_66ff)),
+                )]),
+            );
         let source = canonical_source(&theme, &["// Attribution".to_owned()]);
         assert!(source.starts_with("// Attribution\n\n"));
         let engine = RuntimeEngine::new();
+        let reloaded = load_theme_source(engine.engine(), "roundtrip.rhai", &source).unwrap();
         assert_eq!(
-            load_theme_source(engine.engine(), "roundtrip.rhai", &source).unwrap(),
-            theme
+            reloaded.tokens.color_snapshot(),
+            theme.tokens.color_snapshot()
+        );
+        assert!(reloaded.tokens.spacing.is_empty() && reloaded.tokens.typography.roles.is_empty());
+        let preview = with_token_base(&reloaded);
+        assert!(preview.tokens.color("table.selection").is_some());
+        assert_eq!(
+            canonical_source(&reloaded, &[]),
+            canonical_source(&theme, &[]),
+            "derived base colors are never written into the palette"
         );
     }
 
@@ -1055,6 +963,16 @@ mod tests {
                 "{component}"
             );
         }
+    }
+
+    #[test]
+    fn studio_entry_does_not_shadow_builtins() {
+        let document = default_draft().unwrap();
+        let main = source_with_state(&document, "", &validation_status(&document));
+        let found = RuntimeEngine::new()
+            .lint_shadowed_builtins("studio", &main)
+            .unwrap();
+        assert!(found.is_empty(), "{found:?}");
     }
 
     #[test]

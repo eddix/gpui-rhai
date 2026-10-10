@@ -225,6 +225,7 @@ fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut Test
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(slots)
     .prepare()
     .unwrap();
@@ -317,6 +318,7 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let shell_entry = ModuleId::parse("shell").unwrap();
@@ -348,6 +350,7 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
             )])),
             include_str!("../../../registry/themes/default_dark.rhai"),
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .extension(slots)
         .prepare()
         .unwrap()
@@ -394,6 +397,7 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let shell_entry = ModuleId::parse("shell").unwrap();
@@ -426,6 +430,7 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
             shell_source,
             include_str!("../../../registry/themes/default_dark.rhai"),
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .extension(slots)
         .prepare()
         .unwrap()
@@ -667,9 +672,11 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
             OverlayNodeSpec {
                 initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
                 id: OverlayId::new("keyboard-overlay"),
+                owner: None,
                 parent: None,
                 kind: OverlayKind::Popover,
                 placement: OverlayPlacement::Bottom,
+                align: gpui_rhai::OverlayAlign::Center,
                 anchor: None,
                 open: false,
                 gap: 4.0,
@@ -982,9 +989,11 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         OverlayNodeSpec {
             initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("child-popover"),
+            owner: None,
             parent: Some(OverlayId::new("parent-dialog")),
             kind: OverlayKind::Popover,
             placement: OverlayPlacement::Right,
+            align: gpui_rhai::OverlayAlign::Center,
             anchor: None,
             open: true,
             gap: 4.0,
@@ -1005,9 +1014,11 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         OverlayNodeSpec {
             initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("parent-dialog"),
+            owner: None,
             parent: None,
             kind: OverlayKind::Dialog,
             placement: OverlayPlacement::Bottom,
+            align: gpui_rhai::OverlayAlign::Center,
             anchor: None,
             open: true,
             gap: 0.0,
@@ -1140,6 +1151,7 @@ fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(cx: &mut 
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1196,7 +1208,7 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &m
             r#"
                 define_component(#{
                     metadata: #{ id: "tests/geometry_probe", "export": "GeometryProbe",
-                        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                         state: #{ fields: #{ event_measured: #{ schema: #{ type: "bool" },
@@ -1222,6 +1234,7 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &m
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1300,7 +1313,7 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                 r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_stateful", "export": "SlotStateful",
-                            version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                             state: #{ fields: #{ value: #{ schema: #{ type: "string" },
@@ -1322,7 +1335,7 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                 r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_receiver", "export": "SlotReceiver",
-                            version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{
                                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -1349,6 +1362,7 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1436,14 +1450,14 @@ fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
   "id": "components/broken_panel",
   "export": "BrokenPanel",
   "version": "0.1.3",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
 */
                 define_component(#{
                     metadata: #{ id: "components/broken_panel", "export": "BrokenPanel",
-                        version: "0.1.3", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        version: "0.1.3", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{
                         broken: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
@@ -1477,6 +1491,7 @@ fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap()
@@ -1557,6 +1572,7 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -1599,7 +1615,10 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
         Modifiers::default(),
     );
     visual.run_until_parked();
-    let placement = host.overlay_placement("combobox-view", "theme").unwrap();
+    let placement = host
+        .overlay_placement("combobox-view", "theme")
+        .unwrap()
+        .unwrap();
     visual.simulate_click(
         point(
             px((placement.bounds.x + placement.bounds.width / 2.0) as f32),
@@ -1665,6 +1684,7 @@ fn combobox_relative_width_tracks_flex_space_and_sizes_its_panel(cx: &mut TestAp
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -1719,6 +1739,7 @@ fn combobox_relative_width_tracks_flex_space_and_sizes_its_panel(cx: &mut TestAp
         let fixed = query(visual, "Fixed");
         let panel = host
             .overlay_placement("adaptive-width-view", "adaptive")
+            .unwrap()
             .expect("open adaptive panel has placement");
         (adaptive, fixed, panel.bounds)
     };
@@ -1780,6 +1801,7 @@ fn click_context_exposes_untracked_event_target_visual_bounds(cx: &mut TestAppCo
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -1887,6 +1909,7 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .runtime_clock(manual.clock())
     .asset_sources(official_icon_assets())
     .prepare()
@@ -2102,7 +2125,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
                 import "helpers/state" as state;
                 define_component(#{
                     metadata: #{ id: "tests/ticker", "export": "Ticker", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.ticker": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -2149,6 +2172,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .manifest(manifest)
     .extension(AsyncExtension {
         gate: std::sync::Arc::clone(&gate),
@@ -2292,7 +2316,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/loader", "export": "Loader", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.echo": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -2339,6 +2363,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .manifest(manifest)
     .extension(EchoExtension)
     .asset_sources(official_icon_assets())
@@ -2454,7 +2479,7 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/nested", "export": "Nested", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.echo": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -2502,6 +2527,7 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .manifest(manifest)
     .extension(EchoExtension)
     .asset_sources(official_icon_assets())
@@ -2619,7 +2645,7 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/watcher", "export": "Watcher", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.echo": "*", "app.push": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -2668,6 +2694,7 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .manifest(manifest)
     .extension(Extension)
     .asset_sources(official_icon_assets())
@@ -3067,6 +3094,10 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
             ModuleId::parse("components/divider").unwrap(),
             include_str!("../../../registry/components/divider.rhai").to_owned(),
         ),
+        (
+            ModuleId::parse("components/kbd").unwrap(),
+            include_str!("../../../registry/components/kbd.rhai").to_owned(),
+        ),
     ]));
     let mut runtime_engine = RuntimeEngine::new();
     runtime_engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
@@ -3085,10 +3116,8 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
                 } } }
                 fn opened(ctx, open) { ctx.set_state("open", open); }
                 fn activated(ctx, value) { ctx.set_state("active", value); }
-                fn acted(ctx, value) {
-                    ctx.set_state("action", value);
-                    ctx.set_state("open", false);
-                }
+                // The menu asks to close after the action, through `opened`.
+                fn acted(ctx, value) { ctx.set_state("action", value); }
                 fn view(ctx) {
                     menu::Menu(#{
                         key: "file", label: "File menu", trigger: text("File"),
@@ -3128,15 +3157,25 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
     let captured_engine = Rc::clone(&runtime_engine);
     let captured_errors = Rc::clone(&errors);
     let captured_events = Rc::clone(&events);
+    let captured_runtime = Rc::clone(&runtime);
     let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _, app| {
         captured_events
             .borrow_mut()
             .push((callback.name().to_owned(), payload.clone()));
         let result = {
             let engine = captured_engine.borrow();
-            captured_lifecycle
-                .borrow()
+            let lifecycle = captured_lifecycle.borrow();
+            // Menu reports row activations as component events, which the host delivers
+            // to the caller after the handler returns.
+            lifecycle
                 .invoke_callback_transactional(&engine, &callback, payload)
+                .and_then(|_| {
+                    let pending = captured_runtime.borrow_mut().drain_batch().events;
+                    for event in pending {
+                        lifecycle.invoke_component_event_transactional(&engine, event)?;
+                    }
+                    Ok(())
+                })
         };
         if let Err(error) = result {
             captured_errors.borrow_mut().push(error.to_string());
@@ -3244,6 +3283,7 @@ fn prepared_embedded_test_view(open: bool) -> gpui_rhai::PreparedScriptView {
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap()
@@ -3427,7 +3467,10 @@ fn multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state(cx: &m
     assert!(first_text.contains(&"View: first".to_owned()));
     assert!(first_text.contains(&"Responsive: compact".to_owned()));
 
-    let first_placement = host.overlay_placement("first", "shared-overlay").unwrap();
+    let first_placement = host
+        .overlay_placement("first", "shared-overlay")
+        .unwrap()
+        .unwrap();
     assert!(first_placement.bounds.width > 200.0);
     let toast_count = [&first, &second, &third]
         .into_iter()
@@ -3493,8 +3536,14 @@ fn duplicate_local_overlay_ids_are_namespaced_per_embedded_view(cx: &mut TestApp
     cx.run_until_parked();
 
     let host = captured.borrow().as_ref().unwrap().clone();
-    let first = host.overlay_placement("first", "shared-overlay").unwrap();
-    let second = host.overlay_placement("second", "shared-overlay").unwrap();
+    let first = host
+        .overlay_placement("first", "shared-overlay")
+        .unwrap()
+        .unwrap();
+    let second = host
+        .overlay_placement("second", "shared-overlay")
+        .unwrap()
+        .unwrap();
     assert!(first.bounds.width > 200.0);
     assert!(second.bounds.width > 200.0);
     assert_ne!(first.bounds.x, second.bounds.x);
@@ -3642,6 +3691,7 @@ fn selectable_text_uses_native_selection_and_copy_semantics(cx: &mut TestAppCont
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -3729,7 +3779,7 @@ fn inherited_motion_group_survives_incremental_component_update(cx: &mut TestApp
             r#"
                 define_component(#{
                     metadata: #{ id: "components/group_probe", "export": "GroupProbe",
-                        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{ key: #{ schema: #{ type: "string" },
                         required: true, sensitive: false } }, state: #{ fields: #{ count: #{
@@ -3757,6 +3807,7 @@ fn inherited_motion_group_survives_incremental_component_update(cx: &mut TestApp
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -3843,6 +3894,7 @@ fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestA
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -3949,6 +4001,7 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -4146,6 +4199,7 @@ fn table_flex_columns_distribute_remaining_width_by_weight(cx: &mut TestAppConte
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -4263,6 +4317,7 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -4411,12 +4466,12 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
             .visual
             .width
     });
-    assert!((auto_fit - 48.0).abs() < 1.0, "auto_fit={auto_fit}");
+    assert!((auto_fit - 58.0).abs() < 1.0, "auto_fit={auto_fit}");
     let auto_fit_texts = palette_texts(&mut visual, &view);
     assert!(
         auto_fit_texts
             .iter()
-            .any(|text| text == "resize:2:48" || text == "resize:2:48.0"),
+            .any(|text| text == "resize:2:58" || text == "resize:2:58.0"),
         "double-click auto-fit must emit one semantic resize: {auto_fit_texts:?}"
     );
 
@@ -4441,7 +4496,7 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
     assert!(
         keyboard_texts
             .iter()
-            .any(|text| text == "resize:3:56" || text == "resize:3:56.0"),
+            .any(|text| text == "resize:3:66" || text == "resize:3:66.0"),
         "focused separators must support logical arrow-key resizing: {keyboard_texts:?}"
     );
 }
@@ -4487,6 +4542,7 @@ fn table_resize_handles_sit_on_column_boundaries_including_the_last_column(
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -4756,6 +4812,7 @@ fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(cx: &m
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -5138,6 +5195,16 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
             )
         })
         .unwrap();
+    visual.run_until_parked();
+    // A later success does not hide the failure: the rolled-back event is
+    // still reported until the developer dismisses it.
+    let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());
+    assert!(error.contains("dogfood render failure"), "{error}");
+    let dismiss = visual
+        .debug_bounds("gpui-rhai-error-banner-dismiss:failure-view")
+        .expect("the banner offers a dismiss button");
+    visual.simulate_click(dismiss.center(), Modifiers::default());
+    visual.run_until_parked();
     assert!(
         visual
             .update(|_, cx| view.last_error(cx))
@@ -5148,6 +5215,13 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
         visual
             .update(|_, cx| view.last_diagnostic(cx))
             .unwrap()
+            .is_none()
+    );
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    assert!(
+        visual
+            .debug_bounds("gpui-rhai-error-banner:failure-view")
             .is_none()
     );
 }
@@ -5208,6 +5282,8 @@ fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut
             .is_none(),
         "the host-owned error surface must not compete with a built-in banner"
     );
+    visual.update(|_, cx| view.clear_error(cx)).unwrap();
+    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
 }
 
 #[gpui::test]
@@ -5241,6 +5317,7 @@ fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -5343,6 +5420,7 @@ fn mount_controlled_palette(
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -5485,6 +5563,7 @@ fn modal_dialog_reclaims_focus_stolen_by_an_embedding_host(cx: &mut TestAppConte
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -5567,6 +5646,7 @@ fn slider_previews_drag_natively_and_commits_once_before_keyboard_steps(cx: &mut
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -5661,6 +5741,7 @@ fn slider_reverses_horizontal_pointer_and_arrow_semantics_in_rtl(cx: &mut TestAp
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .locale_sources([(
         "ar.rhai".to_owned(),
         include_str!("../../../registry/locales/ar.rhai").to_owned(),
@@ -5744,6 +5825,7 @@ fn scroll_area_thumb_drag_updates_the_retained_scroll_handle(cx: &mut TestAppCon
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -5862,9 +5944,14 @@ fn context_menu_anchors_at_the_right_click_and_closes_with_escape(cx: &mut TestA
                 ModuleId::parse("components/divider").unwrap(),
                 include_str!("../../../registry/components/divider.rhai").to_owned(),
             ),
+            (
+                ModuleId::parse("components/kbd").unwrap(),
+                include_str!("../../../registry/components/kbd.rhai").to_owned(),
+            ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -5963,6 +6050,7 @@ fn sheet_uses_the_viewport_end_edge_and_restores_controlled_open_state(cx: &mut 
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -6076,6 +6164,7 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -6290,6 +6379,7 @@ fn grouped_command_initial_reveal_keeps_its_first_header_natural(cx: &mut TestAp
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .extension(CommandData(commands))
     .prepare()
@@ -6424,6 +6514,7 @@ fn command_preserves_manual_scroll_and_reveals_controlled_active_item(cx: &mut T
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -6587,6 +6678,7 @@ fn code_and_diff_viewers_mount_native_document_surfaces(cx: &mut TestAppContext)
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -6706,6 +6798,7 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(Documents)
     .prepare()
     .unwrap();
@@ -6975,6 +7068,7 @@ fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
@@ -7116,6 +7210,7 @@ fn host_none_policy_snaps_layout_motion_in_the_presented_frame(cx: &mut TestAppC
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .runtime_clock(manual.clock())
     .motion_preference(gpui_rhai::MotionPreference::None)
     .prepare()
@@ -7222,6 +7317,7 @@ fn canvas_morph_hit_testing_follows_the_presented_path(cx: &mut TestAppContext) 
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .runtime_clock(manual.clock())
     .prepare()
     .unwrap();
@@ -7313,6 +7409,7 @@ fn timeline_rebinds_a_replaced_child_in_presented_frames(cx: &mut TestAppContext
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .runtime_clock(manual.clock())
     .prepare()
     .unwrap();

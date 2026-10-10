@@ -1,8 +1,12 @@
 # Official component catalog
 
-gpui-rhai ships 62 editable Rhai source components. They all use the same
+gpui-rhai ships 64 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
+
+This page records how components differ and what their contracts promise. The
+props, events, slots and parts of every module, with their types, defaults and
+meaning, are in the generated [module reference](../reference/README.md).
 
 Run the interactive catalog from this repository:
 
@@ -18,9 +22,9 @@ loading, read-only and presentation-only specimens intentionally remain inert.
 
 Theme Studio renders the same exhaustive specimen while editing a theme.
 
-The [registry visual system](../registry-design-system.md) is the maintained
-source for component dimensions, color roles, state appearance, and known
-visual gaps. This catalog records component semantics and public contracts.
+The [design specification](../design/) is the maintained source for component
+dimensions, color roles and state appearance. This catalog records component
+semantics and public contracts.
 
 Version 0.1.2 freezes the original 51-component foundation: component IDs and exports,
 controlled-state ownership, semantic event payloads, the `xs`/`sm`/`md`/`lg`
@@ -53,7 +57,7 @@ remaining space. The caller owns the accepted `{x,y,width,height}` rectangle.
 
 The component supports any unique subset of `n/s/e/w/ne/nw/se/sw`, min/max
 dimensions, optional boundary containment, optional aspect ratio, a keyboard
-step, disabled state, and one `resize({x,y,width,height,handle})` proposal.
+step, disabled state, and one `resize({x,y,width,height})` proposal shaped exactly like `rect`.
 Pointer moves update four optional-float native signals; Rhai runs only for the
 final proposal. Style parts are `root`, `surface`, `content`, and `handle`.
 
@@ -183,11 +187,19 @@ progress indicator has an explicit textual accessible name. Input placeholders
 are hints, not names. An Icon without its optional `label` is decorative
 presentation; IconButton always requires an action label.
 
-For a custom macOS titlebar, configure GPUI's transparent `TitlebarOptions` in
-the trusted Host and pass `inset_start: 70` to the Rhai `TitleBar`. Rendering a
-bar alone deliberately does not change native window behavior. This keeps an
-embedded user-authored view from turning ordinary content into a window-control
-surface.
+TitleBar can replace the platform title bar. The trusted Host hides the
+platform bar (`TitlebarOptions { appears_transparent: true, traffic_light_position, .. }`
+and, on macOS, `app_owns_titlebar_drag: true` so AppKit does not claim clicks in
+the title strip) and allows window drag areas for the view
+(`ScriptViewConfig::window_drag_areas(true)` or
+`ScriptApplication::window_drag_areas(true)`). The script passes
+`inset_start` (room for the macOS window buttons; the Gallery uses 72 with the
+buttons at (12, 11)) and `window_drag: true`: pressing the bar's background
+moves the window, a double press runs the platform title-bar action (zoom or
+minimize), and a press on a control inside the bar stays with the control.
+Window moves are platform drags on macOS and Linux. Without the Host's
+permission a drag area is inert, so an embedded user-authored view cannot turn
+ordinary content into a window-control surface.
 
 TitleBar requires a textual `label` for accessibility. Its `title` and optional
 `subtitle` accept strings or nodes. String values receive the standard
@@ -196,13 +208,65 @@ handlers while still participating in TitleBar's start inset and clipping.
 Breadcrumb separators remain application-owned rather than becoming TitleBar
 policy.
 
+## List
+
+`List` is a controlled virtualized list of keyed rows: Table's rows, selection
+and keyboard model without columns or a header. Items are data, as Table cells
+are, so long lists realize only the visible rows:
+
+| Item field | Contract |
+|---|---|
+| `key` | Required stable string |
+| `title` | Required string; the row's accessible name starts with it |
+| `secondary` | Optional muted text, beside the title or below it (`secondary_layout`) |
+| `meta` | Optional trailing text such as a time or a count, tabular figures |
+| `badge` | Optional leading status `#{ text, variant, dot }` |
+| `disabled` | Optional; a disabled row takes no input and keyboard navigation skips it |
+
+The list takes `selection_mode` (`none` default, `single`, `multiple`),
+`selected_keys`, `height` or `fill_height`, `dividers`, `badge_width` (pixels;
+one leading slot on every row, so titles align when badges differ), `empty_text` /
+`empty`, and emits `selection_change`, `row_click` and `context_request`
+(`#{ key, anchor, source }`, like Table's without a column; without a selection
+mode, `on_context_request` alone makes the list a tab stop whose Shift+F10 asks
+for the whole list).
+
+Source: [list.rhai](../../registry/components/list.rhai).
+Runnable story: `gpui-rhai gallery --story components/list`.
+
+## TabBar
+
+`TabBar` is a controlled strip of document tabs that belong to the panel under
+them (the panel is the caller's; give it `tabbar.active` so the selected tab
+joins it). Tabs keep their width and scroll sideways; the selected tab stays
+revealed.
+
+| Tab field | Contract |
+|---|---|
+| `value`, `label` | Required strings; the label is the tab's accessible name |
+| `icon` | Optional decorative node before the label |
+| `closable` | Shows a close button (selected or hovered) and closes on a middle press |
+| `dirty` | Shows the unsaved mark, which becomes the close button under the pointer |
+| `disabled` | Takes no input; the cursor skips it |
+
+Props: `key`, `label`, `value`, `tabs`, `size`, `start` / `end` (nodes beside
+the strip, not scrolled), `overflow_menu` (a menu listing every tab,
+`menu_label`), `close_label`, `reorderable`. Events: `change(value)`,
+`close(value)`, `context_request(#{ value, anchor, source })` from a right
+press or Shift+F10, `reorder(#{ value, anchor, placement })` from a drag (a
+press that does not move selects) or Alt+Left/Right. The strip is one tab
+stop: the arrows, Home and End move a cursor, Enter or Space selects it.
+
+Source: [tab_bar.rhai](../../registry/components/tab_bar.rhai).
+Runnable story: `gpui-rhai gallery --story components/tab-bar`.
+
 ## Foundations and status
 
 - `Label`, `Divider`, and `Icon` provide semantic text and visual structure.
 - `Avatar`, `Badge`, and `Tag` are distinct: Badge is read-only status,
   while Tag may represent removable application metadata. Badge keeps a compact
   text enclosure relative to Button; see the
-  [density metrics](../registry-design-system.md#button-and-badge-density).
+  [marker contracts](../design/atoms.md#badge).
 - `Alert` is persistent inline feedback; `Toast` is transient layered feedback.
 - `Card`, `GroupBox`, and `Empty` standardize common composition without hiding
   their node slots.
@@ -223,11 +287,12 @@ policy.
   mixed with text. `Toggle`/`ToggleGroup` express labeled pressed tool state;
   `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain their separate selection
   and setting semantics.
-- ToggleGroup's future segmented appearance is recorded under
-  [known visual gaps](../registry-design-system.md#known-implementation-gaps);
-  it is not part of the current component contract.
+- ToggleGroup's segmented appearance is specified in the
+  [component contracts](../design/atoms.md#related-togglegroup-and-tabs).
 - `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
-  editing core and explicit semantic relationships.
+  editing core and explicit semantic relationships. `Input` with
+  `appearance: "embedded"` is the frameless search line that heads a panel
+  (Command, CommandDialog, a searchable Combobox).
 - `Select` is scalar choice. `Combobox` is searchable single/multiple choice.
   Both are strictly controlled for value, open state, and query.
 - `DatePicker` remains a controlled ISO-date composition over public calendar
@@ -290,7 +355,7 @@ Tabs retains one keyboard entry point, orientation-aware arrow navigation,
 disabled-item skipping, and the runtime's horizontal RTL behavior. It exposes
 group/tablist/tab semantics and selected state, rather than button pressed
 state. The track and inset selection thumb follow the
-[Tabs visual contract](../registry-design-system.md#tabs-track-and-selection-thumb).
+[Tabs visual contract](../design/atoms.md#related-togglegroup-and-tabs).
 
 | Style part | Responsibility |
 |---|---|
@@ -309,8 +374,7 @@ inner Tabs' motion identity. Its own style part is `root`. It uses the shared
 selection thumb instead of replaying opacity over the entire component.
 
 Current limit: horizontal overflow is locally scrollable but controlled
-selection does not automatically reveal an offscreen item. See the visual
-system's [known implementation gaps](../registry-design-system.md#known-implementation-gaps).
+selection does not automatically reveal an offscreen item.
 
 ## Command and CommandDialog
 
@@ -369,9 +433,11 @@ resource limits and extension points.
 
 - `Popover` and `Tooltip` are anchored non-modal surfaces.
 - `Menu` is a trigger-based action menu; `ContextMenu` reuses the same item,
-  submenu, typeahead, and roving model while anchoring at a secondary click.
+  submenu, typeahead, and roving model while anchoring at a secondary click,
+  or at its trigger on Shift+F10 or the menu key. Activating any row closes
+  either menu.
 - `Dialog` is a general modal; `AlertDialog` adds explicit confirmation and
-  cancellation semantics.
+  cancellation semantics: Escape and backdrop presses report `cancel` too.
 - `Sheet` is a temporary modal attached to logical start/end or physical
   top/bottom. Persistent sidebars remain normal application layout.
 

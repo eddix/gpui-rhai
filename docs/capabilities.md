@@ -24,7 +24,8 @@ subscription example is `crates/gpui-rhai/examples/extension_host.rs`. File view
 
 ## Rhai calls
 
-Synchronous methods may run only in `init`, `dispose`, or an event callback:
+Synchronous methods may run anywhere except `view`: `init`, an event callback,
+an effect, `suspend`, `resume`, or `dispose`:
 
 ```rhai
 let result = ctx.call_capability("app.settings", "load", #{ key: "theme" });
@@ -71,6 +72,47 @@ scope cancellation, registry teardown, and generation replacement cannot lose
 a producer wakeup. A stale generation discards its buffered values and removes
 the subscription immediately; a normal producer close still drains values that
 were accepted before close.
+
+## What a call responds to
+
+A synchronous handler can override `call_with` to see the context of a call:
+what it runs in response to (`InvocationOrigin`), the view, and the calling
+component instance. The default forwards to `call`. Gate a method that should
+only run for the user, such as switching to another tool, on
+`context.origin.is_user_input()`:
+
+```rust
+impl CapabilityHandler for Open {
+    fn call(&mut self, _: &str, _: UiValue) -> Result<UiValue, String> {
+        Err("call_with is the entry point".into())
+    }
+
+    fn call_with(&mut self, context: &InvocationContext, method: &str, input: UiValue)
+        -> Result<UiValue, String> {
+        if !context.origin.is_user_input() {
+            return Err("open needs user input".into());
+        }
+        self.open(method, input)
+    }
+}
+```
+
+| Origin | Set for |
+|---|---|
+| `UserInput { event }` | a platform input event dispatched to the view (`click`, `pointer_down`, `key_down`, ...), a Host key-binding action (`action`), a window close (`window_close`) |
+| `Automation` | `AutomationCommand::Dispatch` and `Action` |
+| `Timer { started_by }` | a timer firing; `started_by` is the root origin that scheduled it |
+| `TaskCompletion { started_by }` | a task or image decode completing; `started_by` is the root origin that started it |
+| `Subscription` | a subscription delivering a value |
+| `Effect` | an effect's start or cleanup, a motion timeline callback |
+| `Lifecycle` | `init`, `dispose`, suspend, resume and reload |
+
+Callbacks that run inside the same dispatch (component events a callback
+emits, the render it causes) share its origin; effects run as `Effect`. A task a
+click starts completes as `TaskCompletion { started_by: UserInput { .. } }`, so
+`is_user_input()` follows the chain to its root; an automation command is never
+user input. The origin is one field set on each dispatch path and read only by
+handlers that ask for it.
 
 ## Subscription producer lifetime
 

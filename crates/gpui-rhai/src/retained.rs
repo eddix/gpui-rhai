@@ -116,8 +116,22 @@ impl RetainedNode {
         self.handlers.get(event).map_or(&[], Vec::as_slice)
     }
 
+    /// The payload set for `event` on the node, else the value of its last
+    /// handler declared with one.
     #[must_use]
     pub fn handler_payload(&self, event: &str) -> Option<&crate::UiValue> {
+        self.handler_payloads.get(event).or_else(|| {
+            self.event_handlers(event)
+                .iter()
+                .rev()
+                .find_map(crate::UiEventBinding::value)
+        })
+    }
+
+    /// The payload set for `event` on the node itself, which handlers without
+    /// their own value receive.
+    #[must_use]
+    pub(crate) fn node_payload(&self, event: &str) -> Option<&crate::UiValue> {
         self.handler_payloads.get(event)
     }
 
@@ -716,10 +730,12 @@ mod tests {
             keyed_text("shared", "content"),
             crate::OverlayNodeSpec {
                 id: crate::OverlayId::new("overlay"),
+                owner: None,
                 parent: None,
                 kind: crate::OverlayKind::Popover,
                 initial_focus: crate::OverlayInitialFocus::Panel,
                 placement: crate::OverlayPlacement::Bottom,
+                align: crate::OverlayAlign::Center,
                 anchor: None,
                 open: true,
                 gap: 0.0,

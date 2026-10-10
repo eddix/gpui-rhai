@@ -1588,14 +1588,15 @@ impl RuntimeEngine {
                 let invocation = &recipe.renderer_context;
                 self.align_execution_session_to(invocation.operation_base());
                 let started = self.begin_timing();
+                let item_context = virtual_item_context(&context, id, &key);
+                enter_virtual_collection_scope(&self.component_render, item_context.clone())
+                    .map_err(RuntimeError::Evaluate)?;
                 let item = invocation.call::<UiNode>(
                     self.engine(),
                     &recipe.renderer,
-                    (
-                        context.for_virtual_item(id, &key),
-                        Dynamic::from_map(payload),
-                    ),
+                    (item_context, Dynamic::from_map(payload)),
                 );
+                leave_component_render(&self.component_render).map_err(RuntimeError::Evaluate)?;
                 self.record_timing(
                     ExecutionOperation::VirtualCollection(id.key.clone()),
                     id.key.as_str(),
@@ -1838,10 +1839,17 @@ impl RuntimeEngine {
     /// Standard packages are omitted because the language server supplies them.
     #[must_use]
     pub fn definition_source(&self) -> String {
-        self.engine
-            .definitions()
-            .include_standard_packages(false)
-            .single_file()
+        // Parameter names, doc comments and readable return types come from the
+        // script docs; Rhai's own printer is the fallback.
+        crate::script_docs::ScriptApi::from_engine(&self.engine).map_or_else(
+            |_| {
+                self.engine
+                    .definitions()
+                    .include_standard_packages(false)
+                    .single_file()
+            },
+            |api| api.definitions(),
+        )
     }
 
     /// Validate statically visible direct and method call arities in an entry
@@ -1862,6 +1870,22 @@ impl RuntimeEngine {
         modules: &BTreeMap<ModuleId, String>,
     ) -> Result<Vec<crate::KnownCallDiagnostic>, crate::KnownCallLintError> {
         crate::script_lint::lint_known_calls(&mut self.engine, entry_name, entry_source, modules)
+    }
+
+    /// List entry-script functions that replace a native function of the same
+    /// name and arity. Rhai prefers the script function for every call,
+    /// including method calls inside imported components, so a helper named
+    /// like a built-in breaks code that never mentions it.
+    ///
+    /// # Errors
+    ///
+    /// Returns a metadata or parse error if the lint catalog cannot be built.
+    pub fn lint_shadowed_builtins(
+        &mut self,
+        entry_name: &str,
+        entry_source: &str,
+    ) -> Result<Vec<crate::ShadowedBuiltin>, crate::KnownCallLintError> {
+        crate::script_lint::lint_shadowed_builtins(&mut self.engine, entry_name, entry_source)
     }
 
     /// Return a snapshot of components exported through this engine.
@@ -2265,6 +2289,15 @@ fn validate_literal_imports(ast: &AST) -> Result<(), RuntimeError> {
 }
 
 fn register_node_apis(engine: &mut Engine) {
+    // A caller-written shortcut as `#{ label, keystrokes, chords }`, formatted
+    // like a bound action's (`cmd-p` is `⌘P` on macOS); a legend stays as is.
+    FuncRegistration::new("key_shortcut")
+        .in_global_namespace()
+        .register_into_engine(engine, |text: ImmutableString| {
+            crate::ActionShortcut::from_text(text.as_str())
+                .to_ui_value()
+                .into_dynamic()
+        });
     FuncRegistration::new("text")
         .in_global_namespace()
         .register_into_engine(engine, text_node);
@@ -3343,6 +3376,43 @@ fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                 )
             },
         );
+
+    let parent_active = Rc::clone(active);
+    FuncRegistration::new("bind_parent_signal")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |node: &mut UiNode,
+                  context: UiContext,
+                  property: ImmutableString,
+                  key: ImmutableString|
+                  -> Result<UiNode, Box<EvalAltResult>> {
+                let property = crate::SignalProperty::parse(property.as_str())
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                if property.signal_kind() != crate::SignalKind::OptionalFloat {
+                    return Err(Box::new(crate::signal::signal_runtime_error(
+                        &"parent signal binding currently supports optional-float properties",
+                    )));
+                }
+                // An owner rendering in this pass has declared its signals but
+                // not committed them yet.
+                let pending = parent_active
+                    .try_borrow()
+                    .ok()
+                    .and_then(|guard| {
+                        guard
+                            .as_ref()
+                            .map(|render| render.signals.keys().cloned().collect::<Vec<_>>())
+                    })
+                    .unwrap_or_default();
+                let signal = context
+                    .parent_optional_float_signal_ref(key.as_str(), &pending)
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                node.clone()
+                    .with_signal_binding(property, signal)
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
+            },
+        );
 }
 
 fn declare_signal(
@@ -3468,6 +3538,7 @@ impl DecodedVirtualCollection {
             reveal_key: self.reveal_key,
             sticky_headers: self.sticky_headers,
             inherited_motion_group: None,
+            inherited_motion_scope: None,
         }
     }
 }
@@ -3675,10 +3746,24 @@ fn validate_virtual_renderer_curry(value: &Dynamic) -> Result<(), crate::UiValue
     UiValue::from_dynamic(value.clone()).map(|_| ())
 }
 
+/// The context an item renderer runs in: a structural `Item[<key>]` scope under
+/// the collection, so components inside an item are named by the item, not by
+/// how many items the batch rendered before it.
+fn virtual_item_context(
+    context: &UiContext,
+    id: &crate::VirtualCollectionId,
+    key: &str,
+) -> UiContext {
+    context
+        .for_structural_scope(context.component_path().child("Item", key), BTreeMap::new())
+        .for_virtual_item(id, key)
+}
+
 fn realize_initial_collection(
     call: &rhai::NativeCallContext<'_>,
     renderer: &FnPtr,
     context: &UiContext,
+    active: &ActiveComponentRenderState,
     id: &crate::VirtualCollectionId,
     data: &crate::VirtualCollectionData,
     indices: &BTreeSet<usize>,
@@ -3695,13 +3780,11 @@ fn realize_initial_collection(
             })?;
         let (item_key, mut payload) = collection_payload(&item, index)?;
         add_collection_neighbors(data, index, &mut payload);
-        let node = renderer
-            .call_within_context::<UiNode>(
-                call,
-                (context.for_virtual_item(id, &item_key), payload),
-            )?
-            .with_key(item_key);
-        realized.insert(index, node);
+        let item_context = virtual_item_context(context, id, &item_key);
+        enter_virtual_collection_scope(active, item_context.clone())?;
+        let node = renderer.call_within_context::<UiNode>(call, (item_context, payload));
+        leave_component_render(active)?;
+        realized.insert(index, node?.with_key(item_key));
     }
     Ok(realized)
 }
@@ -3742,7 +3825,8 @@ fn realize_seeded_virtual_collection(
     let indices =
         virtual_collection_seed_indices(active, id, decoded, count, previous_metrics.as_ref())?;
     enter_virtual_collection_scope(active, context.clone())?;
-    let realized = realize_initial_collection(call, renderer, context, id, &decoded.data, &indices);
+    let realized =
+        realize_initial_collection(call, renderer, context, active, id, &decoded.data, &indices);
     leave_component_render(active)?;
     realized
 }
@@ -4598,7 +4682,7 @@ mod tests {
                     define_component(#{
                         metadata: #{
                             id: "components/message", "export": "Message", version: "0.1.0",
-                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{}
                         },
                         schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: [] },
@@ -4729,7 +4813,7 @@ mod tests {
             .unwrap();
         let root = runtime.render(&compiled).unwrap();
         assert_eq!(
-            root.handler_payload("click"),
+            root.event_handlers("click")[0].value(),
             Some(&crate::UiValue::Map(BTreeMap::from([
                 ("checked".to_owned(), crate::UiValue::Bool(true)),
                 (
@@ -4994,7 +5078,7 @@ mod tests {
                     define_component(#{
                         metadata: #{ id: "components/broken", "export": "Broken",
                             version: "0.1.3",
-                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{}, state: #{ fields: #{} }, events: #{},
                             slots: #{}, parts: [] },
@@ -5139,7 +5223,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/heavy", "export": "Heavy", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
                 render: Fn("render_Heavy")
             });
@@ -5233,7 +5317,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
                     events: #{}, slots: #{}, parts: ["root"] },
@@ -5306,7 +5390,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
                     events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Probe") }
@@ -5489,7 +5573,7 @@ mod tests {
                 r#"
                     define_component(#{
                         metadata: #{ id: "test/action", "export": "Action", version: "0.1.8",
-                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{
                                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -5606,7 +5690,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/counter", "export": "Counter", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
                 render: Fn("render_Counter")
             });
@@ -5660,7 +5744,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/incarnation", "export": "Counter", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ count: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } } } },
                     events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Counter")

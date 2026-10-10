@@ -40,6 +40,7 @@ fn prepared(source: &str) -> PreparedScriptView {
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.to_owned())])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap()
 }

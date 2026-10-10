@@ -99,7 +99,7 @@ impl Element for RotationElement {
         cx: &mut App,
     ) -> RotationPrepaint {
         if let Some(viewport) = self.context.canvas_bounds(&self.config.content_ref, cx) {
-            sync_controlled_source(&self.context, &self.config, viewport, cx);
+            sync_controlled_source(&self.context, &self.config, viewport, window, cx);
         }
         RotationPrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::Normal),
@@ -139,7 +139,7 @@ impl Element for RotationElement {
             if let Some(focus) = config.focus.as_ref() {
                 focus.focus(window, cx);
             }
-            sync_controlled_source(&context, &config, viewport, cx);
+            sync_controlled_source(&context, &config, viewport, window, cx);
             let pointer_start = pointer_angle(event.position, viewport, config.pivot);
             let source_angle = config.angle;
             let update_context = context.clone();
@@ -186,15 +186,23 @@ impl Element for RotationElement {
                 let pointer =
                     pointer_angle(gesture.current(), current_viewport, finish_config.pivot);
                 let next = rotated_angle(&finish_config, source_angle, pointer - pointer_start);
-                write_preview(
-                    &finish_context,
-                    &finish_config,
-                    current_viewport,
-                    finish_config.angle,
-                    cx,
-                );
                 if gesture.moved() && angle_changed(finish_config.angle, next) {
-                    finish_context.propose("rotate", UiValue::Float(next), window, cx);
+                    propose_angle(
+                        &finish_context,
+                        &finish_config,
+                        current_viewport,
+                        next,
+                        window,
+                        cx,
+                    );
+                } else {
+                    write_preview(
+                        &finish_context,
+                        &finish_config,
+                        current_viewport,
+                        finish_config.angle,
+                        cx,
+                    );
                 }
             };
             let cancel_context = context.clone();
@@ -243,12 +251,12 @@ impl PrimitiveHandler for RotatablePrimitiveHandler {
         instance: &PrimitiveInstance,
         context: &PrimitiveContext,
         _: &PrimitiveTheme,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> Result<AnyElement, String> {
         let config = parse_config(&instance.node.props, instance.focus_handle().cloned())?;
         if let Some(viewport) = context.canvas_bounds(&config.content_ref, cx) {
-            sync_controlled_source(context, &config, viewport, cx);
+            sync_controlled_source(context, &config, viewport, window, cx);
         }
         let key_config = config.clone();
         let key_context = context.clone();
@@ -275,7 +283,11 @@ impl PrimitiveHandler for RotatablePrimitiveHandler {
                 };
                 let next = rotated_angle(&key_config, key_config.angle, delta);
                 if angle_changed(key_config.angle, next) {
-                    key_context.propose("rotate", UiValue::Float(next), window, cx);
+                    if let Some(viewport) = key_context.canvas_bounds(&key_config.content_ref, cx) {
+                        propose_angle(&key_context, &key_config, viewport, next, window, cx);
+                    } else {
+                        key_context.propose("rotate", UiValue::Float(next), window, cx);
+                    }
                 }
                 cx.stop_propagation();
             })
@@ -301,8 +313,8 @@ fn parse_config(
         Some(_) => Some(required_number(props, "snap")?),
     };
     if snap.is_some_and(|snap| snap <= 0.0 || snap > 360.0)
-        || pivot.0.abs() > 1_000_000.0
-        || pivot.1.abs() > 1_000_000.0
+        || pivot.0.abs() > MAX_PIVOT
+        || pivot.1.abs() > MAX_PIVOT
     {
         return Err("rotatable pivot or snap is invalid".to_owned());
     }
@@ -341,6 +353,8 @@ fn parse_config(
         focus,
     })
 }
+
+const MAX_PIVOT: f64 = 1_000_000.0;
 
 fn required_number(props: &PrimitiveProps, name: &str) -> Result<f64, String> {
     props
@@ -448,16 +462,28 @@ fn write_preview(
     );
 }
 
+fn presentation_token(config: &RotatableConfig, viewport: crate::GeometryBounds) -> String {
+    format!(
+        "{}|{}|{}",
+        config.source_token, viewport.width, viewport.height
+    )
+}
+
+/// Show the controlled angle when the source (or the viewport) changed. A
+/// proposal leaves the token as `pending:<token>`: the same source then means
+/// the Host rejected it and the preview returns to the source.
+///
+/// This also runs while a frame is drawn, after the content read the signals,
+/// when GPUI drops the redraw a write asks for; a changed preview asks for the
+/// next frame itself.
 fn sync_controlled_source(
     context: &PrimitiveContext,
     config: &RotatableConfig,
     viewport: crate::GeometryBounds,
+    window: &mut Window,
     cx: &mut App,
 ) {
-    let presentation_token = format!(
-        "{}|{}|{}",
-        config.source_token, viewport.width, viewport.height
-    );
+    let presentation_token = presentation_token(config, viewport);
     let token_matches = matches!(
         context.read_signal(&config.source_token_signal, cx),
         Ok(SignalValue::String(value)) if value == presentation_token
@@ -465,23 +491,67 @@ fn sync_controlled_source(
     if token_matches {
         return;
     }
+    let shown = matches!(
+        context.read_signal(&config.angle_signal, cx),
+        Ok(SignalValue::Float(angle)) if !angle_changed(angle, preview_for(config.angle, config.pivot, viewport).angle)
+    );
     write_preview(context, config, viewport, config.angle, cx);
     let _ = context.write_signal(
         &config.source_token_signal,
         SignalValue::String(presentation_token),
         cx,
     );
+    if !shown {
+        window.defer(cx, |window, _| window.refresh());
+    }
+}
+
+/// Propose an angle and keep showing it until the next source decides.
+fn propose_angle(
+    context: &PrimitiveContext,
+    config: &RotatableConfig,
+    viewport: crate::GeometryBounds,
+    angle: f64,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    write_preview(context, config, viewport, angle, cx);
+    let _ = context.write_signal(
+        &config.source_token_signal,
+        SignalValue::String(format!("pending:{}", presentation_token(config, viewport))),
+        cx,
+    );
+    context.propose("rotate", UiValue::Float(angle), window, cx);
+    // A frame must follow the answer even when the Host changes nothing.
+    window.defer(cx, |window, _| window.refresh());
 }
 
 fn descriptor_signal_props() -> BTreeMap<String, ObjectField> {
     [
-        "angle_signal",
-        "x_signal",
-        "y_signal",
-        "source_token_signal",
+        (
+            "angle_signal",
+            "Float signal that receives the previewed angle in degrees; bind it to the Canvas `rotate`.",
+        ),
+        (
+            "x_signal",
+            "Float signal that receives the horizontal shift that keeps the pivot in place while the Canvas turns about its centre.",
+        ),
+        (
+            "y_signal",
+            "Float signal that receives the vertical shift that keeps the pivot in place while the Canvas turns about its centre.",
+        ),
+        (
+            "source_token_signal",
+            "String signal that keeps the source last shown or proposed, so a rerender with the same source reads as a rejection.",
+        ),
     ]
     .into_iter()
-    .map(|name| (name.to_owned(), ObjectField::required(ValueSchema::Signal)))
+    .map(|(name, doc)| {
+        (
+            name.to_owned(),
+            ObjectField::required(ValueSchema::Signal).with_doc(doc),
+        )
+    })
     .collect()
 }
 
@@ -495,43 +565,71 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
     let mut props = BTreeMap::from([
         (
             "source_token".to_owned(),
-            ObjectField::required(ValueSchema::string()),
+            ObjectField::required(ValueSchema::string()).with_doc(
+                "Fingerprint of the controlled angle, pivot and settings; when it changes, the preview returns to `angle`.",
+            ),
         ),
         (
             "angle".to_owned(),
-            ObjectField::required(ValueSchema::number()),
+            ObjectField::required(ValueSchema::number()).with_doc(
+                "Controlled rotation in degrees, clockwise on screen; it is wrapped into 0 to 360.",
+            ),
         ),
         (
             "pivot_x".to_owned(),
-            ObjectField::required(ValueSchema::number()),
+            ObjectField::required(ValueSchema::bounded_number(Some(-MAX_PIVOT), Some(MAX_PIVOT)))
+                .with_doc(
+                "Horizontal position of the pivot in `content_ref`'s local logical pixels.",
+            ),
         ),
         (
             "pivot_y".to_owned(),
-            ObjectField::required(ValueSchema::number()),
+            ObjectField::required(ValueSchema::bounded_number(Some(-MAX_PIVOT), Some(MAX_PIVOT)))
+                .with_doc(
+                "Vertical position of the pivot in `content_ref`'s local logical pixels.",
+            ),
         ),
         (
             "snap".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::number())),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Number {
+                min: None,
+                max: Some(360.0),
+                exclusive_min: Some(0.0),
+                exclusive_max: None,
+            }))
+            .with_doc(
+                "Step in degrees, up to 360, that angles round to and keys turn by; `()` turns snapping off.",
+            ),
         ),
         (
             "keyboard_step".to_owned(),
-            ObjectField::optional(ValueSchema::bounded_number(Some(0.1), Some(180.0))),
+            ObjectField::optional(ValueSchema::bounded_number(Some(0.1), Some(180.0))).with_doc(
+                "Degrees one arrow-key press turns when `snap` is unset; Shift multiplies it by four; defaults to 5.",
+            ),
         ),
         (
             "threshold".to_owned(),
-            ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))),
+            ObjectField::optional(ValueSchema::bounded_number(Some(0.0), Some(64.0))).with_doc(
+                "Pointer movement in logical pixels before a press becomes a rotation; defaults to 4.",
+            ),
         ),
         (
             "disabled".to_owned(),
-            ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+            ObjectField::optional(ValueSchema::Bool)
+                .with_default(UiValue::Bool(false))
+                .with_doc("Ignores presses and keys and removes the handle from the tab order."),
         ),
         (
             "content_ref".to_owned(),
-            ObjectField::required(ValueSchema::Ref),
+            ObjectField::required(ValueSchema::Ref).with_doc(
+                "Ref to the rotated Canvas; the pivot is local to it, and moving or resizing it during a drag cancels the rotation.",
+            ),
         ),
         (
             "on_rotate".to_owned(),
-            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+            ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                "Called with the proposed angle when a rotation drag ends or an arrow key or Home is pressed.",
+            ),
         ),
     ]);
     props.extend(descriptor_signal_props());
@@ -542,6 +640,10 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
         events: BTreeMap::from([(
             "rotate".to_owned(),
             EventSchema {
+                doc: Some(
+                    "Emitted once when a rotation drag ends or an arrow key or Home turns it; the payload is the next angle in degrees, 0 to 360."
+                        .to_owned(),
+                ),
                 payload: ValueSchema::number(),
             },
         )]),
@@ -554,6 +656,20 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_schema_rejects_what_the_handler_rejects() {
+        let props = rotatable_primitive_descriptor().props;
+        let accepts = |name: &str, value: f64| {
+            props[name]
+                .schema
+                .validate_ui_value(&UiValue::Float(value))
+                .is_ok()
+        };
+        assert!(accepts("pivot_x", MAX_PIVOT) && !accepts("pivot_x", 2_000_000.0));
+        assert!(!accepts("pivot_y", -2_000_000.0));
+        assert!(accepts("snap", 360.0) && !accepts("snap", 361.0) && !accepts("snap", 0.0));
+    }
 
     #[test]
     fn arbitrary_pivot_stays_fixed_under_rotation_compensation() {

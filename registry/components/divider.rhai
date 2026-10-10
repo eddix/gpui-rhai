@@ -2,26 +2,28 @@
 {
   "id": "components/divider",
   "export": "Divider",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["border"],
+  "environment": []
 }
 */
 // Divider separates adjacent content without owning layout spacing.
 //
-// Props: orientation, thickness.
-// Events: none. State: none. Slots: none. Parts: root.
 // Example: Divider(#{ orientation: "horizontal" })
 
 define_component(#{
     metadata: #{
         id: "components/divider",
         "export": "Divider",
-        version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
+        tokens: ["border"],
+        environment: [],
     },
     schema: #{
         props: #{
@@ -30,12 +32,14 @@ define_component(#{
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "horizontal" },
+                doc: "`horizontal` draws a full-width line; `vertical` a full-height one.",
             },
             thickness: #{
                 schema: #{ type: "integer", min: 1 },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "integer", value: 1 },
+                doc: "Line thickness in logical pixels; values above 8 are drawn as 8.",
             },
         },
         state: #{ fields: #{} },
@@ -61,7 +65,7 @@ fn render_Divider(ctx, props) {
     } else {
         requested_thickness
     };
-    let base = style().background(theme_color("border")).opacity(0.72);
+    let base = style().background(theme_color("border"));
     let divider_style = if orientation == "vertical" {
         base.width(px(thickness)).height(relative(1.0))
     } else {

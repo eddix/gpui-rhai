@@ -9,6 +9,7 @@ use crate::{
 };
 
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct NodeSlotRuntime {
     pub now: std::time::Instant,
     pub clock: crate::RuntimeClock,
@@ -25,6 +26,7 @@ pub(crate) struct NodeSlotRuntime {
     pub geometry: crate::GeometryRegistry,
     pub pointer_capture: crate::PointerCaptureRegistry,
     pub focus_handles: BTreeMap<crate::NodeId, gpui::FocusHandle>,
+    pub focus_owners: BTreeMap<crate::NodeId, gpui::FocusHandle>,
     pub scroll_handles: BTreeMap<crate::NodeId, gpui::ScrollHandle>,
     pub scroll_anchors: BTreeMap<crate::NodeId, gpui::ScrollAnchor>,
     pub virtual_requests: crate::VirtualRequestRegistry,
@@ -34,10 +36,15 @@ pub(crate) struct NodeSlotRuntime {
     pub locale: String,
     pub number: Option<crate::NumberMetadata>,
     pub ambient_text_color: Option<crate::Rgba8>,
+    pub environment: crate::Environment,
+    pub inherited_disabled: bool,
+    pub focus_path: Vec<crate::NodeId>,
+    pub owner_focused: bool,
     pub base_path: String,
     pub view_id: String,
     pub semantics: crate::CommittedSemanticFrame,
     pub a11y_active: bool,
+    pub window_drag: bool,
     pub retained_roots: BTreeMap<String, crate::NodeId>,
     pub retained_links: BTreeMap<crate::NodeId, Vec<crate::RetainedChildLink>>,
 }
@@ -71,6 +78,7 @@ impl NodeSlotRuntime {
             geometry: &self.geometry,
             pointer_capture: &self.pointer_capture,
             focus_handles: &self.focus_handles,
+            focus_owners: &self.focus_owners,
             scroll_handles: &self.scroll_handles,
             scroll_anchors: &self.scroll_anchors,
             virtual_requests: &self.virtual_requests,
@@ -80,10 +88,15 @@ impl NodeSlotRuntime {
             locale: &self.locale,
             number: self.number.as_ref(),
             ambient_text_color: self.ambient_text_color,
+            environment: self.environment,
+            inherited_disabled: self.inherited_disabled,
+            focus_path: &self.focus_path,
+            owner_focused: self.owner_focused,
             root_path: &self.base_path,
             view_id: &self.view_id,
             semantics: &self.semantics,
             a11y_active: self.a11y_active,
+            window_drag: self.window_drag,
         };
         GpuiNodeRenderer::render_subtree_with_window_runtime_at(
             node,

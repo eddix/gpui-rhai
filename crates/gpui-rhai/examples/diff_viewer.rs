@@ -13,8 +13,8 @@ fn state_schema() { #{ fields: #{
         "default": #{ type: "string", value: "split" } }
 } } }
 fn activated(ctx, location) { () }
-fn unified(ctx, payload) { ctx.set_state("mode", "unified"); }
-fn split(ctx, payload) { ctx.set_state("mode", "split"); }
+fn show_unified(ctx, payload) { ctx.set_state("mode", "unified"); }
+fn show_split(ctx, payload) { ctx.set_state("mode", "split"); }
 fn mode_button(ctx, label, mode, handler) {
     let selected = ctx.get_state("mode") == mode;
     let background = if selected { theme_color("selection") } else { theme_color("surface_raised") };
@@ -27,8 +27,8 @@ fn view(ctx) {
         row([
             text("SERVER CONFIG DIFF").with_style(style().typography("heading").font_weight(700)),
             row([
-                mode_button(ctx, "Unified", "unified", Fn("unified")),
-                mode_button(ctx, "Split", "split", Fn("split"))
+                mode_button(ctx, "Unified", "unified", Fn("show_unified")),
+                mode_button(ctx, "Split", "split", Fn("show_split"))
             ]).with_style(style().gap(px(1)))
         ]).with_style(style().items_center().justify_between()),
         diff_viewer::DiffViewer(#{
@@ -66,6 +66,7 @@ fn prepared() -> gpui_rhai::PreparedScriptView {
         ])),
         THEME,
     )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
     .prepare()
     .expect("DiffViewer prepares")
 }

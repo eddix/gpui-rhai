@@ -513,14 +513,15 @@ impl NativeTextDocumentRegistry {
         name: &str,
     ) -> Result<NativeTextDocument, DocumentError> {
         self.read_dependency(
-            &crate::read_dependency::ReadDependency::component(reader),
+            Some(&crate::read_dependency::ReadDependency::component(reader)),
             name,
         )
     }
 
+    /// Read a document, subscribing `reader` when there is one.
     pub(crate) fn read_dependency(
         &mut self,
-        reader: &crate::read_dependency::ReadDependency,
+        reader: Option<&crate::read_dependency::ReadDependency>,
         name: &str,
     ) -> Result<NativeTextDocument, DocumentError> {
         let document = self
@@ -528,10 +529,12 @@ impl NativeTextDocumentRegistry {
             .get(name)
             .cloned()
             .ok_or_else(|| DocumentError::UnknownDocument(name.to_owned()))?;
-        self.readers
-            .entry(name.to_owned())
-            .or_default()
-            .insert(reader.clone());
+        if let Some(reader) = reader {
+            self.readers
+                .entry(name.to_owned())
+                .or_default()
+                .insert(reader.clone());
+        }
         Ok(document)
     }
 

@@ -237,6 +237,8 @@ pub struct AsyncDelivery {
     pub callback: ScriptCallback,
     pub payload: UiValue,
     pub scope: AsyncScope,
+    /// What the delivery runs in response to.
+    pub origin: crate::InvocationOrigin,
 }
 
 #[derive(Clone, Debug)]
@@ -252,6 +254,7 @@ struct TaskEntry {
     callbacks: CallbackPair,
     output: ValueSchema,
     cancellation: TaskCancellation,
+    started_by: Box<crate::InvocationOrigin>,
 }
 
 struct TaskMessage {
@@ -267,6 +270,8 @@ pub struct TaskRegistry {
     wake: AsyncWake,
     deferred_cancellations: BTreeMap<u64, TaskEntry>,
     transaction_depth: usize,
+    /// The root origin of the current invocation, recorded on tasks it starts.
+    origin_root: crate::InvocationOrigin,
 }
 
 #[derive(Clone, Debug)]
@@ -287,6 +292,7 @@ impl Default for TaskRegistry {
             wake: AsyncWake::default(),
             deferred_cancellations: BTreeMap::new(),
             transaction_depth: 0,
+            origin_root: crate::InvocationOrigin::default(),
         }
     }
 }
@@ -301,6 +307,12 @@ impl fmt::Debug for TaskRegistry {
 }
 
 impl TaskRegistry {
+    /// Record the root origin of the invocation now running; tasks it starts
+    /// deliver as completions started by it.
+    pub(crate) fn set_origin_root(&mut self, origin: &crate::InvocationOrigin) {
+        self.origin_root = origin.root().clone();
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -356,6 +368,7 @@ impl TaskRegistry {
                 callbacks: CallbackPair { success, error },
                 output,
                 cancellation: cancellation.clone(),
+                started_by: Box::new(self.origin_root.clone()),
             },
         );
         let sender = self.sender.clone();
@@ -383,6 +396,11 @@ impl TaskRegistry {
             return Err(error);
         }
         Ok(TaskHandle(id))
+    }
+
+    /// The scope that owns a pending task; `None` once it finished.
+    pub(crate) fn scope(&self, handle: TaskHandle) -> Option<&AsyncScope> {
+        self.entries.get(&handle.0).map(|entry| &entry.scope)
     }
 
     #[must_use]
@@ -491,23 +509,29 @@ impl TaskRegistry {
 }
 
 fn task_delivery(entry: TaskEntry, result: Result<UiValue, String>) -> AsyncDelivery {
+    let origin = crate::InvocationOrigin::TaskCompletion {
+        started_by: entry.started_by,
+    };
     match result {
         Ok(value) => match validate_async_payload(&entry.output, &value) {
             Ok(()) => AsyncDelivery {
                 callback: entry.callbacks.success,
                 payload: value,
                 scope: entry.scope,
+                origin,
             },
             Err(payload) => AsyncDelivery {
                 callback: entry.callbacks.error,
                 payload,
                 scope: entry.scope,
+                origin,
             },
         },
         Err(error) => AsyncDelivery {
             callback: entry.callbacks.error,
             payload: error_payload(&error),
             scope: entry.scope,
+            origin,
         },
     }
 }
@@ -978,6 +1002,11 @@ impl SubscriptionRegistry {
         self.cancel_with_reason(handle, SubscriptionCloseReason::Cancelled)
     }
 
+    /// The scope that owns an open subscription; `None` once it closed.
+    pub(crate) fn scope(&self, handle: SubscriptionHandle) -> Option<&AsyncScope> {
+        self.entries.get(&handle.0).map(|entry| &entry.scope)
+    }
+
     pub(crate) fn cancel_with_reason(
         &mut self,
         handle: SubscriptionHandle,
@@ -1173,17 +1202,20 @@ fn subscription_delivery(
                 callback: entry.callbacks.success.clone(),
                 payload: value,
                 scope: entry.scope.clone(),
+                origin: crate::InvocationOrigin::Subscription,
             },
             Err(payload) => AsyncDelivery {
                 callback: entry.callbacks.error.clone(),
                 payload,
                 scope: entry.scope.clone(),
+                origin: crate::InvocationOrigin::Subscription,
             },
         },
         Err(error) => AsyncDelivery {
             callback: entry.callbacks.error.clone(),
             payload: error_payload(&error),
             scope: entry.scope.clone(),
+            origin: crate::InvocationOrigin::Subscription,
         },
     }
 }

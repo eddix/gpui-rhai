@@ -2,56 +2,81 @@
 {
   "id": "components/toast",
   "export": "Toast",
-  "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/close.svg"]
+  "assets": ["icons/close.svg"],
+  "tokens": [
+    "surface_raised", "border", "surface_hover", "success", "warning", "danger",
+    "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm",
+    "space.related", "radius.lg", "typography.body"
+  ],
+  "environment": ["density", "corners"]
 }
 */
 // Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events.
-// Props: key, items, max_visible, dismiss_label, on_dismiss. Events: dismiss(string).
 // State: caller owns items; runtime timers own one-shot deadline and pause/resume state.
 // Example: Toast(#{ key: "toasts", items: items, on_dismiss: Fn("dismissed") })
 
 define_component(#{
     metadata: #{
-        id: "components/toast", "export": "Toast", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
+        id: "components/toast", "export": "Toast", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "surface_hover", "success", "warning", "danger",
+            "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs",
+            "spacing.sm", "space.related", "radius.lg", "typography.body"
+        ],
+        environment: ["density", "corners"],
         assets: ["icons/close.svg"],
     },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Identity of the toast stack; the ids of its four corner layers derive from it." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 10 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 3 } },
+                "default": #{ type: "integer", value: 3 },
+                doc: "How many items, counted from the start of `items` across all regions, show at once; the rest wait without a countdown." },
             dismiss_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Dismiss notification" } },
+                "default": #{ type: "string", value: "Dismiss notification" },
+                doc: "Accessible name of each toast's close button." },
             items: #{ schema: #{ type: "array", max_items: 100, items: #{
                 type: "object", allow_unknown: false, fields: #{
-                    id: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    id: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Identity of the toast, passed to `on_dismiss`; unique and not blank." },
+                    title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                        doc: "Bold first line and accessible name; not blank." },
                     message: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                        "default": #{ type: "string", value: "" } },
+                        "default": #{ type: "string", value: "" },
+                        doc: "Muted text under the title; empty shows none." },
                     variant: #{ schema: #{ type: "string", allowed: ["neutral", "success", "warning", "danger"] }, required: false, sensitive: false,
-                        "default": #{ type: "string", value: "neutral" } },
+                        "default": #{ type: "string", value: "neutral" },
+                        doc: "Tone of the toast: a status variant adds a colored square lamp, and `danger` is announced as an alert." },
                     region: #{ schema: #{ type: "string", allowed: ["top_left", "top_right", "bottom_left", "bottom_right"] }, required: false, sensitive: false,
-                        "default": #{ type: "string", value: "top_right" } },
+                        "default": #{ type: "string", value: "top_right" },
+                        doc: "Window corner the toast stacks in." },
                     duration_ms: #{ schema: #{ type: "integer", min: 1, max: 86400000 }, required: false, sensitive: false,
-                        "default": #{ type: "integer", value: 5000 } },
+                        "default": #{ type: "integer", value: 5000 },
+                        doc: "Milliseconds from showing until the toast asks to be dismissed; hovering it pauses the countdown." },
                     paused: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
+                        "default": #{ type: "bool", value: false },
+                        doc: "Holds the countdown while `true`; the toast stays until it is closed or `paused` turns `false`." },
                     dismissible: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: true } },
+                        "default": #{ type: "bool", value: true },
+                        doc: "Whether the toast has a close button." },
                 },
-            } }, required: true, sensitive: false },
-            on_dismiss: #{ schema: #{ type: "callback" }, required: true, sensitive: false },
+            } }, required: true, sensitive: false,
+                doc: "The notifications in display order; the caller removes an item when it is dismissed." },
+            on_dismiss: #{ schema: #{ type: "callback" }, required: true, sensitive: false,
+                doc: "Called with a toast's `id` when its countdown ends or its close button is pressed." },
         },
         state: #{ fields: #{} },
-        events: #{ dismiss: #{ payload: #{ type: "string" } } },
+        events: #{ dismiss: #{ payload: #{ type: "string" },
+            doc: "Emitted when a toast's countdown ends or its close button is pressed; the payload is the item's `id`." } },
         slots: #{},
         parts: ["root", "region", "toast", "toast_neutral", "toast_success",
-            "toast_warning", "toast_danger", "title", "message", "close"],
+            "toast_warning", "toast_danger", "title", "message", "close", "lamp"],
     },
     render: Fn("render_Toast")
 });
@@ -73,38 +98,43 @@ fn toast_hover(ctx, payload) {
 }
 
 fn variant_color(variant) {
-    if variant == "success" { theme_color("success") }
-    else if variant == "warning" { theme_color("warning") }
-    else if variant == "danger" { theme_color("danger") }
-    else { theme_color("border") }
+    if variant == "success" || variant == "warning" || variant == "danger" { theme_color(variant) }
+    else { () }
 }
 
+// A toast is a raised overlay block with a hairline; status toasts carry a square lamp.
 fn toast_node(ctx, item, dismiss_label) {
     let variant = prop_or(item, "variant", "neutral");
-    let header = [text(item.title)
-        .with_style(ctx.component_style("title", style()))];
+    let header = [];
+    let lamp = variant_color(variant);
+    if lamp != () {
+        header.push(row([]).with_style(ctx.component_style("lamp", style()
+            .width(px(6)).height(px(6)).background(lamp))));
+    }
+    header.push(text(item.title).with_style(ctx.component_style("title", style().flex_grow())));
     if prop_or(item, "dismissible", true) {
-        header.push(image_source(asset("app/icons/close")).with_key(`${item.id}-close`)
+        header.push(row([image_source(asset("app/icons/close"))
+                .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))])
+            .with_key(`${item.id}-close`)
             .with_style(ctx.component_style("close", style()
-                .width(px(18)).height(px(18)).items_center().justify_center()
+                .items_center().justify_center()
                 .text_color(theme_color("text_muted"))
-                .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
+                .hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary")))))
             .accessibility_role("button").accessibility_label(dismiss_label)
             .on_click_value(Fn("toast_manual_dismiss"), item.id));
     }
-    let children = [row(header).with_style(style().items_center().justify_between()
-        .typography("body").font_weight(700))];
+    let children = [row(header).with_style(style().items_center().gap(theme_spacing("sm"))
+        .typography("body").font_weight(600))];
     if prop_or(item, "message", "") != "" {
         children.push(text(item.message).with_style(ctx.component_style("message",
-            style().typography("body_small")
-                .text_color(theme_color("text_muted")))));
+            style().typography("body").text_color(theme_color("text_muted")))));
     }
     column(children).with_key(item.id)
         .with_style(ctx.component_style(`toast_${variant}`,
             ctx.component_style("toast",
-                    style().width(px(320)).gap(theme_spacing("xs")).padding(theme_spacing("sm"))
-                    .border(px(1)).border_color(variant_color(variant))
-                    .radius(theme_radius("md")).background(theme_color("surface"))
+                    style().width(px(320)).gap(theme_spacing("xxs")).padding(theme_length("metrics.inset"))
+                    .border(px(1)).border_color(theme_color("border"))
+                    .radius(theme_radius("lg")).background(theme_color("surface_raised"))
                     .text_color(theme_color("text_primary")))))
         .on_hover_value(Fn("toast_hover"), item.id)
         .accessibility_role(if variant == "danger" { "alert" } else { "status" })
@@ -114,8 +144,8 @@ fn toast_node(ctx, item, dismiss_label) {
 fn region_layer(ctx, key, placement, children) {
     if children.len == 0 { return (); }
     layer(column(children).with_key(`${key}-column`)
-        .with_style(ctx.component_style("region", style().width(px(320)).gap(theme_spacing("xs")))),
-        #{ id: key, placement: placement, inset: 10, priority: 9000 })
+        .with_style(ctx.component_style("region", style().width(px(320)).gap(theme_length("space.related")))),
+        #{ id: key, placement: placement, inset: 12, priority: 9000 })
 }
 
 fn render_Toast(ctx, props) {

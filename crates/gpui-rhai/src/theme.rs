@@ -1,48 +1,21 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
-use rhai::{Dynamic, Engine, Scope};
+use rhai::Engine;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{ColorResolver, ColorValue, ComponentInstancePath, Length, Rgba8};
+use crate::token::{
+    EnvironmentDeclaration, EnvironmentDeclarations, Symbol, Variable, valid_token_segment,
+};
+use crate::{ColorResolver, ColorValue, ComponentInstancePath, Environment, Length, Rgba8};
 
-const REQUIRED_COLORS: &[&str] = &[
-    "surface",
-    "surface_raised",
-    "surface_hover",
-    "text_primary",
-    "text_muted",
-    "accent",
-    "accent_hover",
-    "on_accent",
-    "danger",
-    "on_danger",
-    "warning",
-    "on_warning",
-    "success",
-    "on_success",
-    "border",
-    "focus_ring",
-    "selection",
-    "disabled",
-];
-const REQUIRED_SPACING: &[&str] = &["xxs", "xs", "sm", "md", "lg"];
-const REQUIRED_RADII: &[&str] = &["sm", "md", "lg"];
 const REQUIRED_MOTION_DURATIONS: &[&str] = &["instant", "fast", "normal", "slow", "ambient"];
 const REQUIRED_MOTION_EASINGS: &[&str] = &["standard", "entrance", "exit", "emphasized"];
 const REQUIRED_MOTION_SPRINGS: &[&str] = &["responsive", "gentle", "bouncy"];
 const REQUIRED_MOTION_DISTANCES: &[&str] = &["subtle", "moderate", "large"];
 const REQUIRED_MOTION_STAGGERS: &[&str] = &["tight", "normal", "relaxed"];
-pub const REQUIRED_TYPOGRAPHY: &[&str] = &[
-    "caption",
-    "body_small",
-    "body",
-    "subtitle",
-    "title",
-    "heading",
-    "display",
-    "display_large",
-];
+const MAX_TYPOGRAPHY_ALIAS_DEPTH: usize = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -59,23 +32,31 @@ pub struct ThemeVariantInfo {
     pub mode: ThemeMode,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// A length token value that may depend on inherited environment values.
+pub type ThemeLength = Variable<Length>;
+
+/// The resolved token set of one theme variant.
+///
+/// The runtime imposes no vocabulary: every map may be empty. Colors are
+/// final values; color expressions are evaluated when the token layers are
+/// merged. Lengths and typography aliases may depend on environment values
+/// and are resolved during native rendering.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct ThemeTokens {
     pub colors: BTreeMap<String, Rgba8>,
-    pub spacing: BTreeMap<String, Length>,
-    pub radii: BTreeMap<String, Length>,
+    pub spacing: BTreeMap<String, ThemeLength>,
+    pub radii: BTreeMap<String, ThemeLength>,
     pub typography: ThemeTypography,
-    #[serde(default)]
     pub motion: ThemeMotion,
-    #[serde(default)]
     pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+    pub environment: EnvironmentDeclarations,
 }
 
 /// Host-owned token preferences applied uniformly to every loaded theme.
 ///
 /// Overrides are intentionally partial: absent entries inherit the value from
-/// each theme, while present entries replace it. Theme family, variant name,
-/// and color mode are never host-overridable through this type.
+/// the token base and each theme, while present entries replace it. Theme
+/// family, variant name, and color mode are never host-overridable.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ThemeTokenOverrides {
     pub colors: BTreeMap<String, Rgba8>,
@@ -84,12 +65,15 @@ pub struct ThemeTokenOverrides {
     pub typography: ThemeTypographyOverrides,
     pub motion: ThemeMotionOverrides,
     pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+    /// Replaces declared environment defaults, for example a compact density
+    /// preference on small screens.
+    pub environment_defaults: BTreeMap<String, String>,
 }
 
 /// Partial host preferences for the shared typography system.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ThemeTypographyOverrides {
-    /// Replaces the theme's primary family when present.
+    /// Replaces the primary UI family when present.
     pub family: Option<String>,
     /// Replaces, rather than appends to, the fallback stack when present.
     pub fallbacks: Option<Vec<String>>,
@@ -224,13 +208,24 @@ impl ThemeMotion {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct ThemeTypography {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Primary UI family; `None` keeps the platform font.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fallbacks: Vec<String>,
-    pub roles: BTreeMap<String, TypographyToken>,
+    pub roles: BTreeMap<String, TypographyRole>,
+}
+
+/// A named typography role: a concrete style or an alias to another role.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TypographyRole {
+    Style(TypographyToken),
+    /// Another role's name, optionally chosen by environment values (for
+    /// example a `control` role that maps `xs` to `body_small`).
+    Alias(Variable<String>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -238,6 +233,27 @@ pub struct TypographyToken {
     pub size: Length,
     pub line_height: Length,
     pub weight: u16,
+    /// Role-specific family, replacing the shared UI family (for example a
+    /// monospace label role).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    /// Role-specific fallbacks; used only together with `family`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<String>,
+}
+
+impl TypographyToken {
+    /// A role in the shared UI family.
+    #[must_use]
+    pub const fn new(size: Length, line_height: Length, weight: u16) -> Self {
+        Self {
+            size,
+            line_height,
+            weight,
+            family: None,
+            fallbacks: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -249,192 +265,16 @@ pub struct ResolvedTypography {
     pub weight: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum ThemeTokenValue {
     Color(Rgba8),
-    Length(Length),
+    Length(ThemeLength),
     Number(f64),
     String(String),
 }
 
 impl ThemeTokens {
-    fn install_document_defaults(&mut self) {
-        let color = |name: &str| self.colors.get(name).copied();
-        let syntax = self.namespaces.entry("syntax".to_owned()).or_default();
-        for (name, value) in [
-            ("comment", color("text_muted")),
-            ("string", color("success")),
-            ("number", color("warning")),
-            ("keyword", color("accent")),
-            ("function", color("accent_hover")),
-            ("type", color("warning")),
-            ("variable", color("text_primary")),
-            ("constant", color("danger")),
-            ("operator", color("accent")),
-            ("punctuation", color("text_muted")),
-            ("tag", color("danger")),
-            ("attribute", color("warning")),
-        ] {
-            if let Some(value) = value {
-                syntax
-                    .entry(name.to_owned())
-                    .or_insert(ThemeTokenValue::Color(value));
-            }
-        }
-        let document = self.namespaces.entry("document".to_owned()).or_default();
-        if let Some(value) = color("warning") {
-            document
-                .entry("search_match".to_owned())
-                .or_insert(ThemeTokenValue::Color(with_alpha(value, 0x55)));
-            document
-                .entry("search_current".to_owned())
-                .or_insert(ThemeTokenValue::Color(with_alpha(value, 0xaa)));
-        }
-        let diff = self.namespaces.entry("diff".to_owned()).or_default();
-        for (name, value) in [
-            (
-                "left_only",
-                color("danger").map(|value| with_alpha(value, 0x24)),
-            ),
-            (
-                "right_only",
-                color("success").map(|value| with_alpha(value, 0x24)),
-            ),
-            (
-                "modified",
-                color("accent").map(|value| with_alpha(value, 0x18)),
-            ),
-            (
-                "inline_left",
-                color("danger").map(|value| with_alpha(value, 0x66)),
-            ),
-            (
-                "inline_right",
-                color("success").map(|value| with_alpha(value, 0x66)),
-            ),
-            ("gutter", color("surface_raised")),
-            ("fold", color("surface_hover")),
-        ] {
-            if let Some(value) = value {
-                diff.entry(name.to_owned())
-                    .or_insert(ThemeTokenValue::Color(value));
-            }
-        }
-        let charts = self.namespaces.entry("charts".to_owned()).or_default();
-        for (name, value) in [
-            ("axis", color("text_muted")),
-            ("grid", color("border").map(|value| with_alpha(value, 0x55))),
-            ("tooltip_surface", color("surface_raised")),
-            ("tooltip_text", color("text_primary")),
-            ("positive", color("success")),
-            ("negative", color("danger")),
-            ("selection", color("accent")),
-            ("map_missing", color("surface_hover")),
-            ("crosshair", color("focus_ring")),
-            ("palette_1", color("accent")),
-            ("palette_2", color("success")),
-            ("palette_3", color("warning")),
-            ("palette_4", color("danger")),
-            ("palette_5", color("focus_ring")),
-            ("palette_6", color("accent_hover")),
-            ("palette_7", color("text_muted")),
-            ("palette_8", color("selection")),
-        ] {
-            if let Some(value) = value {
-                charts
-                    .entry(name.to_owned())
-                    .or_insert(ThemeTokenValue::Color(value));
-            }
-        }
-        self.install_component_defaults();
-    }
-
-    fn install_component_defaults(&mut self) {
-        let color = |name: &str| self.colors.get(name).copied();
-        let table_selection = color("surface")
-            .zip(color("accent"))
-            .map(|(surface, accent)| mix_opaque(surface, accent, 0x48));
-        let table = self.namespaces.entry("table".to_owned()).or_default();
-        if let Some(value) = table_selection {
-            table
-                .entry("selection".to_owned())
-                .or_insert(ThemeTokenValue::Color(value));
-        }
-        let tabs_foreground = color("text_muted")
-            .zip(color("text_primary"))
-            .zip(color("surface_hover"))
-            .map(|((muted, primary), surface)| readable_secondary(muted, primary, surface));
-        let tabs = self.namespaces.entry("tabs".to_owned()).or_default();
-        if let Some(value) = tabs_foreground {
-            tabs.entry("foreground".to_owned())
-                .or_insert(ThemeTokenValue::Color(value));
-        }
-    }
-
-    /// Validate the initial semantic token contract.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ThemeError`] for missing tokens or invalid lengths.
-    pub fn validate(&self) -> Result<(), ThemeError> {
-        require_tokens("color", REQUIRED_COLORS, &self.colors)?;
-        require_tokens("spacing", REQUIRED_SPACING, &self.spacing)?;
-        require_tokens("radius", REQUIRED_RADII, &self.radii)?;
-        self.typography.validate()?;
-        self.motion.validate()?;
-        for (name, value) in self.spacing.iter().chain(&self.radii) {
-            if value.is_theme_token() {
-                return Err(ThemeError::NestedLengthToken(name.clone()));
-            }
-            value
-                .validate()
-                .map_err(|source| ThemeError::InvalidLength {
-                    token: name.clone(),
-                    source,
-                })?;
-        }
-        for (namespace, tokens) in &self.namespaces {
-            if !valid_token_segment(namespace) {
-                return Err(ThemeError::InvalidNamespace(namespace.clone()));
-            }
-            for (name, value) in tokens {
-                if !valid_token_segment(name) {
-                    return Err(ThemeError::InvalidTokenName {
-                        namespace: namespace.clone(),
-                        name: name.clone(),
-                    });
-                }
-                match value {
-                    ThemeTokenValue::Length(length) => {
-                        if length.is_theme_token() {
-                            return Err(ThemeError::NestedNamespacedLength {
-                                namespace: namespace.clone(),
-                                name: name.clone(),
-                            });
-                        }
-                        length
-                            .validate()
-                            .map_err(|source| ThemeError::InvalidLength {
-                                token: format!("{namespace}.{name}"),
-                                source,
-                            })?;
-                    }
-                    ThemeTokenValue::Number(number) if !number.is_finite() => {
-                        return Err(ThemeError::NonFiniteNumber {
-                            namespace: namespace.clone(),
-                            name: name.clone(),
-                        });
-                    }
-                    ThemeTokenValue::Color(_)
-                    | ThemeTokenValue::Number(_)
-                    | ThemeTokenValue::String(_) => {}
-                }
-            }
-        }
-        Ok(())
-    }
-
     #[must_use]
     pub fn token(&self, path: &str) -> Option<&ThemeTokenValue> {
         let (namespace, name) = path.split_once('.')?;
@@ -451,72 +291,377 @@ impl ThemeTokens {
                 _ => None,
             })
     }
-}
 
-impl ThemeTypography {
-    /// Validate the shared family/fallback stack and every required type role.
+    /// The length token at `path` (`spacing.sm`, `radius.md`, `metrics.row`)
+    /// before environment resolution.
+    #[must_use]
+    pub fn length_token(&self, path: &str) -> Option<&ThemeLength> {
+        let (namespace, name) = path.split_once('.')?;
+        match namespace {
+            "spacing" => self.spacing.get(name),
+            "radius" => self.radii.get(name),
+            _ => match self.namespaces.get(namespace)?.get(name)? {
+                ThemeTokenValue::Length(length) => Some(length),
+                _ => None,
+            },
+        }
+    }
+
+    /// Resolve a length against the inherited environment. Literal lengths
+    /// pass through; scaled tokens multiply their resolved value.
+    #[must_use]
+    pub fn resolve_length(&self, length: Length, environment: &Environment) -> Option<Length> {
+        let Length::Token(token) = length else {
+            return Some(length);
+        };
+        let value = *self
+            .length_token(&token.path().as_str())?
+            .resolve(environment, &self.environment)?;
+        let scale = token.scale();
+        match value {
+            Length::Pixels(value) => Some(Length::Pixels(value * scale)),
+            Length::Rems(value) => Some(Length::Rems(value * scale)),
+            Length::Relative(value) => Some(Length::Relative((value * scale).min(1.0))),
+            Length::Token(_) => None,
+        }
+    }
+
+    /// Every length token resolved for one environment, keyed by path.
+    #[must_use]
+    pub fn length_snapshot(&self, environment: &Environment) -> BTreeMap<String, Length> {
+        let mut lengths = BTreeMap::new();
+        let mut insert = |path: String, value: &ThemeLength| {
+            if let Some(value) = value.resolve(environment, &self.environment) {
+                lengths.insert(path, *value);
+            }
+        };
+        for (name, value) in &self.spacing {
+            insert(format!("spacing.{name}"), value);
+        }
+        for (name, value) in &self.radii {
+            insert(format!("radius.{name}"), value);
+        }
+        for (namespace, values) in &self.namespaces {
+            for (name, value) in values {
+                if let ThemeTokenValue::Length(value) = value {
+                    insert(format!("{namespace}.{name}"), value);
+                }
+            }
+        }
+        lengths
+    }
+
+    /// Resolve a typography role, following aliases with the environment.
+    #[must_use]
+    pub fn resolve_typography(
+        &self,
+        role: &str,
+        environment: &Environment,
+    ) -> Option<ResolvedTypography> {
+        let mut current = role.to_owned();
+        for _ in 0..MAX_TYPOGRAPHY_ALIAS_DEPTH {
+            match self.typography.roles.get(&current)? {
+                TypographyRole::Style(token) => {
+                    let (family, fallbacks) = if token.family.is_some() {
+                        (token.family.clone(), token.fallbacks.clone())
+                    } else {
+                        (
+                            self.typography.family.clone(),
+                            self.typography.fallbacks.clone(),
+                        )
+                    };
+                    return Some(ResolvedTypography {
+                        family,
+                        fallbacks,
+                        size: token.size,
+                        line_height: token.line_height,
+                        weight: token.weight,
+                    });
+                }
+                TypographyRole::Alias(target) => {
+                    current = target.resolve(environment, &self.environment)?.clone();
+                }
+            }
+        }
+        None
+    }
+
+    /// Every typography role resolved for one environment.
+    #[must_use]
+    pub fn typography_snapshot(
+        &self,
+        environment: &Environment,
+    ) -> BTreeMap<String, ResolvedTypography> {
+        self.typography
+            .roles
+            .keys()
+            .filter_map(|role| {
+                self.resolve_typography(role, environment)
+                    .map(|value| (role.clone(), value))
+            })
+            .collect()
+    }
+
+    /// Every color, with namespaced colors keyed `namespace.name`.
+    #[must_use]
+    pub fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        let mut colors = self.colors.clone();
+        for (namespace, values) in &self.namespaces {
+            for (name, value) in values {
+                if let ThemeTokenValue::Color(color) = value {
+                    colors.insert(format!("{namespace}.{name}"), *color);
+                }
+            }
+        }
+        colors
+    }
+
+    /// Whether a declared token requirement is satisfied.
+    ///
+    /// A bare name is a semantic color; `spacing.*`, `radius.*` and other
+    /// `namespace.name` paths are lengths or namespaced tokens;
+    /// `typography.<role>` is a role; `environment.<name>` is a declaration.
+    #[must_use]
+    pub fn provides(&self, requirement: &str) -> bool {
+        match requirement.split_once('.') {
+            None => self.colors.contains_key(requirement),
+            Some(("typography", role)) => self.typography.roles.contains_key(role),
+            Some(("environment", name)) => self.environment.contains_key(&Symbol::intern(name)),
+            Some(_) => {
+                self.length_token(requirement).is_some() || self.token(requirement).is_some()
+            }
+        }
+    }
+
+    /// Validate token names and values. No token is required here; required
+    /// tokens are declared by components and checked by
+    /// [`ThemeVariant::require`].
     ///
     /// # Errors
     ///
-    /// Returns [`ThemeError`] for missing roles or invalid font metrics.
+    /// Returns [`ThemeError`] for malformed names, invalid lengths, invalid
+    /// typography, invalid motion or environment tables that reference
+    /// undeclared names or values.
     pub fn validate(&self) -> Result<(), ThemeError> {
-        require_tokens("typography", REQUIRED_TYPOGRAPHY, &self.roles)?;
-        if self
+        for name in self.colors.keys() {
+            if !valid_token_segment(name) {
+                return Err(ThemeError::InvalidTokenName {
+                    namespace: "colors".to_owned(),
+                    name: name.clone(),
+                });
+            }
+        }
+        for (category, values) in [("spacing", &self.spacing), ("radius", &self.radii)] {
+            for (name, value) in values {
+                if !valid_token_segment(name) {
+                    return Err(ThemeError::InvalidTokenName {
+                        namespace: category.to_owned(),
+                        name: name.clone(),
+                    });
+                }
+                self.validate_length(&format!("{category}.{name}"), value)?;
+            }
+        }
+        for (namespace, tokens) in &self.namespaces {
+            if !valid_token_segment(namespace) {
+                return Err(ThemeError::InvalidNamespace(namespace.clone()));
+            }
+            for (name, value) in tokens {
+                if !valid_token_segment(name) {
+                    return Err(ThemeError::InvalidTokenName {
+                        namespace: namespace.clone(),
+                        name: name.clone(),
+                    });
+                }
+                match value {
+                    ThemeTokenValue::Length(length) => {
+                        self.validate_length(&format!("{namespace}.{name}"), length)?;
+                    }
+                    ThemeTokenValue::Number(number) if !number.is_finite() => {
+                        return Err(ThemeError::NonFiniteNumber {
+                            namespace: namespace.clone(),
+                            name: name.clone(),
+                        });
+                    }
+                    ThemeTokenValue::Color(_)
+                    | ThemeTokenValue::Number(_)
+                    | ThemeTokenValue::String(_) => {}
+                }
+            }
+        }
+        self.validate_typography()?;
+        self.motion.validate()
+    }
+
+    fn validate_length(&self, token: &str, value: &ThemeLength) -> Result<(), ThemeError> {
+        self.validate_variable(token, value)?;
+        for length in value.values() {
+            if length.is_theme_token() {
+                return Err(ThemeError::NestedLengthToken(token.to_owned()));
+            }
+            length
+                .validate()
+                .map_err(|source| ThemeError::InvalidLength {
+                    token: token.to_owned(),
+                    source,
+                })?;
+        }
+        Ok(())
+    }
+
+    fn validate_variable<T>(&self, token: &str, value: &Variable<T>) -> Result<(), ThemeError> {
+        let Variable::ByEnv(table) = value else {
+            return Ok(());
+        };
+        for (index, name) in table.keys().iter().enumerate() {
+            let declaration =
+                self.environment
+                    .get(name)
+                    .ok_or_else(|| ThemeError::UndeclaredEnvironment {
+                        token: token.to_owned(),
+                        name: name.to_string(),
+                    })?;
+            for (path, _) in table.entries() {
+                if !declaration.allows(path[index]) {
+                    return Err(ThemeError::UndeclaredEnvironmentValue {
+                        token: token.to_owned(),
+                        name: name.to_string(),
+                        value: path[index].to_string(),
+                    });
+                }
+            }
+        }
+        // Every combination of declared values must have an entry: a gap would
+        // pass the required-token check and then resolve to nothing.
+        let axes = table
+            .keys()
+            .iter()
+            .filter_map(|name| self.environment.get(name).map(|d| d.values.as_slice()))
+            .collect::<Vec<_>>();
+        let mut path = axes.iter().map(|values| values[0]).collect::<Vec<_>>();
+        let mut indices = vec![0usize; axes.len()];
+        loop {
+            if table.get(&path).is_none() {
+                let missing = table
+                    .keys()
+                    .iter()
+                    .zip(&path)
+                    .map(|(name, value)| format!("{name}={value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(ThemeError::IncompleteEnvironmentTable {
+                    token: token.to_owned(),
+                    missing,
+                });
+            }
+            // Advance the last key first, like an odometer.
+            let mut key = axes.len();
+            loop {
+                if key == 0 {
+                    return Ok(());
+                }
+                key -= 1;
+                indices[key] += 1;
+                if indices[key] < axes[key].len() {
+                    path[key] = axes[key][indices[key]];
+                    break;
+                }
+                indices[key] = 0;
+                path[key] = axes[key][0];
+            }
+        }
+    }
+
+    fn validate_typography(&self) -> Result<(), ThemeError> {
+        let typography = &self.typography;
+        if typography
             .family
             .as_ref()
             .is_some_and(|family| !valid_font_family(family))
         {
             return Err(ThemeError::InvalidTypographyFamily);
         }
-        let mut families = std::collections::BTreeSet::new();
-        for family in &self.fallbacks {
-            if !valid_font_family(family) || !families.insert(family) {
-                return Err(ThemeError::InvalidTypographyFallbacks);
+        validate_fallbacks(typography.family.as_deref(), &typography.fallbacks)?;
+        for (role, value) in &typography.roles {
+            if !valid_token_segment(role) {
+                return Err(ThemeError::InvalidTypographyRole(role.clone()));
             }
-        }
-        if self
-            .family
-            .as_ref()
-            .is_some_and(|family| families.contains(family))
-        {
-            return Err(ThemeError::InvalidTypographyFallbacks);
-        }
-        for (role, token) in &self.roles {
-            if !REQUIRED_TYPOGRAPHY.contains(&role.as_str()) {
-                return Err(ThemeError::UnknownTypographyRole(role.clone()));
-            }
-            validate_typography_length(role, "size", token.size)?;
-            validate_typography_length(role, "line_height", token.line_height)?;
-            if !(1..=1_000).contains(&token.weight) {
-                return Err(ThemeError::InvalidTypographyWeight {
-                    role: role.clone(),
-                    weight: token.weight,
-                });
-            }
-            match (token.size, token.line_height) {
-                (Length::Pixels(size), Length::Pixels(line_height))
-                | (Length::Rems(size), Length::Rems(line_height))
-                    if line_height < size =>
-                {
-                    return Err(ThemeError::InvalidTypographyLineHeight(role.clone()));
+            match value {
+                TypographyRole::Style(token) => validate_typography_token(role, token)?,
+                TypographyRole::Alias(target) => {
+                    self.validate_variable(&format!("typography.{role}"), target)?;
+                    for target in target.values() {
+                        if !typography.roles.contains_key(target) {
+                            return Err(ThemeError::UnknownTypographyAlias {
+                                role: role.clone(),
+                                target: target.clone(),
+                            });
+                        }
+                    }
                 }
-                _ => {}
+            }
+        }
+        for role in typography.roles.keys() {
+            if self.alias_cycle(role) {
+                return Err(ThemeError::TypographyAliasCycle(role.clone()));
             }
         }
         Ok(())
     }
 
-    #[must_use]
-    pub fn resolve(&self, role: &str) -> Option<ResolvedTypography> {
-        let token = self.roles.get(role)?;
-        Some(ResolvedTypography {
-            family: self.family.clone(),
-            fallbacks: self.fallbacks.clone(),
-            size: token.size,
-            line_height: token.line_height,
-            weight: token.weight,
-        })
+    fn alias_cycle(&self, role: &str) -> bool {
+        let mut frontier = vec![(role.to_owned(), 0_usize)];
+        while let Some((current, depth)) = frontier.pop() {
+            if depth > MAX_TYPOGRAPHY_ALIAS_DEPTH {
+                return true;
+            }
+            if let Some(TypographyRole::Alias(target)) = self.typography.roles.get(&current) {
+                frontier.extend(target.values().map(|next| (next.clone(), depth + 1)));
+            }
+        }
+        false
     }
+}
+
+fn validate_typography_token(role: &str, token: &TypographyToken) -> Result<(), ThemeError> {
+    validate_typography_length(role, "size", token.size)?;
+    validate_typography_length(role, "line_height", token.line_height)?;
+    if !(1..=1_000).contains(&token.weight) {
+        return Err(ThemeError::InvalidTypographyWeight {
+            role: role.to_owned(),
+            weight: token.weight,
+        });
+    }
+    if token
+        .family
+        .as_ref()
+        .is_some_and(|family| !valid_font_family(family))
+    {
+        return Err(ThemeError::InvalidTypographyFamily);
+    }
+    validate_fallbacks(token.family.as_deref(), &token.fallbacks)?;
+    match (token.size, token.line_height) {
+        (Length::Pixels(size), Length::Pixels(line_height))
+        | (Length::Rems(size), Length::Rems(line_height))
+            if line_height < size =>
+        {
+            Err(ThemeError::InvalidTypographyLineHeight(role.to_owned()))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_fallbacks(family: Option<&str>, fallbacks: &[String]) -> Result<(), ThemeError> {
+    let mut families = std::collections::BTreeSet::new();
+    for fallback in fallbacks {
+        if !valid_font_family(fallback) || !families.insert(fallback.as_str()) {
+            return Err(ThemeError::InvalidTypographyFallbacks);
+        }
+    }
+    if family.is_some_and(|family| families.contains(family)) {
+        return Err(ThemeError::InvalidTypographyFallbacks);
+    }
+    Ok(())
 }
 
 fn valid_font_family(family: &str) -> bool {
@@ -531,7 +676,7 @@ fn validate_typography_length(
 ) -> Result<(), ThemeError> {
     let positive = match value {
         Length::Pixels(value) | Length::Rems(value) => value.is_finite() && value > 0.0,
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => false,
+        Length::Relative(_) | Length::Token(_) => false,
     };
     if positive {
         Ok(())
@@ -541,16 +686,6 @@ fn validate_typography_length(
             field,
         })
     }
-}
-
-fn valid_token_segment(value: &str) -> bool {
-    !value.is_empty()
-        && !value.starts_with('_')
-        && !value.ends_with('_')
-        && !value.contains("__")
-        && value.chars().all(|character| {
-            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
-        })
 }
 
 fn require_tokens<T>(
@@ -570,18 +705,18 @@ fn require_tokens<T>(
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ThemeVariant {
     pub family: String,
     pub name: String,
     pub mode: ThemeMode,
-    pub tokens: ThemeTokens,
+    pub tokens: Arc<ThemeTokens>,
 }
 
 /// Owned, host-readable snapshot of the effective theme for one mounted view.
 ///
 /// `revision` advances whenever the resolved variant changes, including a
-/// system light/dark transition. The complete semantic token table is available
+/// system light/dark transition. The complete token table is available
 /// through [`Self::variant`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct ThemeSnapshot {
@@ -596,7 +731,7 @@ impl ThemeSnapshot {
 }
 
 impl ThemeVariant {
-    /// Validate identity and semantic tokens.
+    /// Validate identity and token format.
     ///
     /// # Errors
     ///
@@ -608,104 +743,292 @@ impl ThemeVariant {
         self.tokens.validate()
     }
 
+    /// Check that every requirement declared by a consumer is provided.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThemeError::MissingRequiredTokens`] listing what is absent.
+    pub fn require<'a>(
+        &self,
+        consumer: &str,
+        requirements: impl IntoIterator<Item = &'a str>,
+    ) -> Result<(), ThemeError> {
+        let missing = requirements
+            .into_iter()
+            .filter(|requirement| !self.tokens.provides(requirement))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(ThemeError::MissingRequiredTokens {
+                theme: format!("{}/{}", self.family, self.name),
+                consumer: consumer.to_owned(),
+                missing,
+            })
+        }
+    }
+
     #[must_use]
     pub fn typography(&self, role: &str) -> Option<ResolvedTypography> {
-        self.tokens.typography.resolve(role)
+        self.tokens.resolve_typography(role, &Environment::EMPTY)
     }
 }
 
 impl ThemeTokenOverrides {
-    fn merge_into(&self, variant: &mut ThemeVariant) {
-        variant.tokens.colors.extend(self.colors.clone());
-        variant.tokens.spacing.extend(self.spacing.clone());
-        variant.tokens.radii.extend(self.radii.clone());
-        if let Some(family) = &self.typography.family {
-            variant.tokens.typography.family = Some(family.clone());
-        }
-        if let Some(fallbacks) = &self.typography.fallbacks {
-            variant.tokens.typography.fallbacks.clone_from(fallbacks);
-        }
-        variant
-            .tokens
-            .typography
-            .roles
-            .extend(self.typography.roles.clone());
-        variant
-            .tokens
-            .motion
-            .durations_ms
-            .extend(self.motion.durations_ms.clone());
-        variant
-            .tokens
-            .motion
-            .easings
-            .extend(self.motion.easings.clone());
-        variant
-            .tokens
-            .motion
-            .springs
-            .extend(self.motion.springs.clone());
-        variant
-            .tokens
-            .motion
-            .distances
-            .extend(self.motion.distances.clone());
-        variant
-            .tokens
-            .motion
-            .staggers_ms
-            .extend(self.motion.staggers_ms.clone());
-        for (namespace, tokens) in &self.namespaces {
-            variant
-                .tokens
-                .namespaces
-                .entry(namespace.clone())
-                .or_default()
-                .extend(tokens.clone());
-        }
+    fn into_layer(self) -> TokenLayer {
+        let mut layer = TokenLayer {
+            colors: self
+                .colors
+                .into_iter()
+                .map(|(name, color)| (name, ColorValue::Literal(color)))
+                .collect(),
+            spacing: self
+                .spacing
+                .into_iter()
+                .map(|(name, value)| (name, Variable::Fixed(value)))
+                .collect(),
+            radii: self
+                .radii
+                .into_iter()
+                .map(|(name, value)| (name, Variable::Fixed(value)))
+                .collect(),
+            typography_family: self.typography.family.map(FamilyChoice::Named),
+            typography_fallbacks: self.typography.fallbacks,
+            typography_roles: self
+                .typography
+                .roles
+                .into_iter()
+                .map(|(name, token)| (name, TypographyRole::Style(token)))
+                .collect(),
+            motion: self.motion,
+            namespaces: self.namespaces,
+            environment: BTreeMap::new(),
+            environment_defaults: self.environment_defaults,
+        };
+        layer.normalize_colors();
+        layer
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.colors.is_empty()
-            && self.spacing.is_empty()
-            && self.radii.is_empty()
-            && self.typography == ThemeTypographyOverrides::default()
-            && self.motion == ThemeMotionOverrides::default()
-            && self.namespaces.is_empty()
+        self == &Self::default()
     }
 }
 
-impl ColorResolver for ThemeVariant {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        match color {
-            ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(token) => self.tokens.color(token),
-        }
-    }
+/// A layer's choice of UI family: keep the platform font or name one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum FamilyChoice {
+    Platform,
+    Named(String),
+}
 
-    fn resolve_length(&self, length: Length) -> Option<Length> {
-        match length {
-            Length::ThemeSpacing(token) => self.tokens.spacing.get(token.as_str()).copied(),
-            Length::ThemeRadius(token) => self.tokens.radii.get(token.as_str()).copied(),
-            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
-        }
-    }
+/// One unresolved token layer: the token base, a palette theme, or Host
+/// overrides. Layers merge entry by entry; later layers win.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TokenLayer {
+    pub(crate) colors: BTreeMap<String, ColorValue>,
+    pub(crate) spacing: BTreeMap<String, ThemeLength>,
+    pub(crate) radii: BTreeMap<String, ThemeLength>,
+    pub(crate) typography_family: Option<FamilyChoice>,
+    pub(crate) typography_fallbacks: Option<Vec<String>>,
+    pub(crate) typography_roles: BTreeMap<String, TypographyRole>,
+    pub(crate) motion: ThemeMotionOverrides,
+    pub(crate) namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+    pub(crate) environment: BTreeMap<String, EnvironmentDeclaration>,
+    pub(crate) environment_defaults: BTreeMap<String, String>,
+}
 
-    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
-        let mut colors = self.tokens.colors.clone();
-        for (namespace, values) in &self.tokens.namespaces {
-            for (name, value) in values {
+impl TokenLayer {
+    /// Move namespaced literal colors into the color map under their dotted
+    /// path, so precedence between layers and expression references work
+    /// the same for every color.
+    pub(crate) fn normalize_colors(&mut self) {
+        for (namespace, tokens) in &mut self.namespaces {
+            let colors = &mut self.colors;
+            tokens.retain(|name, value| {
                 if let ThemeTokenValue::Color(color) = value {
-                    colors.insert(format!("{namespace}.{name}"), *color);
+                    colors.insert(format!("{namespace}.{name}"), ColorValue::Literal(*color));
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        self.namespaces.retain(|_, tokens| !tokens.is_empty());
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.colors.extend(other.colors);
+        self.spacing.extend(other.spacing);
+        self.radii.extend(other.radii);
+        if other.typography_family.is_some() {
+            self.typography_family = other.typography_family;
+        }
+        if other.typography_fallbacks.is_some() {
+            self.typography_fallbacks = other.typography_fallbacks;
+        }
+        self.typography_roles.extend(other.typography_roles);
+        self.motion.durations_ms.extend(other.motion.durations_ms);
+        self.motion.easings.extend(other.motion.easings);
+        self.motion.springs.extend(other.motion.springs);
+        self.motion.distances.extend(other.motion.distances);
+        self.motion.staggers_ms.extend(other.motion.staggers_ms);
+        for (namespace, tokens) in other.namespaces {
+            self.namespaces.entry(namespace).or_default().extend(tokens);
+        }
+        self.environment.extend(other.environment);
+        self.environment_defaults.extend(other.environment_defaults);
+    }
+
+    /// Evaluate color expressions and produce the final token set.
+    fn finalize(self) -> Result<ThemeTokens, ThemeError> {
+        let mut environment = EnvironmentDeclarations::new();
+        for (name, mut declaration) in self.environment {
+            if !valid_token_segment(&name) {
+                return Err(ThemeError::InvalidTokenName {
+                    namespace: "environment".to_owned(),
+                    name,
+                });
+            }
+            if let Some(default) = self.environment_defaults.get(&name) {
+                let default = Symbol::intern(default);
+                if !declaration.allows(default) {
+                    return Err(ThemeError::UndeclaredEnvironmentValue {
+                        token: "environment default".to_owned(),
+                        name,
+                        value: default.to_string(),
+                    });
+                }
+                declaration.default = default;
+            }
+            environment.insert(Symbol::intern(&name), declaration);
+        }
+        if let Some(name) = self
+            .environment_defaults
+            .keys()
+            .find(|name| !environment.contains_key(&Symbol::intern(name)))
+        {
+            return Err(ThemeError::UndeclaredEnvironment {
+                token: "environment default".to_owned(),
+                name: name.clone(),
+            });
+        }
+
+        let resolved = resolve_color_expressions(&self.colors)?;
+        let mut colors = BTreeMap::new();
+        let mut namespaces = self.namespaces;
+        for (name, color) in resolved {
+            match name.split_once('.') {
+                Some((namespace, token)) => {
+                    namespaces
+                        .entry(namespace.to_owned())
+                        .or_default()
+                        .insert(token.to_owned(), ThemeTokenValue::Color(color));
+                }
+                None => {
+                    colors.insert(name, color);
                 }
             }
         }
-        colors
+        let mut motion = ThemeMotion::default();
+        motion.durations_ms.extend(self.motion.durations_ms);
+        motion.easings.extend(self.motion.easings);
+        motion.springs.extend(self.motion.springs);
+        motion.distances.extend(self.motion.distances);
+        motion.staggers_ms.extend(self.motion.staggers_ms);
+        Ok(ThemeTokens {
+            colors,
+            spacing: self.spacing,
+            radii: self.radii,
+            typography: ThemeTypography {
+                family: match self.typography_family {
+                    Some(FamilyChoice::Named(family)) => Some(family),
+                    Some(FamilyChoice::Platform) | None => None,
+                },
+                fallbacks: self.typography_fallbacks.unwrap_or_default(),
+                roles: self.typography_roles,
+            },
+            motion,
+            namespaces,
+            environment,
+        })
+    }
+}
+
+/// Evaluate every color, following token references between colors.
+fn resolve_color_expressions(
+    colors: &BTreeMap<String, ColorValue>,
+) -> Result<BTreeMap<String, Rgba8>, ThemeError> {
+    fn visit(
+        name: &str,
+        colors: &BTreeMap<String, ColorValue>,
+        resolved: &mut BTreeMap<String, Rgba8>,
+        stack: &mut Vec<String>,
+    ) -> Result<Option<Rgba8>, ThemeError> {
+        if let Some(color) = resolved.get(name) {
+            return Ok(Some(*color));
+        }
+        let Some(expression) = colors.get(name) else {
+            return Ok(None);
+        };
+        if stack.iter().any(|entry| entry == name) {
+            stack.push(name.to_owned());
+            return Err(ThemeError::ColorCycle(stack.join(" -> ")));
+        }
+        stack.push(name.to_owned());
+        let mut failure = None;
+        let value = expression.resolve_with(&mut |token: &str| match visit(
+            token, colors, resolved, stack,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                failure.get_or_insert(error);
+                None
+            }
+        });
+        stack.pop();
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        let value = value.ok_or_else(|| ThemeError::UnresolvedColor {
+            token: name.to_owned(),
+            expression: format!("{expression:?}"),
+        })?;
+        resolved.insert(name.to_owned(), value);
+        Ok(Some(value))
     }
 
-    fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
-        self.typography(role)
+    let mut resolved = BTreeMap::new();
+    for name in colors.keys() {
+        visit(name, colors, &mut resolved, &mut Vec::new())?;
+    }
+    Ok(resolved)
+}
+
+impl ColorResolver for ThemeVariant {
+    fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+        self.tokens.color(token)
+    }
+
+    fn resolve_length_in(&self, length: Length, environment: &Environment) -> Option<Length> {
+        self.tokens.resolve_length(length, environment)
+    }
+
+    fn resolve_typography_in(
+        &self,
+        role: &str,
+        environment: &Environment,
+    ) -> Option<ResolvedTypography> {
+        self.tokens.resolve_typography(role, environment)
+    }
+
+    fn token_set(&self) -> Option<Arc<ThemeTokens>> {
+        Some(Arc::clone(&self.tokens))
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        self.tokens.color_snapshot()
     }
 
     fn resolve_motion(&self) -> ThemeMotion {
@@ -713,7 +1036,7 @@ impl ColorResolver for ThemeVariant {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ThemeFamily {
     pub name: String,
     pub variants: BTreeMap<String, ThemeVariant>,
@@ -822,8 +1145,7 @@ impl ThemeManager {
         selection: ThemeSelection,
     ) -> Result<Self, ThemeError> {
         let mut grouped = BTreeMap::<String, BTreeMap<String, ThemeVariant>>::new();
-        for mut variant in variants {
-            variant.tokens.install_document_defaults();
+        for variant in variants {
             variant.validate()?;
             let family = grouped.entry(variant.family.clone()).or_default();
             if family
@@ -893,10 +1215,7 @@ impl ThemeManager {
     /// # Errors
     ///
     /// Returns [`ThemeError`] for invalid or duplicate families.
-    pub fn register_family(&mut self, mut family: ThemeFamily) -> Result<(), ThemeError> {
-        for variant in family.variants.values_mut() {
-            variant.tokens.install_document_defaults();
-        }
+    pub fn register_family(&mut self, family: ThemeFamily) -> Result<(), ThemeError> {
         family.validate()?;
         if self.families.contains_key(&family.name) {
             return Err(ThemeError::DuplicateFamily(family.name));
@@ -914,8 +1233,7 @@ impl ThemeManager {
     /// # Errors
     ///
     /// Returns validation or unknown-selection errors.
-    pub fn replace_variant(&mut self, mut variant: ThemeVariant) -> Result<(), ThemeError> {
-        variant.tokens.install_document_defaults();
+    pub fn replace_variant(&mut self, variant: ThemeVariant) -> Result<(), ThemeError> {
         variant.validate()?;
         let selection = ThemeSelection::new(variant.family.clone(), variant.name.clone());
         let family = self
@@ -1016,6 +1334,13 @@ impl ThemeManager {
         self.generation
     }
 
+    /// Every registered variant.
+    pub fn variants(&self) -> impl Iterator<Item = &ThemeVariant> {
+        self.families
+            .values()
+            .flat_map(|family| family.variants.values())
+    }
+
     #[must_use]
     pub fn app_preference(&self) -> &ThemePreference {
         &self.app
@@ -1109,19 +1434,28 @@ impl ResolvedTheme<'_> {
 }
 
 impl ColorResolver for ResolvedTheme<'_> {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        match color {
-            ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(token) => self.variant.tokens.color(token),
-        }
+    fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+        self.variant.resolve_token(token)
     }
 
-    fn resolve_length(&self, length: Length) -> Option<Length> {
-        self.variant.resolve_length(length)
+    fn resolve_length_in(&self, length: Length, environment: &Environment) -> Option<Length> {
+        self.variant.resolve_length_in(length, environment)
     }
 
-    fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
-        self.variant.typography(role)
+    fn resolve_typography_in(
+        &self,
+        role: &str,
+        environment: &Environment,
+    ) -> Option<ResolvedTypography> {
+        self.variant.resolve_typography_in(role, environment)
+    }
+
+    fn token_set(&self) -> Option<Arc<ThemeTokens>> {
+        self.variant.token_set()
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        self.variant.color_snapshot()
     }
 
     fn resolve_motion(&self) -> ThemeMotion {
@@ -1129,118 +1463,73 @@ impl ColorResolver for ResolvedTheme<'_> {
     }
 }
 
-/// Compile and evaluate a Rhai theme source exporting `theme() -> map`.
+/// Compile and evaluate a Rhai theme source exporting `theme() -> map`,
+/// without a token base or Host overrides.
 ///
 /// # Errors
 ///
-/// Returns [`ThemeError`] for compilation, evaluation, decoding, or semantic
-/// token validation failures.
+/// Returns [`ThemeError`] for compilation, evaluation, decoding, color
+/// expression or token validation failures.
 pub fn load_theme_source(
     engine: &Engine,
     source_name: &str,
     source: &str,
 ) -> Result<ThemeVariant, ThemeError> {
-    let mut theme = decode_theme_source(engine, source_name, source)?;
-    theme.tokens.install_document_defaults();
-    theme.validate()?;
-    Ok(theme)
+    load_theme_with_layers(
+        engine,
+        None,
+        source_name,
+        source,
+        &ThemeTokenOverrides::default(),
+    )
 }
 
-pub(crate) fn load_theme_source_with_overrides(
+/// Compile and evaluate a token base source exporting `tokens() -> map`.
+///
+/// The base is the lowest token layer: palette themes and Host overrides
+/// replace individual entries of it.
+///
+/// # Errors
+///
+/// Returns [`ThemeError`] for compilation, evaluation or decoding failures.
+pub fn load_token_base(
     engine: &Engine,
+    source_name: &str,
+    source: &str,
+) -> Result<TokenLayer, ThemeError> {
+    crate::theme_source::decode_token_base(engine, source_name, source)
+}
+
+/// Load a palette theme on top of an optional token base and Host overrides.
+///
+/// # Errors
+///
+/// Returns [`ThemeError`] for any decoding, merge or validation failure.
+pub fn load_theme_with_layers(
+    engine: &Engine,
+    base: Option<&TokenLayer>,
     source_name: &str,
     source: &str,
     overrides: &ThemeTokenOverrides,
 ) -> Result<ThemeVariant, ThemeError> {
-    let theme = decode_theme_source(engine, source_name, source)?;
-    let mut original = theme.clone();
-    original.tokens.install_document_defaults();
-    original.validate()?;
-    let mut candidate = theme;
-    overrides.merge_into(&mut candidate);
-    candidate.tokens.install_document_defaults();
-    candidate.validate()?;
-    Ok(candidate)
-}
-
-fn decode_theme_source(
-    engine: &Engine,
-    source_name: &str,
-    source: &str,
-) -> Result<ThemeVariant, ThemeError> {
-    let mut ast = engine
-        .compile(source)
-        .map_err(|error| ThemeError::Script(error.to_string()))?;
-    crate::engine::validate_assignment_targets(&ast)
-        .map_err(|error| ThemeError::Script(error.to_string()))?;
-    ast.set_source(source_name);
-    let raw: Dynamic = engine
-        .call_fn(&mut Scope::new(), &ast, "theme", ())
-        .map_err(|error| ThemeError::Script(error.to_string()))?;
-    rhai::serde::from_dynamic::<ThemeVariant>(&raw)
-        .map_err(|error| ThemeError::Decode(error.to_string()))
-}
-
-const fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {
-    Rgba8::from_rgba_hex((color.as_rgba_hex() & 0xffff_ff00) | alpha as u32)
-}
-
-const fn mix_opaque(background: Rgba8, foreground: Rgba8, weight: u8) -> Rgba8 {
-    let background = background.as_rgba_hex();
-    let foreground = foreground.as_rgba_hex();
-    let inverse = 255_u32 - weight as u32;
-    let weight = weight as u32;
-    Rgba8::from_rgba_hex(
-        (mix_channel(background, foreground, inverse, weight, 24) << 24)
-            | (mix_channel(background, foreground, inverse, weight, 16) << 16)
-            | (mix_channel(background, foreground, inverse, weight, 8) << 8)
-            | 0xff,
-    )
-}
-
-const fn mix_channel(
-    background: u32,
-    foreground: u32,
-    inverse: u32,
-    weight: u32,
-    shift: u32,
-) -> u32 {
-    let back = (background >> shift) & 0xff;
-    let front = (foreground >> shift) & 0xff;
-    (back * inverse + front * weight + 127) / 255
-}
-
-fn readable_secondary(muted: Rgba8, primary: Rgba8, surface: Rgba8) -> Rgba8 {
-    if contrast_ratio(muted, surface) >= 4.5 {
-        return muted;
-    }
-    for step in 1_u8..=16 {
-        let weight = u8::try_from(u16::from(step) * 255 / 16).unwrap_or(255);
-        let candidate = mix_opaque(muted, primary, weight);
-        if contrast_ratio(candidate, surface) >= 4.5 {
-            return candidate;
-        }
-    }
-    primary
-}
-
-fn contrast_ratio(left: Rgba8, right: Rgba8) -> f64 {
-    let left = relative_luminance(left);
-    let right = relative_luminance(right);
-    (left.max(right) + 0.05) / (left.min(right) + 0.05)
-}
-
-fn relative_luminance(color: Rgba8) -> f64 {
-    let color = color.as_rgba_hex();
-    let channel = |shift| {
-        let encoded = f64::from(((color >> shift) & 0xff_u32) as u8) / 255.0;
-        if encoded <= 0.04045 {
-            encoded / 12.92
-        } else {
-            ((encoded + 0.055) / 1.055).powf(2.4)
-        }
+    let theme = crate::theme_source::decode_theme(engine, source_name, source)?;
+    let mut layer = base.cloned().unwrap_or_default();
+    layer.merge(theme.tokens);
+    layer.merge(overrides.clone().into_layer());
+    let variant = ThemeVariant {
+        family: theme.family,
+        name: theme.name,
+        mode: theme.mode,
+        tokens: Arc::new(layer.finalize()?),
     };
-    0.2126 * channel(24) + 0.7152 * channel(16) + 0.0722 * channel(8)
+    variant.validate()?;
+    Ok(variant)
+}
+
+/// Relative luminance contrast ratio between two opaque colors.
+#[must_use]
+pub fn contrast_ratio(left: Rgba8, right: Rgba8) -> f64 {
+    left.contrast_ratio(right)
 }
 
 #[derive(Debug, Error)]
@@ -1263,16 +1552,44 @@ pub enum ThemeError {
     InvalidNamespace(String),
     #[error("theme token `{namespace}.{name}` must use a snake_case name")]
     InvalidTokenName { namespace: String, name: String },
-    #[error("theme length token `{namespace}.{name}` cannot reference another theme token")]
-    NestedNamespacedLength { namespace: String, name: String },
     #[error("theme number token `{namespace}.{name}` must be finite")]
     NonFiniteNumber { namespace: String, name: String },
     #[error("theme typography family must be a non-empty name no longer than 256 bytes")]
     InvalidTypographyFamily,
     #[error("theme typography fallbacks must contain unique non-empty family names")]
     InvalidTypographyFallbacks,
-    #[error("unknown theme typography role `{0}`")]
-    UnknownTypographyRole(String),
+    #[error("theme typography role `{0}` must use a snake_case name")]
+    InvalidTypographyRole(String),
+    #[error("theme typography role `{role}` aliases unknown role `{target}`")]
+    UnknownTypographyAlias { role: String, target: String },
+    #[error("theme typography role `{0}` has an alias cycle or is nested too deeply")]
+    TypographyAliasCycle(String),
+    #[error("theme token `{token}` depends on undeclared environment value `{name}`")]
+    UndeclaredEnvironment { token: String, name: String },
+    #[error(
+        "theme token `{token}` has no value for {missing}; give every declared combination one"
+    )]
+    IncompleteEnvironmentTable { token: String, missing: String },
+    #[error(
+        "theme token `{token}` uses `{value}`, which environment value `{name}` does not declare"
+    )]
+    UndeclaredEnvironmentValue {
+        token: String,
+        name: String,
+        value: String,
+    },
+    #[error("theme color expressions form a cycle: {0}")]
+    ColorCycle(String),
+    #[error("theme color `{token}` could not be resolved from {expression}")]
+    UnresolvedColor { token: String, expression: String },
+    #[error("theme `{theme}` lacks tokens required by {consumer}: {missing:?}")]
+    MissingRequiredTokens {
+        theme: String,
+        consumer: String,
+        missing: Vec<String>,
+    },
+    #[error("theme token `{token}` is invalid: {reason}")]
+    InvalidTokenValue { token: String, reason: String },
     #[error("theme typography `{role}.{field}` must be a positive px or rem length")]
     InvalidTypographyLength { role: String, field: &'static str },
     #[error("theme typography `{0}` line height cannot be smaller than its font size")]
@@ -1311,34 +1628,9 @@ pub enum ThemeError {
 mod tests {
     use super::*;
 
-    fn typography() -> ThemeTypography {
-        ThemeTypography {
-            family: None,
-            fallbacks: Vec::new(),
-            roles: BTreeMap::from([
-                ("caption".to_owned(), type_token(11.0, 16.0, 400)),
-                ("body_small".to_owned(), type_token(12.0, 16.0, 400)),
-                ("body".to_owned(), type_token(13.0, 18.0, 400)),
-                ("subtitle".to_owned(), type_token(14.0, 20.0, 400)),
-                ("title".to_owned(), type_token(16.0, 22.0, 700)),
-                ("heading".to_owned(), type_token(18.0, 24.0, 700)),
-                ("display".to_owned(), type_token(24.0, 32.0, 700)),
-                ("display_large".to_owned(), type_token(28.0, 36.0, 700)),
-            ]),
-        }
-    }
-
-    fn type_token(size: f64, line_height: f64, weight: u16) -> TypographyToken {
-        TypographyToken {
-            size: Length::Pixels(size),
-            line_height: Length::Pixels(line_height),
-            weight,
-        }
-    }
-
     fn tokens(accent: u32) -> ThemeTokens {
         ThemeTokens {
-            colors: REQUIRED_COLORS
+            colors: ["surface", "text_primary", "accent"]
                 .iter()
                 .map(|name| {
                     (
@@ -1351,21 +1643,16 @@ mod tests {
                     )
                 })
                 .collect(),
-            spacing: BTreeMap::from([
-                ("xxs".to_owned(), Length::Pixels(2.0)),
-                ("xs".to_owned(), Length::Pixels(4.0)),
-                ("sm".to_owned(), Length::Pixels(8.0)),
-                ("md".to_owned(), Length::Pixels(12.0)),
-                ("lg".to_owned(), Length::Pixels(16.0)),
-            ]),
-            radii: BTreeMap::from([
-                ("sm".to_owned(), Length::Pixels(4.0)),
-                ("md".to_owned(), Length::Pixels(8.0)),
-                ("lg".to_owned(), Length::Pixels(12.0)),
-            ]),
-            typography: typography(),
-            motion: ThemeMotion::default(),
-            namespaces: BTreeMap::new(),
+            ..ThemeTokens::default()
+        }
+    }
+
+    fn variant(name: &str, mode: ThemeMode, accent: u32) -> ThemeVariant {
+        ThemeVariant {
+            family: "Default".to_owned(),
+            name: name.to_owned(),
+            mode,
+            tokens: Arc::new(tokens(accent)),
         }
     }
 
@@ -1375,26 +1662,90 @@ mod tests {
             variants: BTreeMap::from([
                 (
                     "Light".to_owned(),
-                    ThemeVariant {
-                        family: "Default".to_owned(),
-                        name: "Light".to_owned(),
-                        mode: ThemeMode::Light,
-                        tokens: tokens(0x0033_66ff),
-                    },
+                    variant("Light", ThemeMode::Light, 0x0033_66ff),
                 ),
                 (
                     "Dark".to_owned(),
-                    ThemeVariant {
-                        family: "Default".to_owned(),
-                        name: "Dark".to_owned(),
-                        mode: ThemeMode::Dark,
-                        tokens: tokens(0x0066_99ff),
-                    },
+                    variant("Dark", ThemeMode::Dark, 0x0066_99ff),
                 ),
             ]),
             default_light: "Light".to_owned(),
             default_dark: "Dark".to_owned(),
         }
+    }
+
+    fn engine() -> crate::RuntimeEngine {
+        crate::RuntimeEngine::new()
+    }
+
+    const BASE: &str = r#"
+        fn tokens() {
+            #{
+                environment: #{
+                    density: #{ values: ["comfortable", "compact"], "default": "comfortable" },
+                    size: #{ values: ["sm", "md"], "default": "md" },
+                },
+                spacing: #{
+                    sm: px(8),
+                    lg: by_env("density", #{ comfortable: px(16), compact: px(12) }),
+                },
+                radius: #{ md: px(0) },
+                metrics: #{
+                    control: by_env(["density", "size"], #{
+                        comfortable: #{ sm: px(28), md: px(32) },
+                        compact: #{ sm: px(24), md: px(28) },
+                    }),
+                },
+                typography: #{
+                    roles: #{
+                        body: #{ size: px(14), line_height: px(22), weight: 400 },
+                        body_small: #{ size: px(13), line_height: px(20), weight: 400 },
+                        label: #{ size: px(12), line_height: px(16), weight: 400,
+                            family: "Menlo", fallbacks: ["DejaVu Sans Mono"] },
+                        control: by_env("size", #{ sm: "body_small", md: "body" }),
+                    },
+                },
+                colors: #{
+                    "text.accent": readable(theme_color("accent"), theme_color("text_primary"),
+                        theme_color("surface"), 4.5),
+                    "table.selection": mix(theme_color("surface"), theme_color("accent"), 0.25),
+                },
+            }
+        }
+    "#;
+
+    const PALETTE: &str = r#"
+        fn theme() {
+            #{
+                family: "Paper", name: "Dark", mode: "dark",
+                tokens: #{ colors: #{
+                    surface: 0x151412ff, text_primary: 0xe8e4daff, accent: 0x3d5fe0ff,
+                } },
+            }
+        }
+    "#;
+
+    fn layered() -> ThemeVariant {
+        let engine = engine();
+        let base = load_token_base(engine.engine(), "tokens.rhai", BASE).expect("base");
+        load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
+            "theme.rhai",
+            PALETTE,
+            &ThemeTokenOverrides::default(),
+        )
+        .expect("layered theme")
+    }
+
+    fn environment(pairs: &[(&str, &str)]) -> Environment {
+        pairs
+            .iter()
+            .fold(Environment::EMPTY, |environment, (name, value)| {
+                environment
+                    .with(Symbol::intern(name), Symbol::intern(value))
+                    .expect("environment")
+            })
     }
 
     #[test]
@@ -1423,7 +1774,6 @@ mod tests {
                 },
             )
             .unwrap();
-
         let child = root.child("Preview", "preview");
         assert_eq!(
             manager
@@ -1433,65 +1783,7 @@ mod tests {
                 .name,
             "Dark"
         );
-    }
-
-    #[test]
-    fn namespaced_typed_tokens_validate_and_resolve_colors() {
-        let mut tokens = tokens(0x0033_66ff);
-        tokens.namespaces.insert(
-            "charts".to_owned(),
-            BTreeMap::from([
-                (
-                    "series_a".to_owned(),
-                    ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x00ff_5500)),
-                ),
-                (
-                    "stroke".to_owned(),
-                    ThemeTokenValue::Length(Length::Pixels(2.0)),
-                ),
-                ("muted_alpha".to_owned(), ThemeTokenValue::Number(0.6)),
-            ]),
-        );
-        tokens.validate().unwrap();
-        assert_eq!(
-            tokens.color("charts.series_a"),
-            Some(Rgba8::from_rgb_hex(0x00ff_5500))
-        );
-        tokens
-            .namespaces
-            .get_mut("charts")
-            .unwrap()
-            .insert("bad_number".to_owned(), ThemeTokenValue::Number(f64::NAN));
-        assert!(matches!(
-            tokens.validate(),
-            Err(ThemeError::NonFiniteNumber { .. })
-        ));
-    }
-
-    #[test]
-    fn document_palette_defaults_preserve_explicit_theme_tuning() {
-        let explicit = Rgba8::from_rgb_hex(0x00ab_cdef);
-        let mut tokens = tokens(0x0033_66ff);
-        tokens.namespaces.insert(
-            "syntax".to_owned(),
-            BTreeMap::from([("keyword".to_owned(), ThemeTokenValue::Color(explicit))]),
-        );
-        let manager = ThemeManager::from_variants(
-            [ThemeVariant {
-                family: "Tuned".to_owned(),
-                name: "Dark".to_owned(),
-                mode: ThemeMode::Dark,
-                tokens,
-            }],
-            ThemeSelection::new("Tuned", "Dark"),
-        )
-        .unwrap();
-        let resolved = manager.resolve(None, None, SystemAppearance::Dark).unwrap();
-        assert_eq!(
-            resolved.variant().tokens.color("syntax.keyword"),
-            Some(explicit)
-        );
-        assert!(resolved.variant().tokens.color("diff.left_only").is_some());
+        assert_eq!(manager.variants().count(), 2);
     }
 
     #[test]
@@ -1523,14 +1815,8 @@ mod tests {
         .unwrap();
         let before = manager.generation();
         manager
-            .replace_variant(ThemeVariant {
-                family: "Default".to_owned(),
-                name: "Dark".to_owned(),
-                mode: ThemeMode::Dark,
-                tokens: tokens(0x00ff_00ff),
-            })
+            .replace_variant(variant("Dark", ThemeMode::Dark, 0x00ff_00ff))
             .unwrap();
-
         assert_eq!(manager.generation(), before + 1);
         assert_eq!(
             manager
@@ -1541,205 +1827,312 @@ mod tests {
                 .colors["accent"],
             Rgba8::from_rgb_hex(0x00ff_00ff)
         );
+        let mut missing = variant("Dark", ThemeMode::Dark, 0);
+        missing.family = "Missing".to_owned();
         assert!(matches!(
-            manager.replace_variant(ThemeVariant {
-                family: "Missing".to_owned(),
-                name: "Dark".to_owned(),
-                mode: ThemeMode::Dark,
-                tokens: tokens(0x0000_00ff),
-            }),
+            manager.replace_variant(missing),
             Err(ThemeError::UnknownSelection(_))
         ));
     }
 
     #[test]
-    fn missing_semantic_token_is_rejected() {
-        let mut tokens = tokens(0x0033_66ff);
-        tokens.colors.remove("focus_ring");
+    fn the_runtime_requires_no_vocabulary() {
+        let engine = engine();
+        let theme = load_theme_source(
+            engine.engine(),
+            "custom.rhai",
+            r#"fn theme() { #{ family: "Tree", name: "Night", mode: "dark",
+                tokens: #{ colors: #{ inset: 0x1a1b26ff, bright: 0xc0caf5ff } } } }"#,
+        )
+        .expect("a theme with its own vocabulary");
+        assert_eq!(theme.tokens.colors.len(), 2);
+        assert!(theme.tokens.typography.roles.is_empty());
+        assert!(theme.require("app", ["inset", "bright"]).is_ok());
+        let error = theme
+            .require(
+                "components/button",
+                ["surface", "metrics.control", "typography.body"],
+            )
+            .expect_err("missing design-language tokens");
+        assert!(
+            matches!(error, ThemeError::MissingRequiredTokens { ref missing, .. } if missing.len() == 3),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn layers_merge_and_color_expressions_follow_the_palette() {
+        let theme = layered();
+        let tokens = &theme.tokens;
+        assert_eq!(tokens.colors["accent"], Rgba8::from_rgba_hex(0x3d5f_e0ff));
+        let readable = tokens.color("text.accent").expect("derived");
+        assert!(readable.contrast_ratio(tokens.colors["surface"]) >= 4.5);
+        let selection = tokens.color("table.selection").expect("mixed");
+        assert_eq!(
+            selection,
+            tokens.colors["surface"].mix(tokens.colors["accent"], 0.25)
+        );
+        assert!(
+            theme
+                .require("components/table", ["table.selection", "spacing.sm"])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn host_overrides_replace_tokens_and_environment_defaults() {
+        let engine = engine();
+        let base = load_token_base(engine.engine(), "tokens.rhai", BASE).unwrap();
+        let theme = load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
+            "theme.rhai",
+            PALETTE,
+            &ThemeTokenOverrides {
+                colors: BTreeMap::from([("accent".to_owned(), Rgba8::from_rgb_hex(0x0000_ff00))]),
+                radii: BTreeMap::from([("md".to_owned(), Length::Pixels(4.0))]),
+                environment_defaults: BTreeMap::from([(
+                    "density".to_owned(),
+                    "compact".to_owned(),
+                )]),
+                ..ThemeTokenOverrides::default()
+            },
+        )
+        .unwrap();
+        // Derived colors resolve after the override.
+        assert_eq!(
+            theme.tokens.color("table.selection"),
+            Some(theme.tokens.colors["surface"].mix(Rgba8::from_rgb_hex(0x0000_ff00), 0.25))
+        );
+        assert_eq!(
+            theme.resolve_length(Length::theme_radius("md").unwrap()),
+            Some(Length::Pixels(4.0))
+        );
+        // The compact default applies when the subtree sets nothing.
+        assert_eq!(
+            theme.resolve_length(Length::token("metrics.control").unwrap()),
+            Some(Length::Pixels(28.0))
+        );
+        let invalid = load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
+            "theme.rhai",
+            PALETTE,
+            &ThemeTokenOverrides {
+                environment_defaults: BTreeMap::from([("density".to_owned(), "dense".to_owned())]),
+                ..ThemeTokenOverrides::default()
+            },
+        );
         assert!(matches!(
-            tokens.validate(),
-            Err(ThemeError::MissingTokens {
-                category: "color",
-                ..
-            })
+            invalid,
+            Err(ThemeError::UndeclaredEnvironmentValue { .. })
         ));
     }
 
     #[test]
-    fn typography_roles_are_required_validated_and_resolved() {
-        let mut theme_tokens = tokens(0x0033_66ff);
-        theme_tokens.typography.family = Some("JetBrains Mono".to_owned());
-        theme_tokens.typography.fallbacks = vec!["PingFang SC".to_owned()];
-        let body = theme_tokens.typography.resolve("body").unwrap();
-        assert_eq!(body.family.as_deref(), Some("JetBrains Mono"));
-        assert_eq!(body.fallbacks, ["PingFang SC"]);
-        assert_eq!(body.size, Length::Pixels(13.0));
-        assert_eq!(body.line_height, Length::Pixels(18.0));
-        assert_eq!(body.weight, 400);
+    fn lengths_resolve_against_the_inherited_environment_and_scale() {
+        let theme = layered();
+        let control = Length::token("metrics.control").unwrap();
+        assert_eq!(theme.resolve_length(control), Some(Length::Pixels(32.0)));
+        assert_eq!(
+            theme.resolve_length_in(
+                control,
+                &environment(&[("density", "compact"), ("size", "sm")])
+            ),
+            Some(Length::Pixels(24.0))
+        );
+        // An undeclared environment value falls back to the declared default.
+        assert_eq!(
+            theme.resolve_length_in(control, &environment(&[("size", "huge")])),
+            Some(Length::Pixels(32.0))
+        );
+        assert_eq!(
+            theme.resolve_length_in(
+                Length::theme_spacing("lg").unwrap(),
+                &environment(&[("density", "compact")])
+            ),
+            Some(Length::Pixels(12.0))
+        );
+        assert_eq!(
+            theme.resolve_length(control.scaled(8.0).unwrap()),
+            Some(Length::Pixels(256.0))
+        );
+        assert_eq!(
+            theme.resolve_length(Length::token("metrics.missing").unwrap()),
+            None
+        );
+    }
 
-        theme_tokens.typography.roles.remove("caption");
-        assert!(matches!(
-            theme_tokens.validate(),
-            Err(ThemeError::MissingTokens {
-                category: "typography",
-                ..
-            })
-        ));
+    #[test]
+    fn typography_aliases_follow_the_environment_and_role_families() {
+        let theme = layered();
+        let control = theme
+            .resolve_typography_in("control", &environment(&[("size", "sm")]))
+            .expect("alias");
+        assert_eq!(control.size, Length::Pixels(13.0));
+        assert_eq!(
+            theme.resolve_typography("control").map(|role| role.size),
+            Some(Length::Pixels(14.0))
+        );
+        let label = theme.resolve_typography("label").expect("label role");
+        assert_eq!(label.family.as_deref(), Some("Menlo"));
+        assert_eq!(label.fallbacks, ["DejaVu Sans Mono"]);
+        assert!(theme.resolve_typography("missing").is_none());
+    }
 
-        let mut invalid = tokens(0x0033_66ff);
-        invalid
-            .typography
-            .roles
-            .insert("body".to_owned(), type_token(16.0, 12.0, 400));
+    #[test]
+    fn invalid_token_sources_are_rejected_with_paths() {
+        let engine = engine();
+        let decode = |source: &str| load_token_base(engine.engine(), "tokens.rhai", source);
+        let cycle = load_theme_source(
+            engine.engine(),
+            "cycle.rhai",
+            r#"fn theme() { #{ family: "F", name: "N", mode: "dark", tokens: #{ colors: #{
+                a: theme_color("b"), b: mix(theme_color("a"), theme_color("a"), 0.5) } } } }"#,
+        );
+        assert!(matches!(cycle, Err(ThemeError::ColorCycle(_))), "{cycle:?}");
+        let undeclared = engine.engine();
+        let undeclared = load_theme_with_layers(
+            undeclared,
+            Some(
+                &decode(
+                    r#"fn tokens() { #{ metrics: #{ row: by_env("density",
+                    #{ comfortable: px(32) }) } } }"#,
+                )
+                .unwrap(),
+            ),
+            "theme.rhai",
+            PALETTE,
+            &ThemeTokenOverrides::default(),
+        );
+        assert!(
+            matches!(undeclared, Err(ThemeError::UndeclaredEnvironment { .. })),
+            "{undeclared:?}"
+        );
+        let bare_number = decode(r"fn tokens() { #{ spacing: #{ sm: 8 } } }");
+        assert!(
+            matches!(bare_number, Err(ThemeError::InvalidTokenValue { ref token, .. }) if token == "spacing.sm"),
+            "{bare_number:?}"
+        );
+        let unknown_alias = load_theme_with_layers(
+            engine.engine(),
+            Some(
+                &decode(r#"fn tokens() { #{ typography: #{ roles: #{ control: "body" } } } }"#)
+                    .unwrap(),
+            ),
+            "theme.rhai",
+            PALETTE,
+            &ThemeTokenOverrides::default(),
+        );
         assert!(matches!(
-            invalid.validate(),
-            Err(ThemeError::InvalidTypographyLineHeight(role)) if role == "body"
+            unknown_alias,
+            Err(ThemeError::UnknownTypographyAlias { .. })
         ));
+    }
 
-        let mut invalid = tokens(0x0033_66ff);
-        invalid
-            .typography
-            .roles
-            .insert("bodyish".to_owned(), type_token(12.0, 16.0, 400));
-        assert!(matches!(
-            invalid.validate(),
-            Err(ThemeError::UnknownTypographyRole(role)) if role == "bodyish"
-        ));
+    #[test]
+    fn environment_tables_must_cover_every_declared_combination() {
+        let engine = engine();
+        let load = |metrics: &str| {
+            let base = load_token_base(
+                engine.engine(),
+                "tokens.rhai",
+                &format!(
+                    r#"fn tokens() {{ #{{ environment: #{{
+                        density: #{{ values: ["comfortable", "compact"], "default": "compact" }},
+                        size: #{{ values: ["sm", "md"], "default": "md" }} }},
+                        metrics: #{{ {metrics} }} }} }}"#
+                ),
+            )
+            .unwrap();
+            load_theme_with_layers(
+                engine.engine(),
+                Some(&base),
+                "theme.rhai",
+                PALETTE,
+                &ThemeTokenOverrides::default(),
+            )
+        };
+        let missing = |metrics: &str| match load(metrics) {
+            Err(ThemeError::IncompleteEnvironmentTable { token, missing }) => {
+                format!("{token}: {missing}")
+            }
+            other => panic!("expected an incomplete table, got {other:?}"),
+        };
+        // The default branch, a non-default branch, one combination of two axes.
+        assert_eq!(
+            missing(r#"row: by_env("density", #{ comfortable: px(32) })"#),
+            "metrics.row: density=compact"
+        );
+        assert_eq!(
+            missing(r#"row: by_env("density", #{ compact: px(28) })"#),
+            "metrics.row: density=comfortable"
+        );
+        assert_eq!(
+            missing(
+                r#"control: by_env(["density", "size"], #{
+                    comfortable: #{ sm: px(28), md: px(32) }, compact: #{ md: px(28) } })"#
+            ),
+            "metrics.control: density=compact, size=sm"
+        );
+        let complete = load(
+            r#"control: by_env(["density", "size"], #{
+                comfortable: #{ sm: px(28), md: px(32) }, compact: #{ sm: px(24), md: px(28) } })"#,
+        )
+        .unwrap();
+        assert_eq!(
+            complete.tokens.resolve_length(
+                Length::token("metrics.control").unwrap(),
+                &Environment::EMPTY
+            ),
+            Some(Length::Pixels(28.0))
+        );
+    }
+
+    #[test]
+    fn verbose_serialized_lengths_and_legacy_namespaces_remain_valid() {
+        let engine = engine();
+        let theme = load_theme_source(
+            engine.engine(),
+            "legacy.rhai",
+            r#"fn theme() { #{ family: "F", name: "N", mode: "light", tokens: #{
+                colors: #{ surface: 0xffffffff },
+                spacing: #{ sm: #{ unit: "pixels", value: 8.0 } },
+                radii: #{ sm: #{ unit: "pixels", value: 0.0 } },
+                namespaces: #{ brand: #{ tint: #{ type: "color", value: 0xff0000ff },
+                    stroke: #{ type: "length", value: #{ unit: "pixels", value: 2.0 } } } },
+            } } }"#,
+        )
+        .expect("legacy shape");
+        assert_eq!(
+            theme.resolve_length(Length::theme_spacing("sm").unwrap()),
+            Some(Length::Pixels(8.0))
+        );
+        assert_eq!(
+            theme.tokens.color("brand.tint"),
+            Some(Rgba8::from_rgba_hex(0xff00_00ff))
+        );
+        assert_eq!(
+            theme.resolve_length(Length::token("brand.stroke").unwrap()),
+            Some(Length::Pixels(2.0))
+        );
     }
 
     #[test]
     fn semantic_motion_tokens_default_validate_and_reject_invalid_physics() {
+        assert!(ThemeMotion::default().validate().is_ok());
         let mut motion = ThemeMotion::default();
-        motion.validate().unwrap();
-        assert_eq!(motion.durations_ms["normal"], 180);
-        motion.springs.get_mut("responsive").unwrap().mass = 0.0;
+        motion.springs.insert(
+            "bouncy".to_owned(),
+            ThemeMotionSpring {
+                stiffness: 0.0,
+                damping: 1.0,
+                mass: 1.0,
+            },
+        );
         assert!(matches!(
             motion.validate(),
             Err(ThemeError::InvalidMotionTokens)
         ));
-    }
-
-    #[test]
-    fn semantic_spacing_and_radius_lengths_resolve_without_recursion() {
-        let mut theme_family = family();
-        let variant = theme_family.variants.remove("Dark").unwrap();
-        assert_eq!(
-            variant.resolve_length(Length::ThemeSpacing(crate::SpacingToken::Sm)),
-            Some(Length::Pixels(8.0))
-        );
-        assert_eq!(
-            variant.resolve_length(Length::ThemeRadius(crate::RadiusToken::Md)),
-            Some(Length::Pixels(8.0))
-        );
-        let mut invalid = variant.tokens;
-        invalid.spacing.insert(
-            "sm".to_owned(),
-            Length::ThemeSpacing(crate::SpacingToken::Sm),
-        );
-        assert!(matches!(
-            invalid.validate(),
-            Err(ThemeError::NestedLengthToken(token)) if token == "sm"
-        ));
-    }
-
-    #[test]
-    fn host_token_overrides_are_partial_merged_and_validated() {
-        let mut variant = ThemeVariant {
-            family: "Default".to_owned(),
-            name: "Dark".to_owned(),
-            mode: ThemeMode::Dark,
-            tokens: tokens(0x0066_99ff),
-        };
-        let original_surface = variant.tokens.colors["surface"];
-        let overrides = ThemeTokenOverrides {
-            colors: BTreeMap::from([("accent".to_owned(), Rgba8::from_rgb_hex(0xff00_99ff))]),
-            radii: BTreeMap::from([
-                ("sm".to_owned(), Length::Pixels(3.0)),
-                ("md".to_owned(), Length::Pixels(6.0)),
-                ("lg".to_owned(), Length::Pixels(9.0)),
-            ]),
-            typography: ThemeTypographyOverrides {
-                family: Some("Host Sans".to_owned()),
-                roles: BTreeMap::from([("body".to_owned(), type_token(15.0, 21.0, 500))]),
-                ..ThemeTypographyOverrides::default()
-            },
-            motion: ThemeMotionOverrides {
-                durations_ms: BTreeMap::from([("normal".to_owned(), 240)]),
-                ..ThemeMotionOverrides::default()
-            },
-            namespaces: BTreeMap::from([(
-                "charts".to_owned(),
-                BTreeMap::from([(
-                    "axis".to_owned(),
-                    ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x7788_99ff)),
-                )]),
-            )]),
-            ..ThemeTokenOverrides::default()
-        };
-
-        overrides.merge_into(&mut variant);
-        variant.validate().unwrap();
-
-        assert_eq!(variant.tokens.colors["surface"], original_surface);
-        assert_eq!(
-            variant.tokens.colors["accent"],
-            Rgba8::from_rgb_hex(0xff00_99ff)
-        );
-        assert_eq!(variant.tokens.radii["md"], Length::Pixels(6.0));
-        assert_eq!(
-            variant.tokens.typography.family.as_deref(),
-            Some("Host Sans")
-        );
-        assert_eq!(
-            variant.tokens.typography.roles["body"],
-            type_token(15.0, 21.0, 500)
-        );
-        assert_eq!(variant.tokens.motion.durations_ms["normal"], 240);
-        assert_eq!(
-            variant.tokens.token("charts.axis"),
-            Some(&ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x7788_99ff)))
-        );
-    }
-
-    #[test]
-    fn invalid_host_token_override_rejects_the_candidate_theme() {
-        let variant = ThemeVariant {
-            family: "Default".to_owned(),
-            name: "Dark".to_owned(),
-            mode: ThemeMode::Dark,
-            tokens: tokens(0x0066_99ff),
-        };
-        let overrides = ThemeTokenOverrides {
-            radii: BTreeMap::from([("md".to_owned(), Length::Pixels(f64::NAN))]),
-            ..ThemeTokenOverrides::default()
-        };
-
-        let mut candidate = variant;
-        overrides.merge_into(&mut candidate);
-        assert!(matches!(
-            candidate.validate(),
-            Err(ThemeError::InvalidLength { token, .. }) if token == "md"
-        ));
-    }
-
-    #[test]
-    fn rhai_theme_source_is_typed_and_validated() {
-        let theme = ThemeVariant {
-            family: "Default".to_owned(),
-            name: "Dark".to_owned(),
-            mode: ThemeMode::Dark,
-            tokens: tokens(0x0066_99ff),
-        };
-        let dynamic = rhai::serde::to_dynamic(theme.clone()).unwrap();
-        let mut scope = Scope::new();
-        scope.push_dynamic("THEME", dynamic);
-        let engine = Engine::new();
-        let ast = engine
-            .compile_with_scope(&scope, "fn theme() { THEME }")
-            .unwrap();
-        let raw: Dynamic = engine.call_fn(&mut scope, &ast, "theme", ()).unwrap();
-        let decoded: ThemeVariant = rhai::serde::from_dynamic(&raw).unwrap();
-        decoded.validate().unwrap();
-        assert_eq!(decoded, theme);
     }
 }

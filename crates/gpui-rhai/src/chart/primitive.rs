@@ -33,6 +33,9 @@ use crate::{
 };
 
 const WHEEL_COMMIT_DELAY: Duration = Duration::from_millis(80);
+/// Pointer travel, in logical pixels, before a press in the plot becomes a
+/// brush; the default `threshold` of the drag primitives.
+const BRUSH_THRESHOLD: f64 = 4.0;
 
 #[derive(Clone, Debug)]
 enum ChartDataInput {
@@ -1362,7 +1365,6 @@ impl ChartEntity {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.brush = Some((start, start));
         let entity = cx.weak_entity();
         let update_entity = entity.clone();
         let update =
@@ -1371,7 +1373,9 @@ impl ChartEntity {
                     if chart.activity != ChartActivity::Active {
                         return false;
                     }
-                    if let Some(end) = chart.local_point(gesture.current()) {
+                    if gesture.moved()
+                        && let Some(end) = chart.local_point(gesture.current())
+                    {
                         chart.brush = Some((start, end));
                         cx.notify();
                     }
@@ -1385,12 +1389,21 @@ impl ChartEntity {
             };
         let finish_entity = entity.clone();
         let finish =
-            move |_: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
                 let _ = finish_entity.update(cx, |chart, cx| {
-                    if let Some((start, end)) = chart.brush.take()
-                        && chart.activity == ChartActivity::Active
-                    {
-                        chart.emit_brush(start, end, window, cx);
+                    let brush = chart.brush.take();
+                    if chart.activity == ChartActivity::Active {
+                        if gesture.moved() {
+                            if let Some((start, end)) = brush {
+                                chart.emit_brush(start, end, window, cx);
+                            }
+                        } else if let Some(mark) = chart.hit_mark_at(gesture.start())
+                            && mark.role == ChartMarkRole::Data
+                        {
+                            // A release before the threshold is a click: it
+                            // selects as it does without a brush.
+                            chart.emit_select(&mark, window, cx);
+                        }
                     }
                     cx.notify();
                 });
@@ -1412,7 +1425,8 @@ impl ChartEntity {
                 update,
                 finish,
                 cancel,
-            ),
+            )
+            .with_threshold(BRUSH_THRESHOLD),
             window,
             cx,
         );
@@ -3229,9 +3243,7 @@ fn typography_length_pixels(value: crate::Length, fallback: f64) -> f64 {
     match value {
         crate::Length::Pixels(value) => value,
         crate::Length::Rems(value) => value * 16.0,
-        crate::Length::Relative(_)
-        | crate::Length::ThemeSpacing(_)
-        | crate::Length::ThemeRadius(_) => fallback,
+        crate::Length::Relative(_) | crate::Length::Token(_) => fallback,
     }
 }
 
@@ -3297,7 +3309,9 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "spec".to_owned(),
-                ObjectField::required(ValueSchema::UiValue),
+                ObjectField::required(ValueSchema::UiValue).with_doc(
+                    "Typed chart description: series and their `encode`, regions, axes, legend, `brush`, annotations and links.",
+                ),
             ),
             (
                 "data".to_owned(),
@@ -3309,68 +3323,106 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                         },
                         ValueSchema::ChartData,
                     ],
-                }),
+                })
+                .with_doc(
+                    "Up to 10,000 inline row objects, or a `NativeChartData` handle from `ctx.get_native_chart_data` for large data.",
+                ),
             ),
             (
                 "key_dimension".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc(
+                    "Inline-row field whose value keys each datum across replacement, selection, focus and motion.",
+                ),
             ),
             (
                 "selected_keys".to_owned(),
                 ObjectField::optional(string_array.clone())
-                    .with_default(UiValue::Array(Vec::new())),
+                    .with_default(UiValue::Array(Vec::new()))
+                    .with_doc(
+                        "Datum keys drawn as selected; controlled, so update it from `select` or `brush_change` payloads.",
+                    ),
             ),
             (
                 "hidden_series".to_owned(),
-                ObjectField::optional(string_array).with_default(UiValue::Array(Vec::new())),
+                ObjectField::optional(string_array)
+                    .with_default(UiValue::Array(Vec::new()))
+                    .with_doc("Series keys to hide; controlled, so update it from `legend_change` payloads."),
             ),
             (
                 "zoom".to_owned(),
                 ObjectField::optional(ValueSchema::bounded_number(Some(0.5), Some(20.0)))
-                    .with_default(UiValue::Float(1.0)),
+                    .with_default(UiValue::Float(1.0))
+                    .with_doc(
+                        "Scalar camera zoom where 1 shows the whole domain; shorthand for `viewport` when one camera is enough.",
+                    ),
             ),
             (
                 "pan_x".to_owned(),
-                ObjectField::optional(ValueSchema::number()).with_default(UiValue::Float(0.0)),
+                ObjectField::optional(ValueSchema::number())
+                    .with_default(UiValue::Float(0.0))
+                    .with_doc("Scalar camera offset along x in logical plot pixels; goes with `zoom`."),
             ),
             (
                 "pan_y".to_owned(),
-                ObjectField::optional(ValueSchema::number()).with_default(UiValue::Float(0.0)),
+                ObjectField::optional(ValueSchema::number())
+                    .with_default(UiValue::Float(0.0))
+                    .with_doc("Scalar camera offset along y in logical plot pixels; goes with `zoom`."),
             ),
             (
                 "viewport".to_owned(),
-                ObjectField::optional(ValueSchema::UiValue).with_default(UiValue::Null),
+                ObjectField::optional(ValueSchema::UiValue)
+                    .with_default(UiValue::Null)
+                    .with_doc(
+                        "Controlled typed viewport, a cartesian axis window or a geo camera, or `()`; store `zoom_change`'s `viewport`.",
+                    ),
             ),
             (
                 "viewport_revision".to_owned(),
                 ObjectField::optional(ValueSchema::bounded_integer(Some(0), None))
-                    .with_default(UiValue::Integer(0)),
+                    .with_default(UiValue::Integer(0))
+                    .with_doc(
+                        "Revision of the last `zoom_change` you answered; write its `viewport_revision` back, also when rejecting it.",
+                    ),
             ),
             (
                 "on_select".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, the click counts on release, since a press that moves more than 4 pixels starts a brush instead.",
+                ),
             ),
             (
                 "on_zoom_change".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the proposed camera, typed `viewport` and `viewport_revision` when a wheel zoom or pan commits.",
+                ),
             ),
             (
                 "on_brush_change".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the brushed datum keys, references and rectangle when a brush drag ends; a press in the plot becomes a brush once the pointer moves more than 4 pixels.",
+                ),
             ),
             (
                 "on_legend_change".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with `#{ series_key, visible }` when a legend entry is clicked; `visible` is the requested new state.",
+                ),
             ),
             (
                 "on_annotation_activate".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called with the annotation's `key` and `label` when it is clicked or activated by Enter or Space.",
+                ),
             ),
         ]),
         events: BTreeMap::from([
             (
                 "select".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when a data mark is clicked or activated by Enter or Space; the payload identifies the datum and its value. With `spec.brush` set, a click is a press released before the pointer moves more than 4 pixels."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3409,6 +3461,10 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "zoom_change".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when a wheel zoom or a middle-button pan commits; the payload is the proposed camera and its new revision."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3439,6 +3495,10 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "brush_change".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when a brush drag ends; the payload lists the enclosed data and the rectangle in chart-local pixels."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3477,6 +3537,10 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "legend_change".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when a legend entry is clicked; the payload names the series and its requested visibility."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
@@ -3495,6 +3559,10 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "annotation_activate".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when an annotation is clicked or activated by Enter or Space; the payload is its `key` and `label`."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (

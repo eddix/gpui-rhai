@@ -490,6 +490,17 @@ network/geocoding, and exposes only compile-time trusted Rust transform,
 formatter, projection, and custom-series extensions. Graph/hierarchy/flow
 layouts and 3D/Globe are explicit later workstreams.
 
+Version `0.2.0` is the coordinated Runtime API 3 break that separates a neutral
+runtime from an optional design system. The runtime keeps no visual opinions:
+it resolves whatever tokens a project declares through environment axes. The
+official registry ships a design system for keyboard-first productivity tools:
+a token base (spacing, relationships, metrics, radius and typography resolved
+through density, size and corners), palettes that hold colors only, the
+official components rebuilt on one set of contracts, layouts and patterns,
+application profiles, a composition audit, and the Gallery as its acceptance
+application. The specification lives in `docs/design/`; an application may
+replace all of it with its own design.
+
 ## 15. Completion and acceptance
 
 The maintainer reviews one final delivery, not intermediate product states. The

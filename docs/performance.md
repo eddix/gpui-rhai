@@ -63,6 +63,51 @@ Run on a release build:
 cargo run --release -p gpui-rhai --example performance_probe
 ```
 
+## Frame cost
+
+GPUI lays out the whole window on every frame it draws, including frames that
+only repaint (hover, scrolling, a caret). Two rules keep that cheap:
+
+- **Stretched children have a definite width.** A child of a column that
+  stretches its children, and has no width of its own, is rendered with
+  `width: 100%`. Without it Taffy measures the child at its content width and
+  then lays it out again at the stretched width, and the two passes compound at
+  every nesting level: a `ListDetail` inside a page inside an `AppShell` took
+  28 ms per frame and takes 0.4 ms. The output is pixel-identical (verified on
+  all 57 baselines and 415 Gallery page renders).
+- **Nodes are shared.** `UiNode` is a copy-on-write handle: Rhai passes nodes
+  by value (variables, arrays, arguments), and copying subtrees was half of a
+  render. Cloning a node is now a reference-count increment.
+- **Host audits run after renders, not after frames.**
+  `ScriptViewHandle::committed_revision` advances only when a render commits;
+  the Gallery Host audits once per revision. Font enumeration for the
+  `unresolved-font` rule (about 100 ms on macOS) is cached and skipped when the
+  rule is off.
+
+`tests/native-keyboard/src/bin/gallery_profile.rs` measures the Gallery with the
+real renderer, offscreen: per interaction the Rhai work, the CPU frame time
+(`Window::draw`) and the audit, as p50 / p95.
+
+```sh
+cd tests/native-keyboard
+cargo run --release --bin gallery_profile -- 20
+GALLERY_PROFILE_PAGES=1 cargo run --release --bin gallery_profile -- 3   # per-page frame cost
+GALLERY_PROFILE_RHAI=view.rhai cargo run --release --bin gallery_profile # any view, all registry modules
+```
+
+Measured on an Apple Silicon Mac (release, 2026-10-05), before and after:
+
+| | Before | After |
+|---|---:|---:|
+| idle frame, Button page | 19.7 ms | 1.9 ms |
+| idle frame, `list_detail` page | 52.2 ms | under 2 ms |
+| audit per frame in the Gallery | 103 ms | not run (0.1 ms after a render) |
+| mount and first frame | 453 ms | 160 ms |
+| Rhai render, navigate to a page | 15 ms | 7.4 ms |
+| Rhai render, navigate to the 120-row data scene | 22 ms | 13 ms |
+| Rhai work per keystroke in a filter | 10.6 ms | 5.1 ms |
+| Rhai render, light/dark switch | 21 ms | 14 ms |
+
 ## Trusted Host execution policy
 
 Ordinary applications keep `DEFAULT_SCRIPT_OPERATION_LIMIT = 1_000_000` and

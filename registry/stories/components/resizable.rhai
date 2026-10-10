@@ -12,17 +12,12 @@ fn state_schema() { #{ fields: #{
         width: #{ type: "float", value: 300.0 }, height: #{ type: "float", value: 180.0 }
     } } },
     lock_ratio: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
-    last_handle: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "none" } },
 } } }
 
-fn resized(ctx, value) {
-    ctx.set_state("rect", #{ x:value.x, y:value.y, width:value.width, height:value.height });
-    ctx.set_state("last_handle", value.handle);
-}
+fn resized(ctx, value) { ctx.set_state("rect", value); }
 fn toggle_ratio(ctx, payload) { ctx.set_state("lock_ratio", !ctx.get_state("lock_ratio")); }
 fn reset_rect(ctx, payload) {
     ctx.set_state("rect", #{ x:48.0, y:36.0, width:300.0, height:180.0 });
-    ctx.set_state("last_handle", "none");
 }
 
 fn view(ctx) {
@@ -33,7 +28,7 @@ fn view(ctx) {
             button::Button(#{ text: if lock_ratio { "Unlock ratio" } else { "Lock 5:3 ratio" },
                 variant:"outline", on_click:Fn("toggle_ratio") }),
             button::Button(#{ text:"Reset rectangle", variant:"outline", on_click:Fn("reset_rect") }),
-            text(`x ${rect.x.round} · y ${rect.y.round} · ${rect.width.round} × ${rect.height.round} · ${ctx.get_state("last_handle")}`)
+            text(`x ${rect.x.round} · y ${rect.y.round} · ${rect.width.round} × ${rect.height.round}`)
                 .accessibility_role("status")
         ]).with_style(style().gap(theme_spacing("sm")).items_center()),
         resizable::Resizable(#{ key:"story-resizable", label:"Demo card", rect:rect,

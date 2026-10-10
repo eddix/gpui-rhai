@@ -11,9 +11,9 @@ use thiserror::Error;
 
 use crate::{
     AssetId, ColorResolver, ColorValue, ComponentStateSchema, EventSchema, Length,
-    NodeEventDispatcher, ObjectField, RadiusToken, Rgba8, SchemaDefinitionError,
-    SchemaValidationError, ScriptCallback, ScriptGeneration, SpacingToken, Style, UiEventHandler,
-    UiNode, UiValue, UiValueError, ValueSchema,
+    NodeEventDispatcher, ObjectField, Rgba8, SchemaDefinitionError, SchemaValidationError,
+    ScriptCallback, ScriptGeneration, Style, UiEventHandler, UiNode, UiValue, UiValueError,
+    ValueSchema,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -159,10 +159,10 @@ pub enum PrimitiveValue {
 /// concrete theme family.
 #[derive(Clone, Debug)]
 pub struct PrimitiveTheme {
+    tokens: Option<std::sync::Arc<crate::ThemeTokens>>,
     colors: BTreeMap<String, Rgba8>,
-    spacing: BTreeMap<SpacingToken, Length>,
-    radii: BTreeMap<RadiusToken, Length>,
-    typography: BTreeMap<String, crate::ResolvedTypography>,
+    environment: crate::Environment,
+    inherited_disabled: bool,
     direction: crate::TextDirection,
     locale: String,
     number: Option<crate::NumberMetadata>,
@@ -172,84 +172,13 @@ pub struct PrimitiveTheme {
     clock: crate::RuntimeClock,
 }
 
-pub(crate) const RUNTIME_THEME_COLOR_TOKENS: &[&str] = &[
-    "surface",
-    "surface_raised",
-    "surface_hover",
-    "text_primary",
-    "text_muted",
-    "accent",
-    "accent_hover",
-    "on_accent",
-    "danger",
-    "on_danger",
-    "warning",
-    "on_warning",
-    "success",
-    "on_success",
-    "border",
-    "focus_ring",
-    "selection",
-    "disabled",
-    "syntax.comment",
-    "syntax.string",
-    "syntax.number",
-    "syntax.keyword",
-    "syntax.function",
-    "syntax.type",
-    "syntax.variable",
-    "syntax.constant",
-    "syntax.operator",
-    "syntax.punctuation",
-    "syntax.tag",
-    "syntax.attribute",
-    "document.search_match",
-    "document.search_current",
-    "diff.left_only",
-    "diff.right_only",
-    "diff.modified",
-    "diff.inline_left",
-    "diff.inline_right",
-    "diff.gutter",
-    "diff.fold",
-    "charts.axis",
-    "charts.grid",
-    "charts.tooltip_surface",
-    "charts.tooltip_text",
-    "charts.positive",
-    "charts.negative",
-    "charts.selection",
-    "charts.map_missing",
-    "charts.crosshair",
-    "charts.palette_1",
-    "charts.palette_2",
-    "charts.palette_3",
-    "charts.palette_4",
-    "charts.palette_5",
-    "charts.palette_6",
-    "charts.palette_7",
-    "charts.palette_8",
-    "table.selection",
-];
-
-pub(crate) const RUNTIME_THEME_SPACING_TOKENS: &[SpacingToken] = &[
-    SpacingToken::Xxs,
-    SpacingToken::Xs,
-    SpacingToken::Sm,
-    SpacingToken::Md,
-    SpacingToken::Lg,
-];
-
-pub(crate) const RUNTIME_THEME_RADIUS_TOKENS: &[RadiusToken] =
-    &[RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg];
-
 impl Default for PrimitiveTheme {
     fn default() -> Self {
         Self {
+            tokens: None,
             colors: BTreeMap::new(),
-            spacing: BTreeMap::new(),
-            radii: BTreeMap::new(),
-            typography: BTreeMap::new(),
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
             direction: crate::TextDirection::LeftToRight,
             locale: "en".to_owned(),
             number: None,
@@ -298,9 +227,8 @@ impl PrimitiveTheme {
         )
     }
 
-    #[allow(clippy::too_many_lines)]
     pub(crate) fn capture_with_environment(
-        colors: &impl ColorResolver,
+        colors: &(impl ColorResolver + ?Sized),
         direction: crate::TextDirection,
         locale: &str,
         number: Option<&crate::NumberMetadata>,
@@ -308,34 +236,16 @@ impl PrimitiveTheme {
         motion_preference: crate::MotionPreference,
         motion_quality: crate::MotionQuality,
     ) -> Self {
+        let tokens = colors.token_set();
         Self {
-            colors: colors.color_snapshot(),
-            spacing: RUNTIME_THEME_SPACING_TOKENS
-                .iter()
-                .copied()
-                .filter_map(|token| {
-                    colors
-                        .resolve_length(Length::ThemeSpacing(token))
-                        .map(|value| (token, value))
-                })
-                .collect(),
-            radii: RUNTIME_THEME_RADIUS_TOKENS
-                .iter()
-                .copied()
-                .filter_map(|token| {
-                    colors
-                        .resolve_length(Length::ThemeRadius(token))
-                        .map(|value| (token, value))
-                })
-                .collect(),
-            typography: crate::REQUIRED_TYPOGRAPHY
-                .iter()
-                .filter_map(|role| {
-                    colors
-                        .resolve_typography(role)
-                        .map(|value| ((*role).to_owned(), value))
-                })
-                .collect(),
+            colors: if tokens.is_some() {
+                BTreeMap::new()
+            } else {
+                colors.color_snapshot()
+            },
+            tokens,
+            environment: colors.environment(),
+            inherited_disabled: false,
             direction,
             locale: locale.to_owned(),
             number: number.cloned(),
@@ -347,25 +257,43 @@ impl PrimitiveTheme {
     }
 
     #[must_use]
+    pub(crate) const fn with_inherited_disabled(mut self, disabled: bool) -> Self {
+        self.inherited_disabled = disabled;
+        self
+    }
+
+    #[must_use]
     pub fn color(&self, token: &str) -> Option<Rgba8> {
-        self.colors.get(token).copied()
+        match &self.tokens {
+            Some(tokens) => tokens.color(token),
+            None => self.colors.get(token).copied(),
+        }
     }
 
     #[must_use]
     pub fn resolve_color(&self, value: &ColorValue) -> Option<Rgba8> {
-        match value {
-            ColorValue::Literal(value) => Some(*value),
-            ColorValue::Token(token) => self.color(token),
-        }
+        value.resolve_with(&mut |token| self.color(token))
     }
 
     #[must_use]
     pub fn resolve_length(&self, value: Length) -> Option<Length> {
-        match value {
-            Length::ThemeSpacing(token) => self.spacing.get(&token).copied(),
-            Length::ThemeRadius(token) => self.radii.get(&token).copied(),
-            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(value),
+        match &self.tokens {
+            Some(tokens) => tokens.resolve_length(value, &self.environment),
+            None => (!value.is_theme_token()).then_some(value),
         }
+    }
+
+    /// The environment inherited by this primitive.
+    #[must_use]
+    pub const fn environment(&self) -> crate::Environment {
+        self.environment
+    }
+
+    /// Whether an ancestor disabled this subtree. Primitives treat it like
+    /// their own `disabled` prop.
+    #[must_use]
+    pub const fn inherited_disabled(&self) -> bool {
+        self.inherited_disabled
     }
 
     #[must_use]
@@ -405,25 +333,51 @@ impl PrimitiveTheme {
 
     #[must_use]
     pub fn typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
-        self.typography.get(role).cloned()
+        self.tokens
+            .as_ref()
+            .and_then(|tokens| tokens.resolve_typography(role, &self.environment))
     }
 }
 
 impl ColorResolver for PrimitiveTheme {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        self.resolve_color(color)
-    }
-
-    fn resolve_length(&self, length: Length) -> Option<Length> {
-        PrimitiveTheme::resolve_length(self, length)
+    fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+        self.color(token)
     }
 
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
-        self.colors.clone()
+        match &self.tokens {
+            Some(tokens) => tokens.color_snapshot(),
+            None => self.colors.clone(),
+        }
     }
 
-    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
-        self.typography(role)
+    fn environment(&self) -> crate::Environment {
+        self.environment
+    }
+
+    fn resolve_length_in(
+        &self,
+        length: Length,
+        environment: &crate::Environment,
+    ) -> Option<Length> {
+        match &self.tokens {
+            Some(tokens) => tokens.resolve_length(length, environment),
+            None => (!length.is_theme_token()).then_some(length),
+        }
+    }
+
+    fn resolve_typography_in(
+        &self,
+        role: &str,
+        environment: &crate::Environment,
+    ) -> Option<crate::ResolvedTypography> {
+        self.tokens
+            .as_ref()
+            .and_then(|tokens| tokens.resolve_typography(role, environment))
+    }
+
+    fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
+        self.tokens.clone()
     }
 
     fn resolve_motion(&self) -> crate::ThemeMotion {
@@ -850,6 +804,8 @@ pub struct PrimitiveContext {
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
     retained_node: Option<crate::NodeId>,
+    /// The focus handle of the node that hosts the primitive, if it has one.
+    focus_handle: Option<gpui::FocusHandle>,
 }
 
 /// A schema-checked semantic proposal produced by a native primitive policy.
@@ -924,7 +880,7 @@ impl PrimitiveContext {
             match handler {
                 UiEventHandler::Script(callback) => {
                     if let Some(dispatcher) = self.dispatcher.as_ref() {
-                        dispatcher.dispatch(callback.clone(), payload, None, window, cx);
+                        dispatcher.dispatch(callback.clone(), event, payload, None, window, cx);
                     }
                 }
                 UiEventHandler::Host(callback) => {
@@ -1090,6 +1046,8 @@ impl PrimitiveContext {
         self.interactions.drop_target_state(owner)
     }
 
+    // A drag source passes its press, threshold and both endings through unchanged.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn begin_application_drag(
         &self,
         spec: crate::interaction::ApplicationDragSpec,
@@ -1097,6 +1055,7 @@ impl PrimitiveContext {
         threshold: f64,
         on_end: impl Fn(crate::interaction::ApplicationDropResult, bool, &mut Window, &mut App)
         + 'static,
+        on_tap: Option<crate::interaction::TapHandler>,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -1107,6 +1066,7 @@ impl PrimitiveContext {
             spec,
             threshold,
             on_end,
+            on_tap,
         );
         self.interactions.begin(gesture, window, cx);
     }
@@ -1133,6 +1093,14 @@ impl PrimitiveContext {
         self.scroll_handles.clone()
     }
 
+    /// Whether the node hosting the primitive has keyboard focus.
+    #[must_use]
+    pub fn is_focused(&self, window: &Window) -> bool {
+        self.focus_handle
+            .as_ref()
+            .is_some_and(|handle| handle.is_focused(window))
+    }
+
     /// Read the last committed layout bounds for a primitive-owned element ref.
     #[must_use]
     pub fn element_bounds(
@@ -1143,6 +1111,18 @@ impl PrimitiveContext {
         self.dispatcher
             .as_ref()
             .and_then(|dispatcher| dispatcher.element_bounds(reference, cx))
+    }
+
+    /// This frame's hitbox of the node holding `reference`: hovered only where
+    /// the node is visible and nothing occluding sits above it.
+    pub(crate) fn element_hitbox(
+        &self,
+        reference: &crate::ElementRef,
+        cx: &App,
+    ) -> Option<gpui::HitboxId> {
+        self.dispatcher
+            .as_ref()
+            .and_then(|dispatcher| dispatcher.element_hitbox(reference, cx))
     }
 
     pub(crate) fn canvas_local_point(
@@ -1325,6 +1305,17 @@ impl fmt::Debug for PrimitiveRegistry {
 }
 
 impl PrimitiveRegistry {
+    /// The descriptors of every registered primitive, in id order.
+    #[must_use]
+    pub fn descriptors(&self) -> Vec<PrimitiveDescriptor> {
+        self.inner
+            .borrow()
+            .entries
+            .values()
+            .map(|entry| entry.descriptor.clone())
+            .collect()
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -1964,6 +1955,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             view_id: self.runtime.view_id,
             instance: None,
             retained_node: self.retained.as_ref().map(|(node, _)| *node),
+            focus_handle: self.focus_handle.clone(),
         };
         match registry.render_instance(
             self.node,
@@ -2260,34 +2252,36 @@ mod tests {
 
     struct TestTheme;
 
-    impl ColorResolver for TestTheme {
-        fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-            match color {
-                ColorValue::Token(token)
-                    if matches!(token.as_str(), "accent" | "selection" | "table.selection") =>
-                {
-                    Some(Rgba8::from_rgba_hex(0x1234_56ff))
-                }
-                _ => None,
-            }
-        }
-
-        fn resolve_length(&self, length: Length) -> Option<Length> {
-            match length {
-                Length::ThemeSpacing(SpacingToken::Xxs) => Some(Length::Pixels(2.0)),
-                Length::ThemeSpacing(SpacingToken::Sm) => Some(Length::Pixels(6.0)),
-                _ => None,
-            }
-        }
-
-        fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
-            (role == "body").then(|| crate::ResolvedTypography {
-                family: Some("JetBrains Mono".to_owned()),
-                fallbacks: vec!["PingFang SC".to_owned()],
-                size: Length::Pixels(12.0),
-                line_height: Length::Pixels(16.0),
-                weight: 400,
+    fn test_tokens() -> std::sync::Arc<crate::ThemeTokens> {
+        static TOKENS: std::sync::OnceLock<std::sync::Arc<crate::ThemeTokens>> =
+            std::sync::OnceLock::new();
+        TOKENS
+            .get_or_init(|| {
+                let engine = crate::RuntimeEngine::new();
+                crate::load_theme_source(
+                    engine.engine(),
+                    "test.rhai",
+                    r#"fn theme() { #{ family: "T", name: "T", mode: "dark", tokens: #{
+                        colors: #{ accent: 0x123456ff, selection: 0x123456ff,
+                            "table.selection": 0x123456ff },
+                        spacing: #{ xxs: px(2), sm: px(6) },
+                        typography: #{ roles: #{ body: #{ size: px(12), line_height: px(16),
+                            weight: 400, family: "JetBrains Mono", fallbacks: ["PingFang SC"] } } },
+                    } } }"#,
+                )
+                .expect("test theme")
+                .tokens
             })
+            .clone()
+    }
+
+    impl ColorResolver for TestTheme {
+        fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+            test_tokens().color(token)
+        }
+
+        fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
+            Some(test_tokens())
         }
     }
 
@@ -2325,11 +2319,11 @@ mod tests {
             Some(Rgba8::from_rgba_hex(0xaabb_ccdd))
         );
         assert_eq!(
-            theme.resolve_length(Length::ThemeSpacing(SpacingToken::Sm)),
+            theme.resolve_length(Length::theme_spacing("sm").unwrap()),
             Some(Length::Pixels(6.0))
         );
         assert_eq!(
-            theme.resolve_length(Length::ThemeSpacing(SpacingToken::Xxs)),
+            theme.resolve_length(Length::theme_spacing("xxs").unwrap()),
             Some(Length::Pixels(2.0))
         );
         assert_eq!(
@@ -2345,11 +2339,8 @@ mod tests {
         )
         .unwrap();
         let captured = PrimitiveTheme::capture(&loaded);
-        assert_eq!(
-            captured.color("table.selection"),
-            loaded.tokens.color("table.selection")
-        );
-        assert!(captured.color("table.selection").is_some());
+        assert_eq!(captured.color("surface"), loaded.tokens.color("surface"));
+        assert!(captured.color("surface").is_some());
     }
 
     fn descriptor() -> PrimitiveDescriptor {
@@ -2369,6 +2360,7 @@ mod tests {
             events: BTreeMap::from([(
                 "change".to_owned(),
                 EventSchema {
+                    doc: None,
                     payload: ValueSchema::string(),
                 },
             )]),
@@ -2610,6 +2602,7 @@ mod tests {
             view_id: "test".to_owned(),
             instance: None,
             retained_node: None,
+            focus_handle: None,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

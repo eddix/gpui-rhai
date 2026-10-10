@@ -48,14 +48,17 @@ impl Fixture {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        // Parallel tests can read the same clock value; a counter keeps roots unique.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
-            "gpui-rhai-host-policy-{}-{suffix}",
+            "gpui-rhai-host-policy-{}-{suffix}-{sequence}",
             std::process::id()
         ));
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("main.rhai"), source).unwrap();
         std::fs::write(root.join("theme.rhai"), THEME).unwrap();
-        std::fs::write(root.join("app.toml"), "entry = \"main\"\nruntime_api = 2\n").unwrap();
+        std::fs::write(root.join("app.toml"), "entry = \"main\"\nruntime_api = 3\n").unwrap();
         Self { root }
     }
     fn builder(&self) -> FileScriptView {
@@ -81,6 +84,7 @@ fn embedded(source: &str) -> EmbeddedScriptView {
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         THEME,
     )
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
 }
 
 fn mount_result(

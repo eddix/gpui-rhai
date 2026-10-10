@@ -8,7 +8,7 @@ const PANEL: &str = r##"
 define_component(#{
     metadata: #{
         id: "components/art_panel", "export": "ArtPanel", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{}
     },
     schema: #{
@@ -102,6 +102,7 @@ fn showcase_view() -> EmbeddedScriptView {
         ),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME)
+        .token_base(include_str!("../../../registry/tokens.rhai"))
 }
 
 fn main() {

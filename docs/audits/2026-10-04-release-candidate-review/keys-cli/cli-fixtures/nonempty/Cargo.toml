@@ -1,9 +1,0 @@
-[package]
-name="audit-rc-embed-nonempty"
-version="0.0.0"
-edition="2024"
-publish=false
-[workspace]
-[dependencies]
-gpui-rhai={path="../../../../../../crates/gpui-rhai",features=["charts"]}
-gpui={package="gpui-pre",version="=0.3.7",default-features=false,features=["font-kit","test-support"]}

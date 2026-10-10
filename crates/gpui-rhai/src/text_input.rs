@@ -123,9 +123,18 @@ pub(crate) fn native_typography(
     role: &str,
     window: &Window,
 ) -> Result<NativeTypography, String> {
-    let typography = theme
-        .typography(role)
-        .ok_or_else(|| format!("native text primitive cannot resolve typography role `{role}`"))?;
+    // Without a token base the role is unknown; fall back to the platform text
+    // size (the window rem) so native text works without a design language.
+    let Some(typography) = theme.typography(role) else {
+        let font_size = window.rem_size();
+        return Ok(NativeTypography {
+            family: None,
+            fallbacks: Vec::new(),
+            font_size,
+            line_height: (font_size * 1.25).round(),
+            weight: 400,
+        });
+    };
     Ok(NativeTypography {
         family: typography.family,
         fallbacks: typography.fallbacks,
@@ -157,9 +166,7 @@ fn native_length(
             .parse::<f32>()
             .map(|value| rem_size * value)
             .map_err(|_| format!("typography `{role}.{field}` cannot fit native f32 rems")),
-        crate::Length::Relative(_)
-        | crate::Length::ThemeSpacing(_)
-        | crate::Length::ThemeRadius(_) => Err(format!(
+        crate::Length::Relative(_) | crate::Length::Token(_) => Err(format!(
             "typography `{role}.{field}` must resolve to pixels or rems"
         )),
     }
@@ -198,7 +205,7 @@ impl TextInputEntity {
         callbacks: TextInputCallbacks,
         cx: &mut Context<Self>,
     ) {
-        self.buffer.set_controlled(&config.value);
+        sync_controlled(&mut self.buffer, &config.value);
         self.focus = self.focus.clone().tab_stop(!config.disabled);
         self.placeholder = config.placeholder.clone().into();
         self.disabled = config.disabled;
@@ -427,8 +434,13 @@ impl EntityInputHandler for TextInputEntity {
             .map(|range| self.buffer.range_to_utf16(range))
     }
 
-    fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
+    fn unmark_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let was_marked = self.buffer.marked().is_some();
         self.buffer.unmark();
+        if was_marked {
+            self.emit_change(window, cx);
+            cx.notify();
+        }
     }
 
     fn replace_text_in_range(
@@ -451,15 +463,15 @@ impl EntityInputHandler for TextInputEntity {
         range_utf16: Option<Range<usize>>,
         text: &str,
         selected_utf16: Option<Range<usize>>,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.disabled || self.read_only {
             return;
         }
+        // Composition steps only show in the field; `change` waits for the commit.
         self.buffer
             .replace_and_mark(range_utf16.as_ref(), text, selected_utf16);
-        self.emit_change(window, cx);
         cx.notify();
     }
 
@@ -924,6 +936,14 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
     }
 }
 
+/// Applies the controlled value unless IME composition is in progress, so a
+/// re-render with the last committed value keeps the marked text.
+fn sync_controlled(buffer: &mut TextBuffer, value: &str) {
+    if buffer.marked().is_none() {
+        buffer.set_controlled(value);
+    }
+}
+
 fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
     let change_events = events.clone();
     let submit_events = events.clone();
@@ -933,9 +953,12 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
         change: Some(Rc::new(move |value, window, cx| {
             let _ = change_events.emit("change", UiValue::String(value), window, cx);
         })),
-        submit: Some(Rc::new(move |value, window, cx| {
-            let _ = submit_events.emit("submit", UiValue::String(value), window, cx);
-        })),
+        // Without a submit handler the field leaves Enter to its ancestors.
+        submit: events.observes("submit").then(|| {
+            Rc::new(move |value, window: &mut Window, cx: &mut App| {
+                let _ = submit_events.emit("submit", UiValue::String(value), window, cx);
+            }) as TextValueHandler
+        }),
         focus: Some(Rc::new(move |window, cx| {
             let _ = focus_events.emit("focus", UiValue::Null, window, cx);
         })),
@@ -952,6 +975,7 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
 ///
 /// Panics only if the static built-in primitive ID becomes invalid.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One declarative list of documented props and events.
 pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
     let optional_callback = || ObjectField::optional(ValueSchema::optional(ValueSchema::Callback));
     PrimitiveDescriptor {
@@ -960,60 +984,96 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
         props: BTreeMap::from([
             (
                 "value".to_owned(),
-                ObjectField::required(ValueSchema::string()),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "The field's text; controlled, so store each `change` payload here or the next render restores the old text; text still being composed with an IME stays until it commits.",
+                ),
             ),
             (
                 "placeholder".to_owned(),
-                ObjectField::optional(ValueSchema::optional(ValueSchema::string())),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::string()))
+                    .with_doc("Hint text shown dimmed while `value` is empty."),
             ),
             (
                 "disabled".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Blocks focus, clicks and edits and dims the field."),
             ),
             (
                 "read_only".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Keeps focus, selection and copy but blocks every edit."),
             ),
             (
                 "autofocus".to_owned(),
-                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(false))
+                    .with_doc("Focuses the field once when it first mounts, unless it is disabled."),
             ),
             (
                 "typography".to_owned(),
-                ObjectField::required(ValueSchema::String {
-                    allowed: crate::REQUIRED_TYPOGRAPHY
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                }),
+                ObjectField::required(ValueSchema::string()).with_doc(
+                    "Theme typography role, such as `control`, that sets the font family, size, weight and line height.",
+                ),
             ),
-            ("on_change".to_owned(), optional_callback()),
-            ("on_submit".to_owned(), optional_callback()),
-            ("on_focus".to_owned(), optional_callback()),
-            ("on_blur".to_owned(), optional_callback()),
+            (
+                "on_change".to_owned(),
+                optional_callback().with_doc(
+                    "Called with the full new text after each edit, paste, cut, undo, redo or committed IME composition.",
+                ),
+            ),
+            (
+                "on_submit".to_owned(),
+                optional_callback().with_doc(
+                    "Called with the current text when Enter is pressed in an enabled field; without it, Enter reaches the field's ancestors.",
+                ),
+            ),
+            (
+                "on_focus".to_owned(),
+                optional_callback().with_doc("Called when the field gains keyboard focus."),
+            ),
+            (
+                "on_blur".to_owned(),
+                optional_callback().with_doc("Called when the field loses keyboard focus."),
+            ),
         ]),
         events: BTreeMap::from([
             (
                 "change".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted after each edit, undo and redo and when IME composition commits, not during it; the payload is the full new text."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::string(),
                 },
             ),
             (
                 "submit".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when Enter is pressed in an enabled field; the payload is the current text."
+                            .to_owned(),
+                    ),
                     payload: ValueSchema::string(),
                 },
             ),
             (
                 "focus".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when the field gains keyboard focus; the payload is `()`.".to_owned(),
+                    ),
                     payload: ValueSchema::Null,
                 },
             ),
             (
                 "blur".to_owned(),
                 EventSchema {
+                    doc: Some(
+                        "Emitted when the field loses keyboard focus; the payload is `()`.".to_owned(),
+                    ),
                     payload: ValueSchema::Null,
                 },
             ),
@@ -1072,5 +1132,20 @@ mod tests {
         buffer.replace(None, "日本");
         assert_eq!(buffer.content(), "日本");
         assert!(buffer.marked().is_none());
+    }
+
+    #[test]
+    fn controlled_render_during_ime_composition_keeps_the_marked_text() {
+        let mut buffer = TextBuffer::new("a");
+        buffer.move_to(1);
+        buffer.replace_and_mark(None, "に", Some(1..1));
+        sync_controlled(&mut buffer, "a");
+        assert_eq!(buffer.content(), "aに");
+        assert_eq!(buffer.marked(), Some(&(1..4)));
+        buffer.replace(None, "日本");
+        sync_controlled(&mut buffer, "a日本");
+        assert_eq!(buffer.content(), "a日本");
+        sync_controlled(&mut buffer, "b");
+        assert_eq!(buffer.content(), "b");
     }
 }

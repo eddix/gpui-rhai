@@ -2,57 +2,74 @@
 {
   "id": "components/draggable",
   "export": "Draggable",
-  "version": "0.1.8",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "version": "0.2.0",
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [],
+  "environment": []
 }
 */
 // Controlled in-window positioning. Native pointer movement updates only
 // optional translation signals; release proposes one final {x,y} value.
-// Props: key, label, position, content, handle, axes, contain, threshold,
-// snap_x, snap_y, keyboard_step, disabled, on_move.
-// Events: move({x,y}) proposes one complete controlled position.
 // State: only native pointer preview; application position remains controlled.
-// Parts: root, surface, handle, content, interaction.
 // Example: Draggable(#{ key:"card", label:"Move card", position:#{x:0,y:0},
 //     handle:text("Move"), content:text("Body"), on_move:Fn("moved") })
 
 define_component(#{
-    metadata: #{ id: "components/draggable", "export": "Draggable", version: "0.1.8",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/draggable", "export": "Draggable", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [],
+        environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Accessible name of the movable object." },
             position: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
-                x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
-                y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
-            } }, required: true, sensitive: false },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            handle: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
+                x: #{ schema: #{ type: "number", min: -1000000.0, max: 1000000.0 }, required: true,
+                    sensitive: false, doc: "Distance from the root's left edge, in logical pixels." },
+                y: #{ schema: #{ type: "number", min: -1000000.0, max: 1000000.0 }, required: true,
+                    sensitive: false, doc: "Distance from the root's top edge, in logical pixels." },
+            } }, required: true, sensitive: false,
+                doc: "Top-left corner of the object in the root box; the caller stores the `move` payload and passes it back." },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
+                doc: "Body of the object, below `handle` when there is one." },
+            handle: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Node above `content` that alone starts a drag; without it the whole object does." },
             axes: #{ schema: #{ type: "string", allowed: ["both", "horizontal", "vertical"] },
-                required: false, sensitive: false, "default": #{ type: "string", value: "both" } },
+                required: false, sensitive: false, "default": #{ type: "string", value: "both" },
+                doc: "Axes the object moves along, by pointer and by arrow keys." },
             contain: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true } },
+                "default": #{ type: "bool", value: true },
+                doc: "Keeps the object inside the root box; while `position` lies outside it, a drag does not start." },
             threshold: #{ schema: #{ type: "number", min: 0.0, max: 64.0 }, required: false,
-                sensitive: false, "default": #{ type: "float", value: 4.0 } },
+                sensitive: false, "default": #{ type: "float", value: 4.0 },
+                doc: "Pointer travel in logical pixels before a press becomes a drag." },
             snap_x: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0 } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Grid step in logical pixels that a proposed `x` rounds to, for drags and arrow keys." },
             snap_y: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0 } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Grid step in logical pixels that a proposed `y` rounds to, for drags and arrow keys." },
             keyboard_step: #{ schema: #{ type: "number", exclusive_min: 0.0, max: 512.0 },
-                required: false, sensitive: false, "default": #{ type: "float", value: 8.0 } },
+                required: false, sensitive: false, "default": #{ type: "float", value: 8.0 },
+                doc: "Logical pixels one arrow-key press moves the object; Shift moves four times as far. With a larger snap step, a press moves to the next grid line." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: false },
+                doc: "Ignores pointer and keyboard input and removes the object from the tab order." },
             on_move: #{ schema: #{ type: "optional", value: #{ type: "callback" } },
-                required: false, sensitive: false },
+                required: false, sensitive: false,
+                doc: "Called with the proposed `{x, y}` when a drag ends or an arrow key moves the object." },
         },
         state: #{ fields: #{} },
         events: #{ move: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
-            x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
-            y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
-        } } } },
+            x: #{ schema: #{ type: "number" }, required: true, sensitive: false,
+                doc: "Proposed distance from the root's left edge, in logical pixels." },
+            y: #{ schema: #{ type: "number" }, required: true, sensitive: false,
+                doc: "Proposed distance from the root's top edge, in logical pixels." },
+        } },
+            doc: "Emitted when a drag ends or an arrow key moves the object; the payload is one complete next `position`." } },
         slots: #{}, parts: ["root", "surface", "handle", "content", "interaction"],
     },
     render: Fn("render_Draggable")

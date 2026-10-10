@@ -3,22 +3,24 @@
   "id": "motion/text_reveal",
   "export": "TextReveal",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
 */
 // Grapheme-safe native text reveal. Rhai builds spans once; Rust samples opacity.
-// Props: key and text. State: stateless. Emits no events.
+// State: stateless. Emits no events.
 // Example: TextReveal(#{ key: "hero", text: "Hello" })
 
 define_component(#{
     metadata: #{ id: "motion/text_reveal", "export": "TextReveal", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
-            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            text: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Motion identity of the reveal; keep it stable across renders." },
+            text: #{ schema: #{ type: "string" }, required: true, sensitive: false,
+                doc: "Text revealed one grapheme cluster at a time, with a `tight` stagger, in `title` typography." },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
     },
