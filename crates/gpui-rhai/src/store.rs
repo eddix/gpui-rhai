@@ -149,14 +149,15 @@ impl StoreRegistry {
         field: &str,
     ) -> Result<UiValue, StoreError> {
         self.read_dependency(
-            &crate::read_dependency::ReadDependency::component(reader),
+            Some(&crate::read_dependency::ReadDependency::component(reader)),
             store,
             field,
         )
     }
+    /// Read a field, subscribing `reader` when there is one.
     pub(crate) fn read_dependency(
         &mut self,
-        reader: &crate::read_dependency::ReadDependency,
+        reader: Option<&crate::read_dependency::ReadDependency>,
         store: &StoreId,
         field: &str,
     ) -> Result<UiValue, StoreError> {
@@ -171,14 +172,16 @@ impl StoreRegistry {
                 store: store.clone(),
                 field: field.to_owned(),
             })?;
-        Rc::make_mut(&mut self.readers)
-            .entry(StoreField {
-                store: store.clone(),
-                field: field.to_owned(),
-                path: None,
-            })
-            .or_default()
-            .insert(reader.clone());
+        if let Some(reader) = reader {
+            Rc::make_mut(&mut self.readers)
+                .entry(StoreField {
+                    store: store.clone(),
+                    field: field.to_owned(),
+                    path: None,
+                })
+                .or_default()
+                .insert(reader.clone());
+        }
         Ok(value)
     }
 
@@ -195,15 +198,16 @@ impl StoreRegistry {
         path: &UiValuePath,
     ) -> Result<UiValue, StoreError> {
         self.read_path_dependency(
-            &crate::read_dependency::ReadDependency::component(reader),
+            Some(&crate::read_dependency::ReadDependency::component(reader)),
             store,
             field,
             path,
         )
     }
+    /// Read one nested path, subscribing `reader` to it when there is one.
     pub(crate) fn read_path_dependency(
         &mut self,
-        reader: &crate::read_dependency::ReadDependency,
+        reader: Option<&crate::read_dependency::ReadDependency>,
         store: &StoreId,
         field: &str,
         path: &UiValuePath,
@@ -220,14 +224,16 @@ impl StoreRegistry {
             })?
             .get_path(path)?
             .clone();
-        Rc::make_mut(&mut self.readers)
-            .entry(StoreField {
-                store: store.clone(),
-                field: field.to_owned(),
-                path: Some(path.clone()),
-            })
-            .or_default()
-            .insert(reader.clone());
+        if let Some(reader) = reader {
+            Rc::make_mut(&mut self.readers)
+                .entry(StoreField {
+                    store: store.clone(),
+                    field: field.to_owned(),
+                    path: Some(path.clone()),
+                })
+                .or_default()
+                .insert(reader.clone());
+        }
         Ok(value)
     }
 

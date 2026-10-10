@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use rhai::{
-    Array, CustomType, Engine, EvalAltResult, FLOAT, FuncRegistration, ImmutableString, Position,
-    TypeBuilder,
+    Array, CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FuncRegistration, INT,
+    ImmutableString, Position, TypeBuilder,
 };
 use thiserror::Error;
 
@@ -192,18 +192,48 @@ impl CustomType for CanvasCommand {
                     .translate(x, y)
                     .map_err(|error| Box::new(canvas_runtime_error(&error)))
             })
+            .with_fn(
+                "translate",
+                |command: &mut Self, x: Dynamic, y: Dynamic| -> Result<Self, Box<EvalAltResult>> {
+                    command
+                        .clone()
+                        .translate(
+                            number("path.translate_x", &x)?,
+                            number("path.translate_y", &y)?,
+                        )
+                        .map_err(|error| Box::new(canvas_runtime_error(&error)))
+                },
+            )
             .with_fn("scale", |command: &mut Self, value: FLOAT| {
                 command
                     .clone()
                     .scale(value)
                     .map_err(|error| Box::new(canvas_runtime_error(&error)))
             })
+            .with_fn(
+                "scale",
+                |command: &mut Self, value: INT| -> Result<Self, Box<EvalAltResult>> {
+                    command
+                        .clone()
+                        .scale(number("path.scale", &Dynamic::from_int(value))?)
+                        .map_err(|error| Box::new(canvas_runtime_error(&error)))
+                },
+            )
             .with_fn("rotate", |command: &mut Self, degrees: FLOAT| {
                 command
                     .clone()
                     .rotate(degrees)
                     .map_err(|error| Box::new(canvas_runtime_error(&error)))
             })
+            .with_fn(
+                "rotate",
+                |command: &mut Self, degrees: INT| -> Result<Self, Box<EvalAltResult>> {
+                    command
+                        .clone()
+                        .rotate(number("path.rotate", &Dynamic::from_int(degrees))?)
+                        .map_err(|error| Box::new(canvas_runtime_error(&error)))
+                },
+            )
             .with_fn(
                 "clip_rect",
                 |command: &mut Self, x: FLOAT, y: FLOAT, width: FLOAT, height: FLOAT| {
@@ -212,8 +242,37 @@ impl CustomType for CanvasCommand {
                         .clip_rect(x, y, width, height)
                         .map_err(|error| Box::new(canvas_runtime_error(&error)))
                 },
+            )
+            .with_fn(
+                "clip_rect",
+                |command: &mut Self,
+                 x: Dynamic,
+                 y: Dynamic,
+                 width: Dynamic,
+                 height: Dynamic|
+                 -> Result<Self, Box<EvalAltResult>> {
+                    command
+                        .clone()
+                        .clip_rect(
+                            number("path.clip.x", &x)?,
+                            number("path.clip.y", &y)?,
+                            number("path.clip.width", &width)?,
+                            number("path.clip.height", &height)?,
+                        )
+                        .map_err(|error| Box::new(canvas_runtime_error(&error)))
+                },
             );
     }
+}
+
+/// One numeric argument of a Canvas function, an integer or a float.
+fn number(field: &'static str, value: &Dynamic) -> Result<FLOAT, Box<EvalAltResult>> {
+    crate::value::script_number(value).ok_or_else(|| {
+        Box::new(canvas_runtime_error(&format!(
+            "{field} must be a number, got {}",
+            value.type_name()
+        )))
+    })
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1249,6 +1308,167 @@ pub(crate) fn register_canvas_api(engine: &mut Engine) {
     FuncRegistration::new("canvas_scene")
         .in_global_namespace()
         .register_into_engine(engine, canvas_scene);
+    register_mixed_number_canvas_api(engine);
+}
+
+/// Overloads that take each coordinate, size and width as an integer or a
+/// float, so `canvas_rect("r", 0, 0, 10, 10, fill)` works; an all-float call
+/// still resolves to the typed function.
+#[allow(clippy::too_many_lines)]
+fn register_mixed_number_canvas_api(engine: &mut Engine) {
+    FuncRegistration::new("canvas_rect")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |key: ImmutableString,
+             x: Dynamic,
+             y: Dynamic,
+             width: Dynamic,
+             height: Dynamic,
+             fill: ColorValue|
+             -> Result<CanvasCommand, Box<EvalAltResult>> {
+                canvas_rect(
+                    key,
+                    number("rect.x", &x)?,
+                    number("rect.y", &y)?,
+                    number("rect.width", &width)?,
+                    number("rect.height", &height)?,
+                    fill,
+                )
+            },
+        );
+    FuncRegistration::new("canvas_circle")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |key: ImmutableString,
+             center_x: Dynamic,
+             center_y: Dynamic,
+             radius: Dynamic,
+             fill: ColorValue|
+             -> Result<CanvasCommand, Box<EvalAltResult>> {
+                canvas_circle(
+                    key,
+                    number("circle.center_x", &center_x)?,
+                    number("circle.center_y", &center_y)?,
+                    number("circle.radius", &radius)?,
+                    fill,
+                )
+            },
+        );
+    FuncRegistration::new("canvas_line")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |key: ImmutableString,
+             from_x: Dynamic,
+             from_y: Dynamic,
+             to_x: Dynamic,
+             to_y: Dynamic,
+             width: Dynamic,
+             color: ColorValue|
+             -> Result<CanvasCommand, Box<EvalAltResult>> {
+                canvas_line(
+                    key,
+                    number("line.from_x", &from_x)?,
+                    number("line.from_y", &from_y)?,
+                    number("line.to_x", &to_x)?,
+                    number("line.to_y", &to_y)?,
+                    number("line.width", &width)?,
+                    color,
+                )
+            },
+        );
+    FuncRegistration::new("path_move")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |x: Dynamic, y: Dynamic| -> Result<CanvasPathSegment, Box<EvalAltResult>> {
+                path_move(number("path.move.x", &x)?, number("path.move.y", &y)?)
+            },
+        );
+    FuncRegistration::new("path_line")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |x: Dynamic, y: Dynamic| -> Result<CanvasPathSegment, Box<EvalAltResult>> {
+                path_line(number("path.line.x", &x)?, number("path.line.y", &y)?)
+            },
+        );
+    FuncRegistration::new("path_quadratic")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |x: Dynamic,
+             y: Dynamic,
+             control_x: Dynamic,
+             control_y: Dynamic|
+             -> Result<CanvasPathSegment, Box<EvalAltResult>> {
+                path_quadratic(
+                    number("path.quadratic.x", &x)?,
+                    number("path.quadratic.y", &y)?,
+                    number("path.quadratic.control_x", &control_x)?,
+                    number("path.quadratic.control_y", &control_y)?,
+                )
+            },
+        );
+    FuncRegistration::new("path_cubic")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |x: Dynamic,
+             y: Dynamic,
+             control_a_x: Dynamic,
+             control_a_y: Dynamic,
+             control_b_x: Dynamic,
+             control_b_y: Dynamic|
+             -> Result<CanvasPathSegment, Box<EvalAltResult>> {
+                path_cubic(
+                    number("path.cubic.x", &x)?,
+                    number("path.cubic.y", &y)?,
+                    number("path.cubic.control_a_x", &control_a_x)?,
+                    number("path.cubic.control_a_y", &control_a_y)?,
+                    number("path.cubic.control_b_x", &control_b_x)?,
+                    number("path.cubic.control_b_y", &control_b_y)?,
+                )
+            },
+        );
+    FuncRegistration::new("canvas_stroke_path")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |key: ImmutableString,
+             segments: Array,
+             width: INT,
+             color: ColorValue|
+             -> Result<CanvasCommand, Box<EvalAltResult>> {
+                canvas_stroke_path(
+                    key,
+                    segments,
+                    number("path.stroke_width", &Dynamic::from_int(width))?,
+                    color,
+                )
+            },
+        );
+    FuncRegistration::new("canvas_morph_stroke_path")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |key: ImmutableString,
+             from: Array,
+             to: Array,
+             width: INT,
+             color: ColorValue|
+             -> Result<CanvasCommand, Box<EvalAltResult>> {
+                canvas_morph_stroke_path(
+                    key,
+                    from,
+                    to,
+                    number("path.stroke_width", &Dynamic::from_int(width))?,
+                    color,
+                )
+            },
+        );
 }
 
 #[cfg(test)]
@@ -1317,6 +1537,61 @@ mod tests {
                     r#"canvas_fill_path("bad", [path_line(0.0, 0.0), path_close()], color("red"))"#
                 )
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn numeric_arguments_take_integers_and_floats_in_any_mix() {
+        let mut engine = Engine::new();
+        crate::style::register_style_api(&mut engine);
+        register_canvas_api(&mut engine);
+        let scene = engine
+            .eval::<CanvasScene>(
+                r#"
+                    canvas_scene([
+                        canvas_rect("rect", 0, 0, 10, 10.5, color("red")),
+                        canvas_circle("circle", 4, 4.0, 2, color("red")),
+                        canvas_line("line", 0, 0, 10, 10, 1, color("red")),
+                        canvas_stroke_path("path", [
+                            path_move(0, 0), path_line(10, 0.5),
+                            path_quadratic(20, 0, 15, 5), path_cubic(30, 0, 22, 4, 28, 4)
+                        ], 2, color("red"))
+                            .translate(1, 2.5).scale(2).rotate(90).clip_rect(0, 0, 40, 40),
+                        canvas_morph_stroke_path("morph", [path_move(0, 0), path_line(4, 4)],
+                            [path_move(0, 0), path_line(8, 0)], 1, color("red")),
+                    ])
+                "#,
+            )
+            .unwrap();
+        let [
+            CanvasCommand::Rect { height, .. },
+            CanvasCommand::Circle { radius, .. },
+            CanvasCommand::Line { width, .. },
+            CanvasCommand::Path {
+                segments,
+                transform,
+                clip,
+                ..
+            },
+            CanvasCommand::MorphPath { .. },
+        ] = scene.commands()
+        else {
+            panic!("unexpected commands: {:?}", scene.commands());
+        };
+        assert!((height - 10.5).abs() < f64::EPSILON);
+        assert!((radius - 2.0).abs() < f64::EPSILON);
+        assert!((width - 1.0).abs() < f64::EPSILON);
+        assert_eq!(segments.len(), 4);
+        assert!((transform.translate_y - 2.5).abs() < f64::EPSILON);
+        assert!((transform.scale - 2.0).abs() < f64::EPSILON);
+        assert!((transform.rotate_degrees - 90.0).abs() < f64::EPSILON);
+        assert!(clip.is_some());
+        let error = engine
+            .eval::<CanvasCommand>(r#"canvas_rect("bad", "0", 0, 10, 10, color("red"))"#)
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("rect.x must be a number"),
+            "{error}"
         );
     }
 

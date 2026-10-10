@@ -1789,24 +1789,28 @@ impl NativeCollectionRegistry {
         track_missing: bool,
     ) -> Result<NativeCollection, NativeCollectionError> {
         self.read_dependency(
-            &crate::read_dependency::ReadDependency::component(reader),
+            Some(&crate::read_dependency::ReadDependency::component(reader)),
             name,
             track_missing,
         )
     }
 
+    /// Read a collection, subscribing `reader` when there is one.
     pub(crate) fn read_dependency(
         &mut self,
-        reader: &crate::read_dependency::ReadDependency,
+        reader: Option<&crate::read_dependency::ReadDependency>,
         name: &str,
         track_missing: bool,
     ) -> Result<NativeCollection, NativeCollectionError> {
         validate_name(name, "collection name")?;
         let Some(collection) = self.collections.get(name).cloned() else {
-            if track_missing {
+            if track_missing && let Some(reader) = reader {
                 self.track_missing_reader(reader, name)?;
             }
             return Err(NativeCollectionError::UnknownCollection(name.to_owned()));
+        };
+        let Some(reader) = reader else {
+            return Ok(collection);
         };
         if let Some(readers) = self.missing_readers.get_mut(name) {
             readers.remove(reader);

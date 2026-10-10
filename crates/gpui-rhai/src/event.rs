@@ -386,6 +386,7 @@ impl HostCallback {
 pub struct UiEventBinding {
     phase: EventPhase,
     handler: UiEventHandler,
+    value: Option<UiValue>,
 }
 
 impl UiEventBinding {
@@ -394,7 +395,22 @@ impl UiEventBinding {
         Self {
             phase,
             handler: handler.into(),
+            value: None,
         }
+    }
+
+    /// Give this handler its own payload value, used instead of the node's
+    /// payload for the event; other handlers of the event keep theirs.
+    #[must_use]
+    pub fn with_value(mut self, value: UiValue) -> Self {
+        self.value = Some(value);
+        self
+    }
+
+    /// The handler's own payload value, when it was declared with one.
+    #[must_use]
+    pub const fn value(&self) -> Option<&UiValue> {
+        self.value.as_ref()
     }
 
     #[must_use]

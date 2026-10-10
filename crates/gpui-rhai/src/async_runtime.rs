@@ -398,6 +398,11 @@ impl TaskRegistry {
         Ok(TaskHandle(id))
     }
 
+    /// The scope that owns a pending task; `None` once it finished.
+    pub(crate) fn scope(&self, handle: TaskHandle) -> Option<&AsyncScope> {
+        self.entries.get(&handle.0).map(|entry| &entry.scope)
+    }
+
     #[must_use]
     pub fn cancel(&mut self, handle: TaskHandle) -> bool {
         let Some(entry) = self.entries.remove(&handle.0) else {
@@ -995,6 +1000,11 @@ impl SubscriptionRegistry {
     #[must_use]
     pub fn cancel(&mut self, handle: SubscriptionHandle) -> bool {
         self.cancel_with_reason(handle, SubscriptionCloseReason::Cancelled)
+    }
+
+    /// The scope that owns an open subscription; `None` once it closed.
+    pub(crate) fn scope(&self, handle: SubscriptionHandle) -> Option<&AsyncScope> {
+        self.entries.get(&handle.0).map(|entry| &entry.scope)
     }
 
     pub(crate) fn cancel_with_reason(

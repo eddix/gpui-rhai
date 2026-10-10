@@ -22,7 +22,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "clip_rect(_: &mut CanvasCommand, _: f64, _: f64, _: f64, _: f64) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["x", "y", "width", "height"],
-        doc: "Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it; other commands raise an error.",
+        doc: "Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it, replacing an earlier clip; other commands raise an error.",
+    },
+    ScriptFnDoc {
+        signature: "clip_rect(_: &mut CanvasCommand, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["x", "y", "width", "height"],
+        doc: "Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it, replacing an earlier clip; other commands raise an error. Numbers may be integers or floats.",
     },
     ScriptFnDoc {
         signature: "color(_: &mut Span, _: gpui_rhai::style::ColorValue) -> Span",
@@ -110,9 +115,19 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Sets the path's rotation in degrees about the Canvas origin, replacing an earlier one; other commands raise an error.",
     },
     ScriptFnDoc {
+        signature: "rotate(_: &mut CanvasCommand, _: i64) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["degrees"],
+        doc: "Sets the path's rotation in degrees about the Canvas origin, replacing an earlier one; other commands raise an error.",
+    },
+    ScriptFnDoc {
         signature: "scale(_: &mut CanvasCommand, _: f64) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["factor"],
-        doc: "Sets the path's positive uniform scale, applied before rotation and translation; other commands raise an error.",
+        doc: "Sets the path's positive uniform scale, applied before rotation and translation and replacing an earlier one; other commands raise an error.",
+    },
+    ScriptFnDoc {
+        signature: "scale(_: &mut CanvasCommand, _: i64) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["factor"],
+        doc: "Sets the path's positive uniform scale, applied before rotation and translation and replacing an earlier one; other commands raise an error.",
     },
     ScriptFnDoc {
         signature: "stop(_: &mut EventResponse) -> EventResponse",
@@ -163,6 +178,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "translate(_: &mut CanvasCommand, _: f64, _: f64) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["x", "y"],
         doc: "Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error.",
+    },
+    ScriptFnDoc {
+        signature: "translate(_: &mut CanvasCommand, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["x", "y"],
+        doc: "Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. Numbers may be integers or floats.",
     },
     ScriptFnDoc {
         signature: "typography(_: &mut Span, _: string) -> Span",

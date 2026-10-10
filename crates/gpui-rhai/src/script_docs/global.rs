@@ -50,6 +50,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a filled circle command centered at (`center_x`, `center_y`); `radius` must be positive and `key` unique in the scene.",
     },
     ScriptFnDoc {
+        signature: "canvas_circle(_: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "center_x", "center_y", "radius", "fill"],
+        doc: "Creates a filled circle command centered at (`center_x`, `center_y`); `radius` must be positive and `key` unique in the scene. Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "canvas_fill_path(_: string, _: array, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key", "segments", "fill"],
         doc: "Creates a path command filled with a solid color; `segments` start with `path_move` and hold 2 to 10,000 segments.",
@@ -65,7 +70,17 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a line command from (`from_x`, `from_y`) to (`to_x`, `to_y`), stroked `width` pixels wide (positive).",
     },
     ScriptFnDoc {
+        signature: "canvas_line(_: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "from_x", "from_y", "to_x", "to_y", "width", "color"],
+        doc: "Creates a line command from (`from_x`, `from_y`) to (`to_x`, `to_y`), stroked `width` pixels wide (positive). Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "canvas_morph_stroke_path(_: string, _: array, _: array, _: f64, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "from", "to", "width", "color"],
+        doc: "Creates a stroked path that morphs from `from` to `to` as its `path_progress` motion goes 0 to 1; both need the same segment kinds.",
+    },
+    ScriptFnDoc {
+        signature: "canvas_morph_stroke_path(_: string, _: array, _: array, _: i64, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key", "from", "to", "width", "color"],
         doc: "Creates a stroked path that morphs from `from` to `to` as its `path_progress` motion goes 0 to 1; both need the same segment kinds.",
     },
@@ -75,12 +90,22 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a filled rectangle command with its top-left corner at (`x`, `y`); `width` and `height` must be positive.",
     },
     ScriptFnDoc {
+        signature: "canvas_rect(_: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "x", "y", "width", "height", "fill"],
+        doc: "Creates a filled rectangle command with its top-left corner at (`x`, `y`); `width` and `height` must be positive. Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "canvas_scene(_: array) -> core::result::Result<gpui_rhai::canvas::CanvasScene,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["commands"],
         doc: "Builds a canvas scene from canvas commands, painted in order; every command key must be unique.",
     },
     ScriptFnDoc {
         signature: "canvas_stroke_path(_: string, _: array, _: f64, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "segments", "width", "color"],
+        doc: "Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments.",
+    },
+    ScriptFnDoc {
+        signature: "canvas_stroke_path(_: string, _: array, _: i64, _: ColorValue) -> core::result::Result<gpui_rhai::canvas::CanvasCommand,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key", "segments", "width", "color"],
         doc: "Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments.",
     },
@@ -270,6 +295,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates an inertia source gliding `property` from `from` at `velocity` units/s; `config` sets `friction`, `min`, `max`, `bounce`, `snap_points`.",
     },
     ScriptFnDoc {
+        signature: "motion_inertia(_: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: map) -> core::result::Result<gpui_rhai::motion::MotionSource,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["property", "from", "velocity", "config"],
+        doc: "Creates an inertia source gliding `property` from `from` at `velocity` units/s; `config` sets `friction`, `min`, `max`, `bounce`, `snap_points`. Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "motion_keyframes(_: string, _: array, _: map) -> core::result::Result<gpui_rhai::motion::MotionSource,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["property", "frames", "config"],
         doc: "Creates a keyframe source for `property` from `#{ offset, value, easing }` maps; `config` sets `duration_ms` (240), `delay_ms`, `iterations`.",
@@ -305,6 +335,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`.",
     },
     ScriptFnDoc {
+        signature: "motion_spring(_: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: map) -> core::result::Result<gpui_rhai::motion::MotionSource,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["property", "from", "to", "config"],
+        doc: "Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "motion_stagger(_: array, _: i64) -> core::result::Result<gpui_rhai::motion::MotionTimelineStep,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["steps", "interval_ms"],
         doc: "Creates a timeline step that starts each of `steps` `interval_ms` milliseconds after the previous one.",
@@ -330,6 +365,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`.",
     },
     ScriptFnDoc {
+        signature: "motion_transition(_: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: map) -> core::result::Result<gpui_rhai::motion::MotionSource,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["property", "from", "to", "config"],
+        doc: "Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`. Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "motion_viewport(_: MotionSource) -> core::result::Result<gpui_rhai::motion::MotionProgressBinding,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["source"],
         doc: "Maps `source` to the node's travel through the viewport: 0 as it enters at the bottom, 1 as it leaves at the top.",
@@ -337,7 +377,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "native_fuzzy_adjacent(_: NativeCollection, _: string, _: i64) -> core::result::Result<rhai::types::immutable_string::ImmutableString,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["collection", "active", "step"],
-        doc: "Returns the key of the enabled row before (`step` < 0) or after (`step` > 0) `active` in a fuzzy view, wrapping; `\"\"` if none.",
+        doc: "Returns the key of the enabled row one before (`step` < 0) or after (`step` > 0) `active` in a fuzzy view, wrapping; `step` 0 returns `active` itself. An `active` that is not an enabled row counts as the first one; `\"\"` when none is enabled.",
     },
     ScriptFnDoc {
         signature: "native_fuzzy_edge(_: NativeCollection, _: bool) -> core::result::Result<rhai::types::immutable_string::ImmutableString,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -357,7 +397,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "native_table_neighbors(_: NativeCollection, _: array) -> map",
         params: &["collection", "selected_keys"],
-        doc: "Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row.",
+        doc: "Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row. Non-string keys match no row.",
     },
     ScriptFnDoc {
         signature: "native_table_view(_: NativeCollection, _: map) -> core::result::Result<gpui_rhai::native_collection::NativeCollection,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -427,9 +467,26 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`).",
     },
     ScriptFnDoc {
+        signature: "path_cubic(_: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::canvas::CanvasPathSegment,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &[
+            "x",
+            "y",
+            "control_a_x",
+            "control_a_y",
+            "control_b_x",
+            "control_b_y",
+        ],
+        doc: "Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`). Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "path_line(_: f64, _: f64) -> core::result::Result<gpui_rhai::canvas::CanvasPathSegment,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["x", "y"],
         doc: "Creates a path segment that draws a straight line to (`x`, `y`).",
+    },
+    ScriptFnDoc {
+        signature: "path_line(_: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::canvas::CanvasPathSegment,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["x", "y"],
+        doc: "Creates a path segment that draws a straight line to (`x`, `y`). Numbers may be integers or floats.",
     },
     ScriptFnDoc {
         signature: "path_move(_: f64, _: f64) -> core::result::Result<gpui_rhai::canvas::CanvasPathSegment,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -437,9 +494,19 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a path segment that starts a new subpath at (`x`, `y`); every path begins with one.",
     },
     ScriptFnDoc {
+        signature: "path_move(_: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::canvas::CanvasPathSegment,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["x", "y"],
+        doc: "Creates a path segment that starts a new subpath at (`x`, `y`); every path begins with one. Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "path_quadratic(_: f64, _: f64, _: f64, _: f64) -> core::result::Result<gpui_rhai::canvas::CanvasPathSegment,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["x", "y", "control_x", "control_y"],
         doc: "Creates a quadratic curve segment to (`x`, `y`) with control point (`control_x`, `control_y`); the end point comes first.",
+    },
+    ScriptFnDoc {
+        signature: "path_quadratic(_: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::canvas::CanvasPathSegment,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["x", "y", "control_x", "control_y"],
+        doc: "Creates a quadratic curve segment to (`x`, `y`) with control point (`control_x`, `control_y`); the end point comes first. Numbers may be integers or floats.",
     },
     ScriptFnDoc {
         signature: "propagate() -> EventResponse",

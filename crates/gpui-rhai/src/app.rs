@@ -4756,8 +4756,11 @@ impl ScriptHostView {
             .retained()
             .node(target)
             .ok_or_else(|| crate::AutomationError::StaleTarget(target.get()))?;
+        // An explicit payload reaches every handler; otherwise a handler
+        // declared with its own value receives it, and the rest the node's.
+        let explicit = payload.is_some();
         let payload = payload
-            .or_else(|| target_node.handler_payload(event).cloned())
+            .or_else(|| target_node.node_payload(event).cloned())
             .unwrap_or(UiValue::Null);
         let native_target = target_node
             .primitive()
@@ -4776,22 +4779,24 @@ impl ScriptHostView {
                 visited.push(step.node);
             }
             let event_target = geometry.get(step.node).map(|geometry| geometry.visual);
+            let step_payload = match &step.value {
+                Some(value) if !explicit => value.clone(),
+                _ => payload.clone(),
+            };
             let current = match &step.handler {
                 crate::UiEventHandler::Script(callback) => self.handle_node_event(
                     callback,
-                    payload.clone(),
+                    step_payload,
                     event_target,
                     crate::InvocationOrigin::Automation,
                     window,
                     cx,
                 ),
-                crate::UiEventHandler::Host(callback) => {
-                    callback.invoke(payload.clone(), window, cx)
-                }
+                crate::UiEventHandler::Host(callback) => callback.invoke(step_payload, window, cx),
                 crate::UiEventHandler::Native(handler) => self.handle_native_event(
                     handler,
                     event.to_owned(),
-                    payload.clone(),
+                    step_payload,
                     event_target,
                     window,
                     cx,

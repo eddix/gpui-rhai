@@ -96,7 +96,9 @@ still expose `movement`, `velocity`, and timestamps for seeding inertia.
 
 ## Enter, exit, layout, and shared layout
 
-`.enter_motion(source)` runs on a real keyed mount or changed replay key.
+`.enter_motion(source)` is `.motion(source)` under a name that states the
+intent: a property source plays from its start value when the keyed node
+mounts or its replay key changes.
 `.exit_motion(source)` creates an immutable paint ghost after the real node has
 left layout, hit testing, focus, accessibility, callbacks, and resource
 ownership. Text, RichText, Canvas, SVG, images, and boxes/fragments composed

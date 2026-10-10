@@ -586,6 +586,17 @@ pub enum UiValuePathError {
     },
 }
 
+/// An integer or float script argument as a float; `None` for other values.
+pub(crate) fn script_number(value: &Dynamic) -> Option<f64> {
+    if let Ok(value) = value.as_float() {
+        return Some(value);
+    }
+    value
+        .as_int()
+        .ok()
+        .and_then(|value| value.to_string().parse().ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

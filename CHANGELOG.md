@@ -315,6 +315,29 @@ and [docs/design/](docs/design/) for the specification.
   `start` / `end` slots. The keys move a cursor and Enter selects.
 - Table's header is unfilled like its rows, so on a raised layer (Dialog,
   Sheet, Popover) it no longer shows a `surface` band (#129).
+- Numeric script arguments take integers as well as floats, in any mix:
+  `canvas_rect`, `canvas_circle`, `canvas_line`, the `path_*` segments,
+  `CanvasCommand` `translate`, `clip_rect`, `scale` and `rotate`, stroke widths,
+  `motion_transition`, `motion_spring`, `motion_inertia` and `ctx.scroll_to`;
+  `canvas_rect(0, 0, 10, 10, c)` failed with "Function not found".
+- Each value handler keeps its own payload: a second `on_click_value`,
+  `on_key_value` or `on_hover_value` on a node no longer replaces the payload
+  of the node's other handlers (a plain `on_click` received the value, and
+  every `on_hover_change` handler a `#{ hovered, value }` map).
+  `UiEventBinding::with_value` and `UiNode::with_value_handler` carry it.
+- `node.bind_parent_signal(ctx, property, key)` works in virtual item renderers,
+  where it is documented: it binds the nearest ancestor that declares `key`,
+  in this render pass or committed. It made up a signal id for the collection
+  and failed when the frame committed; a misspelled key now fails at once.
+- `ctx.cancel_task`, `cancel_subscription` and `cancel_image_decode` reject a
+  handle another component instance owns with
+  `UiContextError::ForeignAsyncHandle` (**breaking** for an exhaustive match);
+  a component could cancel another's work. Application- and window-scoped work
+  stays cancellable. `start_image_decode` refuses to start while the view
+  suspends or disposes, as `start_task` does.
+- Store, locale, viewport, native collection and document reads register a
+  dependency only while rendering; a read in a callback scheduled a needless
+  rerender.
 
 ## 0.1.8 - 2026-10-04
 

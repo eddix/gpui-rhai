@@ -126,7 +126,7 @@ mod tests {
             )
             .unwrap();
         for reader in [&direct, &first, &second] {
-            stores.read_dependency(reader, &id, "value").unwrap();
+            stores.read_dependency(Some(reader), &id, "value").unwrap();
         }
         stores.retain_contributions(&scope, &active);
         stores.reset_contribution(&direct);

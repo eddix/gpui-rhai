@@ -827,6 +827,24 @@ impl AssetRegistry {
         Ok(ImageDecodeHandle(decode_id))
     }
 
+    /// The scope that owns a pending decode; `None` once it completed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AssetError::Borrowed`] during conflicting registry access.
+    pub(crate) fn image_decode_scope(
+        &self,
+        handle: ImageDecodeHandle,
+    ) -> Result<Option<AsyncScope>, AssetError> {
+        Ok(self
+            .inner
+            .try_borrow()
+            .map_err(|_| AssetError::Borrowed)?
+            .pending_decodes
+            .get(&handle.0)
+            .map(|pending| pending.scope.clone()))
+    }
+
     /// Cancel one pending decode. Completed or unknown handles return `false`.
     ///
     /// # Errors

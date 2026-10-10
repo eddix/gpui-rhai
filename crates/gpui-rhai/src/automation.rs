@@ -227,6 +227,8 @@ pub(crate) struct AutomationDispatchStep {
     pub node: NodeId,
     pub phase: EventPhase,
     pub handler: UiEventHandler,
+    /// The handler's own payload value, when it was declared with one.
+    pub value: Option<UiValue>,
 }
 
 pub(crate) fn resolve_locator(
@@ -318,6 +320,7 @@ fn append_phase(
                 node,
                 phase,
                 handler: binding.handler().clone(),
+                value: binding.value().cloned(),
             }),
     );
     Ok(())

@@ -24,7 +24,8 @@ subscription example is `crates/gpui-rhai/examples/extension_host.rs`. File view
 
 ## Rhai calls
 
-Synchronous methods may run only in `init`, `dispose`, or an event callback:
+Synchronous methods may run anywhere except `view`: `init`, an event callback,
+an effect, `suspend`, `resume`, or `dispose`:
 
 ```rhai
 let result = ctx.call_capability("app.settings", "load", #{ key: "theme" });

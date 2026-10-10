@@ -1354,6 +1354,12 @@ impl UiContext {
             .contains(&self.component)
     }
 
+    /// The reader a dependency read subscribes: only a render does, because
+    /// only a render's output depends on what it read.
+    fn render_reader(&self) -> Option<&crate::read_dependency::ReadDependency> {
+        (self.phase == ExecutionPhase::Render).then_some(&self.read_dependency)
+    }
+
     fn mark_non_reusable_render_read(&self) {
         if self.phase == ExecutionPhase::Render {
             self.non_reusable_render_reads
@@ -1597,17 +1603,19 @@ impl UiContext {
         Ok(runtime.signals.read(&signal)?.into_dynamic())
     }
 
-    /// Resolve an optional-float signal owned by the nearest parent component.
-    /// This is intended for retained render scopes, such as virtual collection
-    /// item renderers, that consume a signal declared by their owner while the
-    /// owner's initial render transaction is still in progress.
+    /// Resolve an optional-float signal declared by the nearest ancestor scope
+    /// that declares `key`. This is intended for retained render scopes, such
+    /// as virtual collection item renderers, that consume a signal declared by
+    /// their owner; `pending` holds the signals declared by the render in
+    /// progress, so the owner's initial render can bind them before commit.
     ///
     /// # Errors
     ///
-    /// Returns a borrow, identity, type, or unknown-signal error.
+    /// Returns a borrow, type, or unknown-signal error.
     pub(crate) fn parent_optional_float_signal_ref(
         &self,
         key: &str,
+        pending: &[crate::SignalId],
     ) -> Result<crate::NativeSignal, UiContextError> {
         let runtime = self
             .runtime
@@ -1615,7 +1623,13 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         let mut scope = self.component.parent();
         while let Some(component) = scope {
-            if let Ok(signal) = runtime.signals.resolve(&component, key) {
+            let signal = pending
+                .iter()
+                .find(|id| id.component() == &component && id.key() == key)
+                .cloned()
+                .map(crate::NativeSignal::new)
+                .or_else(|| runtime.signals.resolve(&component, key).ok());
+            if let Some(signal) = signal {
                 if signal.id().kind() == crate::SignalKind::OptionalFloat {
                     return Ok(signal);
                 }
@@ -1624,15 +1638,6 @@ impl UiContext {
                     actual: signal.id().kind(),
                 }
                 .into());
-            }
-            if let Some(incarnation) = runtime.component_incarnation(&component) {
-                let id = crate::SignalId::new_scoped(
-                    component,
-                    incarnation,
-                    key,
-                    crate::SignalKind::OptionalFloat,
-                )?;
-                return Ok(crate::NativeSignal::new(id));
             }
             scope = component.parent();
         }
@@ -1898,7 +1903,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .stores
-            .read_dependency(&self.read_dependency, &StoreId::app(store), field)?)
+            .read_dependency(self.render_reader(), &StoreId::app(store), field)?)
     }
 
     /// Read one Rust-owned collection and subscribe the current component.
@@ -1917,11 +1922,9 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime.native_collections.read_dependency(
-            &self.read_dependency,
-            name,
-            self.phase == ExecutionPhase::Render,
-        )?)
+        Ok(runtime
+            .native_collections
+            .read_dependency(self.render_reader(), name, true)?)
     }
 
     /// Read and subscribe to one immutable Host-owned text revision.
@@ -1939,7 +1942,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .native_documents
-            .read_dependency(&self.read_dependency, name)?)
+            .read_dependency(self.render_reader(), name)?)
     }
 
     /// Read one Host-owned chart data handle. The handle performs its own
@@ -1979,7 +1982,7 @@ impl UiContext {
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime.stores.read_path_dependency(
-            &self.read_dependency,
+            self.render_reader(),
             &StoreId::app(store),
             field,
             path,
@@ -2062,7 +2065,7 @@ impl UiContext {
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime.stores.read_dependency(
-            &self.read_dependency,
+            self.render_reader(),
             &StoreId::window(window, store),
             field,
         )?)
@@ -2085,7 +2088,7 @@ impl UiContext {
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime.stores.read_path_dependency(
-            &self.read_dependency,
+            self.render_reader(),
             &StoreId::window(window, store),
             field,
             path,
@@ -2374,9 +2377,11 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime
-            .environment_dependencies
-            .track_locale(self.window.as_deref(), &self.read_dependency);
+        if let Some(reader) = self.render_reader() {
+            runtime
+                .environment_dependencies
+                .track_locale(self.window.as_deref(), reader);
+        }
         let locale = runtime
             .locale
             .as_ref()
@@ -2601,9 +2606,11 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime
-            .environment_dependencies
-            .track_viewport(window, &self.read_dependency);
+        if let Some(reader) = self.render_reader() {
+            runtime
+                .environment_dependencies
+                .track_viewport(window, reader);
+        }
         Ok(runtime.responsive.class(window).as_str().to_owned())
     }
 
@@ -3267,6 +3274,7 @@ impl UiContext {
         error: FnPtr,
     ) -> Result<ImageDecodeHandle, UiContextError> {
         self.require_mutation()?;
+        self.require_async_start()?;
         self.require_generation()?;
         let success = self.scoped_callback(success)?;
         let error = self.scoped_callback(error)?;
@@ -3298,49 +3306,49 @@ impl UiContext {
         Ok(handle)
     }
 
-    /// Cancel a pending image decode owned by this runtime.
+    /// Cancel a pending image decode this component started.
     ///
     /// # Errors
     ///
-    /// Returns phase or borrow errors.
+    /// Returns phase, foreign-owner, or borrow errors.
     pub fn cancel_image_decode(&self, handle: ImageDecodeHandle) -> Result<bool, UiContextError> {
         self.require_mutation()?;
-        Ok(self
+        let runtime = self
             .runtime
             .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?
-            .assets
-            .cancel_image_decode(handle)?)
+            .map_err(|_| UiContextError::Borrowed)?;
+        self.require_async_owner(runtime.assets.image_decode_scope(handle)?.as_ref())?;
+        Ok(runtime.assets.cancel_image_decode(handle)?)
     }
 
-    /// Cancel a one-shot task owned by this runtime.
+    /// Cancel a one-shot task this component started.
     ///
     /// # Errors
     ///
-    /// Returns phase or borrow errors.
+    /// Returns phase, foreign-owner, or borrow errors.
     pub fn cancel_task(&self, handle: TaskHandle) -> Result<bool, UiContextError> {
         self.require_mutation()?;
-        Ok(self
+        let mut runtime = self
             .runtime
             .try_borrow_mut()
-            .map_err(|_| UiContextError::Borrowed)?
-            .tasks
-            .cancel(handle))
+            .map_err(|_| UiContextError::Borrowed)?;
+        self.require_async_owner(runtime.tasks.scope(handle))?;
+        Ok(runtime.tasks.cancel(handle))
     }
 
-    /// Cancel a continuous subscription owned by this runtime.
+    /// Cancel a continuous subscription this component started.
     ///
     /// # Errors
     ///
-    /// Returns phase or borrow errors.
+    /// Returns phase, foreign-owner, or borrow errors.
     pub fn cancel_subscription(&self, handle: SubscriptionHandle) -> Result<bool, UiContextError> {
         self.require_mutation()?;
-        Ok(self
+        let mut runtime = self
             .runtime
             .try_borrow_mut()
-            .map_err(|_| UiContextError::Borrowed)?
-            .subscriptions
-            .cancel(handle))
+            .map_err(|_| UiContextError::Borrowed)?;
+        self.require_async_owner(runtime.subscriptions.scope(handle))?;
+        Ok(runtime.subscriptions.cancel(handle))
     }
 
     /// Pause a declared timer by its component-local key.
@@ -3522,6 +3530,23 @@ impl UiContext {
             Ok(())
         } else {
             Err(UiContextError::AsyncDuringSuspend)
+        }
+    }
+
+    /// Async work belongs to the component whose scope started it; app- and
+    /// window-scoped work has no component owner.
+    fn require_async_owner(&self, scope: Option<&AsyncScope>) -> Result<(), UiContextError> {
+        let Some(owner) = scope.and_then(AsyncScope::component) else {
+            return Ok(());
+        };
+        if owner == &self.component
+            || self.async_scope.as_ref().and_then(AsyncScope::component) == Some(owner)
+        {
+            Ok(())
+        } else {
+            Err(UiContextError::ForeignAsyncHandle {
+                owner: owner.clone(),
+            })
         }
     }
 
@@ -3935,6 +3960,7 @@ fn geometry_bounds_value(bounds: crate::GeometryBounds) -> UiValue {
     bounds.into_value()
 }
 
+#[allow(clippy::too_many_lines)]
 fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn(
@@ -4009,6 +4035,31 @@ fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
             |context: &mut UiContext, key: ImmutableString, x: FLOAT, y: FLOAT| {
                 context
                     .scroll_element_to_by_key(key.as_str(), x, y)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        // Integer and mixed offsets, as `ctx.scroll_to("list", 0, 0)`.
+        .with_fn(
+            "scroll_to",
+            |context: &mut UiContext,
+             reference: crate::ElementRef,
+             x: Dynamic,
+             y: Dynamic|
+             -> Result<(), Box<EvalAltResult>> {
+                context
+                    .scroll_element_to(&reference, scroll_number(&x)?, scroll_number(&y)?)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "scroll_to",
+            |context: &mut UiContext,
+             key: ImmutableString,
+             x: Dynamic,
+             y: Dynamic|
+             -> Result<(), Box<EvalAltResult>> {
+                context
+                    .scroll_element_to_by_key(key.as_str(), scroll_number(&x)?, scroll_number(&y)?)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )
@@ -4657,6 +4708,15 @@ pub(crate) fn register_ui_context_api(engine: &mut Engine) {
     engine.build_type::<UiContext>();
 }
 
+fn scroll_number(value: &Dynamic) -> Result<f64, Box<EvalAltResult>> {
+    crate::value::script_number(value).ok_or_else(|| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            format!("scroll offset must be a number, got {}", value.type_name()).into(),
+            Position::NONE,
+        ))
+    })
+}
+
 fn context_runtime_error(error: &UiContextError) -> EvalAltResult {
     EvalAltResult::ErrorRuntime(error.to_string().into(), Position::NONE)
 }
@@ -4675,6 +4735,8 @@ pub enum UiContextError {
     EventTargetOutsideEvent,
     #[error("async work requires a bound script generation")]
     MissingGeneration,
+    #[error("this async handle belongs to component `{owner}`; only that component may cancel it")]
+    ForeignAsyncHandle { owner: ComponentInstancePath },
     #[error("no locale manager is configured for this application")]
     LocaleUnavailable,
     #[error("no theme manager is configured for this application")]
@@ -4894,6 +4956,167 @@ mod tests {
         );
         assert!(context.get_signal(&signal).is_err());
         assert!(!context.component_render_is_reusable());
+    }
+
+    #[test]
+    fn image_decodes_are_new_async_work_and_never_start_while_suspending() {
+        for phase in [ExecutionPhase::Suspend, ExecutionPhase::Dispose] {
+            assert!(
+                matches!(
+                    mounted_context(phase).start_image_decode(
+                        &AssetId::parse("app/avatar").unwrap(),
+                        FnPtr::new("loaded").unwrap(),
+                        FnPtr::new("failed").unwrap(),
+                    ),
+                    Err(UiContextError::AsyncDuringSuspend)
+                ),
+                "{phase:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn async_handles_cancel_only_from_the_component_that_owns_them() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                "fn view() { text(\"owner\") } fn done(ctx, value) {} fn failed(ctx, error) {}",
+            )
+            .unwrap();
+        let generation = compiled.generation();
+        let callback = |name| engine.callback(&compiled, name).unwrap();
+        let owner = ComponentInstancePath::root("View", "main").child("Owner", "owner");
+        let other = ComponentInstancePath::root("View", "main").child("Other", "other");
+        let mut state = UiRuntimeState::new();
+        let spawn = |state: &mut UiRuntimeState, scope| {
+            state
+                .tasks
+                .spawn(
+                    scope,
+                    generation,
+                    callback("done"),
+                    callback("failed"),
+                    ValueSchema::Null,
+                    || Ok(UiValue::Null),
+                )
+                .unwrap()
+        };
+        let task = spawn(&mut state, AsyncScope::Component(owner.clone()));
+        let app_task = spawn(&mut state, AsyncScope::App);
+        let (subscription, _emitter) =
+            state.subscriptions.subscribe(SubscriptionRegistration::new(
+                "watch",
+                AsyncScope::Effect {
+                    component: owner.clone(),
+                    key: "watch".into(),
+                    activation: 1,
+                },
+                generation,
+                callback("done"),
+                callback("failed"),
+                ValueSchema::integer(),
+            ));
+        let runtime = Rc::new(RefCell::new(state));
+        let context = |component: &ComponentInstancePath| {
+            UiContext::new(
+                Rc::clone(&runtime),
+                component.clone(),
+                Some("main".to_owned()),
+                ExecutionPhase::Event,
+                BTreeMap::new(),
+            )
+        };
+
+        let foreign = context(&other);
+        assert!(matches!(
+            foreign.cancel_task(task),
+            Err(UiContextError::ForeignAsyncHandle { owner: found }) if found == owner
+        ));
+        assert!(matches!(
+            foreign.cancel_subscription(subscription),
+            Err(UiContextError::ForeignAsyncHandle { owner: found }) if found == owner
+        ));
+        assert!(
+            foreign.cancel_task(app_task).unwrap(),
+            "app-scoped work has no component owner"
+        );
+        let own = context(&owner);
+        assert!(own.cancel_task(task).unwrap());
+        assert!(own.cancel_subscription(subscription).unwrap());
+        assert!(
+            !foreign.cancel_task(task).unwrap(),
+            "a finished handle is no longer anyone's"
+        );
+    }
+
+    #[test]
+    fn only_render_reads_subscribe_to_stores_and_locale() {
+        let engine = Engine::new();
+        let en = crate::load_locale_source(
+            &engine,
+            "en.rhai",
+            include_str!("../../../registry/locales/en.rhai"),
+        )
+        .unwrap();
+        let zh = crate::load_locale_source(
+            &engine,
+            "zh_cn.rhai",
+            include_str!("../../../registry/locales/zh_cn.rhai"),
+        )
+        .unwrap();
+        let mut state = UiRuntimeState::new();
+        state.locale = Some(LocaleManager::new([en, zh], "en", "en").unwrap());
+        state.windows.register_open("main").unwrap();
+        for store in [StoreId::app("data"), StoreId::window("main", "data")] {
+            state
+                .stores
+                .declare(
+                    store,
+                    ComponentStateSchema::new(BTreeMap::from([(
+                        "count".to_owned(),
+                        StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
+                    )]))
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        let runtime = Rc::new(RefCell::new(state));
+        let reader = ComponentInstancePath::root("View", "main").child("Reader", "reader");
+        let writer = ComponentInstancePath::root("View", "main").child("Writer", "writer");
+        let context = |component: &ComponentInstancePath, phase| {
+            UiContext::new(
+                Rc::clone(&runtime),
+                component.clone(),
+                Some("main".to_owned()),
+                phase,
+                BTreeMap::new(),
+            )
+        };
+        let read_everything = |context: &UiContext| {
+            context.get_app_store("data", "count").unwrap();
+            context.get_window_store("data", "count").unwrap();
+            context.text("common.loading").unwrap();
+        };
+        let write_everything = |value: i64, locale: &str| {
+            let writer = context(&writer, ExecutionPhase::Event);
+            writer
+                .set_app_store("data", "count", Dynamic::from(value))
+                .unwrap();
+            writer
+                .set_window_store("data", "count", Dynamic::from(value))
+                .unwrap();
+            writer.set_locale(locale).unwrap();
+            runtime.borrow_mut().drain_batch().dirty
+        };
+
+        read_everything(&context(&reader, ExecutionPhase::Event));
+        assert!(
+            !write_everything(1, "zh-CN").contains(&reader),
+            "a callback read is no dependency"
+        );
+
+        read_everything(&context(&reader, ExecutionPhase::Render));
+        assert!(write_everything(2, "en").contains(&reader));
     }
 
     #[test]
@@ -5311,6 +5534,33 @@ mod tests {
             state.theme.as_ref().unwrap().app_preference(),
             ThemePreference::System { family } if family == "Default"
         ));
+    }
+
+    #[test]
+    fn scroll_offsets_take_integers_and_floats() {
+        let mut engine = Engine::new();
+        register_ui_context_api(&mut engine);
+        let mut scope = rhai::Scope::new();
+        scope.push("ctx", mounted_context(ExecutionPhase::Event));
+        for script in [
+            r#"ctx.scroll_to("missing", 0, 0)"#,
+            r#"ctx.scroll_to("missing", 0, 12.5)"#,
+        ] {
+            let error = engine
+                .eval_with_scope::<()>(&mut scope, script)
+                .unwrap_err();
+            assert!(
+                !matches!(*error, EvalAltResult::ErrorFunctionNotFound(..)),
+                "{script}: {error}"
+            );
+        }
+        let error = engine
+            .eval_with_scope::<()>(&mut scope, r#"ctx.scroll_to("missing", "0", 0)"#)
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("scroll offset must be a number"),
+            "{error}"
+        );
     }
 
     #[test]

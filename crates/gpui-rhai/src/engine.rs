@@ -3376,6 +3376,43 @@ fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                 )
             },
         );
+
+    let parent_active = Rc::clone(active);
+    FuncRegistration::new("bind_parent_signal")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |node: &mut UiNode,
+                  context: UiContext,
+                  property: ImmutableString,
+                  key: ImmutableString|
+                  -> Result<UiNode, Box<EvalAltResult>> {
+                let property = crate::SignalProperty::parse(property.as_str())
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                if property.signal_kind() != crate::SignalKind::OptionalFloat {
+                    return Err(Box::new(crate::signal::signal_runtime_error(
+                        &"parent signal binding currently supports optional-float properties",
+                    )));
+                }
+                // An owner rendering in this pass has declared its signals but
+                // not committed them yet.
+                let pending = parent_active
+                    .try_borrow()
+                    .ok()
+                    .and_then(|guard| {
+                        guard
+                            .as_ref()
+                            .map(|render| render.signals.keys().cloned().collect::<Vec<_>>())
+                    })
+                    .unwrap_or_default();
+                let signal = context
+                    .parent_optional_float_signal_ref(key.as_str(), &pending)
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                node.clone()
+                    .with_signal_binding(property, signal)
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
+            },
+        );
 }
 
 fn declare_signal(
@@ -4776,7 +4813,7 @@ mod tests {
             .unwrap();
         let root = runtime.render(&compiled).unwrap();
         assert_eq!(
-            root.handler_payload("click"),
+            root.event_handlers("click")[0].value(),
             Some(&crate::UiValue::Map(BTreeMap::from([
                 ("checked".to_owned(), crate::UiValue::Bool(true)),
                 (

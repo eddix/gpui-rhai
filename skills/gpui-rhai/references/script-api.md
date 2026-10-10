@@ -79,13 +79,18 @@ Components, references, collections, timers, motion and canvas commands.
 | `auto() -> AutoLength` | Returns the `auto` layout length, accepted by the size, margin and inset setters: `style().width(auto())`. |
 | `by_env(keys: ?, table: Map) -> EnvTableSource` | Varies a theme token with the environment: `keys` is an axis name or an array of names, and `table` maps their values, nested per axis. |
 | `canvas_circle(key: String, center_x: float, center_y: float, radius: float, fill: ColorValue) -> CanvasCommand` | Creates a filled circle command centered at (`center_x`, `center_y`); `radius` must be positive and `key` unique in the scene. |
+| `canvas_circle(key: String, center_x: ?, center_y: ?, radius: ?, fill: ColorValue) -> CanvasCommand` | Creates a filled circle command centered at (`center_x`, `center_y`); `radius` must be positive and `key` unique in the scene. Numbers may be integers or floats. |
 | `canvas_fill_path(key: String, segments: Array, fill: ColorValue) -> CanvasCommand` | Creates a path command filled with a solid color; `segments` start with `path_move` and hold 2 to 10,000 segments. |
 | `canvas_fill_path(key: String, segments: Array, gradient: LinearGradientSpec) -> CanvasCommand` | Creates a path command filled with a two-stop `linear_gradient`; `segments` start with `path_move` and hold 2 to 10,000 segments. |
 | `canvas_line(key: String, from_x: float, from_y: float, to_x: float, to_y: float, width: float, color: ColorValue) -> CanvasCommand` | Creates a line command from (`from_x`, `from_y`) to (`to_x`, `to_y`), stroked `width` pixels wide (positive). |
+| `canvas_line(key: String, from_x: ?, from_y: ?, to_x: ?, to_y: ?, width: ?, color: ColorValue) -> CanvasCommand` | Creates a line command from (`from_x`, `from_y`) to (`to_x`, `to_y`), stroked `width` pixels wide (positive). Numbers may be integers or floats. |
 | `canvas_morph_stroke_path(key: String, from: Array, to: Array, width: float, color: ColorValue) -> CanvasCommand` | Creates a stroked path that morphs from `from` to `to` as its `path_progress` motion goes 0 to 1; both need the same segment kinds. |
+| `canvas_morph_stroke_path(key: String, from: Array, to: Array, width: int, color: ColorValue) -> CanvasCommand` | Creates a stroked path that morphs from `from` to `to` as its `path_progress` motion goes 0 to 1; both need the same segment kinds. |
 | `canvas_rect(key: String, x: float, y: float, width: float, height: float, fill: ColorValue) -> CanvasCommand` | Creates a filled rectangle command with its top-left corner at (`x`, `y`); `width` and `height` must be positive. |
+| `canvas_rect(key: String, x: ?, y: ?, width: ?, height: ?, fill: ColorValue) -> CanvasCommand` | Creates a filled rectangle command with its top-left corner at (`x`, `y`); `width` and `height` must be positive. Numbers may be integers or floats. |
 | `canvas_scene(commands: Array) -> CanvasScene` | Builds a canvas scene from canvas commands, painted in order; every command key must be unique. |
 | `canvas_stroke_path(key: String, segments: Array, width: float, color: ColorValue) -> CanvasCommand` | Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments. |
+| `canvas_stroke_path(key: String, segments: Array, width: int, color: ColorValue) -> CanvasCommand` | Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments. |
 | `chart_validate(spec: Map, data: ?, key_dimension: ?)` | Checks that `spec` is a valid chart spec and `data` is `NativeChartData` or up to 10,000 row maps keyed by `key_dimension` or `()`. |
 | `date_checked_add_days(date: String, days: int) -> ?` | Adds signed `days` to an ISO `YYYY-MM-DD` date and returns the new ISO date, or `()` when it leaves years 1 to 9999. |
 | `date_checked_add_months(date: String, months: int) -> ?` | Adds signed `months` to an ISO date, clamping the day into the target month; returns `()` when it leaves years 1 to 9999. |
@@ -110,6 +115,7 @@ Components, references, collections, timers, motion and canvas commands.
 | `motion_hover(source: MotionSource) -> MotionProgressBinding` | Drives `source` by hover: forward while the pointer is over the node, back after. Takes a transition or keyframes without delay or repeat. |
 | `motion_in_view(source: MotionSource) -> MotionProgressBinding` | Maps `source` to the visible fraction of the node in the viewport, 0 to 1. Takes a transition or keyframes without delay or repeat. |
 | `motion_inertia(property: String, from: float, velocity: float, config: Map) -> MotionSource` | Creates an inertia source gliding `property` from `from` at `velocity` units/s; `config` sets `friction`, `min`, `max`, `bounce`, `snap_points`. |
+| `motion_inertia(property: String, from: ?, velocity: ?, config: Map) -> MotionSource` | Creates an inertia source gliding `property` from `from` at `velocity` units/s; `config` sets `friction`, `min`, `max`, `bounce`, `snap_points`. Numbers may be integers or floats. |
 | `motion_keyframes(property: String, frames: Array, config: Map) -> MotionSource` | Creates a keyframe source for `property` from `#{ offset, value, easing }` maps; `config` sets `duration_ms` (240), `delay_ms`, `iterations`. |
 | `motion_parallel(steps: Array) -> MotionTimelineStep` | Creates a timeline step that starts all `steps` together and ends with the longest. |
 | `motion_path_follow(scene: CanvasScene, key: String, property: String, config: Map) -> MotionSource` | Creates keyframes moving `translate_x`, `translate_y` or `rotate` along path `key` of `scene`; `config` sets `samples` (16 to 512), `duration_ms`. |
@@ -117,25 +123,31 @@ Components, references, collections, timers, motion and canvas commands.
 | `motion_scroll(axis: String, source: MotionSource) -> MotionProgressBinding` | Maps `source` to the scroll position on `axis` (`"x"` or `"y"`) of the nearest scrollable node, 0 at the start to 1 at the end. |
 | `motion_sequence(steps: Array) -> MotionTimelineStep` | Creates a timeline step that runs `steps` one after another. |
 | `motion_spring(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. |
+| `motion_spring(property: String, from: ?, to: ?, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. Numbers may be integers or floats. |
 | `motion_stagger(steps: Array, interval_ms: int) -> MotionTimelineStep` | Creates a timeline step that starts each of `steps` `interval_ms` milliseconds after the previous one. |
 | `motion_text_spans(text: String, config: Map) -> Dynamic>` | Splits `text` into one fading-in span per grapheme for `text(spans)`; `config` sets `duration_ms` (180), `stagger_ms` (24), `easing`. |
 | `motion_timeline(name: String, root: MotionTimelineStep, config: Map) -> MotionTimeline` | Creates timeline `name` from a root step for `node.timeline`; `config` sets `autoplay` (true), `iterations`, `on_complete`, `on_cancel`. |
 | `motion_track(target: String, source: MotionSource) -> MotionTimelineStep` | Creates a timeline step that plays `source` on `target`: `"."` for the timeline's own node, or a `/`-separated path of descendant keys. |
 | `motion_transition(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`. |
+| `motion_transition(property: String, from: ?, to: ?, config: Map) -> MotionSource` | Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`. Numbers may be integers or floats. |
 | `motion_viewport(source: MotionSource) -> MotionProgressBinding` | Maps `source` to the node's travel through the viewport: 0 as it enters at the bottom, 1 as it leaves at the top. |
-| `native_fuzzy_adjacent(collection: NativeCollection, active: String, step: int) -> String` | Returns the key of the enabled row before (`step` < 0) or after (`step` > 0) `active` in a fuzzy view, wrapping; `""` if none. |
+| `native_fuzzy_adjacent(collection: NativeCollection, active: String, step: int) -> String` | Returns the key of the enabled row one before (`step` < 0) or after (`step` > 0) `active` in a fuzzy view, wrapping; `step` 0 returns `active` itself. An `active` that is not an enabled row counts as the first one; `""` when none is enabled. |
 | `native_fuzzy_edge(collection: NativeCollection, last: bool) -> String` | Returns the key of the first (or, when `last`, the last) enabled row of a fuzzy view, or `""` when it has none. |
 | `native_fuzzy_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a fuzzy-filtered, ranked and grouped view of a native collection for Command; `config` sets `query` and the row field names. |
 | `native_handler(id: String) -> NativeHandlerRef` | Resolves the Host-registered native handler `"namespace.name"` for use as a callback; fails when no handler has that ID. |
-| `native_table_neighbors(collection: NativeCollection, selected_keys: Array) -> Map` | Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row. |
+| `native_table_neighbors(collection: NativeCollection, selected_keys: Array) -> Map` | Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row. Non-string keys match no row. |
 | `native_table_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a sorted, filtered, paged and grouped view of a native collection, as the Table's normalized `config` describes. |
 | `optional_float_signal(key: String) -> NativeSignal` | Declares a component-local optional-float signal that starts as `()` during formal render, for example to bind as `width_override`. |
 | `outline_projection(items: Array, expanded_keys: Array) -> Dynamic>` | Flattens `#{ key, parent, label }` tree items into visible rows with `depth` and `has_children`, opening only `expanded_keys`. |
 | `path_close() -> CanvasPathSegment` | Creates a path segment that closes the current subpath back to its start. |
 | `path_cubic(x: float, y: float, control_a_x: float, control_a_y: float, control_b_x: float, control_b_y: float) -> CanvasPathSegment` | Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`). |
+| `path_cubic(x: ?, y: ?, control_a_x: ?, control_a_y: ?, control_b_x: ?, control_b_y: ?) -> CanvasPathSegment` | Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`). Numbers may be integers or floats. |
 | `path_line(x: float, y: float) -> CanvasPathSegment` | Creates a path segment that draws a straight line to (`x`, `y`). |
+| `path_line(x: ?, y: ?) -> CanvasPathSegment` | Creates a path segment that draws a straight line to (`x`, `y`). Numbers may be integers or floats. |
 | `path_move(x: float, y: float) -> CanvasPathSegment` | Creates a path segment that starts a new subpath at (`x`, `y`); every path begins with one. |
+| `path_move(x: ?, y: ?) -> CanvasPathSegment` | Creates a path segment that starts a new subpath at (`x`, `y`); every path begins with one. Numbers may be integers or floats. |
 | `path_quadratic(x: float, y: float, control_x: float, control_y: float) -> CanvasPathSegment` | Creates a quadratic curve segment to (`x`, `y`) with control point (`control_x`, `control_y`); the end point comes first. |
+| `path_quadratic(x: ?, y: ?, control_x: ?, control_y: ?) -> CanvasPathSegment` | Creates a quadratic curve segment to (`x`, `y`) with control point (`control_x`, `control_y`); the end point comes first. Numbers may be integers or floats. |
 | `propagate() -> EventResponse` | Returns an event response that lets the event continue to ancestor handlers; a handler returning any other value stops it. |
 | `shadow(spec: Map) -> ShadowSpec` | Creates a box shadow from `#{ x, y, blur, spread, color }` in pixels; only `color` is required, and `blur` and `spread` are non-negative. |
 | `signal(key: String, initial: ?) -> NativeSignal` | Declares a component-local native signal holding a bool, int, float, string or color during formal render; `initial` applies on first mount. |
@@ -151,12 +163,12 @@ Methods of the context a view, callback or effect receives.
 | `ctx.action_enabled(action: String) -> bool` | Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered. |
 | `ctx.action_shortcut(action: String) -> ?` | Returns the key binding declared to this view for `action` as `#{ label, keystrokes, chords }`, or `()` when it has none. |
 | `ctx.actions() -> Dynamic>` | Lists every registered action as `#{ id, enabled, shortcut }` for a command palette; `shortcut` is `()` when unbound. |
-| `ctx.calendar() -> Dynamic>` | Returns the selected locale's calendar metadata: `first_weekday`, `months`, `weekdays` and `date_patterns`. Records a locale dependency. |
+| `ctx.calendar() -> Dynamic>` | Returns the selected locale's calendar metadata: `first_weekday`, `months`, `weekdays` and `date_patterns`. Records a locale dependency in render. |
 | `ctx.call_capability(capability: String, method: String, input: ?) -> ?` | Synchronously calls `method` of the declared capability `capability` with `input` and returns its output; not allowed during render. |
-| `ctx.cancel_image_decode(handle: ImageDecodeHandle) -> bool` | Cancels a pending image decode so its callbacks never run; returns `false` when it is no longer pending. Not allowed during render. |
+| `ctx.cancel_image_decode(handle: ImageDecodeHandle) -> bool` | Cancels a pending image decode so its callbacks never run; returns `false` when it is no longer pending. Raises for another component's handle. |
 | `ctx.cancel_motion(handle: MotionHandle)` | Cancels the timeline behind `handle`; raises an error for a stale handle and is not allowed during render. |
-| `ctx.cancel_subscription(handle: SubscriptionHandle) -> bool` | Cancels a subscription; returns `false` when it already closed. The producer is told when the transaction commits. |
-| `ctx.cancel_task(handle: TaskHandle) -> bool` | Cancels a task so its callbacks never run; returns `false` when it already finished. Its work is signalled when the transaction commits. |
+| `ctx.cancel_subscription(handle: SubscriptionHandle) -> bool` | Cancels a subscription; returns `false` when it already closed, raises for another component's handle. The producer is told on commit. |
+| `ctx.cancel_task(handle: TaskHandle) -> bool` | Cancels a task so its callbacks never run and signals its work on commit; returns `false` when it already finished, raises for another component's handle. |
 | `ctx.cancel_timeout(key: String) -> bool` | Cancels this component's declared `timeout` `key` until its declaration changes; returns `false` when no such timer is active. |
 | `ctx.clear_close_handler()` | Removes the current window's close handler, so a native close request closes the window again; not allowed during render. |
 | `ctx.close_window(id: String)` | Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render. |
@@ -169,23 +181,23 @@ Methods of the context a view, callback or effect receives.
 | `ctx.focus(reference: ElementRef)` | Queues keyboard focus for a ref's node, applied after the transaction commits; not allowed during render. |
 | `ctx.focus(key: String)` | Queues keyboard focus for the node of a component-local ref key, applied after the transaction commits; not allowed during render. |
 | `ctx.focus_window(id: String)` | Queues activation of window `id`; needs window-command authority and is not allowed during render. |
-| `ctx.format_date(date: String, style: String) -> String` | Formats an ISO `YYYY-MM-DD` date in the selected locale; `style` is `short`, `medium` or `long`. Records a locale dependency. |
-| `ctx.format_month_year(date: String) -> String` | Formats the month and year of an ISO `YYYY-MM-DD` date with the selected locale's pattern. Records a locale dependency. |
-| `ctx.format_number(value: float) -> String` | Formats a finite number with the selected locale's digits and separators. Records a locale dependency. |
+| `ctx.format_date(date: String, style: String) -> String` | Formats an ISO `YYYY-MM-DD` date in the selected locale; `style` is `short`, `medium` or `long`. Records a locale dependency in render. |
+| `ctx.format_month_year(date: String) -> String` | Formats the month and year of an ISO `YYYY-MM-DD` date with the selected locale's pattern. Records a locale dependency in render. |
+| `ctx.format_number(value: float) -> String` | Formats a finite number with the selected locale's digits and separators. Records a locale dependency in render. |
 | `ctx.format_number(value: float, options: Map) -> String` | Formats a finite number in the selected locale; `options` takes `min_fraction_digits`, `max_fraction_digits` (0 to 12) and `grouping`. |
-| `ctx.format_number(value: int) -> String` | Formats an integer with the selected locale's digits and separators. Records a locale dependency. |
+| `ctx.format_number(value: int) -> String` | Formats an integer with the selected locale's digits and separators. Records a locale dependency in render. |
 | `ctx.format_number(value: int, options: Map) -> String` | Formats an integer in the selected locale; `options` takes `min_fraction_digits`, `max_fraction_digits` (0 to 12) and `grouping`. |
-| `ctx.get_app_store(store: String, field: String) -> ?` | Reads `field` of the app store `store` and subscribes the reader to the whole field. |
-| `ctx.get_app_store_path(store: String, field: String, path: Array) -> ?` | Reads one nested path of an app store field and subscribes to that path only; segments are keys, indexes or `#{ by, key }`. |
+| `ctx.get_app_store(store: String, field: String) -> ?` | Reads `field` of the app store `store`; in render it subscribes the component to the whole field. |
+| `ctx.get_app_store_path(store: String, field: String, path: Array) -> ?` | Reads one nested path of an app store field, in render subscribing to that path only; segments are keys, indexes or `#{ by, key }`. |
 | `ctx.get_native_chart_data(name: String) -> NativeChartData` | Returns the Host-registered chart data `name`; the handle notifies its own updates, so the read adds no rerender dependency. |
-| `ctx.get_native_collection(name: String) -> NativeCollection` | Returns the Host collection `name` as an opaque view for collection-aware components and subscribes the reader to it. |
-| `ctx.get_native_text_document(name: String) -> NativeTextDocument` | Returns the Host text document `name` and subscribes the reader to its replacement. |
+| `ctx.get_native_collection(name: String) -> NativeCollection` | Returns the Host collection `name` as an opaque view for collection-aware components; in render it subscribes the component to it. |
+| `ctx.get_native_text_document(name: String) -> NativeTextDocument` | Returns the Host text document `name`; in render it subscribes the component to its replacement. |
 | `ctx.get_signal(signal: NativeSignal) -> ?` | Reads a native signal's current value without recording a dependency; in render it disables reuse of the component's last render. |
 | `ctx.get_signal(key: String) -> ?` | Reads this component's signal `key` without recording a dependency; raises an error when no such signal is mounted. |
 | `ctx.get_state(field: String) -> ?` | Reads a declared state field of the current component. It needs no dependency: a change to local state rerenders its component. |
 | `ctx.get_state_path(field: String, path: Array) -> ?` | Reads one existing nested path of a state field; segments are keys, indexes or `#{ by, key }`. The component stays the dependency. |
-| `ctx.get_window_store(store: String, field: String) -> ?` | Reads `field` of the current window's store `store` and subscribes the reader to the whole field; raises an error outside a window. |
-| `ctx.get_window_store_path(store: String, field: String, path: Array) -> ?` | Reads one nested path of a field of the current window's store and subscribes to that path only. |
+| `ctx.get_window_store(store: String, field: String) -> ?` | Reads `field` of the current window's store `store`, in render subscribing to the whole field; raises an error outside a window. |
+| `ctx.get_window_store_path(store: String, field: String, path: Array) -> ?` | Reads one nested path of a field of the current window's store, in render subscribing to that path only. |
 | `ctx.load_image(asset: AssetId) -> OpaqueHandle` | Loads and caches the logical image `asset` and returns its opaque handle; not allowed during render. |
 | `ctx.motion_distance(role: String) -> float` | Returns the theme motion distance in pixels for `role`, such as `subtle`; raises an error for an unknown role. |
 | `ctx.motion_duration(role: String) -> int` | Returns the theme motion duration in milliseconds for `role`, such as `fast`; tracked in render, an error for an unknown role. |
@@ -194,7 +206,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.motion_quality() -> String` | Returns the Host's motion quality tier: `low`, `medium` or `high`. |
 | `ctx.motion_spring(role: String) -> Dynamic>` | Returns the theme spring preset for `role` as `#{ stiffness, damping, mass }`; raises an error for an unknown role. |
 | `ctx.motion_stagger(role: String) -> int` | Returns the theme stagger interval in milliseconds for `role`, such as `tight`; raises an error for an unknown role. |
-| `ctx.number() -> Dynamic>` | Returns the selected locale's number metadata: `digits`, separators, group sizes and `minus_sign`. Records a locale dependency. |
+| `ctx.number() -> Dynamic>` | Returns the selected locale's number metadata: `digits`, separators, group sizes and `minus_sign`. Records a locale dependency in render. |
 | `ctx.open_window(id: String, title: String, width: int, height: int, focus: bool)` | Queues a new window `id` that runs the same entry, sides 200 to 4096 pixels; needs window-command authority, not during render. |
 | `ctx.pause_motion(handle: MotionHandle)` | Pauses the timeline behind `handle` at its current position; raises an error for a stale handle and is not allowed during render. |
 | `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` `key`; returns `false` when no such timer is active. Not allowed during render. |
@@ -206,7 +218,9 @@ Methods of the context a view, callback or effect receives.
 | `ctx.scroll_into_view(reference: ElementRef)` | Queues scrolling the nearest retained scroll ancestor so a ref's node shows on the next frame; not allowed during render. |
 | `ctx.scroll_into_view(key: String)` | Queues scrolling the nearest retained scroll ancestor to reveal the node of a component-local ref key; not allowed during render. |
 | `ctx.scroll_to(reference: ElementRef, x: float, y: float)` | Queues a scroll offset for a ref's scroll container, applied after commit; `x` and `y` must be finite and non-negative. |
+| `ctx.scroll_to(reference: ElementRef, x: ?, y: ?)` | Queues a scroll offset for a ref's scroll container, applied after commit; `x` and `y` must be finite and non-negative. Numbers may be integers or floats. |
 | `ctx.scroll_to(key: String, x: float, y: float)` | Queues a scroll offset for the scroll container of a component-local ref key; `x` and `y` must be finite and non-negative. |
+| `ctx.scroll_to(key: String, x: ?, y: ?)` | Queues a scroll offset for the scroll container of a component-local ref key; `x` and `y` must be finite and non-negative. Numbers may be integers or floats. |
 | `ctx.seek_motion(handle: MotionHandle, position_ms: int)` | Moves the timeline behind `handle` to an absolute position in milliseconds; raises an error for a negative position or stale handle. |
 | `ctx.set_action_enabled(action: String, enabled: bool)` | Enables or disables the registered action `action`; raises an error when it is unknown and is not allowed during render. |
 | `ctx.set_app_store(store: String, field: String, value: ?)` | Writes a schema-checked `value` to `field` of app store `store` and rerenders its readers; not during render, undone on failure. |
@@ -228,16 +242,16 @@ Methods of the context a view, callback or effect receives.
 | `ctx.set_window_store_path(store: String, field: String, path: Array, value: ?)` | Replaces one existing nested path of a field of the current window's store; rerenders only readers of that path. |
 | `ctx.set_window_theme(family: String, variant: String)` | Selects the theme variant `variant` of `family` for the current window; not allowed during render. |
 | `ctx.set_window_theme_system(family: String)` | Makes the current window follow the system light or dark appearance within theme `family`; not allowed during render. |
-| `ctx.start_image_decode(asset: AssetId, on_success: FnPtr, on_error: FnPtr) -> ImageDecodeHandle` | Decodes the image `asset` in the background, then calls `on_success` or `on_error`; returns a handle and is not allowed during render. |
+| `ctx.start_image_decode(asset: AssetId, on_success: FnPtr, on_error: FnPtr) -> ImageDecodeHandle` | Decodes the image `asset` in the background, then calls `on_success` or `on_error`, and returns a handle; from `init`, callbacks, effects or `resume`. |
 | `ctx.start_subscription(capability: String, method: String, input: ?, on_value: FnPtr, on_error: FnPtr, options: Map) -> SubscriptionHandle` | Starts a capability stream calling `on_value` per item, only from an effect start; `options` takes `delivery`, `capacity`, `throttle_ms`. |
 | `ctx.start_task(capability: String, method: String, input: ?, on_success: FnPtr, on_error: FnPtr) -> TaskHandle` | Runs a capability `method` in the background, then calls `on_success` or `on_error`; from `init`, callbacks, effects or `resume`. |
-| `ctx.t(key: String) -> String` | Returns the message `key` in the current locale, falling back to the default locale; records a locale dependency. |
-| `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope; records a locale dependency. |
+| `ctx.t(key: String) -> String` | Returns the message `key` in the current locale, falling back to the default locale; records a locale dependency in render. |
+| `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope; records a locale dependency in render. |
 | `ctx.theme_variant() -> ?` | Returns the resolved theme variant as `#{ family, name, mode }`, or `()` without a theme; records a theme dependency in render. |
 | `ctx.theme_variants() -> Array` | Lists every loaded theme variant as `#{ family, name, mode }`, ordered by family and name, for a theme picker. |
 | `ctx.today() -> String` | Returns today's date as an ISO `YYYY-MM-DD` string from the Host calendar clock; available during render. |
 | `ctx.view_id() -> String` | Returns the identity of the mounted script view; raises an error when the context has no view. |
-| `ctx.viewport_class() -> String` | Returns `compact`, `regular` or `wide` for the current window's width and records a viewport dependency. |
+| `ctx.viewport_class() -> String` | Returns `compact`, `regular` or `wide` for the current window's width; records a viewport dependency in render. |
 | `ctx.virtual_item_bounds(collection: String, index: int) -> ?` | Returns the window bounds of the item at display `index` of this component's virtual collection `collection`, or `()`; untracked. |
 | `ctx.window_id() -> String` | Returns the ID of the current window; raises an error outside a window. |
 
@@ -247,7 +261,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 
 | Call | Description |
 |---|---|
-| `node.accessibility_checked(checked: ?) -> UiNode` | Sets the checked state, `true`, `false` or `"mixed"`; tabs, options, rows and menu items report it as selected, a combobox as expanded. |
+| `node.accessibility_checked(checked: ?) -> UiNode` | Sets the checked state, `true`, `false` or `"mixed"`: checkbox, radio and switch roles report it as toggled unless `accessibility_pressed` is set; tabs, options, rows, grid cells and menu items as selected, a combobox as expanded. |
 | `node.accessibility_column_count(count: int) -> UiNode` | Sets the total number of columns of a table or grid, at least 1, including columns that are not rendered. |
 | `node.accessibility_column_header(label: String, column: int) -> UiNode` | Makes the node a `columnheader` with the accessible name `label` at the 1-based column index `column`. |
 | `node.accessibility_column_index(index: int) -> UiNode` | Sets the node's 1-based column index within its table or grid. |
@@ -264,7 +278,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.accessibility_orientation(orientation: String) -> UiNode` | Sets the orientation of a slider, toolbar or list, `horizontal` or `vertical`; other values raise an error. |
 | `node.accessibility_placeholder(placeholder: String) -> UiNode` | Sets the placeholder text assistive technology announces for an empty input. |
 | `node.accessibility_position_in_set(position: int) -> UiNode` | Sets the node's 1-based position among the items of its set, such as the options of a listbox. |
-| `node.accessibility_pressed(pressed: bool) -> UiNode` | Sets the pressed state of a toggle button, reported as toggled on or off. |
+| `node.accessibility_pressed(pressed: bool) -> UiNode` | Sets the pressed state of a toggle button, reported as toggled on or off; it takes precedence over `accessibility_checked`. |
 | `node.accessibility_read_only(read_only: bool) -> UiNode` | Marks the node as read-only; accessibility actions can no longer set its value. |
 | `node.accessibility_required(required: bool) -> UiNode` | Marks the node as a form field that must be filled in. |
 | `node.accessibility_role(role: String) -> UiNode` | Sets the node's semantic role, such as `button`, `checkbox` or `presentation`; an unknown role rejects the render at commit. |
@@ -278,7 +292,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.accessibility_value_max(max: ?) -> UiNode` | Sets the maximum of the node's numeric range, such as a slider's; `max` must be a finite number. |
 | `node.accessibility_value_min(min: ?) -> UiNode` | Sets the minimum of the node's numeric range, such as a slider's; `min` must be a finite number. |
 | `node.audit_allow(rules: Array) -> UiNode` | Exempts the node from the named composition audit rules, such as `"mixed-type-in-row"`; an unknown rule raises an error. |
-| `node.bind_parent_signal(ctx: UiContext, property: String, key: String) -> UiNode` | Drives an optional-float `property` such as `width_override` from the signal `key` of the nearest ancestor component. |
+| `node.bind_parent_signal(ctx: UiContext, property: String, key: String) -> UiNode` | Drives an optional-float `property` such as `width_override` from the signal `key` of the nearest ancestor that declares it; raises when none does. |
 | `node.bind_signal(property: String, signal: NativeSignal) -> UiNode` | Drives `property` (`opacity`, `translate_x`, `width`, `background`, ...) from a native signal of its type, without a rerender. |
 | `node.disabled(disabled: bool) -> UiNode` | Disables the node and its subtree: their handlers stop firing, `disabled` styles apply, and assistive technology reports it. |
 | `node.enter_motion(source: MotionSource) -> UiNode` | Declares a motion source that plays when the keyed node mounts or its replay key changes; the same as `motion`. |
@@ -287,7 +301,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.heading_elsewhere() -> UiNode` | Tells the composition audit that this container's heading is drawn elsewhere, such as in a host's panel header. |
 | `node.layout_motion(duration_ms: int, easing: String) -> UiNode` | Animates the node between committed layout positions over `duration_ms`, with `linear`, `ease_in`, `ease_out` or `ease_in_out`. |
 | `node.motion(source: MotionSource) -> UiNode` | Declares a motion source for one property of the keyed node, replacing an earlier source for it; rerenders keep its progress. |
-| `node.motion_particle_count(count: int) -> UiNode` | Declares how many motion particles the node uses, counted against the runtime's `motion_particles` budget; at least 0. |
+| `node.motion_particle_count(count: int) -> UiNode` | Declares how many particles the node draws itself, such as Canvas circles, against the `motion_particles` budget; it draws nothing. At least 0. |
 | `node.motion_replay_key(key: String) -> UiNode` | Replays the node's unchanged motion declarations whenever `key` changes, such as when a semantically new value arrives. |
 | `node.on(event: String, handler: FnPtr) -> UiNode` | Appends a target-phase handler for `event` (`click`, `pointer_down`, `wheel`, `key:escape`, ...), called with `ctx` and the payload. |
 | `node.on(event: String, handler: NativeHandlerRef) -> UiNode` | Appends a Rust native handler for `event` in the target phase; the handler's descriptor must declare `event`. |
@@ -298,11 +312,11 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.on_change(handler: FnPtr) -> UiNode` | Appends a handler for the `change` event a primitive such as a text input or slider emits with its proposed value. |
 | `node.on_click(handler: FnPtr) -> UiNode` | Appends a click handler, run on a mouse click or Enter or Space while focused, with payload `()`; makes the node a tab stop. |
 | `node.on_click(handler: NativeHandlerRef) -> UiNode` | Appends a Rust native click handler, run like a script one; the handler's descriptor must declare `click`. |
-| `node.on_click_value(handler: FnPtr, value: ?) -> UiNode` | Appends a click handler that receives `value` as its payload, so one named function can serve many nodes. |
-| `node.on_click_value(handler: NativeHandlerRef, value: ?) -> UiNode` | Appends a Rust native click handler that receives `value` as its payload; its descriptor must declare `click`. |
+| `node.on_click_value(handler: FnPtr, value: ?) -> UiNode` | Appends a click handler that receives `value` as its payload, so one named function can serve many nodes; other click handlers keep theirs. |
+| `node.on_click_value(handler: NativeHandlerRef, value: ?) -> UiNode` | Appends a Rust native click handler that receives `value` as its payload, not shared with other click handlers; its descriptor must declare `click`. |
 | `node.on_hover_change(handler: FnPtr) -> UiNode` | Appends a handler called with `true` when the pointer enters the node and `false` when it leaves. |
-| `node.on_hover_value(handler: FnPtr, value: ?) -> UiNode` | Appends a hover handler whose payload is `#{ hovered, value }`: `hovered` is `true` on enter and `false` on leave. |
-| `node.on_key_value(key: String, handler: FnPtr, value: ?) -> UiNode` | Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with `value` as payload. |
+| `node.on_hover_value(handler: FnPtr, value: ?) -> UiNode` | Appends a hover handler whose payload is `#{ hovered, value }`: `hovered` is `true` on enter and `false` on leave. Other hover handlers keep theirs. |
+| `node.on_key_value(key: String, handler: FnPtr, value: ?) -> UiNode` | Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with its own `value` as payload. |
 | `node.on_open_change(handler: FnPtr) -> UiNode` | Appends a handler for an overlay's `open_change` event, called with the requested open state, such as `false` on dismissal. |
 | `node.progress_motion(binding: MotionProgressBinding) -> UiNode` | Attaches a natively driven motion such as `motion_hover(...)` or `motion_scroll(...)`, replacing one for the same property. |
 | `node.scrollbars(horizontal: String, vertical: String) -> UiNode` | Overlays themed scrollbars on a scrollable node; each axis is `auto`, `always` or `hidden`, which changes presentation only. |
@@ -310,7 +324,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.shared_layout(id: String) -> UiNode` | Gives the node the shared-layout identity `id` in the group of the enclosing `motion_group`, linking its layout motion. |
 | `node.shared_layout(group: String, id: String) -> UiNode` | Gives the node the shared-layout identity `id` in `group`, overriding an enclosing `motion_group`; unique in the window. |
 | `node.signal_style(signal: NativeSignal, states: Map) -> UiNode` | Merges `states[value]` over the node's style, where `value` is the current value of a string signal; switches without a rerender. |
-| `node.tab_group() -> UiNode` | Makes the node a tab group, so the `tab_index` values of its descendants order focus locally. |
+| `node.tab_group() -> UiNode` | Makes the node a tab group, so the `tab_index` values of its descendants order focus locally; the node is a tab stop itself unless `tab_stop(false)`. |
 | `node.tab_index(index: int) -> UiNode` | Sets the node's tab order within its tab group, from -32768 to 32767, and makes it a tab stop unless `tab_stop(false)`. |
 | `node.tab_stop(tab_stop: bool) -> UiNode` | Sets whether Tab reaches the node; `false` keeps it focusable from code but out of keyboard traversal. |
 | `node.test_id(id: String) -> UiNode` | Sets a non-semantic automation ID of 1-128 letters, digits, `_`, `-`, `.` or `:` that automation locators find. |
@@ -505,10 +519,14 @@ Properties and methods of handles, signals, documents, collections and canvas va
 | Call | Description |
 |---|---|
 | `asset_id.to_string() -> String` | Returns the namespaced logical asset ID, such as `core/check`. |
-| `canvas_command.clip_rect(x: float, y: float, width: float, height: float) -> CanvasCommand` | Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it; other commands raise an error. |
+| `canvas_command.clip_rect(x: float, y: float, width: float, height: float) -> CanvasCommand` | Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it, replacing an earlier clip; other commands raise an error. |
+| `canvas_command.clip_rect(x: ?, y: ?, width: ?, height: ?) -> CanvasCommand` | Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it, replacing an earlier clip; other commands raise an error. Numbers may be integers or floats. |
 | `canvas_command.rotate(degrees: float) -> CanvasCommand` | Sets the path's rotation in degrees about the Canvas origin, replacing an earlier one; other commands raise an error. |
-| `canvas_command.scale(factor: float) -> CanvasCommand` | Sets the path's positive uniform scale, applied before rotation and translation; other commands raise an error. |
+| `canvas_command.rotate(degrees: int) -> CanvasCommand` | Sets the path's rotation in degrees about the Canvas origin, replacing an earlier one; other commands raise an error. |
+| `canvas_command.scale(factor: float) -> CanvasCommand` | Sets the path's positive uniform scale, applied before rotation and translation and replacing an earlier one; other commands raise an error. |
+| `canvas_command.scale(factor: int) -> CanvasCommand` | Sets the path's positive uniform scale, applied before rotation and translation and replacing an earlier one; other commands raise an error. |
 | `canvas_command.translate(x: float, y: float) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. |
+| `canvas_command.translate(x: ?, y: ?) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. Numbers may be integers or floats. |
 | `element_ref.key -> String` | The component-local key the ref was declared with in `element_ref(key)`. |
 | `element_ref.scope -> String` | The ref's full identity, `<component path>:<key>`, which tells apart refs with the same key in different components. |
 | `event_response.capture_pointer() -> EventResponse` | Captures the pointer for the handler's node, so its later move and up events go to that node until released. |

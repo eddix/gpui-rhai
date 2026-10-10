@@ -1601,6 +1601,22 @@ impl UiNode {
         self
     }
 
+    /// Append a handler that receives `value` as its payload; the node's other
+    /// handlers for `event` keep their own payloads.
+    #[must_use]
+    pub fn with_value_handler(
+        mut self,
+        event: impl Into<String>,
+        handler: impl Into<UiEventHandler>,
+        value: UiValue,
+    ) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Handler(
+            event.into(),
+            UiEventBinding::new(crate::EventPhase::Target, handler).with_value(value),
+        ));
+        self
+    }
+
     #[must_use]
     pub fn with_host_handler(self, event: impl Into<String>, callback: HostCallback) -> Self {
         self.with_handler(event, UiEventHandler::Host(callback))
@@ -1713,8 +1729,22 @@ impl UiNode {
         self.handlers.get(event).map_or(&[], Vec::as_slice)
     }
 
+    /// The payload set for `event` with [`Self::with_handler_payload`], else
+    /// the value of the last handler declared with one.
     #[must_use]
     pub fn handler_payload(&self, event: &str) -> Option<&UiValue> {
+        self.handler_payloads.get(event).or_else(|| {
+            self.event_handlers(event)
+                .iter()
+                .rev()
+                .find_map(UiEventBinding::value)
+        })
+    }
+
+    /// The payload set for `event` on the node itself, which handlers without
+    /// their own value receive.
+    #[must_use]
+    pub(crate) fn node_payload(&self, event: &str) -> Option<&UiValue> {
         self.handler_payloads.get(event)
     }
 
@@ -2213,28 +2243,6 @@ impl CustomType for UiNode {
             )
             .with_fn("signal_style", node_signal_style)
             .with_fn(
-                "bind_parent_signal",
-                |node: &mut Self,
-                 context: crate::UiContext,
-                 property: ImmutableString,
-                 key: ImmutableString|
-                 -> Result<Self, Box<EvalAltResult>> {
-                    let property = crate::SignalProperty::parse(property.as_str())
-                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
-                    if property.signal_kind() != crate::SignalKind::OptionalFloat {
-                        return Err(Box::new(crate::signal::signal_runtime_error(
-                            &"parent signal binding currently supports optional-float properties",
-                        )));
-                    }
-                    let signal = context
-                        .parent_optional_float_signal_ref(key.as_str())
-                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
-                    node.clone()
-                        .with_signal_binding(property, signal)
-                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
-                },
-            )
-            .with_fn(
                 "with_ref",
                 |node: &mut Self, reference: crate::ElementRef| {
                     node.clone().with_element_ref(reference)
@@ -2447,11 +2455,11 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
                         Position::NONE,
                     ))
                 })?;
-                let event = format!("key:{key}");
-                Ok(node
-                    .clone()
-                    .with_handler(event.clone(), retained_script_callback(&call, callback)?)
-                    .with_handler_payload(event, payload))
+                Ok(node.clone().with_value_handler(
+                    format!("key:{key}"),
+                    retained_script_callback(&call, callback)?,
+                    payload,
+                ))
             },
         );
 }
@@ -2466,10 +2474,11 @@ fn register_value_event_methods(builder: &mut TypeBuilder<UiNode>) {
              payload: Dynamic|
              -> Result<UiNode, Box<EvalAltResult>> {
                 let payload = dynamic_ui_value(payload)?;
-                Ok(node
-                    .clone()
-                    .with_handler("click", retained_script_callback(&call, callback)?)
-                    .with_handler_payload("click", payload))
+                Ok(node.clone().with_value_handler(
+                    "click",
+                    retained_script_callback(&call, callback)?,
+                    payload,
+                ))
             },
         )
         .with_fn(
@@ -2480,10 +2489,11 @@ fn register_value_event_methods(builder: &mut TypeBuilder<UiNode>) {
              payload: Dynamic|
              -> Result<UiNode, Box<EvalAltResult>> {
                 let payload = dynamic_ui_value(payload)?;
-                Ok(node
-                    .clone()
-                    .with_handler("hover_change", retained_script_callback(&call, callback)?)
-                    .with_handler_payload("hover_change", payload))
+                Ok(node.clone().with_value_handler(
+                    "hover_change",
+                    retained_script_callback(&call, callback)?,
+                    payload,
+                ))
             },
         );
 }
@@ -2577,8 +2587,7 @@ fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
                 })?;
                 Ok(node
                     .clone()
-                    .with_handler("click", handler)
-                    .with_handler_payload("click", dynamic_ui_value(payload)?))
+                    .with_value_handler("click", handler, dynamic_ui_value(payload)?))
             },
         )
         .with_fn(
@@ -4075,7 +4084,10 @@ mod tests {
                 assert_eq!(node.handlers().len(), 1, "{method}, {key:?}");
                 assert_eq!(node.event_handlers(&event)[0].phase(), phase);
                 if method == "on_key_value" {
-                    assert_eq!(node.handler_payload(&event), Some(&UiValue::Integer(7)));
+                    assert_eq!(
+                        node.event_handlers(&event)[0].value(),
+                        Some(&UiValue::Integer(7))
+                    );
                 }
             }
             for (key, canonical) in [

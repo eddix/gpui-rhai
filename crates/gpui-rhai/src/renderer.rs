@@ -348,11 +348,33 @@ impl<'a> EventRoute<'a> {
     }
 }
 
+/// A handler declared with its own value receives that value; the others
+/// receive the event's payload.
 fn dispatch_ui_handler_phases(
     bindings: &[crate::UiEventBinding],
     event: &str,
     phases: &[crate::EventPhase],
     payload: &UiValue,
+    route: EventRoute<'_>,
+    window: &mut Window,
+    app: &mut App,
+) -> EventResponse {
+    dispatch_ui_handler_phases_with(
+        bindings,
+        event,
+        phases,
+        |binding| binding.value().unwrap_or(payload).clone(),
+        route,
+        window,
+        app,
+    )
+}
+
+fn dispatch_ui_handler_phases_with(
+    bindings: &[crate::UiEventBinding],
+    event: &str,
+    phases: &[crate::EventPhase],
+    payload: impl Fn(&crate::UiEventBinding) -> UiValue,
     route: EventRoute<'_>,
     window: &mut Window,
     app: &mut App,
@@ -364,7 +386,7 @@ fn dispatch_ui_handler_phases(
             let response = dispatch_ui_event(
                 binding.handler(),
                 event,
-                payload.clone(),
+                payload(binding),
                 route.target,
                 window,
                 app,
@@ -456,9 +478,7 @@ fn key_handler_bindings(
                     key.to_owned(),
                     (
                         bindings.clone(),
-                        node.handler_payload(event)
-                            .cloned()
-                            .unwrap_or(UiValue::Null),
+                        node.node_payload(event).cloned().unwrap_or(UiValue::Null),
                     ),
                 )
             })
@@ -701,23 +721,27 @@ fn apply_hover_handler(
 ) -> Stateful<Div> {
     element.on_hover(move |hovered, window, cx| {
         if let Some((bindings, value)) = &hover {
-            let payload = value.as_ref().map_or_else(
-                || UiValue::Bool(*hovered),
-                |value| {
-                    UiValue::Map(BTreeMap::from([
-                        ("hovered".to_owned(), UiValue::Bool(*hovered)),
-                        ("value".to_owned(), value.clone()),
-                    ]))
-                },
-            );
-            let response = dispatch_ui_handlers(
+            // A handler with a value, its own or the node's, receives
+            // `#{ hovered, value }`; a plain handler receives the bool.
+            let payload = |binding: &crate::UiEventBinding| {
+                binding.value().or(value.as_ref()).map_or_else(
+                    || UiValue::Bool(*hovered),
+                    |value| {
+                        UiValue::Map(BTreeMap::from([
+                            ("hovered".to_owned(), UiValue::Bool(*hovered)),
+                            ("value".to_owned(), value.clone()),
+                        ]))
+                    },
+                )
+            };
+            let response = dispatch_ui_handler_phases_with(
                 bindings,
                 "hover_change",
-                &payload,
-                target.snapshot(),
+                &[crate::EventPhase::Target],
+                payload,
+                EventRoute::new(target.snapshot(), dispatcher.as_ref()),
                 window,
                 cx,
-                dispatcher.as_ref(),
             );
             apply_event_response(response, window, cx);
         }
@@ -2464,15 +2488,13 @@ impl GpuiNodeRenderer {
         let click = (!disabled && !node.event_handlers("click").is_empty()).then(|| {
             (
                 node.event_handlers("click").to_vec(),
-                node.handler_payload("click")
-                    .cloned()
-                    .unwrap_or(UiValue::Null),
+                node.node_payload("click").cloned().unwrap_or(UiValue::Null),
             )
         });
         let hover = (!disabled && !node.event_handlers("hover_change").is_empty()).then(|| {
             (
                 node.event_handlers("hover_change").to_vec(),
-                node.handler_payload("hover_change").cloned(),
+                node.node_payload("hover_change").cloned(),
             )
         });
         let key_handlers = key_handler_bindings(node, disabled);
@@ -4198,39 +4220,32 @@ fn overlay_panel_key(
 ) -> Option<crate::overlay_element::PanelKeyHandler> {
     let handlers = node
         .handlers()
-        .keys()
-        .filter_map(|event| {
-            event.strip_prefix("key:").and_then(|key| {
-                node.handler(event)
-                    .cloned()
-                    .map(|handler| (key.to_owned(), handler))
-            })
+        .iter()
+        .filter_map(|(event, bindings)| {
+            let key = event.strip_prefix("key:")?;
+            let binding = bindings
+                .iter()
+                .find(|binding| binding.phase() == crate::EventPhase::Target)?;
+            let payload = binding
+                .value()
+                .or_else(|| node.node_payload(event))
+                .cloned()
+                .unwrap_or(UiValue::Null);
+            Some((key.to_owned(), (binding.handler().clone(), payload)))
         })
         .collect::<BTreeMap<_, _>>();
     (!handlers.is_empty()).then(|| {
         let dispatcher = dispatcher.cloned();
-        let payloads = node
-            .handlers()
-            .keys()
-            .filter_map(|event| {
-                event
-                    .strip_prefix("key:")
-                    .map(|key| (key.to_owned(), node.handler_payload(event).cloned()))
-            })
-            .collect::<BTreeMap<_, _>>();
         Rc::new(
             move |event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App| {
                 let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
-                let Some(callback) = handlers.get(key) else {
+                let Some((callback, payload)) = handlers.get(key) else {
                     return false;
                 };
                 dispatch_ui_event(
                     callback,
                     "key",
-                    payloads
-                        .get(key)
-                        .and_then(Clone::clone)
-                        .unwrap_or(UiValue::Null),
+                    payload.clone(),
                     target.snapshot(),
                     window,
                     cx,

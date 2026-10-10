@@ -7,7 +7,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "accessibility_checked(_: &mut UiNode, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["checked"],
-        doc: "Sets the checked state, `true`, `false` or `\"mixed\"`; tabs, options, rows and menu items report it as selected, a combobox as expanded.",
+        doc: "Sets the checked state, `true`, `false` or `\"mixed\"`: checkbox, radio and switch roles report it as toggled unless `accessibility_pressed` is set; tabs, options, rows, grid cells and menu items as selected, a combobox as expanded.",
     },
     ScriptFnDoc {
         signature: "accessibility_column_count(_: &mut UiNode, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -92,7 +92,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "accessibility_pressed(_: &mut UiNode, _: bool) -> UiNode",
         params: &["pressed"],
-        doc: "Sets the pressed state of a toggle button, reported as toggled on or off.",
+        doc: "Sets the pressed state of a toggle button, reported as toggled on or off; it takes precedence over `accessibility_checked`.",
     },
     ScriptFnDoc {
         signature: "accessibility_read_only(_: &mut UiNode, _: bool) -> UiNode",
@@ -160,9 +160,9 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Exempts the node from the named composition audit rules, such as `\"mixed-type-in-row\"`; an unknown rule raises an error.",
     },
     ScriptFnDoc {
-        signature: "bind_parent_signal(_: &mut UiNode, _: gpui_rhai::context::UiContext, _: string, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        signature: "bind_parent_signal(_: &mut UiNode, _: UiContext, _: string, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["ctx", "property", "key"],
-        doc: "Drives an optional-float `property` such as `width_override` from the signal `key` of the nearest ancestor component.",
+        doc: "Drives an optional-float `property` such as `width_override` from the signal `key` of the nearest ancestor that declares it; raises when none does.",
     },
     ScriptFnDoc {
         signature: "bind_signal(_: &mut UiNode, _: string, _: gpui_rhai::signal::NativeSignal) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -207,7 +207,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "motion_particle_count(_: &mut UiNode, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["count"],
-        doc: "Declares how many motion particles the node uses, counted against the runtime's `motion_particles` budget; at least 0.",
+        doc: "Declares how many particles the node draws itself, such as Canvas circles, against the `motion_particles` budget; it draws nothing. At least 0.",
     },
     ScriptFnDoc {
         signature: "motion_replay_key(_: &mut UiNode, _: string) -> UiNode",
@@ -262,12 +262,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "on_click_value(_: &mut UiNode, _: Fn, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["handler", "value"],
-        doc: "Appends a click handler that receives `value` as its payload, so one named function can serve many nodes.",
+        doc: "Appends a click handler that receives `value` as its payload, so one named function can serve many nodes; other click handlers keep theirs.",
     },
     ScriptFnDoc {
         signature: "on_click_value(_: &mut UiNode, _: gpui_rhai::native_handler::NativeHandlerRef, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["handler", "value"],
-        doc: "Appends a Rust native click handler that receives `value` as its payload; its descriptor must declare `click`.",
+        doc: "Appends a Rust native click handler that receives `value` as its payload, not shared with other click handlers; its descriptor must declare `click`.",
     },
     ScriptFnDoc {
         signature: "on_hover_change(_: &mut UiNode, _: Fn) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -277,12 +277,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "on_hover_value(_: &mut UiNode, _: Fn, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["handler", "value"],
-        doc: "Appends a hover handler whose payload is `#{ hovered, value }`: `hovered` is `true` on enter and `false` on leave.",
+        doc: "Appends a hover handler whose payload is `#{ hovered, value }`: `hovered` is `true` on enter and `false` on leave. Other hover handlers keep theirs.",
     },
     ScriptFnDoc {
         signature: "on_key_value(_: &mut UiNode, _: string, _: Fn, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key", "handler", "value"],
-        doc: "Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with `value` as payload.",
+        doc: "Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with its own `value` as payload.",
     },
     ScriptFnDoc {
         signature: "on_open_change(_: &mut UiNode, _: Fn) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -322,7 +322,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "tab_group(_: &mut UiNode) -> UiNode",
         params: &[],
-        doc: "Makes the node a tab group, so the `tab_index` values of its descendants order focus locally.",
+        doc: "Makes the node a tab group, so the `tab_index` values of its descendants order focus locally; the node is a tab stop itself unless `tab_stop(false)`.",
     },
     ScriptFnDoc {
         signature: "tab_index(_: &mut UiNode, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
