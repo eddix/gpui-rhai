@@ -3502,6 +3502,47 @@ mod tests {
     }
 
     #[test]
+    fn hot_reload_keeps_a_disabled_action_disabled() {
+        let source = r#"
+            fn init(ctx) { ctx.register_action("document.save", Fn("save")); }
+            fn save(ctx, payload) {}
+            fn disable(ctx, payload) { ctx.set_action_enabled("document.save", false); }
+            fn view(ctx) { text("actions") }
+        "#;
+        let mut engine = RuntimeEngine::new();
+        let active = engine.compile(source).unwrap();
+        let disable = engine.callback(&active, "disable").unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let mut lifecycle = ScriptLifecycle::new(
+            active,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "root"),
+            None,
+            BTreeMap::new(),
+            &state_schema(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let id = crate::ActionId::parse("document.save").unwrap();
+        assert_eq!(runtime.borrow().actions.is_enabled(&id), Some(true));
+        let _ = lifecycle
+            .invoke_callback(&engine, &disable, UiValue::Null)
+            .unwrap();
+        assert_eq!(runtime.borrow().actions.is_enabled(&id), Some(false));
+
+        let candidate = engine.compile(source).unwrap();
+        let generation = candidate.generation();
+        lifecycle
+            .reload(&mut engine, candidate, &state_schema())
+            .unwrap();
+        let mut runtime = runtime.borrow_mut();
+        assert_eq!(runtime.actions.is_enabled(&id), Some(false));
+        runtime.actions.set_enabled(&id, true).unwrap();
+        let invocation = runtime.actions.dispatch(&id, UiValue::Null).unwrap();
+        assert_eq!(invocation.callback.generation(), generation);
+    }
+
+    #[test]
     fn hot_reload_rolls_back_engine_generation_after_retained_validation_failure() {
         let mut engine = RuntimeEngine::new();
         let active = engine

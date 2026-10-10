@@ -395,6 +395,17 @@ and [docs/design/](docs/design/) for the specification.
     second click, NumberTicker fades each new value in, GroupBox draws a rule,
     and a callback prop may be forwarded through formal components (it keeps
     its caller's binding).
+- Re-registering an action keeps its enabled state, so a hot reload no longer
+  re-enables an action the script turned off; `image(handle)` and
+  `directional_image` reject a handle of another kind when called, and
+  `theme_color` checks the token path syntax as the length functions do.
+- `text_start()` and `text_end()` name logical text alignment;
+  `text_left()` and `text_right()` remain as synonyms that mirror in RTL.
+  `cursor_move()` shows the open hand, like an idle Draggable.
+- On a focused node the focus paint covers hover paint; a press still paints
+  over both (`base → hover → focus → active`). SplitPane's grab zone takes its
+  hover and drag fill from the native handle's state signal: its `hover` style
+  never applied, since the native handle takes the pointer.
 
 ## 0.1.8 - 2026-10-04
 

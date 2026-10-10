@@ -419,6 +419,23 @@ impl CustomType for ColorValue {
 }
 
 impl ColorValue {
+    /// Reference a theme color token: a palette name such as `accent` or a
+    /// `namespace.name` path such as `text.danger`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidColorToken`] for a malformed path.
+    /// Whether the token exists is decided by the active theme at render time.
+    pub fn token(path: &str) -> Result<Self, StyleValueError> {
+        if crate::token::valid_token_segment(path)
+            || crate::token::validate_token_path(path).is_ok()
+        {
+            Ok(Self::Token(path.to_owned()))
+        } else {
+            Err(StyleValueError::InvalidColorToken(path.to_owned()))
+        }
+    }
+
     /// Resolve the expression, asking `lookup` for token leaves.
     pub fn resolve_with(&self, lookup: &mut dyn FnMut(&str) -> Option<Rgba8>) -> Option<Rgba8> {
         match self {
@@ -942,6 +959,8 @@ pub enum StyleValueError {
     InvalidFontFallbacks,
     #[error("typography role `{0}` must be a snake_case name")]
     InvalidTypographyRole(String),
+    #[error("color token `{0}` must be `name` or `namespace.name` with snake_case segments")]
+    InvalidColorToken(String),
     #[error("color factor must be finite and between zero and one, got {0}")]
     InvalidColorFactor(f64),
     #[error("contrast ratio must be finite and between 1 and 21, got {0}")]
@@ -2784,11 +2803,17 @@ fn register_text_methods(builder: &mut TypeBuilder<Style>) {
         .with_fn("line_height", |style: &mut Style, value: Length| {
             style.clone().line_height(value)
         })
+        .with_fn("text_start", |style: &mut Style| {
+            style.clone().text_align(TextAlignMode::Start)
+        })
         .with_fn("text_left", |style: &mut Style| {
             style.clone().text_align(TextAlignMode::Start)
         })
         .with_fn("text_center", |style: &mut Style| {
             style.clone().text_align(TextAlignMode::Center)
+        })
+        .with_fn("text_end", |style: &mut Style| {
+            style.clone().text_align(TextAlignMode::End)
         })
         .with_fn("text_right", |style: &mut Style| {
             style.clone().text_align(TextAlignMode::End)
@@ -2904,7 +2929,13 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
         .register_into_engine(engine, linear_gradient_from_map);
     FuncRegistration::new("theme_color")
         .in_global_namespace()
-        .register_into_engine(engine, |token: String| ColorValue::Token(token));
+        .register_into_engine(
+            engine,
+            |token: ImmutableString| -> Result<ColorValue, Box<EvalAltResult>> {
+                ColorValue::token(token.as_str())
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
     register_color_expression_api(engine);
     FuncRegistration::new("color")
         .in_global_namespace()
@@ -3389,6 +3420,61 @@ mod tests {
                 .eval::<Style>(r#"style().typography("Body Ish")"#)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn logical_text_alignment_has_start_and_end_names_and_physical_synonyms() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        for (script, align) in [
+            ("style().text_start()", TextAlignMode::Start),
+            ("style().text_left()", TextAlignMode::Start),
+            ("style().text_center()", TextAlignMode::Center),
+            ("style().text_end()", TextAlignMode::End),
+            ("style().text_right()", TextAlignMode::End),
+        ] {
+            let style: Style = engine.eval(script).unwrap();
+            assert_eq!(style.base.text_align, Some(align), "{script}");
+        }
+    }
+
+    #[test]
+    fn theme_color_checks_the_token_path_when_called() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        for path in [
+            "accent",
+            "surface_hover",
+            "text.danger",
+            "tabbar.active",
+            "table.selection",
+            "undefined_token",
+        ] {
+            let color: ColorValue = engine
+                .eval(&format!("theme_color(\"{path}\")"))
+                .unwrap_or_else(|error| panic!("{path}: {error}"));
+            assert_eq!(color, ColorValue::Token(path.to_owned()));
+        }
+        for path in [
+            "",
+            "Accent",
+            "text-muted",
+            "text.",
+            ".danger",
+            "a.b.c",
+            "text..danger",
+            "_accent",
+        ] {
+            let error = engine
+                .eval::<ColorValue>(&format!("theme_color(\"{path}\")"))
+                .unwrap_err();
+            assert!(
+                error.to_string().contains(&format!(
+                    "color token `{path}` must be `name` or `namespace.name`"
+                )),
+                "{path}: {error}"
+            );
+        }
     }
 
     #[test]

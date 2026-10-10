@@ -3331,8 +3331,14 @@ pub(crate) fn lazy_error_boundary_node(
     }
 }
 
-pub(crate) fn image_node(call: NativeCallContext<'_>, handle: OpaqueHandle) -> UiNode {
-    with_call_source(UiNode::image(handle), call)
+pub(crate) fn image_node(
+    call: NativeCallContext<'_>,
+    handle: OpaqueHandle,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    Ok(with_call_source(
+        UiNode::image_source(image_handle_source(handle)?),
+        call,
+    ))
 }
 
 pub(crate) fn asset_image_node(call: NativeCallContext<'_>, asset: AssetId) -> UiNode {
@@ -3353,11 +3359,14 @@ pub(crate) fn directional_image_node(
     call: NativeCallContext<'_>,
     left_to_right: OpaqueHandle,
     right_to_left: OpaqueHandle,
-) -> UiNode {
-    with_call_source(
-        UiNode::directional_image(left_to_right, right_to_left),
+) -> Result<UiNode, Box<EvalAltResult>> {
+    Ok(with_call_source(
+        UiNode::directional_image_sources(
+            image_handle_source(left_to_right)?,
+            image_handle_source(right_to_left)?,
+        ),
         call,
-    )
+    ))
 }
 
 pub(crate) fn directional_asset_image_node(
@@ -3389,24 +3398,27 @@ fn parse_image_source(source: Dynamic) -> Result<ImageSourceSpec, Box<EvalAltRes
     if source.is::<AssetId>() {
         Ok(ImageSourceSpec::Asset(source.cast::<AssetId>()))
     } else if source.is::<OpaqueHandle>() {
-        let handle = source.cast::<OpaqueHandle>();
-        if handle.kind() == "image" {
-            Ok(ImageSourceSpec::Handle(handle))
-        } else {
-            Err(Box::new(EvalAltResult::ErrorRuntime(
-                format!(
-                    "image source handle must have kind `image`, got `{}`",
-                    handle.kind()
-                )
-                .into(),
-                Position::NONE,
-            )))
-        }
+        image_handle_source(source.cast::<OpaqueHandle>())
     } else {
         Err(Box::new(EvalAltResult::ErrorRuntime(
             format!(
                 "image source must be an AssetId or image handle, got {}",
                 source.type_name()
+            )
+            .into(),
+            Position::NONE,
+        )))
+    }
+}
+
+fn image_handle_source(handle: OpaqueHandle) -> Result<ImageSourceSpec, Box<EvalAltResult>> {
+    if handle.kind() == "image" {
+        Ok(ImageSourceSpec::Handle(handle))
+    } else {
+        Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!(
+                "image source handle must have kind `image`, got `{}`",
+                handle.kind()
             )
             .into(),
             Position::NONE,
@@ -3780,6 +3792,38 @@ mod tests {
             node.attributes().get("role"),
             Some(&UiValue::String("label".to_owned()))
         );
+    }
+
+    #[test]
+    fn image_functions_reject_handles_of_another_kind_when_called() {
+        let runtime = crate::RuntimeEngine::new();
+        let mut scope = rhai::Scope::new();
+        scope.push("task", OpaqueHandle::new("task", 1));
+        scope.push("picture", OpaqueHandle::new("image", 2));
+        for script in [
+            "image(task)",
+            "directional_image(task, picture)",
+            "directional_image(picture, task)",
+            "image_source(task)",
+            "directional_image_source(picture, task)",
+        ] {
+            let error = runtime
+                .engine()
+                .eval_with_scope::<UiNode>(&mut scope, script)
+                .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("image source handle must have kind `image`, got `task`"),
+                "{script}: {error}"
+            );
+        }
+        for script in ["image(picture)", "directional_image(picture, picture)"] {
+            runtime
+                .engine()
+                .eval_with_scope::<UiNode>(&mut scope, script)
+                .unwrap_or_else(|error| panic!("{script}: {error}"));
+        }
     }
 
     #[test]

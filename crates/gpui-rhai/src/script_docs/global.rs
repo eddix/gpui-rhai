@@ -170,9 +170,9 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates an image node that shows the first asset in left-to-right layout and the second in right-to-left layout.",
     },
     ScriptFnDoc {
-        signature: "directional_image(_: OpaqueHandle, _: OpaqueHandle) -> UiNode",
+        signature: "directional_image(_: OpaqueHandle, _: OpaqueHandle) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["left_to_right", "right_to_left"],
-        doc: "Creates an image node that shows the first image handle in left-to-right layout and the second in right-to-left layout.",
+        doc: "Creates an image node that shows the first image handle in left-to-right layout and the second in right-to-left layout; a handle of another kind raises an error.",
     },
     ScriptFnDoc {
         signature: "directional_image_source(_: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -225,9 +225,9 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates an image node for a component-declared, preloaded asset; an undeclared asset renders an image error.",
     },
     ScriptFnDoc {
-        signature: "image(_: OpaqueHandle) -> UiNode",
+        signature: "image(_: OpaqueHandle) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["handle"],
-        doc: "Creates an image node for an image handle from `ctx.load_image` or a capability; a handle of another kind fails when rendered.",
+        doc: "Creates an image node for an image handle from `ctx.load_image` or a capability; a handle of another kind raises an error.",
     },
     ScriptFnDoc {
         signature: "image_source(_: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -609,9 +609,9 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a plain text node.",
     },
     ScriptFnDoc {
-        signature: "theme_color(_: string) -> ColorValue",
+        signature: "theme_color(_: string) -> core::result::Result<gpui_rhai::style::ColorValue,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["token"],
-        doc: "References theme color `token`, such as `\"accent\"` or `\"charts.series_a\"`, resolved against the active theme when the node renders.",
+        doc: "References theme color `token`, a snake_case `name` or `namespace.name` such as `\"accent\"` or `\"text.danger\"`, resolved when the node renders; other paths raise an error.",
     },
     ScriptFnDoc {
         signature: "theme_length(_: string) -> core::result::Result<gpui_rhai::style::Length,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

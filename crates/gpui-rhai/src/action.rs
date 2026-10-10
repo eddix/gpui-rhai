@@ -81,14 +81,12 @@ impl ActionRegistry {
         Ok(())
     }
 
+    /// Register a semantic action enabled, or replace the callback of a
+    /// registered one; a replaced action keeps its enabled state, so running
+    /// the registration again (a hot reload) does not re-enable it.
     pub fn register_or_replace(&mut self, id: ActionId, callback: ScriptCallback) {
-        self.actions.insert(
-            id,
-            ActionEntry {
-                callback,
-                enabled: true,
-            },
-        );
+        let enabled = self.actions.get(&id).is_none_or(|entry| entry.enabled);
+        self.actions.insert(id, ActionEntry { callback, enabled });
     }
 
     pub fn remove_component_scope(&mut self, component: &crate::ComponentInstancePath) {
@@ -512,6 +510,24 @@ mod tests {
             registry.dispatch(&id, UiValue::Null),
             Err(ActionError::Disabled(_))
         ));
+    }
+
+    #[test]
+    fn replacing_an_action_keeps_its_enabled_state() {
+        let id = ActionId::parse("document.save").unwrap();
+        let mut registry = ActionRegistry::new();
+        registry.register_or_replace(id.clone(), callback());
+        assert_eq!(registry.is_enabled(&id), Some(true));
+        registry.set_enabled(&id, false).unwrap();
+        registry.register_or_replace(id.clone(), callback());
+        assert_eq!(registry.is_enabled(&id), Some(false));
+        assert!(matches!(
+            registry.dispatch(&id, UiValue::Null),
+            Err(ActionError::Disabled(_))
+        ));
+        registry.set_enabled(&id, true).unwrap();
+        registry.register_or_replace(id.clone(), callback());
+        assert_eq!(registry.is_enabled(&id), Some(true));
     }
 
     #[test]

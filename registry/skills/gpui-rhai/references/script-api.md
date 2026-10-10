@@ -17,13 +17,13 @@ Functions that build `UiNode` values.
 | `canvas(scene: CanvasScene) -> UiNode` | Creates a canvas node that paints a retained `canvas_scene` in canvas-local logical pixels. |
 | `column(children: Array) -> UiNode` | Creates a box that lays its children out top to bottom (`flex_col`); every child must be a `UiNode`. |
 | `directional_image(left_to_right: AssetId, right_to_left: AssetId) -> UiNode` | Creates an image node that shows the first asset in left-to-right layout and the second in right-to-left layout. |
-| `directional_image(left_to_right: OpaqueHandle, right_to_left: OpaqueHandle) -> UiNode` | Creates an image node that shows the first image handle in left-to-right layout and the second in right-to-left layout. |
+| `directional_image(left_to_right: OpaqueHandle, right_to_left: OpaqueHandle) -> UiNode` | Creates an image node that shows the first image handle in left-to-right layout and the second in right-to-left layout; a handle of another kind raises an error. |
 | `directional_image_source(left_to_right: ?, right_to_left: ?) -> UiNode` | Creates an image node chosen by layout direction; each source is an `AssetId` or an image handle, and other values are rejected. |
 | `error_boundary(child: UiNode, fallback: UiNode) -> UiNode` | Wraps `child` so that a native rendering failure in its subtree shows `fallback` instead. |
 | `error_boundary_lazy(child: FnPtr, fallback: FnPtr) -> UiNode` | Builds `fallback()` then `child()` into an error boundary; when `child()` throws, returns the fallback with a `boundary_error` attribute. |
 | `fragment(children: Array) -> UiNode` | Groups children without a layout box; a fragment carries only children, a key and its source, so style, handlers and refs are rejected. |
 | `image(asset: AssetId) -> UiNode` | Creates an image node for a component-declared, preloaded asset; an undeclared asset renders an image error. |
-| `image(handle: OpaqueHandle) -> UiNode` | Creates an image node for an image handle from `ctx.load_image` or a capability; a handle of another kind fails when rendered. |
+| `image(handle: OpaqueHandle) -> UiNode` | Creates an image node for an image handle from `ctx.load_image` or a capability; a handle of another kind raises an error. |
 | `image_source(source: ?) -> UiNode` | Creates an image node from `source`, an `AssetId` or an image handle; other values are rejected. |
 | `layer(content: UiNode, config: Map) -> UiNode` | Places `content` in a window-level layer; `config` needs `id` and may set `placement` (default `top_right`), `inset` (12 px) and `priority`. |
 | `motion_group(id: String, children: Array) -> UiNode` | Groups children in a layout-transparent fragment whose `shared_layout` nodes join group `id` (1 to 128 letters, digits, `_`, `-`). |
@@ -61,7 +61,7 @@ Values a style is built from; read lengths and colors from theme tokens.
 | `rgb(hex: int) -> ColorValue` | Creates an opaque color from `0xRRGGBB` (0 to 0xffffff). |
 | `rgba(hex: int) -> ColorValue` | Creates a color from `0xRRGGBBAA`, alpha in the low byte (0 to 0xffffffff). |
 | `style() -> Style` | Returns an empty `Style` to build with chained setters. |
-| `theme_color(token: String) -> ColorValue` | References theme color `token`, such as `"accent"` or `"charts.series_a"`, resolved against the active theme when the node renders. |
+| `theme_color(token: String) -> ColorValue` | References theme color `token`, a snake_case `name` or `namespace.name` such as `"accent"` or `"text.danger"`, resolved when the node renders; other paths raise an error. |
 | `theme_length(path: String) -> Length` | References length token `path` (`namespace.name`, such as `"metrics.row"`), resolved against theme and environment when rendered. |
 | `theme_radius(name: String) -> Length` | References radius token `radius.<name>`, such as `theme_radius("md")`, resolved when the node renders. |
 | `theme_spacing(name: String) -> Length` | References spacing token `spacing.<name>`, such as `theme_spacing("sm")`, resolved when the node renders. |
@@ -211,7 +211,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.pause_motion(handle: MotionHandle)` | Pauses the timeline behind `handle` at its current position; raises an error for a stale handle and is not allowed during render. |
 | `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` `key`; returns `false` when no such timer is active. Not allowed during render. |
 | `ctx.play_motion(handle: MotionHandle)` | Plays the timeline behind `handle`, resuming a paused position; idempotent while playing and not allowed during render. |
-| `ctx.register_action(action: String, callback: FnPtr)` | Registers or replaces the app-wide action `action` (`namespace.name`), enabled, running `callback`; removed when the component unmounts. |
+| `ctx.register_action(action: String, callback: FnPtr)` | Registers the app-wide action `action` (`namespace.name`), enabled, running `callback`; again replaces the callback and keeps the enabled state. Removed on unmount. |
 | `ctx.restart_motion(handle: MotionHandle)` | Restarts the timeline behind `handle` from zero, the only way to rewind; not allowed during render. |
 | `ctx.resume_motion(handle: MotionHandle)` | Resumes the timeline behind `handle`, the same as `play_motion`; not allowed during render. |
 | `ctx.resume_timeout(key: String) -> bool` | Clears an explicit pause of this component's declared `timeout` `key`; returns `false` when no such timer is active. |
@@ -345,7 +345,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | Call | Description |
 |---|---|
 | `style.absolute() -> Style` | Takes the node out of the flow and places it by its insets (`top`, `left`, `inset_start`, ...) within its parent. |
-| `style.active(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the pointer is pressed on the node. |
+| `style.active(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the pointer is pressed on the node, over `hover` and `focus` paint. |
 | `style.background(color: ColorValue) -> Style` | Fills the node with a solid color, literal or theme token; replaces a gradient set earlier on this style. |
 | `style.block() -> Style` | Uses block layout: children stack vertically in normal flow and flex alignment does not apply. |
 | `style.border(width: Length) -> Style` | Sets the border width of all four edges in px or rem, replacing per-edge widths; a `relative` length is ignored. |
@@ -365,7 +365,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.col_span(span: int) -> Style` | Makes a grid item span `span` columns, from 1 to 1024. |
 | `style.cursor_crosshair() -> Style` | Shows the crosshair cursor while the pointer is over the node. |
 | `style.cursor_default() -> Style` | Shows the default arrow cursor while the pointer is over the node. |
-| `style.cursor_move() -> Style` | Shows the closed-hand (grabbing) cursor while the pointer is over the node. |
+| `style.cursor_move() -> Style` | Shows the open-hand (grab) cursor while the pointer is over the node, like an idle Draggable handle. |
 | `style.cursor_not_allowed() -> Style` | Shows the not-allowed cursor while the pointer is over the node. |
 | `style.cursor_pointer() -> Style` | Shows the pointing-hand cursor while the pointer is over the node. |
 | `style.cursor_resize_x() -> Style` | Shows the left-right resize cursor while the pointer is over the node. |
@@ -383,7 +383,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.flex_shrink(shrink: bool) -> Style` | Sets whether the node may shrink below its flex basis when space runs out: `true` lets it, `false` forbids it. |
 | `style.flex_wrap() -> Style` | Lets a flex container wrap its children onto further lines. |
 | `style.flex_wrap_reverse() -> Style` | Lets a flex container wrap its children onto further lines, stacked in reverse cross-axis order. |
-| `style.focus(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the node has keyboard focus. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width. |
+| `style.focus(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the node has keyboard focus, over `hover` paint and under `active`. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width. |
 | `style.focus_within(style: Style) -> Style` | Merges the nested style over the node while it or any descendant has keyboard focus. |
 | `style.font_fallbacks(families: Array) -> Style` | Sets the ordered fallback font families, 1 to 16 unique non-empty names, used for glyphs the primary font lacks. |
 | `style.font_family(family: String) -> Style` | Sets the font family by name, a system or registered font of at most 256 bytes; overrides the typography role's family. |
@@ -399,7 +399,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.height(length: AutoLength) -> Style` | Sets the height to auto, so content and layout decide it. |
 | `style.height(length: Length) -> Style` | Sets the height in px, rem or a `relative` fraction of the parent's height. |
 | `style.hidden() -> Style` | Removes the node from layout and paint (display none); `invisible` keeps its space instead. |
-| `style.hover(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the pointer is over the node. |
+| `style.hover(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the pointer is over the node; `focus` and `active` paint win over it. |
 | `style.inset_end(inset: AutoLength) -> Style` | Sets the inset from the logical end edge (right in LTR, left in RTL) to auto; overrides `left`/`right` on that side. |
 | `style.inset_end(inset: Length) -> Style` | Sets the inset from the logical end edge (right in LTR, left in RTL) in px, rem or a `relative` fraction; overrides `left`/`right` there. |
 | `style.inset_end(inset: SignedLength) -> Style` | Sets the inset from the logical end edge (right in LTR, left in RTL) to a signed `offset_*` length; overrides `left`/`right`. |
@@ -496,8 +496,10 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.text_center() -> Style` | Centers text horizontally. |
 | `style.text_color(color: ColorValue) -> Style` | Sets the text color, literal or theme token; descendants inherit it. |
 | `style.text_ellipsis() -> Style` | Truncates text that overflows the available width with an ellipsis at the end. |
-| `style.text_left() -> Style` | Aligns text to the logical start: left in LTR, right in RTL. |
-| `style.text_right() -> Style` | Aligns text to the logical end: right in LTR, left in RTL. |
+| `style.text_end() -> Style` | Aligns text to the logical end: right in LTR, left in RTL. |
+| `style.text_left() -> Style` | Same as `text_start`; mirrors in RTL, so it aligns text right there. |
+| `style.text_right() -> Style` | Same as `text_end`; mirrors in RTL, so it aligns text left there. |
+| `style.text_start() -> Style` | Aligns text to the logical start: left in LTR, right in RTL. |
 | `style.top(inset: AutoLength) -> Style` | Sets the top inset of a positioned node to auto. |
 | `style.top(inset: Length) -> Style` | Sets the top inset of a positioned node in px, rem or a `relative` fraction of the parent's height. |
 | `style.top(inset: SignedLength) -> Style` | Sets the top inset of a positioned node to a signed `offset_*` length, which may be negative. |

@@ -4,10 +4,12 @@
 merge, the application component stylesheet, and component parts determine
 precedence. On ordinary nodes `hover`, `active` and `focus` are paint
 refinements: only background, border color, text color and opacity apply, in
-GPUI's order `base → focus → hover → active`, so hover paints over focus.
-`group_focus`, `focus_within` and `disabled` merge the whole nested style
-before paint; while a node is disabled its pointer and focus paints stop. A
-pseudo style nested inside a pseudo style is ignored.
+the order `base → hover → focus → active`: while a node holds keyboard focus,
+its focus paint wins over hover paint on a property both set, and active paint
+wins over both. `group_hover` paints over focus. `group_focus`, `focus_within`
+and `disabled` merge the whole nested style before paint; while a node is
+disabled its pointer and focus paints stop. A pseudo style nested inside a
+pseudo style is ignored.
 
 A merge (`merge`, a stylesheet rule, `part_styles`) gives the same result as
 chaining the overlay's setters: `padding(x)`, `margin(x)`, `border(x)` and
@@ -38,8 +40,10 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
 - explicit `occlude()` or `occlude_except_scroll()` hitbox policy for blocking
   pointer input to painted elements behind a node;
 - font family, ordered fallback stack, bounded OpenType feature tags, numeric
-  weight, normal/italic style, size/line height, logical text alignment,
-  whitespace, ellipsis, and bounded line clamp.
+  weight, normal/italic style, size/line height, logical text alignment
+  (`text_start`, `text_center`, `text_end`; `text_left` and `text_right` are
+  the same as `text_start` and `text_end` and mirror in RTL), whitespace,
+  ellipsis, and bounded line clamp.
 
 `style().flex_grow()` uses GPUI's ordinary factor of 1. The overloaded
 `style().flex_grow(weight)` accepts a positive integer or float and preserves

@@ -257,7 +257,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "register_action(_: &mut UiContext, _: string, _: Fn) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["action", "callback"],
-        doc: "Registers or replaces the app-wide action `action` (`namespace.name`), enabled, running `callback`; removed when the component unmounts.",
+        doc: "Registers the app-wide action `action` (`namespace.name`), enabled, running `callback`; again replaces the callback and keeps the enabled state. Removed on unmount.",
     },
     ScriptFnDoc {
         signature: "restart_motion(_: &mut UiContext, _: gpui_rhai::motion::MotionHandle) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

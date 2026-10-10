@@ -2573,7 +2573,9 @@ impl GpuiNodeRenderer {
         let element = if disabled {
             element
         } else {
-            apply_pseudo_backgrounds(element, node.style(), &environment.resolver())
+            let focused =
+                retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref();
+            apply_pseudo_backgrounds(element, node.style(), &environment.resolver(), focused)
         };
         let element = apply_hover_group(element, node, retained_id, environment, disabled);
         let element = apply_native_semantics(element, semantic.as_ref());
@@ -5374,6 +5376,18 @@ struct PseudoPaint {
     opacity: Option<f32>,
 }
 
+impl PseudoPaint {
+    /// `self` with every field `top` sets replaced by `top`'s.
+    fn under(self, top: Self) -> Self {
+        Self {
+            background: top.background.or(self.background),
+            border: top.border.or(self.border),
+            text: top.text.or(self.text),
+            opacity: top.opacity.or(self.opacity),
+        }
+    }
+}
+
 fn pseudo_paint(properties: Option<&StyleProperties>, colors: &impl ColorResolver) -> PseudoPaint {
     let Some(properties) = properties else {
         return PseudoPaint::default();
@@ -5443,16 +5457,23 @@ fn hover_group_name(id: NodeId) -> SharedString {
     SharedString::from(format!("gpui-rhai-hover-{}", id.get()))
 }
 
+/// GPUI refines `focus`, then `hover`, then `active`; while the node holds
+/// focus the hover paint carries the focus paint on top, so the order is
+/// `hover → focus → active`.
 fn apply_pseudo_backgrounds(
     mut element: Stateful<Div>,
     style: &Style,
     colors: &impl ColorResolver,
+    focused: bool,
 ) -> Stateful<Div> {
-    let hover = pseudo_paint(style.hover.as_ref(), colors);
+    let mut hover = pseudo_paint(style.hover.as_ref(), colors);
     let active = pseudo_paint(style.active.as_ref(), colors);
     let mut focus = pseudo_paint(style.focus.as_ref(), colors);
     if focus.border.is_none() {
         focus.border = Some(semantic_color(colors, "focus_ring", 0x003b_82f6));
+    }
+    if focused {
+        hover = hover.under(focus);
     }
     element = element.hover(move |style| apply_pseudo_paint(style, hover));
     element = element.active(move |style| apply_pseudo_paint(style, active));
@@ -6194,7 +6215,7 @@ const fn gpui_cursor(cursor: CursorKind) -> CursorStyle {
         CursorKind::Default => CursorStyle::Arrow,
         CursorKind::Pointer => CursorStyle::PointingHand,
         CursorKind::Text => CursorStyle::IBeam,
-        CursorKind::Move => CursorStyle::ClosedHand,
+        CursorKind::Move => CursorStyle::OpenHand,
         CursorKind::Crosshair => CursorStyle::Crosshair,
         CursorKind::NotAllowed => CursorStyle::OperationNotAllowed,
         CursorKind::ResizeHorizontal => CursorStyle::ResizeLeftRight,
@@ -6503,6 +6524,32 @@ mod tests {
         assert_eq!(paint.border, Some(Rgba8::from_rgb_hex(0x0044_5566)));
         assert_eq!(paint.text, Some(Rgba8::from_rgb_hex(0x0077_8899)));
         assert_eq!(paint.opacity, Some(0.625));
+    }
+
+    #[test]
+    fn cursor_move_shows_the_open_hand() {
+        assert_eq!(gpui_cursor(CursorKind::Move), CursorStyle::OpenHand);
+    }
+
+    #[test]
+    fn focus_paint_covers_hover_paint_only_where_it_sets_a_field() {
+        let hover = PseudoPaint {
+            background: Some(Rgba8::from_rgb_hex(0x0000_00ff)),
+            border: Some(Rgba8::from_rgb_hex(0x0000_ff00)),
+            text: None,
+            opacity: Some(0.5),
+        };
+        let focus = PseudoPaint {
+            background: Some(Rgba8::from_rgb_hex(0x00ff_0000)),
+            border: None,
+            text: Some(Rgba8::from_rgb_hex(0x00ff_ffff)),
+            opacity: None,
+        };
+        let painted = hover.under(focus);
+        assert_eq!(painted.background, focus.background);
+        assert_eq!(painted.border, hover.border);
+        assert_eq!(painted.text, focus.text);
+        assert_eq!(painted.opacity, Some(0.5));
     }
 
     #[test]

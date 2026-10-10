@@ -12,7 +12,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "active(_: &mut Style, _: Style) -> Style",
         params: &["style"],
-        doc: "Paints the nested style's background, border color, text color and opacity while the pointer is pressed on the node.",
+        doc: "Paints the nested style's background, border color, text color and opacity while the pointer is pressed on the node, over `hover` and `focus` paint.",
     },
     ScriptFnDoc {
         signature: "background(_: &mut Style, _: ColorValue) -> Style",
@@ -112,7 +112,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "cursor_move(_: &mut Style) -> Style",
         params: &[],
-        doc: "Shows the closed-hand (grabbing) cursor while the pointer is over the node.",
+        doc: "Shows the open-hand (grab) cursor while the pointer is over the node, like an idle Draggable handle.",
     },
     ScriptFnDoc {
         signature: "cursor_not_allowed(_: &mut Style) -> Style",
@@ -202,7 +202,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "focus(_: &mut Style, _: Style) -> Style",
         params: &["style"],
-        doc: "Paints the nested style's background, border color, text color and opacity while the node has keyboard focus. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width.",
+        doc: "Paints the nested style's background, border color, text color and opacity while the node has keyboard focus, over `hover` paint and under `active`. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width.",
     },
     ScriptFnDoc {
         signature: "focus_within(_: &mut Style, _: Style) -> Style",
@@ -282,7 +282,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "hover(_: &mut Style, _: Style) -> Style",
         params: &["style"],
-        doc: "Paints the nested style's background, border color, text color and opacity while the pointer is over the node.",
+        doc: "Paints the nested style's background, border color, text color and opacity while the pointer is over the node; `focus` and `active` paint win over it.",
     },
     ScriptFnDoc {
         signature: "inset_end(_: &mut Style, _: AutoLength) -> Style",
@@ -765,14 +765,24 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Truncates text that overflows the available width with an ellipsis at the end.",
     },
     ScriptFnDoc {
+        signature: "text_end(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Aligns text to the logical end: right in LTR, left in RTL.",
+    },
+    ScriptFnDoc {
         signature: "text_left(_: &mut Style) -> Style",
         params: &[],
-        doc: "Aligns text to the logical start: left in LTR, right in RTL.",
+        doc: "Same as `text_start`; mirrors in RTL, so it aligns text right there.",
     },
     ScriptFnDoc {
         signature: "text_right(_: &mut Style) -> Style",
         params: &[],
-        doc: "Aligns text to the logical end: right in LTR, left in RTL.",
+        doc: "Same as `text_end`; mirrors in RTL, so it aligns text left there.",
+    },
+    ScriptFnDoc {
+        signature: "text_start(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Aligns text to the logical start: left in LTR, right in RTL.",
     },
     ScriptFnDoc {
         signature: "top(_: &mut Style, _: AutoLength) -> Style",

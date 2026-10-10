@@ -173,10 +173,10 @@ fn render_SplitPane(ctx, props) {
     let start_style = style().min_width(px(0)).min_height(px(0)).flex_shrink(false);
     let end_style = style().min_width(px(0)).min_height(px(0)).flex_grow();
     // The 8px grab zone: the native handle draws the hairline down its middle (`line`,
-    // `line_inset`); hover fills the zone with the tonal step and keyboard focus turns it
-    // into an ink bar.
+    // `line_inset`); hover and drag fill the zone with the tonal step and keyboard focus
+    // turns it into an ink bar. The native handle takes the pointer, so hover comes from
+    // its state signal rather than a `hover` style.
     let handle_style = style().flex_shrink(false)
-        .hover(style().background(theme_color("surface_hover")))
         .focus(style().background(theme_color("focus_ring")));
     if horizontal {
         start_style = start_style.width(relative(props.size)).height(relative(1.0));
@@ -197,11 +197,11 @@ fn render_SplitPane(ctx, props) {
         max_start: props.max_start, disabled: props.disabled,
         signal: preview, group_ref: root_ref, start_ref: start_ref,
         line: split_prop(props, "line", true), line_inset: split_prop(props, "line_inset", 4.0) };
+    let state = signal("handle-state", "idle");
+    resize_props.state_signal = state;
     let grip = ();
     if has_grip {
         let grip_ref = element_ref(`${props.key}-grip`);
-        let state = signal("handle-state", "idle");
-        resize_props.state_signal = state;
         resize_props.handle_ref = grip_ref;
         grip = split_grip(ctx, props, horizontal, grip_ref, state);
     }
@@ -213,6 +213,10 @@ fn render_SplitPane(ctx, props) {
     let handle = gpui_rhai::SplitResizePrimitive(resize_props)
         .with_key(`${props.key}-separator`).with_ref(handle_ref)
         .with_style(ctx.component_style("handle", handle_style))
+        .signal_style(state, #{
+            hover: style().background(theme_color("surface_hover")),
+            drag: style().background(theme_color("surface_hover")),
+        })
         .disabled(props.disabled)
         .tab_stop(!props.disabled)
         .accessibility_role("separator")

@@ -10,8 +10,10 @@ fn init(ctx) { ctx.register_action("document.save", Fn("save")); }
 ```
 
 Controls and handlers dispatch by ID with `ctx.dispatch_action(id, payload)`.
-Use `ctx.set_action_enabled(id, bool)` to make availability explicit. Dispatch
-is generation-bound and has a 64-callback budget to stop accidental cycles.
+Use `ctx.set_action_enabled(id, bool)` to make availability explicit. A first
+registration is enabled; registering an ID again (as `init` does on hot reload)
+replaces the callback and keeps the enabled state. Dispatch is generation-bound
+and has a 64-callback budget to stop accidental cycles.
 
 The Rust host maps physical shortcuts through validated `KeyBindingSpec`:
 
