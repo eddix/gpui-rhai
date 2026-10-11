@@ -5194,7 +5194,7 @@ mod tests {
             ExecutionPhase::Render,
             BTreeMap::new(),
         );
-        assert!(!render_context.text("common.loading").unwrap().is_empty());
+        assert_ne!(render_context.text("common.loading").unwrap(), "");
         assert_eq!(render_context.viewport_class().unwrap(), "compact");
         let event = UiContext::new(
             Rc::clone(&runtime),

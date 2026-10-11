@@ -1233,7 +1233,7 @@ fn svg_render_image(bytes: &[u8], color: Option<Rgba8>) -> Result<Arc<RenderImag
     let mut bgra = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
         .map_err(|_| AssetError::InvalidSvg)?
         .into_rgba8();
-    for pixel in bgra.chunks_exact_mut(4) {
+    for pixel in bgra.as_chunks_mut::<4>().0 {
         pixel.swap(0, 2);
     }
     Ok(Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])))

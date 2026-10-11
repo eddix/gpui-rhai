@@ -1479,7 +1479,7 @@ impl PrimitiveRegistry {
     }
 
     pub(crate) fn uses_primary_focus(&self, primitive: &PrimitiveId) -> bool {
-        self.inner.try_borrow().ok().is_some_and(|inner| {
+        self.inner.try_borrow().is_ok_and(|inner| {
             inner
                 .entries
                 .get(primitive)

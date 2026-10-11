@@ -701,7 +701,7 @@ mod tests {
             ))
             .unwrap();
         let report = manager.handle_outside_click(120.0, 110.0);
-        assert!(report.dismissed.is_empty());
+        assert_eq!(report.dismissed, [] as [crate::overlay::OverlayId; 0]);
         assert!(manager.z_index(&OverlayId::new("popover")).is_some());
     }
 

@@ -6789,7 +6789,7 @@ mod tests {
         element.write_a11y_info(&mut node);
         assert_eq!(node.label(), None);
         assert_eq!(node.value(), Some("Ready"));
-        assert!(node.character_lengths().is_empty());
+        assert_eq!(node.character_lengths(), [] as [u8; 0]);
     }
 
     #[test]

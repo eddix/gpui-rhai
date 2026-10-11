@@ -2757,7 +2757,10 @@ mod tests {
             .virtual_requests
             .request(id.clone(), [retained, first_new]);
         assert!(!lifecycle.realize_virtual_requests(&mut engine).unwrap());
-        assert!(engine.take_timings().is_empty());
+        assert_eq!(
+            engine.take_timings(),
+            [] as [crate::engine::ExecutionTiming; 0]
+        );
 
         runtime
             .borrow()

@@ -402,7 +402,7 @@ fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode], titles: &[&str]) {
             );
         }
     };
-    assert!(resize_handles(&headers[0]).is_empty());
+    assert_eq!(resize_handles(&headers[0]), [] as [&gpui_rhai::UiNode; 0]);
     for (index, header) in headers.iter().enumerate().skip(1) {
         let handles = resize_handles(header);
         let last = index + 1 == headers.len();
@@ -4243,7 +4243,7 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
         panic!("Accordion item must render trigger and panel");
     };
     assert!(first_item[0].handler_payload("click").is_some());
-    assert!(!first_item[1].motions().is_empty());
+    assert_ne!(first_item[1].motions(), []);
     let UiNodeKind::Box {
         children: tabs_root,
     } = children[3].kind()

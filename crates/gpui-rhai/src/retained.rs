@@ -665,8 +665,8 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(after, vec![before[1], before[0]]);
-        assert!(report.mounted.is_empty());
-        assert!(report.unmounted.is_empty());
+        assert_eq!(report.mounted, [] as [crate::retained::NodeId; 0]);
+        assert_eq!(report.unmounted, [] as [crate::retained::NodeId; 0]);
         assert_eq!(report.moved, before);
     }
 

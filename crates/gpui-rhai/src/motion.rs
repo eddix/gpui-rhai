@@ -5086,7 +5086,10 @@ mod tests {
             1
         );
         runtime.discard_timeline_events_in_scope("window:b");
-        assert!(runtime.drain_timeline_events().is_empty());
+        assert_eq!(
+            runtime.drain_timeline_events(),
+            [] as [crate::motion::MotionTimelineEvent; 0]
+        );
     }
 
     #[test]

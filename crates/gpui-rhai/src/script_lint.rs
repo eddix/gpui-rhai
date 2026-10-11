@@ -636,7 +636,7 @@ mod tests {
             .unwrap();
         assert_eq!(diagnostics.len(), 2);
         assert_eq!(diagnostics[0].function, "texxt");
-        assert!(diagnostics[0].expected_arities.is_empty());
+        assert_eq!(diagnostics[0].expected_arities, [] as [usize; 0]);
         assert_eq!(diagnostics[1].function, "text");
         assert_eq!(diagnostics[1].expected_arities, vec![1]);
     }

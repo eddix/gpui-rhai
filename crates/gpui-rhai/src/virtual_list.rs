@@ -641,6 +641,9 @@ mod tests {
         registry.restore(snapshot);
         assert_eq!(registry.inspect()[0].requested_count, 2);
         registry.retain(&BTreeSet::new());
-        assert!(registry.inspect().is_empty());
+        assert_eq!(
+            registry.inspect(),
+            [] as [crate::virtual_list::VirtualCollectionMetrics; 0]
+        );
     }
 }

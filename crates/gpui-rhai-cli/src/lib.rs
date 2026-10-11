@@ -2996,7 +2996,7 @@ mod tests {
         fs::write(&source_path, &local).unwrap();
         let registry = bumped_button_registry("// Button presents a refined desktop action.");
         let plan = project.plan_update(&registry).unwrap();
-        assert!(plan.conflicts().is_empty());
+        assert_eq!(plan.conflicts(), []);
         plan.apply().unwrap();
 
         let merged = read(&source_path).unwrap();

@@ -1582,8 +1582,8 @@ mod tests {
             .iter()
             .find(|row| row.kind == DiffRowKind::Modified)
             .unwrap();
-        assert!(!modified.left_inline.is_empty());
-        assert!(!modified.right_inline.is_empty());
+        assert_ne!(modified.left_inline, [] as [std::ops::Range<usize>; 0]);
+        assert_ne!(modified.right_inline, [] as [std::ops::Range<usize>; 0]);
         assert!(
             diff.collapsed
                 .iter()
