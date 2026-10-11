@@ -68,6 +68,20 @@ The first coordinate systems are `cartesian_2d`, `polar`, and `geo_2d`.
 Regions are named and series bind to them explicitly. One chart may contain a
 grid of multiple regions.
 
+A chart has no fill and no frame, so it takes the color of the layer it sits
+on (a panel's `surface`, or the `surface_raised` of a Card, Dialog, Sheet or
+Popover) and the region around it draws the edges, as for Table. Give the root
+a `background` (instance style, `part_styles.root` or `ui/styles.rhai`) to fill
+it. Pie and donut slices, map regions and point annotations are edged in the
+color under the chart so neighbors stand apart: the root's `background` when it
+has one, otherwise `surface`, so on a raised layer give the chart that layer's
+color to match.
+
+```rhai
+chart::PieChart(#{ key: "share", data: rows, encode: #{ name: "team", value: "count" } })
+    .with_style(style().background(theme_color("surface_raised")))
+```
+
 ## Data ownership
 
 Arrays of at most 10,000 Rhai object rows are appropriate for small charts.
@@ -266,8 +280,10 @@ never replaces the installed implementation.
 
 Host-only `export_chart_svg` and `export_chart_png` render an explicit terminal
 scene with bounded size, complete locale context, optional acknowledged
-viewport/selection, data revision, and registered geo sources. PNG uses the
-same system-font environment as the SVG adapter, including CJK fallback.
+viewport/selection, data revision, and registered geo sources. An export has
+no layer under it, so it fills its canvas with `ChartTheme::background`, the
+color its edges use. PNG uses the same system-font environment as the SVG
+adapter, including CJK fallback.
 
 The retained figure's accessibility projection includes the presented revision,
 summary, stable active datum, selected data outside the draw sample, and bounded

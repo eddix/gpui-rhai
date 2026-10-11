@@ -445,6 +445,10 @@ and [docs/design/](docs/design/) for the specification.
   stage holding only absolutely positioned children collapsed to zero height
   in the block-laid-out pane and clipped everything (#140). The separator's
   hover and drag fill take the `handle_hover` and `handle_drag` parts (#132).
+- Chart draws no fill and no frame, so on a raised layer (Dialog, Sheet,
+  Popover, a docked panel) it takes the layer's color instead of a `surface`
+  block (#131, D67). A root `background` fills one chart and also edges its pie
+  slices, map regions and point marks (`ChartPrimitive.background_style`).
 
 ## 0.1.8 - 2026-10-04
 

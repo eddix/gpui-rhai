@@ -582,6 +582,7 @@ Official components wrap them; application components may too.
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `background_style` | style | — | Style whose `background` is the color under the chart, usually the element's own style; pie and donut slices, map regions and point annotations are edged in it (`surface` without one). The chart paints no fill. |
 | `data` | array of any value (at most 10000) or chart data | required | Up to 10,000 inline row objects, or a `NativeChartData` handle from `ctx.get_native_chart_data` for large data. |
 | `hidden_series` | array of string (at most 10000) | `[]` | Series keys to hide; controlled, so update it from `legend_change` payloads. |
 | `key_dimension` | string or `()` | — | Inline-row field whose value keys each datum across replacement, selection, focus and motion. |

@@ -33,7 +33,9 @@ fn geo_rows() {
 fn card(title, content) {
     column([
         text(title).with_style(theme_typography("subtitle")),
-        content.with_style(style().width(relative(1.0)).height(px(220))),
+        // The chart takes the card's color, so pie and map edges match it (D67).
+        content.with_style(style().width(relative(1.0)).height(px(220))
+            .background(theme_color("surface_raised"))),
     ]).with_style(style().width(px(340)).padding(theme_spacing("md"))
         .gap(theme_spacing("sm")).border(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface_raised")))

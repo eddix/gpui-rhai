@@ -10,7 +10,8 @@
 */
 // Native composable visualization surface. Small arrays are converted once to
 // typed columns; NativeChartData keeps streaming and large data in Rust.
-// State is controlled by the caller.
+// State is controlled by the caller. The chart has no fill or frame and takes
+// the color of the layer it sits on; a root `background` fills it.
 // Example: Chart(#{ key: "sales", data: rows, key_dimension: "id", spec: spec })
 
 define_component(#{
@@ -206,9 +207,10 @@ fn emit_annotation(ctx, payload) { ctx.emit("annotation_activate", payload); }
 
 fn render_Chart(ctx, props) {
     chart_validate(props.spec, props.data, prop_or(props, "key_dimension", ()));
+    // No fill and no frame, like Table: the chart takes the color of the layer it sits
+    // on (a Dialog, Sheet or Popover is surface_raised) and the region draws the edges.
     let root = ctx.component_style("root", style()
-        .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
-        .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));
+        .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0)));
     let primitive_props = #{
         key: props.key,
         spec: props.spec,
@@ -220,6 +222,8 @@ fn render_Chart(ctx, props) {
         pan_x: prop_or(props, "pan_x", 0.0),
         pan_y: prop_or(props, "pan_y", 0.0),
         viewport_revision: prop_or(props, "viewport_revision", 0),
+        // A `background` given to the root also edges pie slices and map regions.
+        background_style: root,
         on_select: if "on_select" in props && props.on_select != () { Fn("emit_select") } else { () },
         on_zoom_change: if "on_zoom_change" in props && props.on_zoom_change != () { Fn("emit_zoom") } else { () },
         on_brush_change: if "on_brush_change" in props && props.on_brush_change != () { Fn("emit_brush") } else { () },

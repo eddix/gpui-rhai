@@ -76,6 +76,8 @@ struct ChartConfig {
     pan: ChartPoint,
     viewport: Option<ChartLinkedViewport>,
     viewport_revision: u64,
+    /// The `background` of `background_style`, the color the chart is drawn on.
+    background: Option<crate::Rgba8>,
     theme: PrimitiveTheme,
 }
 
@@ -607,8 +609,7 @@ impl ChartEntity {
             .as_ref()
             .is_some_and(|proposal| config.viewport_revision >= proposal.revision);
         let programmatic_viewport_change = !had_pending_viewport && external_viewport_changed;
-        let theme_changed = primitive_chart_theme(&self.config.theme)
-            != primitive_chart_theme(&config.theme)
+        let theme_changed = self.config.chart_theme() != config.chart_theme()
             || self.config.theme.motion_preference() != config.theme.motion_preference()
             || self.config.theme.motion_quality() != config.theme.motion_quality();
         let acknowledge_viewport = acknowledges_pending || programmatic_viewport_change;
@@ -852,7 +853,7 @@ impl ChartEntity {
         let frame_key = self.current_frame_key();
         self.layout_job = self.layout_job.saturating_add(1);
         let job = self.layout_job;
-        let theme = primitive_chart_theme(&self.config.theme);
+        let theme = self.config.chart_theme();
         let geo = self.geo.clone();
         let viewport = ChartViewport {
             zoom: self.zoom,
@@ -1070,7 +1071,7 @@ impl ChartEntity {
                     self.pan = self.config.pan;
                     return;
                 };
-                let theme = primitive_chart_theme(&self.config.theme);
+                let theme = self.config.chart_theme();
                 let plot = self.bounds.and_then(|bounds| {
                     chart_region_rect(
                         &self.config.spec,
@@ -1104,7 +1105,7 @@ impl ChartEntity {
         let Some(scene) = &self.scene else {
             return;
         };
-        let theme = primitive_chart_theme(&self.config.theme);
+        let theme = self.config.chart_theme();
         let plot = self
             .bounds
             .and_then(|bounds| {
@@ -1198,7 +1199,7 @@ impl ChartEntity {
                     let Some(scene) = scene.as_ref() else {
                         return false;
                     };
-                    let theme = primitive_chart_theme(&self.config.theme);
+                    let theme = self.config.chart_theme();
                     let plot = self
                         .bounds
                         .and_then(|bounds| {
@@ -1235,7 +1236,7 @@ impl ChartEntity {
                     let Some(bounds) = self.bounds else {
                         return false;
                     };
-                    let theme = primitive_chart_theme(&self.config.theme);
+                    let theme = self.config.chart_theme();
                     let Some(plot) = chart_region_rect(
                         &self.config.spec,
                         f64::from(bounds.size.width),
@@ -1831,8 +1832,7 @@ impl Render for ChartEntity {
         let scene = self.displayed_scene(window);
         let hovered = self.hovered.clone();
         let focused = self.focused.clone();
-        let chart_theme = primitive_chart_theme(&self.config.theme);
-        let background = chart_theme.background;
+        let chart_theme = self.config.chart_theme();
         let crosshair = self.config.spec.tooltip.crosshair;
         let crosshair_color = chart_theme.crosshair;
         let canvas_scene = scene.clone();
@@ -1859,7 +1859,6 @@ impl Render for ChartEntity {
             .relative()
             .size_full()
             .overflow_hidden()
-            .bg(rgba(background.as_rgba_hex()))
             .track_focus(&self.focus)
             .tab_stop(true)
             .on_key_down(cx.listener(Self::key_down))
@@ -1910,7 +1909,7 @@ impl Render for ChartEntity {
                     .and_then(|key| scene.marks.iter().find(|mark| mark.key == key))
                 && let Some(position) = mark_center(mark)
             {
-                let chart_theme = primitive_chart_theme(&self.config.theme);
+                let chart_theme = self.config.chart_theme();
                 let tooltip_x = if chart_theme.direction == crate::TextDirection::RightToLeft {
                     position.x - 172.0
                 } else {
@@ -1962,7 +1961,7 @@ impl Render for ChartEntity {
             }
         }
         if let Some((start, end)) = self.brush {
-            let selection = primitive_chart_theme(&self.config.theme).selection;
+            let selection = self.config.chart_theme().selection;
             root = root.child(
                 div()
                     .absolute()
@@ -2367,6 +2366,10 @@ fn chart_config_from_source(
             .integer("viewport_revision")
             .and_then(|value| u64::try_from(value).ok())
             .unwrap_or(0),
+        background: props
+            .style("background_style")
+            .and_then(|style| style.base.background.as_ref())
+            .and_then(|color| theme.resolve_color(color)),
         theme: theme.clone(),
     })
 }
@@ -2791,7 +2794,15 @@ fn string_set_prop(props: &PrimitiveProps, name: &str) -> BTreeSet<String> {
     }
 }
 
-fn primitive_chart_theme(theme: &PrimitiveTheme) -> ChartTheme {
+impl ChartConfig {
+    fn chart_theme(&self) -> ChartTheme {
+        primitive_chart_theme(&self.theme, self.background)
+    }
+}
+
+/// `background` is the color under the chart, from `background_style`; without
+/// one, marks are edged in `surface`, the window canvas.
+fn primitive_chart_theme(theme: &PrimitiveTheme, background: Option<crate::Rgba8>) -> ChartTheme {
     let fallback = ChartTheme::default();
     let palette = (1..=8)
         .map(|index| {
@@ -2801,7 +2812,9 @@ fn primitive_chart_theme(theme: &PrimitiveTheme) -> ChartTheme {
         })
         .collect::<Vec<_>>();
     ChartTheme {
-        background: theme.color("surface").unwrap_or(fallback.background),
+        background: background
+            .or_else(|| theme.color("surface"))
+            .unwrap_or(fallback.background),
         text: theme.color("text_primary").unwrap_or(fallback.text),
         muted_text: theme.color("text_muted").unwrap_or(fallback.muted_text),
         axis: theme.color("charts.axis").unwrap_or(fallback.axis),
@@ -3385,6 +3398,12 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                     ),
             ),
             (
+                "background_style".to_owned(),
+                ObjectField::optional(ValueSchema::Style).with_doc(
+                    "Style whose `background` is the color under the chart, usually the element's own style; pie and donut slices, map regions and point annotations are edged in it (`surface` without one). The chart paints no fill.",
+                ),
+            ),
+            (
                 "on_select".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
                     "Called with the datum reference, name and value when a data mark is clicked or activated by Enter or Space; with `spec.brush` set, the click counts on release, since a press that moves more than 4 pixels starts a brush instead.",
@@ -3658,5 +3677,112 @@ mod tests {
             PrimitiveValue::Data(linked_viewport_value(&geo)),
         );
         assert_eq!(viewport_prop(&props).unwrap(), Some(geo));
+    }
+
+    struct Colors(BTreeMap<String, crate::Rgba8>);
+
+    impl crate::ColorResolver for Colors {
+        fn resolve_token(&self, token: &str) -> Option<crate::Rgba8> {
+            self.0.get(token).copied()
+        }
+
+        fn color_snapshot(&self) -> BTreeMap<String, crate::Rgba8> {
+            self.0.clone()
+        }
+    }
+
+    fn map(entries: &[(&str, UiValue)]) -> UiValue {
+        UiValue::Map(
+            entries
+                .iter()
+                .map(|(key, value)| ((*key).to_owned(), value.clone()))
+                .collect(),
+        )
+    }
+
+    /// Edge colors of the pie's slices.
+    fn slice_edges(config: &ChartConfig) -> Vec<crate::Rgba8> {
+        let prepared = prepare_chart_data(
+            config.spec.clone(),
+            &config.data.snapshot(),
+            &ChartTransformRegistry::new(),
+            &ChartSeriesRegistry::new(),
+            &ChartFormatterRegistry::new(),
+        )
+        .unwrap();
+        super::super::layout_chart_scene(
+            &prepared,
+            320.0,
+            200.0,
+            &config.chart_theme(),
+            &ChartGeoRegistry::new(),
+        )
+        .unwrap()
+        .marks
+        .iter()
+        .filter(|mark| mark.role == ChartMarkRole::Data)
+        .filter_map(|mark| mark.stroke.map(|(color, _)| color))
+        .collect()
+    }
+
+    #[test]
+    fn marks_are_edged_in_the_color_under_the_chart() {
+        let surface = crate::Rgba8::from_rgb_hex(0x0015_1412);
+        let raised = crate::Rgba8::from_rgb_hex(0x001d_1c19);
+        let theme = PrimitiveTheme::capture(&Colors(BTreeMap::from([
+            ("surface".to_owned(), surface),
+            ("surface_raised".to_owned(), raised),
+        ])));
+        let spec = map(&[
+            (
+                "regions",
+                UiValue::Array(vec![map(&[
+                    ("key", UiValue::String("main".to_owned())),
+                    ("kind", UiValue::String("polar".to_owned())),
+                ])]),
+            ),
+            (
+                "series",
+                UiValue::Array(vec![map(&[
+                    ("key", UiValue::String("s".to_owned())),
+                    ("kind", UiValue::String("pie".to_owned())),
+                    (
+                        "encode",
+                        map(&[
+                            ("name", UiValue::String("id".to_owned())),
+                            ("value", UiValue::String("v".to_owned())),
+                        ]),
+                    ),
+                ])]),
+            ),
+        ]);
+        let rows = ["a", "b"]
+            .into_iter()
+            .map(|id| {
+                map(&[
+                    ("id", UiValue::String(id.to_owned())),
+                    ("v", UiValue::Integer(1)),
+                ])
+            })
+            .collect();
+        let props = PrimitiveProps::new()
+            .with("spec", PrimitiveValue::Data(spec))
+            .with("data", PrimitiveValue::Data(UiValue::Array(rows)));
+
+        // Without a background the chart cannot know its layer: `surface`.
+        let (config, _) = parse_config(&props, &theme, None).unwrap();
+        assert_eq!(config.background, None);
+        assert_eq!(slice_edges(&config), vec![surface, surface]);
+
+        let on_raised = props.with(
+            "background_style",
+            PrimitiveValue::Style(Box::new(
+                crate::Style::default()
+                    .background(crate::ColorValue::token("surface_raised").unwrap()),
+            )),
+        );
+        let (config, _) = parse_config(&on_raised, &theme, None).unwrap();
+        assert_eq!(config.background, Some(raised));
+        assert_eq!(slice_edges(&config), vec![raised, raised]);
     }
 }

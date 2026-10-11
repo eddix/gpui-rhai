@@ -165,6 +165,9 @@ pub struct ChartSemanticDatum {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChartTheme {
+    /// Color the chart is drawn on. SVG and PNG export fill their canvas with
+    /// it; pie and donut slices, map regions and point annotations are edged in
+    /// it. The native view paints no fill and takes its layer's color.
     pub background: Rgba8,
     pub text: Rgba8,
     pub muted_text: Rgba8,

@@ -3,7 +3,7 @@
 `charts/chart` · export `Chart` · version 0.1.7. Generated from
 [`registry/charts/chart.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/charts/chart.rhai); do not edit.
 
-Native composable visualization surface. Small arrays are converted once to typed columns; NativeChartData keeps streaming and large data in Rust. State is controlled by the caller.
+Native composable visualization surface. Small arrays are converted once to typed columns; NativeChartData keeps streaming and large data in Rust. State is controlled by the caller. The chart has no fill or frame and takes the color of the layer it sits on; a root `background` fills it.
 
 ```rhai
 import "charts/chart" as chart;
