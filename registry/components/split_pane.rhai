@@ -21,8 +21,11 @@
 // both panes, and pressing anywhere on that box, overhang included, starts the drag. The
 // keyboard steps, the separator role and the tab stop stay on the native handle. The grip
 // takes the `grip_<state>` part while the handle is hovered, dragged, focused or disabled,
-// from a native signal, so pointer moves never re-render Rhai. `line: false` drops the
-// native line for a grip that draws its own.
+// from a native signal, so pointer moves never re-render Rhai. The handle itself takes
+// `handle_hover` and `handle_drag` the same way (the `surface_hover` fill by default); give
+// them the `handle` background to keep the lane still. `line: false` drops the native line
+// for a grip that draws its own. Each pane is a flex column, so content with `flex_grow`
+// fills it, and absolute content is placed from the pane's corner.
 // Example: SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
@@ -88,8 +91,8 @@ define_component(#{
         state: #{ fields: #{} },
         events: #{ resize: #{ payload: #{ type: "number", min: 0.0, max: 1.0 },
             doc: "Emitted once when a drag ends or a key step moves the separator; a drag or step that leaves it in place emits nothing. The payload is the next `size`." } },
-        slots: #{}, parts: ["root", "start", "handle", "end", "grip", "grip_hover", "grip_drag",
-            "grip_focus", "grip_disabled"],
+        slots: #{}, parts: ["root", "start", "handle", "handle_hover", "handle_drag", "end", "grip",
+            "grip_hover", "grip_drag", "grip_focus", "grip_disabled"],
     },
     render: Fn("render_SplitPane")
 });
@@ -157,25 +160,28 @@ fn render_SplitPane(ctx, props) {
     let handle_ref_key = `${props.key}-handle-ref`;
     let handle_ref = element_ref(handle_ref_key);
     let root_style = style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0));
+    // A pane is a flex column: a child with `flex_grow` is as tall as the pane, so a stage
+    // whose children are all absolute does not collapse to nothing.
+    let pane_style = style().flex_col().min_width(px(0)).min_height(px(0));
     if props.start_collapsed {
         return box([box([props.end]).with_key(props.end_key).with_style(ctx.component_style("end",
-            style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))))])
+            pane_style.width(relative(1.0)).height(relative(1.0))))])
             .with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref);
     }
     // A collapsed side keeps the other pane's key, so collapsing never remounts it.
     if props.end_collapsed {
         return box([box([props.start]).with_key(start_ref_key).with_style(ctx.component_style("start",
-            style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))))])
+            pane_style.width(relative(1.0)).height(relative(1.0))))])
             .with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref);
     }
 
     let preview = optional_float_signal("start-size");
-    let start_style = style().min_width(px(0)).min_height(px(0)).flex_shrink(false);
-    let end_style = style().min_width(px(0)).min_height(px(0)).flex_grow();
+    let start_style = pane_style.flex_shrink(false);
+    let end_style = pane_style.flex_grow();
     // The 8px grab zone: the native handle draws the hairline down its middle (`line`,
-    // `line_inset`); hover and drag fill the zone with the tonal step and keyboard focus
-    // turns it into an ink bar. The native handle takes the pointer, so hover comes from
-    // its state signal rather than a `hover` style.
+    // `line_inset`); hover and drag fill the zone with the tonal step (`handle_hover`,
+    // `handle_drag`) and keyboard focus turns it into an ink bar. The native handle takes
+    // the pointer, so hover comes from its state signal rather than a `hover` style.
     let handle_style = style().flex_shrink(false)
         .focus(style().background(theme_color("focus_ring")));
     if horizontal {
@@ -214,8 +220,8 @@ fn render_SplitPane(ctx, props) {
         .with_key(`${props.key}-separator`).with_ref(handle_ref)
         .with_style(ctx.component_style("handle", handle_style))
         .signal_style(state, #{
-            hover: style().background(theme_color("surface_hover")),
-            drag: style().background(theme_color("surface_hover")),
+            hover: ctx.component_style("handle_hover", style().background(theme_color("surface_hover"))),
+            drag: ctx.component_style("handle_drag", style().background(theme_color("surface_hover"))),
         })
         .disabled(props.disabled)
         .tab_stop(!props.disabled)

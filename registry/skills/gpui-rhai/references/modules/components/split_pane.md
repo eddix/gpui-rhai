@@ -7,7 +7,7 @@ Controlled, nestable two-panel split layout with a native drag hot lane.
 
 `size` is the controlled start-panel ratio. Pointer moves update only a native signal; `on_resize` fires once when a drag ends or a keyboard step is requested. If the Host rejects that value, the preview returns to `size`. State: only native pointer preview; application ratio and collapse remain controlled.
 
-`handle` is decoration: it sits in a `grip` box centred on the separator and painted above both panes, and pressing anywhere on that box, overhang included, starts the drag. The keyboard steps, the separator role and the tab stop stay on the native handle. The grip takes the `grip_<state>` part while the handle is hovered, dragged, focused or disabled, from a native signal, so pointer moves never re-render Rhai. `line: false` drops the native line for a grip that draws its own.
+`handle` is decoration: it sits in a `grip` box centred on the separator and painted above both panes, and pressing anywhere on that box, overhang included, starts the drag. The keyboard steps, the separator role and the tab stop stay on the native handle. The grip takes the `grip_<state>` part while the handle is hovered, dragged, focused or disabled, from a native signal, so pointer moves never re-render Rhai. The handle itself takes `handle_hover` and `handle_drag` the same way (the `surface_hover` fill by default); give them the `handle` background to keep the lane still. `line: false` drops the native line for a grip that draws its own. Each pane is a flex column, so content with `flex_grow` fills it, and absolute content is placed from the pane's corner.
 
 ```rhai
 import "components/split_pane" as split_pane;
@@ -50,7 +50,7 @@ split_pane::SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `end`, `grip`, `grip_disabled`, `grip_drag`, `grip_focus`, `grip_hover`, `handle`, `root`, `start`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `end`, `grip`, `grip_disabled`, `grip_drag`, `grip_focus`, `grip_hover`, `handle`, `handle_drag`, `handle_hover`, `root`, `start`.
 
 ## Theme
 

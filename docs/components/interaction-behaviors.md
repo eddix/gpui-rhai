@@ -149,9 +149,16 @@ Resizable wrapper. The current source contract includes:
 | `start_collapsed`, `end_collapsed` | Controlled collapse flags; both true is rejected |
 | `keyboard_step` | Positive logical-pixel step; defaults to 8 |
 | `disabled` | Suppress separator interaction |
+| `handle`, `line`, `line_inset` | Decorative grip node over the separator; the native line and its end inset |
 | `on_resize` / `resize(number)` | Propose the next start-panel ratio |
 
-Style parts are `root`, `start`, `handle`, and `end`. Pointer movement updates a
+Style parts are `root`, `start`, `end` and `handle`. The handle takes
+`handle_hover` and `handle_drag` while it is hovered or dragged (a
+`surface_hover` fill by default; give them the `handle` background to keep the
+lane still), and a `handle` grip takes `grip`, `grip_hover`, `grip_drag`,
+`grip_focus` and `grip_disabled`. Each pane is a flex column, so content with
+`flex_grow` fills it and absolute content is placed from the pane's corner.
+Pointer movement updates a
 native preview signal; release emits a ratio proposal. The caller accepts it by
 updating `size`; rejection restores the controlled value. Directional keyboard
 steps use the proposal path. Horizontal interaction follows logical start/end

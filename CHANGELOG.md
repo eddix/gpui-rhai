@@ -441,6 +441,10 @@ and [docs/design/](docs/design/) for the specification.
 - Combobox and Select accept a selected value that is not among `options`
   (options that load later, or reload): the trigger shows the raw value and
   `multiple` keeps it in the selection. It threw and failed the view.
+- SplitPane panes are flex columns, so content that grows fills its pane; a
+  stage holding only absolutely positioned children collapsed to zero height
+  in the block-laid-out pane and clipped everything (#140). The separator's
+  hover and drag fill take the `handle_hover` and `handle_drag` parts (#132).
 
 ## 0.1.8 - 2026-10-04
 
