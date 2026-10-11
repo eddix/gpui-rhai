@@ -227,6 +227,10 @@ and [docs/design/](docs/design/) for the specification.
   repository; `gpui-rhai skills <directory>` writes the copy bundled with the
   CLI (`BUNDLED_SKILL_FILES` in the registry crate) into `.claude/skills`,
   `.agents/skills` or another directory, and refreshes it when run again.
+- `gpui-rhai init` replaces the hello-world `src/main.rs` that `cargo new`
+  writes, so the quick start (`cargo new`, `init`, `dev`) opens a window; it
+  wrote the host to `gpui-rhai-host-snippet.rs` and `dev` printed "Hello,
+  world!". Any other `src/main.rs` is still left alone.
 - `gpui-rhai init` makes the project depend on the CLI's own runtime line
   (`gpui-rhai = "0.2"` from a 0.2 CLI); it wrote a fixed `"0.1"`, which cannot
   load the Runtime API 3 components the same CLI copies.

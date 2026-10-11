@@ -33,8 +33,9 @@ gpui-rhai check
 gpui-rhai dev
 ```
 
-`init` adds the runtime dependency, a minimal Rust host (it never overwrites
-an existing `main.rs`), the Rhai entry `ui/main.rhai`, the theme, the token
+`init` adds the runtime dependency, a minimal Rust host (it replaces the
+hello-world `main.rs` from `cargo new`; any other `main.rs` stays, and the host
+goes to `gpui-rhai-host-snippet.rs`), the Rhai entry `ui/main.rhai`, the theme, the token
 base `ui/tokens.rhai`, the component stylesheet `ui/styles.rhai` and the
 manifests; `--profile productivity` adds the design rules `check` reports on.
 `add` copies components with their dependencies and an update baseline.

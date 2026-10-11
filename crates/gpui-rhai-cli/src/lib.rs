@@ -296,10 +296,21 @@ impl Project {
         let mut plan = ProjectPlan::new(self.root.clone());
         plan.update(cargo_path, cargo.to_string(), cargo_source);
         let main_path = self.root.join("src/main.rs");
-        if main_path.exists() {
-            plan.create(self.root.join("gpui-rhai-host-snippet.rs"), host_source())?;
-        } else {
-            plan.create(main_path, host_source())?;
+        match fs::read_to_string(&main_path) {
+            // `cargo new` writes a hello-world main; replacing it loses nothing.
+            Ok(existing) if existing == CARGO_NEW_MAIN => {
+                plan.update(main_path, host_source(), existing);
+            }
+            Ok(_) => plan.create(self.root.join("gpui-rhai-host-snippet.rs"), host_source())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                plan.create(main_path, host_source())?;
+            }
+            Err(source) => {
+                return Err(ProjectError::Io {
+                    path: main_path,
+                    source,
+                });
+            }
         }
         plan.create(self.root.join("ui/main.rhai"), starter_ui())?;
         plan.create(self.root.join("ui/theme.rhai"), DEFAULT_THEME.to_owned())?;
@@ -1736,6 +1747,9 @@ fn embedded_asset_mime(path: &str) -> Result<&'static str, ProjectError> {
     }
 }
 
+/// The `src/main.rs` that `cargo new` writes, which `init` may replace.
+const CARGO_NEW_MAIN: &str = "fn main() {\n    println!(\"Hello, world!\");\n}\n";
+
 fn host_source() -> String {
     r#"fn main() {
     let view = gpui_rhai::FileScriptView::new("ui/main.rhai")
@@ -2687,6 +2701,19 @@ mod tests {
         assert!(matches!(error, ProjectError::KnownCalls(_)));
         assert!(error.to_string().contains("text/0"));
         assert!(error.to_string().contains("expected 1"));
+    }
+
+    #[test]
+    fn init_replaces_the_main_cargo_new_wrote() {
+        let directory = fixture();
+        fs::write(directory.path().join("src/main.rs"), CARGO_NEW_MAIN).unwrap();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        assert_eq!(
+            read(&directory.path().join("src/main.rs")).unwrap(),
+            host_source()
+        );
+        assert!(!directory.path().join("gpui-rhai-host-snippet.rs").exists());
     }
 
     #[test]

@@ -93,8 +93,9 @@ ui/
 
 The files under `ui/` belong to the application. The files under
 `.gpui-rhai/baselines/` let the CLI distinguish local edits from later bundled
-source updates. `init` never overwrites an existing `src/main.rs`; when one is
-present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
+source updates. `init` replaces the hello-world `src/main.rs` that `cargo new`
+writes; any other `src/main.rs` stays, and `init` writes
+`gpui-rhai-host-snippet.rs` for deliberate integration.
 
 `init` writes the crates.io dependency of the CLI's own runtime line, for
 example from a 0.2 CLI:
