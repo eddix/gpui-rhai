@@ -107,7 +107,10 @@ fn settle(visual: &mut VisualTestContext) {
 }
 
 /// Logical sizes of the quads filled with `color`.
-fn filled(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32)> {
+/// Logical sizes of painted quads.
+type Sizes = Vec<(f32, f32)>;
+
+fn filled(visual: &mut VisualTestContext, color: u32) -> Sizes {
     let color: gpui::Hsla = rgba(color).into();
     visual.update(|window, _| {
         let scale = window.scale_factor();
@@ -254,9 +257,7 @@ fn assert_lane_states(
         "the drag did not move the separator: ({x}, {y}) -> ({dragged_x}, {dragged_y})"
     );
 
-    let keeps = |(band, own): &(Vec<(f32, f32)>, Vec<(f32, f32)>)| {
-        !lane(band, horizontal) && lane(own, horizontal)
-    };
+    let keeps = |(band, own): &(Sizes, Sizes)| !lane(band, horizontal) && lane(own, horizontal);
     assert!(
         keeps(&hovered) && keeps(&dragged),
         "the lane should take handle_hover / handle_drag and show no surface_hover band\n  \
