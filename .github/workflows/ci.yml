@@ -15,7 +15,7 @@ permissions:
 jobs:
   portable:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       # Incremental caches only cost disk on a one-shot runner.
       CARGO_INCREMENTAL: 0
