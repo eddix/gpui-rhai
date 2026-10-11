@@ -109,8 +109,12 @@ fn imports(source: &str) -> Vec<String> {
         .collect()
 }
 
-/// Run one snippet; `Err` describes how the outcome differed from the marker.
-fn run(snippet: &Snippet, registry: &BundledRegistry) -> Result<(), String> {
+/// Check `source` as `ui/main.rhai` of a fresh project with the official modules
+/// it imports installed; `Err` reports a module that could not be added.
+pub(crate) fn check_in_fresh_project(
+    source: &str,
+    registry: &BundledRegistry,
+) -> Result<Result<crate::CheckReport, crate::ProjectError>, String> {
     let directory = tempfile::tempdir().unwrap();
     fs::create_dir_all(directory.path().join("src")).unwrap();
     fs::write(
@@ -120,7 +124,7 @@ fn run(snippet: &Snippet, registry: &BundledRegistry) -> Result<(), String> {
     .unwrap();
     let project = Project::new(directory.path());
     project.plan_init().unwrap().apply().unwrap();
-    let modules = imports(&snippet.source);
+    let modules = imports(source);
     if !modules.is_empty() {
         project
             .plan_add(registry, &modules)
@@ -128,8 +132,13 @@ fn run(snippet: &Snippet, registry: &BundledRegistry) -> Result<(), String> {
             .apply()
             .unwrap();
     }
-    fs::write(directory.path().join("ui/main.rhai"), &snippet.source).unwrap();
-    let outcome = project.check();
+    fs::write(directory.path().join("ui/main.rhai"), source).unwrap();
+    Ok(project.check())
+}
+
+/// Run one snippet; `Err` describes how the outcome differed from the marker.
+fn run(snippet: &Snippet, registry: &BundledRegistry) -> Result<(), String> {
+    let outcome = check_in_fresh_project(&snippet.source, registry)?;
     match (&snippet.expectation, outcome) {
         (Expectation::Pass, Ok(report)) if report.warnings.is_empty() => Ok(()),
         (Expectation::Pass, Ok(report)) => {

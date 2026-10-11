@@ -95,8 +95,8 @@ Components, references, collections, timers, motion and canvas commands.
 | `date_checked_add_days(date: String, days: int) -> ?` | Adds signed `days` to an ISO `YYYY-MM-DD` date and returns the new ISO date, or `()` when it leaves years 1 to 9999. |
 | `date_checked_add_months(date: String, months: int) -> ?` | Adds signed `months` to an ISO date, clamping the day into the target month; returns `()` when it leaves years 1 to 9999. |
 | `date_clamp(date: String, min: ?, max: ?) -> String` | Clamps an ISO date into `min` to `max`, each an ISO date or `()` for no bound, and returns the ISO date. |
-| `date_info(date: String) -> Dynamic>` | Parses an ISO `YYYY-MM-DD` date into `#{ iso, year, month, day, weekday }`, `weekday` being a lowercase English name. |
-| `date_month_grid(date: String, first_weekday: String) -> Dynamic>` | Returns the 42 cells (six weeks) of the month containing `date`, weeks starting on `first_weekday`; each is `#{ date, day, outside, weekday }`. |
+| `date_info(date: String) -> Map` | Parses an ISO `YYYY-MM-DD` date into `#{ iso, year, month, day, weekday }`, `weekday` being a lowercase English name. |
+| `date_month_grid(date: String, first_weekday: String) -> Array` | Returns the 42 cells (six weeks) of the month containing `date`, weeks starting on `first_weekday`; each is `#{ date, day, outside, weekday }`. |
 | `date_month_intersects(date: String, min: ?, max: ?) -> bool` | Returns whether any day of the month containing `date` lies within `min` to `max`, each an ISO date or `()` for no bound. |
 | `date_month_start(date: String) -> String` | Returns the ISO date of the first day of the month containing the ISO date `date`. |
 | `date_week_edge(date: String, first_weekday: String, end: bool) -> ?` | Returns the ISO date that starts (or, when `end`, ends) the week containing `date`, weeks starting on `first_weekday`, or `()` out of range. |
@@ -125,7 +125,7 @@ Components, references, collections, timers, motion and canvas commands.
 | `motion_spring(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. |
 | `motion_spring(property: String, from: ?, to: ?, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. Numbers may be integers or floats. |
 | `motion_stagger(steps: Array, interval_ms: int) -> MotionTimelineStep` | Creates a timeline step that starts each of `steps` `interval_ms` milliseconds after the previous one. |
-| `motion_text_spans(text: String, config: Map) -> Dynamic>` | Splits `text` into one fading-in span per grapheme for `text(spans)`; `config` sets `duration_ms` (180), `stagger_ms` (24), `easing`. |
+| `motion_text_spans(text: String, config: Map) -> Array` | Splits `text` into one fading-in span per grapheme for `text(spans)`; `config` sets `duration_ms` (180), `stagger_ms` (24), `easing`. |
 | `motion_timeline(name: String, root: MotionTimelineStep, config: Map) -> MotionTimeline` | Creates timeline `name` from a root step for `node.timeline`; `config` sets `autoplay` (true), `iterations`, `on_complete`, `on_cancel`. |
 | `motion_track(target: String, source: MotionSource) -> MotionTimelineStep` | Creates a timeline step that plays `source` on `target`: `"."` for the timeline's own node, or a `/`-separated path of descendant keys. |
 | `motion_transition(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`. |
@@ -138,7 +138,7 @@ Components, references, collections, timers, motion and canvas commands.
 | `native_table_neighbors(collection: NativeCollection, selected_keys: Array) -> Map` | Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row. Non-string keys match no row. |
 | `native_table_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a sorted, filtered, paged and grouped view of a native collection, as the Table's normalized `config` describes. |
 | `optional_float_signal(key: String) -> NativeSignal` | Declares a component-local optional-float signal that starts as `()` during formal render, for example to bind as `width_override`. |
-| `outline_projection(items: Array, expanded_keys: Array) -> Dynamic>` | Flattens `#{ key, parent, label }` tree items into visible rows with `depth` and `has_children`, opening only `expanded_keys`. |
+| `outline_projection(items: Array, expanded_keys: Array) -> Array` | Flattens `#{ key, parent, label }` tree items into visible rows with `depth` and `has_children`, opening only `expanded_keys`. |
 | `path_close() -> CanvasPathSegment` | Creates a path segment that closes the current subpath back to its start. |
 | `path_cubic(x: float, y: float, control_a_x: float, control_a_y: float, control_b_x: float, control_b_y: float) -> CanvasPathSegment` | Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`). |
 | `path_cubic(x: ?, y: ?, control_a_x: ?, control_a_y: ?, control_b_x: ?, control_b_y: ?) -> CanvasPathSegment` | Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`). Numbers may be integers or floats. |
@@ -162,8 +162,8 @@ Methods of the context a view, callback or effect receives.
 |---|---|
 | `ctx.action_enabled(action: String) -> bool` | Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered. |
 | `ctx.action_shortcut(action: String) -> ?` | Returns the key binding declared to this view for `action` as `#{ label, keystrokes, chords }`, or `()` when it has none. |
-| `ctx.actions() -> Dynamic>` | Lists every registered action as `#{ id, enabled, shortcut }` for a command palette; `shortcut` is `()` when unbound. |
-| `ctx.calendar() -> Dynamic>` | Returns the selected locale's calendar metadata: `first_weekday`, `months`, `weekdays` and `date_patterns`. Records a locale dependency in render. |
+| `ctx.actions() -> Array` | Lists every registered action as `#{ id, enabled, shortcut }` for a command palette; `shortcut` is `()` when unbound. |
+| `ctx.calendar() -> Map` | Returns the selected locale's calendar metadata: `first_weekday`, `months`, `weekdays` and `date_patterns`. Records a locale dependency in render. |
 | `ctx.call_capability(capability: String, method: String, input: ?) -> ?` | Synchronously calls `method` of the declared capability `capability` with `input` and returns its output; not allowed during render. |
 | `ctx.cancel_image_decode(handle: ImageDecodeHandle) -> bool` | Cancels a pending image decode so its callbacks never run; returns `false` when it is no longer pending. Raises for another component's handle. |
 | `ctx.cancel_motion(handle: MotionHandle)` | Cancels the timeline behind `handle`; raises an error for a stale handle and is not allowed during render. |
@@ -204,9 +204,9 @@ Methods of the context a view, callback or effect receives.
 | `ctx.motion_easing(role: String) -> String` | Returns the theme easing for `role` as `linear`, `ease_in`, `ease_out` or `ease_in_out`; raises an error for an unknown role. |
 | `ctx.motion_handle(name: String) -> MotionHandle` | Returns a handle to the timeline `name` this component declared in the current view; raises an error when missing or duplicated. |
 | `ctx.motion_quality() -> String` | Returns the Host's motion quality tier: `low`, `medium` or `high`. |
-| `ctx.motion_spring(role: String) -> Dynamic>` | Returns the theme spring preset for `role` as `#{ stiffness, damping, mass }`; raises an error for an unknown role. |
+| `ctx.motion_spring(role: String) -> Map` | Returns the theme spring preset for `role` as `#{ stiffness, damping, mass }`; raises an error for an unknown role. |
 | `ctx.motion_stagger(role: String) -> int` | Returns the theme stagger interval in milliseconds for `role`, such as `tight`; raises an error for an unknown role. |
-| `ctx.number() -> Dynamic>` | Returns the selected locale's number metadata: `digits`, separators, group sizes and `minus_sign`. Records a locale dependency in render. |
+| `ctx.number() -> Map` | Returns the selected locale's number metadata: `digits`, separators, group sizes and `minus_sign`. Records a locale dependency in render. |
 | `ctx.open_window(id: String, title: String, width: int, height: int, focus: bool)` | Queues a new window `id` that runs the same entry, sides 200 to 4096 pixels; needs window-command authority, not during render. |
 | `ctx.pause_motion(handle: MotionHandle)` | Pauses the timeline behind `handle` at its current position; raises an error for a stale handle and is not allowed during render. |
 | `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` `key`; returns `false` when no such timer is active. Not allowed during render. |

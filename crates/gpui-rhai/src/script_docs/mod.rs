@@ -340,6 +340,20 @@ pub fn type_name(raw: &str) -> String {
     {
         return format!("{}?", type_name(inner));
     }
+    // A generic type is named by its outer type: `Vec<Dynamic>` is an array and a
+    // `BTreeMap<_, Dynamic>` a map; splitting the whole name on `::` would end inside
+    // the arguments.
+    if let Some((outer, arguments)) = raw.split_once('<') {
+        let outer = outer.rsplit("::").next().unwrap_or(outer);
+        return match outer {
+            "Vec" | "VecDeque" | "SmallVec" => "Array".to_owned(),
+            "BTreeMap" | "HashMap" | "IndexMap" => "Map".to_owned(),
+            "Box" | "Rc" | "Arc" => type_name(first_generic(
+                arguments.strip_suffix('>').unwrap_or(arguments),
+            )),
+            other => other.to_owned(),
+        };
+    }
     let last = raw.rsplit("::").next().unwrap_or(raw);
     match last {
         "" | "_" | "?" | "Dynamic" => "?".to_owned(),
@@ -409,6 +423,47 @@ mod tests {
             ),
             "()"
         );
+        assert_eq!(
+            type_name(
+                "core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>"
+            ),
+            "Array"
+        );
+        assert_eq!(
+            type_name(
+                "alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>, rhai::types::dynamic::Dynamic>"
+            ),
+            "Map"
+        );
+    }
+
+    /// Every type in the generated definitions is a script type name, read from the
+    /// engine's real metadata: no Rust generics leak into `.d.rhai`.
+    #[test]
+    fn generated_definitions_use_script_collection_types() {
+        let runtime = crate::RuntimeEngine::new();
+        let api = ScriptApi::from_engine(runtime.engine()).unwrap();
+        let leaked = api
+            .functions
+            .iter()
+            .filter(|function| {
+                std::iter::once(&function.return_type)
+                    .chain(function.params.iter().map(|param| &param.type_name))
+                    .any(|name| name.contains(['<', '>', ':']))
+            })
+            .map(ScriptFn::display)
+            .collect::<Vec<_>>();
+        assert!(leaked.is_empty(), "Rust types in signatures: {leaked:?}");
+        let returns = |name: &str| {
+            api.functions
+                .iter()
+                .find(|function| function.name == name)
+                .map(|function| function.return_type.clone())
+        };
+        assert_eq!(returns("date_info").as_deref(), Some("Map"));
+        assert_eq!(returns("actions").as_deref(), Some("Array"));
+        let definitions = api.definitions();
+        assert!(!definitions.contains("Dynamic>"), "{definitions}");
     }
 
     #[test]

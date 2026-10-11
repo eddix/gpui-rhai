@@ -58,31 +58,68 @@ const COPIED: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// Recipes: complete, tested views from the examples, (title, example, note).
-const RECIPES: &[(&str, &str, &str)] = &[
-    (
-        "Settings panel",
-        "settings_panel",
-        "A Region with a FormLayout of settings: Switch, RadioGroup, ToggleGroup and a \
-         searchable Combobox, plus an Accordion and a Popover.",
-    ),
-    (
-        "Form with validation, dialog and toast",
-        "form_showcase",
-        "A FormLayout of Input, Textarea, Select, DatePicker, Checkbox, RadioGroup and \
-         Switch fields, validated on submit, with a Dialog and a Toast.",
-    ),
-    (
-        "Data view with a table",
-        "data_table",
-        "A DataView around a Table with a filter, sorting, selection, paging, and \
-         loading and empty states.",
-    ),
-    (
-        "Dashboard",
-        "dashboard_layout",
-        "Sections of Stat figures, DescriptionLists, Tabs, Tags and Progress.",
-    ),
+/// A recipe: a complete, tested view from an example.
+struct Recipe {
+    title: &'static str,
+    example: &'static str,
+    note: &'static str,
+    /// The example's visual-test placeholders, filled as its default state: the
+    /// host replaces them before running `MAIN`, so a recipe must too.
+    values: &'static [(&'static str, &'static str)],
+}
+
+const THEME_AND_LOCALE: [(&str, &str); 2] = [
+    ("__VISUAL_THEME__", "default-dark"),
+    ("__VISUAL_LOCALE__", "en"),
+];
+
+const RECIPES: &[Recipe] = &[
+    Recipe {
+        title: "Settings panel",
+        example: "settings_panel",
+        note: "A Region with a FormLayout of settings: Switch, RadioGroup, ToggleGroup and a \
+               searchable Combobox, plus an Accordion and a Popover.",
+        values: &THEME_AND_LOCALE,
+    },
+    Recipe {
+        title: "Form with validation, dialog and toast",
+        example: "form_showcase",
+        note: "A FormLayout of Input, Textarea, Select, DatePicker, Checkbox, RadioGroup and \
+               Switch fields, validated on submit, with a Dialog and a Toast.",
+        values: &[
+            ("__VISUAL_THEME__", "default-dark"),
+            ("__VISUAL_LOCALE__", "en"),
+            ("__VISUAL_NAME__", ""),
+            ("__VISUAL_ACCEPTED__", "false"),
+            ("__VISUAL_DIALOG__", "false"),
+            ("__VISUAL_TOAST__", "false"),
+            ("__TOAST_DURATION__", "2200"),
+            ("__VISUAL_COUNTRY__", "#{ type: \"null\" }"),
+            ("__VISUAL_APPOINTMENT__", "#{ type: \"null\" }"),
+            ("__VISUAL_NOTES__", ""),
+        ],
+    },
+    Recipe {
+        title: "Data view with a table",
+        example: "data_table",
+        note: "A DataView around a Table with a filter, sorting, selection, paging, and \
+               loading and empty states.",
+        values: &[
+            ("__VISUAL_THEME__", "default-dark"),
+            ("__VISUAL_LOCALE__", "en"),
+            ("__VISUAL_SELECTED__", "[]"),
+            ("__VISUAL_LOADING__", "false"),
+            ("__VISUAL_GROUP_BY__", "#{ type: \"null\" }"),
+            ("__GROUP_CONTROL__", "false"),
+            ("__ROW_COUNT__", "500"),
+        ],
+    },
+    Recipe {
+        title: "Dashboard",
+        example: "dashboard_layout",
+        note: "Sections of Stat figures, DescriptionLists, Tabs, Tags and Progress.",
+        values: &THEME_AND_LOCALE,
+    },
 ];
 
 fn repository_root() -> PathBuf {
@@ -197,8 +234,13 @@ fn rewrite_target(
     )
 }
 
-/// The Rhai view an example embeds as `const MAIN: &str = r#"..."#;`.
-fn example_view(root: &Path, example: &str) -> Result<String, ProjectError> {
+/// The Rhai view an example embeds as `const MAIN: &str = r#"..."#;`, with its
+/// placeholders filled from `values`; one left unfilled is an error.
+fn example_view(
+    root: &Path,
+    example: &str,
+    values: &[(&str, &str)],
+) -> Result<String, ProjectError> {
     let path = root.join(format!("crates/gpui-rhai/examples/{example}.rs"));
     let source = crate::read(&path)?;
     let start = source
@@ -208,9 +250,24 @@ fn example_view(root: &Path, example: &str) -> Result<String, ProjectError> {
     let end = source[start..]
         .find("\"#;")
         .ok_or_else(|| ProjectError::MissingExampleView(path.clone()))?;
-    Ok(source[start..start + end]
+    let mut view = source[start..start + end]
         .trim_start_matches('\n')
-        .to_owned())
+        .to_owned();
+    for (placeholder, value) in values {
+        view = view.replace(placeholder, value);
+    }
+    if let Some(open) = view.find("__")
+        && let Some(length) = view[open + 2..].find("__")
+        && view[open + 2..open + 2 + length]
+            .chars()
+            .all(|character| character.is_ascii_uppercase() || character == '_')
+    {
+        return Err(ProjectError::RecipePlaceholder {
+            example: example.to_owned(),
+            placeholder: view[open..open + length + 4].to_owned(),
+        });
+    }
+    Ok(view)
 }
 
 fn recipes(root: &Path) -> Result<String, ProjectError> {
@@ -220,8 +277,14 @@ fn recipes(root: &Path) -> Result<String, ProjectError> {
          are built, rendered into checked-in baselines and audited by the test suite.\n\
          Start from the closest one; the module reference has every prop they use.\n",
     );
-    for (title, example, note) in RECIPES {
-        let view = example_view(root, example)?;
+    for Recipe {
+        title,
+        example,
+        note,
+        values,
+    } in RECIPES
+    {
+        let view = example_view(root, example, values)?;
         let _ = write!(
             page,
             "\n## {title}\n\n{note} From [`{example}.rs`]({REPOSITORY_URL}/crates/gpui-rhai/examples/{example}.rs).\n\n```rhai\n{view}```\n"
@@ -430,6 +493,66 @@ mod tests {
              GPUI_RHAI_UPDATE_REFERENCE=1 cargo test -p gpui-rhai-cli",
             stale.len()
         );
+    }
+
+    /// The ```` ```rhai ```` blocks of `text` that define a view.
+    fn view_blocks(text: &str) -> Vec<String> {
+        let mut blocks = Vec::new();
+        let mut current: Option<String> = None;
+        for line in text.lines() {
+            match (&mut current, line.trim()) {
+                (None, "```rhai") => current = Some(String::new()),
+                (Some(block), "```") => {
+                    if block.contains("fn view(") {
+                        blocks.push(std::mem::take(block));
+                    }
+                    current = None;
+                }
+                (Some(block), _) => {
+                    block.push_str(line);
+                    block.push('\n');
+                }
+                (None, _) => {}
+            }
+        }
+        blocks
+    }
+
+    /// Every view an agent copies from the skills, the recipes and the `SKILL.md`
+    /// examples, passes `check` as written in a fresh project with its imports
+    /// installed: equal generated files would not show a broken recipe.
+    #[test]
+    fn skill_views_pass_check_as_written() {
+        let registry = BundledRegistry::load().unwrap();
+        let generated = skill_files(&registry).unwrap();
+        let mut sources = vec![(
+            "gpui-rhai/references/recipes.md".to_owned(),
+            generated[&PathBuf::from("gpui-rhai/references/recipes.md")].clone(),
+        )];
+        for skill in SKILLS {
+            let path = repository_root()
+                .join("skills")
+                .join(skill)
+                .join("SKILL.md");
+            sources.push((format!("{skill}/SKILL.md"), crate::read(&path).unwrap()));
+        }
+        let mut checked = 0;
+        let mut failures = Vec::new();
+        for (file, text) in &sources {
+            for block in view_blocks(text) {
+                checked += 1;
+                match crate::doc_snippets::check_in_fresh_project(&block, &registry) {
+                    Ok(Ok(report)) if report.warnings.is_empty() => {}
+                    Ok(Ok(report)) => {
+                        failures.push(format!("{file}: warnings {:?}", report.warnings));
+                    }
+                    Ok(Err(error)) => failures.push(format!("{file}: {error}")),
+                    Err(error) => failures.push(format!("{file}: {error}")),
+                }
+            }
+        }
+        assert!(checked >= 5, "found only {checked} views");
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     #[test]

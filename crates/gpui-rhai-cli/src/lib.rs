@@ -2247,6 +2247,11 @@ pub enum ProjectError {
     MissingExport(ModuleId),
     #[error("example `{0}` has no `const MAIN: &str = r#\"...\"#;` view")]
     MissingExampleView(PathBuf),
+    #[error("recipe from example `{example}` leaves placeholder `{placeholder}` unfilled")]
+    RecipePlaceholder {
+        example: String,
+        placeholder: String,
+    },
     #[error("component `{component}` source documentation is missing {missing}")]
     ComponentDocumentation {
         component: ModuleId,

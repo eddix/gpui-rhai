@@ -230,11 +230,23 @@ The runtime sets these limits for every script:
 
 | Limit | Value |
 |---|---|
+| operations per script run (a render, a callback, an effect) | 1,000,000 |
 | expression depth | 64 at the top level, 32 inside a function |
 | call depth | 64 |
 | array items | 10,000 |
 | map entries | 100,000 |
 | string length | 1 MiB |
+
+A Host changes the operation budget with `operation_limit(n)` and the depths
+with `expression_depth_limits(global, functions)` on `EmbeddedScriptView` or
+`FileScriptView`.
+
+The array, map and string limits count everything nested in a value: an array's
+size is its items plus the items of every array and map inside it, and the
+string limit applies to the total length of the strings it holds. Data that
+gives every row its own list therefore grows as rows times list length; keep
+per-row data small and compute anything derived (the next selection, say) in
+the callback that needs it.
 
 A call, an array and a method chain each cost depth, so a function body nests
 only a few containers: five `column([...])` levels pass, six do not, and five

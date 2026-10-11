@@ -301,9 +301,9 @@ adjacent visual label exists. A placeholder is only a visual hint and is never
 used as the control name. Omit Icon's optional `label` only when the icon is
 decorative; a meaningful standalone image must provide one. IconButton always
 requires its own action label. For persistent icon-only tool state, pass the
-controlled `selected` prop; transparent variants keep their container while
-switching the glyph to the semantic accent and exposing pressed accessibility
-state.
+controlled `selected` prop: `ghost`, `outline` and `secondary` fill with
+`selection` (the glyph keeps its color), stop reacting to hover, and expose
+pressed accessibility state.
 
 Formal component render functions are pure automatic reuse boundaries. When
 root state changes, unchanged non-slot props and a clean component subtree let
@@ -1139,7 +1139,8 @@ was not committed.
 
 For a machine-readable failure, read `ScriptViewHandle::last_diagnostic()` in
 the same foreground App context. It belongs to the exact same failure as
-`last_error()` and is cleared atomically on success. The diagnostic includes
+`last_error()` and, like it, stays until a successful reload or
+`ScriptViewHandle::clear_error()`; a later successful event does not clear it. The diagnostic includes
 the deepest failing component path/key, Rhai source position and stack, typed
 execution timing and operation budget, a bounded termination token, and only
 that component's state snapshot. Sensitive fields are redacted before the

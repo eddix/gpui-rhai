@@ -449,6 +449,16 @@ and [docs/design/](docs/design/) for the specification.
   Popover, a docked panel) it takes the layer's color instead of a `surface`
   block (#131, D67). A root `background` fills one chart and also edges its pie
   slices, map regions and point marks (`ChartPrimitive.background_style`).
+- The `.d.rhai` definitions and the script API reference name array and map
+  results `Array` and `Map`; eight signatures read `Dynamic>`.
+- The skill recipes are the views the examples run, with the placeholders the
+  examples fill filled in their default state; they were templates that failed
+  `check`. A test checks every view in the recipes and in both `SKILL.md`
+  files in a fresh project. The skills scope the design and token rules to
+  projects on the official design system, and leave host extensions and
+  application components to the project. `docs/rhai.md` states the operation
+  budget, how a Host changes the limits, and that nested containers count
+  toward the array, map and string limits.
 
 ## 0.1.8 - 2026-10-04
 

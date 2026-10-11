@@ -9,6 +9,12 @@ The specification is in the reference files below. It is a requirement, not
 inspiration: read the file itself before doing UI work. Do not answer from this
 page, from an existing screen in the project, or from other design systems.
 
+It governs projects on the official design system: the registry's token base
+(`ui/tokens.rhai`) and official components, usually with the `productivity`
+profile. The runtime itself is neutral; a project that brings its own design
+(see "Layers" in principles.md) keeps its own rules, and these apply only to
+the parts of it that use official components.
+
 ## How to read it
 
 For a new screen or a redesign read [principles.md](references/principles.md)

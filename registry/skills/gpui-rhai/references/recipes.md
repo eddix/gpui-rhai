@@ -29,7 +29,7 @@ fn state_schema() {
                 schema: #{ type: "array", max_items: 1, items: #{ type: "string" } },
                 "default": #{
                     type: "array",
-                    value: [#{ type: "string", value: "__VISUAL_THEME__" }]
+                    value: [#{ type: "string", value: "default-dark" }]
                 },
             },
             theme_open: #{
@@ -46,7 +46,7 @@ fn state_schema() {
             },
             locale: #{
                 schema: #{ type: "string", allowed: ["en", "zh-CN", "ar"] },
-                "default": #{ type: "string", value: "__VISUAL_LOCALE__" },
+                "default": #{ type: "string", value: "en" },
             },
             notifications: #{
                 schema: #{ type: "bool" },
@@ -101,8 +101,8 @@ fn set_density(ctx, value) { ctx.set_state("density", value); }
 fn set_expanded(ctx, values) { ctx.set_state("expanded", values); }
 
 fn init(ctx) {
-    choose_theme(ctx, ["__VISUAL_THEME__"]);
-    ctx.set_locale("__VISUAL_LOCALE__");
+    choose_theme(ctx, ["default-dark"]);
+    ctx.set_locale("en");
 }
 
 fn theme_options() {
@@ -223,25 +223,25 @@ import "components/toast" as toast;
 
 fn state_schema() {
     #{ fields: #{
-        name: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "__VISUAL_NAME__" } },
-        accepted: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_ACCEPTED__ } },
+        name: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        accepted: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         plan: #{ schema: #{ type: "string", allowed: ["personal", "team"] },
             "default": #{ type: "string", value: "personal" } },
         updates: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: true } },
         country: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-            "default": __VISUAL_COUNTRY__ },
+            "default": #{ type: "null" } },
         country_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         country_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         appointment: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-            "default": __VISUAL_APPOINTMENT__ },
-        notes: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "__VISUAL_NOTES__" } },
+            "default": #{ type: "null" } },
+        notes: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         fixed_note: #{ schema: #{ type: "string" },
             "default": #{ type: "string", value: "Fixed\nrows" } },
         limit_note: #{ schema: #{ type: "string" },
             "default": #{ type: "string", value: "0123456789" } },
-        locale: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "__VISUAL_LOCALE__" } },
-        dialog_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_DIALOG__ } },
-        toast_visible: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_TOAST__ } },
+        locale: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "en" } },
+        dialog_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        toast_visible: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
     } }
 }
 
@@ -272,14 +272,14 @@ fn confirm(ctx, payload) {
 fn dismiss_toast(ctx, id) { ctx.set_state("toast_visible", false); }
 
 fn init(ctx) {
-    let theme = "__VISUAL_THEME__";
+    let theme = "default-dark";
     if theme == "default-light" { ctx.set_theme("Default", "Light"); }
     else if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if theme == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if theme == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }
     else if theme == "catppuccin-latte" { ctx.set_theme("Catppuccin", "Latte"); }
     else if theme == "catppuccin-mocha" { ctx.set_theme("Catppuccin", "Mocha"); }
-    ctx.set_locale("__VISUAL_LOCALE__");
+    ctx.set_locale("en");
 }
 
 fn heading() {
@@ -384,7 +384,7 @@ fn view(ctx) {
         toasts.push(#{
             id: "saved", title: "Profile saved",
             message: `Saved ${name} on the ${ctx.get_state("plan")} plan.`,
-            variant: "success", region: "bottom_right", duration_ms: __TOAST_DURATION__,
+            variant: "success", region: "bottom_right", duration_ms: 2200,
         });
     }
     let form = form_layout::FormLayout(#{
@@ -417,12 +417,12 @@ fn state_schema() {
         current_page: #{ schema: #{ type: "integer", min: 1 }, "default": #{ type: "integer", value: 1 } },
         page_size: #{ schema: #{ type: "integer", min: 1 }, "default": #{ type: "integer", value: 25 } },
         sort: #{ schema: #{ type: "optional", value: #{ type: "map", values: #{ type: "ui_value" } } }, "default": #{ type: "null" } },
-        selected: #{ schema: #{ type: "array", max_items: 500, items: #{ type: "string" } }, "default": #{ type: "array", value: __VISUAL_SELECTED__ } },
-        loading: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_LOADING__ } },
+        selected: #{ schema: #{ type: "array", max_items: 500, items: #{ type: "string" } }, "default": #{ type: "array", value: [] } },
+        loading: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         selection_mode: #{ schema: #{ type: "string", allowed: ["single", "multiple"] },
             "default": #{ type: "string", value: "multiple" } },
         group_by: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-            "default": __VISUAL_GROUP_BY__ },
+            "default": #{ type: "null" } },
         collapsed_groups: #{ schema: #{ type: "array", max_items: 16,
             items: #{ type: "string" } }, "default": #{ type: "array", value: [] } },
     } }
@@ -447,7 +447,7 @@ fn generated_row(index) {
 fn matching_rows(ctx) {
     let query = ctx.get_state("query").to_lower();
     let rows = [];
-    for index in 0..__ROW_COUNT__ {
+    for index in 0..500 {
         let row = generated_row(index);
         if query == "" || row.name.to_lower().contains(query) || row.email.contains(query) {
             rows.push(row);
@@ -507,12 +507,12 @@ fn toggle_group_rows(ctx, group) {
 }
 
 fn init(ctx) {
-    let theme = "__VISUAL_THEME__";
+    let theme = "default-dark";
     if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if theme == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if theme == "catppuccin-mocha" { ctx.set_theme("Catppuccin", "Mocha"); }
     else { ctx.set_theme("Default", "Light"); }
-    ctx.set_locale("__VISUAL_LOCALE__");
+    ctx.set_locale("en");
 }
 
 fn table_columns() {
@@ -526,7 +526,7 @@ fn table_columns() {
     ]
 }
 
-fn actions(ctx) {
+fn toolbar_actions(ctx) {
     let actions = [
         toggle_group::ToggleGroup(#{
             key: "selection-mode", label: "Selection", allow_empty: false,
@@ -537,7 +537,7 @@ fn actions(ctx) {
         toggle::Toggle(#{ key: "loading", text: "Loading", pressed: ctx.get_state("loading"),
             on_pressed_change: Fn("set_loading") }),
     ];
-    if __GROUP_CONTROL__ {
+    if false {
         actions.push(toggle::Toggle(#{ key: "grouping", text: "Group by status",
             pressed: ctx.get_state("group_by") != (), on_pressed_change: Fn("set_grouping") }));
     }
@@ -572,12 +572,12 @@ fn view(ctx) {
     // Loading and empty are shown in place of the table by DataView.
     let state = if ctx.get_state("loading") {
         #{ state: "loading", title: "Loading users" }
-    } else if __ROW_COUNT__ == 0 {
+    } else if 500 == 0 {
         #{ state: "empty", title: "No users yet", description: "Invite people to see them here." }
     } else { () };
     column([data_view::DataView(#{
         key: "users-view", label: "Users", title: "Users", body: grid, state: state,
-        toolbar: #{ filters: [filter_field(ctx)], actions: actions(ctx) },
+        toolbar: #{ filters: [filter_field(ctx)], actions: toolbar_actions(ctx) },
         footer: #{ status: pager, selection: `${selected.len} selected`, count: `${rows.len} users` }
     })]).with_style(style().flex_col().width(relative(1.0)).height(relative(1.0)))
 }
@@ -614,14 +614,14 @@ fn set_profile_open(ctx, open) { ctx.set_state("profile_open", open); }
 fn ignore(ctx, value) { () }
 
 fn init(ctx) {
-    let theme = "__VISUAL_THEME__";
+    let theme = "default-dark";
     if theme == "default-light" { ctx.set_theme("Default", "Light"); }
     else if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if theme == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if theme == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }
     else if theme == "catppuccin-latte" { ctx.set_theme("Catppuccin", "Latte"); }
     else if theme == "catppuccin-mocha" { ctx.set_theme("Catppuccin", "Mocha"); }
-    ctx.set_locale("__VISUAL_LOCALE__");
+    ctx.set_locale("en");
 }
 
 fn heading() {

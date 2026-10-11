@@ -22,7 +22,7 @@ gpui-rhai dev                            # run the application
 
 | Read | Before |
 |---|---|
-| skill `gpui-rhai-design` | any visible change: choosing components, layout, spacing, density, color, focus, states, overlays, copy |
+| skill `gpui-rhai-design` | any visible change in a project on the official token base and components: choosing components, layout, spacing, density, color, focus, states, overlays, copy |
 | [rhai.md](references/rhai.md) | writing Rhai: values, functions, callbacks, modules, limits, and the mistakes `check` catches |
 | [user-guide.md](references/user-guide.md), section 6 "Callback context" | handling events, state, effects or async work |
 
@@ -30,12 +30,23 @@ Rhai has little training data and gpui-rhai is a DSL on top of it. Read the
 reference files; do not answer from this page, from a similar file in the
 project, or from memory of other UI frameworks.
 
+This skill describes gpui-rhai 0.2. Check the project's `gpui-rhai` version in
+`Cargo.toml` or `Cargo.lock` first; another line may differ. The runtime is
+neutral: a project that brings its own design (its own token vocabulary, no
+`ui/tokens.rhai` from the registry, no profile) follows its own rules, and the
+design skill and the token rules below apply to projects on the official
+design system.
+
 ## Non-negotiables
 
-- **Never invent an API.** A function or method exists only if
-  [script-api.md](references/script-api.md) lists it; a component prop, event,
-  slot or part exists only if its page under [modules/](references/modules/README.md)
-  lists it. Rhai reports a wrong name at run time, not when the script loads.
+- **Never invent an API.** A built-in function or method exists only if
+  [script-api.md](references/script-api.md) lists it; an official component's
+  prop, event, slot or part exists only if its page under
+  [modules/](references/modules/README.md) lists it. The project may add its
+  own: functions, primitives and capabilities its Rust host registers, and
+  components it defines with `define_component`. Read those in the project
+  (the host's registration code, the component's schema), not here. Rhai
+  reports a wrong name at run time, not when the script loads.
 - **Run `gpui-rhai check` after every change** and fix its warnings too. It
   validates known calls in every branch and renders one headless first frame.
 - **Callbacks are named functions:** `on_click: Fn("save")`, with
@@ -48,7 +59,7 @@ project, or from memory of other UI frameworks.
   you.
 - **Stable keys.** Give repeated nodes and anything with an element ref a key
   derived from the data (`with_key`, the component `key` prop), never an index.
-- **Tokens, not pixels.** Lengths from `theme_length("metrics.*")` and
+- **Tokens, not pixels.** On the official token base, lengths from `theme_length("metrics.*")` and
   `theme_length("space.*")`, colors from `theme_color(...)`, type from
   `.typography(role)`. Lengths are never negative: `offset_px(-4)`, not `px(-4)`.
 - **Names.** Do not name a function like a built-in (`index_of`, `contains`,

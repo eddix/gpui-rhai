@@ -149,7 +149,7 @@ fn table_columns() {
     ]
 }
 
-fn actions(ctx) {
+fn toolbar_actions(ctx) {
     let actions = [
         toggle_group::ToggleGroup(#{
             key: "selection-mode", label: "Selection", allow_empty: false,
@@ -200,7 +200,7 @@ fn view(ctx) {
     } else { () };
     column([data_view::DataView(#{
         key: "users-view", label: "Users", title: "Users", body: grid, state: state,
-        toolbar: #{ filters: [filter_field(ctx)], actions: actions(ctx) },
+        toolbar: #{ filters: [filter_field(ctx)], actions: toolbar_actions(ctx) },
         footer: #{ status: pager, selection: `${selected.len} selected`, count: `${rows.len} users` }
     })]).with_style(style().flex_col().width(relative(1.0)).height(relative(1.0)))
 }
