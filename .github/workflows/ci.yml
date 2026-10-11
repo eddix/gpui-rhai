@@ -16,8 +16,18 @@ jobs:
   portable:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Incremental caches only cost disk on a one-shot runner.
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v5
+      - name: Free runner disk
+        # The debug workspace, the native test workspace and the release build
+        # outgrew the runner's free space; SDKs this job never uses go first.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.95.0
@@ -83,6 +93,9 @@ jobs:
             --config 'patch.crates-io.gpui-rhai-registry.path="registry"'
       - name: Release build
         run: |
+          # The debug builds are done; their artifacts would crowd the release build.
+          rm -rf target/debug tests/native-keyboard/target tests/performance/target
+          df -h /
           cargo build --release -p gpui-rhai --examples
           cargo build --release -p gpui-rhai-cli
       - name: Linux X11 and Wayland window smoke
