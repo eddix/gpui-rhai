@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.2.0 - Unreleased
+## 0.2.0 - 2026-10-11
 
 Runtime API 3. A design system for productivity tools, separated from a neutral
 runtime. See the [0.2.0 release notes](docs/releases/0.2.0.md) for migration
