@@ -2729,9 +2729,11 @@ fn official_combobox_rejects_invalid_choice_identity() {
             "[]",
         ),
         (
-            "unknown",
-            r#"[#{ value: "known", label: "Known" }]"#,
-            r#"["missing"]"#,
+            // A selected value missing from `options` is accepted (options may load
+            // later); two values in single mode are not.
+            "two_in_single_mode",
+            r#"[#{ value: "known", label: "Known" }, #{ value: "other", label: "Other" }]"#,
+            r#"["known", "other"]"#,
         ),
         (
             "empty_group",
@@ -3595,15 +3597,8 @@ fn official_pagination_page_size_emits_one_atomic_reset() {
     let option = spec
         .realized
         .values()
-        .find(|node| {
-            matches!(
-                node.handler_payload("click"),
-                Some(UiValue::Map(payload))
-                    if matches!(payload.get("selected"),
-                        Some(UiValue::Array(values))
-                            if values == &[UiValue::String("25".to_owned())])
-            )
-        })
+        // An option row carries its value; the click computes the next selection.
+        .find(|node| node.handler_payload("click") == Some(&UiValue::String("25".to_owned())))
         .expect("page-size option 25");
     let callback = option
         .handler("click")

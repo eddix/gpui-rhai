@@ -229,7 +229,9 @@ one leading slot on every row, so titles align when badges differ), `empty_text`
 `empty`, and emits `selection_change`, `row_click` and `context_request`
 (`#{ key, anchor, source }`, like Table's without a column; without a selection
 mode, `on_context_request` alone makes the list a tab stop whose Shift+F10 asks
-for the whole list).
+for the whole list). A row carries only its selected flag and a click builds the
+next selection when it happens, so the row data stays linear in the items
+however many are selected.
 
 Source: [list.rhai](../../registry/components/list.rhai).
 Runnable story: `gpui-rhai gallery --story components/list`.
@@ -256,6 +258,10 @@ the strip, not scrolled), `overflow_menu` (a menu listing every tab,
 press or Shift+F10, `reorder(#{ value, anchor, placement })` from a drag (a
 press that does not move selects) or Alt+Left/Right. The strip is one tab
 stop: the arrows, Home and End move a cursor, Enter or Space selects it.
+`tabs` may be empty, and `value` may name no tab (`""`, or a tab the caller just
+closed): no tab is selected and the cursor starts on the first enabled tab; with
+no enabled tab there is no cursor and nothing to reveal, so closing the last tab
+in `on_close` leaves an empty bar.
 
 Source: [tab_bar.rhai](../../registry/components/tab_bar.rhai).
 Runnable story: `gpui-rhai gallery --story components/tab-bar`.

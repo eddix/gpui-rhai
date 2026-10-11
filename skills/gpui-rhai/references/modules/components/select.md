@@ -36,7 +36,7 @@ select::Select(#{ key: "country", label: "Country", options: countries, value: "
 | `searchable` | bool | `false` | Shows a search field at the top of the list; without it, letter keys jump to matching options. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; leave unset to inherit the environment size. |
 | `style` | style | — | Style merged over the root part. |
-| `value` | string or `()` | — | Selected option value, or `()` for none; the caller stores the `change` payload and passes it back. |
+| `value` | string or `()` | — | Selected option value, or `()` for none, shown as is when no option has it; the caller stores the `change` payload and passes it back. |
 | `width` | length or `()` | — | Width of the trigger, which the list matches; unset means 280 logical pixels. |
 
 ### `options[]` fields

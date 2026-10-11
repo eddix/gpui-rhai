@@ -47,7 +47,7 @@ define_component(#{
             } }, required: true, sensitive: false,
                 doc: "Options in display order; options that share a `group` are gathered where that group first appears." },
             value: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                doc: "Selected option value, or `()` for none; the caller stores the `change` payload and passes it back." },
+                doc: "Selected option value, or `()` for none, shown as is when no option has it; the caller stores the `change` payload and passes it back." },
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
                 doc: "Whether the list is open; the caller stores the `open_change` payload and passes it back." },
             query: #{ schema: #{ type: "string" }, required: true, sensitive: false,

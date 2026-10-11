@@ -382,3 +382,139 @@ fn the_selected_tab_is_square_in_every_corner_style_and_owns_no_edge_line(cx: &m
         "a later tab draws its start hairline: {start_border}"
     );
 }
+
+fn tab_count(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> usize {
+    visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .filter(|node| node.role == "tab")
+            .count()
+    })
+}
+
+fn last_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Option<String> {
+    visual.update(|_, cx| view.last_error(cx).unwrap())
+}
+
+#[gpui::test]
+fn empty_tab_bar_mounts_without_error(cx: &mut TestAppContext) {
+    let source = script(0, 360, "").replace("value:\"t1\"", "value:\"\"");
+    let (mut visual, view) = mount(cx, source);
+    let error = last_error(&mut visual, &view);
+    assert!(error.is_none(), "empty TabBar must be valid: {error:?}");
+    assert_eq!(tab_count(&mut visual, &view), 0);
+    // Every tab disabled and none selected: there is no cursor to reveal either.
+    let source = script(3, 360, "")
+        .replace("value:\"t1\"", "value:\"\"")
+        .replace("closable:index<3", "disabled:true,closable:index<3");
+    let (mut visual, view) = mount(cx, source);
+    let error = last_error(&mut visual, &view);
+    assert!(
+        error.is_none(),
+        "all-disabled TabBar must be valid: {error:?}"
+    );
+    assert_eq!(tab_count(&mut visual, &view), 3);
+}
+
+/// One tab, which the caller removes in `on_close` (clearing `value`), then opens again.
+#[gpui::test]
+fn closing_last_tab_commits_empty_state(cx: &mut TestAppContext) {
+    let source = script(1, 360, "")
+        .replace("value:\"t1\"", "value:\"t0\"")
+        .replace(
+            "tabs:tabs()",
+            "tabs:if ctx.get_state(\"value\") == \"\" { [] } else { tabs() }",
+        )
+        .replace(
+            "fn closed(ctx,value){note(ctx,`close:${value}`);}",
+            "fn closed(ctx,value){ctx.set_state(\"value\",\"\");note(ctx,`close:${value}`);}\n\
+             fn reopen(ctx,payload){ctx.set_state(\"value\",\"t0\");note(ctx,\"open:t0\");}",
+        )
+        .replace(
+            "text(ctx.get_state(\"log\")).test_id(\"log\"),",
+            "text(ctx.get_state(\"log\")).test_id(\"log\"),\n    \
+             text(\"Reopen\").accessibility_role(\"button\").accessibility_label(\"Reopen\")\
+             .on_click(Fn(\"reopen\")).with_style(style().width(px(80)).height(px(24))),",
+        );
+    assert!(source.contains("ctx.set_state(\"value\",\"\")") && source.contains("Reopen"));
+    let (mut visual, view) = mount(cx, source);
+    let close = bounds(&mut visual, &view, "button", "Close Tab number 0");
+    press(&mut visual, center(close), MouseButton::Left);
+    let error = last_error(&mut visual, &view);
+    assert!(
+        error.is_none(),
+        "closing final tab should commit: {error:?}"
+    );
+    assert_eq!(tab_count(&mut visual, &view), 0, "last tab removed");
+    assert_eq!(log(&mut visual, &view), "close:t0");
+    // 0 -> 1: the tab comes back selected, and the reveal runs again.
+    let reopen = bounds(&mut visual, &view, "button", "Reopen");
+    press(&mut visual, center(reopen), MouseButton::Left);
+    let error = last_error(&mut visual, &view);
+    assert!(error.is_none(), "reopening a tab should commit: {error:?}");
+    assert_eq!(log(&mut visual, &view), "close:t0 open:t0");
+    let selected = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .filter(|node| node.role == "tab" && node.selected == Some(true))
+            .map(|node| node.name.clone())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(selected, ["Tab number 0"]);
+}
+
+/// Three tabs, t1 selected; closing it drops it from `tabs`. `selection` is what the caller
+/// stores as `value` afterwards (`None` leaves the closed tab's value).
+fn closing_the_selected_tab(cx: &mut TestAppContext, selection: Option<&str>) {
+    let store = selection.map_or(String::new(), |value| {
+        format!("ctx.set_state(\"value\",\"{value}\");")
+    });
+    let source = script(3, 600, "")
+        .replace(
+            "log:#{schema",
+            "closed:#{schema:#{type:\"array\",items:#{type:\"string\"}},\
+             \"default\":#{type:\"array\",value:[]}},log:#{schema",
+        )
+        .replace(
+            "fn closed(ctx,value){note(ctx,`close:${value}`);}",
+            &format!(
+                "fn closed(ctx,value){{let gone=ctx.get_state(\"closed\");gone.push(value);\
+                 ctx.set_state(\"closed\",gone);{store}note(ctx,`close:${{value}}`);}}"
+            ),
+        )
+        .replace(
+            "fn view(ctx)",
+            "fn open_tabs(gone){let result=[];for tab in tabs(){if !(tab.value in gone){result.push(tab);}}result}\n\
+             fn view(ctx)",
+        )
+        .replace("tabs:tabs()", "tabs:open_tabs(ctx.get_state(\"closed\"))");
+    assert!(source.contains("open_tabs(ctx.get_state"));
+    let (mut visual, view) = mount(cx, source);
+    let close = bounds(&mut visual, &view, "button", "Close Tab number 1");
+    press(&mut visual, center(close), MouseButton::Left);
+    let error = last_error(&mut visual, &view);
+    assert!(
+        error.is_none(),
+        "closing the selected tab ({selection:?}) should commit: {error:?}"
+    );
+    assert_eq!(tab_count(&mut visual, &view), 2);
+    // With no selected tab left the cursor starts on the first enabled tab, which Enter
+    // selects.
+    focus_strip(&mut visual);
+    visual.simulate_keystrokes("enter");
+    settle(&mut visual);
+    assert_eq!(log(&mut visual, &view), "close:t1 change:t0");
+    assert!(last_error(&mut visual, &view).is_none());
+}
+
+#[gpui::test]
+fn closing_the_selected_tab_and_clearing_the_value_commits(cx: &mut TestAppContext) {
+    closing_the_selected_tab(cx, Some(""));
+}
+
+#[gpui::test]
+fn closing_the_selected_tab_and_keeping_its_value_commits(cx: &mut TestAppContext) {
+    closing_the_selected_tab(cx, None);
+}

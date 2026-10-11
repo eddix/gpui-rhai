@@ -51,7 +51,7 @@ define_component(#{
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Accessible name of the tab strip." },
             value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                doc: "The `value` of the selected tab; the caller stores the `change` payload and passes it back." },
+                doc: "The `value` of the selected tab, or one no tab has (such as `\"\"`) for none; the caller stores the `change` payload and passes it back." },
             tabs: #{ schema: #{ type: "array", max_items: 256, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -70,7 +70,7 @@ define_component(#{
                         "default": #{ type: "bool", value: false },
                         doc: "Whether the tab ignores the pointer; the keyboard cursor skips it." },
                 } } }, required: true, sensitive: false,
-                doc: "The tabs in strip order." },
+                doc: "The tabs in strip order; empty is a bar with no tabs." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false, doc: "Overrides the `size` environment for the bar." },
             start: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
@@ -290,12 +290,18 @@ fn render_TabBar(ctx, props) {
     let reorderable = prop_or(props, "reorderable", false);
     let context = "on_context_request" in props && props.on_context_request != ();
     let enabled = [];
-    for tab in tabs { if !tab_flag(tab, "disabled") { enabled.push(tab.value); } }
+    let named = false;
+    for tab in tabs {
+        if !tab_flag(tab, "disabled") { enabled.push(tab.value); }
+        if tab.value == props.value { named = true; }
+    }
     // The cursor follows the selection until the keys move it, and returns to it whenever
-    // the selection changes from outside.
+    // the selection changes from outside. With no selected tab among the tabs (none yet, or
+    // the caller just closed it) it starts on the first enabled tab; with no enabled tab
+    // either there is no cursor, and nothing to reveal.
     let stored = ctx.get_state("cursor");
     let cursor = if ctx.get_state("cursor_base") == props.value && stored in enabled { stored }
-        else { props.value };
+        else if named { props.value } else if enabled.len > 0 { enabled[0] } else { () };
     let list_ref = element_ref(`${props.key}-tabs`);
     let cursor_ref = element_ref("cursor-tab");
     let nodes = [];
@@ -363,7 +369,9 @@ fn render_TabBar(ctx, props) {
             }
         }
     }
-    effect("reveal", [props.value, cursor], Fn("reveal_start"), Fn("reveal_stop"));
+    // Only a cursor tab carries the ref; without one the effect is not declared, so it
+    // starts again when a tab comes back.
+    if cursor != () { effect("reveal", [props.value, cursor], Fn("reveal_start"), Fn("reveal_stop")); }
 
     // The bar's bottom line, painted first so the selected tab covers it.
     let children = [row([]).with_key("line").with_style(ctx.component_style("line", style()

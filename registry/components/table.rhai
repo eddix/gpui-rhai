@@ -270,9 +270,24 @@ fn next_sort(current, key) {
 }
 
 fn sort_action(ctx, payload) { ctx.emit("sort_change", payload); }
-fn row_action(ctx, payload) {
-    ctx.emit("row_click", payload.key);
-    if payload.selection != () { ctx.emit("selection_change", payload.selection); }
+// The selection a click on the row `key` leads to, or () without a selection mode.
+fn next_selection(mode, selected, key) {
+    let is_selected = key in selected;
+    if mode == "none" { () }
+    else if mode == "single" { if is_selected { [] } else { [key] } }
+    else {
+        let result = [];
+        for candidate in selected { if candidate != key { result.push(candidate); } }
+        if !is_selected { result.push(key); }
+        result
+    }
+}
+// A click builds the next selection for the clicked row alone, from the selection the table
+// was rendered with, so the row data carries only the selected flag.
+fn row_action(mode, selected, ctx, key) {
+    ctx.emit("row_click", key);
+    let selection = next_selection(mode, selected, key);
+    if selection != () { ctx.emit("selection_change", selection); }
 }
 fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
 // Keyboard row navigation moves the selection and keeps the row revealed.
@@ -326,7 +341,8 @@ fn column_resize_key(ctx, payload) {
     if payload.controlled { ctx.set_signal(payload.signal_key, ()); }
 }
 
-fn render_table_row(resize_signals, numeric, roles, context, total_rows, ctx, payload) {
+fn render_table_row(resize_signals, numeric, roles, context, total_rows, selection_mode, selected,
+        ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         let indicator = image_source(asset(if item.collapsed {
@@ -395,7 +411,7 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, ctx, pa
         let node = row(content).with_key(cell.key).with_style(
             ctx.component_style(if item.selected { "row_selected" } else { "row" }, cell_style));
         if context {
-            let select = if item.selection == () || item.selected { () } else { [payload.key] };
+            let select = if selection_mode == "none" || item.selected { () } else { [payload.key] };
             node = node.on("pointer_down", Fn("cell_context")
                 .curry(#{ key: payload.key, column: cell.key, select: select }));
         }
@@ -436,22 +452,14 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, ctx, pa
     if roles.len() > 0 { node = node.audit_allow(["mixed-type-in-row"]); }
     // A row is a pointer target only: the table is the one tab stop, and its keys move
     // the selection.
-    node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
+    node.on_click_value(Fn("row_action").curry(selection_mode).curry(selected), payload.key)
         .tab_stop(false)
 }
 
 fn table_row_item(source, source_index, columns, row_key, label, selected,
-        selection_mode, striped, row_height, display_index) {
+        striped, row_height, display_index) {
     let key = `${source[row_key]}`;
     let is_selected = key in selected;
-    let next_selection = if selection_mode == "none" { () }
-        else if selection_mode == "single" { if is_selected { [] } else { [key] } }
-        else {
-            let result = [];
-            for candidate in selected { if candidate != key { result.push(candidate); } }
-            if !is_selected { result.push(key); }
-            result
-        };
     let cells = [];
     for column in columns {
         let adornments = [];
@@ -477,8 +485,7 @@ fn table_row_item(source, source_index, columns, row_key, label, selected,
         cells.push(cell);
     }
     #{ kind: "row", key: key, label: `${label} row ${source_index + 1}`, cells: cells,
-        selected: is_selected, selection: next_selection,
-        striped: striped && display_index % 2 == 1, height: row_height }
+        selected: is_selected, striped: striped && display_index % 2 == 1, height: row_height }
 }
 
 fn unique_group_header_key(value, row_keys, header_keys) {
@@ -788,7 +795,7 @@ fn render_Table(ctx, props) {
         for display_index in 0..array_rows.len {
             let row = array_rows[display_index];
             data.push(table_row_item(row.source, row.index, columns, props.row_key,
-                props.label, selected, selection_mode, striped, row_height, display_index));
+                props.label, selected, striped, row_height, display_index));
         }
     } else {
         data = [];
@@ -825,7 +832,7 @@ fn render_Table(ctx, props) {
             if !is_collapsed {
                 for row in rows {
                     data.push(table_row_item(row.source, row.index, columns, props.row_key,
-                        props.label, selected, selection_mode, striped, row_height, display_index));
+                        props.label, selected, striped, row_height, display_index));
                     display_index += 1;
                 }
             }
@@ -861,9 +868,12 @@ fn render_Table(ctx, props) {
     let body_style = if fill_height {
         style().flex_grow().min_width(px(0)).min_height(px(0))
     } else { style().min_width(px(0)) };
+    // The selection reaches the row renderer once, not every row: a click builds the next
+    // selection, so the row data stays linear in the rows.
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns))
-            .curry(column_typography(columns)).curry(context).curry(data.len))
+            .curry(column_typography(columns)).curry(context).curry(data.len)
+            .curry(selection_mode).curry(selected))
         .with_style(ctx.component_style("body", body_style));
     let framed = if selection_mode == "none" { context }
         else { neighbors != () && neighbors.first != () && neighbors.current == () };

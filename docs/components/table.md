@@ -11,7 +11,10 @@ normalizes all row maps in Rhai. The native path keeps the complete keyed source
 in Rust, caches controlled scalar-field sort/group orders, and projects
 selection, striping and cell payloads only for the GPUI viewport. Both paths
 feed the same public `virtual_collection` and `render_table_row` Rhai function,
-retain stable row keys, and emit the same semantic events.
+retain stable row keys, and emit the same semantic events. A row is drawn from
+its selected flag alone: a click builds the next selection from `selected_keys`
+when it happens, so Array row data stays linear in the rows however many are
+selected.
 
 ## Search and paging
 

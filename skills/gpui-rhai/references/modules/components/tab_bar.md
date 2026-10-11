@@ -33,8 +33,8 @@ tab_bar::TabBar(#{ key: "docs", label: "Open files", value: current, tabs: tabs,
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Overrides the `size` environment for the bar. |
 | `start` | array of node (at most 8) | `[]` | Nodes before the tab strip. |
 | `style` | style | — | Style merged over the root part. |
-| `tabs` | array of object (at most 256) | required | The tabs in strip order. |
-| `value` | string | required | The `value` of the selected tab; the caller stores the `change` payload and passes it back. |
+| `tabs` | array of object (at most 256) | required | The tabs in strip order; empty is a bar with no tabs. |
+| `value` | string | required | The `value` of the selected tab, or one no tab has (such as `""`) for none; the caller stores the `change` payload and passes it back. |
 
 ### `tabs[]` fields
 

@@ -318,3 +318,140 @@ fn without_a_selection_mode_shift_f10_asks_for_the_list(cx: &mut TestAppContext)
     settle(&mut visual);
     assert_eq!(log(&mut visual, &view), format!("{request} {request}"));
 }
+
+#[gpui::test]
+fn a_second_click_clears_a_single_selection_and_multiple_clicks_toggle(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, script("single", ""));
+    let found = rows(&mut visual, &view);
+    press(&mut visual, found[2].2, MouseButton::Left);
+    press(&mut visual, found[2].2, MouseButton::Left);
+    assert_eq!(log(&mut visual, &view), r#"open:c sel:["c"] open:c sel:[]"#);
+    let (mut visual, view) = mount(cx, script("multiple", ""));
+    let found = rows(&mut visual, &view);
+    press(&mut visual, found[0].2, MouseButton::Left);
+    press(&mut visual, found[2].2, MouseButton::Left);
+    press(&mut visual, found[0].2, MouseButton::Left);
+    assert_eq!(
+        log(&mut visual, &view),
+        r#"open:a sel:["a"] open:c sel:["a", "c"] open:a sel:["c"]"#
+    );
+    // A right press on an unselected row selects it alone; on a selected row it keeps the
+    // selection.
+    press(&mut visual, found[0].2, MouseButton::Right);
+    press(&mut visual, found[0].2, MouseButton::Right);
+    assert!(
+        log(&mut visual, &view).ends_with(r#"sel:["a"] ctx:a:pointer ctx:a:pointer"#),
+        "{}",
+        log(&mut visual, &view)
+    );
+}
+
+fn last_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Option<String> {
+    visual.update(|_, cx| view.last_error(cx).unwrap())
+}
+
+/// `count` rows in `multiple` mode, every one selected when `selected` (the round-4 probe).
+fn list_source(count: usize, selected: bool) -> String {
+    format!(
+        r#"import "components/list" as list;
+fn view(ctx) {{
+    let rows=[];let chosen=[];
+    for i in 0..{count} {{let key=`r${{i}}`;rows.push(#{{key:key,title:key}});if {selected}{{chosen.push(key);}}}}
+    list::List(#{{key:"rows",label:"Rows",items:rows,height:200.0,
+        selection_mode:"multiple",selected_keys:chosen}})
+        .with_style(style().width(px(360)))
+}}"#
+    )
+}
+
+#[gpui::test]
+fn list_500_unselected_rows_control(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, list_source(500, false));
+    let error = last_error(&mut visual, &view);
+    assert!(error.is_none(), "{error:?}");
+}
+
+#[gpui::test]
+fn list_500_selected_rows_do_not_expand_into_oversized_arrays(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, list_source(500, true));
+    let error = last_error(&mut visual, &view);
+    assert!(error.is_none(), "{error:?}");
+}
+
+#[gpui::test]
+fn list_500_rows_with_20_selected_still_renders(cx: &mut TestAppContext) {
+    let source = list_source(500, true).replace(
+        "if true{chosen.push(key);}",
+        "if i < 20 {chosen.push(key);}",
+    );
+    assert!(source.contains("i < 20"));
+    let (mut visual, view) = mount(cx, source);
+    let error = last_error(&mut visual, &view);
+    assert!(error.is_none(), "{error:?}");
+}
+
+/// 500 rows in `multiple` mode, the selection in state starting at `["r0"]`; "Many" selects
+/// r0..r399. The log records each next selection's size, whether it holds r2, and its last key.
+fn growing_selection_script() -> String {
+    r#"import "components/list" as list;
+fn state_schema(){#{fields:#{
+    selected:#{schema:#{type:"array",max_items:10000,items:#{type:"string"}},"default":#{type:"array",value:[#{type:"string",value:"r0"}]}},
+    log:#{schema:#{type:"string"},"default":#{type:"string",value:""}}}}}
+fn note(ctx,line){ctx.set_state("log",`${ctx.get_state("log")} ${line}`);}
+fn selected(ctx,keys){ctx.set_state("selected",keys);
+    note(ctx,`sel:${keys.len}:${"r2" in keys}:${if keys.len==0 {"-"} else {keys[keys.len-1]}}`);}
+fn many(ctx,payload){let keys=[];for i in 0..400{keys.push(`r${i}`);}
+    ctx.set_state("selected",keys);note(ctx,"many");}
+fn view(ctx){
+    let rows=[];
+    for i in 0..500{rows.push(#{key:`r${i}`,title:`Row ${i}`});}
+    column([
+        text("Many").accessibility_role("button").accessibility_label("Many").on_click(Fn("many"))
+            .with_style(style().width(px(80)).height(px(24))),
+        list::List(#{key:"rows",label:"Rows",items:rows,height:200.0,selection_mode:"multiple",
+            selected_keys:ctx.get_state("selected"),on_selection_change:Fn("selected")}),
+        text(ctx.get_state("log")).test_id("log"),
+    ]).with_style(style().width(px(360)))
+}"#
+    .to_owned()
+}
+
+fn named_bounds(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    role: &str,
+    name: &str,
+) -> GeometryBounds {
+    visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name(role, name)
+            .next()
+            .and_then(|node| node.geometry)
+            .unwrap_or_else(|| panic!("no {role} {name:?}"))
+            .visual
+    })
+}
+
+#[gpui::test]
+fn clicks_build_the_next_selection_from_few_to_many_selected_rows(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, growing_selection_script());
+    let row = named_bounds(&mut visual, &view, "option", "Row 1");
+    press(&mut visual, row, MouseButton::Left);
+    assert_eq!(log(&mut visual, &view), "sel:2:false:r1");
+    let many = named_bounds(&mut visual, &view, "button", "Many");
+    press(&mut visual, many, MouseButton::Left);
+    let error = last_error(&mut visual, &view);
+    assert!(error.is_none(), "400 of 500 rows selected: {error:?}");
+    assert_eq!(log(&mut visual, &view), "sel:2:false:r1 many");
+    // A click on a selected row drops it; a second click appends it again.
+    let row = named_bounds(&mut visual, &view, "option", "Row 2");
+    press(&mut visual, row, MouseButton::Left);
+    press(&mut visual, row, MouseButton::Left);
+    let error = last_error(&mut visual, &view);
+    assert!(error.is_none(), "{error:?}");
+    assert_eq!(
+        log(&mut visual, &view),
+        "sel:2:false:r1 many sel:399:false:r399 sel:400:true:r2"
+    );
+}

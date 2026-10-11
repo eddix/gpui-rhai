@@ -28,6 +28,21 @@ over label and keywords. Group order follows first occurrence, keyboard
 navigation skips group headers and disabled options, and multiple selection
 preserves stable values across filter changes.
 
+A selected value that no option has is not an error: options often arrive after
+the first render (loaded by an effect or a task while the selection is restored
+from settings), or are cleared while they reload. Such a value stays selected.
+The trigger shows it as its own text after the known labels, so the user sees
+the stored selection, and the trigger's accessibility value includes it; the
+list has no row for it. `clearable` counts it, so the clear button can remove
+it. A `single` pick replaces it; in `multiple` mode it stays in every next
+selection `change` reports until the caller drops it. Duplicate option values,
+blank labels or groups, and more than one value in `single` mode still fail the
+render.
+
+Option rows carry only their selected flag: a pick, or Enter on the active
+option, builds the next selection from `selected` when it happens, so the row
+data stays linear in the options however many are selected.
+
 The component has no asset requirement and no privileged Rust constructor.
 Its public dependencies are only `components/input` plus runtime atoms. See
 [Select](select.md) for the scalar form-field adapter and the complete style,

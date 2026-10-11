@@ -39,7 +39,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `reset_query_on_close` | bool | `false` | Emits `query_change` with `""` whenever the panel closes or the selection is cleared. |
 | `search_placeholder` | string | `"Search"` | Placeholder of the search field. |
 | `searchable` | bool | `false` | Shows a search field bound to `query` in the panel; without it, letter keys jump to matching options. |
-| `selected` | array of string (at most 100000) | required | Selected option values, at most one in `single` mode; the caller stores the `change` payload and passes it back. |
+| `selected` | array of string (at most 100000) | required | Selected option values, at most one in `single` mode, kept when no option has them (the trigger then shows the value itself); the caller stores the `change` payload and passes it back. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; leave unset to inherit the environment size. |
 | `style` | style | — | Style merged over the root part. |
 | `trigger` | node or `()` | — | Custom trigger that replaces the default field with its clear button and chevron; the panel then takes `width`. |

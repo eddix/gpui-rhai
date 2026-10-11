@@ -138,9 +138,12 @@ fn List(props) { render_component("components/list", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn field_or(item, name, fallback) { if name in item && item[name] != () { item[name] } else { fallback } }
 
-fn row_action(ctx, payload) {
-    ctx.emit("row_click", payload.key);
-    if payload.selection != () { ctx.emit("selection_change", payload.selection); }
+// A click builds the next selection for the clicked row alone, from the selection the list
+// was rendered with, so the rows carry only their selected flag.
+fn row_action(mode, selected, ctx, key) {
+    ctx.emit("row_click", key);
+    let selection = next_selection(mode, selected, key);
+    if selection != () { ctx.emit("selection_change", selection); }
 }
 // Keyboard navigation moves the selection and keeps the row revealed, as in Table.
 fn keyboard_select(ctx, key) { ctx.emit("selection_change", [key]); handled() }
@@ -166,7 +169,7 @@ fn keyboard_context(ctx, target) {
     handled()
 }
 
-// The selection a click on this row leads to, or () without a selection mode.
+// The selection a click on the row `key` leads to, or () without a selection mode.
 fn next_selection(mode, selected, key) {
     let is_selected = key in selected;
     if mode == "none" { () }
@@ -181,17 +184,18 @@ fn next_selection(mode, selected, key) {
 
 // Keyboard targets among the enabled rows: the current row is the first selected one; Up and
 // Down move one row and stop at the ends, and go to the first row when none is current.
-fn row_neighbors(keys, selected) {
+// `chosen` is the selection as a map from key to true.
+fn row_neighbors(keys, chosen) {
     if keys.len == 0 { return #{ first: (), last: (), previous: (), next: (), current: (), index: () }; }
     let current = -1;
-    for index in 0..keys.len { if current < 0 && keys[index] in selected { current = index; } }
+    for index in 0..keys.len { if current < 0 && keys[index] in chosen { current = index; } }
     let previous = if current <= 0 { 0 } else { current - 1 };
     let next = if current < 0 { 0 } else if current + 1 < keys.len { current + 1 } else { current };
     #{ first: keys[0], last: keys[keys.len - 1], previous: keys[previous], next: keys[next],
         current: if current >= 0 { keys[current] } else { () } }
 }
 
-fn render_list_row(below, dividers, badge_width, context, total, ctx, payload) {
+fn render_list_row(below, dividers, badge_width, context, total, mode, selected, ctx, payload) {
     let item = payload.item;
     let children = [];
     let badge = if item.badge == () { () } else {
@@ -259,18 +263,18 @@ fn render_list_row(below, dividers, badge_width, context, total, ctx, payload) {
     let node = row(children).with_key(payload.key)
         .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
         .disabled(item.disabled)
-        .accessibility_role(if item.selectable { "option" } else { "listitem" })
+        .accessibility_role(if mode != "none" { "option" } else { "listitem" })
         .accessibility_label(label)
         .accessibility_selected(item.selected)
         .accessibility_position_in_set(payload.index + 1)
         .accessibility_size_of_set(total);
     if item.disabled { return node.tab_stop(false); }
     if context {
-        let select = if item.selection == () || item.selected { () } else { [payload.key] };
+        let select = if mode == "none" || item.selected { () } else { [payload.key] };
         node = node.on("pointer_down", Fn("row_context").curry(#{ key: payload.key, select: select }));
     }
     // A row is a pointer target only: the list is the one tab stop.
-    node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
+    node.on_click_value(Fn("row_action").curry(mode).curry(selected), payload.key)
         .tab_stop(false)
 }
 
@@ -291,20 +295,22 @@ fn render_List(ctx, props) {
                 .typography("body").text_color(theme_color("text_muted"))))
             .accessibility_role("list").accessibility_label(props.label);
     }
+    // The rows stay linear in the items: each carries its selected flag, and the selection
+    // reaches the row renderer once (a click builds the next selection then), so the data
+    // does not grow with rows times selected keys.
+    let chosen = #{};
+    if mode != "none" { for key in selected { chosen[key] = true; } }
     let data = [];
     let enabled = [];
     for item in props.items {
         let disabled = field_or(item, "disabled", false);
-        let selectable = mode != "none";
         data.push(#{ key: item.key, title: item.title, secondary: field_or(item, "secondary", ()),
             meta: field_or(item, "meta", ()),
             badge: if "badge" in item && item.badge != () {
                 #{ text: item.badge.text, variant: field_or(item.badge, "variant", "neutral"),
                     dot: field_or(item.badge, "dot", true) }
             } else { () },
-            disabled: disabled, selectable: selectable,
-            selected: selectable && item.key in selected,
-            selection: if disabled { () } else { next_selection(mode, selected, item.key) } });
+            disabled: disabled, selected: item.key in chosen });
         if !disabled { enabled.push(item.key); }
     }
     let collection = #{ key: `${props.key}-rows`, label: props.label, data: data,
@@ -313,13 +319,14 @@ fn render_List(ctx, props) {
     if fill_height { collection.fill_height = true; } else { collection.height = props.height; }
     let neighbors = ();
     if mode != "none" {
-        neighbors = row_neighbors(enabled, selected);
+        neighbors = row_neighbors(enabled, chosen);
         if neighbors.current != () { collection.reveal_key = neighbors.current; }
     }
     let context = "on_context_request" in props && props.on_context_request != ();
     let rows = virtual_collection(collection,
         Fn("render_list_row").curry(below).curry(prop_or(props, "dividers", false))
-            .curry(prop_or(props, "badge_width", ())).curry(context).curry(data.len));
+            .curry(prop_or(props, "badge_width", ())).curry(context).curry(data.len)
+            .curry(mode).curry(selected));
     if mode == "none" && context {
         // Without a selection mode there is no current row: the list is a tab stop for the
         // keyboard request alone, which is for the whole list. A wrapper holds that focus and

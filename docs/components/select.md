@@ -23,9 +23,12 @@ panel matches the trigger after layout; a sibling Select with a fixed width can
 therefore remain fixed while another Combobox grows with the row.
 
 Rhai `()` is the only empty-value sentinel. Empty-string option values remain
-legal and distinct from null. Option values must be unique, an externally
-controlled value must name an option, and a disabled option may remain selected
-but cannot be newly selected.
+legal and distinct from null. Option values must be unique, and a disabled
+option may remain selected but cannot be newly selected. A `value` that no
+option has (options still loading, or cleared while they reload) is kept: the
+trigger shows the value itself and Select reports it as its accessibility
+value, `clearable` can clear it, and picking an option replaces it (see
+[Combobox](combobox.md)).
 
 Groups follow first-occurrence order and preserve input order within each
 group. Group headers are not selectable. Search matches case-insensitive

@@ -431,6 +431,16 @@ and [docs/design/](docs/design/) for the specification.
   wider. Avatar initials are the name's first grapheme, uppercased. Spinner
   without `speed_ms` follows `motion_duration("ambient")`. Select and Combobox
   name their clear button with the localized `common.clear`.
+- TabBar mounts with no tabs, and closing the last tab or the selected one
+  commits (an unconditional reveal named a ref no tab carried); with a `value`
+  no tab has, the cursor falls on the first enabled tab.
+- List, an array-backed Table and Combobox in `multiple` mode no longer copy
+  the whole selection into every row before virtualization: 500 rows with 20
+  selected failed to mount (`Size of array/BLOB too large`). Rows carry their
+  key and selected flag; a click computes the next selection.
+- Combobox and Select accept a selected value that is not among `options`
+  (options that load later, or reload): the trigger shows the raw value and
+  `multiple` keeps it in the selection. It threw and failed the view.
 
 ## 0.1.8 - 2026-10-04
 
