@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.2.1 - Unreleased
+## 0.2.1 - 2026-10-12
 
 A compatible patch release of 0.2: fixes for what applications met after moving
 to 0.2.0, and additive APIs. See the [0.2.1 release notes](docs/releases/0.2.1.md)
