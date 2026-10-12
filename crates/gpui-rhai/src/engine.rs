@@ -1869,7 +1869,44 @@ impl RuntimeEngine {
         entry_source: &str,
         modules: &BTreeMap<ModuleId, String>,
     ) -> Result<Vec<crate::KnownCallDiagnostic>, crate::KnownCallLintError> {
-        crate::script_lint::lint_known_calls(&mut self.engine, entry_name, entry_source, modules)
+        crate::script_lint::lint_known_calls(
+            &mut self.engine,
+            entry_name,
+            entry_source,
+            modules,
+            &BTreeSet::new(),
+        )
+        .map(|(diagnostics, _)| diagnostics)
+    }
+
+    /// [`Self::lint_known_calls`] for scripts that also call functions the
+    /// Host registers on its own engine, such as the `[host]` declarations
+    /// `gpui-rhai check` reads: calls to `host` count as known. Returns the
+    /// diagnostics and the declared functions the sources call.
+    ///
+    /// # Errors
+    ///
+    /// Returns a metadata or parse error if the lint catalog cannot be built.
+    pub fn lint_known_calls_with_host(
+        &mut self,
+        entry_name: &str,
+        entry_source: &str,
+        modules: &BTreeMap<ModuleId, String>,
+        host: &BTreeSet<crate::HostFunction>,
+    ) -> Result<
+        (
+            Vec<crate::KnownCallDiagnostic>,
+            BTreeSet<crate::HostFunction>,
+        ),
+        crate::KnownCallLintError,
+    > {
+        crate::script_lint::lint_known_calls(
+            &mut self.engine,
+            entry_name,
+            entry_source,
+            modules,
+            host,
+        )
     }
 
     /// List entry-script functions that replace a native function of the same

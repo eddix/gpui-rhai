@@ -251,7 +251,9 @@ pub use rotatable::{RotatablePrimitiveHandler, rotatable_primitive_descriptor};
 pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };
-pub use script_lint::{KnownCallDiagnostic, KnownCallLintError, ShadowedBuiltin};
+pub use script_lint::{
+    HostFunction, HostFunctionError, KnownCallDiagnostic, KnownCallLintError, ShadowedBuiltin,
+};
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
