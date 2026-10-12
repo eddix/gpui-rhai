@@ -24,12 +24,38 @@ func windows(owner: String) -> [Win] {
     return all
 }
 
+// The process that input goes to. Every event checks that it is still the
+// frontmost application first and stops the step otherwise, so a window that
+// lost activation never passes keys or clicks on to another application.
+var targetPid: pid_t?
+
 func activate(_ pid: pid_t) {
     NSRunningApplication(processIdentifier: pid)?.activate(options: [.activateIgnoringOtherApps])
     usleep(400_000)
+    // Since macOS 14 another process cannot take activation this way; System
+    // Events can, with the Accessibility permission the steps need anyway.
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", "tell application \"System Events\" to set frontmost of (first process whose unix id is \(pid)) to true"]
+        try? process.run()
+        process.waitUntilExit()
+        usleep(600_000)
+    }
+    targetPid = pid
+    requireFront()
+}
+
+func requireFront() {
+    let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    guard let target = targetPid, front == target else {
+        print("stopped: the target window is not frontmost (front pid \(front.map(String.init) ?? "none"), target \(targetPid.map(String.init) ?? "none"))")
+        exit(2)
+    }
 }
 
 func mouse(_ type: CGEventType, _ p: CGPoint, clicks: Int64 = 1) {
+    requireFront()
     let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)!
     e.setIntegerValueField(.mouseEventClickState, value: clicks)
     e.post(tap: .cghidEventTap)
@@ -50,6 +76,7 @@ func doubleClick(_ p: CGPoint) {
 }
 
 func key(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
+    requireFront()
     let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true)!
     down.flags = flags
     down.post(tap: .cghidEventTap)
@@ -62,6 +89,7 @@ func key(_ code: CGKeyCode, _ flags: CGEventFlags = []) {
 
 func typeText(_ text: String) {
     for scalar in text.utf16 {
+        requireFront()
         var unit = scalar
         let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!
         down.keyboardSetUnicodeString(stringLength: 1, unicodeString: &unit)

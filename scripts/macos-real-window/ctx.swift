@@ -1,4 +1,5 @@
 func right(_ p: CGPoint) {
+    requireFront()
     let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .right)!
     move.post(tap: .cghidEventTap); usleep(100_000)
     CGEvent(mouseEventSource: nil, mouseType: .rightMouseDown, mouseCursorPosition: p, mouseButton: .right)!.post(tap: .cghidEventTap)

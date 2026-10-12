@@ -26,6 +26,12 @@ preedit and VoiceOver are checked by hand.
    cat lib.swift keys.swift > /tmp/rw/run.swift && swift /tmp/rw/run.swift
    ```
 
+A step sends input only while its target is the frontmost application: every
+key, click and move checks first and the step stops otherwise, so a window that
+lost activation never passes input to another application. `activate` falls
+back to System Events, since macOS 14 lets no other process take activation
+with `NSRunningApplication`.
+
 Screenshots go to `/tmp/rw/`; compare them in RGB. The steps find the window
 by owner name and press at offsets from its top-left corner, measured in the
 window size of the run that wrote them. A window of another size moves the
