@@ -51,13 +51,25 @@ through 0.1.8 are in the checklist listed under [History](history.md).
     semantics, Progress range metadata, Theme Studio coverage, and Gallery
     preparation across every category.
 
-12. Verify crates.io authentication without printing the token. Publish
-    dependency-first: `gpui-rhai`, then `gpui-rhai-registry`, then
-    `gpui-rhai-cli`, waiting for each package to enter the index before verifying
-    or publishing its dependents. Confirm a clean `cargo install
-    gpui-rhai-cli --locked` from crates.io.
-13. Tag the exact protected-main release commit with the target version and create the
-    matching GitHub release only after all three crates are available.
+12. Publish with `.github/workflows/release.yml` (crates.io Trusted Publishing):
+    push the annotated tag `v<version>` on the exact protected-main release
+    commit. The `verify` job checks that the tag names the workspace version and
+    is on main, then runs `cargo package --workspace --locked`; the `publish` job
+    waits for approval in the `crates-io` environment, exchanges the job's OIDC
+    identity for a 30-minute token and publishes `gpui-rhai`, then
+    `gpui-rhai-registry`, then `gpui-rhai-cli`, skipping a version crates.io
+    already serves, so a rerun finishes a partial release. A manual run of the
+    workflow runs `verify` alone. Setup, once: each crate's crates.io Trusted
+    Publishing entry names `eddix/gpui-rhai`, `release.yml` and the `crates-io`
+    environment; the environment allows `v*` tags only and requires a reviewer;
+    after the first workflow release, turn on "Require trusted publishing" for
+    each crate. A new crate is published by hand once before it can join.
+    Without the workflow, publish dependency-first by hand from a machine with
+    crates.io credentials, waiting for each package to enter the index.
+    Confirm a clean `cargo install gpui-rhai-cli --locked` from crates.io.
+13. Create the GitHub release for the tag only after all three crates are
+    available. Release notes copied from `docs/releases/` need absolute links:
+    their relative links do not resolve on the release page.
 
 ## Runtime and native gates
 
