@@ -1,15 +1,6 @@
 #!/bin/bash
 set -eu
 
-for package_dir in crates/gpui-rhai crates/gpui-rhai-cli registry; do
-  for license in LICENSE-MIT LICENSE-APACHE; do
-    if ! cmp -s "${license}" "${package_dir}/${license}"; then
-      echo "published license drift: ${package_dir}/${license}"
-      exit 1
-    fi
-  done
-done
-
 embedded_examples=(
   dashboard_layout
   data_table
@@ -22,6 +13,21 @@ embedded_examples=(
   settings_panel
   table_1000
 )
+
+# `--list` prints the examples this audit needs, so CI builds only those.
+if [[ "${1:-}" == "--list" ]]; then
+  printf '%s\n' "${embedded_examples[@]}"
+  exit 0
+fi
+
+for package_dir in crates/gpui-rhai crates/gpui-rhai-cli registry; do
+  for license in LICENSE-MIT LICENSE-APACHE; do
+    if ! cmp -s "${license}" "${package_dir}/${license}"; then
+      echo "published license drift: ${package_dir}/${license}"
+      exit 1
+    fi
+  done
+done
 
 for example in "${embedded_examples[@]}"; do
   binary="target/release/examples/${example}"

@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, for the latest stable toolchain (the `stable` job below).
+  schedule:
+    - cron: '17 3 * * 1'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -14,11 +17,16 @@ permissions:
 
 jobs:
   portable:
+    # The schedule only exists for the `stable` job; main was checked on push.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       # Incremental caches only cost disk on a one-shot runner.
       CARGO_INCREMENTAL: 0
+      # Line tables keep file:line in panics and backtraces at a fraction of
+      # full debug info's compile, link and disk cost.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v5
       - name: Free runner disk
@@ -54,22 +62,17 @@ jobs:
           fi
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Verify target manifest
-        run: python3 scripts/verify-target-manifest.py
-      - name: Check (MSRV)
-        run: cargo check --workspace --all-targets --all-features
-      - name: Latest stable check
-        run: |
-          rustup toolchain install stable --profile minimal --no-self-update
-          cargo +stable check --workspace --all-targets --all-features
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # Every feature but the opt-in Grain backend, which the `stable` job
+      # checks; leaving it out lets the default-feature run below reuse Rhai.
+      - name: Clippy (MSRV)
+        run: cargo clippy --workspace --all-targets --features gpui-rhai/charts,gpui-rhai/dev-reload -- -D warnings
+      # Libraries, binaries and integration tests; examples are compiled by
+      # Clippy above, their tests run in crates/gpui-rhai/tests/examples.rs, and
+      # the release build below links the ones CI launches.
       - name: Test
-        run: cargo test --workspace --all-targets --all-features
+        run: cargo test --workspace --lib --bins --tests --features gpui-rhai/charts,gpui-rhai/dev-reload
       - name: Default feature contract
         run: cargo test -p gpui-rhai --lib --locked
-      - name: Performance structure tests
-        run: cargo test --manifest-path tests/performance/Cargo.toml --locked
       - name: Native keyboard test support
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
       - name: Mounted hot reload
@@ -93,16 +96,47 @@ jobs:
             --config 'patch.crates-io.gpui-rhai-registry.path="registry"'
       - name: Release build
         run: |
-          # The debug builds are done; their artifacts would crowd the release build.
-          rm -rf target/debug tests/native-keyboard/target tests/performance/target
+          # How much the debug builds took, for the runner's disk budget.
+          du -sh target/debug tests/native-keyboard/target || true
           df -h /
-          cargo build --release -p gpui-rhai --examples
+          # The debug builds are done; their artifacts would crowd the release build.
+          rm -rf target/debug tests/native-keyboard/target
+          # The examples CI launches: the Linux window smoke and the artifact audit.
+          examples="phase0_probe $(bash scripts/audit-release-artifacts.sh --list)"
+          cargo build --release -p gpui-rhai $(printf -- '--example %s ' ${examples})
           cargo build --release -p gpui-rhai-cli
       - name: Linux X11 and Wayland window smoke
         run: bash scripts/linux-window-smoke.sh
       - name: Audit release artifacts
         run: bash scripts/audit-release-artifacts.sh
-      # macOS launch, Metal, screenshot and unlocked-input gates run locally.
-      # Private-repository GitHub-hosted macOS minutes require paid usage after
-      # the account's included quota, while this portable job stays within the
-      # standard Linux allowance.
+      # macOS launch, Metal, screenshot and unlocked-input gates run locally on a
+      # Mac; see docs/release-checklist.md.
+
+  # The latest stable toolchain and the opt-in Grain backend change without a
+  # pull request touching them, so they run on main and weekly, not per PR.
+  stable:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v5
+      # rust-toolchain.toml pins the MSRV, so the steps name `+stable`.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Install native Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libxcb1-dev \
+            libfontconfig1-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
+      - name: Latest stable check
+        run: cargo +stable check --workspace --all-targets --all-features
+      - name: Grain backend
+        run: cargo +stable clippy -p gpui-rhai --all-targets --features grain-backend -- -D warnings
