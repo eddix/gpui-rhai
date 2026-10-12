@@ -187,7 +187,10 @@ The release benchmark mounts the same `table_1000` fixture in GPUI's test
 platform and measures cold prepare/mount plus unchanged rerender, reverse,
 selection, and native resize scenarios. It also records a document report that
 compares the direct-string and NativeTextDocument Rhai boundaries, native syntax
-tokenization, and two-way diff/hunk construction over deterministic Rhai source:
+tokenization, and two-way diff/hunk construction over deterministic Rhai source.
+The scenarios are the ignored tests of
+`tests/native-keyboard/tests/benchmark.rs` (`--test benchmark`); the script runs
+them in release with one test thread:
 
 ```text
 bash scripts/benchmark.sh

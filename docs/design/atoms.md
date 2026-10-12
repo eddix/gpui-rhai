@@ -471,8 +471,8 @@ closable Tag's close button excepted). The runtime keeps wrappers out of the
 order: an overlay's trigger wrapper takes focus only when its trigger has no
 focusable content of its own, a container with key handlers (a roving group, an
 overlay root) is a stop only when it holds no focusable child, and tooltip panels
-are never stops. `tests/native-keyboard/tests/tab_stops.rs` counts the stops of
-each interactive component.
+are never stops. `tests/native-keyboard/tests/native/input/tab_stops.rs` counts
+the stops of each interactive component.
 
 ## 11. New component checklist
 

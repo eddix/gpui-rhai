@@ -33,7 +33,7 @@ Also check rapid interrupted transitions, first mount, resize, theme/locale
 changes, and Reduced/None presentation without spurious change callbacks.
 Button disabled/loading must suppress actions without changing its height;
 Badge adds no action focus stop. The permanent geometry and controlled-state
-assertions live in `tests/native-keyboard/tests/control_visuals.rs`.
+assertions live in `tests/native-keyboard/tests/native/components/control_visuals.rs`.
 Also mount the specimen with deliberately different valid Host spacing/radius
 overrides and larger typography. Verify all four track insets, text containment,
 theme-responsive Button/Badge density, square and rounded rectangular surfaces,
@@ -191,7 +191,7 @@ Run its independent workspace explicitly:
 
 ```text
 (cd tests/native-keyboard && cargo test -- --test-threads=1)
-(cd tests/native-keyboard && cargo clippy --tests -- -D warnings)
+(cd tests/native-keyboard && cargo clippy --all-targets --features dev-reload -- -D warnings)
 ```
 
 Runtime-only automation injects `ManualRuntimeClock` through the file or

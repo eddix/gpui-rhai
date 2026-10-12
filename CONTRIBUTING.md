@@ -31,8 +31,17 @@ cargo build --workspace --all-targets --release
 bash scripts/audit-release-artifacts.sh
 bash scripts/audit-visual-baselines.sh
 cargo test --manifest-path tests/native-keyboard/Cargo.toml
-cargo clippy --manifest-path tests/native-keyboard/Cargo.toml --tests -- -D warnings
+cargo test --manifest-path tests/native-keyboard/Cargo.toml --features dev-reload --test token_reload
+cargo clippy --manifest-path tests/native-keyboard/Cargo.toml --all-targets --features dev-reload -- -D warnings
 ```
+
+`tests/native-keyboard` is a separate Cargo workspace (GPUI `test-support` must
+stay out of the release dependency graph). Its tests build into one binary,
+`tests/native/main.rs`, with a directory per area (`table/`, `overlay/`,
+`input/`, ...): add a test file to the area's `mod.rs`, and run one area or file
+with a filter such as `cargo test --test native table::keyboard`. Build fixture
+variants with `support::ReplaceOnce` rather than `str::replace`, so a variant
+cannot silently fall back to the base fixture.
 
 On an unlocked macOS machine with Metal installed, additionally run:
 

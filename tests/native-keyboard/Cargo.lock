@@ -2692,6 +2692,7 @@ dependencies = [
  "gpui-rhai-registry",
  "image",
  "semver",
+ "serde",
  "serde_json",
 ]
 

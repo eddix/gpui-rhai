@@ -28,8 +28,9 @@ through 0.1.8 are in the checklist listed under [History](history.md).
    tests and strict test-target Clippy; it is intentionally outside the main
    Cargo workspace so GPUI `test-support` cannot enter release dependency
    resolution.
-   Run the independent `tests/performance` structural suite on shared CI; keep
-   absolute latency thresholds on the controlled Mac benchmark path.
+   The structural performance test (`crates/gpui-rhai/tests/state_structure.rs`)
+   runs with the main workspace on shared CI; keep absolute latency thresholds
+   on the controlled Mac benchmark path (`scripts/benchmark.sh`).
    Frame budget (from 0.2.0, replacing the physical 120Hz gate): in
    `tests/native-keyboard`, `cargo run --release --bin gallery_profile`; every
    interaction's `Window::draw` p95 must be at most 8.3 ms, one 120 Hz frame.

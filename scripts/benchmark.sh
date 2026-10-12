@@ -8,8 +8,8 @@ exec cargo test \
   --release \
   --offline \
   --locked \
-  --manifest-path tests/performance/Cargo.toml \
-  --test e2e \
+  --manifest-path tests/native-keyboard/Cargo.toml \
+  --test benchmark \
   end_to_end_baseline \
   -- \
   --ignored \
