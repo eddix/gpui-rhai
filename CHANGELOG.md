@@ -5,6 +5,83 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.2.1 - Unreleased
+
+A compatible patch release of 0.2: fixes for what applications met after moving
+to 0.2.0, and additive APIs. See the [0.2.1 release notes](docs/releases/0.2.1.md)
+for upgrading; copied official components move to 0.2.1 through `gpui-rhai update`.
+
+- Two script modals open at once, in one view or in two views of one
+  `ScriptViewHost`, no longer take focus from each other every frame (the
+  window never went idle, #145). Only the topmost open modal, the one Escape
+  closes first, takes focus back; when it closes, the next one does.
+- With focus inside `layer(...)` content, which the Host paints outside the
+  view root, Tab and Shift+Tab move focus and the view's `bind_keys` actions
+  and Copy run in the view that declared the layer, for `mount` and
+  `mount_window` views alike (#144).
+- `ScriptViewHost::open_overlays()` lists the open script overlays as of the
+  last frame, topmost last (`OpenOverlay { view_id, owner, key, kind, modal,
+  dismiss_on_escape }`, non-exhaustive), and
+  `ScriptViewHost::dismiss_escape(window, cx)` lets an application-level Escape
+  binding offer the key to script overlays first (#147).
+- Task and subscription capabilities receive the `InvocationContext`: override
+  `AsyncCapabilityHandler::start_with` or `SubscriptionCapabilityHandler::subscribe_with`
+  to see the origin, view and component before any work runs, for example to
+  refuse a save dialog that automation started. Both default to `start` /
+  `subscribe`; `CapabilityRegistry::start_task_with` and
+  `start_subscription_with` take a context from a Host (#133).
+- `gpui-rhai check` knows `gpui_rhai::HostSlot` and reads a CLI-only `[host]`
+  table in `ui/app.toml` (`functions = ["open_file/1", "omb::status/0"]`,
+  `primitives = ["OmbChart"]`), so calls to Host-registered functions and
+  primitives pass the known-call lint with their arity checked. When the
+  scripts call any of them, `check` validates statically, skips the headless
+  first frame and names them in its summary; a malformed declaration fails with
+  its TOML location. Hosts build the same declarations with
+  `HostFunction::parse` / `HostFunction::primitive` for
+  `RuntimeEngine::lint_known_calls_with_host`. `CheckReport` gains
+  `host_extensions` (#141).
+- A single-line text field no longer takes a line break: Enter that no handler
+  takes no longer inserts one (in debug builds GPUI panicked shaping it, for
+  example in a searchable Combobox without `on_submit`), and line breaks inside
+  typed or composed text become spaces, as in a paste.
+- Table group headers show the group value as the rows carry it, no longer
+  uppercased; the label voice keeps their size, weight and color (#146, D68).
+- A click on a Table or List row leaves keyboard focus on the collection, so
+  the selected row shows its focus frame; the row took focus itself before.
+- A long label or placeholder in a fixed-width Select or Combobox trigger ends
+  in an ellipsis, so the chevron and clear button stay inside (#136).
+- Combobox gains `on_submit` / `submit`: Enter in the search field submits the
+  query when no enabled option is active; with an active option Enter still
+  picks it (#139).
+- List `badge_width` and `height` accept a Length as well as pixels; List gains
+  `loading` and `loading_content` like Table (#139).
+- CodeViewer can size to its content: `height: "content"` makes it as tall as
+  its display rows at the current width, wrapped rows included, measured
+  natively; an optional `max_height` caps it and longer documents scroll inside.
+  `height: "fill"` stays the default (#139).
+- Text keeps 4.5:1 on derived colors: `tag.facet` and `table.selection` back off
+  toward their base with `readable` only where `text_primary` would fall short
+  (Everforest and Gruvbox for the facet, Everforest for the selection; the
+  other bundled themes are unchanged), and selected List rows draw secondary
+  and meta text in `text_primary`. The theme constraints check both pairs
+  (#134).
+- Region's footer wraps when it is wider than the region and clips at its edge
+  instead of painting over the neighbouring pane; DataView's footer groups
+  shrink and wrap their fields (#137).
+- TabBar keeps the selected tab in view when the caller reorders, adds or
+  removes tabs while it is visible, and leaves a strip scrolled away by hand
+  alone (#142).
+- Resizable's edge grips show the left-right or up-down resize cursor; corner
+  grips keep the default cursor until styles gain a diagonal one (#143).
+- `alpha`, `mix` and `readable` accept an integer factor or ratio.
+- A native-collection Table no longer builds the full next selection for every
+  visible row; nothing has read it since 0.2.0.
+- The Gallery's title bar fits narrow windows: the density and corner toggles,
+  then the theme picker, give way to the title, and the Commands palette still
+  reaches them.
+- Releases publish from `.github/workflows/release.yml` with crates.io Trusted
+  Publishing.
+
 ## 0.2.0 - 2026-10-11
 
 Runtime API 3. A design system for productivity tools, separated from a neutral

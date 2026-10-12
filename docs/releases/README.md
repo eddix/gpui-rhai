@@ -2,6 +2,7 @@
 
 | Version | Focus | Integration impact |
 |---|---|---|
+| [0.2.1](0.2.1.md) | Fixes after the 0.2.0 upgrade (modal focus, keys in layers, Table/List focus, footers, contrast) and small additive APIs (Host overlay queries, capability invocation context, `check` and Host extensions, CodeViewer content height, List loading) | Compatible; `gpui-rhai update` brings eight changed modules; apply two token-base lines by hand |
 | [0.2.0](0.2.0.md) | Design system for productivity tools: neutral token runtime, token base, 64 components (62 rebuilt, List and TabBar new), layouts and patterns, composition audit and profiles, the Gallery as acceptance application | Runtime API 3; add the token base for official components; review removed props and changed defaults |
 | [0.1.8](0.1.8.md) | Unified Interaction Runtime, direct-manipulation components, Host policy/theme queries and Table/Ref convergence | Upgrade all three crates and copied Table source together; review Rust/key breaking changes; Runtime API stays 2 |
 | [0.1.7](0.1.7.md) | Formal Gallery, Operations Workbench, source-backed acceptance stories | Replace removed Gallery examples; adopt optional Host environment APIs and Table search/page props |
