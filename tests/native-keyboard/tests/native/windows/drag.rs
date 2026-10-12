@@ -3,29 +3,10 @@
 //! window move panics with `not implemented`, which is how these tests observe
 //! it.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
+use gpui_rhai::ScriptViewHandle;
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, point, px,
-};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, TOKEN_BASE_SOURCE,
-};
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, bounds, settle};
 
 const MAIN: &str = r#"
 import "components/title_bar" as title_bar;
@@ -43,64 +24,12 @@ fn view(ctx) {
 "#;
 
 fn mount(cx: &mut TestAppContext, allowed: bool) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    modules.insert(ModuleId::parse("main").unwrap(), MAIN.to_owned());
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        DEFAULT_THEME,
-    )
-    .token_base(TOKEN_BASE_SOURCE)
-    .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-        (
-            path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: source.as_bytes().to_vec(),
-            },
-        )
-    }))
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("window-drag", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("window-drag").window_drag_areas(allowed),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
+    let (mut visual, view) = Mount::components(MAIN)
+        .config(move |config| config.window_drag_areas(allowed))
+        .id("window-drag")
+        .mount(cx);
+    settle(&mut visual, Step::Refresh, 1);
     (visual, view)
-}
-
-fn bounds(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
-        .find(|node| node.role == role && node.name == name)
-        .and_then(|node| node.geometry)
-        .unwrap_or_else(|| panic!("no {role} {name}"))
-        .visual
 }
 
 #[allow(clippy::cast_possible_truncation)]

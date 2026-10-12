@@ -14,17 +14,11 @@
 //! ratios use the runtime's own colour maths (`Rgba8::contrast_ratio`, the function the
 //! audit uses) on the resolved theme tokens (token base + palette).
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
-
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
+use gpui::TestAppContext;
 use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_THEME_SOURCES,
-    TOKEN_BASE_SOURCE,
-};
+use gpui_rhai_registry::{BUNDLED_THEME_SOURCES, TOKEN_BASE_SOURCE};
+
+use crate::support::{Mount, Step, last_error, settle};
 
 /// (foreground, derived background, where the pair is drawn).
 const PAIRS: &[(&str, &str, &str)] = &[
@@ -94,68 +88,22 @@ fn text_on_derived_backgrounds_meets_4_5_in_every_bundled_theme() {
 
 // The same thing as the productivity profile's audit sees it.
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn audit(cx: &mut TestAppContext, theme_source: &str, body: &str) -> Vec<String> {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(
-        entry.clone(),
-        format!(
-            r#"import "components/tag" as tag;
+    let main = format!(
+        r#"import "components/tag" as tag;
 import "components/list" as list;
 import "components/table" as table;
 fn view(ctx) {{ column([{body}]).with_style(style().width(px(360)).padding(px(8))) }}"#
-        ),
-    )]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), theme_source)
-        .token_base(TOKEN_BASE_SOURCE)
-        .motion_preference(MotionPreference::None)
-        .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-            (
-                path.trim_end_matches(".svg").to_owned(),
-                AssetData {
-                    mime_type: "image/svg+xml".into(),
-                    bytes: source.as_bytes().to_vec(),
-                },
-            )
-        }))
-        .prepare()
-        .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("contrast", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("contrast"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..3 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    );
+    let (mut visual, view) = Mount::components(main)
+        .theme(theme_source)
+        .motion(MotionPreference::None)
+        .id("contrast")
+        .mount(cx);
+    settle(&mut visual, Step::Tick, 3);
+    assert_eq!(last_error(&mut visual, &view), None);
     let rules = AuditRules::from_ids(["low-contrast-text"]).unwrap();
     visual.update(|_, cx| {
-        assert_eq!(view.last_error(cx).unwrap(), None);
         view.composition_audit_with(&rules, cx)
             .unwrap()
             .iter()

@@ -1,22 +1,10 @@
 //! Real Rhai registration and GPUI focus-path dispatch, not AST-only probes.
 use gpui::{
-    Context, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton, Render, TestAppContext,
-    VisualTestContext, Window, WindowHandle, point, px,
+    KeyDownEvent, Keystroke, Modifiers, MouseButton, TestAppContext, VisualTestContext,
+    WindowHandle, point, px,
 };
-use gpui_rhai::*;
-use std::collections::BTreeMap;
 
-use crate::support::ReplaceOnce;
-
-struct Host {
-    domain: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.domain.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Host, Mount, ReplaceOnce, center};
 
 const SOURCE: &str = r#"
 import "components/input" as input;
@@ -49,34 +37,11 @@ fn view(ctx) { column([
 "#;
 
 fn mount(cx: &mut TestAppContext, target: &str) -> WindowHandle<Host> {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, SOURCE.replace_once("TARGET", target)),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").into(),
-            ),
-            (
-                ModuleId::parse("components/drag_source").unwrap(),
-                include_str!("../../../../../registry/components/drag_source.rhai").into(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .prepare()
-    .unwrap();
-    let window = cx.add_window(move |window, cx| {
-        let domain = ScriptViewHost::new("keys", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("keys"), domain.clone(), window, cx)
-            .unwrap();
-        Host { domain, view }
-    });
-    cx.run_until_parked();
+    let (window, _) = Mount::new(SOURCE.replace_once("TARGET", target))
+        .registry("components/input")
+        .registry("components/drag_source")
+        .id("keys")
+        .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
     window
@@ -103,8 +68,8 @@ fn named_text(cx: &mut TestAppContext, window: WindowHandle<Host>, id: &str) -> 
             host.view
                 .accessibility_snapshot(cx)
                 .unwrap()
-                .nodes()
-                .find(|node| node.test_id.as_deref() == Some(id))
+                .find_by_test_id(id)
+                .next()
                 .unwrap()
                 .name
                 .clone()
@@ -341,10 +306,7 @@ fn active_gesture_escape_owner_precedes_script_key_capture(cx: &mut TestAppConte
                 .visual
         })
         .unwrap();
-    let start = point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
+    let start = center(bounds);
     let moved = point(start.x + px(20.0), start.y + px(10.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
     visual.simulate_mouse_move(moved, MouseButton::Left, Modifiers::none());

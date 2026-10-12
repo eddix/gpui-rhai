@@ -4,29 +4,10 @@
 //! for a context menu (Shift+F10 too, for the whole list without a selection mode), and
 //! the roles follow the selection mode.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
-
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext};
 use gpui_rhai::*;
 
-use crate::support::ReplaceOnce;
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, ReplaceOnce, Step, bounds, center, last_error, snapshot, text_of};
 
 fn script(mode: &str, extra: &str) -> String {
     format!(
@@ -52,67 +33,17 @@ fn view(ctx){{column([
 }
 
 fn mount(cx: &mut TestAppContext, source: String) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), source)]);
-    for (id, source) in gpui_rhai_registry::BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        gpui_rhai_registry::DEFAULT_THEME,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(
-        gpui_rhai_registry::BUNDLED_ASSET_SOURCES
-            .iter()
-            .map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }),
-    )
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("list", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("list"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(source).id("list").mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    visual.run_until_parked();
-    visual.executor().advance_clock(Duration::from_millis(32));
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
+    crate::support::settle(visual, Step::Tick, 1);
 }
 
 fn log(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.test_id.as_deref() == Some("log"))
-            .unwrap()
-            .name
-            .trim()
-            .to_owned()
-    })
+    text_of(visual, view, "log").trim().to_owned()
 }
 
 /// (role, name, bounds) of every row.
@@ -120,28 +51,21 @@ fn rows(
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,
 ) -> Vec<(String, String, GeometryBounds)> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .filter(|node| node.role == "option" || node.role == "listitem")
-            .map(|node| {
-                (
-                    node.role.clone(),
-                    node.name.clone(),
-                    node.geometry.unwrap().visual,
-                )
-            })
-            .collect()
-    })
+    snapshot(visual, view)
+        .nodes()
+        .filter(|node| node.role == "option" || node.role == "listitem")
+        .map(|node| {
+            (
+                node.role.clone(),
+                node.name.clone(),
+                node.geometry.unwrap().visual,
+            )
+        })
+        .collect()
 }
 
 fn press(visual: &mut VisualTestContext, bounds: GeometryBounds, button: MouseButton) {
-    #[allow(clippy::cast_possible_truncation)]
-    let position = point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
+    let position = center(bounds);
     visual.simulate_mouse_move(position, None, Modifiers::none());
     visual.simulate_mouse_down(position, button, Modifiers::none());
     visual.simulate_mouse_up(position, button, Modifiers::none());
@@ -164,15 +88,7 @@ fn rows_are_options_named_by_their_text_and_start_on_the_inset(cx: &mut TestAppC
             "option:Charlie, T3"
         ]
     );
-    let title = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("text", "Charlie")
-            .next()
-            .and_then(|node| node.geometry)
-            .unwrap()
-            .visual
-    });
+    let title = bounds(&mut visual, &view, "text", "Charlie");
     // Comfortable metrics.inset.
     assert!(
         (title.x - found[2].2.x - 12.0).abs() < 0.5,
@@ -252,30 +168,14 @@ fn an_empty_list_shows_its_empty_text(cx: &mut TestAppContext) {
         r#"items:[],empty_text:"No tickets","#,
     );
     let (mut visual, view) = mount(cx, source);
-    let texts = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .filter(|node| node.role == "text")
-            .map(|node| node.name.clone())
-            .collect::<Vec<_>>()
-    });
+    let texts = texts(&mut visual, &view);
     assert!(texts.iter().any(|text| text == "No tickets"), "{texts:?}");
 }
 
 #[gpui::test]
 fn a_badge_width_lines_the_titles_up(cx: &mut TestAppContext) {
     let title_x = |visual: &mut VisualTestContext, view: &ScriptViewHandle, name: &str| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .find_by_role_and_name("text", name)
-                .next()
-                .and_then(|node| node.geometry)
-                .unwrap()
-                .visual
-                .x
-        })
+        bounds(visual, view, "text", name).x
     };
     // Alpha has a badge, Charlie none: without a slot their titles start apart.
     let (mut visual, view) = mount(cx, script("single", ""));
@@ -302,15 +202,7 @@ fn without_a_selection_mode_shift_f10_asks_for_the_list(cx: &mut TestAppContext)
     settle(&mut visual);
     visual.simulate_keystrokes("shift-f10");
     settle(&mut visual);
-    let list = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("list", "Tickets")
-            .next()
-            .and_then(|node| node.geometry)
-            .unwrap()
-            .visual
-    });
+    let list = bounds(&mut visual, &view, "list", "Tickets");
     let request = format!(
         "ctx::keyboard:{:?},{:?},{:?},{:?}",
         list.x, list.y, list.width, list.height
@@ -346,10 +238,6 @@ fn a_second_click_clears_a_single_selection_and_multiple_clicks_toggle(cx: &mut 
         "{}",
         log(&mut visual, &view)
     );
-}
-
-fn last_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Option<String> {
-    visual.update(|_, cx| view.last_error(cx).unwrap())
 }
 
 /// `count` rows in `multiple` mode, every one selected when `selected` (the round-4 probe).
@@ -418,36 +306,19 @@ fn view(ctx){
     .to_owned()
 }
 
-fn named_bounds(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .and_then(|node| node.geometry)
-            .unwrap_or_else(|| panic!("no {role} {name:?}"))
-            .visual
-    })
-}
-
 #[gpui::test]
 fn clicks_build_the_next_selection_from_few_to_many_selected_rows(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, growing_selection_script());
-    let row = named_bounds(&mut visual, &view, "option", "Row 1");
+    let row = bounds(&mut visual, &view, "option", "Row 1");
     press(&mut visual, row, MouseButton::Left);
     assert_eq!(log(&mut visual, &view), "sel:2:false:r1");
-    let many = named_bounds(&mut visual, &view, "button", "Many");
+    let many = bounds(&mut visual, &view, "button", "Many");
     press(&mut visual, many, MouseButton::Left);
     let error = last_error(&mut visual, &view);
     assert!(error.is_none(), "400 of 500 rows selected: {error:?}");
     assert_eq!(log(&mut visual, &view), "sel:2:false:r1 many");
     // A click on a selected row drops it; a second click appends it again.
-    let row = named_bounds(&mut visual, &view, "option", "Row 2");
+    let row = bounds(&mut visual, &view, "option", "Row 2");
     press(&mut visual, row, MouseButton::Left);
     press(&mut visual, row, MouseButton::Left);
     let error = last_error(&mut visual, &view);
@@ -460,33 +331,27 @@ fn clicks_build_the_next_selection_from_few_to_many_selected_rows(cx: &mut TestA
 
 /// The bounds of the list itself (role `listbox` or `list`, named Tickets).
 fn list_bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> GeometryBounds {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| (node.role == "listbox" || node.role == "list") && node.name == "Tickets")
-            .and_then(|node| node.geometry)
-            .expect("no list named Tickets")
-            .visual
-    })
+    snapshot(visual, view)
+        .nodes()
+        .find(|node| (node.role == "listbox" || node.role == "list") && node.name == "Tickets")
+        .and_then(|node| node.geometry)
+        .expect("no list named Tickets")
+        .visual
 }
 
 fn texts(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .filter(|node| node.role == "text")
-            .map(|node| node.name.clone())
-            .collect()
-    })
+    snapshot(visual, view)
+        .nodes()
+        .filter(|node| node.role == "text")
+        .map(|node| node.name.clone())
+        .collect()
 }
 
 /// `badge_width` takes a Length (#139b) as well as pixels; both line the titles up alike.
 #[gpui::test]
 fn a_badge_width_length_lines_the_titles_up_like_pixels(cx: &mut TestAppContext) {
     let title_x = |visual: &mut VisualTestContext, view: &ScriptViewHandle, name: &str| {
-        named_bounds(visual, view, "text", name).x
+        bounds(visual, view, "text", name).x
     };
     let (mut visual, view) = mount(cx, script("single", ",badge_width:64.0"));
     assert_eq!(last_error(&mut visual, &view), None);

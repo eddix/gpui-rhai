@@ -3,72 +3,20 @@
 //! bleed to the hairline, and 2px or 4px in the subtle and round styles, where the square row
 //! blocks clear the rounded corner. The padding is the same on all four sides.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{AccessibilityNode, GeometryBounds, MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::EN_LOCALE;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, EN_LOCALE,
-    TOKEN_BASE_SOURCE,
-};
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, last_error, nodes, settle};
 
 fn mount(cx: &mut TestAppContext, main: &str) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), main.to_owned())]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .locale_sources([("en.rhai".into(), EN_LOCALE.to_owned())])
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("panels", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("panels"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..3 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    let (mut visual, view) = Mount::components(main)
+        .locale("en.rhai", EN_LOCALE)
+        .motion(MotionPreference::None)
+        .id("panels")
+        .mount(cx);
+    settle(&mut visual, Step::Tick, 3);
+    assert_eq!(last_error(&mut visual, &view), None);
     (visual, view)
 }
 
@@ -99,16 +47,7 @@ const COMMAND_DIALOG: &str = r#"command_dialog::CommandDialog(#{ key: "go", labe
     open: true, query: "", active_value: "deploy", items: [#{ label: "Deploy", value: "deploy" },
     #{ label: "Roll back", value: "rollback" }] })"#;
 
-fn nodes(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<AccessibilityNode> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .cloned()
-            .collect()
-    })
-}
-
+/// The visual bounds of the one node with `role` and `name`.
 fn bounds(nodes: &[AccessibilityNode], role: &str, name: &str) -> GeometryBounds {
     let found = nodes
         .iter()

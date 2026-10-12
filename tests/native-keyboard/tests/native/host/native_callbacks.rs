@@ -8,7 +8,7 @@ use std::rc::Rc;
 use crate::support::KeyboardHost;
 use gpui::{
     Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, ParentElement, Render,
-    StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, point,
+    StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div,
 };
 use gpui_rhai::{
     EventPropagation, GpuiNodeRenderer, HostCallback, NodeEventDispatcher, PrimitiveContext,
@@ -89,13 +89,7 @@ fn host_callbacks_dispatch_without_a_script_runtime(cx: &mut TestAppContext) {
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
     let bounds = visual.debug_bounds("root").expect("host node bounds");
-    visual.simulate_click(
-        point(
-            bounds.origin.x + bounds.size.width / 2.0,
-            bounds.origin.y + bounds.size.height / 2.0,
-        ),
-        Modifiers::default(),
-    );
+    visual.simulate_click(bounds.center(), Modifiers::default());
     visual.run_until_parked();
     assert_eq!(*parent_clicks.borrow(), 1);
     assert_eq!(*received.borrow(), vec![UiValue::Integer(7)]);
@@ -152,13 +146,7 @@ fn explicit_occlusion_blocks_pointer_hits_to_painted_siblings(cx: &mut TestAppCo
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
     let bounds = visual.debug_bounds("root/front").unwrap();
-    visual.simulate_click(
-        point(
-            bounds.origin.x + bounds.size.width / 2.0,
-            bounds.origin.y + bounds.size.height / 2.0,
-        ),
-        Modifiers::default(),
-    );
+    visual.simulate_click(bounds.center(), Modifiers::default());
     visual.run_until_parked();
     assert_eq!(*clicks.borrow(), 0);
 }

@@ -1,24 +1,14 @@
 //! A failed render keeps the last good root, and a Host can suppress the built-in error
 //! banner without hiding the last error.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, node_texts, official_icon_assets};
+use crate::support::{Mount, by_role, dispatch, last_error, node_texts};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost, UiValue,
-};
+use gpui_rhai::UiValue;
 
-fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
-    let entry = ModuleId::parse("main").unwrap();
-    let panel = ModuleId::parse("components/broken_panel").unwrap();
-    EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+/// A view whose `BrokenPanel` throws while `broken` is set.
+fn failure_view() -> Mount {
+    Mount::new(
+        r#"
                 import "components/broken_panel" as broken_panel;
                 fn state_schema() { #{ fields: #{
                     broken: #{ schema: #{ type: "bool" },
@@ -32,12 +22,11 @@ fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
                         on_break: Fn("break_render"), on_recover: Fn("recover")
                     })
                 }
-            "#
-                .to_owned(),
-            ),
-            (
-                panel,
-                r#"/* gpui-rhai
+            "#,
+    )
+    .module(
+        "components/broken_panel",
+        r#"/* gpui-rhai
 {
   "id": "components/broken_panel",
   "export": "BrokenPanel",
@@ -77,60 +66,28 @@ fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
                             .on_click(props.on_recover)
                     ]).with_style(ctx.component_style("root", style()))
                 }
-            "#
-                .to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap()
+    .bundled_assets()
 }
 
 #[gpui::test]
 fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let prepared = prepared_failure_view();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("failure-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("failure-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    let (window, view) = failure_view()
+        .ids("failure-window", "failure-view")
+        .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
-    let automation_error = visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator: gpui_rhai::AutomationLocator::RoleName {
-                        role: "button".to_owned(),
-                        name: "Break render".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap_err();
+    assert_eq!(last_error(&mut visual, &view), None);
+    let automation_error = dispatch(
+        &mut visual,
+        &view,
+        by_role("button", "Break render"),
+        "click",
+    )
+    .unwrap_err();
     assert!(
         automation_error
             .to_string()
@@ -138,7 +95,7 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
     );
     visual.run_until_parked();
 
-    let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());
+    let error = last_error(&mut visual, &view).unwrap();
     assert!(error.contains("dogfood render failure"), "{error}");
     let diagnostic = visual.update(|_, cx| view.last_diagnostic(cx).unwrap().unwrap());
     assert_eq!(
@@ -183,38 +140,18 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
         .expect("selecting the error banner must populate the clipboard on copy");
     assert!(copied.contains("dogfood render failure"), "{copied}");
 
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator: gpui_rhai::AutomationLocator::RoleName {
-                        role: "button".to_owned(),
-                        name: "Recover".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_role("button", "Recover"), "click").unwrap();
     visual.run_until_parked();
     // A later success does not hide the failure: the rolled-back event is
     // still reported until the developer dismisses it.
-    let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());
+    let error = last_error(&mut visual, &view).unwrap();
     assert!(error.contains("dogfood render failure"), "{error}");
     let dismiss = visual
         .debug_bounds("gpui-rhai-error-banner-dismiss:failure-view")
         .expect("the banner offers a dismiss button");
     visual.simulate_click(dismiss.center(), Modifiers::default());
     visual.run_until_parked();
-    assert!(
-        visual
-            .update(|_, cx| view.last_error(cx))
-            .unwrap()
-            .is_none()
-    );
+    assert!(last_error(&mut visual, &view).is_none());
     assert!(
         visual
             .update(|_, cx| view.last_diagnostic(cx))
@@ -232,45 +169,21 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
 
 #[gpui::test]
 fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let prepared = prepared_failure_view();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("custom-error-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("custom-error-view").show_error_banner(false),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    let (window, view) = failure_view()
+        .config(|config| config.show_error_banner(false))
+        .ids("custom-error-window", "custom-error-view")
+        .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let automation_error = visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator: gpui_rhai::AutomationLocator::RoleName {
-                        role: "button".to_owned(),
-                        name: "Break render".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap_err();
+    let automation_error = dispatch(
+        &mut visual,
+        &view,
+        by_role("button", "Break render"),
+        "click",
+    )
+    .unwrap_err();
     assert!(
         automation_error
             .to_string()
@@ -278,7 +191,7 @@ fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut
     );
     visual.run_until_parked();
 
-    let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());
+    let error = last_error(&mut visual, &view).unwrap();
     assert!(error.contains("dogfood render failure"), "{error}");
     assert!(
         visual
@@ -287,5 +200,5 @@ fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut
         "the host-owned error surface must not compete with a built-in banner"
     );
     visual.update(|_, cx| view.clear_error(cx)).unwrap();
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    assert_eq!(last_error(&mut visual, &view), None);
 }

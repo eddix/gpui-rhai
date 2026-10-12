@@ -1,27 +1,13 @@
-use gpui::{
-    AppContext, Context, IntoElement, Render, TestAppContext, VisualTestContext, Window,
-    WindowHandle,
-};
+use gpui::{AppContext, TestAppContext, VisualTestContext};
 use gpui_rhai::*;
+use gpui_rhai_registry::{DEFAULT_LIGHT_THEME, DEFAULT_THEME};
 use std::{
     cell::{Cell, RefCell},
     collections::BTreeMap,
     rc::Rc,
 };
 
-use crate::support::ReplaceOnce;
-
-const DARK: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
-const LIGHT: &str = include_str!("../../../../../registry/themes/default_light.rhai");
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Host, ReplaceOnce, Step, by_test_id, snapshot};
 struct Themes {
     system: bool,
     none: bool,
@@ -48,10 +34,10 @@ fn builder(source: &str, system: bool, none: bool) -> EmbeddedScriptView {
     EmbeddedScriptView::new(
         entry.clone(),
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
-        DARK,
+        DEFAULT_THEME,
     )
     .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .theme_sources([("light".into(), LIGHT.into())])
+    .theme_sources([("light".into(), DEFAULT_LIGHT_THEME.into())])
     .extension(Themes { system, none })
 }
 fn mount(
@@ -59,7 +45,7 @@ fn mount(
     prepared: PreparedScriptView,
     name: &str,
     commands: bool,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
+) -> (VisualTestContext, ScriptViewHandle) {
     cx.update(gpui_rhai::install);
     let captured = Rc::new(RefCell::new(None));
     let capture = captured.clone();
@@ -79,41 +65,20 @@ fn mount(
     cx.run_until_parked();
     cx.refresh().unwrap();
     let view = captured.borrow_mut().take().unwrap();
-    (window, view)
+    (VisualTestContext::from_window(*window, cx), view)
 }
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..4 {
-        visual
-            .background_executor
-            .advance_clock(std::time::Duration::from_millis(32));
-        visual.run_until_parked();
-        visual.update(|window, _| window.refresh());
-    }
+    crate::support::settle(visual, Step::TickRefresh, 4);
 }
 fn labels(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .filter(|node| node.role == "status")
-            .map(|node| node.name.clone())
-            .collect()
-    })
+    snapshot(visual, view)
+        .nodes()
+        .filter(|node| node.role == "status")
+        .map(|node| node.name.clone())
+        .collect()
 }
 fn dispatch(visual: &mut VisualTestContext, view: &ScriptViewHandle, id: &str) {
-    visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::TestId { id: id.into() },
-                    event: "click".into(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    crate::support::dispatch(visual, view, by_test_id(id), "click").unwrap();
     settle(visual);
 }
 
@@ -127,13 +92,12 @@ fn view(ctx){let theme=ctx.theme_variant();column([text(`${ctx.get_state("starts
 
 #[gpui::test]
 fn first_system_light_init_and_render_match_host_without_replaying_init(cx: &mut TestAppContext) {
-    let (window, view) = mount(
+    let (mut visual, view) = mount(
         cx,
         builder(INIT, true, false).prepare().unwrap(),
         "initial-light",
         false,
     );
-    let mut visual = VisualTestContext::from_window(*window, cx);
     settle(&mut visual);
     assert_eq!(
         visual.update(|window, _| window.appearance()),
@@ -173,7 +137,7 @@ fn fixed_dark_and_host_token_overrides_preserve_resolved_identity(cx: &mut TestA
         colors: BTreeMap::from([("background".into(), Rgba8::from_rgb_hex(0x00ff_ffff))]),
         ..ThemeTokenOverrides::default()
     };
-    let (window, view) = mount(
+    let (mut visual, view) = mount(
         cx,
         builder(INIT, false, false)
             .theme_token_overrides(overrides)
@@ -182,7 +146,6 @@ fn fixed_dark_and_host_token_overrides_preserve_resolved_identity(cx: &mut TestA
         "override",
         false,
     );
-    let mut visual = VisualTestContext::from_window(*window, cx);
     settle(&mut visual);
     assert_eq!(labels(&mut visual, &view), vec!["1:dark:Default:Dark:dark"]);
     let snapshot = visual.update(|_, cx| view.theme_snapshot(cx).unwrap());
@@ -212,13 +175,12 @@ fn effect_body_only_does_not_restart_but_explicit_render_deps_do(cx: &mut TestAp
         } else {
             EFFECT.into()
         };
-        let (window, view) = mount(
+        let (mut visual, view) = mount(
             cx,
             builder(&source, false, false).prepare().unwrap(),
             if explicit { "explicit" } else { "body-only" },
             false,
         );
-        let mut visual = VisualTestContext::from_window(*window, cx);
         settle(&mut visual);
         assert_eq!(labels(&mut visual, &view), vec!["1:dark"]);
         visual
@@ -257,13 +219,12 @@ fn window_light(ctx,payload){ctx.set_window_theme("Default","Light");}
 fn panel(ctx,props){let theme=ctx.theme_variant();column([text(`${props.key}:${theme.name}:${theme.mode}`).accessibility_role("status"),text("Local light").test_id(`${props.key}-light`).on_click(Fn("local_light")),text("Local dark").test_id(`${props.key}-dark`).on_click(Fn("local_dark"))])}
 fn view(ctx){let theme=ctx.theme_variant();column([text(`root:${theme.name}:${theme.mode}`).accessibility_role("status"),text("Window light").test_id("window-light").on_click(Fn("window_light")),render_component("tests/panel",#{key:"a"}),render_component("tests/panel",#{key:"b"})])}
 "#;
-    let (window, view) = mount(
+    let (mut visual, view) = mount(
         cx,
         builder(source, false, false).prepare().unwrap(),
         "scope",
         false,
     );
-    let mut visual = VisualTestContext::from_window(*window, cx);
     settle(&mut visual);
     assert_eq!(
         labels(&mut visual, &view),
@@ -288,8 +249,7 @@ fn view(ctx){let theme=ctx.theme_variant();column([text(`root:${theme.name}:${th
 
 #[gpui::test]
 fn missing_theme_is_unit_in_a_mounted_script(cx: &mut TestAppContext) {
-    let(window,view)=mount(cx,builder(r#"fn view(ctx){text(if ctx.theme_variant()==(){"none"}else{"unexpected"}).accessibility_role("status")}"#,false,true).prepare().unwrap(),"none",false);
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx,builder(r#"fn view(ctx){text(if ctx.theme_variant()==(){"none"}else{"unexpected"}).accessibility_role("status")}"#,false,true).prepare().unwrap(),"none",false);
     settle(&mut visual);
     assert_eq!(labels(&mut visual, &view), vec!["none"]);
     assert_eq!(view.state(), ScriptViewState::Active);
@@ -368,28 +328,16 @@ fn secondary_initial_theme_and_failed_startup_keep_native_authority_closed(
             .extension(capture.clone())
             .prepare()
             .unwrap();
-        let (window, view) = mount(
+        let (mut visual, view) = mount(
             cx,
             prepared,
             if fail_first { "retry" } else { "root" },
             true,
         );
-        let mut visual = VisualTestContext::from_window(*window, cx);
         settle(&mut visual);
         assert_eq!(capture.records.borrow().len(), 2);
         if fail_first {
-            let error = visual
-                .update(|window, cx| {
-                    view.automate(
-                        AutomationCommand::Dispatch {
-                            locator: AutomationLocator::TestId { id: "open".into() },
-                            event: "click".into(),
-                            payload: None,
-                        },
-                        window,
-                        cx,
-                    )
-                })
+            let error = crate::support::dispatch(&mut visual, &view, by_test_id("open"), "click")
                 .unwrap_err();
             assert!(
                 error.to_string().contains("child-startup-failure"),

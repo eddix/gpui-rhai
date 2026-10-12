@@ -1,24 +1,14 @@
 //! Automation commands run through the mounted handlers, actions and runtime clock.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, node_texts, official_icon_assets};
+use crate::support::{Mount, by_test_id, dispatch, node_texts};
 use gpui::{TestAppContext, VisualTestContext};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-};
 
 #[gpui::test]
 fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
     let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let clock = manual.clock();
+    let (window, view) = Mount::new(
+        r#"
                 fn state_schema() { #{ fields: #{
                     count: #{ schema: #{ type: "integer" },
                         "default": #{ type: "integer", value: 0 } }
@@ -43,40 +33,17 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
                             .on_click(Fn("increment"))
                     ])
                 }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .runtime_clock(manual.clock())
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("automation-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("automation-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .bundled_assets()
+    .with(move |view| view.runtime_clock(clock))
+    .ids("automation-window", "automation-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let locator = gpui_rhai::AutomationLocator::TestId {
-        id: "increment".to_owned(),
-    };
+    let locator = by_test_id("increment");
     let query = visual
         .update(|window, cx| {
             view.automate(
@@ -90,19 +57,7 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
         .unwrap();
     assert!(matches!(query, gpui_rhai::AutomationResult::Node { .. }));
 
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator,
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, locator, "click").unwrap();
     visual
         .update(|window, cx| {
             view.automate(

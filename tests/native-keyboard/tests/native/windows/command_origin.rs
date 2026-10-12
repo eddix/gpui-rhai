@@ -1,12 +1,9 @@
 //! Queue origin is independent of whichever view later pumps the Runtime.
 use gpui::{Context, IntoElement, ParentElement, Render, TestAppContext, Window};
 use gpui_rhai::*;
-use std::{
-    collections::BTreeMap,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
-use crate::support::ReplaceOnce;
+use crate::support::{Mount, ReplaceOnce};
 
 struct Host {
     domain: ScriptViewHost,
@@ -66,19 +63,10 @@ fn setup(
     init_open: bool,
 ) -> gpui::WindowHandle<Host> {
     cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(
-            entry,
-            source(operation, fail_first, init_open),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .runtime_clock(ManualRuntimeClock::new(Instant::now()).clock())
-    .prepare()
-    .unwrap();
+    let prepared = Mount::new(source(operation, fail_first, init_open))
+        .with(|view| view.runtime_clock(ManualRuntimeClock::new(Instant::now()).clock()))
+        .prepare()
+        .unwrap();
     let window = cx.add_window(move |window, cx| {
         let domain = ScriptViewHost::new("domain", cx).unwrap();
         let owner = prepared

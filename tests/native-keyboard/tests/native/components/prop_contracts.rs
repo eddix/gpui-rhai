@@ -2,34 +2,16 @@
 //! props accept `()`, declared parts reach the node they name, wrappers keep the defaults of
 //! the component they wrap, and disabled or status looks follow docs/design.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
-
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, px, rgba};
+use gpui::{TestAppContext, VisualTestContext, rgba};
 use gpui_rhai::*;
 use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
-    BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID,
-    DEFAULT_THEME, EN_LOCALE, TOKEN_BASE_SOURCE,
+    BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID,
+    BUNDLED_PATTERN_SOURCES_BY_ID, EN_LOCALE,
 };
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let element = if self.view.state() == ScriptViewState::Active {
-            self.view.element().unwrap()
-        } else {
-            gpui::div().into_any_element()
-        };
-        self.host.container(element)
-    }
-}
+use crate::support::{
+    Mount, Step, bounds, click_center, last_error, nodes, painted_quads, text_of,
+};
 
 fn mount(cx: &mut TestAppContext, main: &str) -> (VisualTestContext, ScriptViewHandle) {
     mount_with(
@@ -46,87 +28,26 @@ fn mount_with(
     styles: &str,
     overrides: ThemeTokenOverrides,
 ) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), main.to_owned())]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
-        .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
-        .chain(BUNDLED_CHART_SOURCES_BY_ID)
-        .chain(BUNDLED_MOTION_SOURCES_BY_ID)
-    {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .locale_sources([("en.rhai".into(), EN_LOCALE.to_owned())])
-            .component_styles(styles)
-            .theme_token_overrides(overrides)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("contracts", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("contracts"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let styles = styles.to_owned();
+    let (mut visual, view) = Mount::components(main)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .modules(BUNDLED_CHART_SOURCES_BY_ID)
+        .modules(BUNDLED_MOTION_SOURCES_BY_ID)
+        .locale("en.rhai", EN_LOCALE)
+        .with(move |view| {
+            view.component_styles(styles)
+                .theme_token_overrides(overrides)
+        })
+        .motion(MotionPreference::None)
+        .id("contracts")
+        .mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    visual.run_until_parked();
-    visual.executor().advance_clock(Duration::from_millis(32));
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
-}
-
-fn last_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Option<String> {
-    visual.update(|_, cx| view.last_error(cx).unwrap())
-}
-
-fn nodes(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<AccessibilityNode> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .cloned()
-            .collect()
-    })
-}
-
-fn bounds(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    nodes(visual, view)
-        .into_iter()
-        .find(|node| node.role == role && node.name == name)
-        .unwrap_or_else(|| panic!("no {role} named {name}"))
-        .geometry
-        .unwrap()
-        .visual
+    crate::support::settle(visual, Step::Tick, 1);
 }
 
 fn color(hex: u32) -> Rgba8 {
@@ -143,21 +64,12 @@ fn colors(tokens: &[(&str, u32)]) -> ThemeTokenOverrides {
     }
 }
 
-/// (background, border color) of every painted quad.
+/// (background, border color, left border width) of every painted quad.
 fn quads(visual: &mut VisualTestContext) -> Vec<(gpui::Background, gpui::Hsla, f32)> {
-    visual.update(|window, _| {
-        window
-            .painted_quads()
-            .iter()
-            .map(|quad| {
-                (
-                    quad.background,
-                    quad.border_color,
-                    quad.border_widths.left.0,
-                )
-            })
-            .collect()
-    })
+    painted_quads(visual)
+        .into_iter()
+        .map(|quad| (quad.background, quad.border_color, quad.border_widths[3]))
+        .collect()
 }
 
 fn hsla(hex: u32) -> gpui::Hsla {
@@ -165,23 +77,12 @@ fn hsla(hex: u32) -> gpui::Hsla {
 }
 
 fn press(visual: &mut VisualTestContext, at: GeometryBounds) {
-    #[allow(clippy::cast_possible_truncation)]
-    let position = gpui::point(
-        px((at.x + at.width / 2.0) as f32),
-        px((at.y + at.height / 2.0) as f32),
-    );
-    visual.simulate_click(position, gpui::Modifiers::none());
+    click_center(visual, at);
     settle(visual);
 }
 
 fn log(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    nodes(visual, view)
-        .into_iter()
-        .find(|node| node.test_id.as_deref() == Some("log"))
-        .unwrap()
-        .name
-        .trim()
-        .to_owned()
+    text_of(visual, view, "log").trim().to_owned()
 }
 
 const TABLE_ROWS: &str = r#"row_key: "id", rows: [#{ id: "a", name: "Alpha", count: "1" }]"#;

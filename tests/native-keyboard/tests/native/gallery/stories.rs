@@ -5,11 +5,14 @@ use std::time::{Duration, Instant};
 use gpui::prelude::*;
 use gpui::{Context, IntoElement, Render, TestAppContext, Window, WindowHandle};
 use gpui_rhai::{
-    AutomationCommand, AutomationLocator, AutomationResult, PrimitiveValue, ScriptViewHandle,
-    ScriptViewHost, UiNodeKind,
+    AutomationCommand, AutomationResult, PrimitiveValue, ScriptViewHandle, ScriptViewHost,
+    UiNodeKind,
 };
 use gpui_rhai_cli::gallery::{GalleryLaunch, prepare, stories};
 use gpui_rhai_registry::BUNDLED_THEME_SOURCES;
+
+use super::mount_prepared;
+use crate::support::{bounds, by_role, by_test_id, dispatch, snapshot};
 
 struct GalleryHost {
     host: ScriptViewHost,
@@ -25,6 +28,10 @@ impl Render for GalleryHost {
         };
         self.host.container(gpui::div().size_full().child(content))
     }
+}
+
+fn gallery_root(host: ScriptViewHost, view: ScriptViewHandle) -> GalleryHost {
+    GalleryHost { host, view }
 }
 
 fn node_texts(node: &gpui_rhai::UiNode, output: &mut Vec<String>) {
@@ -102,20 +109,9 @@ fn node_documents(
     }
 }
 
-fn dispatch(visual: &mut gpui::VisualTestContext, view: &ScriptViewHandle, id: &str) {
-    visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::TestId { id: id.to_owned() },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+/// Dispatches a click to the node with `test_id` and runs until parked.
+fn click_test_id(visual: &mut gpui::VisualTestContext, view: &ScriptViewHandle, test_id: &str) {
+    dispatch(visual, view, by_test_id(test_id), "click").unwrap();
     visual.run_until_parked();
 }
 
@@ -125,27 +121,10 @@ fn mount_story(
     identity: &str,
 ) -> (WindowHandle<GalleryHost>, ScriptViewHandle) {
     let prepared = prepare(&launch).unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let host_identity = format!("{identity}-host");
-    let view_identity = format!("{identity}-view");
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(host_identity, cx).unwrap();
-        let view = prepared
-            .mount(
-                gpui_rhai::ScriptViewConfig::new(view_identity),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        GalleryHost { host, view }
-    });
-    cx.run_until_parked();
+    let ids = (format!("{identity}-host"), format!("{identity}-view"));
+    let (window, view) = mount_prepared(cx, prepared, (&ids.0, &ids.1), false, gallery_root);
     cx.refresh().unwrap();
     cx.run_until_parked();
-    let view = captured.borrow().as_ref().unwrap().clone();
     (window, view)
 }
 
@@ -191,29 +170,16 @@ fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestApp
             };
             let prepared = prepare(&launch)
                 .unwrap_or_else(|error| panic!("{}/{} prepare: {error}", story.id, case.id));
-            let captured = Rc::new(RefCell::new(None));
-            let captured_for_window = Rc::clone(&captured);
             let identity = format!("{}-{}", story.id.replace('/', "-"), case.id);
-            let host_identity = format!("gallery-host-{identity}");
-            let view_identity = format!("gallery-view-{identity}");
-            let window = cx.add_window(move |window, cx| {
-                let host = ScriptViewHost::new(host_identity, cx).unwrap();
-                let view = prepared
-                    .mount(
-                        gpui_rhai::ScriptViewConfig::new(view_identity),
-                        host.clone(),
-                        window,
-                        cx,
-                    )
-                    .unwrap();
-                *captured_for_window.borrow_mut() = Some(view.clone());
-                GalleryHost { host, view }
-            });
-            cx.run_until_parked();
+            let ids = (
+                format!("gallery-host-{identity}"),
+                format!("gallery-view-{identity}"),
+            );
+            let (window, view) =
+                mount_prepared(cx, prepared, (&ids.0, &ids.1), false, gallery_root);
             cx.refresh().unwrap();
             cx.run_until_parked();
 
-            let view = captured.borrow().as_ref().unwrap().clone();
             let mut visual = gpui::VisualTestContext::from_window(*window, cx);
             assert!(
                 visual
@@ -266,8 +232,8 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
         "operations-normal",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
-    dispatch(&mut visual, &view, "stage-deploy");
-    dispatch(&mut visual, &view, "cancel-deploy");
+    click_test_id(&mut visual, &view, "stage-deploy");
+    click_test_id(&mut visual, &view, "cancel-deploy");
     let mut texts = rendered_texts(&mut visual, &view);
     assert!(
         !texts
@@ -284,8 +250,8 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
     });
     visual.run_until_parked();
 
-    dispatch(&mut visual, &view, "stage-deploy");
-    dispatch(&mut visual, &view, "confirm-deploy");
+    click_test_id(&mut visual, &view, "stage-deploy");
+    click_test_id(&mut visual, &view, "confirm-deploy");
     texts = wait_for_text(&mut visual, &view, "Deployment complete");
     assert!(
         texts
@@ -302,22 +268,13 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
             .update(|_, cx| view.last_error(cx).unwrap())
             .is_none()
     );
-    visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::RoleName {
-                        role: "button".to_owned(),
-                        name: "Configurations".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(
+        &mut visual,
+        &view,
+        by_role("button", "Configurations"),
+        "click",
+    )
+    .unwrap();
     visual.run_until_parked();
     let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let mut documents = std::collections::BTreeMap::new();
@@ -399,8 +356,8 @@ fn operations_workbench_failure_keeps_the_previous_configuration(cx: &mut TestAp
         "operations-failure",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
-    dispatch(&mut visual, &view, "stage-deploy");
-    dispatch(&mut visual, &view, "confirm-deploy");
+    click_test_id(&mut visual, &view, "stage-deploy");
+    click_test_id(&mut visual, &view, "confirm-deploy");
     let texts = wait_for_text(&mut visual, &view, "Deployment failed");
     assert!(
         texts
@@ -594,13 +551,12 @@ fn critical_story_viewport_and_locale_matrix_mounts_real_frames(cx: &mut TestApp
                 .is_none(),
             "{locale} input story recorded an error"
         );
-        assert!(visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
+        assert!(
+            snapshot(&mut visual, &view)
                 .find_by_role_and_name("text_field", "Host name")
                 .next()
                 .is_some()
-        }));
+        );
     }
 }
 
@@ -617,20 +573,7 @@ fn chart_diagnostic_story_exposes_last_good_invalid_semantics(cx: &mut TestAppCo
         "gallery-chart-diagnostic",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
-    let dispatch_error = visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::TestId {
-                        id: "break-chart".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
+    let dispatch_error = dispatch(&mut visual, &view, by_test_id("break-chart"), "click")
         .expect_err("breaking the chart must reject the event transaction");
     assert!(dispatch_error.to_string().contains("piee"));
     visual.run_until_parked();
@@ -638,13 +581,12 @@ fn chart_diagnostic_story_exposes_last_good_invalid_semantics(cx: &mut TestAppCo
         .update(|_, cx| view.last_error(cx).unwrap())
         .expect("broken spec must reach the view error channel");
     assert!(error.contains("piee"), "{error}");
-    assert!(visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
+    assert!(
+        snapshot(&mut visual, &view)
             .find_by_role_and_name("figure", "Diagnostic chart")
             .next()
             .is_some_and(|node| node.invalid && node.description.contains("piee"))
-    }));
+    );
 }
 
 #[gpui::test]
@@ -659,43 +601,12 @@ fn content_bearing_tabs_stretch_table_and_chart_panels(cx: &mut TestAppContext) 
         "gallery-tabs-fill",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
-    let table_width = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("table", "Hosts in Tabs")
-            .next()
-            .and_then(|node| node.geometry)
-            .map(|geometry| geometry.visual.width)
-            .unwrap()
-    });
+    let table_width = bounds(&mut visual, &view, "table", "Hosts in Tabs").width;
     assert!(table_width > 500.0, "table width was {table_width}");
 
-    visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::RoleName {
-                        role: "tab".to_owned(),
-                        name: "Latency".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_role("tab", "Latency"), "click").unwrap();
     visual.run_until_parked();
-    let chart_width = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("figure", "Latency")
-            .next()
-            .and_then(|node| node.geometry)
-            .map(|geometry| geometry.visual.width)
-            .unwrap()
-    });
+    let chart_width = bounds(&mut visual, &view, "figure", "Latency").width;
     assert!(chart_width > 500.0, "chart width was {chart_width}");
 }
 
@@ -815,26 +726,24 @@ fn workbench_sheet_and_command_dialog_share_session_navigation(cx: &mut TestAppC
         "gallery-workbench-overlays",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
-    dispatch(&mut visual, &view, "open-host-sheet");
-    assert!(visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
+    click_test_id(&mut visual, &view, "open-host-sheet");
+    assert!(
+        snapshot(&mut visual, &view)
             .find_by_role_and_name("dialog", "Host details")
             .next()
             .is_some()
-    }));
-    dispatch(&mut visual, &view, "compare-from-sheet");
+    );
+    click_test_id(&mut visual, &view, "compare-from-sheet");
     let texts = rendered_texts(&mut visual, &view);
     assert!(texts.iter().any(|text| text == "Configurations"));
 
-    dispatch(&mut visual, &view, "open-command");
-    assert!(visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
+    click_test_id(&mut visual, &view, "open-command");
+    assert!(
+        snapshot(&mut visual, &view)
             .find_by_role_and_name("dialog", "Navigate")
             .next()
             .is_some()
-    }));
+    );
 }
 
 #[gpui::test]
@@ -852,22 +761,7 @@ fn workbench_large_hosts_filter_in_rust_without_materializing_rows_in_rhai(
         "gallery-workbench-search",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
-    let result = visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::RoleName {
-                        role: "button".to_owned(),
-                        name: "Next page".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    let result = dispatch(&mut visual, &view, by_role("button", "Next page"), "click").unwrap();
     let AutomationResult::Dispatch { report } = result else {
         panic!("pagination dispatch returned the wrong automation result");
     };

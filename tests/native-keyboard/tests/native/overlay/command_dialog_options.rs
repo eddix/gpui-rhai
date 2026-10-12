@@ -3,34 +3,13 @@
 //! closes (a palette with levels goes back one level), and `width`,
 //! `command_part_styles` and `dialog_part_styles` reach the inner Dialog and Command.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{GeometryBounds, MotionPreference, ScriptViewHandle};
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, TOKEN_BASE_SOURCE,
-};
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, filled, snapshot};
 
 /// A palette open from the start; `extra` adds CommandDialog props.
 fn mount(cx: &mut TestAppContext, extra: &str) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"import "components/command_dialog" as command_dialog;
 fn state_schema() {{ #{{ fields: #{{
@@ -48,67 +27,31 @@ fn view(ctx) {{ column([
         {extra} }}),
 ]).with_style(style().width(px(900)).height(px(700))) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("palette", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("palette"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(main)
+        .motion(MotionPreference::None)
+        .id("palette")
+        .mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 3);
 }
 
 fn status(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    })
+    crate::support::nodes(visual, view)
+        .into_iter()
+        .find(|node| node.role == "status")
+        .unwrap()
+        .name
 }
 
 fn nodes(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<(String, String)> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .map(|node| (node.role.clone(), node.name.clone()))
-            .collect()
-    })
+    crate::support::nodes(visual, view)
+        .into_iter()
+        .map(|node| (node.role, node.name))
+        .collect()
 }
 
 fn press_escape(visual: &mut VisualTestContext) {
@@ -156,25 +99,16 @@ fn search_inset(cx: &mut TestAppContext, extra: &str) -> (GeometryBounds, f64) {
             r#", command_part_styles: #{{ search: style().background(rgba(0x00ff00ff)) }} {extra}"#
         ),
     );
-    let dialog = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("dialog", "Commands")
-            .next()
-            .and_then(|node| node.geometry)
-            .unwrap()
-            .layout
-    });
-    let green: gpui::Hsla = gpui::rgba(0x00ff_00ff).into();
-    let search_x = visual.update(|window, _| {
-        let scale = window.scale_factor();
-        window
-            .painted_quads()
-            .iter()
-            .find(|quad| quad.background == green.into())
-            .map(|quad| f64::from(quad.bounds.origin.x.0 / scale))
-            .expect("the search part takes the caller's background")
-    });
+    let dialog = snapshot(&mut visual, &view)
+        .find_by_role_and_name("dialog", "Commands")
+        .next()
+        .and_then(|node| node.geometry)
+        .unwrap()
+        .layout;
+    let search_x = filled(&mut visual, 0x00ff_00ff)
+        .first()
+        .map(|quad| f64::from(quad.bounds.x))
+        .expect("the search part takes the caller's background");
     (dialog, search_x - dialog.x)
 }
 

@@ -2,90 +2,29 @@
 //! query when no enabled option matches it, and the panel stays open; while an option is
 //! active Enter still picks it.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::EN_LOCALE;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, px};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, EN_LOCALE,
-    TOKEN_BASE_SOURCE,
-};
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, bounds, click_center, last_error, text_of};
 
 fn mount(cx: &mut TestAppContext, main: String) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), main)]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .locale_sources([("en.rhai".into(), EN_LOCALE.to_owned())])
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("submit", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("submit"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(main)
+        .locale("en.rhai", EN_LOCALE)
+        .motion(MotionPreference::None)
+        .id("submit")
+        .mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..2 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Tick, 2);
 }
 
 fn log(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        assert_eq!(view.last_error(cx).unwrap(), None);
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_test_id("log")
-            .next()
-            .unwrap()
-            .name
-            .trim()
-            .to_owned()
-    })
+    assert_eq!(last_error(visual, view), None);
+    text_of(visual, view, "log").trim().to_owned()
 }
 
 /// An open, searchable `single` Combobox over Alpha, Bravo and a disabled Zulu, its query and
@@ -122,22 +61,8 @@ fn view(ctx) {{
 
 /// Focus the search field, type `query` and press Enter.
 fn type_and_enter(visual: &mut VisualTestContext, view: &ScriptViewHandle, query: &str) {
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("text_field", "Service")
-            .next()
-            .expect("no search field")
-            .geometry
-            .unwrap()
-            .visual
-    });
-    #[allow(clippy::cast_possible_truncation)]
-    let at = gpui::point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
-    visual.simulate_click(at, gpui::Modifiers::none());
+    let field = bounds(visual, view, "text_field", "Service");
+    click_center(visual, field);
     settle(visual);
     visual.simulate_input(query);
     settle(visual);

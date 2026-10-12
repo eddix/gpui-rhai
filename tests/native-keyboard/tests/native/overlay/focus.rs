@@ -6,17 +6,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::support::{
-    KeyboardHost, ReplaceOnce, SingleEmbeddedHost, click_palette_trigger, official_icon_assets,
-    palette_texts,
+    Host, KeyboardHost, Mount, ReplaceOnce, click_palette_trigger, palette_texts,
 };
 use gpui::{
     Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, Styled,
     TestAppContext, VisualTestContext, Window, div,
 };
 use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, EventPropagation, ModuleId, NodeEventDispatcher,
-    OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec, OverlayPlacement,
-    PrimitiveRegistry, ScriptViewConfig, ScriptViewHandle, ScriptViewHost, UiNode,
+    EventPropagation, NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind,
+    OverlayNodeSpec, OverlayPlacement, PrimitiveRegistry, ScriptViewConfig, ScriptViewHandle,
+    ScriptViewHost, UiNode,
 };
 
 #[gpui::test]
@@ -141,53 +140,21 @@ fn view(ctx) {
 fn mount_controlled_palette(
     cx: &mut TestAppContext,
     initial_focus: Option<&str>,
-) -> (
-    gpui::WindowHandle<SingleEmbeddedHost>,
-    ScriptViewHost,
-    ScriptViewHandle,
-) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
+) -> (gpui::WindowHandle<Host>, ScriptViewHost, ScriptViewHandle) {
     let script = CONTROLLED_PALETTE_SCRIPT.replace_once(
         "__INITIAL_FOCUS__",
         &initial_focus
             .map(|policy| format!(", initial_focus: \"{policy}\""))
             .unwrap_or_default(),
     );
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (entry, script),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("palette-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("palette-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some((host.clone(), view.clone()));
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    let (window, view) = Mount::new(script)
+        .registry("components/input")
+        .bundled_assets()
+        .ids("palette-window", "palette-view")
+        .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-    let (host, view) = captured.borrow().as_ref().unwrap().clone();
+    let host = window.read_with(cx, |root, _| root.host.clone()).unwrap();
     (window, host, view)
 }
 
@@ -246,13 +213,8 @@ fn overlay_default_panel_focus_keeps_keyboard_on_panel(cx: &mut TestAppContext) 
 #[gpui::test]
 fn modal_dialog_reclaims_focus_stolen_by_an_embedding_host(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let prepared = Mount::new(
+        r#"
                     import "components/dialog" as dialog;
                     fn state_schema() { #{ fields: #{
                         open: #{ schema: #{ type: "bool" },
@@ -271,18 +233,10 @@ fn modal_dialog_reclaims_focus_stolen_by_an_embedding_host(cx: &mut TestAppConte
                             })
                         ])
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/dialog").unwrap(),
-                include_str!("../../../../../registry/components/dialog.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+        "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
+    .registry("components/dialog")
+    .bundled_assets()
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));

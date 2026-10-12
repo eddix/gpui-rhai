@@ -1,19 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use gpui::{Context, IntoElement, Render, TestAppContext, Window};
+    use gpui::TestAppContext;
     use gpui_rhai::*;
-    use std::{cell::RefCell, collections::BTreeMap, rc::Rc, time::Duration};
+    use std::time::Duration;
 
-    const REPO: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
-    struct Host {
-        host: ScriptViewHost,
-        view: ScriptViewHandle,
-    }
-    impl Render for Host {
-        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            self.host.container(self.view.element().unwrap())
-        }
-    }
+    use crate::support::{Host, by_test_id};
     const SCRIPT: &str = r#"
 import "components/table" as table;
 fn state_schema(){#{fields:#{viewport:#{schema:#{type:"number"},"default":#{type:"float",value:300.0}}}}}
@@ -28,64 +19,9 @@ fn view(ctx){column([
 "#;
 
     fn mount(cx: &mut TestAppContext) -> (gpui::WindowHandle<Host>, ScriptViewHandle) {
-        cx.update(gpui_rhai::install);
-        let entry = ModuleId::parse("main").unwrap();
-        let modules = BTreeMap::from([
-            (entry.clone(), SCRIPT.into()),
-            (
-                ModuleId::parse("components/table").unwrap(),
-                std::fs::read_to_string(format!("{REPO}/registry/components/table.rhai")).unwrap(),
-            ),
-            (
-                ModuleId::parse("components/badge").unwrap(),
-                std::fs::read_to_string(format!("{REPO}/registry/components/badge.rhai")).unwrap(),
-            ),
-        ]);
-        let prepared = EmbeddedScriptView::new(
-            entry,
-            EmbeddedScriptSource::new(modules),
-            std::fs::read_to_string(format!("{REPO}/registry/themes/default_dark.rhai")).unwrap(),
-        )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .asset_sources(
-            [
-                "disclosure_down",
-                "chevron_right",
-                "sort_ascending",
-                "sort_descending",
-            ]
-            .into_iter()
-            .map(|name| {
-                (
-                    format!("icons/{name}"),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: std::fs::read(format!("{REPO}/registry/assets/icons/{name}.svg"))
-                            .unwrap(),
-                    },
-                )
-            }),
-        )
-        .prepare()
-        .unwrap();
-        let saved = Rc::new(RefCell::new(None));
-        let capture = saved.clone();
-        let window = cx.add_window(move |window, cx| {
-            let host = ScriptViewHost::new("frame-probe", cx).unwrap();
-            let view = prepared
-                .mount(
-                    ScriptViewConfig::new("frame-probe"),
-                    host.clone(),
-                    window,
-                    cx,
-                )
-                .unwrap();
-            *capture.borrow_mut() = Some(view.clone());
-            Host { host, view }
-        });
-        cx.run_until_parked();
-        let view = saved.borrow().clone().unwrap();
-        (window, view)
+        super::super::table(SCRIPT)
+            .id("frame-probe")
+            .mount_window(cx)
     }
 
     fn widths(cx: &mut TestAppContext, view: &ScriptViewHandle) -> Vec<f64> {
@@ -201,7 +137,7 @@ fn view(ctx){column([
             .update(cx, |_, window, cx| {
                 view.automate(
                     AutomationCommand::Dispatch {
-                        locator: AutomationLocator::TestId { id: "wider".into() },
+                        locator: by_test_id("wider"),
                         event: "click".into(),
                         payload: None,
                     },

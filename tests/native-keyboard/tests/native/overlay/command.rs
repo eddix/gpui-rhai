@@ -1,28 +1,16 @@
 //! Command and CommandDialog: filtering from the native input, Enter, grouped headers on the
 //! first reveal, and manual scroll against a controlled active item.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, official_icon_assets, palette_texts};
+use crate::support::{Mount, bounds, by_role, center, palette_texts, snapshot};
 use gpui::{
     Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px,
 };
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-    UiRuntimeState, UiValue,
-};
+use gpui_rhai::{UiRuntimeState, UiValue};
 
 #[gpui::test]
 fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/command_dialog" as command_dialog;
                     fn state_schema() { #{ fields: #{
                         open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: true } },
@@ -56,56 +44,18 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
                                 on_action: Fn("action") })
                         ])
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/command_dialog").unwrap(),
-                include_str!("../../../../../registry/components/command_dialog.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/command").unwrap(),
-                include_str!("../../../../../registry/components/command.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/dialog").unwrap(),
-                include_str!("../../../../../registry/components/dialog.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/kbd").unwrap(),
-                include_str!("../../../../../registry/components/kbd.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+        "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("command-dialog-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("command-dialog-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/command_dialog")
+    .registry("components/command")
+    .registry("components/dialog")
+    .registry("components/input")
+    .registry("components/kbd")
+    .bundled_assets()
+    .ids("command-dialog-window", "command-dialog-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.update(|_, cx| {
         let snapshot = view.automation_snapshot(cx).unwrap();
@@ -113,16 +63,7 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
             node.role == "option" && node.name == "Open file" && node.bounds.is_some()
         }));
     });
-    let search = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("text_field", "Command palette")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let search = bounds(&mut visual, &view, "text_field", "Command palette");
     assert!(search.width > 0.0 && search.height > 0.0);
     visual.simulate_input("file");
     visual.run_until_parked();
@@ -135,14 +76,11 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
             && !texts_after_input.contains(&"No commands found".to_owned()),
         "the focused CommandDialog input must filter before submit: {texts_after_input:?}"
     );
-    let initial_open_selected = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("option", "Open file")
-            .next()
-            .unwrap()
-            .selected
-    });
+    let initial_open_selected = snapshot(&mut visual, &view)
+        .find_by_role_and_name("option", "Open file")
+        .next()
+        .unwrap()
+        .selected;
     assert_eq!(initial_open_selected, Some(true));
     visual.simulate_keystrokes("down");
     visual.run_until_parked();
@@ -150,36 +88,13 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
         &"command:active=new changes=1 last=none actions=0 open=true query=file".to_owned()
     ));
 
-    let open_file = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("option", "Open file")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    visual.simulate_mouse_move(
-        point(
-            px((open_file.x + open_file.width / 2.0) as f32),
-            px((open_file.y + open_file.height / 2.0) as f32),
-        ),
-        None,
-        Modifiers::default(),
-    );
+    let open_file = bounds(&mut visual, &view, "option", "Open file");
+    visual.simulate_mouse_move(center(open_file), None, Modifiers::default());
     visual.run_until_parked();
     assert!(palette_texts(&mut visual, &view).contains(
         &"command:active=open changes=2 last=none actions=0 open=true query=file".to_owned()
     ));
-    visual.simulate_mouse_move(
-        point(
-            px((open_file.x + open_file.width / 2.0) as f32),
-            px((open_file.y + open_file.height / 2.0) as f32),
-        ),
-        None,
-        Modifiers::default(),
-    );
+    visual.simulate_mouse_move(center(open_file), None, Modifiers::default());
     visual.run_until_parked();
     assert!(palette_texts(&mut visual, &view).contains(
         &"command:active=open changes=2 last=none actions=0 open=true query=file".to_owned()
@@ -205,10 +120,7 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
         );
         let query = view.automate(
             gpui_rhai::AutomationCommand::Query {
-                locator: gpui_rhai::AutomationLocator::RoleName {
-                    role: "option".to_owned(),
-                    name: "Open file".to_owned(),
-                },
+                locator: by_role("option", "Open file"),
             },
             window,
             cx,
@@ -263,13 +175,8 @@ fn grouped_command_initial_reveal_keeps_its_first_header_natural(cx: &mut TestAp
         })
         .collect::<Vec<_>>();
     let commands = gpui_rhai::NativeCollection::new("id", rows).unwrap();
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/command" as command;
                     fn active(ctx, value) { () }
                     fn action(ctx, value) { () }
@@ -279,49 +186,17 @@ fn grouped_command_initial_reveal_keeps_its_first_header_natural(cx: &mut TestAp
                             max_visible: 12,
                             on_active_change: Fn("active"), on_action: Fn("action") })
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/command").unwrap(),
-                include_str!("../../../../../registry/components/command.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/kbd").unwrap(),
-                include_str!("../../../../../registry/components/kbd.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+        "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .extension(CommandData(commands))
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("grouped-command-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("grouped-command-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/command")
+    .registry("components/input")
+    .registry("components/kbd")
+    .bundled_assets()
+    .with(|view| view.extension(CommandData(commands)))
+    .ids("grouped-command-window", "grouped-command-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     let initial = visual
         .update(|_, cx| view.take_performance_snapshot(cx))
@@ -338,29 +213,16 @@ fn grouped_command_initial_reveal_keeps_its_first_header_natural(cx: &mut TestAp
             .is_none()
     );
     assert!(
-        visual
-            .update(|_, cx| view.accessibility_snapshot(cx).unwrap())
+        snapshot(&mut visual, &view)
             .find_by_role_and_name("heading", "Group A")
             .next()
             .is_some(),
         "the first group header must remain in the natural row sequence"
     );
 
-    let option = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("option", "Command 3")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let option = bounds(&mut visual, &view, "option", "Command 3");
     visual.simulate_event(ScrollWheelEvent {
-        position: point(
-            px((option.x + option.width / 2.0) as f32),
-            px((option.y + option.height / 2.0) as f32),
-        ),
+        position: center(option),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
         ..ScrollWheelEvent::default()
     });
@@ -384,14 +246,8 @@ fn grouped_command_initial_reveal_keeps_its_first_header_natural(cx: &mut TestAp
 
 #[gpui::test]
 fn command_preserves_manual_scroll_and_reveals_controlled_active_item(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/command" as command;
                     fn state_schema() { #{ fields: #{
                         active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "command-0" } }
@@ -414,64 +270,20 @@ fn command_preserves_manual_scroll_and_reveals_controlled_active_item(cx: &mut T
                                 on_active_change: Fn("active"), on_action: Fn("action") })
                         ]).with_style(style().width(relative(1)).height(relative(1)).padding(px(16)))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/command").unwrap(),
-                include_str!("../../../../../registry/components/command.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/kbd").unwrap(),
-                include_str!("../../../../../registry/components/kbd.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+        "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("command-scroll-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("command-scroll-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/command")
+    .registry("components/input")
+    .registry("components/kbd")
+    .bundled_assets()
+    .ids("command-scroll-window", "command-scroll-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let row = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("option", "Command 6")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let row = bounds(&mut visual, &view, "option", "Command 6");
     visual.simulate_event(ScrollWheelEvent {
-        position: point(
-            px((row.x + row.width / 2.0) as f32),
-            px((row.y + row.height / 2.0) as f32),
-        ),
+        position: center(row),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
         ..ScrollWheelEvent::default()
     });
@@ -488,24 +300,8 @@ fn command_preserves_manual_scroll_and_reveals_controlled_active_item(cx: &mut T
         "manual wheel scroll must survive realization rerenders: {manually_scrolled:?}"
     );
 
-    let hovered = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("option", "Command 8")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    visual.simulate_mouse_move(
-        point(
-            px((hovered.x + hovered.width / 2.0) as f32),
-            px((hovered.y + hovered.height / 2.0) as f32),
-        ),
-        None,
-        Modifiers::default(),
-    );
+    let hovered = bounds(&mut visual, &view, "option", "Command 8");
+    visual.simulate_mouse_move(center(hovered), None, Modifiers::default());
     visual.run_until_parked();
     let after_hover = visual
         .update(|_, cx| view.take_performance_snapshot(cx))
@@ -545,13 +341,10 @@ fn command_preserves_manual_scroll_and_reveals_controlled_active_item(cx: &mut T
         followed.scroll_item > 0 && followed.visible_range.contains(&13),
         "controlled active item must be revealed: {followed:?}"
     );
-    let active = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("option", "Command 13")
-            .next()
-            .and_then(|node| node.geometry)
-    });
+    let active = snapshot(&mut visual, &view)
+        .find_by_role_and_name("option", "Command 13")
+        .next()
+        .and_then(|node| node.geometry);
     assert!(
         active.is_some(),
         "active option must participate in the frame"

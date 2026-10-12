@@ -9,7 +9,6 @@
 //! ends (and fails the assertion) instead of hanging the test.
 
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
@@ -17,7 +16,8 @@ use gpui::{
     VisualTestContext, Window, div, px,
 };
 use gpui_rhai::*;
-use gpui_rhai_registry::{BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME};
+
+use crate::support::{Mount, Step, last_error, nodes};
 
 const LIMIT: usize = 200;
 
@@ -30,30 +30,14 @@ fn dialog(key: &str, open: bool) -> String {
 }
 
 fn prepared(body: &str) -> PreparedScriptView {
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"import "components/button" as button;
 import "components/dialog" as dialog;
 fn noop(ctx, payload) {{ () }}
 fn view(ctx) {{ column([text("view"), {body}]).with_style(style().width(px(400)).height(px(600))) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .motion_preference(MotionPreference::None)
-        .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-            (
-                path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                AssetData {
-                    mime_type: "image/svg+xml".to_owned(),
-                    bytes: source.as_bytes().to_vec(),
-                },
-            )
-        }))
+    Mount::components(main)
+        .motion(MotionPreference::None)
         .prepare()
         .unwrap()
 }
@@ -120,19 +104,13 @@ fn renders_until_idle(cx: &mut TestAppContext, bodies: &[&str]) -> usize {
     });
     cx.run_until_parked();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..2 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(&mut visual, Step::Frame, 2);
     for view in saved.borrow().iter() {
-        assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+        assert_eq!(last_error(&mut visual, view), None);
     }
     let settled = renders.get();
     // Idle: a few more turns of the executor must not render again.
-    for _ in 0..5 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(&mut visual, Step::Frame, 5);
     let after = renders.get();
     println!("renders: {settled} to settle, {after} after five more idle turns");
     after
@@ -172,10 +150,6 @@ fn two_open_modals_in_one_view_settle(cx: &mut TestAppContext) {
 // the one Escape closes first), and the next one when it closes.
 
 fn controlled_dialog_view(name: &str) -> PreparedScriptView {
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"import "components/button" as button;
 import "components/dialog" as dialog;
@@ -191,20 +165,8 @@ fn view(ctx) {{ column([
         actions: [button::Button(#{{ key: "ok-{name}", text: "OK {name}", on_click: Fn("hit") }})] }})
 ]).with_style(style().width(px(400)).height(px(600))) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .motion_preference(MotionPreference::None)
-        .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-            (
-                path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                AssetData {
-                    mime_type: "image/svg+xml".to_owned(),
-                    bytes: source.as_bytes().to_vec(),
-                },
-            )
-        }))
+    Mount::components(main)
+        .motion(MotionPreference::None)
         .prepare()
         .unwrap()
 }
@@ -278,22 +240,19 @@ fn mount_controlled_dialogs(
     settle(&mut visual);
     let (host, views, external_focus) = saved.borrow().clone().unwrap();
     for view in &views {
-        assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+        assert_eq!(last_error(&mut visual, view), None);
     }
     (visual, host, views, external_focus)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 3);
 }
 
 fn status(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
-        .map(|node| node.name.clone())
+    nodes(visual, view)
+        .into_iter()
+        .map(|node| node.name)
         .find(|name| name.contains(" open="))
         .expect("status text")
 }

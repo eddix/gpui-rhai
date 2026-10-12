@@ -7,17 +7,18 @@
 //! pressed before the page under it. No press may leave the view failed.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::rc::Rc;
-use std::time::Duration;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, px};
+use gpui::{TestAppContext, VisualTestContext, px};
 use gpui_rhai::*;
 use gpui_rhai_registry::{
-    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
+    AR_LOCALE, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
     BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID, BUNDLED_SKILL_FILES,
-    BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, TOKEN_BASE_SOURCE, ZH_CN_LOCALE,
+    BUNDLED_THEME_SOURCES, EN_LOCALE, ZH_CN_LOCALE,
 };
+
+use crate::support::{ActiveHost, Mount, Step, bundled_assets, last_error, nodes};
 
 /// Roles a press acts on.
 const PRESSABLE: &[&str] = &[
@@ -27,22 +28,6 @@ const PRESSABLE: &[&str] = &[
 const MAX_PRESSES: usize = 200;
 const WIDTH: f32 = 1280.0;
 const HEIGHT: f32 = 900.0;
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let element = if self.view.state() == ScriptViewState::Active {
-            self.view.element().unwrap()
-        } else {
-            gpui::div().into_any_element()
-        };
-        self.host.container(element)
-    }
-}
 
 /// (title, Rhai source) of every recipe, as the installed skill has them.
 fn recipes() -> Vec<(String, String)> {
@@ -67,47 +52,30 @@ fn recipes() -> Vec<(String, String)> {
 
 fn mount(cx: &mut TestAppContext, source: &str) -> (VisualTestContext, ScriptViewHandle) {
     cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), source.to_owned())]);
-    for (id, module) in BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
-        .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
-        .chain(BUNDLED_CHART_SOURCES_BY_ID)
-    {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*module).to_owned());
-    }
     // An installed project serves the registry icons under `app/`; the components ask for
     // them without it.
-    let assets = BUNDLED_ASSET_SOURCES.iter().flat_map(|(path, svg)| {
-        let id = path.trim_end_matches(".svg");
-        [id.to_owned(), format!("app/{id}")].map(|id| {
-            (
-                id,
-                AssetData {
-                    mime_type: "image/svg+xml".into(),
-                    bytes: svg.as_bytes().to_vec(),
-                },
-            )
-        })
-    });
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .theme_sources(
+    let assets = bundled_assets()
+        .into_iter()
+        .flat_map(|(id, asset)| [(format!("app/{id}"), asset.clone()), (id, asset)]);
+    let prepared = Mount::new(source)
+        .modules(BUNDLED_COMPONENT_SOURCES_BY_ID)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .modules(BUNDLED_CHART_SOURCES_BY_ID)
+        .locale("en.rhai", EN_LOCALE)
+        .locale("zh_cn.rhai", ZH_CN_LOCALE)
+        .locale("ar.rhai", AR_LOCALE)
+        .motion(MotionPreference::None)
+        .with(move |view| {
+            view.theme_sources(
                 BUNDLED_THEME_SOURCES
                     .iter()
                     .map(|(file, theme)| ((*file).to_owned(), (*theme).to_owned())),
             )
-            .locale_sources([
-                ("en.rhai".into(), EN_LOCALE.to_owned()),
-                ("zh_cn.rhai".into(), ZH_CN_LOCALE.to_owned()),
-                ("ar.rhai".into(), AR_LOCALE.to_owned()),
-            ])
-            .motion_preference(MotionPreference::None)
             .asset_sources(assets)
-            .prepare()
-            .unwrap_or_else(|error| panic!("the recipe prepares: {error}"));
+        })
+        .prepare()
+        .unwrap_or_else(|error| panic!("the recipe prepares: {error}"));
     let saved = Rc::new(RefCell::new(None));
     let save = saved.clone();
     let window = cx.add_window(move |window, cx| {
@@ -116,7 +84,7 @@ fn mount(cx: &mut TestAppContext, source: &str) -> (VisualTestContext, ScriptVie
             .mount(ScriptViewConfig::new("recipe"), host.clone(), window, cx)
             .unwrap();
         *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
+        ActiveHost { host, view }
     });
     cx.run_until_parked();
     let view = saved.borrow().clone().unwrap();
@@ -127,26 +95,11 @@ fn mount(cx: &mut TestAppContext, source: &str) -> (VisualTestContext, ScriptVie
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..2 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
-}
-
-fn nodes(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<AccessibilityNode> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .cloned()
-            .collect()
-    })
+    crate::support::settle(visual, Step::Tick, 2);
 }
 
 fn failure(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Option<String> {
-    visual.update(|_, cx| view.last_error(cx).unwrap())
+    last_error(visual, view)
 }
 
 /// The middle of a node that is on screen and can take a press.

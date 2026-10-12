@@ -6,94 +6,27 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::time::Duration;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, px};
+use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::*;
-use gpui_rhai_registry::{
-    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, EN_LOCALE,
-    TOKEN_BASE_SOURCE, ZH_CN_LOCALE,
-};
+use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE, ZH_CN_LOCALE};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let element = if self.view.state() == ScriptViewState::Active {
-            self.view.element().unwrap()
-        } else {
-            gpui::div().into_any_element()
-        };
-        self.host.container(element)
-    }
-}
+use crate::support::{Mount, Step, click_center, last_error, nodes, registry_source, text_of};
 
 fn mount(cx: &mut TestAppContext, main: &str) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), main.to_owned())]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .locale_sources([
-                ("en.rhai".into(), EN_LOCALE.to_owned()),
-                ("zh_cn.rhai".into(), ZH_CN_LOCALE.to_owned()),
-                ("ar.rhai".into(), AR_LOCALE.to_owned()),
-            ])
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("labels", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("labels"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(main)
+        .locale("en.rhai", EN_LOCALE)
+        .locale("zh_cn.rhai", ZH_CN_LOCALE)
+        .locale("ar.rhai", AR_LOCALE)
+        .motion(MotionPreference::None)
+        .id("labels")
+        .mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    visual.run_until_parked();
-    visual.executor().advance_clock(Duration::from_millis(32));
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
-}
-
-fn last_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Option<String> {
-    visual.update(|_, cx| view.last_error(cx).unwrap())
-}
-
-fn nodes(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<AccessibilityNode> {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .cloned()
-            .collect()
-    })
+    crate::support::settle(visual, Step::Tick, 1);
 }
 
 fn names(visual: &mut VisualTestContext, view: &ScriptViewHandle, role: &str) -> Vec<String> {
@@ -130,23 +63,12 @@ fn bounds(
 }
 
 fn press(visual: &mut VisualTestContext, at: GeometryBounds) {
-    #[allow(clippy::cast_possible_truncation)]
-    let position = gpui::point(
-        px((at.x + at.width / 2.0) as f32),
-        px((at.y + at.height / 2.0) as f32),
-    );
-    visual.simulate_click(position, gpui::Modifiers::none());
+    click_center(visual, at);
     settle(visual);
 }
 
 fn log(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    nodes(visual, view)
-        .into_iter()
-        .find(|node| node.test_id.as_deref() == Some("log"))
-        .unwrap()
-        .name
-        .trim()
-        .to_owned()
+    text_of(visual, view, "log").trim().to_owned()
 }
 
 #[gpui::test]
@@ -248,12 +170,7 @@ fn view(ctx) { row([
 fn a_spinner_without_speed_turns_on_the_ambient_duration() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([(
         ModuleId::parse("components/spinner").unwrap(),
-        BUNDLED_COMPONENT_SOURCES_BY_ID
-            .iter()
-            .find(|(id, _)| *id == "components/spinner")
-            .unwrap()
-            .1
-            .to_owned(),
+        registry_source("components/spinner").to_owned(),
     )]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());

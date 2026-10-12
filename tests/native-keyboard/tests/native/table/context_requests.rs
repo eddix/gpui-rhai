@@ -3,33 +3,18 @@
 //! asks for a menu at the pointer; Shift+F10 asks for one at the current row, or for
 //! the table without a selection mode.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::*;
+
+use crate::support::{Mount, Step, bounds, settle as settle_with, snapshot, text_of};
 
 const ROWS: [(&str, &str, &str); 3] = [
     ("r0", "Alpha", "A"),
     ("r1", "Bravo", "A"),
     ("r2", "Charlie", "B"),
 ];
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
 
 #[derive(Clone)]
 struct Rows;
@@ -81,61 +66,16 @@ fn view(ctx){{column([
 }
 
 fn mount(cx: &mut TestAppContext, source: String) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), source)]);
-    for (id, source) in gpui_rhai_registry::BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        gpui_rhai_registry::DEFAULT_THEME,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(
-        gpui_rhai_registry::BUNDLED_ASSET_SOURCES
-            .iter()
-            .map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }),
-    )
-    .extension(Rows)
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("context", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("context"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
+    let (mut visual, view) = Mount::components(source)
+        .with(|view| view.extension(Rows))
+        .id("context")
+        .mount(cx);
+    settle_with(&mut visual, Step::Frame, 1);
     (visual, view)
 }
 
 fn state(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.test_id.as_deref() == Some("state"))
-            .unwrap()
-            .name
-            .clone()
-    })
+    text_of(visual, view, "state")
 }
 
 /// The bounds of a row by its data label (rows are named `Rows row <n>`).
@@ -144,33 +84,25 @@ fn row_bounds(
     view: &ScriptViewHandle,
     label: &str,
 ) -> GeometryBounds {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| {
-                let position = ROWS.iter().position(|(_, row, _)| *row == label).unwrap();
-                node.role == "row" && node.name == format!("Rows row {}", position + 1)
-            })
-            .and_then(|node| node.geometry)
-            .map(|geometry| geometry.visual)
-            .unwrap_or_else(|| {
-                let names = view
-                    .accessibility_snapshot(cx)
-                    .unwrap()
-                    .nodes()
-                    .map(|node| format!("{}:{}", node.role, node.name))
-                    .collect::<Vec<_>>();
-                panic!("no row {label}: {names:?}")
-            })
-    })
+    let tree = snapshot(visual, view);
+    tree.nodes()
+        .find(|node| {
+            let position = ROWS.iter().position(|(_, row, _)| *row == label).unwrap();
+            node.role == "row" && node.name == format!("Rows row {}", position + 1)
+        })
+        .and_then(|node| node.geometry)
+        .map(|geometry| geometry.visual)
+        .unwrap_or_else(|| {
+            let names = tree
+                .nodes()
+                .map(|node| format!("{}:{}", node.role, node.name))
+                .collect::<Vec<_>>();
+            panic!("no row {label}: {names:?}")
+        })
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    visual.run_until_parked();
-    visual.executor().advance_clock(Duration::from_millis(32));
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
+    settle_with(visual, Step::Tick, 1);
 }
 
 fn right_press(visual: &mut VisualTestContext, x: f64, y: f64) {
@@ -253,15 +185,7 @@ fn without_a_selection_mode_shift_f10_asks_for_the_table(cx: &mut TestAppContext
         settle(&mut visual);
         visual.simulate_keystrokes(key);
         settle(&mut visual);
-        let table = visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .find_by_role_and_name("table", "Rows")
-                .next()
-                .and_then(|node| node.geometry)
-                .unwrap()
-                .visual
-        });
+        let table = bounds(&mut visual, &view, "table", "Rows");
         // Nothing is selected and the request is for the table, at its bounds.
         assert_eq!(
             state(&mut visual, &view),

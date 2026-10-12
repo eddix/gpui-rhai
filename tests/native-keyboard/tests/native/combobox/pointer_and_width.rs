@@ -1,25 +1,13 @@
 //! Combobox pointer picks update transactional caller state, and a relative width tracks the
 //! flex space and sizes the panel.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, node_texts, official_icon_assets};
+use crate::support::{Mount, bounds, by_role, click_center, node_texts};
 use gpui::{Modifiers, TestAppContext, VisualTestContext, point, px, size};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-};
 
 #[gpui::test]
 fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/combobox" as combobox;
                     fn state_schema() { #{ fields: #{
                         open: #{ schema: #{ type: "bool" },
@@ -51,62 +39,21 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
                             })
                         ])
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/combobox").unwrap(),
-                include_str!("../../../../../registry/components/combobox.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+"#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("combobox-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("combobox-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some((host.clone(), view.clone()));
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/combobox")
+    .registry("components/input")
+    .bundled_assets()
+    .ids("combobox-window", "combobox-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let (host, view) = captured.borrow().as_ref().unwrap().clone();
+    let host = window.read_with(cx, |root, _| root.host.clone()).unwrap();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
-    let trigger = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("combobox", "Theme")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-    });
-    visual.simulate_click(
-        point(
-            px((trigger.visual.x + trigger.visual.width / 2.0) as f32),
-            px((trigger.visual.y + trigger.visual.height / 2.0) as f32),
-        ),
-        Modifiers::default(),
-    );
+    let trigger = bounds(&mut visual, &view, "combobox", "Theme");
+    click_center(&mut visual, trigger);
     visual.run_until_parked();
     let placement = host
         .overlay_placement("combobox-view", "theme")
@@ -131,14 +78,8 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
 
 #[gpui::test]
 fn combobox_relative_width_tracks_flex_space_and_sizes_its_panel(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/combobox" as combobox;
                     import "components/select" as select;
                     fn view(ctx) {
@@ -159,48 +100,18 @@ fn combobox_relative_width_tracks_flex_space_and_sizes_its_panel(cx: &mut TestAp
                             }).with_style(style().flex_shrink(false)),
                         ]).with_style(style().width(relative(1.0)).padding(px(20)).gap(px(10)))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/combobox").unwrap(),
-                include_str!("../../../../../registry/components/combobox.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/select").unwrap(),
-                include_str!("../../../../../registry/components/select.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+"#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("adaptive-width-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("adaptive-width-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some((host.clone(), view.clone()));
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/combobox")
+    .registry("components/select")
+    .registry("components/input")
+    .bundled_assets()
+    .ids("adaptive-width-window", "adaptive-width-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let (host, view) = captured.borrow().as_ref().unwrap().clone();
+    let host = window.read_with(cx, |root, _| root.host.clone()).unwrap();
     let mut visual = VisualTestContext::from_window(*window, cx);
     let measure = |visual: &mut VisualTestContext| {
         for _ in 0..3 {
@@ -213,10 +124,7 @@ fn combobox_relative_width_tracks_flex_space_and_sizes_its_panel(cx: &mut TestAp
                 .update(|window, cx| {
                     view.automate(
                         gpui_rhai::AutomationCommand::Query {
-                            locator: gpui_rhai::AutomationLocator::RoleName {
-                                role: "combobox".to_owned(),
-                                name: name.to_owned(),
-                            },
+                            locator: by_role("combobox", name),
                         },
                         window,
                         cx,

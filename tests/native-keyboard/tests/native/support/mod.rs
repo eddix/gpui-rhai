@@ -1,11 +1,25 @@
-//! Helpers shared across areas.
+//! Helpers shared across areas: mounting a view on the official registry (`Mount`, `Host`,
+//! `bundled_assets`), letting it settle (`settle` with a `Step`), reading it (`nodes`,
+//! `node_by_test_id`, `text_of`, `bounds`, `last_error`), acting on it (`click_center`,
+//! `dispatch`) and reading the painted quads in logical pixels (`painted_quads`, `filled`).
 
 mod host;
+mod mount;
+mod paint;
+mod query;
+mod settle;
 
 pub(crate) use host::{
-    KeyboardHost, SingleEmbeddedHost, click_palette_trigger, dispatch_script_button, node_texts,
-    official_icon_assets, palette_texts, wait_for_view_text,
+    KeyboardHost, click_palette_trigger, dispatch_script_button, node_texts, palette_texts,
+    wait_for_view_text,
 };
+pub(crate) use mount::{ActiveHost, Host, Mount, bundled_assets, registry_source};
+pub(crate) use paint::{PaintedQuad, filled, painted_quads};
+pub(crate) use query::{
+    bounds, by_role, by_test_id, center, click_center, dispatch, last_error, node_by_test_id,
+    nodes, snapshot, text_of,
+};
+pub(crate) use settle::{Step, settle};
 
 /// Builds fixture variants by replacing exact places in the source.
 ///

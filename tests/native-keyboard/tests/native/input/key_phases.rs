@@ -3,30 +3,15 @@
 //! modifiers are held, for capture on an ancestor, the focused target, and
 //! bubble on an ancestor alike.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::TestAppContext;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
-use gpui_rhai::*;
+use crate::support::{Mount, text_of};
 
 const THEME: &str = r#"fn theme(){#{family:"Keys",name:"Dark",mode:"dark",tokens:#{}}}"#;
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
 
 /// Mount a parent with capture and bubble handlers around a focusable child
 /// with a target handler, press `keystroke`, and return the trace.
 fn trace(cx: &mut TestAppContext, parent: &str, child: &str, keystroke: &str) -> String {
-    cx.update(gpui_rhai::install);
     let source = format!(
         r#"fn state_schema(){{#{{fields:#{{trace:#{{schema:#{{type:"string"}},"default":#{{type:"string",value:""}}}}}}}}}}
 fn mark(letter,ctx,p){{ctx.set_state("trace",ctx.get_state("trace")+letter);event_response()}}
@@ -36,39 +21,15 @@ fn view(ctx){{column([
     text(ctx.get_state("trace")).test_id("trace"),
 ])}}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, source)])),
-        THEME,
-    )
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("keys", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("keys"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::new(source)
+        .theme(THEME)
+        .no_token_base()
+        .id("keys")
+        .mount(cx);
     visual.update(|window, cx| window.focus_next(cx));
     visual.simulate_keystrokes(keystroke);
     visual.run_until_parked();
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.test_id.as_deref() == Some("trace"))
-            .unwrap()
-            .name
-            .clone()
-    })
+    text_of(&mut visual, &view, "trace")
 }
 
 #[gpui::test]

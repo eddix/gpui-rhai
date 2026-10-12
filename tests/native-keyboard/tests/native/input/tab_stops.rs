@@ -3,77 +3,23 @@
 //! Accordion headers). Phantom stops (wrappers that take focus without showing it)
 //! make Tab feel broken, so the census below is exact.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::TestAppContext;
+use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID, EN_LOCALE};
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID,
-    BUNDLED_PATTERN_SOURCES_BY_ID, DEFAULT_THEME, EN_LOCALE, TOKEN_BASE_SOURCE,
-};
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, settle};
 
 /// Mount `body` (a Rhai expression using `noop`) and count distinct tab stops.
 fn tab_stops(cx: &mut TestAppContext, imports: &str, body: &str) -> usize {
-    cx.update(gpui_rhai::install);
     let main =
         format!("{imports}\nfn noop(ctx, payload) {{}}\nfn view(ctx) {{ column([{body}]) }}\n");
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
-        .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
-    {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    modules.insert(ModuleId::parse("main").unwrap(), main);
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        DEFAULT_THEME,
-    )
-    .token_base(TOKEN_BASE_SOURCE)
-    .locale_sources([("en.rhai".to_owned(), EN_LOCALE.to_owned())])
-    .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-        (
-            path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: source.as_bytes().to_vec(),
-            },
-        )
-    }))
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("tab-stops", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("tab-stops"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, _view) = Mount::components(main)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .locale("en.rhai", EN_LOCALE)
+        .id("tab-stops")
+        .mount(cx);
     // Frames realize virtual rows and overlay content, so stops inside them count.
-    for _ in 0..2 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    settle(&mut visual, Step::Frame, 2);
     let mut seen: Vec<gpui::FocusHandle> = Vec::new();
     for _ in 0..32 {
         visual.update(|window, cx| window.focus_next(cx));

@@ -5,34 +5,16 @@
 //! collection, but the cursor's `group_focus` owner (the collection) would not be focused
 //! and no frame would show.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, WindowHandle, point, px, rgba,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, rgba};
 use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, TOKEN_BASE_SOURCE,
-};
 
-use crate::support::ReplaceOnce;
+use crate::support::{
+    Mount, ReplaceOnce, Step, center, last_error, painted_quads, snapshot, text_of,
+};
 
 const FOCUS: u32 = 0x00ff_00ff;
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
 
 /// `body` is the collection, with `selected` (the stored keys) and `changed` in scope.
 fn script(body: &str) -> String {
@@ -63,114 +45,53 @@ const LIST: &str = r#"list::List(#{key:"l",label:"Hosts",height:160.0,
     on_context_request:Fn("asked")})"#;
 
 fn mount(cx: &mut TestAppContext, source: String) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), source)]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let overrides = ThemeTokenOverrides {
         colors: BTreeMap::from([("focus_ring".to_owned(), Rgba8::from_rgba_hex(FOCUS))]),
         ..Default::default()
     };
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .theme_token_overrides(overrides)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("click-focus", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("click-focus"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(source)
+        .motion(MotionPreference::None)
+        .with(move |view| view.theme_token_overrides(overrides))
+        .id("click-focus")
+        .mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..2 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Tick, 2);
 }
 
 fn log(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        assert_eq!(view.last_error(cx).unwrap(), None);
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_test_id("log")
-            .next()
-            .unwrap()
-            .name
-            .trim()
-            .to_owned()
-    })
+    assert_eq!(last_error(visual, view), None);
+    text_of(visual, view, "log").trim().to_owned()
 }
 
 /// The bounds of the row whose accessible name starts with `title`.
 fn row(visual: &mut VisualTestContext, view: &ScriptViewHandle, title: &str) -> GeometryBounds {
-    visual.update(|_, cx| {
-        let tree = view.accessibility_snapshot(cx).unwrap();
-        tree.nodes()
-            .find(|node| {
-                (node.role == "row" || node.role == "option")
-                    && (node.name.starts_with(title)
-                        || ["Alpha", "Bravo", "Charlie"]
-                            .iter()
-                            .position(|name| *name == title)
-                            .is_some_and(|index| node.name == format!("Hosts row {}", index + 1)))
-            })
-            .and_then(|node| node.geometry)
-            .map(|geometry| geometry.visual)
-            .unwrap_or_else(|| panic!("no row {title}"))
-    })
+    snapshot(visual, view)
+        .nodes()
+        .find(|node| {
+            (node.role == "row" || node.role == "option")
+                && (node.name.starts_with(title)
+                    || ["Alpha", "Bravo", "Charlie"]
+                        .iter()
+                        .position(|name| *name == title)
+                        .is_some_and(|index| node.name == format!("Hosts row {}", index + 1)))
+        })
+        .and_then(|node| node.geometry)
+        .map(|geometry| geometry.visual)
+        .unwrap_or_else(|| panic!("no row {title}"))
 }
 
 /// (top, width, height) of the quads whose border is drawn in the focus color.
 fn frames(visual: &mut VisualTestContext) -> Vec<(f32, f32, f32)> {
     let color: gpui::Hsla = rgba(FOCUS).into();
-    visual.update(|window, _| {
-        let scale = window.scale_factor();
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| quad.border_color == color && quad.border_widths.top.0 > 0.0)
-            .map(|quad| {
-                (
-                    quad.bounds.origin.y.0 / scale,
-                    quad.bounds.size.width.0 / scale,
-                    quad.bounds.size.height.0 / scale,
-                )
-            })
-            .collect()
-    })
+    painted_quads(visual)
+        .iter()
+        .filter(|quad| quad.border_color == color && quad.border_widths[0] > 0.0)
+        .map(|quad| (quad.bounds.y, quad.bounds.width, quad.bounds.height))
+        .collect()
 }
 
 /// Whether a focus frame covers the row `bounds` (a Table row's frame stops above its 1px
@@ -187,11 +108,7 @@ fn frames_row(found: &[(f32, f32, f32)], bounds: GeometryBounds) -> bool {
 }
 
 fn press(visual: &mut VisualTestContext, bounds: GeometryBounds, button: MouseButton) {
-    #[allow(clippy::cast_possible_truncation)]
-    let position = point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
+    let position = center(bounds);
     visual.simulate_mouse_move(position, None, Modifiers::none());
     visual.simulate_mouse_down(position, button, Modifiers::none());
     visual.simulate_mouse_up(position, button, Modifiers::none());

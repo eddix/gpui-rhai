@@ -1,59 +1,54 @@
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
 use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent,
-    TestAppContext, VisualTestContext, Window, WindowHandle, point, px, rgba,
+    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
+    WindowHandle, point, px, rgba,
 };
 use gpui_rhai::*;
+use gpui_rhai_registry::INTERACTION_LAB_STORY_SOURCE as INTERACTION_LAB;
 
-use crate::support::ReplaceOnce;
+use crate::support::{
+    ActiveHost, Mount, ReplaceOnce, bounds, bundled_assets, by_role, center, click_center,
+    dispatch, filled, last_error, painted_quads, snapshot,
+};
 
-const BUTTON: &str = include_str!("../../../../../registry/components/button.rhai");
-const BADGE: &str = include_str!("../../../../../registry/components/badge.rhai");
-const TABS: &str = include_str!("../../../../../registry/components/tabs.rhai");
-const INPUT: &str = include_str!("../../../../../registry/components/input.rhai");
-const INPUT_GROUP: &str = include_str!("../../../../../registry/components/input_group.rhai");
-const CHECKBOX: &str = include_str!("../../../../../registry/components/checkbox.rhai");
-const SPLIT_PANE: &str = include_str!("../../../../../registry/components/split_pane.rhai");
-const RESIZABLE: &str = include_str!("../../../../../registry/components/resizable.rhai");
-const DRAGGABLE: &str = include_str!("../../../../../registry/components/draggable.rhai");
-const DRAG_SOURCE: &str = include_str!("../../../../../registry/components/drag_source.rhai");
-const DROP_ZONE: &str = include_str!("../../../../../registry/components/drop_zone.rhai");
-const SORTABLE: &str = include_str!("../../../../../registry/components/sortable.rhai");
-const SCROLL_AREA: &str = include_str!("../../../../../registry/components/scroll_area.rhai");
-const PAN_ZOOM: &str = include_str!("../../../../../registry/components/pan_zoom.rhai");
-const RANGE_SLIDER: &str = include_str!("../../../../../registry/components/range_slider.rhai");
-const SLIDER: &str = include_str!("../../../../../registry/components/slider.rhai");
-const ROTATABLE: &str = include_str!("../../../../../registry/components/rotatable.rhai");
-const SELECTION_AREA: &str = include_str!("../../../../../registry/components/selection_area.rhai");
-const TREE: &str = include_str!("../../../../../registry/components/tree.rhai");
-const INTERACTION_LAB: &str =
-    include_str!("../../../../../registry/stories/workbench/interaction_lab.rhai");
-const ANIMATED_TABS: &str = include_str!("../../../../../registry/motion/animated_tabs.rhai");
-const DEFAULT_DARK: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
+/// The official modules these tests mount; the rest of the registry stays out.
+const MODULES: [&str; 20] = [
+    "components/button",
+    "components/badge",
+    "components/tabs",
+    "components/input",
+    "components/input_group",
+    "components/checkbox",
+    "components/split_pane",
+    "components/resizable",
+    "components/draggable",
+    "components/drag_source",
+    "components/drop_zone",
+    "components/sortable",
+    "components/scroll_area",
+    "components/pan_zoom",
+    "components/range_slider",
+    "components/slider",
+    "components/rotatable",
+    "components/selection_area",
+    "components/tree",
+    "motion/animated_tabs",
+];
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        if self.view.state() == gpui_rhai::ScriptViewState::Active {
-            self.host.container(self.view.element().unwrap())
-        } else {
-            self.host.container(gpui::div())
-        }
-    }
-}
+/// The only bundled icons these tests install.
+const ICONS: [&str; 4] = [
+    "icons/chevron_down",
+    "icons/chevron_right",
+    "icons/check",
+    "icons/minus",
+];
 
 fn mount(
     cx: &mut TestAppContext,
     script: &str,
     name: &str,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
     mount_with_overrides(cx, script, name, ThemeTokenOverrides::default())
 }
 
@@ -62,141 +57,39 @@ fn mount_with_overrides(
     script: &str,
     name: &str,
     overrides: ThemeTokenOverrides,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, script.to_owned()),
-            (
-                ModuleId::parse("components/button").unwrap(),
-                BUTTON.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/badge").unwrap(),
-                BADGE.to_owned(),
-            ),
-            (ModuleId::parse("components/tabs").unwrap(), TABS.to_owned()),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                INPUT.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/input_group").unwrap(),
-                INPUT_GROUP.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/checkbox").unwrap(),
-                CHECKBOX.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/split_pane").unwrap(),
-                SPLIT_PANE.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/resizable").unwrap(),
-                RESIZABLE.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/draggable").unwrap(),
-                DRAGGABLE.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/drag_source").unwrap(),
-                DRAG_SOURCE.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/drop_zone").unwrap(),
-                DROP_ZONE.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/sortable").unwrap(),
-                SORTABLE.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/scroll_area").unwrap(),
-                SCROLL_AREA.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/pan_zoom").unwrap(),
-                PAN_ZOOM.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/range_slider").unwrap(),
-                RANGE_SLIDER.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/slider").unwrap(),
-                SLIDER.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/rotatable").unwrap(),
-                ROTATABLE.to_owned(),
-            ),
-            (
-                ModuleId::parse("components/selection_area").unwrap(),
-                SELECTION_AREA.to_owned(),
-            ),
-            (ModuleId::parse("components/tree").unwrap(), TREE.to_owned()),
-            (
-                ModuleId::parse("motion/animated_tabs").unwrap(),
-                ANIMATED_TABS.to_owned(),
-            ),
-        ])),
-        DEFAULT_DARK,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources([
-        (
-            "icons/chevron_down".to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/chevron_down.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/chevron_right".to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/chevron_right.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/check".to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/check.svg").to_vec(),
-            },
-        ),
-        (
-            "icons/minus".to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/minus.svg").to_vec(),
-            },
-        ),
-    ])
-    .theme_token_overrides(overrides)
-    .motion_preference(MotionPreference::None)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let name = name.to_owned();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(&name, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
+    let icons = bundled_assets()
+        .into_iter()
+        .filter(|(path, _)| ICONS.contains(&path.as_str()));
+    let mounted = MODULES
+        .iter()
+        .fold(Mount::new(script), |mount, id| mount.registry(id))
+        .with(move |view| view.asset_sources(icons).theme_token_overrides(overrides))
+        .motion(MotionPreference::None)
+        .id(name)
+        .mount_root(cx, |host, view| ActiveHost { host, view });
     cx.refresh().unwrap();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
+    mounted
+}
+
+/// The name of the first `status` node.
+fn status(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
+    snapshot(visual, view)
+        .nodes()
+        .find(|node| node.role == "status")
+        .unwrap()
+        .name
+        .clone()
+}
+
+/// The visual bounds of the first node with `role` and `name` in `tree`.
+fn bounds_in(tree: &AccessibilityTree, role: &str, name: &str) -> GeometryBounds {
+    tree.find_by_role_and_name(role, name)
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual
 }
 
 #[gpui::test]
@@ -223,21 +116,9 @@ fn view(ctx){tabs::Tabs(#{label:"Sections",value:"one",tabs:[
     };
     let (window, view) = mount_with_overrides(cx, script, "tabs-theme-geometry", overrides);
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let list = tree
-        .find_by_role_and_name("tablist", "Sections")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let tab = tree
-        .find_by_role_and_name("tab", "One")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let tree = snapshot(&mut visual, &view);
+    let list = bounds_in(&tree, "tablist", "Sections");
+    let tab = bounds_in(&tree, "tab", "One");
     assert!(tab.height >= 36.0, "tab={tab:?}");
     assert!(
         (tab.y - list.y - 8.0).abs() < 0.01,
@@ -265,21 +146,9 @@ fn view(ctx) { row([
 "#;
     let (window, view) = mount(cx, script, "control-density");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let button = tree
-        .find_by_role_and_name("button", "Density")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let badge = tree
-        .find_by_role_and_name("status", "Density")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let tree = snapshot(&mut visual, &view);
+    let button = bounds_in(&tree, "button", "Density");
+    let badge = bounds_in(&tree, "status", "Density");
     // A md Button is metrics.control; a Badge is a 20px marker in every density.
     assert_eq!(button.height, 32.0);
     assert_eq!(badge.height, 20.0);
@@ -287,36 +156,12 @@ fn view(ctx) { row([
         button.width >= badge.width + 12.0,
         "button={button:?}, badge={badge:?}"
     );
-    let cjk_button = tree
-        .find_by_role_and_name("button", "中文")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let cjk_badge = tree
-        .find_by_role_and_name("status", "中文")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let cjk_button = bounds_in(&tree, "button", "中文");
+    let cjk_badge = bounds_in(&tree, "status", "中文");
     assert_eq!(cjk_button.height, 24.0);
     assert_eq!(cjk_badge.height, 18.0);
-    let large_button = tree
-        .find_by_role_and_name("button", "Large line")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let large_badge = tree
-        .find_by_role_and_name("status", "Large line")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let large_button = bounds_in(&tree, "button", "Large line");
+    let large_badge = bounds_in(&tree, "status", "Large line");
     // Minimum heights are lower bounds: larger type grows both markers.
     assert!(
         large_button.height >= 34.0 && large_badge.height >= 30.0,
@@ -344,14 +189,8 @@ fn view(ctx){column([
 "#;
     let (window, view) = mount(cx, script, "tabs-track");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let list = tree
-        .find_by_role_and_name("tablist", "Sections")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let tree = snapshot(&mut visual, &view);
+    let list = bounds_in(&tree, "tablist", "Sections");
     let tabs = tree
         .nodes()
         .filter(|node| node.role == "tab")
@@ -384,7 +223,7 @@ fn view(ctx){column([
         Modifiers::default(),
     );
     visual.run_until_parked();
-    let after = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let after = snapshot(&mut visual, &view);
     assert_eq!(after.find_by_role_and_name("status", "1").count(), 1);
     let selected = after
         .nodes()
@@ -416,14 +255,8 @@ fn view(ctx){column([
 "#;
     let (window, view) = mount(cx, script, "tabs-natural");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let content_list = tree
-        .find_by_role_and_name("tablist", "Content Sections")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let tree = snapshot(&mut visual, &view);
+    let content_list = bounds_in(&tree, "tablist", "Content Sections");
     assert!(
         content_list.width < 420.0,
         "content layout stretched: {content_list:?}"
@@ -442,13 +275,7 @@ fn view(ctx){column([
     assert_eq!(content_tabs.len(), 3);
     assert!(content_tabs[1].width > content_tabs[0].width + 40.0);
 
-    let vertical_list = tree
-        .find_by_role_and_name("tablist", "Vertical Sections")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let vertical_list = bounds_in(&tree, "tablist", "Vertical Sections");
     let vertical_tabs = tree
         .nodes()
         .filter(|node| {
@@ -489,24 +316,12 @@ fn view(ctx){animated_tabs::AnimatedTabs(#{key:"visual-tabs",label:"Animated Sec
 "#;
     let (window, view) = mount(cx, script, "animated-tabs");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let second = tree
-        .find_by_role_and_name("tab", "Two")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    visual.simulate_click(
-        point(
-            px((second.x + second.width / 2.0) as f32),
-            px((second.y + second.height / 2.0) as f32),
-        ),
-        Modifiers::default(),
-    );
+    let tree = snapshot(&mut visual, &view);
+    let second = bounds_in(&tree, "tab", "Two");
+    click_center(&mut visual, second);
     visual.run_until_parked();
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
-    let after = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    assert_eq!(last_error(&mut visual, &view), None);
+    let after = snapshot(&mut visual, &view);
     let selected = after
         .nodes()
         .filter(|node| node.role == "tab" && node.selected == Some(true))
@@ -526,19 +341,8 @@ fn view(ctx) { box([
 "#;
     let (window, view) = mount(cx, script, "single-axis-scroll");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let marker_x = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .find_by_role_and_name("text", "Scroll marker")
-                .next()
-                .unwrap()
-                .geometry
-                .unwrap()
-                .visual
-                .x
-        })
-    };
+    let marker_x =
+        |visual: &mut VisualTestContext| bounds(visual, &view, "text", "Scroll marker").x;
     let before = marker_x(&mut visual);
     let position = point(px(40.), px(30.));
     visual.simulate_mouse_move(position, None, Modifiers::none());
@@ -553,17 +357,15 @@ fn view(ctx) { box([
     assert_eq!(marker_x(&mut visual), before);
 }
 
-/// Quads painted with a visible border in `color`, as (width, height) in scaled pixels.
+/// Quads painted with a visible start border in `color`, as (width, height) in logical
+/// pixels.
 fn bordered_quads(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32)> {
     let color: gpui::Hsla = rgba(color).into();
-    visual.update(|window, _| {
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| quad.border_widths.left.0 > 0.0 && quad.border_color == color)
-            .map(|quad| (quad.bounds.size.width.0, quad.bounds.size.height.0))
-            .collect()
-    })
+    painted_quads(visual)
+        .into_iter()
+        .filter(|quad| quad.border_widths[3] > 0.0 && quad.border_color == color)
+        .map(|quad| (quad.bounds.width, quad.bounds.height))
+        .collect()
 }
 
 #[gpui::test]
@@ -599,36 +401,23 @@ fn view(ctx) { column([
 
     // Keyboard focus on the Checkbox row paints the ink frame on its 16px box only
     // (group_focus), never around the row, so the box stays on the content edge.
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let row = tree
-        .find_by_role_and_name("checkbox", "Audit box")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let tree = snapshot(&mut visual, &view);
+    let row = bounds_in(&tree, "checkbox", "Audit box");
     visual.update(|window, cx| view.focus(window, cx)).unwrap();
     visual.simulate_keystrokes("tab");
     visual.update(|window, _| window.refresh());
     visual.run_until_parked();
-    let scale = visual.update(|window, _| window.scale_factor());
     let focused = bordered_quads(&mut visual, 0x00ff00ff);
     assert!(!focused.is_empty(), "keyboard focus must paint a frame");
     assert!(
-        focused.iter().all(|(width, height)| {
-            (width / scale - 16.0).abs() < 0.5 && (height / scale - 16.0).abs() < 0.5
-        }),
+        focused
+            .iter()
+            .all(|(width, height)| (width - 16.0).abs() < 0.5 && (height - 16.0).abs() < 0.5),
         "focus frame must be the box, not the row {row:?}: {focused:?}"
     );
 
     // Focus inside the native input paints the InputGroup frame (focus_within).
-    let group = tree
-        .find_by_role_and_name("group", "Audit group")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let group = bounds_in(&tree, "group", "Audit group");
     visual.simulate_click(
         point(
             px((group.x + group.width - 30.) as f32),
@@ -642,7 +431,7 @@ fn view(ctx) { column([
     assert!(
         framed
             .iter()
-            .any(|(width, _)| (width / scale - group.width as f32).abs() < 1.0),
+            .any(|(width, _)| (width - group.width as f32).abs() < 1.0),
         "the group frame must take the focus color: {framed:?}, group={group:?}"
     );
 }
@@ -667,16 +456,7 @@ fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_stat
     };
     let (window, view) = mount_with_overrides(cx, script, "native-input-focus", overrides);
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("text_field", "Audit input")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let bounds = bounds(&mut visual, &view, "text_field", "Audit input");
     visual.simulate_click(
         point(
             px((bounds.x + 30.) as f32),
@@ -689,18 +469,15 @@ fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_stat
     visual.update(|window, _| window.refresh());
     visual.run_until_parked();
     let focus_ring: gpui::Hsla = rgba(0x00ff00ff).into();
-    let green_borders = visual.update(|window, _| {
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| quad.border_widths.left.0 > 0.0 && quad.border_color == focus_ring)
-            .count()
-    });
+    let green_borders = painted_quads(&mut visual)
+        .iter()
+        .filter(|quad| quad.border_widths[3] > 0.0 && quad.border_color == focus_ring)
+        .count();
     assert!(
         green_borders > 0,
         "native focus did not reach wrapper style"
     );
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let tree = snapshot(&mut visual, &view);
     assert_eq!(
         tree.find_by_role_and_name("text_field", "Audit input")
             .next()
@@ -727,41 +504,16 @@ fn view(ctx){column([
 "#;
     let (window, view) = mount(cx, script, "split-pane-keyboard");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let before = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    });
-    visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::RoleName {
-                        role: "separator".to_owned(),
-                        name: "Resize panels".to_owned(),
-                    },
-                    event: "key:right".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    let before = status(&mut visual, &view);
+    dispatch(
+        &mut visual,
+        &view,
+        by_role("separator", "Resize panels"),
+        "key:right",
+    )
+    .unwrap();
     visual.run_until_parked();
-    let after = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    });
+    let after = status(&mut visual, &view);
     assert_ne!(after, before);
     assert!(after.parse::<f64>().unwrap() > 0.5, "{after}");
 }
@@ -783,39 +535,20 @@ fn view(ctx){column([
 "#;
     let (window, view) = mount(cx, script, "split-pane-pointer");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("separator", "Resize panels")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let start = point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
+    let bounds = bounds(&mut visual, &view, "separator", "Resize panels");
+    let start = center(bounds);
     let end = point(start.x + px(72.0), start.y);
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "0.5", "pointer move reran Rhai state");
+    assert_eq!(
+        status(&mut visual, &view),
+        "0.5",
+        "pointer move reran Rhai state"
+    );
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let committed = status(&mut visual).parse::<f64>().unwrap();
+    let committed = status(&mut visual, &view).parse::<f64>().unwrap();
     assert!(committed > 0.5, "committed ratio={committed}");
 }
 
@@ -878,24 +611,15 @@ fn view(ctx){
 "#;
     let (window, view) = mount(cx, script, "draggable-pointer");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let snapshot = snapshot(&mut visual, &view);
     let handle = snapshot
         .nodes()
         .find(|node| node.name == "Drag handle")
         .and_then(|node| node.geometry)
         .unwrap()
         .visual;
-    let surface = snapshot
-        .find_by_role_and_name("group", "Move card")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let start = point(
-        px((handle.x + handle.width / 2.0) as f32),
-        px((handle.y + handle.height / 2.0) as f32),
-    );
+    let surface = bounds_in(&snapshot, "group", "Move card");
+    let start = center(handle);
     let end = point(start.x + px(48.0), start.y + px(32.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
@@ -909,26 +633,13 @@ fn view(ctx){
                 .name,
             "40.0,50.0"
         );
-        tree.find_by_role_and_name("group", "Move card")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
+        bounds_in(&tree, "group", "Move card")
     });
     assert!((preview.x - surface.x - 48.0).abs() < 0.01, "{preview:?}");
     assert!((preview.y - surface.y - 32.0).abs() < 0.01, "{preview:?}");
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let status = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    });
+    let status = status(&mut visual, &view);
     assert_eq!(status, "88.0,82.0");
 }
 
@@ -959,66 +670,25 @@ fn view(ctx){column([text(ctx.get_state("status")).accessibility_role("status"),
 "#;
     let (window, view) = mount(cx, script, "typed-drag-drop");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let source = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("button", "Move item")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let source_point = point(
-        px((source.x + source.width / 2.0) as f32),
-        px((source.y + source.height / 2.0) as f32),
-    );
+    let source = bounds(&mut visual, &view, "button", "Move item");
+    let source_point = center(source);
     visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(source_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
     visual.simulate_keystrokes("enter");
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "drop:b:item-1");
+    assert_eq!(status(&mut visual, &view), "drop:b:item-1");
 
-    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let source = snapshot
-        .find_by_role_and_name("button", "Move item")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let target = snapshot
-        .find_by_role_and_name("group", "Target a")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let source_point = point(
-        px((source.x + source.width / 2.0) as f32),
-        px((source.y + source.height / 2.0) as f32),
-    );
-    let target_point = point(
-        px((target.x + target.width / 2.0) as f32),
-        px((target.y + target.height / 2.0) as f32),
-    );
+    let snapshot = snapshot(&mut visual, &view);
+    let source = bounds_in(&snapshot, "button", "Move item");
+    let target = bounds_in(&snapshot, "group", "Target a");
+    let source_point = center(source);
+    let target_point = center(target);
     visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(target_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(target_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "drop:a:item-1");
+    assert_eq!(status(&mut visual, &view), "drop:a:item-1");
 }
 
 #[gpui::test]
@@ -1045,36 +715,10 @@ fn view(ctx){let items=[];for key in ctx.get_state("order"){
 "#;
     let (window, view) = mount(cx, script, "sortable");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let source = snapshot
-        .find_by_role_and_name("button", "Reorder alpha")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let target = snapshot
-        .find_by_role_and_name("listitem", "charlie")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let source_point = point(
-        px((source.x + source.width / 2.0) as f32),
-        px((source.y + source.height / 2.0) as f32),
-    );
+    let snapshot = snapshot(&mut visual, &view);
+    let source = bounds_in(&snapshot, "button", "Reorder alpha");
+    let target = bounds_in(&snapshot, "listitem", "charlie");
+    let source_point = center(source);
     let target_after = point(
         px((target.x + target.width / 2.0) as f32),
         px((target.y + target.height * 0.75) as f32),
@@ -1083,28 +727,16 @@ fn view(ctx){let items=[];for key in ctx.get_state("order"){
     visual.simulate_mouse_move(target_after, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(target_after, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "alpha:after:charlie");
+    assert_eq!(status(&mut visual, &view), "alpha:after:charlie");
 
-    let source = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("button", "Reorder alpha")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let source_point = point(
-        px((source.x + source.width / 2.0) as f32),
-        px((source.y + source.height / 2.0) as f32),
-    );
+    let source = bounds(&mut visual, &view, "button", "Reorder alpha");
+    let source_point = center(source);
     visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(source_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
     visual.simulate_keystrokes("alt-up");
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "alpha:before:charlie");
+    assert_eq!(status(&mut visual, &view), "alpha:before:charlie");
 }
 
 #[gpui::test]
@@ -1121,33 +753,11 @@ fn view(ctx){let items=[];for index in 0..12{let key=`item-${index}`;
 "#;
     let (window, view) = mount(cx, script, "sortable-scroll");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let source = snapshot
-        .find_by_role_and_name("button", "Reorder item-0")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let viewport = snapshot
-        .find_by_role_and_name("region", "Sortable viewport")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let before = snapshot
-        .find_by_role_and_name("listitem", "item-11")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual
-        .y;
-    let source_point = point(
-        px((source.x + source.width / 2.0) as f32),
-        px((source.y + source.height / 2.0) as f32),
-    );
+    let snapshot = snapshot(&mut visual, &view);
+    let source = bounds_in(&snapshot, "button", "Reorder item-0");
+    let viewport = bounds_in(&snapshot, "region", "Sortable viewport");
+    let before = bounds_in(&snapshot, "listitem", "item-11").y;
+    let source_point = center(source);
     let bottom = viewport.y + viewport.height - 5.0;
     visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
     for step in 0..10 {
@@ -1161,17 +771,7 @@ fn view(ctx){let items=[];for index in 0..12{let key=`item-${index}`;
         );
         visual.run_until_parked();
     }
-    let after = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("listitem", "item-11")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-            .y
-    });
+    let after = bounds(&mut visual, &view, "listitem", "item-11").y;
     visual.simulate_mouse_up(
         point(
             px((viewport.x + viewport.width / 2.0) as f32),
@@ -1202,25 +802,10 @@ fn view(ctx){let data=[];for index in 0..100{data.push(#{key:`item-${index}`,lab
 "#;
     let (window, view) = mount(cx, script, "virtual-sortable");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let source = snapshot
-        .find_by_role_and_name("button", "Reorder Item 0")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let list = snapshot
-        .find_by_role_and_name("list", "Virtual order")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let source_point = point(
-        px((source.x + source.width / 2.0) as f32),
-        px((source.y + source.height / 2.0) as f32),
-    );
+    let snapshot = snapshot(&mut visual, &view);
+    let source = bounds_in(&snapshot, "button", "Reorder Item 0");
+    let list = bounds_in(&snapshot, "list", "Virtual order");
+    let source_point = center(source);
     let bottom = point(
         px((list.x + list.width / 2.0) as f32),
         px((list.y + list.height - 5.0) as f32),
@@ -1236,15 +821,7 @@ fn view(ctx){let data=[];for index in 0..100{data.push(#{key:`item-${index}`,lab
     }
     visual.simulate_mouse_up(bottom, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let status = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    });
+    let status = status(&mut visual, &view);
     assert!(status.starts_with("item-0:"), "status={status}");
 }
 
@@ -1275,37 +852,14 @@ fn view(ctx){let value=ctx.get_state("transform");column([
 "#;
     let (window, view) = mount(cx, script, "pan-zoom");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let viewport = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("region", "Canvas viewport")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let start = point(
-        px((viewport.x + viewport.width / 2.0) as f32),
-        px((viewport.y + viewport.height / 2.0) as f32),
-    );
+    let viewport = bounds(&mut visual, &view, "region", "Canvas viewport");
+    let start = center(viewport);
     let end = point(start.x + px(40.0), start.y + px(20.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "40.0,20.0,1.0,1");
+    assert_eq!(status(&mut visual, &view), "40.0,20.0,1.0,1");
 
     visual.simulate_event(ScrollWheelEvent {
         position: start,
@@ -1313,7 +867,7 @@ fn view(ctx){let value=ctx.get_state("transform");column([
         ..Default::default()
     });
     visual.run_until_parked();
-    let zoomed = status(&mut visual);
+    let zoomed = status(&mut visual, &view);
     let scale = zoomed.split(',').nth(2).unwrap().parse::<f64>().unwrap();
     assert!(scale > 1.0, "status={zoomed}");
     assert!(zoomed.ends_with(",2"), "status={zoomed}");
@@ -1330,7 +884,7 @@ fn view(ctx){let value=ctx.get_state("transform");column([
     visual.run_until_parked();
     cx.refresh().unwrap();
     visual.run_until_parked();
-    let precise = status(&mut visual);
+    let precise = status(&mut visual, &view);
     assert!(precise.ends_with(",3"), "status={precise}");
 
     for (phase, delta) in [
@@ -1346,7 +900,7 @@ fn view(ctx){let value=ctx.get_state("transform");column([
         });
     }
     visual.run_until_parked();
-    let explicit = status(&mut visual);
+    let explicit = status(&mut visual, &view);
     assert!(explicit.ends_with(",4"), "status={explicit}");
     let explicit_x = explicit.split(',').next().unwrap().parse::<f64>().unwrap();
     assert!(
@@ -1356,7 +910,7 @@ fn view(ctx){let value=ctx.get_state("transform");column([
 
     visual.simulate_keystrokes("tab right");
     visual.run_until_parked();
-    let keyboard = status(&mut visual);
+    let keyboard = status(&mut visual, &view);
     assert!(keyboard.ends_with(",5"), "status={keyboard}");
 }
 
@@ -1380,25 +934,8 @@ fn view(ctx){let value=ctx.get_state("range");column([
 "#;
     let (window, view) = mount(cx, script, "range-slider");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let control = snapshot
-        .find_by_role_and_name("group", "Accepted interval")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let snapshot = snapshot(&mut visual, &view);
+    let control = bounds_in(&snapshot, "group", "Accepted interval");
     let start = point(
         px((control.x + control.width * 0.2) as f32),
         px((control.y + control.height * 0.7) as f32),
@@ -1411,18 +948,9 @@ fn view(ctx){let value=ctx.get_state("range");column([
     visual.simulate_mouse_move(target, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(target, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert!(status(&mut visual).ends_with(",1"));
+    assert!(status(&mut visual, &view).ends_with(",1"));
 
-    let control = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("group", "Accepted interval")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let control = bounds(&mut visual, &view, "group", "Accepted interval");
     let high_point = point(
         px((control.x + control.width * 0.8) as f32),
         px((control.y + control.height * 0.7) as f32),
@@ -1431,10 +959,10 @@ fn view(ctx){let value=ctx.get_state("range");column([
     visual.simulate_mouse_down(high_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(high_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert!(status(&mut visual).ends_with(",1"));
+    assert!(status(&mut visual, &view).ends_with(",1"));
     visual.simulate_keystrokes("left");
     visual.run_until_parked();
-    let keyboard = status(&mut visual);
+    let keyboard = status(&mut visual, &view);
     assert_eq!(keyboard, "50.0,75.0,2", "status={keyboard}");
 }
 
@@ -1459,42 +987,19 @@ fn view(ctx){column([
 "#;
     let (window, view) = mount(cx, script, "rotatable");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let handle = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("slider", "Rotate arm")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let start = point(
-        px((handle.x + handle.width / 2.0) as f32),
-        px((handle.y + handle.height / 2.0) as f32),
-    );
+    let handle = bounds(&mut visual, &view, "slider", "Rotate arm");
+    let start = center(handle);
     let target = point(start.x - px(80.0), start.y + px(120.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(target, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(target, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let pointer = status(&mut visual);
+    let pointer = status(&mut visual, &view);
     assert!(pointer.ends_with(",1"), "status={pointer}");
 
     visual.simulate_keystrokes("tab right");
     visual.run_until_parked();
-    let keyboard = status(&mut visual);
+    let keyboard = status(&mut visual, &view);
     assert!(keyboard.ends_with(",2"), "status={keyboard}");
 }
 
@@ -1525,33 +1030,13 @@ fn view(ctx){let targets=[#{key:"a",x:20.0,y:20.0,width:50.0,height:40.0},
 "#;
     let (window, view) = mount(cx, script, "selection-area");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let area = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("grid", "Node selection")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let area = bounds(&mut visual, &view, "grid", "Node selection");
     let local = |x: f64, y: f64| point(px((area.x + x) as f32), px((area.y + y) as f32));
     let a = local(45.0, 40.0);
     visual.simulate_mouse_down(a, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(a, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "a,1");
+    assert_eq!(status(&mut visual, &view), "a,1");
 
     let c = local(205.0, 40.0);
     visual.simulate_mouse_down(
@@ -1571,7 +1056,7 @@ fn view(ctx){let targets=[#{key:"a",x:20.0,y:20.0,width:50.0,height:40.0},
         },
     );
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "a|b|c,2");
+    assert_eq!(status(&mut visual, &view), "a|b|c,2");
 
     let start = local(88.0, 8.0);
     let end = local(162.0, 72.0);
@@ -1579,11 +1064,11 @@ fn view(ctx){let targets=[#{key:"a",x:20.0,y:20.0,width:50.0,height:40.0},
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "b,3");
+    assert_eq!(status(&mut visual, &view), "b,3");
 
     visual.simulate_keystrokes("tab right");
     visual.run_until_parked();
-    assert!(status(&mut visual).ends_with(",4"));
+    assert!(status(&mut visual, &view).ends_with(",4"));
 }
 
 #[gpui::test]
@@ -1600,16 +1085,7 @@ fn suspending_active_rotation_cleans_up_using_current_drawable_geometry(cx: &mut
     "#;
     let (window, view) = mount(cx, script, "rotation-suspend");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("slider", "Rotate")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let bounds = bounds(&mut visual, &view, "slider", "Rotate");
     let start = point(px((bounds.x + 180.0) as f32), px((bounds.y + 50.0) as f32));
     let moved = point(start.x - px(60.0), start.y + px(60.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
@@ -1646,35 +1122,12 @@ fn view(ctx){let items=[#{key:"root",parent:(),label:"Root"},#{key:"a",parent:"r
 "#;
     let (window, view) = mount(cx, script, "tree");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let disclosure = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("button", "Expand Root")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let point = point(
-        px((disclosure.x + disclosure.width / 2.0) as f32),
-        px((disclosure.y + disclosure.height / 2.0) as f32),
-    );
+    let disclosure = bounds(&mut visual, &view, "button", "Expand Root");
+    let point = center(disclosure);
     visual.simulate_mouse_down(point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert!(status(&mut visual).starts_with("root;"));
+    assert!(status(&mut visual, &view).starts_with("root;"));
     let items = visual.update(|_, cx| {
         let snapshot = view.accessibility_snapshot(cx).unwrap();
         let mut items = snapshot
@@ -1689,7 +1142,7 @@ fn view(ctx){let items=[#{key:"root",parent:(),label:"Root"},#{key:"a",parent:"r
 
     visual.simulate_keystrokes("tab down enter");
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "root;a;a");
+    assert_eq!(status(&mut visual, &view), "root;a;a");
 }
 
 #[gpui::test]
@@ -1697,7 +1150,7 @@ fn interaction_workbench_mounts_and_closes_a_cross_component_drag_loop(cx: &mut 
     cx.update(gpui_rhai::install);
     let (window, view) = mount(cx, INTERACTION_LAB, "interaction-lab");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let snapshot = snapshot(&mut visual, &view);
     assert!(
         snapshot
             .find_by_role_and_name("tree", "Workbench files")
@@ -1722,41 +1175,15 @@ fn interaction_workbench_mounts_and_closes_a_cross_component_drag_loop(cx: &mut 
             .next()
             .is_some()
     );
-    let source = snapshot
-        .find_by_role_and_name("button", "Move artifact")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let archive = snapshot
-        .find_by_role_and_name("group", "Archive")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
-    let source_point = point(
-        px((source.x + source.width / 2.0) as f32),
-        px((source.y + source.height / 2.0) as f32),
-    );
-    let target_point = point(
-        px((archive.x + archive.width / 2.0) as f32),
-        px((archive.y + archive.height / 2.0) as f32),
-    );
+    let source = bounds_in(&snapshot, "button", "Move artifact");
+    let archive = bounds_in(&snapshot, "group", "Archive");
+    let source_point = center(source);
+    let target_point = center(archive);
     visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(target_point, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(target_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let status = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    });
+    let status = status(&mut visual, &view);
     assert_eq!(status, "Artifact moved to archive");
 }
 
@@ -1766,55 +1193,23 @@ fn resizable_drag_previews_natively_and_commits_opposite_corner_geometry(cx: &mu
     let script = resizable_script(r#"["nw"]"#);
     let (window, view) = mount(cx, &script, "resizable-pointer");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("separator", "Demo: nw resize handle")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let status = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        })
-    };
-    let start = point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
+    let handle = bounds(&mut visual, &view, "separator", "Demo: nw resize handle");
+    let start = center(handle);
     let end = point(start.x - px(30.0), start.y - px(20.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
     assert_eq!(
-        status(&mut visual),
+        status(&mut visual, &view),
         "100.0,80.0,200.0,120.0,0",
         "pointer preview must not rerun Rhai"
     );
-    let preview = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("separator", "Demo: nw resize handle")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    assert!((preview.x - (bounds.x - 30.0)).abs() < 0.01, "{preview:?}");
-    assert!((preview.y - (bounds.y - 20.0)).abs() < 0.01, "{preview:?}");
+    let preview = bounds(&mut visual, &view, "separator", "Demo: nw resize handle");
+    assert!((preview.x - (handle.x - 30.0)).abs() < 0.01, "{preview:?}");
+    assert!((preview.y - (handle.y - 20.0)).abs() < 0.01, "{preview:?}");
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert_eq!(status(&mut visual), "70.0,60.0,230.0,140.0,1");
+    assert_eq!(status(&mut visual, &view), "70.0,60.0,230.0,140.0,1");
 }
 
 #[gpui::test]
@@ -1833,15 +1228,7 @@ fn resizable_keyboard_handle_uses_the_same_controlled_proposal(cx: &mut TestAppC
         keystroke: gpui::Keystroke::parse("right").unwrap(),
     });
     visual.run_until_parked();
-    let status = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    });
+    let status = status(&mut visual, &view);
     assert_eq!(status, "100.0,80.0,208.0,120.0,1");
 }
 
@@ -1851,33 +1238,15 @@ fn resizable_rejected_proposal_restores_the_controlled_rectangle(cx: &mut TestAp
     let script = resizable_script(r#"["se"]"#).replace_once(r#"ctx.set_state("rect",value);"#, "");
     let (window, view) = mount(cx, &script, "resizable-rejection");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let before = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("separator", "Demo: se resize handle")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    let start = point(
-        px((before.x + before.width / 2.0) as f32),
-        px((before.y + before.height / 2.0) as f32),
-    );
+    let before = bounds(&mut visual, &view, "separator", "Demo: se resize handle");
+    let start = center(before);
     let end = point(start.x + px(40.0), start.y + px(30.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let after = tree
-        .find_by_role_and_name("separator", "Demo: se resize handle")
-        .next()
-        .unwrap()
-        .geometry
-        .unwrap()
-        .visual;
+    let tree = snapshot(&mut visual, &view);
+    let after = bounds_in(&tree, "separator", "Demo: se resize handle");
     assert!((after.x - before.x).abs() < 0.01, "{before:?} -> {after:?}");
     assert!((after.y - before.y).abs() < 0.01, "{before:?} -> {after:?}");
     assert_eq!(
@@ -1922,16 +1291,7 @@ fn drag_beside_separator(cx: &mut TestAppContext, handle: bool) -> (f64, Vec<(f3
         mount_with_overrides(cx, &split_grip_script(handle), "split-grip", overrides);
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
-    let separator = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("separator", "Resize panels")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let separator = bounds(&mut visual, &view, "separator", "Resize panels");
     // 7px left of the separator's centre: outside its 8px lane, inside an 18px grip.
     #[allow(clippy::cast_possible_truncation)]
     let start = point(
@@ -1949,16 +1309,7 @@ fn drag_beside_separator(cx: &mut TestAppContext, handle: bool) -> (f64, Vec<(f3
     visual.run_until_parked();
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let ratio = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .parse::<f64>()
-            .unwrap()
-    });
+    let ratio = status(&mut visual, &view).parse::<f64>().unwrap();
     (ratio, hovered)
 }
 
@@ -1977,42 +1328,25 @@ fn separator_lines(cx: &mut TestAppContext, line: &str) -> (Vec<(f64, f64, f64)>
     let (window, view) = mount_with_overrides(cx, &script, "split-line", overrides);
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
-    let separator = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("separator", "Resize panels")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let separator = bounds(&mut visual, &view, "separator", "Resize panels");
     let fill: gpui::Background = rgba(color).into();
     let edge: gpui::Hsla = rgba(color).into();
-    let lines = visual.update(|window, _| {
-        let scale = f64::from(window.scale_factor());
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| {
-                let bordered = quad.border_color == edge
-                    && quad.border_widths.left.0
-                        + quad.border_widths.right.0
-                        + quad.border_widths.top.0
-                        + quad.border_widths.bottom.0
-                        > 0.0;
-                quad.background == fill || bordered
-            })
-            .map(|quad| {
-                (
-                    f64::from(quad.bounds.origin.x.0) / scale,
-                    f64::from(quad.bounds.size.width.0) / scale,
-                    f64::from(quad.bounds.size.height.0) / scale,
-                )
-            })
-            .filter(|(x, width, _)| *x < separator.x + separator.width && x + width > separator.x)
-            .collect()
-    });
+    let lines = painted_quads(&mut visual)
+        .into_iter()
+        .filter(|quad| {
+            let bordered =
+                quad.border_color == edge && quad.border_widths.iter().sum::<f32>() > 0.0;
+            quad.background == fill || bordered
+        })
+        .map(|quad| {
+            (
+                f64::from(quad.bounds.x),
+                f64::from(quad.bounds.width),
+                f64::from(quad.bounds.height),
+            )
+        })
+        .filter(|(x, width, _)| *x < separator.x + separator.width && x + width > separator.x)
+        .collect();
     (lines, separator.x)
 }
 
@@ -2062,19 +1396,7 @@ fn view(ctx){
     let (window, view) = mount(cx, script, "split-collapse");
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
-    let geometry = |visual: &mut VisualTestContext, role: &str, name: &str| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .find_by_role_and_name(role, name)
-                .next()
-                .unwrap()
-                .geometry
-                .unwrap()
-                .visual
-        })
-    };
-    let list = geometry(&mut visual, "text", "line 0");
+    let list = bounds(&mut visual, &view, "text", "line 0");
     #[allow(clippy::cast_possible_truncation)]
     let position = point(px((list.x + 20.0) as f32), px((list.y + 40.0) as f32));
     visual.simulate_mouse_move(position, None, Modifiers::none());
@@ -2086,21 +1408,21 @@ fn view(ctx){
     visual.run_until_parked();
     visual.update(|window, _| window.refresh());
     visual.run_until_parked();
-    let scrolled = geometry(&mut visual, "text", "line 0").y;
+    let scrolled = bounds(&mut visual, &view, "text", "line 0").y;
     assert!(
         scrolled < list.y - 30.0,
         "the list scrolled: {} -> {scrolled}",
         list.y
     );
     for _ in 0..2 {
-        let toggle = geometry(&mut visual, "button", "Toggle");
+        let toggle = bounds(&mut visual, &view, "button", "Toggle");
         #[allow(clippy::cast_possible_truncation)]
         let at = point(px((toggle.x + 10.0) as f32), px((toggle.y + 10.0) as f32));
         visual.simulate_click(at, Modifiers::none());
         visual.run_until_parked();
         visual.update(|window, _| window.refresh());
         visual.run_until_parked();
-        let now = geometry(&mut visual, "text", "line 0").y;
+        let now = bounds(&mut visual, &view, "text", "line 0").y;
         assert!(
             (now - scrolled).abs() < 0.5,
             "the list kept its offset: {scrolled} -> {now}"
@@ -2114,11 +1436,10 @@ fn split_pane_grip_overhang_starts_a_drag_and_shows_hover(cx: &mut TestAppContex
     let (ratio, hovered) = drag_beside_separator(cx, true);
     println!("grip: ratio {ratio}, hover frames {hovered:?}");
     assert!(ratio > 0.5, "pressing the grip's overhang drags: {ratio}");
-    let scale = 2.0;
     assert!(
         hovered
             .iter()
-            .any(|(width, _)| (*width - 18.0 * scale).abs() < 0.5),
+            .any(|(width, _)| (*width - 18.0).abs() < 0.25),
         "the hovered grip takes the grip_hover border: {hovered:?}"
     );
     // The positive control: without a grip the same press misses the separator.
@@ -2142,16 +1463,7 @@ fn resizable_grip_overhang_starts_its_handle_drag(cx: &mut TestAppContext) {
         let (window, view) = mount(cx, &script, "resizable-grip");
         let mut visual = VisualTestContext::from_window(*window, cx);
         visual.run_until_parked();
-        let handle = visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .find_by_role_and_name("separator", "Demo: se resize handle")
-                .next()
-                .unwrap()
-                .geometry
-                .unwrap()
-                .visual
-        });
+        let handle = bounds(&mut visual, &view, "separator", "Demo: se resize handle");
         // 9px right of the 14px handle's centre: past the handle, inside a 22px grip.
         #[allow(clippy::cast_possible_truncation)]
         let start = point(
@@ -2163,15 +1475,7 @@ fn resizable_grip_overhang_starts_its_handle_drag(cx: &mut TestAppContext) {
         visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
         visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
         visual.run_until_parked();
-        let status = visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .nodes()
-                .find(|node| node.role == "status")
-                .unwrap()
-                .name
-                .clone()
-        });
+        let status = status(&mut visual, &view);
         println!("grip {with_grip}: {status}");
         if with_grip {
             assert_eq!(
@@ -2206,16 +1510,7 @@ fn press_beside_separator(
     let (window, view) = mount(cx, script, "grip-cover");
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
-    let separator = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("separator", name)
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let separator = bounds(&mut visual, &view, "separator", name);
     #[allow(clippy::cast_possible_truncation)]
     let start = point(
         px((separator.x + separator.width / 2.0 + dx) as f32),
@@ -2227,15 +1522,7 @@ fn press_beside_separator(
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    })
+    status(&mut visual, &view)
 }
 
 /// The component wrapped for `setting`: under a covering box, or in a 300px clip
@@ -2392,15 +1679,7 @@ fn view(ctx){column([
     visual.run_until_parked();
     assert_eq!(filled_quads(&mut visual, 0x00ff_00ff).len(), 0, "at rest");
     assert_eq!(filled_quads(&mut visual, 0xff00_00ff).len(), 1, "at rest");
-    let row = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("group", "Row")
-            .next()
-            .and_then(|node| node.geometry)
-            .unwrap()
-            .visual
-    });
+    let row = bounds(&mut visual, &view, "group", "Row");
     // Over the row's text, away from the child itself.
     #[allow(clippy::cast_possible_truncation)]
     let over_text = point(
@@ -2418,17 +1697,12 @@ fn view(ctx){column([
     );
 }
 
-/// The bounds of quads filled with `color`, as (x, y) in scaled pixels.
+/// The origins of quads filled with `color`, as (x, y) in logical pixels.
 fn filled_quads(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32)> {
-    let color: gpui::Hsla = rgba(color).into();
-    visual.update(|window, _| {
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| quad.background == color.into())
-            .map(|quad| (quad.bounds.origin.x.0, quad.bounds.origin.y.0))
-            .collect()
-    })
+    filled(visual, color)
+        .into_iter()
+        .map(|quad| (quad.bounds.x, quad.bounds.y))
+        .collect()
 }
 
 fn pan_zoom_commit_script(accept: bool) -> String {
@@ -2463,35 +1737,21 @@ fn view(ctx){{column([
 }
 
 /// Drag the PanZoom 40x20 and let only the window's own requests draw; returns
-/// the marker's position before and after, in scaled pixels.
-fn pan_zoom_drag(cx: &mut TestAppContext, accept: bool) -> ((f32, f32), (f32, f32), f32) {
+/// the marker's position before and after, in logical pixels.
+fn pan_zoom_drag(cx: &mut TestAppContext, accept: bool) -> ((f32, f32), (f32, f32)) {
     let (window, view) = mount(cx, &pan_zoom_commit_script(accept), "pan-zoom-commit");
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
     let before = filled_quads(&mut visual, 0x00ff00ff)[0];
-    let viewport = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("region", "Canvas viewport")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    #[allow(clippy::cast_possible_truncation)]
-    let start = point(
-        px((viewport.x + viewport.width / 2.0) as f32),
-        px((viewport.y + viewport.height / 2.0) as f32),
-    );
+    let viewport = bounds(&mut visual, &view, "region", "Canvas viewport");
+    let start = center(viewport);
     let end = point(start.x + px(40.0), start.y + px(20.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
     let after = filled_quads(&mut visual, 0x00ff00ff)[0];
-    let scale = visual.update(|window, _| window.scale_factor());
-    (before, after, scale)
+    (before, after)
 }
 
 #[gpui::test]
@@ -2499,17 +1759,17 @@ fn pan_zoom_shows_the_committed_pan_without_another_input(cx: &mut TestAppContex
     cx.update(gpui_rhai::install);
     // The new source reaches the transform signals while a frame is drawn, when
     // GPUI drops the redraw a write asks for; the primitive asks for the next one.
-    let ((bx, by), (ax, ay), scale) = pan_zoom_drag(cx, true);
+    let ((bx, by), (ax, ay)) = pan_zoom_drag(cx, true);
     println!("accepted: ({bx},{by}) -> ({ax},{ay})");
     assert!(
-        (ax - bx - 40.0 * scale).abs() < 0.5 && (ay - by - 20.0 * scale).abs() < 0.5,
+        (ax - bx - 40.0).abs() < 0.25 && (ay - by - 20.0).abs() < 0.25,
         "the content stays at the committed pan: ({bx},{by}) -> ({ax},{ay})"
     );
     // A Host that keeps its transform gets the content back at the source.
-    let ((bx, by), (ax, ay), _) = pan_zoom_drag(cx, false);
+    let ((bx, by), (ax, ay)) = pan_zoom_drag(cx, false);
     println!("rejected: ({bx},{by}) -> ({ax},{ay})");
     assert!(
-        (ax - bx).abs() < 0.5 && (ay - by).abs() < 0.5,
+        (ax - bx).abs() < 0.25 && (ay - by).abs() < 0.25,
         "a rejected pan returns to the source: ({bx},{by}) -> ({ax},{ay})"
     );
 }
@@ -2538,7 +1798,8 @@ fn view(ctx){{column([
 }
 
 /// Turn the arm 90 degrees from the keyboard and let only the window's own
-/// requests draw; returns the canvas background's position before and after.
+/// requests draw; returns the canvas background's position before and after, in logical
+/// pixels.
 fn rotatable_turn(cx: &mut TestAppContext, accept: bool) -> ((f32, f32), (f32, f32)) {
     let (window, _) = mount(cx, &rotatable_commit_script(accept), "rotatable-commit");
     let mut visual = VisualTestContext::from_window(*window, cx);
@@ -2561,13 +1822,13 @@ fn rotatable_shows_the_committed_angle_without_another_input(cx: &mut TestAppCon
     let (before, after) = rotatable_turn(cx, true);
     println!("accepted: {before:?} -> {after:?}");
     assert!(
-        (after.0 - before.0).abs() > 1.0 || (after.1 - before.1).abs() > 1.0,
+        (after.0 - before.0).abs() > 0.5 || (after.1 - before.1).abs() > 0.5,
         "the canvas shows the committed angle: {before:?} -> {after:?}"
     );
     let (before, after) = rotatable_turn(cx, false);
     println!("rejected: {before:?} -> {after:?}");
     assert!(
-        (after.0 - before.0).abs() < 0.5 && (after.1 - before.1).abs() < 0.5,
+        (after.0 - before.0).abs() < 0.25 && (after.1 - before.1).abs() < 0.25,
         "a rejected turn returns to the source: {before:?} -> {after:?}"
     );
 }

@@ -2,24 +2,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, Window, WindowHandle};
+use gpui::{IntoElement, TestAppContext, Window, WindowHandle};
 use gpui_rhai::*;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let element = if self.view.state() == ScriptViewState::Active {
-            self.view.element().unwrap()
-        } else {
-            gpui::div().into_any_element()
-        };
-        self.host.container(element)
-    }
-}
+use crate::support::{ActiveHost, Mount};
 
 #[derive(Default)]
 struct NativeState {
@@ -109,18 +95,12 @@ fn mount(
     cx: &mut TestAppContext,
     name: &str,
     states: Vec<Rc<NativeState>>,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
     let source = r#"fn view(ctx){row([test::Lifecycle0(#{key:"a"}).with_key("a"),test::Lifecycle1(#{key:"b"}).with_key("b"),test::Lifecycle2(#{key:"c"}).with_key("c")])}"#;
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, source.to_owned())])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .extension(HookExtension(states))
-    .prepare()
-    .unwrap();
+    let prepared = Mount::new(source)
+        .with(move |view| view.extension(HookExtension(states)))
+        .prepare()
+        .unwrap();
     let captured = Rc::new(RefCell::new(None));
     let capture = captured.clone();
     let name = name.to_owned();
@@ -130,7 +110,7 @@ fn mount(
             .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
             .unwrap();
         *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
+        ActiveHost { host, view }
     });
     cx.run_until_parked();
     cx.refresh().unwrap();

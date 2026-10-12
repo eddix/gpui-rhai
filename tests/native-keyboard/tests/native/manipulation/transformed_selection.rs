@@ -3,11 +3,11 @@ use gpui::{
     Window, WindowHandle, point, px,
 };
 use gpui_rhai::*;
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use crate::support::ReplaceOnce;
+use crate::support::{Mount, ReplaceOnce, bounds, snapshot};
 
-const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+/// Renders nothing while the view is suspended.
 struct Host {
     host: ScriptViewHost,
     view: ScriptViewHandle,
@@ -28,23 +28,14 @@ fn mount(
     name: &str,
 ) -> (WindowHandle<Host>, ScriptViewHandle) {
     cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut sources = BTreeMap::from([(entry.clone(), script.to_owned())]);
-    for name in ["selection_area", "rotatable", "pan_zoom", "dialog"] {
-        sources.insert(
-            ModuleId::parse(format!("components/{name}")).unwrap(),
-            std::fs::read_to_string(format!("{ROOT}/registry/components/{name}.rhai")).unwrap(),
-        );
-    }
-    let prepared = EmbeddedScriptView::new(
-        entry,
-        EmbeddedScriptSource::new(sources),
-        std::fs::read_to_string(format!("{ROOT}/registry/themes/default_dark.rhai")).unwrap(),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .motion_preference(MotionPreference::None)
-    .prepare()
-    .unwrap();
+    let prepared = Mount::new(script)
+        .registry("components/selection_area")
+        .registry("components/rotatable")
+        .registry("components/pan_zoom")
+        .registry("components/dialog")
+        .motion(MotionPreference::None)
+        .prepare()
+        .unwrap();
     let captured = Rc::new(RefCell::new(None));
     let capture = captured.clone();
     let name = name.to_owned();
@@ -73,32 +64,12 @@ fn find_signal(node: &UiNode, property: SignalProperty) -> Option<NativeSignal> 
     }
 }
 fn status(v: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    v.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|n| n.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    })
-}
-fn bounds(
-    v: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    v.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    })
+    snapshot(v, view)
+        .nodes()
+        .find(|n| n.role == "status")
+        .unwrap()
+        .name
+        .clone()
 }
 fn select_script(multiple: bool) -> String {
     format!(

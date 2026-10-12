@@ -5,12 +5,13 @@
 //! (`.signal_style`) counts like the same style written statically, in either
 //! state and after switching.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
-use gpui_rhai::*;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{GeometryBounds, ScriptViewHandle};
+use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE};
+
+use crate::support::{Mount, Step, by_role, dispatch, settle, snapshot};
 
 const THEME: &str = r#"fn theme(){#{family:"Layout",name:"Dark",mode:"dark",tokens:#{}}}"#;
 
@@ -35,17 +36,6 @@ const CASES: &[(&str, &str)] = &[
     ("plain", "style().height(px(30))"),
 ];
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn script(locale: &str) -> String {
     let mut pairs = Vec::new();
     for (name, child) in CASES {
@@ -62,56 +52,30 @@ fn view(ctx) {{ column([{}]).with_style(style().width(px(600)).gap(px(8))) }}"#,
     )
 }
 
-fn mount(cx: &mut TestAppContext, source: String) -> (WindowHandle<Host>, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, source)])),
-        THEME,
-    )
-    .locale_sources([
-        (
-            "en.rhai".into(),
-            include_str!("../../../../../registry/locales/en.rhai").to_owned(),
-        ),
-        (
-            "ar.rhai".into(),
-            include_str!("../../../../../registry/locales/ar.rhai").to_owned(),
-        ),
-    ])
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("stretch", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("stretch"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    (window, view)
+/// The custom theme with no token base, both locales, no assets.
+fn mount(cx: &mut TestAppContext, source: String) -> (VisualTestContext, ScriptViewHandle) {
+    Mount::new(source)
+        .theme(THEME)
+        .no_token_base()
+        .locale("en.rhai", EN_LOCALE)
+        .locale("ar.rhai", AR_LOCALE)
+        .id("stretch")
+        .mount(cx)
 }
 
 fn laid_out(
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,
 ) -> BTreeMap<String, GeometryBounds> {
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
+    settle(visual, Step::Frame, 1);
+    snapshot(visual, view)
+        .nodes()
         .filter_map(|node| Some((node.test_id.clone()?, node.geometry?.visual)))
         .collect()
 }
 
 fn geometry(locale: &str, cx: &mut TestAppContext) -> BTreeMap<String, GeometryBounds> {
-    let (window, view) = mount(cx, script(locale));
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, script(locale));
     laid_out(&mut visual, &view)
 }
 
@@ -205,27 +169,11 @@ fn view(ctx) {{ render_component("tests/signal_stretch", #{{ key: "cases" }}) }}
 fn a_signal_selected_style_stretches_like_the_same_static_style(cx: &mut TestAppContext) {
     let mut report = Vec::new();
     for locale in ["en", "ar"] {
-        let (window, view) = mount(cx, signal_script(locale));
-        let mut visual = VisualTestContext::from_window(*window, cx);
+        let (mut visual, view) = mount(cx, signal_script(locale));
         // On, off after a switch, and on again.
         for (step, state) in ["on", "off", "on"].into_iter().enumerate() {
             if step > 0 {
-                visual
-                    .update(|window, cx| {
-                        view.automate(
-                            AutomationCommand::Dispatch {
-                                locator: AutomationLocator::RoleName {
-                                    role: "button".into(),
-                                    name: "Toggle".into(),
-                                },
-                                event: "click".into(),
-                                payload: None,
-                            },
-                            window,
-                            cx,
-                        )
-                    })
-                    .unwrap();
+                dispatch(&mut visual, &view, by_role("button", "Toggle"), "click").unwrap();
                 visual.run_until_parked();
             }
             let found = laid_out(&mut visual, &view);
@@ -277,8 +225,7 @@ fn view(ctx) {{
     ])
 }}"#
         );
-        let (window, view) = mount(cx, source);
-        let mut visual = VisualTestContext::from_window(*window, cx);
+        let (mut visual, view) = mount(cx, source);
         let found = laid_out(&mut visual, &view);
         let offset =
             |id: &str, parent: &str| (found[id].x - found[parent].x, found[id].y - found[parent].y);

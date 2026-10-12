@@ -3,28 +3,17 @@
 //! headers use the label voice (#118); a span takes a role's face and a
 //! background without leaving its line.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, rgba};
+use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::*;
+
+use crate::support::{Mount, Step, filled, settle};
 
 const ROWS: &[(&str, &str, &str)] = &[
     ("r0", "dp-09aa6aec4c-kbzgl", "A"),
     ("r1", "dp-09aa6aec4c-0lO1I", "B"),
 ];
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
 
 #[derive(Clone)]
 struct Rows;
@@ -46,54 +35,15 @@ impl ScriptViewExtension for Rows {
 }
 
 fn mount(cx: &mut TestAppContext, view_body: &str) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
     let source = format!(
         r#"import "components/table" as table;
 fn view(ctx) {{ column([{view_body}]).with_style(style().width(px(480))) }}"#
     );
-    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), source)]);
-    for (id, source) in gpui_rhai_registry::BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        gpui_rhai_registry::DEFAULT_THEME,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(
-        gpui_rhai_registry::BUNDLED_ASSET_SOURCES
-            .iter()
-            .map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }),
-    )
-    .extension(Rows)
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("code", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("code"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..2 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    let (mut visual, view) = Mount::components(source)
+        .with(|view| view.extension(Rows))
+        .id("code")
+        .mount(cx);
+    settle(&mut visual, Step::Frame, 2);
     (visual, view)
 }
 
@@ -215,12 +165,6 @@ fn a_span_takes_a_face_and_a_background(cx: &mut TestAppContext) {
     assert!(spans[1].background_value().is_some());
     assert!(spans[0].typography_role().is_none() && spans[0].background_value().is_none());
     // The background is painted behind the span's glyphs.
-    let color: gpui::Hsla = rgba(0x1234_5678).into();
-    let painted = visual.update(|window, _| {
-        window
-            .painted_quads()
-            .iter()
-            .any(|quad| quad.background == color.into())
-    });
+    let painted = !filled(&mut visual, 0x1234_5678).is_empty();
     assert!(painted, "the span background is painted");
 }

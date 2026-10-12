@@ -1,23 +1,11 @@
 //! A fill-height VirtualCollection uses the resolved flex viewport.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, official_icon_assets, wait_for_view_text};
+use crate::support::{Mount, by_test_id, wait_for_view_text};
 use gpui::{TestAppContext, VisualTestContext};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-};
 
 #[gpui::test]
 fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let main = r#"
                 fn render_item(ctx, item) {
                     text(item.item.label).with_style(style().height(px(24)))
                 }
@@ -38,35 +26,13 @@ fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestA
                             .accessibility_label("Fill list")
                     ]).with_style(style().width(px(320)).height(px(240)))
                 }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("fill-list-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("fill-list-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+            "#;
+    let (window, view) = Mount::new(main)
+        .bundled_assets()
+        .ids("fill-list-window", "fill-list-view")
+        .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
     cx.background_executor
@@ -81,9 +47,7 @@ fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestA
         .update(|window, cx| {
             view.automate(
                 gpui_rhai::AutomationCommand::Query {
-                    locator: gpui_rhai::AutomationLocator::TestId {
-                        id: "fill-list".to_owned(),
-                    },
+                    locator: by_test_id("fill-list"),
                 },
                 window,
                 cx,

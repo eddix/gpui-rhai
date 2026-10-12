@@ -4,12 +4,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::support::{KeyboardHost, SingleEmbeddedHost, official_icon_assets, palette_texts};
+use crate::support::{KeyboardHost, Mount, bounds, palette_texts, registry_source};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::{
-    ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation, ModuleId,
-    NodeEventDispatcher, PrimitiveRegistry, RestrictedModuleResolver, RuntimeEngine,
-    ScriptLifecycle, ScriptViewConfig, ScriptViewHost, UiNodeKind, UiRuntimeState, UiValue,
+    ComponentInstancePath, EmbeddedScriptSource, EventPropagation, ModuleId, NodeEventDispatcher,
+    PrimitiveRegistry, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, UiNodeKind,
+    UiRuntimeState, UiValue,
 };
 
 #[gpui::test]
@@ -17,15 +17,15 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
     let source = EmbeddedScriptSource::new(std::collections::BTreeMap::from([
         (
             ModuleId::parse("components/menu").unwrap(),
-            include_str!("../../../../../registry/components/menu.rhai").to_owned(),
+            registry_source("components/menu").to_owned(),
         ),
         (
             ModuleId::parse("components/divider").unwrap(),
-            include_str!("../../../../../registry/components/divider.rhai").to_owned(),
+            registry_source("components/divider").to_owned(),
         ),
         (
             ModuleId::parse("components/kbd").unwrap(),
-            include_str!("../../../../../registry/components/kbd.rhai").to_owned(),
+            registry_source("components/kbd").to_owned(),
         ),
     ]));
     let mut runtime_engine = RuntimeEngine::new();
@@ -158,14 +158,8 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
 
 #[gpui::test]
 fn context_menu_anchors_at_the_right_click_and_closes_with_escape(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/context_menu" as context_menu;
                     fn state_schema() { #{ fields: #{
                         open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
@@ -188,63 +182,19 @@ fn context_menu_anchors_at_the_right_click_and_closes_with_escape(cx: &mut TestA
                                 on_action: Fn("action") })
                         ]).with_style(style().padding(px(24)).gap(px(8)))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/context_menu").unwrap(),
-                include_str!("../../../../../registry/components/context_menu.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/menu").unwrap(),
-                include_str!("../../../../../registry/components/menu.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/divider").unwrap(),
-                include_str!("../../../../../registry/components/divider.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/kbd").unwrap(),
-                include_str!("../../../../../registry/components/kbd.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+        "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("context-menu-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("context-menu-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/context_menu")
+    .registry("components/menu")
+    .registry("components/divider")
+    .registry("components/kbd")
+    .bundled_assets()
+    .ids("context-menu-window", "context-menu-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let target = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("text", "Context target")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let target = bounds(&mut visual, &view, "text", "Context target");
     let click = point(
         px((target.x + target.width * 0.7) as f32),
         px((target.y + target.height * 0.6) as f32),

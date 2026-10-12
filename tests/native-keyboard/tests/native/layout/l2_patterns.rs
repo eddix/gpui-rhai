@@ -1,17 +1,15 @@
 //! Acceptance tests for the L2 layouts and patterns: a full AppShell composition
 //! passes the productivity audit and its regions take keyboard focus with F6.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
-use gpui::{
-    Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle, rgba,
-};
+use gpui::{TestAppContext, VisualTestContext, WindowHandle, rgba};
 use gpui_rhai::*;
+use gpui_rhai_registry::{
+    BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID, BUNDLED_PROFILES,
+};
 
-const DEFAULT_DARK: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
-const PRODUCTIVITY: &str = include_str!("../../../../../registry/profiles/productivity.rhai");
+use crate::support::{Host, Mount, bounds, last_error, painted_quads};
 
 const SHELL: &str = r#"
 import "patterns/app_shell" as app_shell;
@@ -100,72 +98,26 @@ fn view(ctx) {
 }
 "#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
-fn bundled_sources(entry: &ModuleId, script: &str) -> EmbeddedScriptSource {
-    let mut sources = BTreeMap::from([(entry.clone(), script.to_owned())]);
-    for (id, source) in gpui_rhai_registry::BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(gpui_rhai_registry::BUNDLED_LAYOUT_SOURCES_BY_ID)
-        .chain(gpui_rhai_registry::BUNDLED_PATTERN_SOURCES_BY_ID)
-    {
-        sources.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    EmbeddedScriptSource::new(sources)
-}
-
-fn bundled_assets() -> Vec<(String, AssetData)> {
-    gpui_rhai_registry::BUNDLED_ASSET_SOURCES
-        .iter()
-        .map(|(id, svg)| {
-            (
-                id.trim_end_matches(".svg").to_owned(),
-                AssetData {
-                    mime_type: "image/svg+xml".to_owned(),
-                    bytes: svg.as_bytes().to_vec(),
-                },
-            )
-        })
-        .collect()
-}
-
 fn mount(cx: &mut TestAppContext, script: &str) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
     let overrides = ThemeTokenOverrides {
         colors: BTreeMap::from([("focus_ring".to_owned(), Rgba8::from_rgba_hex(0x00ff00ff))]),
         ..Default::default()
     };
-    let prepared =
-        EmbeddedScriptView::new(entry.clone(), bundled_sources(&entry, script), DEFAULT_DARK)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .profile_source(PRODUCTIVITY)
-            .asset_sources(bundled_assets())
-            .theme_token_overrides(overrides)
-            .motion_preference(MotionPreference::None)
-            .prepare()
-            .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("l2", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("l2"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
-    (window, view)
+    let productivity = BUNDLED_PROFILES
+        .iter()
+        .find(|(id, _)| *id == "productivity")
+        .unwrap()
+        .1;
+    Mount::components(script)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .motion(MotionPreference::None)
+        .with(move |view| {
+            view.profile_source(productivity)
+                .theme_token_overrides(overrides)
+        })
+        .id("l2")
+        .mount_window(cx)
 }
 
 #[gpui::test]
@@ -174,7 +126,7 @@ fn app_shell_composition_passes_the_productivity_audit(cx: &mut TestAppContext) 
     let (window, view) = mount(cx, SHELL);
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    assert_eq!(last_error(&mut visual, &view), None);
     // The test platform ships no system fonts, so font resolution is checked on
     // real platforms by the Gallery gate instead.
     let rules = AuditRules::from_ids(
@@ -207,16 +159,7 @@ fn f6_moves_keyboard_focus_between_shell_regions(cx: &mut TestAppContext) {
     let (window, view) = mount(cx, SHELL);
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let region_width = |name: &str| {
-        tree.find_by_role_and_name("region", name)
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-            .width
-    };
+    let mut region_width = |name: &str| bounds(&mut visual, &view, "region", name).width;
     let (navigation, hosts, inspector) = (
         region_width("Navigation"),
         region_width("Hosts"),
@@ -224,15 +167,11 @@ fn f6_moves_keyboard_focus_between_shell_regions(cx: &mut TestAppContext) {
     );
     let framed_width = |visual: &mut VisualTestContext| {
         let color: gpui::Hsla = rgba(0x00ff00ff).into();
-        visual.update(|window, _| {
-            let scale = window.scale_factor();
-            window
-                .painted_quads()
-                .iter()
-                .filter(|quad| quad.border_widths.left.0 > 0.0 && quad.border_color == color)
-                .map(|quad| f64::from(quad.bounds.size.width.0 / scale))
-                .fold(0.0_f64, f64::max)
-        })
+        painted_quads(visual)
+            .iter()
+            .filter(|quad| quad.border_widths[3] > 0.0 && quad.border_color == color)
+            .map(|quad| f64::from(quad.bounds.width))
+            .fold(0.0_f64, f64::max)
     };
     // Enter the shell from the first control, then cycle regions.
     visual.update(|window, cx| view.focus(window, cx)).unwrap();

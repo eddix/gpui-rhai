@@ -1,12 +1,14 @@
 //! The component catalog story switches categories and live themes.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, dispatch_script_button, palette_texts};
-use gpui::{Modifiers, TestAppContext, VisualTestContext, point, px};
-use gpui_rhai::{ScriptViewConfig, ScriptViewHost, UiValue};
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::UiValue;
 use gpui_rhai_cli::gallery::{GalleryLaunch, prepare as prepare_gallery};
+
+use super::mount_prepared;
+use crate::support::{
+    Host, bounds, by_role, click_center, dispatch, dispatch_script_button, last_error,
+    palette_texts, snapshot,
+};
 
 #[gpui::test]
 fn component_catalog_story_switches_categories_and_live_themes(cx: &mut TestAppContext) {
@@ -16,31 +18,21 @@ fn component_catalog_story_switches_categories_and_live_themes(cx: &mut TestAppC
         ..GalleryLaunch::default()
     })
     .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("component-gallery-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("component-gallery-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    let (window, view) = mount_prepared(
+        cx,
+        prepared,
+        ("component-gallery-window", "component-gallery-view"),
+        false,
+        |host, view| Host { host, view },
+    );
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     let initial = palette_texts(&mut visual, &view);
     assert!(initial.contains(&"ACTIONS".to_owned()));
     dispatch_script_button(&mut visual, &view, "Code & diff");
-    let documents = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let documents = snapshot(&mut visual, &view);
     assert!(
         documents
             .find_by_role_and_name("document", "Rhai source")
@@ -61,68 +53,28 @@ fn component_catalog_story_switches_categories_and_live_themes(cx: &mut TestAppC
     assert!(!forms.contains(&"DATA".to_owned()));
     dispatch_script_button(&mut visual, &view, "Foundations");
 
-    let trigger = visual.update(|_, cx| {
-        let snapshot = view.accessibility_snapshot(cx).unwrap();
-        let trigger = snapshot
-            .find_by_role_and_name("combobox", "Gallery theme")
-            .next()
-            .unwrap();
-        assert_eq!(
-            trigger.value,
-            Some(UiValue::String("Default Dark".to_owned()))
-        );
-        trigger.geometry.unwrap().visual
-    });
-    let center = |bounds: gpui_rhai::GeometryBounds| {
-        point(
-            px((bounds.x + bounds.width / 2.0) as f32),
-            px((bounds.y + bounds.height / 2.0) as f32),
-        )
-    };
-    visual.simulate_click(center(trigger), Modifiers::default());
+    let trigger = snapshot(&mut visual, &view)
+        .find_by_role_and_name("combobox", "Gallery theme")
+        .next()
+        .unwrap()
+        .clone();
+    assert_eq!(
+        trigger.value,
+        Some(UiValue::String("Default Dark".to_owned()))
+    );
+    click_center(&mut visual, trigger.geometry.unwrap().visual);
     visual.run_until_parked();
-    let search = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("text_field", "Gallery theme")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    visual.simulate_click(center(search), Modifiers::default());
+    let search = bounds(&mut visual, &view, "text_field", "Gallery theme");
+    click_center(&mut visual, search);
     visual.simulate_input("nord");
     visual.run_until_parked();
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator: gpui_rhai::AutomationLocator::RoleName {
-                        role: "option".to_owned(),
-                        name: "Nord".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_role("option", "Nord"), "click").unwrap();
     visual.run_until_parked();
-    visual.update(|_, cx| {
-        let snapshot = view.accessibility_snapshot(cx).unwrap();
-        let trigger = snapshot
-            .find_by_role_and_name("combobox", "Gallery theme")
-            .next()
-            .unwrap();
-        assert_eq!(trigger.value, Some(UiValue::String("Nord".to_owned())));
-    });
-    assert!(
-        visual
-            .update(|_, cx| view.last_error(cx))
-            .unwrap()
-            .is_none()
-    );
+    let trigger = snapshot(&mut visual, &view)
+        .find_by_role_and_name("combobox", "Gallery theme")
+        .next()
+        .unwrap()
+        .clone();
+    assert_eq!(trigger.value, Some(UiValue::String("Nord".to_owned())));
+    assert!(last_error(&mut visual, &view).is_none());
 }

@@ -5,17 +5,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::support::{
-    KeyboardHost, SingleEmbeddedHost, click_palette_trigger, node_texts, official_icon_assets,
-    palette_texts,
-};
+use crate::support::{KeyboardHost, Mount, click_palette_trigger, node_texts, palette_texts};
 use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::{
-    ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation,
-    HostCallback, ModuleId, NodeEventDispatcher, PrimitiveNode, PrimitiveProps, PrimitiveRegistry,
-    PrimitiveValue, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, ScriptViewConfig,
-    ScriptViewHost, TextInputPrimitiveHandler, UiNode, UiRuntimeState, UiValue, init_text_area,
-    init_text_input, text_input_primitive_descriptor,
+    ComponentInstancePath, EmbeddedScriptSource, EventPropagation, HostCallback, ModuleId,
+    NodeEventDispatcher, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveValue,
+    RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, TextInputPrimitiveHandler, UiNode,
+    UiRuntimeState, UiValue, init_text_area, init_text_input, text_input_primitive_descriptor,
 };
 
 #[gpui::test]
@@ -94,7 +90,7 @@ fn text_input_primitive_dispatches_host_callbacks(cx: &mut TestAppContext) {
 #[gpui::test]
 fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppContext) {
     cx.update(init_text_input);
-    let input = include_str!("../../../../../registry/components/input.rhai");
+    let input = gpui_rhai_registry::INPUT_SOURCE;
     let source = EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
         ModuleId::parse("components/input").unwrap(),
         input.to_owned(),
@@ -207,7 +203,7 @@ fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppCo
 #[gpui::test]
 fn native_textarea_wraps_inserts_newlines_and_limits_graphemes(cx: &mut TestAppContext) {
     cx.update(init_text_area);
-    let textarea = include_str!("../../../../../registry/components/textarea.rhai");
+    let textarea = gpui_rhai_registry::TEXTAREA_SOURCE;
     let source = EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
         ModuleId::parse("components/textarea").unwrap(),
         textarea.to_owned(),
@@ -348,7 +344,7 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
     cx.update(init_text_input);
     let source = EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
         ModuleId::parse("components/input").unwrap(),
-        include_str!("../../../../../registry/components/input.rhai").to_owned(),
+        gpui_rhai_registry::INPUT_SOURCE.to_owned(),
     )]));
     let mut runtime_engine = RuntimeEngine::new();
     runtime_engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
@@ -447,13 +443,8 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
 
 #[gpui::test]
 fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let (window, _) = Mount::new(
+        r#"
                 fn state_schema() { #{ fields: #{
                     text: #{ schema: #{ type: "string" },
                         "default": #{ type: "string", value: "" } }
@@ -471,28 +462,11 @@ fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
                         text(`typed:${ctx.get_state("text")}`)
                     ])
                 }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("autofocus-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("autofocus-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .bundled_assets()
+    .ids("autofocus-window", "autofocus-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
@@ -568,42 +542,13 @@ fn view(ctx) {
 
 #[gpui::test]
 fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (entry, THEME_SWAP_PALETTE_SCRIPT.to_owned()),
-            (
-                ModuleId::parse("components/input").unwrap(),
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("theme-swap-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("theme-swap-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some((host.clone(), view.clone()));
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    let (window, view) = Mount::new(THEME_SWAP_PALETTE_SCRIPT)
+        .registry("components/input")
+        .bundled_assets()
+        .ids("theme-swap-window", "theme-swap-view")
+        .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
-    let (_host, view) = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
 

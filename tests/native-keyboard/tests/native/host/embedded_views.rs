@@ -6,54 +6,28 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::support::{
-    ReplaceOnce, SingleEmbeddedHost, node_texts, official_icon_assets, wait_for_view_text,
+    ActiveHost, Mount, ReplaceOnce, by_test_id, dispatch, node_texts, wait_for_view_text,
 };
 use gpui::{
     Context, IntoElement, Modifiers, ParentElement, Render, Styled, TestAppContext,
     VisualTestContext, Window, div, point, px,
 };
 use gpui_rhai::{
-    ActionId, EmbeddedScriptSource, EmbeddedScriptView, KeyBindingSpec, ModuleId, ScriptViewConfig,
-    ScriptViewHandle, ScriptViewHost, UiNode,
+    ActionId, KeyBindingSpec, ScriptViewConfig, ScriptViewHandle, ScriptViewHost, UiNode,
 };
-
-struct SuspensibleEmbeddedHost {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for SuspensibleEmbeddedHost {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let content = match self.view.state() {
-            gpui_rhai::ScriptViewState::Active => self.view.element().unwrap(),
-            gpui_rhai::ScriptViewState::Suspended | gpui_rhai::ScriptViewState::Disposed => {
-                div().into_any_element()
-            }
-        };
-        self.host.container(content)
-    }
-}
 
 #[gpui::test]
 fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let prepared = Mount::new(
+        r#"
                 fn state_schema() { #{ fields: #{ phase: #{ schema: #{ type: "string" },
                     "default": #{ type: "string", value: "active" } } } } }
                 fn suspend(ctx) { ctx.set_state("phase", "suspended"); }
                 fn resume(ctx, elapsed_ms) { ctx.set_state("phase", "resumed"); }
                 fn view(ctx) { text(ctx.get_state("phase")) }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -69,7 +43,7 @@ fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(cx: &mut 
             )
             .unwrap();
         *captured_for_window.borrow_mut() = Some(view.clone());
-        SuspensibleEmbeddedHost { host, view }
+        ActiveHost { host, view }
     });
     cx.run_until_parked();
     cx.refresh().unwrap();
@@ -101,13 +75,8 @@ fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(cx: &mut 
 
 #[gpui::test]
 fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let (window, view) = Mount::new(
+        r#"
                 define_component(#{
                     metadata: #{ id: "tests/geometry_probe", "export": "GeometryProbe",
                         version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
@@ -131,34 +100,13 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &m
                         .test_id("geometry-target").on_click(Fn("clicked"))
                 }
                 fn view(ctx) { render_component("tests/geometry_probe", #{ key: "probe" }) }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("geometry-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("geometry-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .ids("geometry-window", "geometry-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     wait_for_view_text(
         &mut visual,
@@ -166,21 +114,7 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &m
         "render-measured",
         "first-prepaint geometry dependency did not self-heal",
     );
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator: gpui_rhai::AutomationLocator::TestId {
-                        id: "geometry-target".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_test_id("geometry-target"), "click").unwrap();
     wait_for_view_text(
         &mut visual,
         &view,
@@ -191,28 +125,19 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &m
 
 #[gpui::test]
 fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let stateful = ModuleId::parse("components/slot_stateful").unwrap();
-    let receiver = ModuleId::parse("components/slot_receiver").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/slot_stateful" as stateful;
                     import "components/slot_receiver" as receiver;
                     fn view(ctx) {
                         receiver::SlotReceiver(#{ key: "receiver",
                             content: stateful::SlotStateful(#{ key: "stateful" }) })
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                stateful,
-                r#"
+                "#,
+    )
+    .module(
+        "components/slot_stateful",
+        r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_stateful", "export": "SlotStateful",
                             version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
@@ -229,12 +154,11 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                         text(ctx.get_state("value")).test_id("slot-content")
                             .on_click(Fn("update_slot"))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                receiver,
-                r#"
+                "#,
+    )
+    .module(
+        "components/slot_receiver",
+        r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_receiver", "export": "SlotReceiver",
                             version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
@@ -258,52 +182,16 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                                 .test_id("receiver-control").on_click(Fn("rerender_receiver")),
                         ])
                     }
-                "#
-                .to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("node-prop-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("node-prop-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .ids("node-prop-window", "node-prop-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     for test_id in ["slot-content", "receiver-control"] {
-        visual
-            .update(|window, cx| {
-                view.automate(
-                    gpui_rhai::AutomationCommand::Dispatch {
-                        locator: gpui_rhai::AutomationLocator::TestId {
-                            id: test_id.to_owned(),
-                        },
-                        event: "click".to_owned(),
-                        payload: None,
-                    },
-                    window,
-                    cx,
-                )
-            })
-            .unwrap();
+        dispatch(&mut visual, &view, by_test_id(test_id), "click").unwrap();
         visual.run_until_parked();
     }
     wait_for_view_text(
@@ -322,13 +210,8 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
 
 #[gpui::test]
 fn click_context_exposes_untracked_event_target_visual_bounds(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let (window, view) = Mount::new(
+        r#"
                 fn state_schema() { #{ fields: #{
                     summary: #{ schema: #{ type: "string" },
                         "default": #{ type: "string", value: "waiting" } }
@@ -347,43 +230,20 @@ fn click_context_exposes_untracked_event_target_visual_bounds(cx: &mut TestAppCo
                         .with_style(style().width(px(180)).height(px(72)).padding(px(8)))
                         .on_click(Fn("capture_bounds"))
                 }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("event-target-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("event-target-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .bundled_assets()
+    .ids("event-target-window", "event-target-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     let query = visual
         .update(|window, cx| {
             view.automate(
                 gpui_rhai::AutomationCommand::Query {
-                    locator: gpui_rhai::AutomationLocator::TestId {
-                        id: "geometry-target".to_owned(),
-                    },
+                    locator: by_test_id("geometry-target"),
                 },
                 window,
                 cx,
@@ -462,25 +322,11 @@ fn view(ctx) {
 "#;
 
 fn prepared_embedded_test_view(open: bool) -> gpui_rhai::PreparedScriptView {
-    let entry = ModuleId::parse("main").unwrap();
-    EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                EMBEDDED_VIEW_SCRIPT.replace_once("__OPEN__", if open { "true" } else { "false" }),
-            ),
-            (
-                ModuleId::parse("components/toast").unwrap(),
-                include_str!("../../../../../registry/components/toast.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap()
+    Mount::new(EMBEDDED_VIEW_SCRIPT.replace_once("__OPEN__", if open { "true" } else { "false" }))
+        .registry("components/toast")
+        .bundled_assets()
+        .prepare()
+        .unwrap()
 }
 
 struct EmbeddedIntegrationHost {
@@ -629,10 +475,7 @@ fn multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state(cx: &m
     let increment = visual
         .debug_bounds("window:integration-window/view:third/root/4")
         .expect("third increment debug bounds");
-    let increment_center = point(
-        increment.origin.x + increment.size.width / 2.0,
-        increment.origin.y + increment.size.height / 2.0,
-    );
+    let increment_center = increment.center();
     visual.simulate_click(increment_center, Modifiers::default());
     visual.run_until_parked();
     let third_root = visual.update(|_, cx| third.root(cx).unwrap().unwrap());
@@ -783,13 +626,7 @@ fn separate_hosts_in_one_window_keep_overlay_domains_isolated(cx: &mut TestAppCo
     let increment = visual
         .debug_bounds("window:right-domain/view:right-view/root/4")
         .expect("right increment bounds");
-    visual.simulate_click(
-        point(
-            increment.origin.x + increment.size.width / 2.0,
-            increment.origin.y + increment.size.height / 2.0,
-        ),
-        Modifiers::default(),
-    );
+    visual.simulate_click(increment.center(), Modifiers::default());
     visual.run_until_parked();
 
     let left_root = visual.update(|_, cx| left.root(cx).unwrap().unwrap());

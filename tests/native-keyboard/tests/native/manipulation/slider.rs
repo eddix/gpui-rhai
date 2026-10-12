@@ -1,25 +1,14 @@
 //! Slider previews a drag natively and commits once, and reverses pointer and arrow
 //! semantics in RTL.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, official_icon_assets, palette_texts};
-use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-};
+use crate::support::{Mount, bounds, palette_texts};
+use gpui::{Modifiers, MouseButton, TestAppContext, point, px};
+use gpui_rhai_registry::AR_LOCALE;
 
 #[gpui::test]
 fn slider_previews_drag_natively_and_commits_once_before_keyboard_steps(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (mut visual, view) = Mount::new(
+        r#"
                     import "components/slider" as slider;
                     fn state_schema() { #{ fields: #{
                         value: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
@@ -39,51 +28,16 @@ fn slider_previews_drag_natively_and_commits_once_before_keyboard_steps(cx: &mut
                                 step: 5.0, on_change: Fn("changed") })
                         ]).with_style(style().width(px(320)).padding(px(20)).gap(px(8)))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/slider").unwrap(),
-                include_str!("../../../../../registry/components/slider.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("slider-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("slider-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/slider")
+    .bundled_assets()
+    .ids("slider-window", "slider-view")
+    .mount(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("slider", "Volume")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let bounds = bounds(&mut visual, &view, "slider", "Volume");
     let at = |ratio: f64| {
         point(
             px((bounds.x + bounds.width * ratio) as f32),
@@ -111,14 +65,8 @@ fn slider_previews_drag_natively_and_commits_once_before_keyboard_steps(cx: &mut
 
 #[gpui::test]
 fn slider_reverses_horizontal_pointer_and_arrow_semantics_in_rtl(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (mut visual, view) = Mount::new(
+        r#"
                     import "components/slider" as slider;
                     fn state_schema() { #{ fields: #{
                         value: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
@@ -134,55 +82,17 @@ fn slider_reverses_horizontal_pointer_and_arrow_semantics_in_rtl(cx: &mut TestAp
                                 step: 5.0, on_change: Fn("changed") })
                         ]).with_style(style().width(px(320)).padding(px(20)).gap(px(8)))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/slider").unwrap(),
-                include_str!("../../../../../registry/components/slider.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .locale_sources([(
-        "ar.rhai".to_owned(),
-        include_str!("../../../../../registry/locales/ar.rhai").to_owned(),
-    )])
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("rtl-slider-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("rtl-slider-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/slider")
+    .locale("ar.rhai", AR_LOCALE)
+    .bundled_assets()
+    .ids("rtl-slider-window", "rtl-slider-view")
+    .mount(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("slider", "Volume")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let bounds = bounds(&mut visual, &view, "slider", "Volume");
     let left = point(
         px((bounds.x + bounds.width * 0.2) as f32),
         px((bounds.y + bounds.height / 2.0) as f32),

@@ -6,16 +6,13 @@
 //! overriding `SubscriptionCapabilityHandler::subscribe_with` sees the effect
 //! that started it, with the view and the component.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext};
 use gpui_rhai::*;
+
+use crate::support::{Mount, Step, bounds, by_role, center, dispatch};
 
 /// What a handler saw: the method, the origin, the view and the component.
 #[derive(Clone, Debug, PartialEq)]
@@ -198,22 +195,8 @@ fn view(ctx) {
 }
 "#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 3);
 }
 
 /// Settle until the log holds `count` completions.
@@ -238,38 +221,21 @@ fn wait_for_completions(visual: &mut VisualTestContext, log: &Log, count: usize)
 fn task_and_subscription_starts_see_the_invocation_context(cx: &mut TestAppContext) {
     // Task work runs on a runtime worker thread.
     cx.executor().allow_parking();
-    cx.update(gpui_rhai::install);
     let log = Log::default();
-    let entry = ModuleId::parse("main").unwrap();
-    let manifest = AppManifest::new(entry.clone())
+    let manifest = AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.gate", "*")
         .unwrap()
         .with_capability("app.files", "*")
         .unwrap()
         .with_capability("app.feed", "*")
         .unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, MAIN.to_owned())])),
-        r#"fn theme(){#{family:"Origin",name:"Dark",mode:"dark",tokens:#{}}}"#,
-    )
-    .manifest(manifest)
-    .extension(Capabilities(log.clone()))
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("origin", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("origin"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let capabilities = Capabilities(log.clone());
+    let (mut visual, view) = Mount::new(MAIN)
+        .theme(r#"fn theme(){#{family:"Origin",name:"Dark",mode:"dark",tokens:#{}}}"#)
+        .no_token_base()
+        .with(move |view| view.manifest(manifest).extension(capabilities))
+        .id("origin")
+        .mount(cx);
     settle(&mut visual);
 
     // The subscription the Watcher's effect started on mount.
@@ -293,42 +259,14 @@ fn task_and_subscription_starts_see_the_invocation_context(cx: &mut TestAppConte
     );
 
     // 1. A real click.
-    let button = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("button", "Save")
-            .next()
-            .and_then(|node| node.geometry)
-            .unwrap()
-            .visual
-    });
-    #[allow(clippy::cast_possible_truncation)]
-    let position = point(
-        px((button.x + button.width / 2.0) as f32),
-        px((button.y + button.height / 2.0) as f32),
-    );
+    let position = center(bounds(&mut visual, &view, "button", "Save"));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::none());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::none());
     settle(&mut visual);
     wait_for_completions(&mut visual, &log, 1);
 
     // 2. The same callback through automation: not user input.
-    visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::RoleName {
-                        role: "button".into(),
-                        name: "Save".into(),
-                    },
-                    event: "click".into(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_role("button", "Save"), "click").unwrap();
     settle(&mut visual);
     wait_for_completions(&mut visual, &log, 2);
 
