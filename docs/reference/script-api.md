@@ -619,10 +619,12 @@ Official components wrap them; application components may too.
 | `error_style` | style | required | Style of the message that replaces the view when preparing fails, for example past a size limit. |
 | `file_name` | string or `()` | — | File name, such as `service.toml`, whose extension picks the syntax when `language` does not. |
 | `gutter_style` | style | required | Style of each row's line-number gutter; its font defaults to the platform monospace family. |
+| `height` | `"fill"` or `"content"` | `"fill"` | `fill` takes the box the node's style gives; `content` is as tall as the display rows at the current width, measured at layout time. |
 | `label` | string | required | Human-readable document name; the native view does not show it, so also pass it to `accessibility_label`. |
 | `language` | string or `()` | — | Syntax name or extension, such as `rust`, ahead of `file_name`; unknown ones fall back to it, then plain text. |
 | `line_style` | style | required | Style of each whole row, gutter and text together. |
 | `loading_style` | style | required | Style of the placeholder shown while the document is first prepared in the background. |
+| `max_height` | length or `()` | — | Most a `content` viewer grows, in pixels, rems or a length token; taller documents scroll inside. Ignored with `fill`. |
 | `on_location_activate` | callback or `()` | — | Called with the 1-based `#{ line, column }` when the text is double-clicked or Enter is pressed. |
 | `search_style` | style | required | Style of the find bar that Cmd-F opens. |
 | `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter on the first row of each line; with `false` the gutter stays, empty. |

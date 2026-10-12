@@ -1,6 +1,6 @@
 //! Retained native `CodeViewer` and `DiffViewer` surfaces.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::rc::Rc;
@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, Bounds, Context, CursorStyle, Element, ElementId, Entity,
-    FocusHandle, Focusable, FontWeight, GlobalElementId, HighlightStyle, InspectorElementId,
-    InteractiveElement, IntoElement, KeyBinding, ListHorizontalSizingBehavior, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render, ScrollHandle,
-    ScrollStrategy, SharedString, StatefulInteractiveElement, Styled, StyledText, Task, Window,
-    actions, div, px, relative, rgba, uniform_list,
+    AnyElement, App, AppContext as _, AvailableSpace, Bounds, Context, CursorStyle, Element,
+    ElementId, Entity, FocusHandle, Focusable, FontWeight, GlobalElementId, HighlightStyle,
+    InspectorElementId, InteractiveElement, IntoElement, KeyBinding, ListHorizontalSizingBehavior,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Render,
+    ScrollHandle, ScrollStrategy, SharedString, StatefulInteractiveElement, Styled, StyledText,
+    Task, Window, actions, div, px, relative, rgba, size, uniform_list,
 };
 use regex::RegexBuilder;
 use similar::TextDiff;
@@ -197,12 +197,23 @@ impl DocumentSelection {
     }
 }
 
+/// How tall a `CodeViewer` is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CodeViewerHeight {
+    /// The box its node's style gives it.
+    Fill,
+    /// Its display rows at the current width times the row height, measured at layout
+    /// time, up to `max` logical pixels.
+    Content { max: Option<f32> },
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct CodeViewerConfig {
     descriptor: DocumentDescriptor,
     show_line_numbers: bool,
     wrap: DocumentWrap,
     tab_size: usize,
+    height: CodeViewerHeight,
     monospace_family: SharedString,
     gutter_style: Style,
     line_style: Style,
@@ -389,6 +400,9 @@ struct CodeViewerEntity {
     display_task: Option<Task<()>>,
     pending_display_columns: Option<PendingDisplayColumns>,
     viewport: Option<Bounds<Pixels>>,
+    /// Viewport wrap columns from the width a content-height viewer was last measured
+    /// at, so its display rows are the ones its height counted.
+    measured_columns: Rc<Cell<Option<usize>>>,
     selection: DocumentSelection,
     search: SearchState,
     search_input: Entity<TextInputEntity>,
@@ -460,6 +474,7 @@ impl CodeViewerEntity {
             display_task: None,
             pending_display_columns: None,
             viewport: None,
+            measured_columns: Rc::new(Cell::new(None)),
             selection: DocumentSelection::default(),
             search: SearchState::default(),
             search_input,
@@ -483,6 +498,9 @@ impl CodeViewerEntity {
         let needs_prepare = self.config.preparation_changed(&config);
         let presentation_changed =
             self.config.wrap != config.wrap || self.config.tab_size != config.tab_size;
+        if self.config.height != config.height {
+            self.measured_columns.set(None);
+        }
         self.config = config;
         self.events = events;
         self.theme = theme.clone();
@@ -574,6 +592,12 @@ impl CodeViewerEntity {
         match self.config.wrap {
             DocumentWrap::None => None,
             DocumentWrap::Column(columns) => Some(columns.max(1)),
+            DocumentWrap::Viewport
+                if matches!(self.config.height, CodeViewerHeight::Content { .. })
+                    && self.measured_columns.get().is_some() =>
+            {
+                self.measured_columns.get()
+            }
             DocumentWrap::Viewport => self.viewport.map(|bounds| {
                 let line_digits = self.prepared.as_ref().map_or(1, |document| {
                     document.lines().len().max(1).to_string().len()
@@ -944,15 +968,61 @@ impl CodeViewerEntity {
         let _ = cx;
         list.into_any_element()
     }
+
+    fn content_measure(&self, max_height: Option<f32>) -> CodeContentMeasure {
+        let (text_size, line_height) = document_text_metrics(&self.config.text_style, &self.theme);
+        let line_digits = self.prepared.as_ref().map_or(1, |document| {
+            document.lines().len().max(1).to_string().len()
+        });
+        // The widest row, the one the row list measures.
+        let widest = self
+            .display
+            .iter()
+            .max_by_key(|segment| segment.range.end.saturating_sub(segment.range.start));
+        let row = self
+            .prepared
+            .as_ref()
+            .zip(widest)
+            .map(|(document, segment)| {
+                code_line_element(
+                    document,
+                    segment,
+                    line_digits,
+                    &self.config,
+                    &self.theme,
+                    &self.selection,
+                    &[],
+                    None,
+                    &self.events,
+                    &self.focus,
+                    self.loading,
+                )
+            });
+        CodeContentMeasure {
+            rows: Rc::new(ContentRows {
+                document: self.prepared.clone(),
+                display: Arc::clone(&self.display),
+                display_columns: self.display_columns,
+                wrap: self.config.wrap,
+                tab_size: self.config.tab_size,
+                line_digits,
+                text_size,
+                measured_columns: Rc::clone(&self.measured_columns),
+                last: Cell::new(None),
+            }),
+            row,
+            row_height: line_height.max(16.0),
+            max_height,
+        }
+    }
 }
 
 impl Render for CodeViewerEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut root = div()
+        let root = div()
             .relative()
             .flex()
             .flex_col()
-            .size_full()
             .min_w(px(0.0))
             .min_h(px(0.0))
             .key_context(CODE_CONTEXT)
@@ -964,11 +1034,25 @@ impl Render for CodeViewerEntity {
             .on_action(cx.listener(Self::close_find))
             .on_action(cx.listener(Self::copy_selection))
             .on_action(cx.listener(Self::reveal_line))
-            .on_action(cx.listener(Self::activate_location))
-            .child(self.content(cx))
-            .child(DocumentBoundsRecorder {
-                viewer: cx.entity(),
-            });
+            .on_action(cx.listener(Self::activate_location));
+        // A content-height viewer takes its height from the measured leaf; the rows
+        // fill that height out of flow and scroll only past `max`.
+        let mut root = match self.config.height {
+            CodeViewerHeight::Fill => root.size_full().child(self.content(cx)),
+            CodeViewerHeight::Content { max } => {
+                root.w_full().child(self.content_measure(max)).child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .flex()
+                        .flex_col()
+                        .child(self.content(cx)),
+                )
+            }
+        }
+        .child(DocumentBoundsRecorder {
+            viewer: cx.entity(),
+        });
         if self.search.open {
             root = root.child(self.search_bar(cx));
         }
@@ -1088,6 +1172,165 @@ impl IntoElement for DocumentBoundsRecorder {
     fn into_element(self) -> Self::Element {
         self
     }
+}
+
+/// Counts a content-height `CodeViewer`'s display rows at the width layout offers.
+struct ContentRows {
+    document: Option<Arc<PreparedDocument>>,
+    display: Arc<[DisplaySegment]>,
+    display_columns: Option<usize>,
+    wrap: DocumentWrap,
+    tab_size: usize,
+    line_digits: usize,
+    text_size: f32,
+    measured_columns: Rc<Cell<Option<usize>>>,
+    /// The last count, so the layout passes of one frame wrap the document once.
+    last: Cell<Option<(Option<usize>, usize)>>,
+}
+
+impl ContentRows {
+    fn rows(&self, width: Option<Pixels>) -> usize {
+        let Some(document) = self.document.as_ref() else {
+            return 1;
+        };
+        let columns = match (self.wrap, width) {
+            (DocumentWrap::None, _) | (DocumentWrap::Viewport, None) => None,
+            (DocumentWrap::Column(columns), _) => Some(columns.max(1)),
+            (DocumentWrap::Viewport, Some(width)) => {
+                let columns = viewport_wrap_columns(
+                    f64::from(width),
+                    self.line_digits,
+                    f64::from(self.text_size),
+                );
+                self.measured_columns.set(Some(columns));
+                Some(columns)
+            }
+        };
+        let rows = if columns == self.display_columns && !self.display.is_empty() {
+            self.display.len()
+        } else if let Some((counted, rows)) = self.last.get()
+            && counted == columns
+        {
+            rows
+        } else {
+            let rows = code_display_rows(document, columns, self.tab_size);
+            self.last.set(Some((columns, rows)));
+            rows
+        };
+        rows.max(1)
+    }
+}
+
+/// The in-flow leaf that sizes a content-height `CodeViewer`. It lays out the widest
+/// row, as the row list does, for the row height and the intrinsic width, then
+/// measures the display rows at the width layout offers, so wrapped rows count at the
+/// current width.
+struct CodeContentMeasure {
+    rows: Rc<ContentRows>,
+    row: Option<AnyElement>,
+    /// Row height while no row is prepared.
+    row_height: f32,
+    max_height: Option<f32>,
+}
+
+impl Element for CodeContentMeasure {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (gpui::LayoutId, Self::RequestLayoutState) {
+        let row = self.row.take().map(|mut row| {
+            let available = size(AvailableSpace::MaxContent, AvailableSpace::MinContent);
+            row.layout_as_root(available, window, cx)
+        });
+        let row_width = row.map_or(px(0.0), |row| row.width);
+        let row_height = row.map_or(self.row_height, |row| f32::from(row.height));
+        let rows = Rc::clone(&self.rows);
+        let max_height = self.max_height;
+        let style = gpui::Style {
+            size: size(relative(1.0).into(), gpui::Length::Auto),
+            ..gpui::Style::default()
+        };
+        let layout = window.request_measured_layout(style, move |known, available, _, _| {
+            let width = known.width.or(match available.width {
+                AvailableSpace::Definite(width) => Some(width),
+                AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
+            });
+            let height = content_height(rows.rows(width), row_height, max_height);
+            size(width.unwrap_or(row_width), px(height))
+        });
+        (layout, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        (): &mut Self::RequestLayoutState,
+        _: &mut Window,
+        _: &mut App,
+    ) {
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        (): &mut Self::RequestLayoutState,
+        (): &mut Self::PrepaintState,
+        _: &mut Window,
+        _: &mut App,
+    ) {
+    }
+}
+
+impl IntoElement for CodeContentMeasure {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+/// Display rows of `document` wrapped at `columns`, as `build_code_display` lays them out.
+fn code_display_rows(
+    document: &PreparedDocument,
+    columns: Option<usize>,
+    tab_size: usize,
+) -> usize {
+    if columns.is_none() {
+        return document.lines().len();
+    }
+    document
+        .lines()
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let text = document.line_text(index).unwrap_or_default();
+            wrap_source_line(&line.range, text, columns, tab_size).len()
+        })
+        .sum()
+}
+
+/// A content-height viewer's height: its rows, up to `max_height`.
+fn content_height(rows: usize, row_height: f32, max_height: Option<f32>) -> f32 {
+    let height = usize_f32(rows) * row_height;
+    max_height.map_or(height, |max| height.min(max))
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -1470,7 +1713,7 @@ impl PrimitiveHandler for CodeViewerPrimitiveHandler {
             .monospace_family
             .get_or_insert_with(|| resolve_document_monospace_family(cx))
             .clone();
-        let config = parse_code_config(&instance.node.props, monospace_family)?;
+        let config = parse_code_config(&instance.node.props, monospace_family, theme)?;
         let search_typography = native_typography(theme, "body_small", window)?;
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
@@ -1515,6 +1758,7 @@ impl PrimitiveHandler for CodeViewerPrimitiveHandler {
 fn parse_code_config(
     props: &PrimitiveProps,
     monospace_family: SharedString,
+    theme: &PrimitiveTheme,
 ) -> Result<CodeViewerConfig, String> {
     let descriptor = DocumentDescriptor {
         source: document_source_prop(props, "source")?,
@@ -1528,11 +1772,19 @@ fn parse_code_config(
         Some("column") => DocumentWrap::Column(props.usize("wrap_column").unwrap_or(100)),
         Some(other) => return Err(format!("unknown CodeViewer wrap mode `{other}`")),
     };
+    let height = match props.string("height") {
+        None | Some("fill") => CodeViewerHeight::Fill,
+        Some("content") => CodeViewerHeight::Content {
+            max: code_max_height(props, theme)?,
+        },
+        Some(other) => return Err(format!("unknown CodeViewer height `{other}`")),
+    };
     Ok(CodeViewerConfig {
         descriptor,
         show_line_numbers: props.boolean("show_line_numbers").unwrap_or(true),
         wrap,
         tab_size: props.usize("tab_size").unwrap_or(4),
+        height,
         monospace_family,
         gutter_style: props.style("gutter_style").cloned().unwrap_or_default(),
         line_style: props.style("line_style").cloned().unwrap_or_default(),
@@ -1541,6 +1793,18 @@ fn parse_code_config(
         error_style: props.style("error_style").cloned().unwrap_or_default(),
         search_style: props.style("search_style").cloned().unwrap_or_default(),
     })
+}
+
+fn code_max_height(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<Option<f32>, String> {
+    match props.get("max_height") {
+        None | Some(PrimitiveValue::Data(UiValue::Null)) => Ok(None),
+        Some(PrimitiveValue::Length(value)) => theme
+            .resolve_length(*value)
+            .and_then(resolved_pixels)
+            .map(Some)
+            .ok_or_else(|| "CodeViewer max_height must resolve to pixels or rems".to_owned()),
+        Some(_) => Err("CodeViewer max_height must be a Length".to_owned()),
+    }
 }
 
 fn document_source_prop(props: &PrimitiveProps, name: &str) -> Result<DocumentSource, String> {
@@ -1901,6 +2165,20 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                 ObjectField::optional(ValueSchema::bounded_integer(Some(1), Some(16)))
                     .with_default(UiValue::Integer(4))
                     .with_doc("Columns between tab stops; a tab expands to the next stop for display and wrapping."),
+            ),
+            (
+                "height".to_owned(),
+                ObjectField::optional(ValueSchema::enumeration(["fill", "content"]))
+                    .with_default(UiValue::String("fill".to_owned()))
+                    .with_doc(
+                        "`fill` takes the box the node's style gives; `content` is as tall as the display rows at the current width, measured at layout time.",
+                    ),
+            ),
+            (
+                "max_height".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Length)).with_doc(
+                    "Most a `content` viewer grows, in pixels, rems or a length token; taller documents scroll inside. Ignored with `fill`.",
+                ),
             ),
             (
                 "gutter_style".to_owned(),
@@ -4060,6 +4338,63 @@ mod tests {
                 "{line_digits} digits wrap at {columns} columns"
             );
         }
+    }
+
+    #[test]
+    fn content_rows_count_the_display_rows_at_the_offered_width() {
+        let descriptor = DocumentDescriptor {
+            source: "short\n\tindented line that is long enough to wrap\n\nend"
+                .to_owned()
+                .into(),
+            label: "Sample".to_owned(),
+            file_name: None,
+            language: None,
+        };
+        let document =
+            Arc::new(crate::prepare_document(&descriptor, &SyntaxRegistry::new()).unwrap());
+        for columns in [None, Some(1), Some(6), Some(20), Some(200)] {
+            assert_eq!(
+                code_display_rows(&document, columns, 4),
+                build_code_display(&document, columns, 4).len(),
+                "{columns:?} columns"
+            );
+        }
+        let measured = Rc::new(Cell::new(None));
+        let rows = ContentRows {
+            document: Some(Arc::clone(&document)),
+            display: build_code_display(&document, None, 4),
+            display_columns: None,
+            wrap: DocumentWrap::Viewport,
+            tab_size: 4,
+            line_digits: 1,
+            text_size: 14.0,
+            measured_columns: Rc::clone(&measured),
+            last: Cell::new(None),
+        };
+        // Without a definite width, as in an intrinsic-size pass, lines stay whole.
+        assert_eq!(rows.rows(None), 4);
+        assert_eq!(measured.get(), None);
+        assert_eq!(rows.rows(Some(px(2000.0))), 4);
+        let columns = viewport_wrap_columns(200.0, 1, 14.0);
+        let narrow = rows.rows(Some(px(200.0)));
+        assert_eq!(measured.get(), Some(columns));
+        assert_eq!(
+            narrow,
+            build_code_display(&document, Some(columns), 4).len()
+        );
+        assert!(narrow > 4, "the long line wraps at 200px: {narrow} rows");
+        let unprepared = ContentRows {
+            document: None,
+            ..rows
+        };
+        assert_eq!(unprepared.rows(Some(px(200.0))), 1);
+    }
+
+    #[test]
+    fn content_height_is_the_rows_up_to_the_maximum() {
+        assert!((content_height(3, 22.0, None) - 66.0).abs() < f32::EPSILON);
+        assert!((content_height(3, 22.0, Some(200.0)) - 66.0).abs() < f32::EPSILON);
+        assert!((content_height(40, 22.0, Some(200.0)) - 200.0).abs() < f32::EPSILON);
     }
 
     #[test]

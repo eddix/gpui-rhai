@@ -2,7 +2,7 @@
 {
   "id": "components/code_viewer",
   "export": "CodeViewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -14,7 +14,7 @@
 // Example: CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai source", language: "rhai" })
 
 define_component(#{
-    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.2.0",
+    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["surface", "surface_raised"],
         environment: [] },
@@ -44,6 +44,12 @@ define_component(#{
             tab_size: #{ schema: #{ type: "integer", min: 1, max: 16 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 4 },
                 doc: "Columns between tab stops when tabs are expanded for display." },
+            height: #{ schema: #{ type: "string", allowed: ["fill", "content"] }, required: false,
+                sensitive: false, "default": #{ type: "string", value: "fill" },
+                doc: "`fill` fills the viewer's box; `content` makes it as tall as its rows at the current width, wrapped rows included, up to `max_height`." },
+            max_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
+                #{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false, sensitive: false,
+                doc: "Most a `content` viewer grows: logical pixels, or a Length in pixels, rems or a token; longer documents scroll inside. Ignored with `fill`." },
             on_location_activate: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with `#{ line, column }` when the text is double-clicked or Enter is pressed in it." },
         },
@@ -64,9 +70,12 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 fn location_activate(ctx, payload) { ctx.emit("location_activate", payload); }
 
 fn render_CodeViewer(ctx, props) {
-    let root_style = ctx.component_style("root", style()
-        .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
-        .background(theme_color("surface")));
+    let height = prop_or(props, "height", "fill");
+    let max_height = prop_or(props, "max_height", ());
+    let root_base = style().width(relative(1.0)).min_width(px(0)).background(theme_color("surface"));
+    // A content-height viewer measures its own rows; it is not shrunk below them.
+    if height != "content" { root_base = root_base.height(relative(1.0)).min_height(px(0)); }
+    let root_style = ctx.component_style("root", root_base);
     gpui_rhai::CodeViewPrimitive(#{
         key: props.key,
         source: props.source,
@@ -77,6 +86,8 @@ fn render_CodeViewer(ctx, props) {
         wrap: prop_or(props, "wrap", "none"),
         wrap_column: prop_or(props, "wrap_column", 100),
         tab_size: prop_or(props, "tab_size", 4),
+        height: height,
+        max_height: if type_of(max_height) == "i64" { px(max_height) } else { max_height },
         gutter_style: ctx.component_style("gutter", style()
             .background(theme_color("surface_raised"))),
         line_style: ctx.component_style("line", style()),

@@ -1,6 +1,6 @@
 # CodeViewer
 
-`components/code_viewer` · export `CodeViewer` · version 0.2.0. Generated from
+`components/code_viewer` · export `CodeViewer` · version 0.2.1. Generated from
 [`registry/components/code_viewer.rhai`](../../../registry/components/code_viewer.rhai); do not edit.
 
 Native, virtualized, selectable read-only source document surface.
@@ -16,9 +16,11 @@ code_viewer::CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai sour
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `file_name` | string or `()` | — | File name whose extension picks the syntax when `language` is not set. |
+| `height` | `"fill"` or `"content"` | `"fill"` | `fill` fills the viewer's box; `content` makes it as tall as its rows at the current width, wrapped rows included, up to `max_height`. |
 | `key` | string | required | Stable viewer identity; keeps scroll, selection and search across renders, also when an inline `source` changes. |
 | `label` | string | `"Code"` | Accessible name of the document surface. |
 | `language` | string or `()` | — | Syntax to highlight, such as `"rhai"`; takes precedence over `file_name`, and unknown names show plain text. |
+| `max_height` | integer ≥ 0 or length or `()` | — | Most a `content` viewer grows: logical pixels, or a Length in pixels, rems or a token; longer documents scroll inside. Ignored with `fill`. |
 | `on_location_activate` | callback or `()` | — | Called with `#{ line, column }` when the text is double-clicked or Enter is pressed in it. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter; with `false` the gutter stays, empty. |
