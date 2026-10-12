@@ -1221,7 +1221,6 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 cargo test --manifest-path tests/native-keyboard/Cargo.toml
-bash scripts/audit-visual-baselines.sh
 gpui-rhai check
 ```
 

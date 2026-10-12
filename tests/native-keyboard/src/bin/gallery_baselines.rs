@@ -26,169 +26,25 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
-mod capture {
-    use std::cell::RefCell;
-    use std::path::PathBuf;
-    use std::rc::Rc;
+#[allow(dead_code)]
+#[path = "../offscreen.rs"]
+mod offscreen;
 
-    use gpui::{
-        AnyWindowHandle, AppContext, Context, IntoElement, Render, VisualTestAppContext, Window,
-        px, size,
-    };
-    use gpui_rhai::{MotionPreference, ScriptViewConfig, ScriptViewHandle, ScriptViewHost};
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
+#[path = "../baseline_cases.rs"]
+mod baseline_cases;
+
+#[cfg(target_os = "macos")]
+mod capture {
+    use std::path::PathBuf;
+
+    use gpui::VisualTestAppContext;
+    use gpui_rhai::MotionPreference;
     use gpui_rhai_cli::acceptance::{self, AcceptanceLaunch};
 
-    /// Logical window size of the Gallery.
-    const WIDTH: f32 = 1280.0;
-    const HEIGHT: f32 = 860.0;
-
-    /// name, page, density, theme, locale
-    const CASES: &[(&str, &str, &str, &str, &str)] = &[
-        (
-            "button.comfortable.default-dark.en",
-            "button",
-            "comfortable",
-            "default-dark",
-            "en",
-        ),
-        (
-            "button.comfortable.default-light.en",
-            "button",
-            "comfortable",
-            "default-light",
-            "en",
-        ),
-        (
-            "button.compact.default-dark.en",
-            "button",
-            "compact",
-            "default-dark",
-            "en",
-        ),
-        (
-            "button.compact.default-light.en",
-            "button",
-            "compact",
-            "default-light",
-            "en",
-        ),
-        (
-            "scene-operations.comfortable.default-dark.en",
-            "scene.operations",
-            "comfortable",
-            "default-dark",
-            "en",
-        ),
-        (
-            "scene-operations.comfortable.default-light.en",
-            "scene.operations",
-            "comfortable",
-            "default-light",
-            "en",
-        ),
-        (
-            "scene-operations.compact.default-dark.en",
-            "scene.operations",
-            "compact",
-            "default-dark",
-            "en",
-        ),
-        (
-            "scene-operations.compact.default-light.en",
-            "scene.operations",
-            "compact",
-            "default-light",
-            "en",
-        ),
-        (
-            "scene-form.comfortable.default-dark.en",
-            "scene.form",
-            "comfortable",
-            "default-dark",
-            "en",
-        ),
-        (
-            "scene-form.comfortable.default-light.en",
-            "scene.form",
-            "comfortable",
-            "default-light",
-            "en",
-        ),
-        (
-            "scene-form.compact.default-dark.en",
-            "scene.form",
-            "compact",
-            "default-dark",
-            "en",
-        ),
-        (
-            "scene-form.compact.default-light.en",
-            "scene.form",
-            "compact",
-            "default-light",
-            "en",
-        ),
-        (
-            "scene-settings.comfortable.default-dark.en",
-            "scene.settings",
-            "comfortable",
-            "default-dark",
-            "en",
-        ),
-        (
-            "scene-settings.comfortable.default-light.en",
-            "scene.settings",
-            "comfortable",
-            "default-light",
-            "en",
-        ),
-        (
-            "scene-settings.compact.default-dark.en",
-            "scene.settings",
-            "compact",
-            "default-dark",
-            "en",
-        ),
-        (
-            "scene-settings.compact.default-light.en",
-            "scene.settings",
-            "compact",
-            "default-light",
-            "en",
-        ),
-        (
-            "scene-operations.comfortable.default-dark.ar",
-            "scene.operations",
-            "comfortable",
-            "default-dark",
-            "ar",
-        ),
-        (
-            "table.comfortable.default-dark.zh-CN",
-            "table",
-            "comfortable",
-            "default-dark",
-            "zh-CN",
-        ),
-        (
-            "description-list.compact.default-light.zh-CN",
-            "description_list",
-            "compact",
-            "default-light",
-            "zh-CN",
-        ),
-    ];
-
-    struct Root {
-        host: ScriptViewHost,
-        view: ScriptViewHandle,
-    }
-
-    impl Render for Root {
-        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-            self.host.container(self.view.element().unwrap())
-        }
-    }
+    use super::baseline_cases::{GALLERY_CASES, GALLERY_WINDOW};
+    use super::offscreen;
 
     pub fn run() -> Result<(), String> {
         let mut args = std::env::args().skip(1);
@@ -215,23 +71,22 @@ mod capture {
                     })
                     .collect()
             } else {
-                CASES
+                GALLERY_CASES
                     .iter()
-                    .filter(|(name, ..)| only.as_deref().is_none_or(|only| only == *name))
-                    .map(|(name, page, density, theme, locale)| {
+                    .filter(|case| only.as_deref().is_none_or(|only| only == case.name))
+                    .map(|case| {
                         (
-                            (*name).to_owned(),
-                            (*page).to_owned(),
-                            (*density).to_owned(),
-                            (*theme).to_owned(),
-                            (*locale).to_owned(),
+                            case.name.to_owned(),
+                            case.page.to_owned(),
+                            case.density.to_owned(),
+                            case.theme.to_owned(),
+                            case.locale.to_owned(),
                         )
                     })
                     .collect()
             };
         std::fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-        let mut cx = VisualTestAppContext::new(gpui_platform::current_platform(false));
-        cx.update(gpui_rhai::install);
+        let mut cx = offscreen::context();
         let mut captured = 0;
         for (name, page, density, theme, locale) in &cases {
             let launch = AcceptanceLaunch {
@@ -270,62 +125,23 @@ mod capture {
         let prepared = acceptance::view(launch)?
             .prepare()
             .map_err(|error| error.to_string())?;
-        let bindings = prepared.key_bindings().to_vec();
-        let mounted = Rc::new(RefCell::new(None));
-        let capture = Rc::clone(&mounted);
-        let window = cx
-            .open_offscreen_window(size(px(WIDTH), px(HEIGHT)), move |window, cx| {
-                let host = ScriptViewHost::new("gallery-baseline", cx).unwrap();
-                host.bind_keys(bindings, cx).unwrap();
-                let view = prepared
-                    .mount(
-                        ScriptViewConfig::new("gallery").paint_background(true),
-                        host.clone(),
-                        window,
-                        cx,
-                    )
-                    .unwrap();
-                *capture.borrow_mut() = Some(view.clone());
-                cx.new(|_| Root { host, view })
-            })
-            .map_err(|error| error.to_string())?;
-        let view = mounted
-            .borrow()
-            .clone()
-            .ok_or("the Gallery did not mount")?;
-        let any: AnyWindowHandle = window.into();
+        let (width, height) = GALLERY_WINDOW;
+        let (window, view) = offscreen::mount(cx, prepared, width, height, "gallery")?;
         // Mount, then the frames that read committed geometry (virtualized
         // rows, focus), then report the audit count the way the Gallery Host
         // does after each frame, and draw once more.
-        for _ in 0..4 {
-            draw(cx, any)?;
-        }
-        cx.update_window(any, |_, window, cx| {
+        offscreen::settle(cx, window)?;
+        cx.update_window(window, |_, window, cx| {
             acceptance::report_audit(&view, &mut None, window, cx)
         })
         .map_err(|error| error.to_string())??;
-        draw(cx, any)?;
+        offscreen::draw(cx, window)?;
         if let Some(error) = cx
             .update(|cx| view.last_error(cx))
             .map_err(|error| error.to_string())?
         {
             return Err(format!("{}: {error}", launch.page));
         }
-        let image = cx
-            .capture_screenshot(any)
-            .map_err(|error| error.to_string())?;
-        cx.update_window(any, |_, window, _| window.remove_window())
-            .map_err(|error| error.to_string())?;
-        cx.run_until_parked();
-        Ok(image)
-    }
-
-    fn draw(cx: &mut VisualTestAppContext, any: AnyWindowHandle) -> Result<(), String> {
-        cx.run_until_parked();
-        cx.update_window(any, |_, window, cx| {
-            window.refresh();
-            let _ = window.draw(cx);
-        })
-        .map_err(|error| error.to_string())
+        offscreen::capture(cx, window)
     }
 }

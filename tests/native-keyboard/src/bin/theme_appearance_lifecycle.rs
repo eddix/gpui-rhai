@@ -11,7 +11,12 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
+#[path = "../appearance_records.rs"]
+mod appearance_records;
+
+#[cfg(target_os = "macos")]
 mod actual {
+    use super::appearance_records::Records;
     use gpui::{
         App, AppContext, AsyncApp, Bounds, Context, IntoElement, ParentElement, Render, Styled,
         Window, WindowAppearance, WindowBounds, WindowHandle, WindowOptions, div, px, size,
@@ -19,15 +24,15 @@ mod actual {
     use gpui_rhai::*;
     use serde_json::{Value, json};
     use std::{
-        cell::{Cell, RefCell},
+        cell::Cell,
         collections::BTreeMap,
         path::PathBuf,
         rc::Rc,
         time::{Duration, Instant},
     };
 
-    const DARK: &str = include_str!("../../../../registry/themes/default_dark.rhai");
-    const LIGHT: &str = include_str!("../../../../registry/themes/default_light.rhai");
+    const DARK: &str = gpui_rhai_registry::DEFAULT_THEME;
+    const LIGHT: &str = gpui_rhai_registry::DEFAULT_LIGHT_THEME;
     const READER: &str = r#"
 fn state_schema(){#{fields:#{init_count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},initial:#{schema:#{type:"string"},"default":#{type:"string",value:"none"}}}}}
 fn init(ctx){ctx.set_state("init_count",ctx.get_state("init_count")+1);ctx.set_state("initial",ctx.theme_variant().mode);ctx.call_capability("app.matrix","record",`TAG:init:${ctx.get_state("init_count")}:${ctx.get_state("initial")}`);}
@@ -42,51 +47,6 @@ fn init(ctx){ctx.call_capability("app.matrix","record","T:init");}
 fn view(ctx){text("token-only").accessibility_role("status").with_style(style().padding(px(12)).background(theme_color("surface")).text_color(theme_color("text_primary")))}
 "#;
 
-    #[derive(Clone)]
-    struct Records {
-        values: Rc<RefCell<Vec<String>>>,
-        system: bool,
-    }
-    impl CapabilityHandler for Records {
-        fn call(&mut self, _: &str, input: UiValue) -> Result<UiValue, String> {
-            let UiValue::String(input) = input else {
-                return Err("record needs a string".into());
-            };
-            self.values.borrow_mut().push(input);
-            Ok(UiValue::Null)
-        }
-    }
-    impl ScriptViewExtension for Records {
-        fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
-            if self.system {
-                runtime
-                    .theme
-                    .as_mut()
-                    .unwrap()
-                    .set_app(ThemePreference::System {
-                        family: "Default".into(),
-                    })
-                    .map_err(|error| error.to_string())?;
-            }
-            runtime
-                .capabilities
-                .register(
-                    CapabilityDescriptor {
-                        id: CapabilityId::parse("app.matrix").unwrap(),
-                        version: semver::Version::new(1, 0, 0),
-                        methods: BTreeMap::from([(
-                            "record".into(),
-                            CapabilityMethod {
-                                input: ValueSchema::string(),
-                                output: ValueSchema::Null,
-                            },
-                        )]),
-                    },
-                    self.clone(),
-                )
-                .map_err(|error| error.to_string())
-        }
-    }
     fn prepared(
         tag: &str,
         records: &Records,
@@ -111,10 +71,7 @@ fn view(ctx){text("token-only").accessibility_role("status").with_style(style().
                 .with_capability("app.matrix", "*")
                 .unwrap(),
         )
-        .extension(Records {
-            values: records.values.clone(),
-            system,
-        })
+        .extension(records.following_system(system))
         .prepare()
         .map_err(|error| error.to_string())
     }
@@ -487,10 +444,7 @@ fn view(ctx){text("token-only").accessibility_role("status").with_style(style().
         }
         let output = output.expect("--output required");
         let source_sha = source_sha.expect("--source-sha required");
-        let records = Records {
-            values: Rc::new(RefCell::new(Vec::new())),
-            system: true,
-        };
+        let records = Records::new("app.matrix");
         let done = Rc::new(Cell::new(false));
         let exit = Rc::new(Cell::new(124));
         let final_exit = exit.clone();

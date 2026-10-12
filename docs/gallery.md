@@ -105,7 +105,7 @@ Adding a component means adding its page. `acceptance::page_ids` reads the
 |---|---|
 | every page has zero audit findings in both densities | `cargo test --manifest-path tests/native-keyboard/Cargo.toml --test native gallery::acceptance::every_gallery_page` |
 | the scenes and the palette work by keyboard alone | `cargo test --manifest-path tests/native-keyboard/Cargo.toml --test native gallery::acceptance` |
-| visual baselines | `scripts/capture-macos-gallery-baselines.sh`, checked by `scripts/audit-visual-baselines.sh` |
+| visual baselines | `scripts/capture-macos-gallery-baselines.sh`, checked by the native test `audit::visual_baselines` |
 
 The audit gate runs every rule of the productivity profile except
 `unresolved-font` (the test platform has no system fonts). Baselines cover four
