@@ -2,7 +2,7 @@
 {
   "id": "components/combobox",
   "export": "Combobox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input"],
   "capabilities": {},
@@ -24,7 +24,7 @@
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.2.0",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input"], capabilities: #{},
         tokens: [
@@ -113,6 +113,8 @@ define_component(#{
                 doc: "Called with the requested open state when the trigger is clicked, an arrow key opens it, a `single` pick closes it, or it is dismissed." },
             on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with the new search text as the user types, and with `\"\"` when `reset_query_on_close` resets it." },
+            on_submit: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the query when Enter is pressed in the search field and no enabled option matches it, so typed free text can be taken; while an option is active Enter picks it instead." },
         },
         state: #{ fields: #{
             active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
@@ -124,6 +126,8 @@ define_component(#{
                 doc: "Emitted when the panel should open or close; the payload is the requested open state." },
             query_change: #{ payload: #{ type: "string" },
                 doc: "Emitted when the search text changes, or resets to `\"\"` under `reset_query_on_close`; the payload is the new query." },
+            submit: #{ payload: #{ type: "string" },
+                doc: "Emitted when Enter is pressed in the search field while no enabled option matches the query, only with `on_submit` set; the payload is the query. The panel stays open." },
         },
         slots: #{
             trigger: #{ required: false, multiple: false, doc: "Replaces the default field trigger." },
@@ -259,6 +263,10 @@ fn open_action_reset(ctx, value) {
 fn query_action(ctx, value) {
     ctx.set_state("active", "");
     ctx.emit("query_change", value);
+    handled()
+}
+fn submit_action(ctx, value) {
+    ctx.emit("submit", value);
     handled()
 }
 fn navigate_action(ctx, payload) {
@@ -412,11 +420,14 @@ fn render_Combobox(ctx, props) {
     let custom_trigger = "trigger" in props && props.trigger != ();
     let trigger_children = [];
     if !custom_trigger {
+        // One line that gives way first: a long label or placeholder ends in an ellipsis so the
+        // clear button and the chevron stay inside a fixed-width trigger.
         trigger_children.push(text(if selected_label == "" { placeholder } else { selected_label })
             .with_key(`${props.key}-trigger-value`)
             .with_style(ctx.component_style(
                 if selected_label == "" { "placeholder" } else { "value" },
-                style().flex_grow().text_color(if selected_label == "" { theme_color("text_muted") }
+                style().flex_grow().min_width(px(0)).whitespace_nowrap().text_ellipsis()
+                    .text_color(if selected_label == "" { theme_color("text_muted") }
                     else { theme_color("text_primary") }))));
         let trigger_actions = [];
         if prop_or(props, "clearable", false) && selected.len > 0 {
@@ -496,12 +507,18 @@ fn render_Combobox(ctx, props) {
     if header { content.push(props.header); }
     if searchable {
         // The search spans the panel on the rows' inset; without a header it heads the panel.
-        content.push(input::Input(#{
+        let search = #{
             key: `${props.key}-search`, label: props.label, value: query,
             placeholder: prop_or(props, "search_placeholder", "Search"),
             appearance: "embedded",
             on_change: Fn("query_action")
-        }).with_style(ctx.component_style("search", style())));
+        };
+        // With nothing to pick, Enter in the field submits the typed text; otherwise it reaches
+        // the panel, which picks the active option.
+        if enabled.len == 0 && "on_submit" in props && props.on_submit != () {
+            search.on_submit = Fn("submit_action");
+        }
+        content.push(input::Input(search).with_style(ctx.component_style("search", style())));
     }
     if ordered.len == 0 {
         content.push(if "empty" in props && props.empty != () { props.empty }

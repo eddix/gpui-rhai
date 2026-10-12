@@ -1,6 +1,6 @@
 # List
 
-`components/list` · export `List` · version 0.2.0. Generated from
+`components/list` · export `List` · version 0.2.1. Generated from
 [`registry/components/list.rhai`](../../../registry/components/list.rhai); do not edit.
 
 Controlled virtualized list of keyed rows: the rows Table draws, without columns.
@@ -18,15 +18,17 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `badge_width` | number > 0 or `()` | — | Badge slot width in logical pixels, reserved on every row so the titles align; `()` fits each badge. |
+| `badge_width` | number > 0 or length or `()` | — | Badge slot width reserved on every row so the titles align: logical pixels, or a Length resolved in the list's density; `()` fits each badge. |
 | `dividers` | bool | `false` | Draws a 1px border under every row. |
 | `empty` | node or `()` | — | Node shown instead of `empty_text` when `items` is empty. |
 | `empty_text` | string | `"No items"` | Muted text shown when `items` is empty, unless `empty` is given. |
 | `fill_height` | bool | `false` | Grows into the free height of a flex parent instead of a fixed `height`; give exactly one of the two. |
-| `height` | number > 0 or `()` | — | Viewport height in logical pixels; give exactly one of `height` or `fill_height`. |
+| `height` | number > 0 or length or `()` | — | Viewport height: logical pixels, or a Length such as `theme_length("metrics.row") * 6`; give exactly one of `height` or `fill_height`. |
 | `items` | array of object (at most 10000) | required | Rows in display order. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name of the list. |
+| `loading` | bool | `false` | Shows `loading_content` in the list's place instead of the rows. |
+| `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted "Loading…" line. |
 | `on_context_request` | callback or `()` | — | Called with `#{ key, anchor, source }` when a row is right-pressed or Shift+F10 or the menu key is pressed; without a selection mode it makes the list a tab stop for those keys. |
 | `on_row_click` | callback or `()` | — | Called with the row key when an enabled row is clicked, or Enter is pressed on the selected row. |
 | `on_selection_change` | callback or `()` | — | Called with the next selected keys when a row is clicked, Up, Down, Home or End is pressed, or a context request selects a row. |
@@ -68,10 +70,11 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 | Slot | Required | Multiple | Description |
 |---|---|---|---|
 | `empty` | no | no | Node shown instead of `empty_text` when `items` is empty. |
+| `loading_content` | no | no | Node shown in the list's place while `loading`. |
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empty`, `focus_frame`, `indicator_bar`, `meta`, `root`, `row`, `row_selected`, `secondary`, `title`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empty`, `focus_frame`, `indicator_bar`, `loading`, `meta`, `root`, `row`, `row_selected`, `secondary`, `title`.
 
 ## Theme
 

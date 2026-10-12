@@ -92,6 +92,7 @@ drafts.
 | `accent` on `surface` (indicator bar, checked marks) | 3:1 |
 | `surface_hover` distinguishable from `surface` | 1.15:1 |
 | derived `text.*` on `surface_hover` | 4.5:1 (guaranteed by `readable`) |
+| `text_primary` on the derived `tag.facet` and `table.selection` | 4.5:1 (guaranteed by `readable`); each still differs from its base (`surface_hover`, `surface`) |
 
 Semantic rules:
 

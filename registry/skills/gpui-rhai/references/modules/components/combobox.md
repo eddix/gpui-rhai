@@ -1,6 +1,6 @@
 # Combobox
 
-`components/combobox` · export `Combobox` · version 0.2.0. Generated from
+`components/combobox` · export `Combobox` · version 0.2.1. Generated from
 [`registry/components/combobox.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/combobox.rhai); do not edit.
 
 Public Rhai choice composition over Overlay, Input, and virtual_collection. State: caller owns selected/open/query; component owns only active-option navigation.
@@ -29,6 +29,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `on_change` | callback or `()` | — | Called with the full new selection when an option is picked or the selection is cleared. |
 | `on_open_change` | callback or `()` | — | Called with the requested open state when the trigger is clicked, an arrow key opens it, a `single` pick closes it, or it is dismissed. |
 | `on_query_change` | callback or `()` | — | Called with the new search text as the user types, and with `""` when `reset_query_on_close` resets it. |
+| `on_submit` | callback or `()` | — | Called with the query when Enter is pressed in the search field and no enabled option matches it, so typed free text can be taken; while an option is active Enter picks it instead. |
 | `open` | bool | required | Whether the panel is open; the caller stores the `open_change` payload and passes it back. |
 | `options` | array of object (at most 100000) | required | Options in display order; options that share a `group` are gathered where that group first appears. |
 | `parent_overlay` | string or `()` | — | Key of the open overlay this one nests in, such as a Dialog; the panel stacks above it and closes with it. |
@@ -62,6 +63,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `change` | `on_change` | array of string (at most 100000) | Emitted when a pick changes the selection or the selection is cleared; the payload is the full new selection. |
 | `open_change` | `on_open_change` | bool | Emitted when the panel should open or close; the payload is the requested open state. |
 | `query_change` | `on_query_change` | string | Emitted when the search text changes, or resets to `""` under `reset_query_on_close`; the payload is the new query. |
+| `submit` | `on_submit` | string | Emitted when Enter is pressed in the search field while no enabled option matches the query, only with `on_submit` set; the payload is the query. The panel stays open. |
 
 ## Slots
 

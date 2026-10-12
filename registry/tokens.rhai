@@ -124,8 +124,12 @@ fn tokens() {
             "text.success": readable(theme_color("success"), theme_color("text_primary"),
                 theme_color("surface_hover"), 4.5),
             "control.hover": mix(theme_color("surface_hover"), theme_color("text_primary"), 0.06),
-            "tag.facet": mix(theme_color("surface_hover"), theme_color("text_primary"), 0.14),
-            "table.selection": mix(theme_color("surface"), theme_color("accent"), 0.28),
+            // Text sits on these two, so each tint backs off toward its base only as far as
+            // text_primary needs to keep 4.5:1; palettes with room keep the full tint.
+            "tag.facet": readable(mix(theme_color("surface_hover"), theme_color("text_primary"), 0.14),
+                theme_color("surface_hover"), theme_color("text_primary"), 4.5),
+            "table.selection": readable(mix(theme_color("surface"), theme_color("accent"), 0.28),
+                theme_color("surface"), theme_color("text_primary"), 4.5),
             "scrollbar.thumb": alpha(theme_color("text_muted"), 0.45),
             "scrollbar.thumb_hover": theme_color("text_muted"),
             "tabs.foreground": readable(theme_color("text_muted"), theme_color("text_primary"),

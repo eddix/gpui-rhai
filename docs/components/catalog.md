@@ -224,14 +224,18 @@ are, so long lists realize only the visible rows:
 | `disabled` | Optional; a disabled row takes no input and keyboard navigation skips it |
 
 The list takes `selection_mode` (`none` default, `single`, `multiple`),
-`selected_keys`, `height` or `fill_height`, `dividers`, `badge_width` (pixels;
-one leading slot on every row, so titles align when badges differ), `empty_text` /
-`empty`, and emits `selection_change`, `row_click` and `context_request`
+`selected_keys`, `height` (pixels or a Length, such as
+`theme_length("metrics.row") * 6` for six rows in either density) or
+`fill_height`, `dividers`, `badge_width` (pixels or a Length; one leading slot
+on every row, so titles align when badges differ), `loading` / `loading_content`
+(shown in the list's place, as in Table), `empty_text` / `empty`, and emits
+`selection_change`, `row_click` and `context_request`
 (`#{ key, anchor, source }`, like Table's without a column; without a selection
 mode, `on_context_request` alone makes the list a tab stop whose Shift+F10 asks
 for the whole list). A row carries only its selected flag and a click builds the
 next selection when it happens, so the row data stays linear in the items
-however many are selected.
+however many are selected. A click leaves the keyboard focus on the list, so
+the arrows continue from the clicked row and its focus frame shows.
 
 Source: [list.rhai](../../registry/components/list.rhai).
 Runnable story: `gpui-rhai gallery --story components/list`.
@@ -299,8 +303,10 @@ Runnable story: `gpui-rhai gallery --story components/tab-bar`.
   editing core and explicit semantic relationships. `Input` with
   `appearance: "embedded"` is the frameless search line that heads a panel
   (Command, CommandDialog, a searchable Combobox).
-- `Select` is scalar choice. `Combobox` is searchable single/multiple choice.
-  Both are strictly controlled for value, open state, and query.
+- `Select` is scalar choice. `Combobox` is searchable single/multiple choice;
+  with `on_submit`, Enter in its search field submits typed free text when no
+  enabled option matches. Both are strictly controlled for value, open state,
+  and query.
 - `DatePicker` remains a controlled ISO-date composition over public calendar
   helpers and Overlay.
 
