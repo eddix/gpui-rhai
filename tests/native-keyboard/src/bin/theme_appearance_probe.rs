@@ -13,7 +13,13 @@ fn main() {
 }
 
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
+#[path = "../appearance_records.rs"]
+mod appearance_records;
+
+#[cfg(target_os = "macos")]
 mod actual_macos {
+    use super::appearance_records::Records;
     use gpui::{
         App, AppContext, AsyncApp, Bounds, Context, IntoElement, Render, Window, WindowAppearance,
         WindowBounds, WindowHandle, WindowOptions, px, size,
@@ -21,7 +27,7 @@ mod actual_macos {
     use gpui_rhai::*;
     use serde_json::{Value, json};
     use std::{
-        cell::{Cell, RefCell},
+        cell::Cell,
         collections::BTreeMap,
         path::PathBuf,
         rc::Rc,
@@ -39,47 +45,6 @@ fn stop(ctx,deps){}
 fn reader(ctx,props){effect("theme",ctx.theme_variant(),Fn("start"),Fn("stop"));text(`effect:${ctx.get_state("starts")}`).accessibility_role("status")}
 fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx.get_state("init_count")}:${ctx.get_state("init_mode")}:${ctx.get_state("marker")}:${info.name}:${info.mode}`).accessibility_role("status"),render_component("probe/theme_reader",#{key:"theme-reader"}),text("Increment").test_id("increment").on_click(Fn("increment")),text("Open child").test_id("open").on_click(Fn("open"))]).with_style(style().padding(px(16)).gap(px(8)))}
 "#;
-
-    #[derive(Clone)]
-    struct Records(Rc<RefCell<Vec<String>>>);
-    impl CapabilityHandler for Records {
-        fn call(&mut self, _: &str, input: UiValue) -> Result<UiValue, String> {
-            let UiValue::String(value) = input else {
-                return Err("record input must be a string".into());
-            };
-            self.0.borrow_mut().push(value);
-            Ok(UiValue::Null)
-        }
-    }
-    impl ScriptViewExtension for Records {
-        fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
-            runtime
-                .theme
-                .as_mut()
-                .ok_or("theme manager missing")?
-                .set_app(ThemePreference::System {
-                    family: "Default".into(),
-                })
-                .map_err(|error| error.to_string())?;
-            runtime
-                .capabilities
-                .register(
-                    CapabilityDescriptor {
-                        id: CapabilityId::parse("app.probe").unwrap(),
-                        version: semver::Version::new(1, 0, 0),
-                        methods: BTreeMap::from([(
-                            "record".into(),
-                            CapabilityMethod {
-                                input: ValueSchema::string(),
-                                output: ValueSchema::Null,
-                            },
-                        )]),
-                    },
-                    self.clone(),
-                )
-                .map_err(|error| error.to_string())
-        }
-    }
 
     struct Host {
         domain: ScriptViewHost,
@@ -143,12 +108,12 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
         EmbeddedScriptView::new(
             entry.clone(),
             EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), SOURCE.into())])),
-            include_str!("../../../../registry/themes/default_dark.rhai"),
+            gpui_rhai_registry::DEFAULT_THEME,
         )
         .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources([(
             "light".into(),
-            include_str!("../../../../registry/themes/default_light.rhai").into(),
+            gpui_rhai_registry::DEFAULT_LIGHT_THEME.into(),
         )])
         .manifest(
             AppManifest::new(entry)
@@ -241,7 +206,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
         } {
             let init = format!("init:{window}:1:{initial}");
             let effect = format!("effect:{window}:{effects}:{expected}");
-            let observed = records.0.borrow();
+            let observed = records.values.borrow();
             if observed
                 .iter()
                 .filter(|record| record.starts_with(&format!("init:{window}:")))
@@ -254,7 +219,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
             }
         }
         Ok(
-            json!({"expected":expected,"primary":primary_sample,"child_native_appearance":child_appearance,"records":records.0.borrow().clone()}),
+            json!({"expected":expected,"primary":primary_sample,"child_native_appearance":child_appearance,"records":records.values.borrow().clone()}),
         )
     }
 
@@ -325,7 +290,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
             .update(cx, |root, _, cx| root.view.take_performance_snapshot(cx))
             .map_err(|error| error.to_string())?
             .map_err(|error| error.to_string())?;
-        let before = records.0.borrow().clone();
+        let before = records.values.borrow().clone();
         cx.background_executor()
             .timer(Duration::from_millis(750))
             .await;
@@ -333,7 +298,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
             .update(cx, |root, _, cx| root.view.take_performance_snapshot(cx))
             .map_err(|error| error.to_string())?
             .map_err(|error| error.to_string())?;
-        let after = records.0.borrow().clone();
+        let after = records.values.borrow().clone();
         let evidence = json!({"stage":"idle-before-appearance-change","real_timer_ms":750,"primary_timing_count":performance.timings.len(),"shared_dirty_components":performance.dirty_components,"shared_pending_virtual_requests":performance.pending_virtual_requests,"init_effect_records_unchanged":before==after,"timings":performance.timings.iter().map(|timing|format!("{:?}",timing.operation)).collect::<Vec<_>>()});
         if !performance.timings.is_empty()
             || performance.dirty_components != 0
@@ -366,7 +331,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
             eprintln!("{error}");
             std::process::exit(2)
         });
-        let records = Records(Rc::new(RefCell::new(Vec::new())));
+        let records = Records::new("app.probe");
         let initial = options.initial;
         let done = Rc::new(Cell::new(false));
         let exit = Rc::new(Cell::new(124));
@@ -393,7 +358,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
                 done.set(true);
                 let (cleanup_evidence,clean)=cx.update(cleanup);
                 capture_exit.set(if result.is_ok()&&clean{0}else{1});
-                let report=json!({"platform":"actual macOS MacPlatform (current_platform(false))","gpui_pre":"0.3.7","source_sha":options.source_sha,"initial":mode(initial),"samples":result.as_ref().ok(),"error":result.as_ref().err(),"records":records.0.borrow().clone(),"os_preferences_changed":false,"cleanup":cleanup_evidence,"process_id":std::process::id(),"binary_path":std::env::current_exe().ok()});
+                let report=json!({"platform":"actual macOS MacPlatform (current_platform(false))","gpui_pre":"0.3.7","source_sha":options.source_sha,"initial":mode(initial),"samples":result.as_ref().ok(),"error":result.as_ref().err(),"records":records.values.borrow().clone(),"os_preferences_changed":false,"cleanup":cleanup_evidence,"process_id":std::process::id(),"binary_path":std::env::current_exe().ok()});
                 let text=serde_json::to_string_pretty(&report).unwrap();
                 println!("{text}");
                 if let Err(error)=std::fs::write(&options.output,&text){eprintln!("failed writing {}: {error}",options.output.display());capture_exit.set(1);}

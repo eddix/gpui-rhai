@@ -20,8 +20,8 @@ through 0.1.8 are in the checklist listed under [History](history.md).
    and update `THIRD_PARTY_LICENSES.md` for copied source or assets.
 6. Build every example in release mode and run `scripts/release-smoke.sh` on
    macOS with the Metal Toolchain installed.
-7. Run `scripts/audit-visual-baselines.sh` and complete the unlocked keyboard,
-   focus, IME, clipboard, overlay, and multi-window interaction matrix
+7. Complete the unlocked keyboard, focus, IME, clipboard, overlay, and
+   multi-window interaction matrix
    ([real-window scripts](../scripts/macos-real-window/)).
    Before manual work, run the independent `tests/native-keyboard` workspace's
    tests and strict test-target Clippy; it is intentionally outside the main

@@ -29,7 +29,6 @@ RUSTDOCFLAGS="-D warnings" cargo doc -p gpui-rhai-cli --lib --no-deps
 cargo package -p gpui-rhai
 cargo build --workspace --all-targets --release
 bash scripts/audit-release-artifacts.sh
-bash scripts/audit-visual-baselines.sh
 cargo test --manifest-path tests/native-keyboard/Cargo.toml
 cargo test --manifest-path tests/native-keyboard/Cargo.toml --features dev-reload --test token_reload
 cargo clippy --manifest-path tests/native-keyboard/Cargo.toml --all-targets --features dev-reload -- -D warnings

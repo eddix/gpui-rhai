@@ -26,6 +26,11 @@ mod offscreen;
 
 #[cfg(target_os = "macos")]
 #[allow(dead_code)]
+#[path = "../baseline_cases.rs"]
+mod baseline_cases;
+
+#[cfg(target_os = "macos")]
+#[allow(dead_code)]
 #[path = "../../../../crates/gpui-rhai/examples/settings_panel.rs"]
 mod settings_panel;
 
@@ -57,141 +62,12 @@ mod capture {
     use gpui::{AppContext, VisualTestAppContext, px, size};
     use gpui_rhai::{EmbeddedScriptView, MotionPreference};
 
+    use super::baseline_cases::{ExampleCase, example_cases, example_window};
     use super::{
         dashboard_layout, data_table, embedded_views, form_showcase, offscreen, settings_panel,
     };
 
-    /// One baseline: the example, the file name, how to build it, and the
-    /// keystrokes that bring it into the recorded state.
-    struct Case {
-        example: &'static str,
-        name: &'static str,
-        theme: &'static str,
-        locale: &'static str,
-        state: &'static str,
-        motion: MotionPreference,
-        keys: &'static str,
-    }
-
-    const fn case(
-        example: &'static str,
-        name: &'static str,
-        theme: &'static str,
-        locale: &'static str,
-        state: &'static str,
-    ) -> Case {
-        Case {
-            example,
-            name,
-            theme,
-            locale,
-            state,
-            motion: MotionPreference::None,
-            keys: "",
-        }
-    }
-
-    fn cases() -> Vec<Case> {
-        let mut cases = Vec::new();
-        for (theme, locale, direction) in [
-            ("catppuccin-latte", "en", "ltr"),
-            ("catppuccin-mocha", "ar", "rtl"),
-            ("catppuccin-mocha", "en", "ltr"),
-            ("default-dark", "en", "ltr"),
-            ("default-light", "en", "ltr"),
-            ("tokyo-night", "en", "ltr"),
-            ("tokyo-storm", "en", "ltr"),
-        ] {
-            let name = leak(format!("{theme}.{locale}.{direction}"));
-            cases.push(case("settings_panel", name, theme, locale, ""));
-            cases.push(case("form_showcase", name, theme, locale, ""));
-            for motion in ["normal", "reduced"] {
-                cases.push(Case {
-                    motion: if motion == "normal" {
-                        MotionPreference::Normal
-                    } else {
-                        MotionPreference::Reduced
-                    },
-                    ..case(
-                        "dashboard_layout",
-                        leak(format!("{theme}.{locale}.{direction}.{motion}")),
-                        theme,
-                        locale,
-                        "",
-                    )
-                });
-            }
-        }
-        // Focus states come from real keyboard traversal: the language switch
-        // pressed with the keyboard, and the notification Switch toggled.
-        cases.push(Case {
-            keys: SETTINGS_LANGUAGE_FOCUS,
-            ..case(
-                "settings_panel",
-                "default-dark.zh-cn.button-focus",
-                "default-dark",
-                "en",
-                "",
-            )
-        });
-        cases.push(Case {
-            keys: SETTINGS_SWITCH_FOCUS,
-            ..case(
-                "settings_panel",
-                "default-dark.zh-cn.switch-focus",
-                "default-dark",
-                "zh-CN",
-                "",
-            )
-        });
-        cases.push(case(
-            "form_showcase",
-            "default-light.en.dialog",
-            "default-light",
-            "en",
-            "dialog",
-        ));
-        cases.push(case(
-            "form_showcase",
-            "default-light.en.toast",
-            "default-light",
-            "en",
-            "toast",
-        ));
-        for (name, theme, locale, state) in [
-            (
-                "catppuccin-mocha.ar.rtl",
-                "catppuccin-mocha",
-                "ar",
-                "default",
-            ),
-            ("default-dark.en.selected", "default-dark", "en", "selected"),
-            ("default-light.en.empty", "default-light", "en", "empty"),
-            ("default-light.en.ltr", "default-light", "en", "default"),
-            ("default-light.en.loading", "default-light", "en", "loading"),
-        ] {
-            cases.push(case("data_table", name, theme, locale, state));
-        }
-        cases.push(case(
-            "embedded_views",
-            "default-dark.shared-host",
-            "default-dark",
-            "en",
-            "",
-        ));
-        cases
-    }
-
-    /// Tab into the language ToggleGroup, move to 简体中文 and press it.
-    const SETTINGS_LANGUAGE_FOCUS: &str = "tab tab tab right space";
-    /// Tab to the notification Switch and toggle it.
-    const SETTINGS_SWITCH_FOCUS: &str = "tab tab tab tab tab space";
-
-    fn leak(value: String) -> &'static str {
-        Box::leak(value.into_boxed_str())
-    }
-
-    fn view(case: &Case) -> Option<(EmbeddedScriptView, (f32, f32))> {
+    fn view(case: &ExampleCase) -> Option<(EmbeddedScriptView, (f32, f32))> {
         Some(match case.example {
             "settings_panel" => (
                 settings_panel::view(case.theme, case.locale),
@@ -223,7 +99,7 @@ mod capture {
         let only_case = args.next();
         let mut cx = offscreen::context();
         let mut captured = 0;
-        for case in cases() {
+        for case in example_cases() {
             if only_example
                 .as_deref()
                 .is_some_and(|only| only != case.example)
@@ -262,12 +138,13 @@ mod capture {
 
     fn capture_case(
         cx: &mut VisualTestAppContext,
-        case: &Case,
+        case: &ExampleCase,
     ) -> Result<image::RgbaImage, String> {
         if case.example == "embedded_views" {
             return capture_embedded(cx);
         }
         let (view, (width, height)) = view(case).ok_or("unknown example")?;
+        check_window(case.example, (width, height))?;
         // Motion runs on a manual clock, so a normal-motion capture is a fixed
         // moment rather than whenever the frame happened to be drawn.
         let clock = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
@@ -311,8 +188,20 @@ mod capture {
         offscreen::capture(cx, window)
     }
 
+    /// The case table records each example's window, for the baseline audit.
+    fn check_window(example: &str, window: (f32, f32)) -> Result<(), String> {
+        if example_window(example) == Some(window) {
+            Ok(())
+        } else {
+            Err(format!(
+                "{example}::WINDOW is {window:?}; update example_window in baseline_cases.rs"
+            ))
+        }
+    }
+
     fn capture_embedded(cx: &mut VisualTestAppContext) -> Result<image::RgbaImage, String> {
         let (width, height) = embedded_views::WINDOW;
+        check_window("embedded_views", (width, height))?;
         let window = cx
             .open_offscreen_window(size(px(width), px(height)), |window, cx| {
                 cx.new(|cx| embedded_views::EmbeddedViewsDemo::new(window, cx))
