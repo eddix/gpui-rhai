@@ -1,6 +1,6 @@
 # Command
 
-`components/command` · export `Command` · version 0.2.0. Generated from
+`components/command` · export `Command` · version 0.2.1. Generated from
 [`registry/components/command.rhai`](../../../registry/components/command.rhai); do not edit.
 
 Embeddable keyboard-first command search with deterministic fuzzy ranking.
