@@ -169,3 +169,12 @@ fn enter_with_an_active_option_still_picks_it(cx: &mut TestAppContext) {
     type_and_enter(&mut visual, &view, "br");
     assert_eq!(log(&mut visual, &view), r#"change:["b"] open:false"#);
 }
+
+/// Without `on_submit`, Enter with nothing to pick reaches the search field's
+/// input handler as a line break; a single-line field inserts nothing.
+#[gpui::test]
+fn without_on_submit_enter_with_nothing_to_pick_does_nothing(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, script(""));
+    type_and_enter(&mut visual, &view, "svc-new");
+    assert_eq!(log(&mut visual, &view), "");
+}
