@@ -1,22 +1,12 @@
 //! Real viewport/extent, shared-width and input regressions for Table.
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, WindowHandle, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point, px};
 use gpui_rhai::*;
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE};
+use std::collections::BTreeMap;
 
-use crate::support::ReplaceOnce;
+use super::{mount_refreshed, table};
+use crate::support::{Host, ReplaceOnce, Step, bounds, by_role, dispatch};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
 struct Rows;
 impl ScriptViewExtension for Rows {
     fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
@@ -163,116 +153,20 @@ fn mount_with_styles(
     overrides: ThemeTokenOverrides,
     styles: &str,
 ) -> (WindowHandle<Host>, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, source),
-            (
-                ModuleId::parse("components/table").unwrap(),
-                include_str!("../../../../../registry/components/table.rhai").into(),
-            ),
-            (
-                ModuleId::parse("components/badge").unwrap(),
-                include_str!("../../../../../registry/components/badge.rhai").into(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .locale_sources([
-        (
-            "en.rhai".into(),
-            include_str!("../../../../../registry/locales/en.rhai").into(),
-        ),
-        (
-            "ar.rhai".into(),
-            include_str!("../../../../../registry/locales/ar.rhai").into(),
-        ),
-    ])
-    .asset_sources([
-        (
-            "icons/disclosure_down".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/disclosure_down.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/chevron_right".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/chevron_right.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/sort_ascending".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/sort_ascending.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/sort_descending".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/sort_descending.svg")
-                    .to_vec(),
-            },
-        ),
-    ])
-    .theme_token_overrides(overrides)
-    .component_styles(styles)
-    .extension(Rows)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let name = name.to_owned();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(&name, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
+    let styles = styles.to_owned();
+    let mount = table(source)
+        .locale("en.rhai", EN_LOCALE)
+        .locale("ar.rhai", AR_LOCALE)
+        .with(move |view| {
+            view.theme_token_overrides(overrides)
+                .component_styles(styles)
+                .extension(Rows)
+        })
+        .id(name);
+    let mounted = mount_refreshed(cx, mount);
     cx.refresh().unwrap();
     cx.run_until_parked();
-    cx.refresh().unwrap();
-    cx.run_until_parked();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
-}
-fn bounds(
-    v: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    v.update(|_, cx| {
-        let snapshot = view.accessibility_snapshot(cx).unwrap();
-        snapshot
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap_or_else(|| {
-                panic!(
-                    "missing {role}/{name}; nodes={:?}",
-                    snapshot
-                        .nodes()
-                        .map(|node| (&node.role, &node.name))
-                        .collect::<Vec<_>>()
-                )
-            })
-            .geometry
-            .unwrap()
-            .visual
-    })
+    mounted
 }
 fn command(
     v: &mut VisualTestContext,
@@ -281,21 +175,7 @@ fn command(
     name: &str,
     event: &str,
 ) {
-    v.update(|window, cx| {
-        view.automate(
-            AutomationCommand::Dispatch {
-                locator: AutomationLocator::RoleName {
-                    role: role.into(),
-                    name: name.into(),
-                },
-                event: event.into(),
-                payload: None,
-            },
-            window,
-            cx,
-        )
-    })
-    .unwrap();
+    dispatch(v, view, by_role(role, name), event).unwrap();
     v.run_until_parked();
     v.update(|window, _| window.refresh());
     v.run_until_parked();
@@ -313,10 +193,7 @@ fn wheel(v: &mut VisualTestContext, p: gpui::Point<gpui::Pixels>, x: f32, y: f32
     v.run_until_parked();
 }
 fn settle(v: &mut VisualTestContext) {
-    v.executor()
-        .advance_clock(std::time::Duration::from_millis(32));
-    v.run_until_parked();
-    v.update(|window, _| window.refresh());
+    crate::support::settle(v, Step::TickRefresh, 1);
     v.run_until_parked();
 }
 fn assert_width(
@@ -405,14 +282,11 @@ fn fixed_wide_ltr_rtl_array_native_share_scroll_and_all_states(cx: &mut TestAppC
                 v.simulate_mouse_up(click, MouseButton::Left, Modifiers::none());
                 v.run_until_parked();
                 assert_eq!(
-                    v.update(|_, cx| view
-                        .accessibility_snapshot(cx)
-                        .unwrap()
+                    crate::support::snapshot(&mut v, &view)
                         .nodes()
                         .find(|node| node.role == "status")
                         .unwrap()
-                        .name
-                        .clone()),
+                        .name,
                     "c"
                 );
                 wheel(&mut v, p, if rtl { -500.0 } else { 500.0 }, 0.0);

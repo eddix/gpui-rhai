@@ -1,26 +1,14 @@
 //! CodeViewer and DiffViewer mount native document surfaces, and a text document revision
 //! invalidates exactly the viewer that reads it.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, palette_texts, wait_for_view_text};
+use crate::support::{Mount, bounds, last_error, palette_texts, wait_for_view_text};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-    UiRuntimeState,
-};
+use gpui_rhai::UiRuntimeState;
 
 #[gpui::test]
 fn code_and_diff_viewers_mount_native_document_surfaces(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/code_viewer" as code_viewer;
                     import "components/diff_viewer" as diff_viewer;
                     fn activated(ctx, payload) { () }
@@ -35,43 +23,15 @@ fn code_and_diff_viewers_mount_native_document_surfaces(cx: &mut TestAppContext)
                                 on_location_activate: Fn("activated") })
                         ]).with_style(style().width(relative(1)).height(relative(1)))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/code_viewer").unwrap(),
-                include_str!("../../../../../registry/components/code_viewer.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/diff_viewer").unwrap(),
-                include_str!("../../../../../registry/components/diff_viewer.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("document-viewer-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("document-viewer-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/code_viewer")
+    .registry("components/diff_viewer")
+    .ids("document-viewer-window", "document-viewer-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
     visual.update(|_, cx| {
@@ -89,16 +49,12 @@ fn code_and_diff_viewers_mount_native_document_surfaces(cx: &mut TestAppContext)
             );
         }
     });
-    let diff_bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("document", "Server A compared with Server B")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let diff_bounds = bounds(
+        &mut visual,
+        &view,
+        "document",
+        "Server A compared with Server B",
+    );
     let diff_line = point(
         px((diff_bounds.x + 72.0) as f32),
         px((diff_bounds.y + 42.0) as f32),
@@ -142,14 +98,8 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
         }
     }
 
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let (window, view) = Mount::new(
+        r#"
                     import "components/code_viewer" as code_viewer;
                     fn view(ctx) {
                         let document = ctx.get_native_text_document("source");
@@ -159,52 +109,18 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
                                 source: document, language: "rhai" })
                         ]).with_style(style().width(relative(1)).height(relative(1)))
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                ModuleId::parse("components/code_viewer").unwrap(),
-                include_str!("../../../../../registry/components/code_viewer.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .extension(Documents)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("native-document-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("native-document-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .registry("components/code_viewer")
+    .with(|view| view.extension(Documents))
+    .ids("native-document-window", "native-document-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     assert!(palette_texts(&mut visual, &view).contains(&"revision:1".to_owned()));
-    let document_bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("document", "Source")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let document_bounds = bounds(&mut visual, &view, "document", "Source");
     let start = point(
         px((document_bounds.x + 48.0) as f32),
         px((document_bounds.y + 8.0) as f32),
@@ -230,7 +146,7 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
     visual.simulate_keystrokes("cmd-g");
     visual.simulate_keystrokes("escape");
     visual.run_until_parked();
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    assert_eq!(last_error(&mut visual, &view), None);
     let invalidated = visual
         .update(|_, cx| {
             view.replace_native_text_document(
@@ -252,5 +168,5 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
         "revision:2",
         "native document replacement should invalidate its exact reader",
     );
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    assert_eq!(last_error(&mut visual, &view), None);
 }

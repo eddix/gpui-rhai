@@ -5,32 +5,15 @@
 //!
 //! cargo test --manifest-path tests/native-keyboard/Cargo.toml --test native manipulation::resizable_grip_cursor
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
+use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, TOKEN_BASE_SOURCE,
-};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, last_error, settle};
 
 const HANDLES: [&str; 8] = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
 /// A Resizable with a grip on every handle.
 fn mount(cx: &mut TestAppContext) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
     let grips = HANDLES
         .iter()
         .map(|handle| format!("{handle}:box([]).with_style(style().width(px(12)).height(px(12)))"))
@@ -44,42 +27,12 @@ fn view(ctx) {{ column([
         .with_style(style().width(px(500)).height(px(400)))
 ]) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), main)]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("resizable", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("resizable"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    let (mut visual, view) = Mount::components(main)
+        .motion(MotionPreference::None)
+        .id("resizable")
+        .mount(cx);
+    settle(&mut visual, Step::Frame, 1);
+    assert_eq!(last_error(&mut visual, &view), None);
     (visual, view)
 }
 

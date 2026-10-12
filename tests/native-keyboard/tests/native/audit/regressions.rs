@@ -5,40 +5,16 @@
 //! positioned focus frame does not stack with the text of a panel it is drawn over.
 //! Each false positive case has a positive control that must still be reported.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::TestAppContext;
+use gpui_rhai::MotionPreference;
+use gpui_rhai_registry::BUNDLED_LAYOUT_SOURCES_BY_ID;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID,
-    DEFAULT_THEME,
-};
+use crate::support::{Mount, Step, settle};
 
 const PROFILE: &str = r#"fn profile() { #{ name: "test",
     audit: ["row-height-mismatch", "text-edge-misaligned", "spacing-not-nested", "mixed-type-in-row"] } }"#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn audit(cx: &mut TestAppContext, view_body: &str) -> Vec<String> {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
-    {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"import "components/badge" as badge;
 import "components/button" as button;
@@ -53,41 +29,13 @@ fn item(ctx, payload) {{
 }}
 fn view(ctx) {{ column([{view_body}]).with_style(style().width(px(800))) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .profile_source(PROFILE)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("audit", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("audit"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..2 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    let (mut visual, view) = Mount::components(main)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .motion(MotionPreference::None)
+        .with(|view| view.profile_source(PROFILE))
+        .id("audit")
+        .mount(cx);
+    settle(&mut visual, Step::Frame, 2);
     visual
         .update(|_, cx| view.composition_audit(cx).unwrap())
         .into_iter()

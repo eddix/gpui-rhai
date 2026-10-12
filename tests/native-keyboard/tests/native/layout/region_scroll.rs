@@ -2,30 +2,14 @@
 //! right edge scrolls the body, as it does a ScrollArea with the same content and size
 //! (the control); the wheel precondition shows the body is a viewport.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-
 use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent,
-    TestAppContext, VisualTestContext, Window, WindowHandle, point, px,
+    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
+    point, px,
 };
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID,
-    BUNDLED_PATTERN_SOURCES_BY_ID, DEFAULT_THEME,
-};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, bounds, center, settle};
 
 const ROWS: &str = r#"
 fn rows() {
@@ -39,15 +23,6 @@ fn rows() {
 "#;
 
 fn mount(cx: &mut TestAppContext, view_body: &str) -> (VisualTestContext, ScriptViewHandle) {
-    let mut modules = BTreeMap::new();
-    let tables = [
-        BUNDLED_COMPONENT_SOURCES_BY_ID,
-        BUNDLED_LAYOUT_SOURCES_BY_ID,
-        BUNDLED_PATTERN_SOURCES_BY_ID,
-    ];
-    for (id, source) in tables.iter().flat_map(|t| t.iter()) {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"
 import "components/scroll_area" as scroll_area;
@@ -56,59 +31,15 @@ import "layouts/region" as region;
 fn view(ctx) {{ column([{view_body}]).with_style(style().width(px(400)).height(px(400))) }}
 "#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("scroll", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("scroll"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(main)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .motion(MotionPreference::None)
+        .id("scroll")
+        .mount(cx);
     visual.run_until_parked();
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
+    settle(&mut visual, Step::Refresh, 1);
     (visual, view)
-}
-
-fn visual_of(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> (f64, f64, f64, f64) {
-    visual.update(|_, cx| {
-        let snapshot = view.accessibility_snapshot(cx).unwrap();
-        let g = snapshot
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap_or_else(|| panic!("no {role} {name:?}"))
-            .geometry
-            .unwrap()
-            .visual;
-        (g.x, g.y, g.width, g.height)
-    })
 }
 
 /// Hover the viewport, then drag along its right edge from top to bottom (where an overlay
@@ -120,8 +51,9 @@ fn drag_right_edge(
     viewport_name: &str,
 ) -> (f64, f64) {
     let (mut visual, view) = mount(cx, view_body);
-    let (x, y, w, h) = visual_of(&mut visual, &view, viewport_role, viewport_name);
-    let before = visual_of(&mut visual, &view, "text", "Row 11").1;
+    let viewport = bounds(&mut visual, &view, viewport_role, viewport_name);
+    let (x, y, w, h) = (viewport.x, viewport.y, viewport.width, viewport.height);
+    let before = bounds(&mut visual, &view, "text", "Row 11").y;
     // 24px in from the ends: a Region's body (the viewport) starts below its 12px inset,
     // so this is on the thumb in both, not on the viewport's top edge.
     let start = point(px((x + w - 6.0) as f32), px((y + 24.0) as f32));
@@ -132,7 +64,7 @@ fn drag_right_edge(
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    let after = visual_of(&mut visual, &view, "text", "Row 11").1;
+    let after = bounds(&mut visual, &view, "text", "Row 11").y;
     eprintln!("{viewport_name}: Row 11 y {before} -> {after}");
     (before, after)
 }
@@ -145,15 +77,15 @@ fn wheel(
     viewport_name: &str,
 ) -> (f64, f64) {
     let (mut visual, view) = mount(cx, view_body);
-    let (x, y, w, h) = visual_of(&mut visual, &view, viewport_role, viewport_name);
-    let before = visual_of(&mut visual, &view, "text", "Row 11").1;
+    let viewport = bounds(&mut visual, &view, viewport_role, viewport_name);
+    let before = bounds(&mut visual, &view, "text", "Row 11").y;
     visual.simulate_event(ScrollWheelEvent {
-        position: point(px((x + w / 2.0) as f32), px((y + h / 2.0) as f32)),
+        position: center(viewport),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-200.0))),
         ..ScrollWheelEvent::default()
     });
     visual.run_until_parked();
-    let after = visual_of(&mut visual, &view, "text", "Row 11").1;
+    let after = bounds(&mut visual, &view, "text", "Row 11").y;
     eprintln!("{viewport_name} wheel: Row 11 y {before} -> {after}");
     (before, after)
 }

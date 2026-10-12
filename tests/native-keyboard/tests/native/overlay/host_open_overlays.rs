@@ -3,7 +3,6 @@
 //! them take Escape before it handles the key itself.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
@@ -11,9 +10,8 @@ use gpui::{
     div, px,
 };
 use gpui_rhai::*;
-use gpui_rhai_registry::{BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME};
 
-use crate::support::ReplaceOnce;
+use crate::support::{Mount, ReplaceOnce, Step, last_error, text_of};
 
 /// A raw popover the view declares itself (no owner component).
 const POPOVER: &str = r#"overlay(text("anchor"), text("popover body"), #{ id: "pop",
@@ -25,10 +23,6 @@ const DIALOG: &str = r#"dialog::Dialog(#{ key: "confirm", open: ctx.get_state("o
     title: "Confirm", content: text("Sure?"), on_open_change: Fn("set_open") })"#;
 
 fn prepared(body: &str) -> PreparedScriptView {
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"import "components/dialog" as dialog;
 fn state_schema() {{ #{{ fields: #{{
@@ -38,24 +32,13 @@ fn view(ctx) {{ column([
     text(`open=${{ctx.get_state("open")}}`).accessibility_role("group").test_id("open"),
     {body}]).with_style(style().width(px(400)).height(px(600))) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .motion_preference(MotionPreference::None)
-        .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-            (
-                path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                AssetData {
-                    mime_type: "image/svg+xml".to_owned(),
-                    bytes: source.as_bytes().to_vec(),
-                },
-            )
-        }))
+    Mount::components(main)
+        .motion(MotionPreference::None)
         .prepare()
         .unwrap()
 }
 
+/// Several views side by side under one ScriptViewHost.
 struct Host {
     host: ScriptViewHost,
     views: Vec<ScriptViewHandle>,
@@ -107,24 +90,17 @@ fn mount(
     settle(&mut visual);
     let (host, views) = saved.borrow().clone().unwrap();
     for view in &views {
-        assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+        assert_eq!(last_error(&mut visual, view), None);
     }
     (visual, host, views)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..2 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 2);
 }
 
 fn open_state(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
-        .find(|node| node.test_id.as_deref() == Some("open"))
-        .map(|node| node.name.clone())
-        .expect("open node")
+    text_of(visual, view, "open")
 }
 
 /// `(view, owner, key, kind, modal, dismiss_on_escape)` per open overlay.

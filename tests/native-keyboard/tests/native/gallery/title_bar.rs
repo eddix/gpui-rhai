@@ -3,24 +3,12 @@
 //! ones give way (the command palette still reaches them). On macOS the Host keeps the
 //! window buttons in the middle of the bar, whose height follows the density.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::time::Duration;
-
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
+use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::*;
 use gpui_rhai_cli::acceptance::{self, AcceptanceLaunch};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use super::mount_prepared;
+use crate::support::{Host, Step, last_error, settle};
 
 fn mount(cx: &mut TestAppContext, width: f32) -> (VisualTestContext, ScriptViewHandle) {
     mount_launch(cx, width, &AcceptanceLaunch::default())
@@ -37,27 +25,14 @@ fn mount_launch(
         .motion_preference(MotionPreference::None)
         .prepare()
         .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("gallery", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("gallery"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
+    let (window, view) =
+        mount_prepared(cx, prepared, ("gallery", "gallery"), false, |host, view| {
+            Host { host, view }
+        });
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.simulate_resize(gpui::size(gpui::px(width), gpui::px(860.0)));
-    for _ in 0..3 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    settle(&mut visual, Step::Tick, 3);
+    assert_eq!(last_error(&mut visual, &view), None);
     (visual, view)
 }
 

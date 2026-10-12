@@ -1,22 +1,12 @@
 // Real geometry and input regressions from the independent PR101 review.
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, WindowHandle, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point, px};
 use gpui_rhai::*;
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE};
+use std::collections::BTreeMap;
 
-use crate::support::ReplaceOnce;
+use super::{mount_refreshed, table};
+use crate::support::{Host, ReplaceOnce, bounds, by_role, center, dispatch, snapshot};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
 struct Rows;
 impl ScriptViewExtension for Rows {
     fn configure_runtime(&self, r: &mut UiRuntimeState) -> Result<(), String> {
@@ -64,115 +54,20 @@ fn mount(
     script: String,
     name: &str,
 ) -> (WindowHandle<Host>, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, script),
-            (
-                ModuleId::parse("components/table").unwrap(),
-                include_str!("../../../../../registry/components/table.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/badge").unwrap(),
-                include_str!("../../../../../registry/components/badge.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .locale_sources([
-        (
-            "en.rhai".into(),
-            include_str!("../../../../../registry/locales/en.rhai").to_owned(),
-        ),
-        (
-            "ar.rhai".into(),
-            include_str!("../../../../../registry/locales/ar.rhai").to_owned(),
-        ),
-    ])
-    .asset_sources([
-        (
-            "icons/disclosure_down".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/disclosure_down.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/chevron_right".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/chevron_right.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/sort_ascending".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/sort_ascending.svg")
-                    .to_vec(),
-            },
-        ),
-        (
-            "icons/sort_descending".into(),
-            AssetData {
-                mime_type: "image/svg+xml".into(),
-                bytes: include_bytes!("../../../../../registry/assets/icons/sort_descending.svg")
-                    .to_vec(),
-            },
-        ),
-    ])
-    .extension(Rows)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let name = name.to_owned();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(&name, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    cx.run_until_parked();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
-}
-fn bounds(
-    v: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    v.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    })
+    let mount = table(script)
+        .locale("en.rhai", EN_LOCALE)
+        .locale("ar.rhai", AR_LOCALE)
+        .with(|view| view.extension(Rows))
+        .id(name);
+    mount_refreshed(cx, mount)
 }
 fn status(v: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    v.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|n| n.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    })
+    snapshot(v, view)
+        .nodes()
+        .find(|n| n.role == "status")
+        .unwrap()
+        .name
+        .clone()
 }
 fn drag(v: &mut VisualTestContext, p: gpui::Point<gpui::Pixels>, dx: f32) {
     let q = point(p.x + px(dx), p.y);
@@ -298,10 +193,7 @@ fn native_last_column_autofit_measures_last_column_without_sort(cx: &mut TestApp
     let (window, view) = mount(cx, script(false, true, false), "pr101-native-autofit");
     let mut v = VisualTestContext::from_window(*window, cx);
     let h = bounds(&mut v, &view, "separator", "Resize C column");
-    let p = point(
-        px((h.x + h.width / 2.0) as f32),
-        px((h.y + h.height / 2.0) as f32),
-    );
+    let p = center(h);
     v.simulate_mouse_move(p, None, Modifiers::none());
     v.simulate_event(gpui::MouseDownEvent {
         button: MouseButton::Left,
@@ -329,14 +221,7 @@ fn one_column_table_is_resizable(cx: &mut TestAppContext) {
     let (window, view) = mount(cx, script(false, false, true), "pr101-single");
     let mut v = VisualTestContext::from_window(*window, cx);
     let h = bounds(&mut v, &view, "separator", "Resize C column");
-    drag(
-        &mut v,
-        point(
-            px((h.x + h.width / 2.0) as f32),
-            px((h.y + h.height / 2.0) as f32),
-        ),
-        40.0,
-    );
+    drag(&mut v, center(h), 40.0);
     assert_eq!(status(&mut v, &view), "c:200.0|none");
 }
 #[gpui::test]
@@ -347,13 +232,12 @@ fn nonresizable_neighbor_preserves_owner_and_last_keyboard_resize(cx: &mut TestA
     );
     let (window, view) = mount(cx, source, "pr101-mixed-resizable");
     let mut v = VisualTestContext::from_window(*window, cx);
-    assert!(v.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
+    assert!(
+        snapshot(&mut v, &view)
             .find_by_role_and_name("separator", "Resize B column")
             .next()
             .is_none()
-    }));
+    );
     let h = bounds(&mut v, &view, "columnheader", "A");
     drag(
         &mut v,
@@ -364,20 +248,12 @@ fn nonresizable_neighbor_preserves_owner_and_last_keyboard_resize(cx: &mut TestA
         40.0,
     );
     assert_eq!(status(&mut v, &view), "a:160.0|none");
-    v.update(|window, cx| {
-        view.automate(
-            AutomationCommand::Dispatch {
-                locator: AutomationLocator::RoleName {
-                    role: "separator".into(),
-                    name: "Resize C column".into(),
-                },
-                event: "key:right".into(),
-                payload: None,
-            },
-            window,
-            cx,
-        )
-    })
+    dispatch(
+        &mut v,
+        &view,
+        by_role("separator", "Resize C column"),
+        "key:right",
+    )
     .unwrap();
     v.run_until_parked();
     let actual = status(&mut v, &view);
@@ -408,32 +284,14 @@ fn data_loading_and_both_empty_paths_share_the_bordered_horizontal_viewport(
         }
         let (window, view) = mount(cx, source, &format!("state-shell-{name}"));
         let mut visual = VisualTestContext::from_window(*window, cx);
-        visual.update(|_, cx| {
-            let snapshot = view.accessibility_snapshot(cx).unwrap();
-            let root = snapshot
-                .find_by_role_and_name("table", "Table")
-                .next()
-                .unwrap()
-                .geometry
-                .unwrap()
-                .visual;
-            let header = snapshot
-                .find_by_role_and_name("columnheader", "C")
-                .next()
-                .unwrap()
-                .geometry
-                .unwrap();
-            assert!(
-                header.visual.x + header.visual.width > root.x + root.width,
-                "fixture must really overflow: {name}"
-            );
-            heights.push(root.height);
-        });
+        let root = bounds(&mut visual, &view, "table", "Table");
         let h = bounds(&mut visual, &view, "columnheader", "C");
-        let outside = point(
-            px((h.x + h.width / 2.0) as f32),
-            px((h.y + h.height / 2.0) as f32),
+        assert!(
+            h.x + h.width > root.x + root.width,
+            "fixture must really overflow: {name}"
         );
+        heights.push(root.height);
+        let outside = center(h);
         visual.simulate_mouse_down(outside, MouseButton::Left, Modifiers::default());
         visual.simulate_mouse_up(outside, MouseButton::Left, Modifiers::default());
         visual.run_until_parked();

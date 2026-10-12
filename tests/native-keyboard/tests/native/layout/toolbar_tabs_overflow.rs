@@ -3,27 +3,11 @@
 //! is left out, so it cannot wrap onto a second line. The `part_styles` cases are the
 //! controls the reporter used before the fix.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID};
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID,
-    BUNDLED_PATTERN_SOURCES_BY_ID, DEFAULT_THEME,
-};
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, settle, snapshot};
 
 const SCRIPT: &str = r#"
 fn noop(ctx, payload) { () }
@@ -42,15 +26,6 @@ fn mount(
     extra: &str,
     view_body: &str,
 ) -> (VisualTestContext, ScriptViewHandle) {
-    let mut modules = BTreeMap::new();
-    let tables = [
-        BUNDLED_COMPONENT_SOURCES_BY_ID,
-        BUNDLED_LAYOUT_SOURCES_BY_ID,
-        BUNDLED_PATTERN_SOURCES_BY_ID,
-    ];
-    for (id, source) in tables.iter().flat_map(|t| t.iter()) {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"
 import "components/tabs" as tabs;
@@ -61,39 +36,14 @@ import "layouts/toolbar" as toolbar;
 fn view(ctx) {{ column([{view_body}]).with_style(style().width(px(900)).height(px(400))) }}
 "#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("toolbar", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("toolbar"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(main)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .motion(MotionPreference::None)
+        .id("toolbar")
+        .mount(cx);
     visual.run_until_parked();
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
+    settle(&mut visual, Step::Refresh, 1);
     (visual, view)
 }
 
@@ -117,24 +67,22 @@ fn measure(
 }}"#
     );
     let (mut visual, view) = mount(cx, &scene, "scene()");
-    let found = visual.update(|_, cx| {
-        let snapshot = view.accessibility_snapshot(cx).unwrap();
-        let bounds = |role: &str, name: &str| {
-            let g = snapshot
-                .find_by_role_and_name(role, name)
-                .next()
-                .unwrap_or_else(|| panic!("no {role} {name:?}"))
-                .geometry
-                .unwrap()
-                .layout;
-            (g.x, g.y, g.width, g.height)
-        };
-        (
-            bounds("region", "Services"),
-            bounds("toolbar", "Filters"),
-            bounds("tablist", "View"),
-        )
-    });
+    let snapshot = snapshot(&mut visual, &view);
+    let bounds = |role: &str, name: &str| {
+        let g = snapshot
+            .find_by_role_and_name(role, name)
+            .next()
+            .unwrap_or_else(|| panic!("no {role} {name:?}"))
+            .geometry
+            .unwrap()
+            .layout;
+        (g.x, g.y, g.width, g.height)
+    };
+    let found = (
+        bounds("region", "Services"),
+        bounds("toolbar", "Filters"),
+        bounds("tablist", "View"),
+    );
     eprintln!(
         "{label}: region {:?}, toolbar {:?}, tablist {:?}",
         found.0, found.1, found.2
@@ -145,17 +93,14 @@ fn measure(
 fn natural_tablist_width(cx: &mut TestAppContext) -> f64 {
     cx.update(gpui_rhai::install);
     let (mut visual, view) = mount(cx, "", "switcher()");
-    let width = visual.update(|_, cx| {
-        let snapshot = view.accessibility_snapshot(cx).unwrap();
-        snapshot
-            .find_by_role_and_name("tablist", "View")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .layout
-            .width
-    });
+    let width = snapshot(&mut visual, &view)
+        .find_by_role_and_name("tablist", "View")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .layout
+        .width;
     eprintln!("tab list alone: {width}px wide");
     width
 }

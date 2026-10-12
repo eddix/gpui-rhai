@@ -4,6 +4,8 @@ use gpui::{
     Window, WindowHandle, point, px,
 };
 use gpui_rhai::*;
+
+use crate::support::Mount;
 use std::{
     collections::BTreeMap,
     sync::mpsc::{Receiver, Sender, channel},
@@ -154,23 +156,19 @@ fn view(ctx) { Probe(#{ key: "probe", watch: ctx.window_id() == "domain" }) }
 "#;
 
 fn prepared(source: &str, ready: Sender<SubscriptionEmitter>) -> PreparedScriptView {
-    let entry = ModuleId::parse("main").unwrap();
-    let manifest = AppManifest::new(entry.clone())
+    let manifest = AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.echo", "*")
         .unwrap()
         .with_capability("app.push", "*")
         .unwrap();
-    EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .manifest(manifest)
-    .extension(Extension(ready))
-    .runtime_clock(ManualRuntimeClock::new(Instant::now()).clock())
-    .prepare()
-    .unwrap()
+    Mount::new(source)
+        .with(move |view| {
+            view.manifest(manifest)
+                .extension(Extension(ready))
+                .runtime_clock(ManualRuntimeClock::new(Instant::now()).clock())
+        })
+        .prepare()
+        .unwrap()
 }
 
 fn setup(cx: &mut TestAppContext) -> (WindowHandle<Host>, SubscriptionEmitter) {

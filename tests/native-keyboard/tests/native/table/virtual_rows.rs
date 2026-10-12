@@ -1,18 +1,20 @@
 //! Table rows in the native virtual list: grouped headers stick, and the 1000-row workload
 //! tracks a resized window viewport.
 
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::time::Duration;
 
-use super::table_1000_example;
-use crate::support::{
-    SingleEmbeddedHost, dispatch_script_button, official_icon_assets, wait_for_view_text,
-};
+use super::{mount_example, mount_refreshed, table, table_1000_example};
+use crate::support::{dispatch_script_button, wait_for_view_text};
 use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px, size};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ExecutionOperation, ModuleId, ScriptViewConfig,
-    ScriptViewHost, UiNode, UiValue,
-};
+use gpui_rhai::{ExecutionOperation, UiNode, UiValue};
+
+/// Advances the clock 16ms and runs until parked, `times` times.
+fn advance(visual: &mut VisualTestContext, times: usize) {
+    for _ in 0..times {
+        visual.executor().advance_clock(Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+}
 
 fn virtual_realized_window(node: &UiNode) -> Option<(std::ops::Range<usize>, usize)> {
     match node.kind() {
@@ -42,15 +44,7 @@ fn virtual_realized_window(node: &UiNode) -> Option<(std::ops::Range<usize>, usi
 
 #[gpui::test]
 fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let table = ModuleId::parse("components/table").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                entry,
-                r#"
+    let main = r#"
                     import "components/table" as table;
                     fn toggled(ctx, group) { () }
                     fn view(ctx) {
@@ -76,50 +70,13 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
                             on_group_toggle: Fn("toggled")
                         })
                     }
-                "#
-                .to_owned(),
-            ),
-            (
-                table,
-                include_str!("../../../../../registry/components/table.rhai").to_owned(),
-            ),
-            (
-                ModuleId::parse("components/badge").unwrap(),
-                include_str!("../../../../../registry/components/badge.rhai").to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("sticky-table-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("sticky-table-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
+                "#;
+    let (window, view) = mount_refreshed(
+        cx,
+        table(main).ids("sticky-table-window", "sticky-table-view"),
+    );
     let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..4 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 4);
     let viewport = visual
         .debug_bounds("virtual-list:groups-body")
         .expect("grouped Table virtual viewport");
@@ -162,9 +119,7 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         "a group header at its natural position must not be duplicated in the sticky layer"
     );
     scroll(&mut visual, -60.0);
-    cx.background_executor
-        .advance_clock(std::time::Duration::from_millis(16));
-    visual.run_until_parked();
+    advance(&mut visual, 1);
     let sticky_bounds = visual
         .debug_bounds("virtual-list-sticky:groups-body")
         .expect("the group header must enter the sticky layer after crossing the viewport top");
@@ -227,11 +182,7 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         "rows inside the second group must settle before asserting its sticky position",
     );
     scroll(&mut visual, -60.0);
-    for _ in 0..4 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 4);
     let beta = bounds_for_group(&mut visual, "beta, 20");
     assert!(
         (beta.y - f64::from(viewport.origin.y)).abs() < 1.0,
@@ -251,34 +202,14 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
 
 #[gpui::test]
 fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let prepared = table_1000_example::table_1000_view().prepare().unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("table-1000-resize-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("table-1000-resize-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
+    let (window, view) = mount_example(
+        cx,
+        table_1000_example::table_1000_view(),
+        "table-1000-resize-window",
+        "table-1000-resize-view",
+    );
     let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..4 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 4);
     wait_for_view_text(
         &mut visual,
         &view,
@@ -310,9 +241,7 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         .map(|collection| collection.realized_range.clone())
         .collect::<Vec<_>>();
     for _ in 0..2 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
+        advance(&mut visual, 1);
         let next = visual
             .update(|_, cx| view.take_performance_snapshot(cx))
             .unwrap();
@@ -333,11 +262,7 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         );
     }
     dispatch_script_button(&mut visual, &view, "Reverse 1,000 rows");
-    for _ in 0..4 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 4);
     wait_for_view_text(
         &mut visual,
         &view,
@@ -345,11 +270,7 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         "native Table sorting should project the descending Rust order",
     );
     dispatch_script_button(&mut visual, &view, "Reverse 1,000 rows");
-    for _ in 0..4 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 4);
     wait_for_view_text(
         &mut visual,
         &view,
@@ -377,22 +298,14 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         node.bounds.expect("node has committed bounds")
     };
     visual.simulate_resize(size(px(820.0), px(620.0)));
-    for _ in 0..3 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 3);
     let compact = node_bounds(&mut visual, "table", "One thousand deterministic accounts");
     let compact_email = node_bounds(&mut visual, "columnheader", "Email");
     let compact_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let (_, compact_realized) = virtual_realized_window(&compact_root).unwrap();
 
     visual.simulate_resize(size(px(1_180.0), px(820.0)));
-    for _ in 0..3 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 3);
     let expanded = node_bounds(&mut visual, "table", "One thousand deterministic accounts");
     let expanded_email = node_bounds(&mut visual, "columnheader", "Email");
     let expanded_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
@@ -424,11 +337,7 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         delta: ScrollDelta::Pixels(point(px(0.0), px(-600.0))),
         ..ScrollWheelEvent::default()
     });
-    for _ in 0..4 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 4);
     let scrolled_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let (scrolled_range, scrolled_realized) = virtual_realized_window(&scrolled_root).unwrap();
     assert!(
@@ -463,11 +372,7 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
             .update(|_, cx| view.replace_native_collection("accounts", replacement, cx))
             .unwrap()
     );
-    for _ in 0..4 {
-        cx.background_executor
-            .advance_clock(std::time::Duration::from_millis(16));
-        visual.run_until_parked();
-    }
+    advance(&mut visual, 4);
     wait_for_view_text(
         &mut visual,
         &view,

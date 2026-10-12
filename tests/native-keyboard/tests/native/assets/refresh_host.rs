@@ -17,6 +17,8 @@ use gpui::{
 };
 use gpui_rhai::*;
 
+use crate::support::{Mount, bounds, by_test_id, dispatch, last_error, snapshot};
+
 const COVER: &str = "media/cover";
 
 fn cover_data(color: &str) -> AssetData {
@@ -228,6 +230,7 @@ fn view(ctx){column([
 ])}
 "#;
 
+/// Counts its renders.
 struct Host {
     domain: ScriptViewHost,
     view: ScriptViewHandle,
@@ -244,22 +247,15 @@ fn mount(
     extension: Extension,
     name: &str,
 ) -> (WindowHandle<Host>, ScriptViewHandle, Rc<Cell<usize>>) {
-    let entry = ModuleId::parse("main").unwrap();
-    let manifest = AppManifest::new(entry.clone())
+    let manifest = AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.cover_prepare", "*")
         .unwrap()
         .with_capability("app.cover_publish", "*")
         .unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, SOURCE.into())])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .manifest(manifest)
-    .extension(extension)
-    .prepare()
-    .unwrap();
+    let prepared = Mount::new(SOURCE)
+        .with(move |view| view.manifest(manifest).extension(extension))
+        .prepare()
+        .unwrap();
     let capture = Rc::new(RefCell::new(None));
     let captured = capture.clone();
     let frames = Rc::new(Cell::new(0));
@@ -321,38 +317,16 @@ fn assert_pixels(pixels: &[u8], bgra: [u8; 4]) {
     assert!(pixels.chunks_exact(4).all(|pixel| pixel == bgra));
 }
 fn assert_cover_geometry(v: &mut VisualTestContext, view: &ScriptViewHandle) {
-    let geometry = v.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("image", "Cover")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let geometry = bounds(v, view, "image", "Cover");
     assert!((geometry.width - 32.0).abs() < 0.01 && (geometry.height - 32.0).abs() < 0.01);
-    assert!(v.update(|_, cx| view.last_error(cx).unwrap()).is_none());
+    assert!(last_error(v, view).is_none());
 }
 fn publish_from_worker(
     v: &mut VisualTestContext,
     view: &ScriptViewHandle,
     calls: &Rc<Cell<usize>>,
 ) {
-    v.update(|window, cx| {
-        view.automate(
-            AutomationCommand::Dispatch {
-                locator: AutomationLocator::TestId {
-                    id: "prepare".into(),
-                },
-                event: "click".into(),
-                payload: None,
-            },
-            window,
-            cx,
-        )
-    })
-    .unwrap();
+    dispatch(v, view, by_test_id("prepare"), "click").unwrap();
     for _ in 0..200 {
         v.run_until_parked();
         v.executor().advance_clock(Duration::from_millis(16));
@@ -368,11 +342,9 @@ fn publish_from_worker(
     );
     v.run_until_parked();
     assert_eq!(
-        v.update(|_, cx| view
-            .accessibility_snapshot(cx)
-            .unwrap()
+        snapshot(v, view)
             .find_by_role_and_name("status", "2")
-            .count()),
+            .count(),
         1
     );
 }
@@ -432,11 +404,9 @@ fn shared_registry_requires_host_scheduled_foreground_window_refresh(cx: &mut Te
     let mut second_v = VisualTestContext::from_window(*second, cx);
     assert_cover_geometry(&mut second_v, &second_view);
     assert_eq!(
-        second_v.update(|_, cx| second_view
-            .accessibility_snapshot(cx)
-            .unwrap()
+        snapshot(&mut second_v, &second_view)
             .find_by_role_and_name("status", "1")
-            .count()),
+            .count(),
         1,
         "asset sharing does not share application state"
     );

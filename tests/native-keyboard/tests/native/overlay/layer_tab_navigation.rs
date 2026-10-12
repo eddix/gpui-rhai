@@ -6,7 +6,6 @@
 //! keyboard handling to the layer content it declares.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
@@ -14,13 +13,15 @@ use gpui::{
     TestAppContext, VisualTestContext, Window, div, point, px,
 };
 use gpui_rhai::*;
-use gpui_rhai_registry::{BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME};
+
+use crate::support::{Mount, Step, bounds, center, last_error, node_by_test_id, text_of};
 
 const BUTTONS: &str = r#"row([
     button::Button(#{ key: "first", text: "First", on_click: Fn("noop") }),
     button::Button(#{ key: "second", text: "Second", on_click: Fn("noop") }),
 ]).with_style(style().gap(px(8)))"#;
 
+/// Several views stacked under one ScriptViewHost.
 struct Host {
     host: ScriptViewHost,
     views: Vec<ScriptViewHandle>,
@@ -39,10 +40,6 @@ impl Render for Host {
 }
 
 fn prepared(body: &str) -> PreparedScriptView {
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"import "components/button" as button;
 fn state_schema() {{ #{{ fields: #{{ hits: #{{ schema: #{{ type: "integer" }},
@@ -56,20 +53,8 @@ fn view(ctx) {{ column([
     text(`hits=${{ctx.get_state("hits")}}`).accessibility_role("group").test_id("hits"),
     {body}]).with_style(style().width(px(800)).height(px(300))) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .motion_preference(MotionPreference::None)
-        .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-            (
-                path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                AssetData {
-                    mime_type: "image/svg+xml".to_owned(),
-                    bytes: source.as_bytes().to_vec(),
-                },
-            )
-        }))
+    Mount::components(main)
+        .motion(MotionPreference::None)
         .prepare()
         .unwrap()
 }
@@ -122,7 +107,7 @@ fn mount_views(
     let mut visual = VisualTestContext::from_window(*window, cx);
     settle(&mut visual);
     for view in &views {
-        assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+        assert_eq!(last_error(&mut visual, view), None);
     }
     (visual, views)
 }
@@ -133,25 +118,11 @@ fn mount(cx: &mut TestAppContext, body: &str) -> (VisualTestContext, ScriptViewH
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..2 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 2);
 }
 
 fn click_button(visual: &mut VisualTestContext, view: &ScriptViewHandle, name: &str) {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let bounds = tree
-        .find_by_role_and_name("button", name)
-        .next()
-        .and_then(|node| node.geometry)
-        .unwrap_or_else(|| panic!("no button {name}"))
-        .visual;
-    #[allow(clippy::cast_possible_truncation)]
-    let position = point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
+    let position = center(bounds(visual, view, "button", name));
     visual.simulate_mouse_move(position, None, Modifiers::none());
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::none());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::none());
@@ -239,11 +210,7 @@ fn tab_moves_between_buttons_in_a_layer(cx: &mut TestAppContext) {
 }
 
 fn hits(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
-        .find(|node| node.test_id.as_deref() == Some("hits"))
-        .map(|node| node.name.clone())
-        .expect("hits node")
+    text_of(visual, view, "hits")
 }
 
 /// Focus First by a click and press the Host-bound key of a view action.
@@ -314,11 +281,7 @@ fn a_view_key_binding_in_a_layer_runs_in_the_view_that_declared_it(cx: &mut Test
 }
 
 fn popover_open(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
-        .find(|node| node.test_id.as_deref() == Some("open"))
-        .map(|node| node.name.clone())
-        .expect("open node")
+    text_of(visual, view, "open")
 }
 
 /// Escape still reaches the Host's overlays with focus in a layer.
@@ -349,14 +312,10 @@ fn copy_runs_with_focus_in_a_layer(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, &layered(&content));
     click_button(&mut visual, &view, "First");
     let first = focused(&mut visual).expect("clicking First focuses it");
-    let bounds = {
-        let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-        tree.nodes()
-            .find(|node| node.test_id.as_deref() == Some("copyable"))
-            .and_then(|node| node.geometry)
-            .expect("selectable text has bounds")
-            .visual
-    };
+    let bounds = node_by_test_id(&mut visual, &view, "copyable")
+        .geometry
+        .expect("selectable text has bounds")
+        .visual;
     visual.write_to_clipboard(gpui::ClipboardItem::new_string("sentinel".to_owned()));
     #[allow(clippy::cast_possible_truncation)]
     let (start, end) = (

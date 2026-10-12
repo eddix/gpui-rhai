@@ -1,52 +1,19 @@
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::{TestAppContext, VisualTestContext, WindowHandle};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
-use gpui_rhai::*;
+use crate::support::{Host, Mount};
 
-const DEFAULT_DARK: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
 const PROFILE: &str = r#"fn profile() { #{ name: "test", audit: [
     "row-height-mismatch", "text-edge-misaligned", "spacing-not-nested",
     "multiple-solid-actions", "mixed-type-in-row", "low-contrast-text", "unresolved-font",
 ] } }"#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn mount(cx: &mut TestAppContext, script: &str) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, script.to_owned())])),
-        DEFAULT_DARK,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .profile_source(PROFILE)
-    .motion_preference(MotionPreference::None)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("audit", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("audit"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
-    (window, view)
+    Mount::new(script)
+        .motion(MotionPreference::None)
+        .with(|view| view.profile_source(PROFILE))
+        .id("audit")
+        .mount_window(cx)
 }
 
 fn rules(cx: &mut TestAppContext, script: &str) -> Vec<String> {
@@ -148,32 +115,17 @@ fn view(ctx) {
 #[gpui::test]
 fn no_profile_means_no_design_rules(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(
-            entry,
-            r#"fn view(ctx) { row([text("A").with_style(style().font_size(px(30))),
-                text("b").with_style(style().font_size(px(9)))]) }"#
-                .to_owned(),
-        )])),
+    let (window, view) = Mount::new(
+        r#"fn view(ctx) { row([text("A").with_style(style().font_size(px(30))),
+                text("b").with_style(style().font_size(px(9)))]) }"#,
+    )
+    .theme(
         r#"fn theme() { #{ family: "Plain", name: "Dark", mode: "dark",
             tokens: #{ colors: #{ ink: 0xffffffff } } } }"#,
     )
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("plain", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("plain"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
+    .no_token_base()
+    .id("plain")
+    .mount_window(cx);
     let mut visual = VisualTestContext::from_window(*window, cx);
     let findings = visual.update(|_, cx| view.composition_audit(cx).unwrap());
     assert!(findings.is_empty(), "{findings:?}");

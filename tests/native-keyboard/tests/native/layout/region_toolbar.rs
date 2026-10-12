@@ -4,32 +4,11 @@
 //! `fill`, `size` and `inset` through. Region's body scrolls only on `scroll`
 //! and otherwise clips: it neither draws nor takes clicks outside the region.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::{TestAppContext, VisualTestContext, point, px};
+use gpui_rhai::{GeometryBounds, MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID};
 
-use gpui::{
-    Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle, point,
-    px,
-};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID,
-    BUNDLED_PATTERN_SOURCES_BY_ID, DEFAULT_THEME,
-};
-
-use crate::support::ReplaceOnce;
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, ReplaceOnce, Step, filled, settle, snapshot, text_of};
 
 /// A mounted view: `view_body` sits in a column of `width` x `height` pixels.
 fn mount(
@@ -38,16 +17,6 @@ fn mount(
     width: u32,
     height: u32,
 ) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    let tables = [
-        BUNDLED_COMPONENT_SOURCES_BY_ID,
-        BUNDLED_LAYOUT_SOURCES_BY_ID,
-        BUNDLED_PATTERN_SOURCES_BY_ID,
-    ];
-    for (id, source) in tables.iter().flat_map(|table| table.iter()) {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
     let main = format!(
         r#"import "components/button" as button;
 import "components/input" as input;
@@ -68,44 +37,20 @@ fn rows() {{
 }}
 fn view(ctx) {{ column([{view_body}]).with_style(style().width(px({width})).height(px({height}))) }}"#
     );
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main);
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("toolbar", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("toolbar"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
+    let (mut visual, view) = Mount::components(main)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .motion(MotionPreference::None)
+        .id("toolbar")
+        .mount(cx);
+    settle(&mut visual, Step::Frame, 1);
     (visual, view)
 }
 
+/// The node with test ID `id`, or the text field or button named `id`.
 fn bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle, id: &str) -> GeometryBounds {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
+    snapshot(visual, view)
+        .nodes()
         .find(|node| {
             node.test_id.as_deref() == Some(id)
                 || (node.role == "text_field" && node.name == id)
@@ -293,8 +238,7 @@ fn scroll_body(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> (f64,
         ..gpui::ScrollWheelEvent::default()
     });
     visual.run_until_parked();
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
+    settle(visual, Step::Frame, 1);
     (before.y, bounds(visual, view, "row-0").y)
 }
 
@@ -346,43 +290,20 @@ fn a_region_body_clips_unless_it_scrolls(cx: &mut TestAppContext) {
             text(`${{ctx.get_state("clicks")}}`).test_id("clicks")"#
         );
         let (mut visual, view) = mount(cx, &body, 300, 600);
-        let clicks = |visual: &mut VisualTestContext| {
-            visual.update(|_, cx| {
-                view.accessibility_snapshot(cx)
-                    .unwrap()
-                    .nodes()
-                    .find(|node| node.test_id.as_deref() == Some("clicks"))
-                    .unwrap()
-                    .name
-                    .clone()
-            })
-        };
-        let magenta: gpui::Hsla = gpui::rgba(0xff00_ffff).into();
-        // Scene quads are in device pixels.
-        let mask_bottom = visual.update(|window, _| {
-            let scale = window.scale_factor();
-            window
-                .painted_quads()
-                .iter()
-                .filter(|quad| quad.background == magenta.into())
-                .map(|quad| {
-                    let mask = quad.content_mask.bounds;
-                    let bottom = (mask.origin.y + mask.size.height).0;
-                    bottom.min((quad.bounds.origin.y + quad.bounds.size.height).0) / scale
-                })
-                .fold(0.0_f32, f32::max)
-        });
+        let clicks = |visual: &mut VisualTestContext| text_of(visual, &view, "clicks");
+        let mask_bottom = filled(&mut visual, 0xff00_ffff)
+            .iter()
+            .map(|quad| quad.mask.bottom().min(quad.bounds.bottom()))
+            .fold(0.0_f32, f32::max);
         assert!(
             mask_bottom > 150.0 && mask_bottom <= 200.5,
             "scroll {scroll}: the body paints down to {mask_bottom}"
         );
         visual.simulate_click(point(px(50.0), px(300.0)), gpui::Modifiers::none());
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
+        settle(&mut visual, Step::Frame, 1);
         assert_eq!(clicks(&mut visual), "0", "scroll {scroll}: a press below");
         visual.simulate_click(point(px(50.0), px(100.0)), gpui::Modifiers::none());
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
+        settle(&mut visual, Step::Frame, 1);
         assert_eq!(clicks(&mut visual), "1", "scroll {scroll}: a press inside");
     }
 }

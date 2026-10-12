@@ -4,8 +4,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
+use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::*;
+use gpui_rhai_registry::BUNDLED_PROFILES;
+
+use crate::support::{Host, Step, last_error, settle};
 
 #[allow(dead_code)]
 #[path = "../../../../../crates/gpui-rhai/examples/settings_panel.rs"]
@@ -27,17 +30,13 @@ mod data_table;
 #[path = "../../../../../crates/gpui-rhai/examples/embedded_views.rs"]
 mod embedded_views;
 
-const PRODUCTIVITY: &str = include_str!("../../../../../registry/profiles/productivity.rhai");
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
+/// The bundled productivity profile.
+fn productivity() -> &'static str {
+    BUNDLED_PROFILES
+        .iter()
+        .find(|(id, _)| *id == "productivity")
+        .unwrap()
+        .1
 }
 
 /// Every rule except font resolution: the test platform ships no system fonts.
@@ -71,11 +70,8 @@ fn findings(
     let view = captured.borrow().clone().unwrap();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.simulate_resize(gpui::size(gpui::px(width), gpui::px(height)));
-    for _ in 0..3 {
-        visual.update(|window, _| window.refresh());
-        visual.run_until_parked();
-    }
-    if let Some(error) = visual.update(|_, cx| view.last_error(cx).unwrap()) {
+    settle(&mut visual, Step::Refresh, 3);
+    if let Some(error) = last_error(&mut visual, &view) {
         return vec![format!("render error: {error}")];
     }
     visual
@@ -86,7 +82,7 @@ fn findings(
 }
 
 fn audited(view: EmbeddedScriptView) -> PreparedScriptView {
-    view.profile_source(PRODUCTIVITY)
+    view.profile_source(productivity())
         .motion_preference(MotionPreference::None)
         .prepare()
         .unwrap()

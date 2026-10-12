@@ -8,11 +8,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext};
 use gpui_rhai::*;
+
+use crate::support::{Mount, Step, bounds, by_role, center, dispatch};
 
 /// (label, origin, view, component) for every `record` call.
 type Records = Rc<RefCell<Vec<(String, InvocationOrigin, Option<String>, String)>>>;
@@ -133,77 +132,37 @@ fn view(ctx) {
 }
 "#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 3);
 }
 
 #[gpui::test]
 fn capability_calls_carry_their_origin(cx: &mut TestAppContext) {
     // Task work runs on a runtime worker thread.
     cx.executor().allow_parking();
-    cx.update(gpui_rhai::install);
     let records = Records::default();
     let capture = Capture {
         records: records.clone(),
     };
-    let entry = ModuleId::parse("main").unwrap();
-    let manifest = AppManifest::new(entry.clone())
+    let manifest = AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.capture", "*")
         .unwrap()
         .with_capability("app.work", "*")
         .unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, MAIN.to_owned())])),
-        r#"fn theme(){#{family:"Origin",name:"Dark",mode:"dark",tokens:#{}}}"#,
-    )
-    .manifest(manifest)
-    .runtime_clock(ManualRuntimeClock::new(std::time::Instant::now()).clock())
-    .extension(capture)
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("origin", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("origin"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::new(MAIN)
+        .theme(r#"fn theme(){#{family:"Origin",name:"Dark",mode:"dark",tokens:#{}}}"#)
+        .no_token_base()
+        .with(move |view| {
+            view.manifest(manifest)
+                .runtime_clock(ManualRuntimeClock::new(std::time::Instant::now()).clock())
+                .extension(capture)
+        })
+        .id("origin")
+        .mount(cx);
     settle(&mut visual);
 
     // A real click: user input, and the task it starts completes as started by it.
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let go = tree
-        .find_by_role_and_name("button", "Go")
-        .next()
-        .and_then(|node| node.geometry)
-        .unwrap()
-        .visual;
-    #[allow(clippy::cast_possible_truncation)]
-    let position = point(
-        px((go.x + go.width / 2.0) as f32),
-        px((go.y + go.height / 2.0) as f32),
-    );
+    let position = center(bounds(&mut visual, &view, "button", "Go"));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::none());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::none());
     settle(&mut visual);
@@ -228,22 +187,7 @@ fn capability_calls_carry_their_origin(cx: &mut TestAppContext) {
     settle(&mut visual);
 
     // The same callback through automation.
-    visual
-        .update(|window, cx| {
-            view.automate(
-                AutomationCommand::Dispatch {
-                    locator: AutomationLocator::RoleName {
-                        role: "button".into(),
-                        name: "Go".into(),
-                    },
-                    event: "click".into(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_role("button", "Go"), "click").unwrap();
     settle(&mut visual);
 
     let records = records.borrow();

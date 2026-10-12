@@ -5,11 +5,10 @@ mod tests {
         Window, WindowHandle, point, px,
     };
     use gpui_rhai::*;
-    use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+    use std::{cell::RefCell, rc::Rc};
 
-    use crate::support::ReplaceOnce;
+    use crate::support::{Mount, ReplaceOnce, Step, bounds, by_role, dispatch};
 
-    const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
     struct Host {
         host: ScriptViewHost,
         view: ScriptViewHandle,
@@ -45,15 +44,7 @@ fn view(ctx){render_component("tests/provider",#{key:"provider"})}
         name: &str,
     ) -> (WindowHandle<Host>, ScriptViewHandle) {
         cx.update(gpui_rhai::install);
-        let entry = ModuleId::parse("main").unwrap();
-        let prepared = EmbeddedScriptView::new(
-            entry.clone(),
-            EmbeddedScriptSource::new(BTreeMap::from([(entry, source.to_owned())])),
-            std::fs::read_to_string(format!("{ROOT}/registry/themes/default_dark.rhai")).unwrap(),
-        )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .prepare()
-        .unwrap();
+        let prepared = Mount::new(source).prepare().unwrap();
         let capture = Rc::new(RefCell::new(None));
         let save = capture.clone();
         let name = name.to_owned();
@@ -71,12 +62,7 @@ fn view(ctx){render_component("tests/provider",#{key:"provider"})}
         (window, view)
     }
     fn settle(v: &mut VisualTestContext) {
-        for _ in 0..4 {
-            v.background_executor
-                .advance_clock(std::time::Duration::from_millis(32));
-            v.run_until_parked();
-            v.update(|window, _| window.refresh());
-        }
+        crate::support::settle(v, Step::TickRefresh, 4);
     }
     fn readout(v: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
         v.update(|_, cx| {
@@ -93,16 +79,7 @@ fn view(ctx){render_component("tests/provider",#{key:"provider"})}
     }
 
     fn click(v: &mut VisualTestContext, view: &ScriptViewHandle, name: &str) {
-        let b = v.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .find_by_role_and_name("button", name)
-                .next()
-                .unwrap()
-                .geometry
-                .unwrap()
-                .visual
-        });
+        let b = bounds(v, view, "button", name);
         let p = point(px((b.x + 30.) as f32), px((b.y + 15.) as f32));
         v.simulate_mouse_down(p, MouseButton::Left, Modifiers::default());
         v.simulate_mouse_up(p, MouseButton::Left, Modifiers::default());
@@ -256,22 +233,7 @@ fn view(ctx)"#,
             // Capture the failed transaction at its synchronous boundary.
             // A later successful independent geometry reader may clear the
             // view's last-error diagnostic without undoing that failure.
-            let error = v
-                .update(|window, cx| {
-                    view.automate(
-                        AutomationCommand::Dispatch {
-                            locator: AutomationLocator::RoleName {
-                                role: "button".into(),
-                                name: "Advance".into(),
-                            },
-                            event: "click".into(),
-                            payload: None,
-                        },
-                        window,
-                        cx,
-                    )
-                })
-                .unwrap_err();
+            let error = dispatch(&mut v, &view, by_role("button", "Advance"), "click").unwrap_err();
             assert!(
                 error.to_string().contains("ref-candidate-failure"),
                 "{error}"

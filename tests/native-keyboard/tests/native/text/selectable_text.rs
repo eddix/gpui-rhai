@@ -1,23 +1,12 @@
 //! Selectable text uses native selection and copy semantics.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, node_texts, official_icon_assets};
+use crate::support::{Mount, node_texts};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-};
 
 #[gpui::test]
 fn selectable_text_uses_native_selection_and_copy_semantics(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let (window, view) = Mount::new(
+        r#"
                 fn state_schema() { #{ fields: #{
                     clicks: #{ schema: #{ type: "integer" },
                         "default": #{ type: "integer", value: 0 } }
@@ -35,35 +24,14 @@ fn selectable_text_uses_native_selection_and_copy_semantics(cx: &mut TestAppCont
                         text(`clicks: ${ctx.get_state("clicks")}`)
                     ]).on_click(Fn("parent_clicked"))
                 }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("selectable-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("selectable-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .bundled_assets()
+    .ids("selectable-window", "selectable-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
 

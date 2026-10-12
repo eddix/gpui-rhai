@@ -2,15 +2,12 @@
 //! `VirtualCollection[key]/Item[<item key>]/...`, so a keyless component in a
 //! newly realized row cannot take the path of a retained row's component.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-
 use gpui::{
-    Context, IntoElement, Modifiers, Render, ScrollDelta, ScrollWheelEvent, TestAppContext,
-    VisualTestContext, Window, point, px,
+    Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px,
 };
 use gpui_rhai::*;
+
+use crate::support::{Mount, Step, last_error, settle, snapshot};
 
 /// A keyless formal component (stateless, like an adornment Badge), once per row.
 const MARK: &str = r#"
@@ -45,20 +42,9 @@ fn view(ctx) {
 }
 "#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn realized(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
+    snapshot(visual, view)
+        .nodes()
         .filter_map(|node| node.test_id.clone())
         .filter(|id| id.starts_with('r'))
         .collect()
@@ -93,33 +79,15 @@ fn mark_paths(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<St
 
 #[gpui::test]
 fn keyless_components_in_new_rows_do_not_take_retained_paths(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, MAIN.to_owned()),
-            (ModuleId::parse("components/mark").unwrap(), MARK.to_owned()),
-        ])),
-        r#"fn theme(){#{family:"Paths",name:"Dark",mode:"dark",tokens:#{}}}"#,
-    )
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("paths", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("paths"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
+    // A theme of its own, no token base, no assets; the motion preference from the
+    // environment.
+    let (mut visual, view) = Mount::new(MAIN)
+        .module("components/mark", MARK)
+        .theme(r#"fn theme(){#{family:"Paths",name:"Dark",mode:"dark",tokens:#{}}}"#)
+        .no_token_base()
+        .id("paths")
+        .mount(cx);
+    settle(&mut visual, Step::Frame, 1);
 
     let before = realized(&mut visual, &view);
     let paths = mark_paths(&mut visual, &view);
@@ -139,15 +107,14 @@ fn keyless_components_in_new_rows_do_not_take_retained_paths(cx: &mut TestAppCon
         ..Default::default()
     });
     visual.run_until_parked();
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
+    settle(&mut visual, Step::Frame, 1);
     let after = realized(&mut visual, &view);
     println!("after {after:?}");
     assert!(
         after.iter().any(|id| before.contains(id)) && after.iter().any(|id| !before.contains(id)),
         "the scroll keeps some rows and realizes new ones: {before:?} -> {after:?}"
     );
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    assert_eq!(last_error(&mut visual, &view), None);
     let paths = mark_paths(&mut visual, &view);
     let mut unique = paths.clone();
     unique.sort();

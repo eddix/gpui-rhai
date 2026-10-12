@@ -6,98 +6,36 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent,
-    TestAppContext, VisualTestContext, Window, WindowHandle, point, px,
+    IntoElement, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    VisualTestContext, Window, WindowHandle, point, px,
 };
 use gpui_rhai::*;
 use gpui_rhai_cli::gallery::{GalleryLaunch, prepare as prepare_gallery};
 
-use crate::support::ReplaceOnce;
+use gpui_rhai_registry::BUNDLED_CHART_SOURCES_BY_ID;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
+use crate::support::{ActiveHost, Mount, ReplaceOnce, bounds, center, click_center, snapshot};
 
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let element = if self.view.state() == ScriptViewState::Active {
-            self.view.element().unwrap()
-        } else {
-            gpui::div().into_any_element()
-        };
-        self.host.container(element)
-    }
-}
-
-fn source(path: &str) -> String {
-    std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join(path),
-    )
-    .unwrap()
-}
-
+/// The chart modules over the default theme, no assets, motion off; the window root shows
+/// nothing once the view is no longer active.
 fn mount(
     cx: &mut TestAppContext,
     script: &str,
     name: &str,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, script.to_owned()),
-            (
-                ModuleId::parse("charts/chart").unwrap(),
-                source("registry/charts/chart.rhai"),
-            ),
-            (
-                ModuleId::parse("charts/bar_chart").unwrap(),
-                source("registry/charts/bar_chart.rhai"),
-            ),
-            (
-                ModuleId::parse("charts/line_chart").unwrap(),
-                source("registry/charts/line_chart.rhai"),
-            ),
-            (
-                ModuleId::parse("charts/pie_chart").unwrap(),
-                source("registry/charts/pie_chart.rhai"),
-            ),
-            (
-                ModuleId::parse("charts/map_chart").unwrap(),
-                source("registry/charts/map_chart.rhai"),
-            ),
-        ])),
-        source("registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .motion_preference(MotionPreference::None)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let name = name.to_owned();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(&name, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
+    let prepared = Mount::new(script)
+        .modules(BUNDLED_CHART_SOURCES_BY_ID)
+        .motion(MotionPreference::None)
+        .prepare()
+        .unwrap();
+    mount_prepared(cx, prepared, name)
 }
 
 fn mount_prepared(
     cx: &mut TestAppContext,
     prepared: PreparedScriptView,
     name: &str,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
     let captured = Rc::new(RefCell::new(None));
     let capture = captured.clone();
     let name = name.to_owned();
@@ -107,7 +45,7 @@ fn mount_prepared(
             .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
             .unwrap();
         *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
+        ActiveHost { host, view }
     });
     cx.run_until_parked();
     cx.refresh().unwrap();
@@ -126,28 +64,16 @@ fn pump(cx: &mut TestAppContext, visual: &mut VisualTestContext) {
 }
 
 fn status(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    })
+    snapshot(visual, view)
+        .nodes()
+        .find(|node| node.role == "status")
+        .unwrap()
+        .name
+        .clone()
 }
 
 fn chart_bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> GeometryBounds {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("figure", "Control")
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    })
+    bounds(visual, view, "figure", "Control")
 }
 
 fn chart_mark_count(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> i64 {
@@ -178,19 +104,7 @@ fn chart_catalog_story_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppCon
     let (window, view) = mount_prepared(cx, prepared, "chart-gallery-scroll");
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
-    let figure_y = |visual: &mut VisualTestContext| {
-        visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
-                .find_by_role_and_name("figure", "pie")
-                .next()
-                .unwrap()
-                .geometry
-                .unwrap()
-                .visual
-                .y
-        })
-    };
+    let figure_y = |visual: &mut VisualTestContext| bounds(visual, &view, "figure", "pie").y;
     let before = figure_y(&mut visual);
     for _ in 0..12 {
         visual.simulate_event(ScrollWheelEvent {
@@ -223,10 +137,7 @@ fn plain_wheel_over_chart_bubbles_to_scroll_container(cx: &mut TestAppContext) {
     pump(cx, &mut visual);
     let before = chart_bounds(&mut visual, &view);
     visual.simulate_event(ScrollWheelEvent {
-        position: point(
-            px((before.x + before.width / 2.0) as f32),
-            px((before.y + before.height / 2.0) as f32),
-        ),
+        position: center(before),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
         ..Default::default()
     });
@@ -324,23 +235,8 @@ fn chart_position(
 }
 
 fn click_named(visual: &mut VisualTestContext, view: &ScriptViewHandle, role: &str, name: &str) {
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    });
-    visual.simulate_click(
-        point(
-            px((bounds.x + bounds.width / 2.0) as f32),
-            px((bounds.y + bounds.height / 2.0) as f32),
-        ),
-        Modifiers::default(),
-    );
+    let bounds = bounds(visual, view, role, name);
+    click_center(visual, bounds);
     visual.run_until_parked();
 }
 
@@ -546,15 +442,12 @@ fn chart_semantics_expose_active_and_selected_datum(cx: &mut TestAppContext) {
     );
     visual.simulate_keystrokes("home");
     visual.run_until_parked();
-    let description = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name("figure", "Control")
-            .next()
-            .unwrap()
-            .description
-            .clone()
-    });
+    let description = snapshot(&mut visual, &view)
+        .find_by_role_and_name("figure", "Control")
+        .next()
+        .unwrap()
+        .description
+        .clone();
     assert!(description.contains("first"), "{description}");
 }
 
@@ -735,12 +628,11 @@ fn invalid_inline_chart_data_reaches_view_error(cx: &mut TestAppContext) {
         .update(|_, cx| view.last_error(cx).unwrap())
         .expect("invalid inline Chart data must reach the view error channel");
     assert!(error.contains("inline row 0"), "{error}");
-    assert!(visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
+    assert!(
+        snapshot(&mut visual, &view)
             .nodes()
             .any(|node| node.invalid && node.description.contains("inline row 0"))
-    }));
+    );
 }
 
 #[gpui::test]
@@ -824,83 +716,29 @@ fn mount_with_layout_counter(
     script: &str,
     name: &str,
     counter: Arc<AtomicUsize>,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, script.to_owned()),
-            (
-                ModuleId::parse("charts/chart").unwrap(),
-                source("registry/charts/chart.rhai"),
-            ),
-        ])),
-        source("registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .extension(CountExtension(counter))
-    .motion_preference(MotionPreference::None)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let name = name.to_owned();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(&name, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
+    let prepared = Mount::new(script)
+        .registry("charts/chart")
+        .motion(MotionPreference::None)
+        .with(|view| view.extension(CountExtension(counter)))
+        .prepare()
+        .unwrap();
+    mount_prepared(cx, prepared, name)
 }
 
 fn mount_streaming_chart(
     cx: &mut TestAppContext,
     data: NativeChartData,
     counter: Arc<AtomicUsize>,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
     let script = r#"import "charts/chart" as chart;fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("stream"),spec:#{title:"Control",interaction:#{wheel_zoom:"always"},series:[#{key:"s",kind:"custom",renderer:"stream_count",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, script.to_owned()),
-            (
-                ModuleId::parse("charts/chart").unwrap(),
-                source("registry/charts/chart.rhai"),
-            ),
-        ])),
-        source("registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .extension(StreamExtension { data, counter })
-    .motion_preference(MotionPreference::None)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("chart-suspend-stream", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("chart-suspend-stream"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
+    let prepared = Mount::new(script)
+        .registry("charts/chart")
+        .motion(MotionPreference::None)
+        .with(|view| view.extension(StreamExtension { data, counter }))
+        .prepare()
+        .unwrap();
+    mount_prepared(cx, prepared, "chart-suspend-stream")
 }
 
 #[gpui::test]
@@ -1064,40 +902,14 @@ fn mount_extended_chart(
     extension: impl ScriptViewExtension + 'static,
     clock: RuntimeClock,
     preference: MotionPreference,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([
-            (entry, script.to_owned()),
-            (
-                ModuleId::parse("charts/chart").unwrap(),
-                source("registry/charts/chart.rhai"),
-            ),
-        ])),
-        source("registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .extension(extension)
-    .runtime_clock(clock)
-    .motion_preference(preference)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let name = name.to_owned();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(&name, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
+) -> (WindowHandle<ActiveHost>, ScriptViewHandle) {
+    let prepared = Mount::new(script)
+        .registry("charts/chart")
+        .motion(preference)
+        .with(move |view| view.extension(extension).runtime_clock(clock))
+        .prepare()
+        .unwrap();
+    mount_prepared(cx, prepared, name)
 }
 
 #[gpui::test]
@@ -1658,20 +1470,11 @@ fn figure_coordinate(
     name: &str,
     coordinate: ChartPoint,
 ) -> gpui::Point<gpui::Pixels> {
-    visual.update(|_, cx| {
-        let snapshot = view.accessibility_snapshot(cx).unwrap();
-        let bounds = snapshot
-            .find_by_role_and_name("figure", name)
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual;
-        point(
-            px((bounds.x + coordinate.x + 1.0) as f32),
-            px((bounds.y + coordinate.y + 1.0) as f32),
-        )
-    })
+    let bounds = bounds(visual, view, "figure", name);
+    point(
+        px((bounds.x + coordinate.x + 1.0) as f32),
+        px((bounds.y + coordinate.y + 1.0) as f32),
+    )
 }
 
 fn click_chart_coordinate(

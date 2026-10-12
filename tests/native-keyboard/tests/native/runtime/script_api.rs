@@ -5,13 +5,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext};
 use gpui_rhai::*;
 
-use crate::support::ReplaceOnce;
+use crate::support::{Mount, ReplaceOnce, Step, bounds, center};
 
 type Records = Rc<RefCell<Vec<(String, UiValue)>>>;
 
@@ -56,77 +53,30 @@ impl ScriptViewExtension for Capture {
     }
 }
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 3);
 }
 
 fn mount(cx: &mut TestAppContext, source: &str) -> (VisualTestContext, ScriptViewHandle, Records) {
-    cx.update(gpui_rhai::install);
     let records = Records::default();
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), source.to_owned())])),
-        r#"fn theme(){#{family:"Api",name:"Dark",mode:"dark",tokens:#{}}}"#,
-    )
-    .manifest(
-        AppManifest::new(entry)
-            .with_capability("app.capture", "*")
-            .unwrap(),
-    )
-    .extension(Capture {
+    let capture = Capture {
         records: records.clone(),
-    })
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("api", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("api"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    };
+    let (mut visual, view) = Mount::new(source)
+        .theme(r#"fn theme(){#{family:"Api",name:"Dark",mode:"dark",tokens:#{}}}"#)
+        .no_token_base()
+        .with(move |view| {
+            view.manifest(
+                AppManifest::new(ModuleId::parse("main").unwrap())
+                    .with_capability("app.capture", "*")
+                    .unwrap(),
+            )
+            .extension(capture)
+        })
+        .id("api")
+        .mount(cx);
     settle(&mut visual);
     (visual, view, records)
-}
-
-fn center(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    name: &str,
-) -> gpui::Point<gpui::Pixels> {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let bounds = tree
-        .find_by_role_and_name("button", name)
-        .next()
-        .and_then(|node| node.geometry)
-        .unwrap()
-        .visual;
-    #[allow(clippy::cast_possible_truncation)]
-    point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    )
 }
 
 const VALUE_HANDLERS: &str = r#"
@@ -174,7 +124,7 @@ fn clicks(plain: UiValue, first: UiValue, second: UiValue) -> Vec<(String, UiVal
 #[gpui::test]
 fn each_value_handler_receives_its_own_value(cx: &mut TestAppContext) {
     let (mut visual, view, records) = mount(cx, VALUE_HANDLERS);
-    let go = center(&mut visual, &view, "Go");
+    let go = center(bounds(&mut visual, &view, "button", "Go"));
 
     visual.simulate_mouse_move(go, None, Modifiers::none());
     settle(&mut visual);

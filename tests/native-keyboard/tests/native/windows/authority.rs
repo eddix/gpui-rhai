@@ -1,6 +1,7 @@
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
 use gpui_rhai::*;
-use std::collections::BTreeMap;
+
+use crate::support::Mount;
 
 struct Host {
     host: ScriptViewHost,
@@ -24,15 +25,7 @@ fn view(ctx){column([text(ctx.get_state("status")).accessibility_role("status"),
  text("Focus").test_id("focus").on_click(Fn("focus"))])}
 "#;
 fn prepared() -> PreparedScriptView {
-    let entry = ModuleId::parse("main").unwrap();
-    EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, SOURCE.to_owned())])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .prepare()
-    .unwrap()
+    Mount::new(SOURCE).prepare().unwrap()
 }
 fn queue_close(view: &ScriptViewHandle, window: &mut Window, cx: &mut gpui::App) {
     view.automate(

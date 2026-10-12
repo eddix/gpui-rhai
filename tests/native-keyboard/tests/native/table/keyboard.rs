@@ -3,13 +3,13 @@
 //! current row; filtering, paging, sorting and collapsed groups decide which
 //! rows those are. A NativeCollection finds its targets in native code.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 use std::time::Duration;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
+use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use gpui_rhai::*;
+
+use crate::support::{Host, Mount, last_error, text_of};
 
 const ROWS: [(&str, &str, &str); 4] = [
     ("r0", "Alpha", "A"),
@@ -17,17 +17,6 @@ const ROWS: [(&str, &str, &str); 4] = [
     ("r2", "Charlie", "B"),
     ("r3", "Delta", "B"),
 ];
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
 
 #[derive(Clone)]
 struct Rows;
@@ -151,59 +140,14 @@ fn mount(
     source: String,
     name: &str,
 ) -> (WindowHandle<Host>, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), source)]);
-    for (id, source) in gpui_rhai_registry::BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        gpui_rhai_registry::DEFAULT_THEME,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .asset_sources(
-        gpui_rhai_registry::BUNDLED_ASSET_SOURCES
-            .iter()
-            .map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }),
-    )
-    .extension(Rows)
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let name = name.to_owned();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new(&name, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    (window, view)
+    Mount::components(source)
+        .with(|view| view.extension(Rows))
+        .id(name)
+        .mount_window(cx)
 }
 
 fn state(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> (String, String) {
-    let text = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.test_id.as_deref() == Some("state"))
-            .unwrap()
-            .name
-            .clone()
-    });
+    let text = text_of(visual, view, "state");
     let (selected, clicked) = text.split_once('|').unwrap();
     (selected.to_owned(), clicked.to_owned())
 }
@@ -229,7 +173,7 @@ fn both_data_sources_follow_the_same_keyboard_contract(cx: &mut TestAppContext) 
             });
             visual.run_until_parked();
             assert_eq!(
-                view.last_error_with(&mut visual),
+                last_error(&mut visual, &view),
                 None,
                 "{} {source}",
                 case.name
@@ -262,14 +206,4 @@ fn both_data_sources_follow_the_same_keyboard_contract(cx: &mut TestAppContext) 
     let text = report.join("\n");
     println!("{text}");
     assert!(!text.contains("MISMATCH"), "{text}");
-}
-
-trait LastError {
-    fn last_error_with(&self, visual: &mut VisualTestContext) -> Option<String>;
-}
-
-impl LastError for ScriptViewHandle {
-    fn last_error_with(&self, visual: &mut VisualTestContext) -> Option<String> {
-        visual.update(|_, cx| self.last_error(cx).unwrap())
-    }
 }

@@ -2,87 +2,35 @@
 //! (no selection mode with a context request, or nothing selected) draws the 2px
 //! `focus_ring` frame over its edge; a current row shows its cursor instead.
 
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
-use gpui::{
-    Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle, rgba,
-};
+use gpui::{TestAppContext, VisualTestContext, rgba};
 use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, TOKEN_BASE_SOURCE,
-};
+
+use crate::support::{Mount, Step, painted_quads};
 
 const FOCUS: u32 = 0x00ff_00ff;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn mount(cx: &mut TestAppContext, body: &str) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(
-        entry.clone(),
-        format!(
-            "import \"components/table\" as table;\nimport \"components/list\" as list;\n\
-             fn noop(ctx, payload) {{}}\nfn view(ctx) {{ column([{body}]).with_style(style().width(px(480)).padding(px(16))) }}\n"
-        ),
+    let main = format!(
+        "import \"components/table\" as table;\nimport \"components/list\" as list;\n\
+         fn noop(ctx, payload) {{}}\nfn view(ctx) {{ column([{body}]).with_style(style().width(px(480)).padding(px(16))) }}\n"
     );
     let overrides = ThemeTokenOverrides {
         colors: BTreeMap::from([("focus_ring".to_owned(), Rgba8::from_rgba_hex(FOCUS))]),
         ..Default::default()
     };
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .theme_token_overrides(overrides)
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("frames", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("frames"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = Mount::components(main)
+        .motion(MotionPreference::None)
+        .with(move |view| view.theme_token_overrides(overrides))
+        .id("frames")
+        .mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.update(|window, _| window.refresh());
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Refresh, 3);
 }
 
 /// Whether a frame spans the whole collection (448 wide, taller than one row).
@@ -95,20 +43,11 @@ fn frames_the_collection(frames: &[(f32, f32)]) -> bool {
 /// Logical sizes of the quads whose border is drawn in the focus color.
 fn framed_sizes(visual: &mut VisualTestContext) -> Vec<(f32, f32)> {
     let color: gpui::Hsla = rgba(FOCUS).into();
-    visual.update(|window, _| {
-        let scale = window.scale_factor();
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| quad.border_color == color && quad.border_widths.top.0 > 0.0)
-            .map(|quad| {
-                (
-                    quad.bounds.size.width.0 / scale,
-                    quad.bounds.size.height.0 / scale,
-                )
-            })
-            .collect()
-    })
+    painted_quads(visual)
+        .iter()
+        .filter(|quad| quad.border_color == color && quad.border_widths[0] > 0.0)
+        .map(|quad| (quad.bounds.width, quad.bounds.height))
+        .collect()
 }
 
 /// Focus the first tab stop and return the sizes of focus-colored frames.

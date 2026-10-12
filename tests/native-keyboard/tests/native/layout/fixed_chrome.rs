@@ -4,76 +4,20 @@
 //! the chrome around it: a 2000px page squeezed the region header and the shell's title and
 //! status bars.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID};
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
-use gpui_rhai::*;
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, settle};
 
 fn mount(cx: &mut TestAppContext, source: String) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), source)]);
-    for (id, source) in gpui_rhai_registry::BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(gpui_rhai_registry::BUNDLED_LAYOUT_SOURCES_BY_ID)
-        .chain(gpui_rhai_registry::BUNDLED_PATTERN_SOURCES_BY_ID)
-    {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        gpui_rhai_registry::DEFAULT_THEME,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .motion_preference(MotionPreference::None)
-    .asset_sources(
-        gpui_rhai_registry::BUNDLED_ASSET_SOURCES
-            .iter()
-            .map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }),
-    )
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("chrome", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("chrome"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..3 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    let (mut visual, view) = Mount::components(source)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .motion(MotionPreference::None)
+        .id("chrome")
+        .mount(cx);
+    settle(&mut visual, Step::Tick, 3);
     (visual, view)
 }
 

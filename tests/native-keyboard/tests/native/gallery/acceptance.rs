@@ -1,23 +1,12 @@
 //! Gallery acceptance gates: every page passes the productivity audit in both
 //! densities, and the scenes can be completed by keyboard alone.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
+use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use gpui_rhai::*;
 use gpui_rhai_cli::acceptance::{self, AcceptanceLaunch};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use super::mount_prepared;
+use crate::support::{Host, Step, click_center, last_error, settle, snapshot};
 
 fn mount(
     cx: &mut TestAppContext,
@@ -28,19 +17,9 @@ fn mount(
         .motion_preference(MotionPreference::None)
         .prepare()
         .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("gallery", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("gallery"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
+    mount_prepared(cx, prepared, ("gallery", "gallery"), false, |host, view| {
         Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
-    (window, view)
+    })
 }
 
 fn try_action(
@@ -131,20 +110,13 @@ fn keyboard_mount(cx: &mut TestAppContext, page: &str) -> (VisualTestContext, Sc
         .motion_preference(MotionPreference::None)
         .prepare()
         .unwrap();
-    let bindings = prepared.key_bindings().to_vec();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("gallery-keyboard", cx).unwrap();
-        host.bind_keys(bindings, cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("gallery"), host.clone(), window, cx)
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = captured.borrow().clone().unwrap();
+    let (window, view) = mount_prepared(
+        cx,
+        prepared,
+        ("gallery-keyboard", "gallery"),
+        true,
+        |host, view| Host { host, view },
+    );
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.update(|window, cx| view.focus(window, cx)).unwrap();
     visual.run_until_parked();
@@ -153,19 +125,16 @@ fn keyboard_mount(cx: &mut TestAppContext, page: &str) -> (VisualTestContext, Sc
 
 fn keys(visual: &mut VisualTestContext, keystrokes: &str) {
     visual.simulate_keystrokes(keystrokes);
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
+    settle(visual, Step::Refresh, 1);
 }
 
 fn typed(visual: &mut VisualTestContext, input: &str) {
     visual.simulate_input(input);
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
+    settle(visual, Step::Refresh, 1);
 }
 
 fn shows(visual: &mut VisualTestContext, view: &ScriptViewHandle, needle: &str) -> bool {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes().any(|node| {
+    snapshot(visual, view).nodes().any(|node| {
         node.name.contains(needle)
             || matches!(&node.value, Some(UiValue::String(value)) if value.contains(needle))
     })
@@ -233,7 +202,7 @@ fn settings_scene_switches_views_and_toggles_by_keyboard(cx: &mut TestAppContext
     );
     keys(&mut visual, "tab");
     keys(&mut visual, "space");
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let tree = snapshot(&mut visual, &view);
     let email = tree
         .find_by_role_and_name("switch", "Email")
         .next()
@@ -250,7 +219,7 @@ fn command_palette_navigates_by_keyboard(cx: &mut TestAppContext) {
     let (mut visual, view) = keyboard_mount(cx, "button");
     keys(&mut visual, "tab");
     keys(&mut visual, "cmd-k");
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let tree = snapshot(&mut visual, &view);
     assert!(
         tree.find_by_role_and_name("dialog", "Go to")
             .next()
@@ -259,7 +228,7 @@ fn command_palette_navigates_by_keyboard(cx: &mut TestAppContext) {
     );
     typed(&mut visual, "badge");
     keys(&mut visual, "enter");
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let tree = snapshot(&mut visual, &view);
     assert!(
         tree.find_by_role_and_name("region", "Badge")
             .next()
@@ -274,8 +243,8 @@ fn bounds_of(
     role: &str,
     name: &str,
 ) -> GeometryBounds {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
+    snapshot(visual, view)
+        .nodes()
         .find(|node| node.role == role && node.name.contains(name))
         .and_then(|node| node.geometry)
         .unwrap_or_else(|| panic!("no {role} named {name}"))
@@ -307,8 +276,7 @@ fn drag(visual: &mut VisualTestContext, from: (f64, f64), by: (f64, f64)) {
 }
 
 fn no_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) {
-    let error = visual.update(|_, cx| view.last_error(cx).unwrap());
-    assert_eq!(error, None);
+    assert_eq!(last_error(visual, view), None);
 }
 
 #[gpui::test]
@@ -354,7 +322,7 @@ fn rotatable_page_turns_from_anywhere_in_the_area(cx: &mut TestAppContext) {
     let pivot = (area.x + 100.0, area.y + 100.0);
     drag(&mut visual, (pivot.0 + 80.0, pivot.1 + 94.0), (-70.0, 0.0));
     no_error(&mut visual, &view);
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let tree = snapshot(&mut visual, &view);
     let value = tree
         .nodes()
         .find(|node| node.role == "slider" && node.name == "Rotate arm")
@@ -370,8 +338,7 @@ fn theme_mount(cx: &mut TestAppContext, theme: &str) -> (VisualTestContext, Scri
     };
     let (window, view) = mount(cx, &launch);
     let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
+    settle(&mut visual, Step::Refresh, 1);
     (visual, view)
 }
 
@@ -389,17 +356,8 @@ fn gallery_launches_any_bundled_theme_and_toggles_within_its_family(cx: &mut Tes
 }
 
 fn click_at(visual: &mut VisualTestContext, bounds: GeometryBounds) {
-    use gpui::{Modifiers, point, px};
-    #[allow(clippy::cast_possible_truncation)]
-    let center = point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    );
-    visual.simulate_click(center, Modifiers::default());
-    for _ in 0..3 {
-        visual.update(|window, _| window.refresh());
-        visual.run_until_parked();
-    }
+    click_center(visual, bounds);
+    settle(visual, Step::Refresh, 3);
 }
 
 #[gpui::test]
@@ -407,7 +365,7 @@ fn gallery_theme_picker_lists_loaded_themes_and_switches(cx: &mut TestAppContext
     let (mut visual, view) = theme_mount(cx, "default-dark");
     let picker = bounds_of(&mut visual, &view, "combobox", "Theme");
     click_at(&mut visual, picker);
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let tree = snapshot(&mut visual, &view);
     let options = tree
         .nodes()
         .filter(|node| node.role == "option")
@@ -437,23 +395,19 @@ fn quads_sized(
     width: f32,
     height: f32,
 ) -> usize {
-    visual.update(|window, _| {
-        let scale = window.scale_factor();
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| {
-                let x = f64::from(quad.bounds.origin.x.0 / scale);
-                quad.background
-                    .as_solid()
-                    .is_some_and(|color| color.a > 0.0)
-                    && x >= area.x - 8.0
-                    && x <= area.x + area.width + 8.0
-                    && (quad.bounds.size.width.0 / scale - width).abs() < 0.01
-                    && (quad.bounds.size.height.0 / scale - height).abs() < 0.01
-            })
-            .count()
-    })
+    crate::support::painted_quads(visual)
+        .iter()
+        .filter(|quad| {
+            let x = f64::from(quad.bounds.x);
+            quad.background
+                .as_solid()
+                .is_some_and(|color| color.a > 0.0)
+                && x >= area.x - 8.0
+                && x <= area.x + area.width + 8.0
+                && (quad.bounds.width - width).abs() < 0.01
+                && (quad.bounds.height - height).abs() < 0.01
+        })
+        .count()
 }
 
 #[gpui::test]

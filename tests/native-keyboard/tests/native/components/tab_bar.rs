@@ -5,33 +5,19 @@
 //! with a vertical wheel) and keeps the selected tab revealed, and an optional menu lists
 //! every tab.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
-
 use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent,
-    TestAppContext, VisualTestContext, Window, point, px,
+    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
+    point, px,
 };
-use gpui_rhai::*;
+use gpui_rhai::{GeometryBounds, MotionPreference, ScriptViewHandle};
 
-use crate::support::ReplaceOnce;
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{
+    Mount, ReplaceOnce, Step, bounds, center, last_error, painted_quads, text_of,
+};
 
 /// A bar `width` wide over `count` tabs (t0..), the selected value in state; `extra` adds
 /// TabBar props. The log line records events.
-fn script(count: usize, width: u32, extra: &str) -> String {
+pub(super) fn script(count: usize, width: u32, extra: &str) -> String {
     format!(
         r#"import "components/tab_bar" as tab_bar;
 fn state_schema(){{#{{fields:#{{
@@ -53,96 +39,24 @@ fn view(ctx){{column([
     )
 }
 
-fn mount(cx: &mut TestAppContext, source: String) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), source)]);
-    for (id, source) in gpui_rhai_registry::BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        gpui_rhai_registry::DEFAULT_THEME,
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .motion_preference(MotionPreference::None)
-    .asset_sources(
-        gpui_rhai_registry::BUNDLED_ASSET_SOURCES
-            .iter()
-            .map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }),
-    )
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("tabs", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("tabs"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
+pub(super) fn mount(
+    cx: &mut TestAppContext,
+    source: String,
+) -> (VisualTestContext, ScriptViewHandle) {
+    let (mut visual, view) = Mount::components(source)
+        .motion(MotionPreference::None)
+        .id("tabs")
+        .mount(cx);
     settle(&mut visual);
     (visual, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Tick, 3);
 }
 
 fn log(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.test_id.as_deref() == Some("log"))
-            .unwrap()
-            .name
-            .trim()
-            .to_owned()
-    })
-}
-
-fn bounds(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .and_then(|node| node.geometry)
-            .unwrap_or_else(|| panic!("no {role} {name:?}"))
-            .visual
-    })
-}
-
-fn center(bounds: GeometryBounds) -> gpui::Point<gpui::Pixels> {
-    #[allow(clippy::cast_possible_truncation)]
-    point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    )
+    text_of(visual, view, "log").trim().to_owned()
 }
 
 fn press(visual: &mut VisualTestContext, at: gpui::Point<gpui::Pixels>, button: MouseButton) {
@@ -175,17 +89,11 @@ fn the_selected_tab_joins_the_panel_and_covers_the_line(cx: &mut TestAppContext)
         (selected.y + selected.height - (strip.y + strip.height)).abs() < 0.5,
         "tab {selected:?} in strip {strip:?}"
     );
-    let fill: gpui::Hsla = gpui::rgba(0x00ff_00ff).into();
-    let covers = visual.update(|window, _| {
-        let scale = window.scale_factor();
-        window.painted_quads().iter().any(|quad| {
-            quad.background == fill.into()
-                && (f64::from(quad.bounds.origin.x.0 / scale) - selected.x).abs() < 1.5
-                && (f64::from((quad.bounds.origin.y + quad.bounds.size.height).0 / scale)
-                    - (strip.y + strip.height))
-                    .abs()
-                    < 0.5
-        })
+    let fill: gpui::Background = gpui::rgba(0x00ff_00ff).into();
+    let covers = painted_quads(&mut visual).iter().any(|quad| {
+        quad.background == fill
+            && (f64::from(quad.bounds.x) - selected.x).abs() < 1.5
+            && (f64::from(quad.bounds.bottom()) - (strip.y + strip.height)).abs() < 0.5
     });
     assert!(
         covers,
@@ -332,24 +240,21 @@ fn the_overflow_menu_lists_every_tab(cx: &mut TestAppContext) {
     assert_eq!(log(&mut visual, &view), "change:t5");
 }
 
-/// The selected tab's painted corner radius and start border width, in scaled pixels. A
+/// The selected tab's painted corner radius and start border width, in logical pixels. A
 /// unique fill marks the tab; GPUI paints its border as separate quads over the same bounds.
 fn selected_quad(visual: &mut VisualTestContext) -> (f32, f32) {
-    let fill: gpui::Hsla = gpui::rgba(0x00ff_00ff).into();
-    visual.update(|window, _| {
-        let quads = window.painted_quads();
-        let tab = quads
-            .iter()
-            .find(|quad| quad.background == fill.into())
-            .expect("the selected tab is painted");
-        let radii = tab.corner_radii;
-        let start_border = quads
-            .iter()
-            .filter(|quad| quad.bounds == tab.bounds)
-            .map(|quad| quad.border_widths.left.0)
-            .fold(0.0_f32, f32::max);
-        (radii.top_left.0.max(radii.top_right.0), start_border)
-    })
+    let fill: gpui::Background = gpui::rgba(0x00ff_00ff).into();
+    let quads = painted_quads(visual);
+    let tab = quads
+        .iter()
+        .find(|quad| quad.background == fill)
+        .expect("the selected tab is painted");
+    let start_border = quads
+        .iter()
+        .filter(|quad| quad.bounds == tab.bounds)
+        .map(|quad| quad.border_widths[3])
+        .fold(0.0_f32, f32::max);
+    (tab.corner_radii[0].max(tab.corner_radii[1]), start_border)
 }
 
 #[gpui::test]
@@ -369,34 +274,27 @@ fn the_selected_tab_is_square_in_every_corner_style_and_owns_no_edge_line(cx: &m
     let (mut visual, _) = mount(cx, source.clone());
     let (radius, start_border) = selected_quad(&mut visual);
     assert!(
-        radius.abs() < 0.01,
+        radius.abs() < 0.005,
         "round corners leave the selected tab square: {radius}"
     );
     assert!(
-        start_border.abs() < 0.01,
+        start_border.abs() < 0.005,
         "the first tab draws no start hairline: {start_border}"
     );
     // The second tab keeps its start hairline.
     let (mut visual, _) = mount(cx, source.replace_once(r#"value:"t0""#, r#"value:"t1""#));
     let (_, start_border) = selected_quad(&mut visual);
     assert!(
-        start_border > 0.5,
+        start_border > 0.25,
         "a later tab draws its start hairline: {start_border}"
     );
 }
 
 fn tab_count(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> usize {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .filter(|node| node.role == "tab")
-            .count()
-    })
-}
-
-fn last_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Option<String> {
-    visual.update(|_, cx| view.last_error(cx).unwrap())
+    crate::support::nodes(visual, view)
+        .iter()
+        .filter(|node| node.role == "tab")
+        .count()
 }
 
 #[gpui::test]
@@ -456,14 +354,11 @@ fn closing_last_tab_commits_empty_state(cx: &mut TestAppContext) {
     let error = last_error(&mut visual, &view);
     assert!(error.is_none(), "reopening a tab should commit: {error:?}");
     assert_eq!(log(&mut visual, &view), "close:t0 open:t0");
-    let selected = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .filter(|node| node.role == "tab" && node.selected == Some(true))
-            .map(|node| node.name.clone())
-            .collect::<Vec<_>>()
-    });
+    let selected = crate::support::nodes(&mut visual, &view)
+        .into_iter()
+        .filter(|node| node.role == "tab" && node.selected == Some(true))
+        .map(|node| node.name)
+        .collect::<Vec<_>>();
     assert_eq!(selected, ["Tab number 0"]);
 }
 

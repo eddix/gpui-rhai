@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use crate::support::{SingleEmbeddedHost, node_texts, wait_for_view_text};
+use crate::support::{Host, Mount, by_role, last_error, node_texts, wait_for_view_text};
 use gpui::{
     InteractiveElement, IntoElement, Modifiers, ParentElement, StatefulInteractiveElement, Styled,
     TestAppContext, VisualTestContext, div, point, px,
@@ -16,7 +16,6 @@ use gpui_rhai::{
 
 #[gpui::test]
 fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
     let native_clicks = Rc::new(Cell::new(0_u32));
     let native_clicks_factory = Rc::clone(&native_clicks);
     let slots = HostSlotRegistry::new()
@@ -30,12 +29,8 @@ fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut Test
                 .into_any_element())
         })
         .unwrap();
-    let entry = ModuleId::parse("main").unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+    let (window, view) = Mount::new(
+        r#"
                 fn state_schema() { #{ fields: #{ clicks: #{ schema: #{ type: "integer" },
                     "default": #{ type: "integer", value: 0 } } } } }
                 fn clicked(ctx, payload) { ctx.set_state("clicks", ctx.get_state("clicks") + 1); }
@@ -48,45 +43,21 @@ fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut Test
                             .with_style(style().width(px(220)).height(px(120)))
                     ]).on_click(Fn("clicked"))
                 }
-            "#
-            .to_owned(),
-        )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+            "#,
     )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .extension(slots)
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("host-slot-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("host-slot-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .with(|view| view.extension(slots))
+    .ids("host-slot-window", "host-slot-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
     let result = visual
         .update(|window, cx| {
             view.automate(
                 gpui_rhai::AutomationCommand::Query {
-                    locator: gpui_rhai::AutomationLocator::RoleName {
-                        role: "group".to_owned(),
-                        name: "Host content".to_owned(),
-                    },
+                    locator: by_role("group", "Host content"),
                 },
                 window,
                 cx,
@@ -139,12 +110,9 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
                 "#
                 .to_owned(),
             ),
-            (
-                input_module,
-                include_str!("../../../../../registry/components/input.rhai").to_owned(),
-            ),
+            (input_module, gpui_rhai_registry::INPUT_SOURCE.to_owned()),
         ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+        gpui_rhai_registry::DEFAULT_THEME,
     )
     .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
@@ -176,7 +144,7 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
                 }"#
                 .to_owned(),
             )])),
-            include_str!("../../../../../registry/themes/default_dark.rhai"),
+            gpui_rhai_registry::DEFAULT_THEME,
         )
         .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .extension(slots)
@@ -190,7 +158,7 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
         )
         .unwrap();
         *captured_for_window.borrow_mut() = Some(resident);
-        SingleEmbeddedHost {
+        Host {
             host: shell_host,
             view: shell,
         }
@@ -223,7 +191,7 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
             }"#
             .to_owned(),
         )])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+        gpui_rhai_registry::DEFAULT_THEME,
     )
     .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
@@ -253,24 +221,21 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
         let slots = HostSlotRegistry::new()
             .with_script_view("content", resident.clone())
             .unwrap();
-        let shell = EmbeddedScriptView::new(
-            shell_entry,
-            shell_source,
-            include_str!("../../../../../registry/themes/default_dark.rhai"),
-        )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .extension(slots)
-        .prepare()
-        .unwrap()
-        .mount(
-            ScriptViewConfig::new("shell-view"),
-            shell_host.clone(),
-            window,
-            cx,
-        )
-        .unwrap();
+        let shell =
+            EmbeddedScriptView::new(shell_entry, shell_source, gpui_rhai_registry::DEFAULT_THEME)
+                .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
+                .extension(slots)
+                .prepare()
+                .unwrap()
+                .mount(
+                    ScriptViewConfig::new("shell-view"),
+                    shell_host.clone(),
+                    window,
+                    cx,
+                )
+                .unwrap();
         *captured_for_window.borrow_mut() = Some(resident);
-        SingleEmbeddedHost {
+        Host {
             host: shell_host,
             view: shell,
         }
@@ -286,10 +251,7 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
             .advance_clock(std::time::Duration::from_millis(16));
         visual.run_until_parked();
     }
-    assert_eq!(
-        visual.update(|_, cx| resident.last_error(cx).unwrap()),
-        None
-    );
+    assert_eq!(last_error(&mut visual, &resident), None);
     assert_eq!(resident.state(), gpui_rhai::ScriptViewState::Active);
     let snapshot = visual.update(|_, cx| resident.accessibility_snapshot(cx).unwrap());
     let node = snapshot

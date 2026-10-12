@@ -2,7 +2,9 @@ use gpui::{AppContext, Context, IntoElement, Render, TestAppContext, VisualTestC
 use gpui_rhai::*;
 use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
-const THEME: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
+use crate::support::{by_test_id, dispatch, last_error};
+
+const THEME: &str = gpui_rhai_registry::DEFAULT_THEME;
 const HEAVY_VIEW: &str = r#"
 fn view(ctx){let n=0;for i in 0..450000{n+=1;}text(`${n}`).accessibility_role("status")}
 "#;
@@ -220,19 +222,7 @@ fn view(ctx){if ctx.window_id()=="child"{let n=0;for i in 0..450000{n+=1;}text(`
         let (window, result) = mount_result(cx, prepared, "root", true);
         let view = result.unwrap();
         let mut visual = VisualTestContext::from_window(*window, cx);
-        visual
-            .update(|window, cx| {
-                view.automate(
-                    AutomationCommand::Dispatch {
-                        locator: AutomationLocator::TestId { id: "open".into() },
-                        event: "click".into(),
-                        payload: None,
-                    },
-                    window,
-                    cx,
-                )
-            })
-            .unwrap();
+        dispatch(&mut visual, &view, by_test_id("open"), "click").unwrap();
         visual.run_until_parked();
         assert_eq!(
             cx.windows().len(),
@@ -240,7 +230,7 @@ fn view(ctx){if ctx.window_id()=="child"{let n=0;for i in 0..450000{n+=1;}text(`
             "child must actually mount 1.35M+ operations"
         );
         assert_eq!(view.state(), ScriptViewState::Active);
-        assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+        assert_eq!(last_error(&mut visual, &view), None);
         assert_eq!(
             *seen.borrow(),
             vec![(300_000, (64, 48)); 2],

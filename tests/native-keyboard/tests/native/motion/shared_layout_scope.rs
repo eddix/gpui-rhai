@@ -4,12 +4,12 @@
 //! a duplicate.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
-use gpui_rhai::*;
-use gpui_rhai_registry::{BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME};
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{MotionPreference, ScriptViewConfig, ScriptViewHost};
+
+use crate::support::{Host, Mount, Step, last_error, settle};
 
 const PANE: &str = r#"
 import "components/tabs" as tabs;
@@ -33,60 +33,24 @@ fn views() {
 fn render_Pane(ctx, props) { column([views()]) }
 "#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 /// Mount a view; the error the mount or its first frames report, if any.
 fn mount_error(cx: &mut TestAppContext, view_body: &str) -> Option<String> {
     cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    modules.insert(ModuleId::parse("test/pane").unwrap(), PANE.to_owned());
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(
-        entry.clone(),
-        format!(
-            r#"import "test/pane" as pane;
+    let prepared = Mount::components(format!(
+        r#"import "test/pane" as pane;
 import "components/tabs" as tabs;
 fn changed(ctx, value) {{ () }}
 fn view(ctx) {{ column([{view_body}]) }}"#
-        ),
-    );
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .motion_preference(MotionPreference::Normal)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let fallback = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(BTreeMap::from([(
-            ModuleId::parse("main").unwrap(),
-            "fn view(ctx) { column([]) }".to_owned(),
-        )])),
-        DEFAULT_THEME,
-    )
+    ))
+    .module("test/pane", PANE)
+    .motion(MotionPreference::Normal)
     .prepare()
     .unwrap();
+    // Mounted in place of the view when it fails to mount: no token base, no assets.
+    let fallback = Mount::new("fn view(ctx) { column([]) }")
+        .no_token_base()
+        .prepare()
+        .unwrap();
     let saved = Rc::new(RefCell::new(None));
     let save = saved.clone();
     let failure = Rc::new(RefCell::new(None));
@@ -110,9 +74,8 @@ fn view(ctx) {{ column([{view_body}]) }}"#
     cx.run_until_parked();
     let view = saved.borrow().clone().unwrap();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, cx| window.simulate_next_frame(cx));
-    visual.run_until_parked();
-    visual.update(|_, cx| view.last_error(cx).unwrap())
+    settle(&mut visual, Step::Frame, 1);
+    last_error(&mut visual, &view)
 }
 
 #[gpui::test]

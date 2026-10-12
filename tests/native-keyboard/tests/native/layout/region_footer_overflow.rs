@@ -5,78 +5,24 @@
 //!
 //! cargo test --manifest-path tests/native-keyboard/Cargo.toml --test native layout::region_footer_overflow -- --nocapture
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-use std::time::Duration;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID, EN_LOCALE};
 
-use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_LAYOUT_SOURCES_BY_ID,
-    BUNDLED_PATTERN_SOURCES_BY_ID, DEFAULT_THEME, EN_LOCALE, TOKEN_BASE_SOURCE,
-};
+use crate::support::{Mount, Step, bounds, filled, last_error, settle};
 
 const UPDATED: &str = "Updated 12:04:31";
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn mount(cx: &mut TestAppContext, main: String) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), main)]);
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
-        .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
-    {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .locale_sources([("en.rhai".into(), EN_LOCALE.to_owned())])
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.trim_end_matches(".svg").to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".into(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("footer", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("footer"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..3 {
-        visual.run_until_parked();
-        visual.executor().advance_clock(Duration::from_millis(32));
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    let (mut visual, view) = Mount::components(main)
+        .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+        .locale("en.rhai", EN_LOCALE)
+        .motion(MotionPreference::None)
+        .id("footer")
+        .mount(cx);
+    settle(&mut visual, Step::Tick, 3);
+    assert_eq!(last_error(&mut visual, &view), None);
     (visual, view)
 }
 
@@ -95,44 +41,30 @@ fn placed(
     role: &str,
     name: &str,
 ) -> Placed {
-    visual.update(|_, cx| {
-        let tree = view.accessibility_snapshot(cx).unwrap();
-        let node = tree
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap_or_else(|| panic!("no {role} named {name}"));
-        let visual = node.geometry.as_ref().unwrap().visual;
-        Placed {
-            left: visual.x,
-            right: visual.x + visual.width,
-            top: visual.y,
-            bottom: visual.y + visual.height,
-        }
-    })
+    let visual = bounds(visual, view, role, name);
+    Placed {
+        left: visual.x,
+        right: visual.x + visual.width,
+        top: visual.y,
+        bottom: visual.y + visual.height,
+    }
 }
 
 /// The right edges of the magenta quads painted inside `node`'s box, in logical pixels: as
 /// laid out, and as drawn, cut by the content mask each quad carries.
 fn quad_right_edges(visual: &mut VisualTestContext, node: Placed) -> Vec<(f64, f64)> {
-    let magenta: gpui::Hsla = gpui::rgba(0xff00_ffff).into();
-    visual.update(|window, _| {
-        let scale = f64::from(window.scale_factor());
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| quad.background == magenta.into())
-            .filter_map(|quad| {
-                let left = f64::from(quad.bounds.origin.x.0) / scale;
-                let top = f64::from(quad.bounds.origin.y.0) / scale;
-                let right = f64::from((quad.bounds.origin.x + quad.bounds.size.width).0) / scale;
-                let bottom = f64::from((quad.bounds.origin.y + quad.bounds.size.height).0) / scale;
-                let mask = quad.content_mask.bounds;
-                let mask_right = f64::from((mask.origin.x + mask.size.width).0) / scale;
-                (left >= node.left - 0.5 && top >= node.top - 0.5 && bottom <= node.bottom + 0.5)
-                    .then_some((right, right.min(mask_right)))
-            })
-            .collect()
-    })
+    filled(visual, 0xff00_ffff)
+        .iter()
+        .filter_map(|quad| {
+            let left = f64::from(quad.bounds.x);
+            let top = f64::from(quad.bounds.y);
+            let right = f64::from(quad.bounds.right());
+            let bottom = f64::from(quad.bounds.bottom());
+            let mask_right = f64::from(quad.mask.right());
+            (left >= node.left - 0.5 && top >= node.top - 0.5 && bottom <= node.bottom + 0.5)
+                .then_some((right, right.min(mask_right)))
+        })
+        .collect()
 }
 
 /// `region` in a 460px column, with a 300px pane beside it.

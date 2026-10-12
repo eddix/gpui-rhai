@@ -8,82 +8,24 @@
 //! that box is as tall as the pane; in a block pane it would collapse to its in-flow content,
 //! which is nothing, and clip the probe away.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::{TestAppContext, VisualTestContext};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
+use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE};
 
-use gpui::{
-    Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle, rgba,
-};
-use gpui_rhai::*;
-use gpui_rhai_registry::{
-    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, EN_LOCALE,
-    TOKEN_BASE_SOURCE,
-};
+use crate::support::{Mount, Step, filled};
 
 const START: u32 = 0xff00_00ff;
 const END: u32 = 0x00ff_00ff;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn mount(cx: &mut TestAppContext, main: &str) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), main.to_owned());
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(TOKEN_BASE_SOURCE)
-            .locale_sources([
-                ("en.rhai".to_owned(), EN_LOCALE.to_owned()),
-                ("ar.rhai".to_owned(), AR_LOCALE.to_owned()),
-            ])
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window: WindowHandle<Host> = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("split", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("split"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    settle(&mut visual);
+    let (mut visual, view) = Mount::components(main)
+        .locale("en.rhai", EN_LOCALE)
+        .locale("ar.rhai", AR_LOCALE)
+        .motion(MotionPreference::None)
+        .id("split")
+        .mount(cx);
+    crate::support::settle(&mut visual, Step::Refresh, 3);
     (visual, view)
-}
-
-fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..3 {
-        visual.update(|window, _| window.refresh());
-        visual.run_until_parked();
-    }
 }
 
 /// `(x, y, width, height)` in logical pixels.
@@ -91,37 +33,17 @@ type Rect = (f32, f32, f32, f32);
 
 /// The visible part (bounds within the content mask) of each quad filled with `color`.
 fn visible(visual: &mut VisualTestContext, color: u32) -> Vec<Rect> {
-    let color: gpui::Hsla = rgba(color).into();
-    visual.update(|window, _| {
-        let scale = window.scale_factor();
-        window
-            .painted_quads()
-            .iter()
-            .filter(|quad| quad.background == color.into())
-            .map(|quad| {
-                let bounds = quad.bounds.intersect(&quad.content_mask.bounds);
-                (
-                    bounds.origin.x.0 / scale,
-                    bounds.origin.y.0 / scale,
-                    bounds.size.width.0.max(0.0) / scale,
-                    bounds.size.height.0.max(0.0) / scale,
-                )
-            })
-            .collect()
-    })
+    filled(visual, color)
+        .iter()
+        .map(|quad| {
+            let visible = quad.visible();
+            (visible.x, visible.y, visible.width, visible.height)
+        })
+        .collect()
 }
 
 fn bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle, role: &str, name: &str) -> Rect {
-    let bounds = visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap_or_else(|| panic!("no {role} named {name}"))
-            .geometry
-            .unwrap()
-            .visual
-    });
+    let bounds = crate::support::bounds(visual, view, role, name);
     #[allow(clippy::cast_possible_truncation)]
     (
         bounds.x as f32,

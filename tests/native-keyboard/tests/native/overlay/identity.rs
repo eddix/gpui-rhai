@@ -3,16 +3,11 @@
 //! close their own Select. Host lookups by key report the ambiguity and can
 //! name the instance.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
+use gpui::{Modifiers, MouseButton, Pixels, Point, TestAppContext, VisualTestContext, point, px};
+use gpui_rhai::{MotionPreference, OverlayLookupError, ScriptViewHandle, ScriptViewHost};
+use gpui_rhai_registry::EN_LOCALE;
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, point, px,
-};
-use gpui_rhai::*;
-use gpui_rhai_registry::{BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME};
+use crate::support::{Mount, Step, bounds, center, last_error, nodes};
 
 const FILTER: &str = r#"
 import "components/select" as select;
@@ -55,87 +50,38 @@ fn view(ctx) {
 }
 "#;
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-
 fn mount(cx: &mut TestAppContext) -> (VisualTestContext, ScriptViewHost, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    modules.insert(ModuleId::parse("test/filter").unwrap(), FILTER.to_owned());
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(entry.clone(), MAIN.to_owned());
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .locale_sources([(
-                "en.rhai".to_owned(),
-                include_str!("../../../../../registry/locales/en.rhai").to_owned(),
-            )])
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("filters", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("filters"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some((host.clone(), view.clone()));
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let (host, view) = saved.borrow().clone().unwrap();
+    let (window, view) = Mount::components(MAIN)
+        .module("test/filter", FILTER)
+        .locale("en.rhai", EN_LOCALE)
+        .motion(MotionPreference::None)
+        .id("filters")
+        .mount_window(cx);
+    let host = window.read_with(cx, |root, _| root.host.clone()).unwrap();
     let mut visual = VisualTestContext::from_window(*window, cx);
     settle(&mut visual);
     (visual, host, view)
 }
 
 fn settle(visual: &mut VisualTestContext) {
-    for _ in 0..2 {
-        visual.update(|window, cx| window.simulate_next_frame(cx));
-        visual.run_until_parked();
-    }
+    crate::support::settle(visual, Step::Frame, 2);
 }
 
 fn open_states(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let mut states = tree
-        .nodes()
+    let mut states = nodes(visual, view)
+        .into_iter()
         .filter(|node| {
             node.test_id
                 .as_deref()
                 .is_some_and(|id| id.starts_with("state-"))
         })
-        .map(|node| node.name.clone())
+        .map(|node| node.name)
         .collect::<Vec<_>>();
     states.sort();
     states.join(", ")
 }
 
-fn click(visual: &mut VisualTestContext, x: f64, y: f64) {
-    #[allow(clippy::cast_possible_truncation)]
-    let position = point(px(x as f32), px(y as f32));
+fn click(visual: &mut VisualTestContext, position: Point<Pixels>) {
     visual.simulate_mouse_move(position, None, Modifiers::none());
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::none());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::none());
@@ -143,18 +89,8 @@ fn click(visual: &mut VisualTestContext, x: f64, y: f64) {
 }
 
 fn click_trigger(visual: &mut VisualTestContext, view: &ScriptViewHandle, label: &str) {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let bounds = tree
-        .nodes()
-        .find(|node| node.role == "combobox" && node.name == label)
-        .and_then(|node| node.geometry)
-        .map(|geometry| geometry.visual)
-        .unwrap_or_else(|| panic!("no combobox {label}"));
-    click(
-        visual,
-        bounds.x + bounds.width / 2.0,
-        bounds.y + bounds.height / 2.0,
-    );
+    let trigger = bounds(visual, view, "combobox", label);
+    click(visual, center(trigger));
 }
 
 #[gpui::test]
@@ -182,7 +118,7 @@ fn each_instance_closes_its_own_overlay(cx: &mut TestAppContext) {
         open_states(&mut visual, &view),
         "eu open=true, sg open=false, us open=false"
     );
-    click(&mut visual, 700.0, 480.0);
+    click(&mut visual, point(px(700.0), px(480.0)));
     assert_eq!(
         open_states(&mut visual, &view),
         "eu open=false, sg open=false, us open=false"
@@ -245,54 +181,20 @@ fn render_Files(ctx, props) {
 
 #[gpui::test]
 fn a_submenu_parent_resolves_to_the_enclosing_menu_of_its_instance(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    modules.insert(ModuleId::parse("test/files").unwrap(), FILES.to_owned());
-    let entry = ModuleId::parse("main").unwrap();
-    modules.insert(
-        entry.clone(),
+    let (window, view) = Mount::components(
         r#"import "test/files" as files;
 fn view(ctx) { row([files::Files(#{ key: "a" }), files::Files(#{ key: "b" })])
-    .with_style(style().gap(px(300))) }"#
-            .to_owned(),
-    );
-    let prepared =
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), DEFAULT_THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .locale_sources([(
-                "en.rhai".to_owned(),
-                include_str!("../../../../../registry/locales/en.rhai").to_owned(),
-            )])
-            .motion_preference(MotionPreference::None)
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
-            .prepare()
-            .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("files", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("files"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some((host.clone(), view.clone()));
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let (host, view) = saved.borrow().clone().unwrap();
+    .with_style(style().gap(px(300))) }"#,
+    )
+    .module("test/files", FILES)
+    .locale("en.rhai", EN_LOCALE)
+    .motion(MotionPreference::None)
+    .id("files")
+    .mount_window(cx);
+    let host = window.read_with(cx, |root, _| root.host.clone()).unwrap();
     let mut visual = VisualTestContext::from_window(*window, cx);
     settle(&mut visual);
-    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
+    assert_eq!(last_error(&mut visual, &view), None);
     // Each submenu registers under its own instance's parent menu: an unresolved
     // parent would leave it without a placement.
     let OverlayLookupError::Ambiguous { instances, .. } =

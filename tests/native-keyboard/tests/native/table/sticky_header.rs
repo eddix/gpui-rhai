@@ -3,28 +3,10 @@
 //! header row above (#113). Hit testing honors the clip, so a click in the
 //! overlap must reach the column header.
 
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-
-use gpui::{
-    Context, IntoElement, Modifiers, Render, TestAppContext, VisualTestContext, Window, point, px,
-};
+use gpui::{Modifiers, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::*;
-use gpui_rhai_registry::{
-    BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, DEFAULT_THEME, TOKEN_BASE_SOURCE,
-};
 
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
+use crate::support::{Mount, Step, settle, snapshot, text_of};
 
 const MAIN: &str = r#"
 import "components/table" as table;
@@ -49,44 +31,8 @@ fn view(ctx) {
 "#;
 
 fn mount(cx: &mut TestAppContext) -> (VisualTestContext, ScriptViewHandle) {
-    cx.update(gpui_rhai::install);
-    let mut modules = BTreeMap::new();
-    for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(ModuleId::parse(*id).unwrap(), (*source).to_owned());
-    }
-    modules.insert(ModuleId::parse("main").unwrap(), MAIN.to_owned());
-    let prepared = EmbeddedScriptView::new(
-        ModuleId::parse("main").unwrap(),
-        EmbeddedScriptSource::new(modules),
-        DEFAULT_THEME,
-    )
-    .token_base(TOKEN_BASE_SOURCE)
-    .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-        (
-            path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: source.as_bytes().to_vec(),
-            },
-        )
-    }))
-    .prepare()
-    .unwrap();
-    let saved = Rc::new(RefCell::new(None));
-    let save = saved.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("sticky", cx).unwrap();
-        let view = prepared
-            .mount(ScriptViewConfig::new("sticky"), host.clone(), window, cx)
-            .unwrap();
-        *save.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, _| window.refresh());
-    visual.run_until_parked();
-    let view = saved.borrow().clone().unwrap();
+    let (mut visual, view) = Mount::components(MAIN).id("sticky").mount(cx);
+    settle(&mut visual, Step::Refresh, 1);
     (visual, view)
 }
 
@@ -94,8 +40,8 @@ fn nodes(
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,
 ) -> Vec<(String, String, GeometryBounds)> {
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    tree.nodes()
+    snapshot(visual, view)
+        .nodes()
         .filter_map(|node| Some((node.role.clone(), node.name.clone(), node.geometry?.visual)))
         .collect()
 }
@@ -158,14 +104,9 @@ fn a_pushed_sticky_header_does_not_cover_the_column_header(cx: &mut TestAppConte
     );
     visual.simulate_click(at, Modifiers::default());
     visual.run_until_parked();
-    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let event = tree
-        .nodes()
-        .find(|node| node.test_id.as_deref() == Some("event"))
-        .map(|node| node.name.clone());
     assert_eq!(
-        event.as_deref(),
-        Some("sorted"),
+        text_of(&mut visual, &view, "event"),
+        "sorted",
         "the click reached the column header"
     );
 }

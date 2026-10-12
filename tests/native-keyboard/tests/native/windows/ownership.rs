@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use gpui::{
     Context, IntoElement, ParentElement, Render, TestAppContext, VisualTestContext, Window,
@@ -6,7 +6,7 @@ use gpui::{
 };
 use gpui_rhai::*;
 
-use crate::support::ReplaceOnce;
+use crate::support::{Mount, ReplaceOnce, by_test_id, last_error};
 
 struct Host {
     host: ScriptViewHost,
@@ -36,15 +36,7 @@ text("Close child").test_id("close-child").on_click(Fn("close_child"))])}
 "#;
 
 fn prepared(source: &str) -> PreparedScriptView {
-    let entry = ModuleId::parse("main").unwrap();
-    EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(BTreeMap::from([(entry, source.to_owned())])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .prepare()
-    .unwrap()
+    Mount::new(source).prepare().unwrap()
 }
 
 fn mount(
@@ -82,17 +74,7 @@ fn dispatch(
     view: &ScriptViewHandle,
     id: &str,
 ) -> Result<AutomationResult, ScriptViewError> {
-    visual.update(|window, cx| {
-        view.automate(
-            AutomationCommand::Dispatch {
-                locator: AutomationLocator::TestId { id: id.to_owned() },
-                event: "click".to_owned(),
-                payload: None,
-            },
-            window,
-            cx,
-        )
-    })
+    crate::support::dispatch(visual, view, by_test_id(id), "click")
 }
 
 #[gpui::test]
@@ -103,11 +85,7 @@ fn managed_embedding_focuses_opens_and_closes_real_native_windows(cx: &mut TestA
     dispatch(&mut visual, &view, "focus").unwrap();
     visual.run_until_parked();
     assert!(visual.update(|window, _| window.is_window_active()));
-    assert!(
-        visual
-            .update(|_, cx| view.last_error(cx).unwrap())
-            .is_none()
-    );
+    assert!(last_error(&mut visual, &view).is_none());
     dispatch(&mut visual, &view, "open").unwrap();
     visual.run_until_parked();
     assert_eq!(cx.windows().len(), 2);

@@ -1,93 +1,27 @@
 #![cfg(test)]
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, WindowHandle, point, px,
-};
-use gpui_rhai::*;
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
+use gpui_rhai::{MotionPreference, ScriptViewHandle};
 
-use crate::support::ReplaceOnce;
+use crate::support::{Mount, ReplaceOnce, bounds, center, snapshot};
 
-const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
-    }
-}
-fn mount(cx: &mut TestAppContext, script: &str) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let entry = ModuleId::parse("main").unwrap();
-    let mut modules = BTreeMap::from([(entry.clone(), script.to_owned())]);
-    for name in ["drag_source", "drop_zone"] {
-        modules.insert(
-            ModuleId::parse(format!("components/{name}")).unwrap(),
-            std::fs::read_to_string(format!("{ROOT}/registry/components/{name}.rhai")).unwrap(),
-        );
-    }
-    let theme =
-        std::fs::read_to_string(format!("{ROOT}/registry/themes/default_dark.rhai")).unwrap();
-    let prepared = EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), &theme)
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .motion_preference(MotionPreference::None)
-        .prepare()
-        .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let capture = captured.clone();
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("audit-drag-sort", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("audit-drag-sort"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
-    });
-    cx.run_until_parked();
+/// Only DragSource and DropZone, without assets.
+fn mount(cx: &mut TestAppContext, script: &str) -> (VisualTestContext, ScriptViewHandle) {
+    let (window, view) = Mount::new(script)
+        .registry("components/drag_source")
+        .registry("components/drop_zone")
+        .motion(MotionPreference::None)
+        .id("audit-drag-sort")
+        .mount_window(cx);
     cx.refresh().unwrap();
-    let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
-}
-fn geometry(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap()
-            .geometry
-            .unwrap()
-            .visual
-    })
-}
-fn center(bounds: GeometryBounds) -> gpui::Point<gpui::Pixels> {
-    point(
-        px((bounds.x + bounds.width / 2.0) as f32),
-        px((bounds.y + bounds.height / 2.0) as f32),
-    )
+    (VisualTestContext::from_window(*window, cx), view)
 }
 fn status(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    })
+    snapshot(visual, view)
+        .nodes()
+        .find(|node| node.role == "status")
+        .unwrap()
+        .name
+        .clone()
 }
 fn drag(
     visual: &mut VisualTestContext,
@@ -141,23 +75,22 @@ fn tick(cx: &mut TestAppContext, visual: &mut VisualTestContext, n: usize) {
 }
 fn row_gap_probe(cx: &mut TestAppContext, block: bool) {
     cx.update(gpui_rhai::install);
-    let (window, view) = mount(cx, &gap_script(block));
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    let source = center(geometry(&mut visual, &view, "button", "Source"));
-    let accepted = center(geometry(&mut visual, &view, "group", "Lane 1"));
+    let (mut visual, view) = mount(cx, &gap_script(block));
+    let source = center(bounds(&mut visual, &view, "button", "Source"));
+    let accepted = center(bounds(&mut visual, &view, "group", "Lane 1"));
     drag(&mut visual, source, accepted);
     assert_eq!(
         status(&mut visual, &view),
         "lane-1",
         "control: valid row accepts typed drag"
     );
-    let list = geometry(&mut visual, &view, "list", "Lanes");
+    let list = bounds(&mut visual, &view, "list", "Lanes");
     let gap = point(
         px((list.x + list.width / 2.0) as f32),
         px((list.y + list.height - 5.0) as f32),
     );
     if block {
-        let blocked = geometry(&mut visual, &view, "group", "Blocked Lane 2");
+        let blocked = bounds(&mut visual, &view, "group", "Blocked Lane 2");
         assert!(
             f64::from(gap.x) >= blocked.x
                 && f64::from(gap.x) < blocked.x + blocked.width
@@ -224,11 +157,10 @@ fn occluding_rejecting_child_blocks_row_gap_continuation(cx: &mut TestAppContext
 #[gpui::test]
 fn canceled_tick_cannot_transfer_previous_destination_to_new_drag(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let (window, view) = mount(cx, &gap_script(false));
-    let mut visual = VisualTestContext::from_window(*window, cx);
-    let source = center(geometry(&mut visual, &view, "button", "Source"));
-    let accepted = center(geometry(&mut visual, &view, "group", "Lane 1"));
-    let list = geometry(&mut visual, &view, "list", "Lanes");
+    let (mut visual, view) = mount(cx, &gap_script(false));
+    let source = center(bounds(&mut visual, &view, "button", "Source"));
+    let accepted = center(bounds(&mut visual, &view, "group", "Lane 1"));
+    let list = bounds(&mut visual, &view, "list", "Lanes");
     let gap = point(
         px((list.x + list.width / 2.0) as f32),
         px((list.y + list.height - 5.0) as f32),

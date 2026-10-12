@@ -1,15 +1,9 @@
 //! Async workers, effects and subscriptions deliver into a mounted view without input or a
 //! manual poll, including across effect restarts.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::support::{SingleEmbeddedHost, node_texts, official_icon_assets, wait_for_view_text};
+use crate::support::{Mount, by_test_id, dispatch, node_texts, wait_for_view_text};
 use gpui::{TestAppContext, VisualTestContext};
-use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHost,
-    UiRuntimeState, UiValue,
-};
+use gpui_rhai::{ModuleId, UiRuntimeState, UiValue};
 
 #[gpui::test]
 fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppContext) {
@@ -104,29 +98,17 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
         }
     }
 
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let helper = ModuleId::parse("helpers/state").unwrap();
     let gate = std::sync::Arc::new((std::sync::Mutex::new(0), std::sync::Condvar::new()));
-    let manifest = gpui_rhai::AppManifest::new(entry.clone())
+    let manifest = gpui_rhai::AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.delayed_text", "*")
         .unwrap()
         .with_capability("app.ticker", "*")
         .unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                helper,
-                r#"
-                fn set_message(ctx, value) { ctx.set_state("message", value); }
-                fn set_tick(ctx, value) { ctx.set_state("tick", value); }
-                "#
-                .to_owned(),
-            ),
-            (
-                entry,
-                r#"
+    let extension = AsyncExtension {
+        gate: std::sync::Arc::clone(&gate),
+    };
+    let (window, view) = Mount::new(
+        r#"
                 import "helpers/state" as state;
                 define_component(#{
                     metadata: #{ id: "tests/ticker", "export": "Ticker", version: "0.1.0",
@@ -171,40 +153,22 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
                         Ticker()
                     ])
                 }
-                "#
-                .to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .manifest(manifest)
-    .extension(AsyncExtension {
-        gate: std::sync::Arc::clone(&gate),
-    })
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("async-delivery-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("async-delivery-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .module(
+        "helpers/state",
+        r#"
+                fn set_message(ctx, value) { ctx.set_state("message", value); }
+                fn set_tick(ctx, value) { ctx.set_state("tick", value); }
+                "#,
+    )
+    .bundled_assets()
+    .with(move |view| view.manifest(manifest).extension(extension))
+    .ids("async-delivery-window", "async-delivery-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
 
     let release_tick = |tick: u8| {
@@ -238,21 +202,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
     release_tick(2);
     wait_for(&mut visual, ["message: BACKGROUND READY", "tick: 2"]);
 
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator: gpui_rhai::AutomationLocator::TestId {
-                        id: "message".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_test_id("message"), "click").unwrap();
     visual.run_until_parked();
     let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let mut texts = Vec::new();
@@ -307,18 +257,28 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
         }
     }
 
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let widget = ModuleId::parse("widgets/loader").unwrap();
-    let manifest = gpui_rhai::AppManifest::new(entry.clone())
+    let manifest = gpui_rhai::AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.echo", "*")
         .unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                widget,
-                r#"
+    let extension = EchoExtension;
+    let (window, view) = Mount::new(
+        r#"
+                import "widgets/loader" as loader;
+                fn state_schema() { #{ fields: #{
+                    dep: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "first" } } } } }
+                fn bump(ctx, payload) { ctx.set_state("dep", "second"); }
+                fn view(ctx) {
+                    column([
+                        loader::Loader(#{ key: "loader", dep: ctx.get_state("dep") }),
+                        text("Bump").with_key("bump").test_id("bump").on_click(Fn("bump"))
+                    ])
+                }
+                "#,
+    )
+    .module(
+        "widgets/loader",
+        r#"
                 define_component(#{
                     metadata: #{ id: "widgets/loader", "export": "Loader", version: "0.1.0",
                         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
@@ -345,55 +305,15 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
                     effect("load", #{ dep: props.dep }, Fn("start_load"), Fn("cleanup_load"));
                     text(`got ${ctx.get_state("got")}`)
                 }
-                "#
-                .to_owned(),
-            ),
-            (
-                entry.clone(),
-                r#"
-                import "widgets/loader" as loader;
-                fn state_schema() { #{ fields: #{
-                    dep: #{ schema: #{ type: "string" },
-                        "default": #{ type: "string", value: "first" } } } } }
-                fn bump(ctx, payload) { ctx.set_state("dep", "second"); }
-                fn view(ctx) {
-                    column([
-                        loader::Loader(#{ key: "loader", dep: ctx.get_state("dep") }),
-                        text("Bump").with_key("bump").test_id("bump").on_click(Fn("bump"))
-                    ])
-                }
-                "#
-                .to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .manifest(manifest)
-    .extension(EchoExtension)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("effect-restart-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("effect-restart-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .bundled_assets()
+    .with(move |view| view.manifest(manifest).extension(extension))
+    .ids("effect-restart-window", "effect-restart-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
 
     wait_for_view_text(
@@ -405,21 +325,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
 
     // Dependency change restarts the effect; the replacement activation's
     // task must deliver too.
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::Dispatch {
-                    locator: gpui_rhai::AutomationLocator::TestId {
-                        id: "bump".to_owned(),
-                    },
-                    event: "click".to_owned(),
-                    payload: None,
-                },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
+    dispatch(&mut visual, &view, by_test_id("bump"), "click").unwrap();
     wait_for_view_text(
         &mut visual,
         &view,
@@ -470,18 +376,19 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
         }
     }
 
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let widget = ModuleId::parse("widgets/nested").unwrap();
-    let manifest = gpui_rhai::AppManifest::new(entry.clone())
+    let manifest = gpui_rhai::AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.echo", "*")
         .unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                widget,
-                r#"
+    let extension = EchoExtension;
+    let (window, view) = Mount::new(
+        r#"
+                import "widgets/nested" as nested;
+                fn view(ctx) { nested::Nested(#{ key: "nested" }) }
+                "#,
+    )
+    .module(
+        "widgets/nested",
+        r#"
                 define_component(#{
                     metadata: #{ id: "widgets/nested", "export": "Nested", version: "0.1.0",
                         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
@@ -518,46 +425,15 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
                         Fn("start_load"), Fn("cleanup_load"));
                     text(`got ${ctx.get_state("got")}`)
                 }
-                "#
-                .to_owned(),
-            ),
-            (
-                entry.clone(),
-                r#"
-                import "widgets/nested" as nested;
-                fn view(ctx) { nested::Nested(#{ key: "nested" }) }
-                "#
-                .to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .manifest(manifest)
-    .extension(EchoExtension)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("nested-effect-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("nested-effect-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .bundled_assets()
+    .with(move |view| view.manifest(manifest).extension(extension))
+    .ids("nested-effect-window", "nested-effect-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     wait_for_view_text(
         &mut visual,
@@ -634,20 +510,21 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
         }
     }
 
-    cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let widget = ModuleId::parse("widgets/watcher").unwrap();
-    let manifest = gpui_rhai::AppManifest::new(entry.clone())
+    let manifest = gpui_rhai::AppManifest::new(ModuleId::parse("main").unwrap())
         .with_capability("app.echo", "*")
         .unwrap()
         .with_capability("app.push", "*")
         .unwrap();
-    let prepared = EmbeddedScriptView::new(
-        entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
-            (
-                widget,
-                r#"
+    let extension = Extension;
+    let (window, view) = Mount::new(
+        r#"
+                import "widgets/watcher" as watcher;
+                fn view(ctx) { watcher::Watcher(#{ key: "watcher" }) }
+                "#,
+    )
+    .module(
+        "widgets/watcher",
+        r#"
                 define_component(#{
                     metadata: #{ id: "widgets/watcher", "export": "Watcher", version: "0.1.0",
                         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
@@ -685,46 +562,15 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
                         Fn("start_load"), Fn("cleanup_load"));
                     text(`got ${ctx.get_state("got")}`)
                 }
-                "#
-                .to_owned(),
-            ),
-            (
-                entry.clone(),
-                r#"
-                import "widgets/watcher" as watcher;
-                fn view(ctx) { watcher::Watcher(#{ key: "watcher" }) }
-                "#
-                .to_owned(),
-            ),
-        ])),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
+                "#,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .manifest(manifest)
-    .extension(Extension)
-    .asset_sources(official_icon_assets())
-    .prepare()
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("sub-restart-window", cx).unwrap();
-        let view = prepared
-            .mount(
-                ScriptViewConfig::new("sub-restart-view"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        SingleEmbeddedHost { host, view }
-    });
-    cx.run_until_parked();
+    .bundled_assets()
+    .with(move |view| view.manifest(manifest).extension(extension))
+    .ids("sub-restart-window", "sub-restart-view")
+    .mount_window(cx);
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     wait_for_view_text(
         &mut visual,

@@ -3,87 +3,37 @@
 //! submit handler leaves Enter to its parent.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, WindowHandle, point, px,
-};
+use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::*;
+use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE};
 
-const MODULES: [(&str, &str); 6] = [
-    (
-        "components/split_pane",
-        include_str!("../../../../../registry/components/split_pane.rhai"),
-    ),
-    (
-        "components/selection_area",
-        include_str!("../../../../../registry/components/selection_area.rhai"),
-    ),
-    (
-        "components/sortable",
-        include_str!("../../../../../registry/components/sortable.rhai"),
-    ),
-    (
-        "components/input",
-        include_str!("../../../../../registry/components/input.rhai"),
-    ),
-    (
-        "components/slider",
-        include_str!("../../../../../registry/components/slider.rhai"),
-    ),
-    (
-        "components/range_slider",
-        include_str!("../../../../../registry/components/range_slider.rhai"),
-    ),
+use crate::support::{ActiveHost, Mount, bounds, by_role, dispatch, snapshot};
+
+const MODULES: [&str; 6] = [
+    "components/split_pane",
+    "components/selection_area",
+    "components/sortable",
+    "components/input",
+    "components/slider",
+    "components/range_slider",
 ];
-
-struct Host {
-    host: ScriptViewHost,
-    view: ScriptViewHandle,
-}
-
-impl Render for Host {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        if self.view.state() == gpui_rhai::ScriptViewState::Active {
-            self.host.container(self.view.element().unwrap())
-        } else {
-            self.host.container(gpui::div())
-        }
-    }
-}
 
 fn mount(
     cx: &mut TestAppContext,
     script: &str,
     name: &str,
-) -> (WindowHandle<Host>, ScriptViewHandle) {
+) -> (VisualTestContext, ScriptViewHandle) {
     cx.update(gpui_rhai::install);
-    let entry = ModuleId::parse("main").unwrap();
-    let mut sources = BTreeMap::from([(entry.clone(), script.to_owned())]);
-    for (id, source) in MODULES {
-        sources.insert(ModuleId::parse(id).unwrap(), source.to_owned());
-    }
-    let prepared = EmbeddedScriptView::new(
-        entry,
-        EmbeddedScriptSource::new(sources),
-        include_str!("../../../../../registry/themes/default_dark.rhai"),
-    )
-    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-    .locale_sources([
-        (
-            "en.rhai".to_owned(),
-            include_str!("../../../../../registry/locales/en.rhai").to_owned(),
-        ),
-        (
-            "ar.rhai".to_owned(),
-            include_str!("../../../../../registry/locales/ar.rhai").to_owned(),
-        ),
-    ])
-    .motion_preference(MotionPreference::None)
-    .prepare()
-    .unwrap();
+    let prepared = MODULES
+        .iter()
+        .fold(Mount::new(script), |mount, id| mount.registry(id))
+        .locale("en.rhai", EN_LOCALE)
+        .locale("ar.rhai", AR_LOCALE)
+        .motion(MotionPreference::None)
+        .prepare()
+        .unwrap();
     let captured = Rc::new(RefCell::new(None));
     let capture = captured.clone();
     let name = name.to_owned();
@@ -93,43 +43,22 @@ fn mount(
             .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
             .unwrap();
         *capture.borrow_mut() = Some(view.clone());
-        Host { host, view }
+        ActiveHost { host, view }
     });
     cx.run_until_parked();
     cx.refresh().unwrap();
     cx.run_until_parked();
     let view = captured.borrow().as_ref().unwrap().clone();
-    (window, view)
+    (VisualTestContext::from_window(*window, cx), view)
 }
 
 fn status(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .nodes()
-            .find(|node| node.role == "status")
-            .unwrap()
-            .name
-            .clone()
-    })
-}
-
-fn bounds(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) -> GeometryBounds {
-    visual.update(|_, cx| {
-        view.accessibility_snapshot(cx)
-            .unwrap()
-            .find_by_role_and_name(role, name)
-            .next()
-            .unwrap_or_else(|| panic!("no {role} named {name}"))
-            .geometry
-            .unwrap()
-            .visual
-    })
+    snapshot(visual, view)
+        .nodes()
+        .find(|node| node.role == "status")
+        .unwrap()
+        .name
+        .clone()
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -153,20 +82,7 @@ fn dispatch_key(
     name: &str,
     key: &str,
 ) -> Result<AutomationResult, ScriptViewError> {
-    let result = visual.update(|window, cx| {
-        view.automate(
-            AutomationCommand::Dispatch {
-                locator: AutomationLocator::RoleName {
-                    role: role.to_owned(),
-                    name: name.to_owned(),
-                },
-                event: format!("key:{key}"),
-                payload: None,
-            },
-            window,
-            cx,
-        )
-    });
+    let result = dispatch(visual, view, by_role(role, name), &format!("key:{key}"));
     visual.run_until_parked();
     result
 }
@@ -189,8 +105,7 @@ fn view(ctx){column([
         .with_style(style().width(px(420)).height(px(180)))
 ])}
 "#;
-    let (window, view) = mount(cx, script, "split-pane-no-op");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, script, "split-pane-no-op");
     // The start pane already sits at `min_start`, so a step towards the start changes nothing.
     dispatch_key(&mut visual, &view, "separator", "Resize panels", "left").unwrap();
     assert_eq!(status(&mut visual, &view), "0");
@@ -219,8 +134,7 @@ fn view(ctx){column([
         .with_style(style().width(px(420)).height(px(180)))
 ])}
 "#;
-    let (window, view) = mount(cx, script, "split-pane-drag-no-op");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, script, "split-pane-drag-no-op");
     let separator = bounds(&mut visual, &view, "separator", "Resize panels");
     let start = at(separator, 0.5, 0.5);
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
@@ -257,8 +171,7 @@ fn view(ctx){let targets=[#{key:"a",x:20.0,y:20.0,width:50.0,height:40.0},
             on_selection_change:Fn("changed")}).with_style(style().width(px(200)).height(px(100)))
     ]).with_style(style().padding(px(12)).gap(px(8)))}
 "#;
-    let (window, view) = mount(cx, script, "selection-area-no-op");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, script, "selection-area-no-op");
     let area = bounds(&mut visual, &view, "grid", "Node selection");
     let a = point(px((area.x + 45.0) as f32), px((area.y + 40.0) as f32));
     click(&mut visual, a);
@@ -293,8 +206,7 @@ fn view(ctx){let items=[];for key in ctx.get_state("order"){
 
 #[gpui::test]
 fn rtl_horizontal_sortable_drops_on_the_side_the_pointer_is_on(cx: &mut TestAppContext) {
-    let (window, view) = mount(cx, RTL_SORTABLE, "rtl-sortable-pointer");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, RTL_SORTABLE, "rtl-sortable-pointer");
     let alpha = bounds(&mut visual, &view, "listitem", "alpha");
     let bravo = bounds(&mut visual, &view, "listitem", "bravo");
     assert!(
@@ -318,8 +230,7 @@ fn rtl_horizontal_sortable_drops_on_the_side_the_pointer_is_on(cx: &mut TestAppC
 
 #[gpui::test]
 fn rtl_horizontal_sortable_alt_arrows_move_the_way_they_point(cx: &mut TestAppContext) {
-    let (window, view) = mount(cx, RTL_SORTABLE, "rtl-sortable-keys");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, RTL_SORTABLE, "rtl-sortable-keys");
     let target = bounds(&mut visual, &view, "button", "Reorder alpha");
     click(&mut visual, at(target, 0.5, 0.5));
     // Alpha is the rightmost row; Alt+Left moves it left, past bravo.
@@ -345,8 +256,7 @@ fn view(ctx){column([
         .on_key_value("enter",Fn("parent_enter"),"submitting")
 ]).with_style(style().width(px(320)).padding(px(12)).gap(px(8)))}
 "#;
-    let (window, view) = mount(cx, script, "input-enter");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, script, "input-enter");
     let target = bounds(&mut visual, &view, "text_field", "Plain field");
     click(&mut visual, at(target, 0.5, 0.5));
     visual.simulate_keystrokes("enter");
@@ -372,8 +282,7 @@ fn view(ctx){column([
         step:5.0,on_change:Fn("changed")})
 ]).with_style(style().width(px(320)).padding(px(20)).gap(px(8)))}
 "#;
-    let (window, view) = mount(cx, script, "slider-no-op");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, script, "slider-no-op");
     let track = bounds(&mut visual, &view, "slider", "Volume");
     // A click on the thumb's own value leaves it there.
     click(&mut visual, at(track, 0.999, 0.5));
@@ -403,8 +312,7 @@ fn view(ctx){let value=ctx.get_state("range");column([
         on_change:Fn("changed")})
 ]).with_style(style().width(px(320)).padding(px(12)).gap(px(8)))}
 "#;
-    let (window, view) = mount(cx, script, "range-slider-no-op");
-    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (mut visual, view) = mount(cx, script, "range-slider-no-op");
     let control = bounds(&mut visual, &view, "group", "Accepted interval");
     click(&mut visual, at(control, 0.999, 0.7));
     assert_eq!(status(&mut visual, &view), "20.0,100.0,0");
