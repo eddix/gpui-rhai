@@ -225,7 +225,10 @@ their original local IDs. An overlay's `parent` (`parent_overlay`) names the
 nearest enclosing overlay with that key, so a submenu or a Combobox inside a
 Popover finds its parent even when another component declared it. Toast items
 remain owned and limited by their source component; only their generic
-positioned Layer elements share the Host portal.
+positioned Layer elements share the Host portal. The portal paints layer content
+outside the view's root, but the content keeps the view's keyboard handling:
+Tab and Shift+Tab move focus, the actions bound with `bind_keys` and Copy run in
+the view that declared the layer, and Escape still reaches the Host's overlays.
 
 `ScriptViewHost::overlay_placement(view_id, key)` returns the placement of the
 overlay a view rendered with that key in the last frame. When several instances
@@ -236,9 +239,42 @@ paths; `overlay_placement_in(view_id, instance_path, key)` names one
 Non-modal outside clicks dismiss the topmost Host overlay during native capture
 and continue to the clicked sibling control. Modal backdrops consume the click.
 An open modal also reclaims focus when Host code moves it to an ancestor, so
-Escape and Tab stay in the modal path. Do not refocus a Host root after each
-embedded render; attach global shortcuts to the Host interaction domain and let
-Overlay own focus while a modal is presented.
+Escape and Tab stay in the modal path. With several modals open, in one view or
+in several, only the topmost reclaims focus: the last one in the Host's overlay
+stack, which is also the one Escape closes first. Do not refocus a Host root
+after each embedded render; attach global shortcuts to the Host interaction
+domain and let Overlay own focus while a modal is presented.
+
+A Host that needs to know whether a script overlay is open asks
+`ScriptViewHost::open_overlays()`. It lists the overlays open in every view as
+of the last frame, bottom to top, including those declared inside components
+(a Select's `<key>-combobox`, a Dialog in a third-party widget). Each
+`OpenOverlay` carries the `view_id`, the declaring instance path in `owner`
+(`None` when the view declared it outside any component), the script `key`,
+the `kind`, and `modal` and `dismiss_on_escape`. Gate Host shortcuts on it, for
+example skip panel switching while any entry is `modal`:
+
+```rust
+let modal_open = host.open_overlays().iter().any(|overlay| overlay.modal);
+```
+
+The container's own Escape handler only runs when the key reaches it. A Host
+that binds Escape at App level (`cx.bind_keys` + `cx.on_action`) gets the action
+before any key-down listener, so it offers the key to the script overlays first
+with `ScriptViewHost::dismiss_escape(window, cx)`. That closes the topmost
+overlay that Escape closes, as the container does, and returns `false` when no
+script overlay took the key:
+
+```rust
+cx.on_action(move |_: &HostEscape, cx| {
+    let taken = window_handle
+        .update(cx, |_, window, cx| host.dismiss_escape(window, cx))
+        .unwrap_or(false);
+    if !taken {
+        close_call_log(cx);
+    }
+});
+```
 
 ## Event-time geometry bridges
 
