@@ -7,7 +7,7 @@ the Host refreshes on the foreground. This guide describes their limits; it is
 not a per-asset revision or strongly consistent publication contract.
 
 See [asset loading](assets.md) for declarations, supported formats and dynamic
-decode, and [the executable Host fixture](../tests/native-keyboard/tests/asset_refresh_host.rs)
+decode, and [the executable Host fixture](../tests/native-keyboard/tests/native/assets/refresh_host.rs)
 for the complete, schema-validated registration and mounted native test.
 
 ## Prefer immutable, versioned IDs when practical
@@ -146,7 +146,7 @@ Run the maintained native fixture without changing the thread stack:
 ```sh
 env -u RUST_MIN_STACK cargo test \
   --manifest-path tests/native-keyboard/Cargo.toml --locked \
-  --test asset_refresh_host -- --nocapture --test-threads=1
+  --test native assets::refresh_host -- --nocapture --test-threads=1
 ```
 
 It drives a real Rhai `start_task` completion into the registered synchronous
