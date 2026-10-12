@@ -110,6 +110,132 @@ impl fmt::Display for ShadowedBuiltin {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
+/// A function the Host registers on its own engine, which known-call
+/// validation cannot see in this one: `name/arity` called directly or as a
+/// method, or `module::name/arity` in a static module (a custom primitive
+/// constructor is `namespace::Export/1`).
+pub struct HostFunction {
+    /// Static module path for `module::name` calls, or `None` for a global
+    /// function.
+    pub namespace: Option<String>,
+    /// Function name.
+    pub name: String,
+    /// Number of parameters.
+    pub arity: usize,
+}
+
+impl HostFunction {
+    /// Parse `name/arity` or `module::name/arity`, such as `open_file/1` or
+    /// `omb::status/0`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HostFunctionError`] naming the declaration when the arity
+    /// is missing or not a number, a segment is not a Rhai identifier, or the
+    /// module is `global`.
+    pub fn parse(value: &str) -> Result<Self, HostFunctionError> {
+        let (path, arity) = value
+            .rsplit_once('/')
+            .ok_or_else(|| HostFunctionError::MissingArity(value.to_owned()))?;
+        let arity = arity
+            .parse::<usize>()
+            .ok()
+            .filter(|_| arity.bytes().all(|byte| byte.is_ascii_digit()))
+            .ok_or_else(|| HostFunctionError::InvalidArity(value.to_owned()))?;
+        let mut segments = path.split("::").collect::<Vec<_>>();
+        if !segments.iter().all(|segment| is_rhai_identifier(segment)) {
+            return Err(HostFunctionError::InvalidName(value.to_owned()));
+        }
+        let name = segments.pop().unwrap_or_default().to_owned();
+        let namespace = (!segments.is_empty()).then(|| segments.join("::"));
+        if namespace.as_deref() == Some("global") {
+            return Err(HostFunctionError::GlobalNamespace(value.to_owned()));
+        }
+        Ok(Self {
+            namespace,
+            name,
+            arity,
+        })
+    }
+
+    /// The constructor of a custom primitive from its export: `OmbChart` for
+    /// `gpui_rhai::OmbChart`, or `namespace::Export` for the primitive
+    /// namespace `namespace`. It takes one argument, the props.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HostFunctionError::InvalidPrimitive`] when the export is not
+    /// `PascalCase` or the namespace is not a primitive namespace.
+    pub fn primitive(export: &str) -> Result<Self, HostFunctionError> {
+        let (namespace, name) = export.split_once("::").unwrap_or(("gpui_rhai", export));
+        let pascal_case = name
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_uppercase())
+            && name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric());
+        // A primitive namespace is the part of a `PrimitiveId` before the dot.
+        if !pascal_case || crate::PrimitiveId::parse(format!("{namespace}.export")).is_err() {
+            return Err(HostFunctionError::InvalidPrimitive(export.to_owned()));
+        }
+        Ok(Self {
+            namespace: Some(namespace.to_owned()),
+            name: name.to_owned(),
+            arity: 1,
+        })
+    }
+}
+
+/// A Rhai identifier: an ASCII letter or `_`, then letters, digits or `_`.
+fn is_rhai_identifier(value: &str) -> bool {
+    value != "_"
+        && value
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[non_exhaustive]
+/// A malformed [`HostFunction`] declaration; each variant holds it.
+pub enum HostFunctionError {
+    #[error(
+        "host function `{0}` has no arity; write `name/arity` or `module::name/arity`, such as `open_file/1`"
+    )]
+    MissingArity(String),
+    #[error(
+        "host function `{0}` has an invalid arity; write `name/arity` or `module::name/arity`, such as `open_file/1`"
+    )]
+    InvalidArity(String),
+    #[error(
+        "host function `{0}` has an invalid name; write `name/arity` or `module::name/arity`, such as `open_file/1`"
+    )]
+    InvalidName(String),
+    #[error(
+        "host function `{0}` names the `global` namespace; write `name/arity` for a global function"
+    )]
+    GlobalNamespace(String),
+    #[error(
+        "host primitive `{0}` must be a PascalCase export, `OmbChart` for `gpui_rhai::OmbChart` or `namespace::Export` for another primitive namespace"
+    )]
+    InvalidPrimitive(String),
+}
+
+impl fmt::Display for HostFunction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(namespace) = &self.namespace {
+            write!(formatter, "{namespace}::")?;
+        }
+        write!(formatter, "{}/{}", self.name, self.arity)
+    }
+}
+
 #[derive(Debug, Error)]
 /// Failure to construct or parse inputs for known-call validation.
 pub enum KnownCallLintError {
@@ -188,6 +314,24 @@ impl KnownCallCatalog {
         catalog.ingest_metadata_module("", &metadata);
         catalog.insert_language_intrinsics();
         Ok(catalog)
+    }
+
+    fn insert_host_functions(&mut self, host: &BTreeSet<HostFunction>) {
+        for function in host {
+            if let Some(namespace) = &function.namespace {
+                self.modules
+                    .entry(namespace.clone())
+                    .or_default()
+                    .insert_direct(function.name.clone(), function.arity);
+            } else {
+                self.global
+                    .insert_direct(function.name.clone(), function.arity);
+                if function.arity > 0 {
+                    self.global
+                        .insert_method(function.name.clone(), function.arity - 1);
+                }
+            }
+        }
     }
 
     fn insert_language_intrinsics(&mut self) {
@@ -282,8 +426,10 @@ pub(crate) fn lint_known_calls(
     entry_name: &str,
     entry_source: &str,
     modules: &BTreeMap<ModuleId, String>,
-) -> Result<Vec<KnownCallDiagnostic>, KnownCallLintError> {
-    let catalog = KnownCallCatalog::from_engine(engine)?;
+    host: &BTreeSet<HostFunction>,
+) -> Result<(Vec<KnownCallDiagnostic>, BTreeSet<HostFunction>), KnownCallLintError> {
+    let mut catalog = KnownCallCatalog::from_engine(engine)?;
+    catalog.insert_host_functions(host);
     let previous_optimization = engine.optimization_level();
     engine.set_optimization_level(OptimizationLevel::None);
     let parsed = parse_sources(engine, entry_name, entry_source, modules);
@@ -303,8 +449,18 @@ pub(crate) fn lint_known_calls(
     }
 
     let mut diagnostics = Vec::new();
+    let mut host_calls = HostCalls {
+        declared: host,
+        called: BTreeSet::new(),
+    };
     for source in &parsed {
-        lint_source(source, &catalog, &module_functions, &mut diagnostics);
+        lint_source(
+            source,
+            &catalog,
+            &module_functions,
+            &mut host_calls,
+            &mut diagnostics,
+        );
     }
     diagnostics.sort_by(|left, right| {
         (
@@ -325,7 +481,27 @@ pub(crate) fn lint_known_calls(
             ))
     });
     diagnostics.dedup();
-    Ok(diagnostics)
+    Ok((diagnostics, host_calls.called))
+}
+
+/// The Host functions a lint was given and those the sources call.
+struct HostCalls<'a> {
+    declared: &'a BTreeSet<HostFunction>,
+    called: BTreeSet<HostFunction>,
+}
+
+impl HostCalls<'_> {
+    /// Record a call that resolves to a declared Host function.
+    fn record(&mut self, namespace: Option<&str>, name: &str, arity: usize) {
+        let function = HostFunction {
+            namespace: namespace.map(ToOwned::to_owned),
+            name: name.to_owned(),
+            arity,
+        };
+        if self.declared.contains(&function) {
+            self.called.insert(function);
+        }
+    }
 }
 
 pub(crate) fn lint_shadowed_builtins(
@@ -339,10 +515,6 @@ pub(crate) fn lint_shadowed_builtins(
     let parsed = parse_source(engine, entry_name, None, entry_source);
     engine.set_optimization_level(previous_optimization);
     let parsed = parsed?;
-    let takes = |set: &BTreeMap<String, BTreeSet<usize>>, name: &str, arity: usize| {
-        set.get(name)
-            .is_some_and(|arities| arities.contains(&arity))
-    };
     let mut diagnostics = parsed
         .ast
         .iter_functions()
@@ -430,6 +602,7 @@ fn lint_source(
     source: &ParsedSource,
     catalog: &KnownCallCatalog,
     module_functions: &BTreeMap<String, FunctionSet>,
+    host: &mut HostCalls<'_>,
     diagnostics: &mut Vec<KnownCallDiagnostic>,
 ) {
     let mut local = FunctionSet::default();
@@ -458,6 +631,19 @@ fn lint_source(
                     namespace.as_deref(),
                     &call.name,
                 );
+                let arity = call.args.len();
+                match namespace.as_deref() {
+                    None if !takes(&local.direct, &call.name, arity) => {
+                        host.record(None, &call.name, arity);
+                    }
+                    Some("global") => host.record(None, &call.name, arity),
+                    Some(namespace)
+                        if !imports.contains_key(namespace.split("::").next().unwrap_or("")) =>
+                    {
+                        host.record(Some(namespace), &call.name, arity);
+                    }
+                    _ => {}
+                }
                 push_if_invalid(
                     diagnostics,
                     source,
@@ -476,6 +662,9 @@ fn lint_source(
                     catalog.global.method.get(call.name.as_str()),
                     local.method.get(call.name.as_str()),
                 );
+                if !takes(&local.method, &call.name, call.args.len()) {
+                    host.record(None, &call.name, call.args.len() + 1);
+                }
                 push_if_invalid(
                     diagnostics,
                     source,
@@ -558,6 +747,11 @@ fn direct_arities(
         .and_then(|functions| functions.direct.get(function))
         .cloned()
         .unwrap_or_default()
+}
+
+fn takes(set: &BTreeMap<String, BTreeSet<usize>>, name: &str, arity: usize) -> bool {
+    set.get(name)
+        .is_some_and(|arities| arities.contains(&arity))
 }
 
 fn merged_arities(
@@ -697,6 +891,134 @@ mod tests {
             )
             .unwrap();
         assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    }
+
+    #[test]
+    fn host_functions_parse_from_declarations() {
+        let parsed = |value: &str| HostFunction::parse(value).map(|function| function.to_string());
+        assert_eq!(parsed("open_file/1").as_deref(), Ok("open_file/1"));
+        assert_eq!(parsed("omb::status/0").as_deref(), Ok("omb::status/0"));
+        assert_eq!(parsed("a::b::_c/12").as_deref(), Ok("a::b::_c/12"));
+        let status = HostFunction::parse("omb::status/0").unwrap();
+        assert_eq!(
+            (
+                status.namespace.as_deref(),
+                status.name.as_str(),
+                status.arity
+            ),
+            (Some("omb"), "status", 0)
+        );
+        for (value, error) in [
+            (
+                "open_file",
+                HostFunctionError::MissingArity("open_file".into()),
+            ),
+            (
+                "open_file/",
+                HostFunctionError::InvalidArity("open_file/".into()),
+            ),
+            (
+                "open_file/+1",
+                HostFunctionError::InvalidArity("open_file/+1".into()),
+            ),
+            (
+                "open file/1",
+                HostFunctionError::InvalidName("open file/1".into()),
+            ),
+            ("omb::/0", HostFunctionError::InvalidName("omb::/0".into())),
+            ("1open/0", HostFunctionError::InvalidName("1open/0".into())),
+            ("_/0", HostFunctionError::InvalidName("_/0".into())),
+            (
+                "global::open/1",
+                HostFunctionError::GlobalNamespace("global::open/1".into()),
+            ),
+        ] {
+            assert_eq!(HostFunction::parse(value), Err(error), "{value}");
+        }
+
+        let primitive =
+            |value: &str| HostFunction::primitive(value).map(|function| function.to_string());
+        assert_eq!(
+            primitive("OmbChart").as_deref(),
+            Ok("gpui_rhai::OmbChart/1")
+        );
+        assert_eq!(primitive("omb::Chart").as_deref(), Ok("omb::Chart/1"));
+        for value in [
+            "ombChart",
+            "Omb::Chart",
+            "omb::chart",
+            "omb__x::Chart",
+            "Omb-Chart",
+            "",
+        ] {
+            assert_eq!(
+                HostFunction::primitive(value),
+                Err(HostFunctionError::InvalidPrimitive(value.into())),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn known_call_lint_accepts_and_reports_declared_host_functions() {
+        let open = HostFunction::parse("open_file/1").unwrap();
+        let status = HostFunction::parse("omb::status/0").unwrap();
+        let chart = HostFunction::primitive("OmbChart").unwrap();
+        let unused = HostFunction::parse("close_file/1").unwrap();
+        let host = BTreeSet::from([open.clone(), status.clone(), chart.clone(), unused]);
+        let source = r#"
+            fn clicked(ctx, payload) { "a.txt".open_file(); }
+            fn view(ctx) {
+                let state = omb::status();
+                column([gpui_rhai::OmbChart(#{ key: "chart" }), text(state)])
+            }
+        "#;
+        let mut runtime = RuntimeEngine::new();
+        assert_eq!(
+            runtime
+                .lint_known_calls("ui/main.rhai", source, &BTreeMap::new())
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            [
+                "ui/main.rhai:2:48: unknown function call `open_file/0`",
+                "ui/main.rhai:4:34: unknown function call `omb::status/0`",
+                "ui/main.rhai:5:36: unknown function call `gpui_rhai::OmbChart/1`",
+            ]
+        );
+        let (diagnostics, called) = runtime
+            .lint_known_calls_with_host("ui/main.rhai", source, &BTreeMap::new(), &host)
+            .unwrap();
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+        assert_eq!(called, BTreeSet::from([open.clone(), status, chart]));
+        assert_eq!(open.to_string(), "open_file/1");
+
+        // A wrong arity is still wrong; a script function of the same name
+        // and a module import are not Host calls.
+        let (diagnostics, called) = runtime
+            .lint_known_calls_with_host(
+                "ui/main.rhai",
+                r#"
+                    import "components/probe" as omb;
+                    fn open_file(path) { path }
+                    fn view(ctx) { omb::status(); open_file("a"); text(open_file()) }
+                "#,
+                &BTreeMap::from([(
+                    ModuleId::parse("components/probe").unwrap(),
+                    "fn status() { 0 }".to_owned(),
+                )]),
+                &host,
+            )
+            .unwrap();
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["ui/main.rhai:4:72: call `open_file/0` has the wrong arity; expected 1"]
+        );
+        assert!(called.is_empty(), "{called:?}");
     }
 
     #[test]

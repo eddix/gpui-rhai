@@ -11,11 +11,11 @@ use std::rc::Rc;
 
 use gpui_rhai::{
     AppManifest, ComponentDefinition, ComponentInstancePath, ComponentMetadata, ComponentRegistry,
-    DirectoryAssetProvider, EmbeddedScriptSource, FontSource, LocaleManager, ModuleId,
-    RUNTIME_API_VERSION, RestrictedModuleResolver, RuntimeEngine, ScriptAsset, ScriptLifecycle,
-    ThemeManager, ThemeSelection, ThemeTokenOverrides, ThemeVariant, UiRuntimeState,
-    load_component_styles, load_locale_source, load_theme_with_layers, load_token_base,
-    parse_component_header, validate_font_sources,
+    DirectoryAssetProvider, EmbeddedScriptSource, FontSource, HostFunction, HostSlotRegistry,
+    LocaleManager, ModuleId, RUNTIME_API_VERSION, RestrictedModuleResolver, RuntimeEngine,
+    ScriptAsset, ScriptLifecycle, ScriptViewExtension, ThemeManager, ThemeSelection,
+    ThemeTokenOverrides, ThemeVariant, UiRuntimeState, load_component_styles, load_locale_source,
+    load_theme_with_layers, load_token_base, parse_component_header, validate_font_sources,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -517,7 +517,9 @@ impl Project {
             modules.insert(id, source);
         }
 
-        let app: AppManifest = toml::from_str(&read(&self.root.join("ui/app.toml"))?)?;
+        let app_source = read(&self.root.join("ui/app.toml"))?;
+        let app: AppManifest = toml::from_str(&app_source)?;
+        let declarations: AppHostDeclarations = toml::from_str(&app_source)?;
         if app.entry.as_str() != "main" {
             return Err(ProjectError::ManifestEntry(app.entry));
         }
@@ -529,9 +531,15 @@ impl Project {
         }
         let components = validate_component_exports(&modules, &headers)?;
         app.validate_components(&components)?;
-        let host_validation_required = !app.capabilities.is_empty();
-        let initial_view_validated =
-            validate_entry(&self.root, &modules, &components, !host_validation_required)?;
+        let capabilities_declared = !app.capabilities.is_empty();
+        let (initial_view_validated, host_extensions) = validate_entry(
+            &self.root,
+            &modules,
+            &components,
+            &declarations.host.functions(),
+            !capabilities_declared,
+        )?;
+        let host_validation_required = capabilities_declared || !host_extensions.is_empty();
         let styles_path = self.root.join("ui/styles.rhai");
         if styles_path.exists() {
             load_component_styles(
@@ -558,6 +566,7 @@ impl Project {
             entry: app.entry,
             host_validation_required,
             initial_view_validated,
+            host_extensions: host_extensions.iter().map(ToString::to_string).collect(),
             warnings,
         })
     }
@@ -1124,17 +1133,29 @@ fn validate_component_exports(
     Ok(exported)
 }
 
+/// Lint, compile and, unless it needs the Host, run the first frame of the
+/// entry. Returns whether the initial view ran and the host extensions the
+/// scripts call: `HostSlot` and the `[host]` declarations of `ui/app.toml`.
 fn validate_entry(
     root: &Path,
     modules: &BTreeMap<ModuleId, String>,
     components: &ComponentRegistry,
+    declared: &BTreeSet<HostFunction>,
     run_hostless_lifecycle: bool,
-) -> Result<bool, ProjectError> {
+) -> Result<(bool, BTreeSet<HostFunction>), ProjectError> {
     let entry_path = root.join("ui/main.rhai");
     let entry = read(&entry_path)?;
     let source = EmbeddedScriptSource::new(modules.clone());
     let mut runtime = RuntimeEngine::new();
-    let call_diagnostics = runtime.lint_known_calls("ui/main.rhai", &entry, modules)?;
+    // The extensions gpui-rhai ships: a Host installs them, so a script can
+    // call them although `RuntimeEngine::new` does not register them.
+    HostSlotRegistry::new()
+        .configure_engine(&mut runtime)
+        .expect("HostSlot registers on a fresh engine");
+    let mut host = declared.clone();
+    host.insert(HostFunction::primitive("HostSlot").expect("HostSlot is a PascalCase export"));
+    let (call_diagnostics, host_calls) =
+        runtime.lint_known_calls_with_host("ui/main.rhai", &entry, modules, &host)?;
     if !call_diagnostics.is_empty() {
         return Err(ProjectError::KnownCalls(
             call_diagnostics
@@ -1193,14 +1214,17 @@ fn validate_entry(
         BTreeMap::new(),
         &schema,
     )?;
-    if run_hostless_lifecycle {
+    if !host_calls.is_empty() {
+        // Only the Host has these: the first frame would fail on them here.
+        Ok((false, host_calls))
+    } else if run_hostless_lifecycle {
         lifecycle.start(&mut runtime)?;
-        Ok(true)
+        Ok((true, host_calls))
     } else if !has_init {
         lifecycle.validate_initial_view_without_init(&mut runtime)?;
-        Ok(true)
+        Ok((true, host_calls))
     } else {
-        Ok(false)
+        Ok((false, host_calls))
     }
 }
 
@@ -2125,6 +2149,61 @@ fn rollback_staged_files(
     }
 }
 
+/// The `[host]` table of `ui/app.toml`. Only `check` reads it; `AppManifest`
+/// and the runtime ignore it.
+#[derive(Debug, Default, Deserialize)]
+struct AppHostDeclarations {
+    #[serde(default)]
+    host: HostDeclarations,
+}
+
+/// Rhai items the Host registers on its own engine, which `check` cannot see.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostDeclarations {
+    /// `name/arity`, or `module::name/arity` for a static module.
+    #[serde(default)]
+    functions: Vec<DeclaredHostFunction>,
+    /// A custom primitive export: `Export` for `gpui_rhai::Export`, or
+    /// `namespace::Export`.
+    #[serde(default)]
+    primitives: Vec<DeclaredHostPrimitive>,
+}
+
+impl HostDeclarations {
+    fn functions(&self) -> BTreeSet<HostFunction> {
+        self.functions
+            .iter()
+            .map(|function| function.0.clone())
+            .chain(self.primitives.iter().map(|primitive| primitive.0.clone()))
+            .collect()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "String")]
+struct DeclaredHostFunction(HostFunction);
+
+impl TryFrom<String> for DeclaredHostFunction {
+    type Error = gpui_rhai::HostFunctionError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        HostFunction::parse(&value).map(Self)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "String")]
+struct DeclaredHostPrimitive(HostFunction);
+
+impl TryFrom<String> for DeclaredHostPrimitive {
+    type Error = gpui_rhai::HostFunctionError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        HostFunction::primitive(&value).map(Self)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct LocalManifest {
     runtime_api: u32,
@@ -2155,6 +2234,10 @@ pub struct CheckReport {
     pub entry: ModuleId,
     pub host_validation_required: bool,
     pub initial_view_validated: bool,
+    /// The host extensions the scripts call, `gpui_rhai::HostSlot/1` and the
+    /// `[host]` declarations of `ui/app.toml`; when there are any, the
+    /// headless first frame did not run.
+    pub host_extensions: Vec<String>,
     /// Built-in shadowing and the application profile's design rules; never
     /// fatal.
     pub warnings: Vec<String>,
@@ -2172,7 +2255,18 @@ impl CheckReport {
     }
 
     fn status(&self) -> String {
-        if self.host_validation_required && !self.initial_view_validated {
+        if !self.host_extensions.is_empty() {
+            format!(
+                "Static check passed: entry `{}`, {} installed component(s). The scripts call host extensions only the Host registers ({}), so the headless first frame was not executed.",
+                self.entry,
+                self.components,
+                self.host_extensions
+                    .iter()
+                    .map(|extension| format!("`{extension}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        } else if self.host_validation_required && !self.initial_view_validated {
             format!(
                 "Static check passed: entry `{}`, {} installed component(s). Host capability lifecycle and its dependent initial view were not executed.",
                 self.entry, self.components
@@ -2648,6 +2742,183 @@ mod tests {
             project.check(),
             Err(ProjectError::Lifecycle(_) | ProjectError::Runtime(_))
         ));
+    }
+
+    #[test]
+    fn check_knows_the_host_slot_extension() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn host_slot(name) { gpui_rhai::HostSlot(#{ key: name, name: name }) }\n\
+             fn view(ctx) { host_slot(\"pad\") }\n",
+        )
+        .unwrap();
+        let report = project.check().unwrap();
+        assert_eq!(report.host_extensions, ["gpui_rhai::HostSlot/1"]);
+        assert!(report.host_validation_required);
+        assert!(!report.initial_view_validated);
+        assert!(
+            report.summary().contains(
+                "call host extensions only the Host registers (`gpui_rhai::HostSlot/1`), \
+                 so the headless first frame was not executed"
+            ),
+            "{}",
+            report.summary()
+        );
+
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { gpui_rhai::HostSlot() }\n",
+        )
+        .unwrap();
+        let error = project.check().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("call `gpui_rhai::HostSlot/0` has the wrong arity; expected 1"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn check_treats_host_declarations_in_app_toml_as_known() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        let manifest = "entry = \"main\"\nruntime_api = 3\n";
+        let main = r#"
+            fn opened(ctx, payload) { "notes.txt".open_file(); }
+            fn view(ctx) {
+                column([text(omb::status()), gpui_rhai::OmbChart(#{ key: "chart" })])
+                    .on_click(Fn("opened"))
+            }
+        "#;
+        fs::write(directory.path().join("ui/main.rhai"), main).unwrap();
+        fs::write(directory.path().join("ui/app.toml"), manifest).unwrap();
+        let error = project.check().unwrap_err().to_string();
+        for unknown in [
+            "`open_file/0`",
+            "`omb::status/0`",
+            "`gpui_rhai::OmbChart/1`",
+        ] {
+            assert!(error.contains(unknown), "{unknown}: {error}");
+        }
+
+        let declared = format!(
+            "{manifest}\n[host]\nfunctions = [\"open_file/1\", \"omb::status/0\", \"close_file/1\"]\n\
+             primitives = [\"OmbChart\"]\n"
+        );
+        fs::write(directory.path().join("ui/app.toml"), &declared).unwrap();
+        let report = project.check().unwrap();
+        assert_eq!(
+            report.host_extensions,
+            ["open_file/1", "gpui_rhai::OmbChart/1", "omb::status/0"]
+        );
+        assert!(report.host_validation_required);
+        assert!(!report.initial_view_validated);
+        assert!(report.summary().contains("`omb::status/0`"));
+        // The runtime manifest ignores the table.
+        let app: AppManifest = toml::from_str(&declared).unwrap();
+        assert_eq!(app, AppManifest::new(ModuleId::parse("main").unwrap()));
+
+        // A wrong arity is still reported.
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { text(omb::status(1)) }\n",
+        )
+        .unwrap();
+        assert!(
+            project
+                .check()
+                .unwrap_err()
+                .to_string()
+                .contains("call `omb::status/1` has the wrong arity; expected 0")
+        );
+
+        // Declarations the scripts do not call keep the headless first frame.
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { throw \"invalid initial view\"; }\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            project.check(),
+            Err(ProjectError::Lifecycle(_) | ProjectError::Runtime(_))
+        ));
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { text(\"ready\") }\n",
+        )
+        .unwrap();
+        let report = project.check().unwrap();
+        assert_eq!(report.host_extensions, [] as [String; 0]);
+        assert!(!report.host_validation_required);
+        assert!(report.initial_view_validated);
+    }
+
+    #[test]
+    fn check_rejects_invalid_host_declarations() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        for (host, message) in [
+            (
+                "functions = [\"open_file\"]",
+                "host function `open_file` has no arity",
+            ),
+            (
+                "functions = [\"open_file/one\"]",
+                "host function `open_file/one` has an invalid arity",
+            ),
+            (
+                "functions = [\"open_file/+1\"]",
+                "host function `open_file/+1` has an invalid arity",
+            ),
+            (
+                "functions = [\"open file/1\"]",
+                "host function `open file/1` has an invalid name",
+            ),
+            (
+                "functions = [\"omb::/0\"]",
+                "host function `omb::/0` has an invalid name",
+            ),
+            (
+                "functions = [\"global::open_file/1\"]",
+                "names the `global` namespace",
+            ),
+            (
+                "primitives = [\"omb_chart\"]",
+                "host primitive `omb_chart` must be a PascalCase export",
+            ),
+            (
+                "primitives = [\"Omb::Chart\"]",
+                "host primitive `Omb::Chart` must be a PascalCase export",
+            ),
+            ("functions = \"open_file/1\"", "invalid type"),
+            ("primitive = [\"OmbChart\"]", "unknown field `primitive`"),
+        ] {
+            fs::write(
+                directory.path().join("ui/app.toml"),
+                format!("entry = \"main\"\nruntime_api = 3\n\n[host]\n{host}\n"),
+            )
+            .unwrap();
+            let error = project.check().unwrap_err();
+            assert!(matches!(error, ProjectError::TomlDeserialize(_)), "{error}");
+            assert!(error.to_string().contains(message), "{host}: {error}");
+        }
+        fs::write(
+            directory.path().join("ui/app.toml"),
+            "entry = \"main\"\nruntime_api = 3\n\n[host]\nprimitives = [\"omb::Chart\"]\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { omb::Chart(#{}) }\n",
+        )
+        .unwrap();
+        assert_eq!(project.check().unwrap().host_extensions, ["omb::Chart/1"]);
     }
 
     #[test]

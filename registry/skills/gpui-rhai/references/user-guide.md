@@ -224,6 +224,14 @@ validation. Event branches still need representative runtime value types. Rhai
 maps are key-sorted maps, not insertion-ordered records, and scripts do not
 define Rust-like struct or class types.
 
+Functions and custom primitives the Host registers itself are invisible to
+`check` until `ui/app.toml` declares them under `[host]`, for example
+`functions = ["open_file/1", "omb::status/0"]` and `primitives = ["OmbChart"]`
+for `gpui_rhai::OmbChart`. When the scripts call one of them or
+`gpui_rhai::HostSlot`, `check` validates the calls statically and skips the
+headless first frame, and its summary names them. See
+[Host extensions in `check`](https://github.com/eddix/gpui-rhai/blob/main/docs/capabilities.md#host-extensions-in-check).
+
 ## 4. State and controlled components
 
 State field defaults use the serialized `UiValue` form. Each nested map entry

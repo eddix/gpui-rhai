@@ -174,3 +174,41 @@ Runtime activation remains explicit so a manifest cannot grant itself a service.
 Startup and `gpui-rhai check` also cross-check every installed component header:
 its capability requirement must appear explicitly and identically in the app
 manifest before any handler can activate.
+
+## Host extensions in `check`
+
+`gpui-rhai check` lints every call against the functions its own engine
+registers. It also knows `gpui_rhai::HostSlot`, which a Host installs with
+`HostSlotRegistry`. Functions and custom primitives a Host registers itself in
+`ScriptViewExtension::configure_engine` are declared under `[host]` in
+`ui/app.toml`, so the lint treats calls to them as known and still checks
+their arity:
+
+```toml
+entry = "main"
+runtime_api = 3
+
+[host]
+functions = ["open_file/1", "omb::status/0"]
+primitives = ["OmbChart"]
+```
+
+A function is `name/arity`, called as `open_file(path)` or `path.open_file()`,
+or `module::name/arity` for a static module. A primitive is its PascalCase
+export: `OmbChart` is called as `gpui_rhai::OmbChart(#{ ... })`, and
+`omb::Chart` declares the export `Chart` of the primitive namespace `omb`. A
+malformed entry or an unknown key fails the check with its line in
+`ui/app.toml`. Only the CLI reads `[host]`; `AppManifest` and the runtime
+ignore it.
+
+Only the Host provides these items, so when the scripts call `HostSlot` or a
+declared item, `check` validates them statically and skips the headless first
+frame; its summary lists the extensions it found. Declarations the scripts do
+not call leave the first frame on. This entry passes `check` without a
+`[host]` table:
+
+<!-- check: pass -->
+```rhai
+fn host_slot(name) { gpui_rhai::HostSlot(#{ key: name, name: name }) }
+fn view(ctx) { column([text("Editor"), host_slot("editor")]) }
+```
