@@ -40,10 +40,12 @@ for upgrading; copied official components move to 0.2.1 through `gpui-rhai updat
   `HostFunction::parse` / `HostFunction::primitive` for
   `RuntimeEngine::lint_known_calls_with_host`. `CheckReport` gains
   `host_extensions` (#141).
-- A single-line text field no longer takes a line break: Enter that no handler
-  takes no longer inserts one (in debug builds GPUI panicked shaping it, for
-  example in a searchable Combobox without `on_submit`), and line breaks inside
-  typed or composed text become spaces, as in a paste.
+- A single-line text field never takes a line break: input that is only line
+  breaks is ignored, and line breaks inside typed or composed text become
+  spaces, as in a paste. GPUI's test platform delivers an unhandled Enter as the
+  text `"\n"`, which the field inserted and debug builds then panicked shaping
+  (a searchable Combobox without `on_submit`). On macOS, Return does not reach
+  the field as text, so Enter there behaves as before.
 - Table group headers show the group value as the rows carry it, no longer
   uppercased; the label voice keeps their size, weight and color (#146, D68).
 - A click on a Table or List row leaves keyboard focus on the collection, so
