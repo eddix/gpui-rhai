@@ -150,7 +150,10 @@ gpui-rhai gallery
   headless first frame, and with a profile reports design-rule warnings in
   application source (not in installed official components).
 - `metadata` emits component schemas, snippets, and Rhai language-server
-  definitions from the actual installed APIs.
+  definitions from the actual installed APIs. The definitions,
+  `.gpui-rhai/editor/definitions/gpui_rhai.d.rhai`, are in Rhai's definition
+  format: the Rhai language server (`rhaiscript/lsp`, experimental) parses them
+  without errors and resolves calls to the functions they declare.
 - `skills <directory>` writes the agent skills `gpui-rhai` and
   `gpui-rhai-design` for this CLI's version: `.claude/skills` for Claude Code,
   `.agents/skills` for Codex, Cursor and other agents. Run it again after an
