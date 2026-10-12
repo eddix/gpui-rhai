@@ -2,11 +2,11 @@
 {
   "id": "components/command_dialog",
   "export": "CommandDialog",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/command", "components/dialog"],
   "capabilities": {},
-  "tokens": ["metrics.inset"],
+  "tokens": ["metrics.inset", "radius.lg"],
   "environment": ["density"]
 }
 */
@@ -22,10 +22,10 @@ import "components/command" as command;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.2.0",
+    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/command", "components/dialog"], capabilities: #{},
-        tokens: ["metrics.inset"],
+        tokens: ["metrics.inset", "radius.lg"],
         environment: ["density"] },
     schema: #{
         props: #{
@@ -139,11 +139,13 @@ fn render_CommandDialog(ctx, props) {
         on_active_change: Fn("active_action"),
         on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)),
         part_styles: prop_or(props, "command_part_styles", #{}) })
-        .with_style(ctx.component_style("command", style().border(px(0))));
+        .with_style(ctx.component_style("command", style().border(px(0)).padding(px(0))));
     let escape = "on_escape" in props && props.on_escape != ();
     if escape { list = list.on_key_value("escape", Fn("escape_action"), ()); }
     let dialog_parts = prop_or(props, "dialog_part_styles", #{});
-    let panel = style().padding(px(0)).gap(px(0));
+    // Half of radius.lg on every side clears the corner, as Command's own panel does; the
+    // title and the Command inside then share one text edge.
+    let panel = style().padding(theme_radius("lg") * 0.5).gap(px(0));
     if "panel" in dialog_parts { panel = panel.merge(dialog_parts.panel); }
     if "width" in props && props.width != () { panel = panel.width(props.width); }
     dialog_parts.panel = panel;

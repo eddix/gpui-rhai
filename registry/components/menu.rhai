@@ -2,7 +2,7 @@
 {
   "id": "components/menu",
   "export": "Menu",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/divider", "components/kbd"],
   "capabilities": {},
@@ -26,7 +26,7 @@ import "components/kbd" as kbd;
 
 define_component(#{
     metadata: #{
-        id: "components/menu", "export": "Menu", version: "0.2.0",
+        id: "components/menu", "export": "Menu", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/divider", "components/kbd"], capabilities: #{},
         tokens: [
@@ -300,8 +300,10 @@ fn render_Menu(ctx, props) {
     let content = column(children)
         .with_key(`${props.key}-content`)
         .with_style(ctx.component_style("content",
-        // Overlays are raised blocks with a hairline; rows carry their own inset.
-        style().relative().min_width(px(240)).padding_y(theme_spacing("xs")).radius(theme_radius("lg"))
+        // Overlays are raised blocks with a hairline; rows carry their own inset. Every side
+        // pads by half of radius.lg so the square rows clear the corner: nothing in the
+        // square style, where rows bleed to the hairline.
+        style().relative().min_width(px(240)).padding(theme_radius("lg") * 0.5).radius(theme_radius("lg"))
                 .border(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface_raised"))
                 .focus(style().border_color(theme_color("focus_ring")))

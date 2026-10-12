@@ -52,6 +52,11 @@ for upgrading; copied official components move to 0.2.1 through `gpui-rhai updat
   the selected row shows its focus frame; the row took focus itself before.
 - A long label or placeholder in a fixed-width Select or Combobox trigger ends
   in an ellipsis, so the chevron and clear button stay inside (#136).
+- The panels of Menu, ContextMenu, Select, Combobox, Command and CommandDialog
+  pad every side alike, by half of `radius.lg`: in the default square style the
+  rows reach the hairline on all four sides instead of leaving 4px only above
+  and below; the subtle and round styles inset every side by 2px or 4px so the
+  square rows clear the rounded corner (D69).
 - Combobox gains `on_submit` / `submit`: Enter in the search field submits the
   query when no enabled option is active; with an active option Enter still
   picks it (#139).

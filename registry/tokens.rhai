@@ -36,7 +36,8 @@ fn tokens() {
         // stay boxes (Checkbox, Kbd); sm: markers (Tag, strong Badge, chips); md:
         // single-line controls; lg: panels, multi-line fields and tooltips. Round makes
         // markers and controls capsules (a square control a circle: radii clamp to half
-        // the shorter side) and keeps panels at 8px, which their 4px row inset hides.
+        // the shorter side) and keeps panels at 8px. List panels pad by half of radius.lg on
+        // every side, so their square rows clear the corner.
         radius: #{
             xs: by_env("corners", #{ square: px(0), subtle: px(2), round: px(4) }),
             sm: by_env("corners", #{ square: px(0), subtle: px(2), round: px(999) }),

@@ -1,6 +1,6 @@
 # CommandDialog
 
-`components/command_dialog` · export `CommandDialog` · version 0.2.0. Generated from
+`components/command_dialog` · export `CommandDialog` · version 0.2.1. Generated from
 [`registry/components/command_dialog.rhai`](../../../registry/components/command_dialog.rhai); do not edit.
 
 Controlled modal presentation of Command without registering a global shortcut.
@@ -70,7 +70,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `command`, `dialog`, `ro
 
 ## Theme
 
-- Tokens: `metrics.inset`
+- Tokens: `metrics.inset`, `radius.lg`
 - Environment: `density`
 
 ## Dependencies

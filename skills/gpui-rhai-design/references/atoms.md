@@ -398,6 +398,12 @@ Things you type into have a frame; things you press are blocks.
   Sheet, Toast, Command) are `surface_raised` blocks with a 1px `border`
   hairline and `radius.lg`; no shadow. Menus and field panels align to their
   trigger's start edge (`align: "start"`, RTL-aware); Tooltips center.
+- Panels of transient lists (Menu and ContextMenu, Select and Combobox
+  options, Command, CommandDialog) pad every side by half of `radius.lg`:
+  nothing in the square style, where rows bleed to the hairline as in Table and
+  List, and 2px or 4px in the subtle and round styles, where the square row
+  blocks clear the rounded corner. CommandDialog pads its dialog panel, so its
+  title and the Command inside share one text edge.
 - Dialog and Sheet pad with `spacing.xl`; actions are separated by space, not
   a rule. Sheets draw their hairline only on the edge facing the window. A
   Dialog is 420 wide, at most 90% of the window; `title_visible: false` hides

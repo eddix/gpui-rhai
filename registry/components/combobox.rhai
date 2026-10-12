@@ -145,6 +145,11 @@ define_component(#{
 
 fn Combobox(props) { render_component("components/combobox", props) }
 
+// Square option rows clear the panel's corner: every side pads by half of radius.lg, so
+// nothing in the square style, where rows bleed to the hairline, and 2px or 4px in the
+// subtle and round styles. Menu and Command pad their panels the same way.
+fn list_panel_padding() { theme_radius("lg") * 0.5 }
+
 // The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
 // panel's hairline (painted over its children) turns the focus color and this frame adds
 // the inner pixel. A control inside shows its own frame instead.
@@ -545,8 +550,7 @@ fn render_Combobox(ctx, props) {
     let panel = column(content).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
             style().relative().width(if custom_trigger { width } else { relative(1.0) })
-            .min_width(px(0)).gap(theme_spacing("xs")).padding_y(theme_spacing("xs"))
-                .padding_top(if searchable && !header { px(0) } else { theme_spacing("xs") })
+            .min_width(px(0)).gap(theme_spacing("xs")).padding(list_panel_padding())
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("lg")).background(theme_color("surface_raised"))
                 .focus(style().border_color(theme_color("focus_ring")))))

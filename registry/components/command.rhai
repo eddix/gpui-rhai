@@ -2,7 +2,7 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {},
@@ -23,7 +23,7 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.2.0",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{},
         tokens: [
@@ -370,9 +370,11 @@ fn render_Command(ctx, props) {
             .with_style(ctx.component_style("list", style()
                 .height(theme_length("metrics.row") * visible_rows)))
     };
+    // Every side pads by half of radius.lg so the square rows and the search line clear the
+    // corner: nothing in the square style, where they bleed to the hairline.
     let root = column([search, body]).with_key(props.key)
         .with_style(ctx.component_style("root", style()
-            .gap(theme_spacing("xs")).padding_bottom(theme_spacing("xs")).radius(theme_radius("lg"))
+            .gap(theme_spacing("xs")).padding(theme_radius("lg") * 0.5).radius(theme_radius("lg"))
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised"))))
         .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);
