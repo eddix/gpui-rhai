@@ -1,6 +1,6 @@
 # DataView
 
-`patterns/data_view` · export `DataView` · version 0.2.0. Generated from
+`patterns/data_view` · export `DataView` · version 0.2.1. Generated from
 [`registry/patterns/data_view.rhai`](../../../registry/patterns/data_view.rhai); do not edit.
 
 DataView is a browsable collection in one region: toolbar, table or list, and a footer with status, selection, count and data time.

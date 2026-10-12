@@ -2,7 +2,7 @@
 {
   "id": "components/tab_bar",
   "export": "TabBar",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/menu"],
   "capabilities": {},
@@ -34,7 +34,7 @@
 import "components/menu" as menu;
 
 define_component(#{
-    metadata: #{ id: "components/tab_bar", "export": "TabBar", version: "0.2.0",
+    metadata: #{ id: "components/tab_bar", "export": "TabBar", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/menu"], capabilities: #{},
         tokens: [
@@ -145,7 +145,7 @@ define_component(#{
         },
         parts: ["root", "line", "start", "list", "tab", "tab_selected", "icon", "label", "slot",
             "close", "dirty", "cursor", "menu", "end"],
-        effects: ["reveal"],
+        effects: ["reveal", "reveal_order"],
     },
     render: Fn("render_TabBar")
 });
@@ -202,6 +202,16 @@ fn menu_pick(ctx, value) { ctx.set_state("menu_open", false); select_tab(ctx, va
 // Keep the cursor tab, which follows the selection, in view after either moves.
 fn reveal_start(ctx, deps) { ctx.scroll_into_view("cursor-tab"); }
 fn reveal_stop(ctx, deps) {}
+// After the caller reorders, adds or removes tabs, keep the cursor tab in view if it was in
+// view: the bounds are still the last frame's. A strip scrolled away from it by hand stays.
+fn reveal_order_start(ctx, deps) {
+    let tab = ctx.element_bounds("cursor-tab");
+    let strip = ctx.element_bounds(deps.strip);
+    if tab == () || strip == () || (tab.visual.x < strip.visual.x + strip.visual.width
+        && tab.visual.x + tab.visual.width > strip.visual.x) {
+        ctx.scroll_into_view("cursor-tab");
+    }
+}
 
 // The close button over the slot, and the dirty mark under it. The close button shows while
 // the tab is selected (unless it is dirty) or hovered; the mark shows until the tab is hovered.
@@ -290,8 +300,10 @@ fn render_TabBar(ctx, props) {
     let reorderable = prop_or(props, "reorderable", false);
     let context = "on_context_request" in props && props.on_context_request != ();
     let enabled = [];
+    let order = [];
     let named = false;
     for tab in tabs {
+        order.push(tab.value);
         if !tab_flag(tab, "disabled") { enabled.push(tab.value); }
         if tab.value == props.value { named = true; }
     }
@@ -369,9 +381,14 @@ fn render_TabBar(ctx, props) {
             }
         }
     }
-    // Only a cursor tab carries the ref; without one the effect is not declared, so it
-    // starts again when a tab comes back.
-    if cursor != () { effect("reveal", [props.value, cursor], Fn("reveal_start"), Fn("reveal_stop")); }
+    // Only a cursor tab carries the ref; without one the effects are not declared, so they
+    // start again when a tab comes back. A reorder that keeps the selection can carry the
+    // cursor tab out of view, so the order has its own effect.
+    if cursor != () {
+        effect("reveal", [props.value, cursor], Fn("reveal_start"), Fn("reveal_stop"));
+        effect("reveal_order", #{ order: order, strip: `${props.key}-tabs` },
+            Fn("reveal_order_start"), Fn("reveal_stop"));
+    }
 
     // The bar's bottom line, painted first so the selected tab covers it.
     let children = [row([]).with_key("line").with_style(ctx.component_style("line", style()

@@ -2,7 +2,7 @@
 {
   "id": "patterns/data_view",
   "export": "DataView",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["layouts/region", "layouts/toolbar", "patterns/inline_state"],
   "capabilities": {},
@@ -26,7 +26,7 @@ import "patterns/inline_state" as inline_state;
 
 define_component(#{
     metadata: #{
-        id: "patterns/data_view", "export": "DataView", version: "0.2.0",
+        id: "patterns/data_view", "export": "DataView", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["layouts/region", "layouts/toolbar", "patterns/inline_state"], capabilities: #{},
         tokens: ["text_primary", "text_muted", "space.related", "space.group"],
@@ -103,6 +103,9 @@ define_component(#{
 
 fn DataView(props) { render_component("patterns/data_view", props) }
 fn has(map, name) { name in map && map[name] != () }
+fn footer_group() {
+    style().flex_row().flex_wrap().items_center().gap(theme_length("space.group")).min_width(px(0))
+}
 
 fn render_DataView(ctx, props) {
     // Table and List rows carry their own inset, so by default the body bleeds to the
@@ -137,11 +140,10 @@ fn render_DataView(ctx, props) {
             if has(footer, name) { end.push(text(footer[name]).with_style(style().font_feature("tnum", 1))); }
         }
         // Footer fields are groups (status, selection, count), like Region's; the
-        // start and end ends are distributed, so the footer gap is only a floor.
-        config.footer = [
-            row(start).with_style(style().flex_row().items_center().flex_grow().gap(theme_length("space.group"))),
-            row(end).with_style(style().flex_row().items_center().gap(theme_length("space.group"))),
-        ];
+        // start and end ends are distributed, so the footer gap is only a floor. When the
+        // region is too narrow the end group wraps below the start group, and a group may
+        // shrink below its content and wrap its own fields, as Toolbar's groups do.
+        config.footer = [row(start).with_style(footer_group().flex_grow()), row(end).with_style(footer_group())];
         config.part_styles = #{ footer: style().justify_between() };
     }
     region::Region(config).with_key(props.key).with_style(ctx.component_style("root", style()))

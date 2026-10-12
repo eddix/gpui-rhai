@@ -234,27 +234,37 @@ fn navigation(ctx, v, page) {
     region::Region(#{ label: "Navigation", body: list, inset: false })
 }
 
+// Every control fits the title bar of a wide window. Narrower, the Density and Corners
+// toggles give way first (the palette still sets them and the status bar shows them), and
+// in a compact window the theme picker too (the palette toggles light and dark), so the
+// title stays readable and no control runs past the window's edge.
 fn title_controls(ctx) {
-    let density = toggle_group::ToggleGroup(#{ key: "gallery-density", label: "Density",
-        values: [ctx.get_state("density")], allow_empty: false, size: "sm",
-        items: [#{ value: "comfortable", label: "Comfortable" }, #{ value: "compact", label: "Compact" }],
-        on_change: Fn("set_density") });
-    let corners = toggle_group::ToggleGroup(#{ key: "gallery-corners", label: "Corners",
-        values: [ctx.get_state("corners")], allow_empty: false, size: "sm",
-        items: [#{ value: "square", label: "Square" }, #{ value: "subtle", label: "Subtle" },
-            #{ value: "round", label: "Round" }],
-        on_change: Fn("set_corners") });
-    let current = ctx.theme_variant();
-    let theme = select::Select(#{ key: "gallery-theme", label: "Theme", value: `${current.family}|${current.name}`,
-        open: ctx.get_state("theme_open"), query: "", size: "sm", width: px(176), options: theme_options(ctx),
-        on_change: Fn("choose_theme"), on_open_change: Fn("theme_open") });
-    let locale = select::Select(#{ key: "gallery-locale", label: "Locale", value: ctx.get_state("locale"),
+    let class = ctx.viewport_class();
+    let controls = [];
+    if class == "wide" {
+        controls.push(toggle_group::ToggleGroup(#{ key: "gallery-density", label: "Density",
+            values: [ctx.get_state("density")], allow_empty: false, size: "sm",
+            items: [#{ value: "comfortable", label: "Comfortable" }, #{ value: "compact", label: "Compact" }],
+            on_change: Fn("set_density") }));
+        controls.push(toggle_group::ToggleGroup(#{ key: "gallery-corners", label: "Corners",
+            values: [ctx.get_state("corners")], allow_empty: false, size: "sm",
+            items: [#{ value: "square", label: "Square" }, #{ value: "subtle", label: "Subtle" },
+                #{ value: "round", label: "Round" }],
+            on_change: Fn("set_corners") }));
+    }
+    if class != "compact" {
+        let current = ctx.theme_variant();
+        controls.push(select::Select(#{ key: "gallery-theme", label: "Theme", value: `${current.family}|${current.name}`,
+            open: ctx.get_state("theme_open"), query: "", size: "sm", width: px(176), options: theme_options(ctx),
+            on_change: Fn("choose_theme"), on_open_change: Fn("theme_open") }));
+    }
+    controls.push(select::Select(#{ key: "gallery-locale", label: "Locale", value: ctx.get_state("locale"),
         open: ctx.get_state("locale_open"), query: "", size: "sm", width: px(120),
         options: [#{ value: "en", label: "English" }, #{ value: "zh-CN", label: "简体中文" }, #{ value: "ar", label: "العربية" }],
-        on_change: Fn("choose_locale"), on_open_change: Fn("locale_open") });
-    let palette = button::Button(#{ key: "gallery-palette", text: "Commands", variant: "ghost", size: "sm",
-        action: "gallery.palette" });
-    [density, corners, theme, locale, palette]
+        on_change: Fn("choose_locale"), on_open_change: Fn("locale_open") }));
+    controls.push(button::Button(#{ key: "gallery-palette", text: "Commands", variant: "ghost", size: "sm",
+        action: "gallery.palette" }));
+    controls
 }
 
 // One option per loaded variant; a family with several variants names the variant.

@@ -2,7 +2,7 @@
 {
   "id": "layouts/region",
   "export": "Region",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -33,7 +33,7 @@
 
 define_component(#{
     metadata: #{
-        id: "layouts/region", "export": "Region", version: "0.2.0",
+        id: "layouts/region", "export": "Region", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
@@ -59,7 +59,7 @@ define_component(#{
                 doc: "Main content; fills the remaining height and clips, or scrolls with `scroll`." },
             footer: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
                 required: false, sensitive: false, "default": #{ type: "array", value: [] },
-                doc: "Status items in a caption row pinned to the bottom under a hairline, `group` apart." },
+                doc: "Status items in a caption row pinned to the bottom under a hairline, `group` apart; it wraps when wider than the region and clips at its edge." },
             fill: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
                 doc: "Grows the region to the remaining height of its parent, so the body can fill it." },
@@ -104,9 +104,11 @@ fn header_style() {
     header.gap(theme_length("space.group")).min_height(theme_length("metrics.control"))
 }
 fn footer_style() {
-    // Footer fields are groups of related items, so they sit `group` apart.
-    let footer = style().flex_row().items_center().gap(theme_length("space.group"));
-    footer = footer.min_height(theme_length("metrics.statusbar"));
+    // Footer fields are groups of related items, so they sit `group` apart. A footer wider
+    // than the region wraps onto further lines, and an item wider than a line is cut at the
+    // region's edge instead of painting over what is beside the region.
+    let footer = style().flex_row().flex_wrap().items_center().gap(theme_length("space.group"));
+    footer = footer.min_height(theme_length("metrics.statusbar")).min_width(px(0)).clip();
     footer.border_top(px(1)).border_color(theme_color("border"))
         .typography("caption").text_color(theme_color("text_muted"))
 }

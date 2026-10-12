@@ -518,3 +518,139 @@ fn closing_the_selected_tab_and_clearing_the_value_commits(cx: &mut TestAppConte
 fn closing_the_selected_tab_and_keeping_its_value_commits(cx: &mut TestAppContext) {
     closing_the_selected_tab(cx, None);
 }
+
+/// Twelve tabs in a 360px strip, t1 selected, in the order the caller keeps in state:
+/// `on_reorder` writes the moved order back, Reverse reverses it, and Note only adds to the
+/// log, a render that changes neither the order nor the selection.
+fn controlled_order_script() -> String {
+    let source = script(12, 360, ",reorderable:true")
+        .replace(
+            "log:#{schema",
+            "order:#{schema:#{type:\"array\",items:#{type:\"string\"}},\
+             \"default\":#{type:\"array\",value:[]}},log:#{schema",
+        )
+        .replace(
+            "fn moved(ctx,request){",
+            "fn moved(ctx,request){let order=current_order(ctx);order.remove(order.index_of(request.value));\
+             let at=order.index_of(request.anchor);if request.placement==\"after\"{at+=1;}\
+             order.insert(at,request.value);ctx.set_state(\"order\",order);",
+        )
+        .replace(
+            "fn view(ctx)",
+            "fn current_order(ctx){let order=ctx.get_state(\"order\");\
+             if order.len==0{for tab in tabs(){order.push(tab.value);}}order}\n\
+             fn ordered_tabs(ctx){let all=tabs();let result=[];\
+             for value in current_order(ctx){for tab in all{if tab.value==value{result.push(tab);}}}result}\n\
+             fn reverse(ctx,payload){let order=current_order(ctx);order.reverse();ctx.set_state(\"order\",order);}\n\
+             fn ping(ctx,payload){note(ctx,\"ping\");}\n\
+             fn view(ctx)",
+        )
+        .replace("tabs:tabs()", "tabs:ordered_tabs(ctx)")
+        .replace(
+            "text(ctx.get_state(\"log\")).test_id(\"log\"),",
+            "text(ctx.get_state(\"log\")).test_id(\"log\"),\n    \
+             row([text(\"Reverse\").accessibility_role(\"button\").accessibility_label(\"Reverse\")\
+             .on_click(Fn(\"reverse\")).with_style(style().width(px(80)).height(px(24))),\
+             text(\"Note\").accessibility_role(\"button\").accessibility_label(\"Note\")\
+             .on_click(Fn(\"ping\")).with_style(style().width(px(80)).height(px(24)))]),",
+        );
+    assert!(source.contains("ordered_tabs(ctx)") && source.contains("Reverse"));
+    source
+}
+
+fn assert_in_strip(tab: GeometryBounds, strip: GeometryBounds, when: &str) {
+    assert!(
+        tab.x >= strip.x - 0.5 && tab.x + tab.width <= strip.x + strip.width + 0.5,
+        "{when}: the selected tab must stay revealed: {tab:?} in {strip:?}"
+    );
+}
+
+/// The round-4 review probe (#142): reversing the tabs keeps t1 selected and revealed.
+#[gpui::test]
+fn reorder_keeps_selected_tab_in_view(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, controlled_order_script());
+    let strip = bounds(&mut visual, &view, "tablist", "Open files");
+    let before = bounds(&mut visual, &view, "tab", "Tab number 1");
+    assert_in_strip(before, strip, "at first");
+    let reverse = bounds(&mut visual, &view, "button", "Reverse");
+    press(&mut visual, center(reverse), MouseButton::Left);
+    assert!(last_error(&mut visual, &view).is_none());
+    let first = bounds(&mut visual, &view, "tab", "Tab number 11");
+    let selected = bounds(&mut visual, &view, "tab", "Tab number 1");
+    println!("after reversing: t11 {first:?}, t1 {selected:?}, strip {strip:?}");
+    assert!(first.x < selected.x, "the order is reversed");
+    assert_in_strip(selected, strip, "after reversing");
+}
+
+/// Alt+Right moves the selected tab one place at a time, and the caller writes each new order
+/// back: the tab stays in view all the way to the end of the strip.
+#[gpui::test]
+fn a_controlled_reorder_keeps_the_moved_tab_in_view(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, controlled_order_script());
+    let strip = bounds(&mut visual, &view, "tablist", "Open files");
+    focus_strip(&mut visual);
+    for step in 1..=10 {
+        visual.simulate_keystrokes("alt-right");
+        settle(&mut visual);
+        let selected = bounds(&mut visual, &view, "tab", "Tab number 1");
+        assert_in_strip(selected, strip, &format!("after move {step}"));
+    }
+    assert!(last_error(&mut visual, &view).is_none());
+    assert!(
+        log(&mut visual, &view).ends_with("move:t1:after:t11"),
+        "{}",
+        log(&mut visual, &view)
+    );
+}
+
+/// After the reveal, the strip scrolled by hand away from the selected tab stays where it was:
+/// through renders that change neither the order nor the selection, and through a reorder,
+/// which keeps the selected tab in view only when it was in view.
+#[gpui::test]
+fn scrolling_by_hand_after_a_reorder_is_not_pulled_back(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, controlled_order_script());
+    let strip = bounds(&mut visual, &view, "tablist", "Open files");
+    let reverse = bounds(&mut visual, &view, "button", "Reverse");
+    press(&mut visual, center(reverse), MouseButton::Left);
+    assert_in_strip(
+        bounds(&mut visual, &view, "tab", "Tab number 1"),
+        strip,
+        "after reversing",
+    );
+    visual.simulate_event(ScrollWheelEvent {
+        position: center(strip),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(800.0))),
+        ..ScrollWheelEvent::default()
+    });
+    settle(&mut visual);
+    let scrolled = bounds(&mut visual, &view, "tab", "Tab number 1");
+    assert!(
+        scrolled.x > strip.x + strip.width,
+        "the wheel scrolled the selected tab out of view: {scrolled:?} in {strip:?}"
+    );
+    let note = bounds(&mut visual, &view, "button", "Note");
+    press(&mut visual, center(note), MouseButton::Left);
+    settle(&mut visual);
+    assert!(log(&mut visual, &view).ends_with("ping"));
+    let after = bounds(&mut visual, &view, "tab", "Tab number 1");
+    assert!(
+        (after.x - scrolled.x).abs() < 0.5,
+        "a render without a reorder leaves the strip where it was scrolled: {} -> {}",
+        scrolled.x,
+        after.x
+    );
+    // Reverse again, back to t0..t11: the strip keeps its scroll offset, measured from the
+    // first tab, though the selected tab is still out of view.
+    let offset = strip.x - bounds(&mut visual, &view, "tab", "Tab number 11").x;
+    press(&mut visual, center(reverse), MouseButton::Left);
+    settle(&mut visual);
+    let first = bounds(&mut visual, &view, "tab", "Tab number 0");
+    let selected = bounds(&mut visual, &view, "tab", "Tab number 1");
+    assert!(first.x < selected.x, "the order is back to t0..t11");
+    assert!(
+        (strip.x - first.x - offset).abs() < 0.5,
+        "a reorder while the selected tab is scrolled out of view keeps the scroll offset: \
+         {offset} -> {} (t1 {selected:?})",
+        strip.x - first.x
+    );
+}

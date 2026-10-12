@@ -2,7 +2,7 @@
 {
   "id": "components/resizable",
   "export": "Resizable",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -21,7 +21,7 @@
 //     on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.2.0",
+    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["focus_ring", "accent", "border", "surface_raised"],
         environment: [] },
@@ -155,10 +155,15 @@ fn handle_box(handle) {
 }
 
 // A decorative grip centred on its handle: later in the surface than the content and the
-// handles, so it paints above them.
+// handles, so it paints above them. It covers the handle's own hitbox, so an edge grip shows
+// the handle's resize cursor itself, as SplitPane's grip does; there is no diagonal cursor
+// to give a corner grip.
 fn resizable_grip(ctx, props, handle, node, grip_ref, state) {
     let shape = style().flex_row().items_center().justify_center().occlude_except_scroll()
         .background(theme_color("surface_raised")).border(px(1)).border_color(theme_color("border"));
+    let orientation = handle_orientation(handle);
+    if orientation == "horizontal" { shape = shape.cursor_resize_y(); }
+    else if orientation == "vertical" { shape = shape.cursor_resize_x(); }
     let grip = box([node]).with_key(`${props.key}-grip-${handle}`).with_ref(grip_ref)
         .with_style(ctx.component_style("grip", shape))
         .signal_style(state, #{
