@@ -228,6 +228,13 @@ impl OverlayManager {
         self.entries.get(id).map(|entry| entry.z_index)
     }
 
+    /// The open overlays bottom to top, the order Escape walks from the end.
+    pub(crate) fn stack(&self) -> impl DoubleEndedIterator<Item = &OverlaySpec> {
+        self.order
+            .iter()
+            .filter_map(|id| self.entries.get(id).map(|entry| &entry.spec))
+    }
+
     #[must_use]
     pub fn dismiss(&mut self, id: &OverlayId) -> DismissReport {
         let mut removed = BTreeSet::new();
@@ -560,6 +567,27 @@ fn validate_size(width: f64, height: f64, gap: f64) -> Result<(), OverlayError> 
 pub struct DismissReport {
     pub dismissed: Vec<OverlayId>,
     pub restore_focus: Option<FocusToken>,
+}
+
+/// A script overlay open in a Host, as
+/// [`ScriptViewHost::open_overlays`](crate::ScriptViewHost::open_overlays)
+/// reports it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub struct OpenOverlay {
+    /// The view that rendered it.
+    pub view_id: String,
+    /// The component instance that declared it, the instance path as
+    /// diagnostics print it (`/View[main]/Filter[eu]/Select[region]`); `None`
+    /// when the view declared it outside any component.
+    pub owner: Option<String>,
+    /// Its script key (the overlay `id`).
+    pub key: String,
+    pub kind: OverlayKind,
+    /// A modal overlay (a Dialog or Sheet by default) holds focus while open.
+    pub modal: bool,
+    /// Whether Escape closes it.
+    pub dismiss_on_escape: bool,
 }
 
 /// A Host lookup of a view's overlay by its script key.

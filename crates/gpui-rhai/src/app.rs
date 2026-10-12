@@ -308,6 +308,28 @@ impl ScriptViewHost {
             .find_map(|(_, placement)| placement)
     }
 
+    /// The script overlays open in this Host's views as of the last frame,
+    /// bottom to top: the last entry is the topmost. Escape closes the last
+    /// one with `dismiss_on_escape`; a modal holds focus while it is the
+    /// topmost modal. Overlays declared inside components are listed too
+    /// (a Select's `<key>-combobox`, a Dialog in a third-party widget), with
+    /// the declaring instance in `owner`. Read it from an action handler or
+    /// from the Host's `render`, before the container lays out: while the
+    /// container lays out and prepaints, the list is being rebuilt.
+    #[must_use]
+    pub fn open_overlays(&self) -> Vec<crate::OpenOverlay> {
+        self.inner.borrow().overlays.open_overlays()
+    }
+
+    /// Close the topmost script overlay that Escape closes, as the
+    /// [`Self::container`]'s Escape handler does, and report whether one took
+    /// the key. An App-level Escape binding, which GPUI dispatches before any
+    /// key-down listener, calls this first and handles Escape itself only when
+    /// it returns `false`.
+    pub fn dismiss_escape(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.overlays().dismiss_escape(window, cx)
+    }
+
     /// Bind host-approved script actions once at App scope.
     ///
     /// # Errors
@@ -4008,6 +4030,52 @@ fn apply_root_text_direction(
     }
 }
 
+/// A view's keyboard handling: its key context, Tab navigation and the actions
+/// Host key bindings dispatch to it. The view root carries it, and so does each
+/// `layer(...)` the Host portal paints outside the root.
+#[derive(Clone)]
+struct ViewKeyScope {
+    dispatch_key_binding: ActionListener<DispatchScriptAction>,
+    copy_selected_text: ActionListener<CopySelectedText>,
+    #[cfg(feature = "dev-reload")]
+    toggle_inspector: ActionListener<ToggleInspector>,
+}
+
+type ActionListener<A> = Rc<dyn Fn(&A, &mut Window, &mut App)>;
+
+impl ViewKeyScope {
+    fn new(cx: &mut Context<ScriptHostView>) -> Self {
+        Self {
+            dispatch_key_binding: Rc::new(cx.listener(ScriptHostView::dispatch_key_binding)),
+            copy_selected_text: Rc::new(cx.listener(ScriptHostView::copy_selected_text)),
+            #[cfg(feature = "dev-reload")]
+            toggle_inspector: Rc::new(cx.listener(ScriptHostView::toggle_inspector)),
+        }
+    }
+
+    fn apply<E: InteractiveElement>(&self, element: E) -> E {
+        let dispatch_key_binding = Rc::clone(&self.dispatch_key_binding);
+        let copy_selected_text = Rc::clone(&self.copy_selected_text);
+        let element = element
+            .key_context(HOST_KEY_CONTEXT)
+            .on_key_down(handle_tab_navigation)
+            .on_action(move |action: &DispatchScriptAction, window, cx| {
+                dispatch_key_binding(action, window, cx);
+            })
+            .on_action(move |action: &CopySelectedText, window, cx| {
+                copy_selected_text(action, window, cx);
+            });
+        #[cfg(feature = "dev-reload")]
+        let element = {
+            let toggle_inspector = Rc::clone(&self.toggle_inspector);
+            element.on_action(move |action: &ToggleInspector, window, cx| {
+                toggle_inspector(action, window, cx);
+            })
+        };
+        element
+    }
+}
+
 fn build_host_root(
     host_focus: &FocusHandle,
     theme: &ThemeVariant,
@@ -4018,9 +4086,7 @@ fn build_host_root(
     let mut root = div()
         .id("gpui-rhai-host")
         .size_full()
-        .track_focus(host_focus)
-        .key_context(HOST_KEY_CONTEXT)
-        .on_key_down(handle_tab_navigation);
+        .track_focus(host_focus);
     if let Some(color) = theme.tokens.color("text_primary") {
         root = root.text_color(rgba(color.as_rgba_hex()));
     }
@@ -4468,11 +4534,12 @@ impl Render for ScriptHostView {
                 }
             });
         let root = apply_root_text_direction(root, snapshot.direction);
-        let root = root
-            .on_action(cx.listener(Self::dispatch_key_binding))
-            .on_action(cx.listener(Self::copy_selected_text));
-        #[cfg(feature = "dev-reload")]
-        let root = root.on_action(cx.listener(Self::toggle_inspector));
+        let key_scope = ViewKeyScope::new(cx);
+        let root = key_scope.apply(root);
+        self.overlays.set_layer_key_scope(
+            &self.view_id,
+            Rc::new(move |layer: gpui::Div| key_scope.apply(layer)),
+        );
         let has_committed_motion_events = !committed_motion_events.is_empty();
         cx.on_next_frame(window, move |view, _, cx| {
             view.lifecycle

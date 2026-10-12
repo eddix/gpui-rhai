@@ -222,9 +222,9 @@ pub use node::{
     UiNode, UiNodeKind, UiNodeKindTag,
 };
 pub use overlay::{
-    DismissReport, FocusToken, OverlayAlign, OverlayBounds, OverlayError, OverlayId, OverlayKind,
-    OverlayLookupError, OverlayManager, OverlayPlacement, OverlaySpec, PlacementResult,
-    TooltipScheduler, TooltipTransition,
+    DismissReport, FocusToken, OpenOverlay, OverlayAlign, OverlayBounds, OverlayError, OverlayId,
+    OverlayKind, OverlayLookupError, OverlayManager, OverlayPlacement, OverlaySpec,
+    PlacementResult, TooltipScheduler, TooltipTransition,
 };
 pub use pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 pub use primitive::{
