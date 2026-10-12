@@ -362,6 +362,9 @@ Rhai then renders `TitleBar(#{ ..., inset_start: 72, window_drag: true })`, or
 calls `.window_drag_area()` on its own node. Embedded hosts use
 `ScriptViewConfig::window_drag_areas(true)` for the view that draws the bar;
 every other view keeps drag areas inert.
+Drag areas move the window on macOS and Linux. GPUI's Windows platform
+implements neither the window move nor the title-bar double press, so on
+Windows they do nothing; keep the platform title bar there.
 
 ## Key bindings
 
