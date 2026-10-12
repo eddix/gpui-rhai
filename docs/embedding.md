@@ -362,6 +362,12 @@ Rhai then renders `TitleBar(#{ ..., inset_start: 72, window_drag: true })`, or
 calls `.window_drag_area()` on its own node. Embedded hosts use
 `ScriptViewConfig::window_drag_areas(true)` for the view that draws the bar;
 every other view keeps drag areas inert.
+`traffic_light_position` is fixed when the window opens. A bar whose height
+changes, with the density for instance, moves the window buttons with
+`Window::set_traffic_light_position` after it is laid out; the Gallery reads
+its bar's height from the view's accessibility snapshot after each committed
+render and centres them (`gpui_rhai_cli::acceptance::titlebar_traffic_lights`).
+
 Drag areas move the window on macOS and Linux. GPUI's Windows platform
 implements neither the window move nor the title-bar double press, so on
 Windows they do nothing; keep the platform title bar there.
