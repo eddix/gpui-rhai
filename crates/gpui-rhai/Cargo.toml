@@ -41,6 +41,9 @@ syntect.workspace = true
 regex.workspace = true
 
 [dev-dependencies]
+# Path-only on purpose: `cargo publish` drops a versionless dev-dependency, so the
+# registry snapshot the tests read never becomes a published dependency of this crate.
+gpui-rhai-registry = { path = "../../registry" }
 tempfile = "3"
 
 [[example]]
