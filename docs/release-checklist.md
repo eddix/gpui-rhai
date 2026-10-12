@@ -9,8 +9,7 @@ through 0.1.8 are in the checklist listed under [History](history.md).
    breaking runtime API, component schema, locale, registry, manifest, and
    generated-source change against its published predecessor.
 2. Run format, all-target/all-feature check, strict Clippy, tests, and rustdoc.
-   Run `python3 scripts/verify-target-manifest.py` first; CI, release smoke, and
-   the checked-in target inventory must agree.
+   `scripts/release-smoke.sh` launches every example Cargo reports.
 3. Test the declared MSRV (`1.95`) and latest stable toolchains.
 4. Run `cargo package` and inspect the file list for `gpui-rhai`,
    `gpui-rhai-registry`, and `gpui-rhai-cli`. A CLI candidate may use

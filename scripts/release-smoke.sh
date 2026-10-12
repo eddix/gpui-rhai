@@ -2,7 +2,8 @@
 set -eu
 
 examples=($(
-  python3 scripts/verify-target-manifest.py --examples
+  cargo metadata --format-version 1 --no-deps \
+    | python3 -c 'import json, sys; print("\n".join(sorted(t["name"] for p in json.load(sys.stdin)["packages"] if p["name"] == "gpui-rhai" for t in p["targets"] if "example" in t["kind"])))'
 ))
 smoke_seconds="${GPUI_RHAI_SMOKE_SECONDS:-2}"
 clang_cache="${TMPDIR:-/tmp}/gpui-rhai-clang-module-cache"
@@ -31,11 +32,9 @@ for example in "${examples[@]}"; do
     fi
   else
     wait "${pid}" || status=$?
-    if [[ "${example}" != "performance_probe" || "${status}" != "0" ]]; then
-      echo "${example} exited before the smoke window with status ${status}"
-      sed -n '1,160p' "${log}"
-      exit 1
-    fi
+    echo "${example} exited before the smoke window with status ${status}"
+    sed -n '1,160p' "${log}"
+    exit 1
   fi
   if grep -Eiq 'panicked at|thread .* panicked|failed to initialize|failed to compile' "${log}"; then
     echo "${example} reported a panic or initialization failure"
