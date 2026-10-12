@@ -1,6 +1,7 @@
 //! The Gallery's title bar at narrow widths: the controls never run past the window's edge
 //! and the title stays whole. A wide window keeps every control; narrower, the lower-priority
-//! ones give way (the command palette still reaches them).
+//! ones give way (the command palette still reaches them). On macOS the Host keeps the
+//! window buttons in the middle of the bar, whose height follows the density.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -22,8 +23,16 @@ impl Render for Host {
 }
 
 fn mount(cx: &mut TestAppContext, width: f32) -> (VisualTestContext, ScriptViewHandle) {
+    mount_launch(cx, width, &AcceptanceLaunch::default())
+}
+
+fn mount_launch(
+    cx: &mut TestAppContext,
+    width: f32,
+    launch: &AcceptanceLaunch,
+) -> (VisualTestContext, ScriptViewHandle) {
     cx.update(gpui_rhai::install);
-    let prepared = acceptance::view(&AcceptanceLaunch::default())
+    let prepared = acceptance::view(launch)
         .unwrap()
         .motion_preference(MotionPreference::None)
         .prepare()
@@ -162,5 +171,38 @@ fn the_title_bar_fits_narrow_windows(cx: &mut TestAppContext) {
                 "{width}: {role} {name:?} runs to {right}, past the bar's end inset {end}"
             );
         }
+    }
+}
+
+#[gpui::test]
+fn the_window_buttons_sit_in_the_middle_of_the_bar_in_either_density(cx: &mut TestAppContext) {
+    for (density, height, y) in [("comfortable", 36.0, 11.0), ("compact", 32.0, 9.0)] {
+        let launch = AcceptanceLaunch {
+            density: density.to_owned(),
+            ..AcceptanceLaunch::default()
+        };
+        let (mut visual, view) = mount_launch(cx, 1280.0, &launch);
+        let (bar, position) = visual.update(|_, cx| {
+            let tree = view.accessibility_snapshot(cx).unwrap();
+            let bar = tree
+                .find_by_role_and_name("toolbar", "gpui-rhai Gallery title bar")
+                .next()
+                .and_then(|node| node.geometry)
+                .expect("the Gallery has a title bar")
+                .visual;
+            (bar, acceptance::titlebar_traffic_lights(&view, cx).unwrap())
+        });
+        assert!(
+            (bar.height - height).abs() < 0.01,
+            "{density}: the bar is {} high",
+            bar.height
+        );
+        // The comfortable bar keeps the position the window opens with; the compact one
+        // moves the buttons up by half the 4pt the bar loses.
+        assert_eq!(
+            position,
+            Some(gpui::point(gpui::px(12.0), gpui::px(y))),
+            "{density}"
+        );
     }
 }

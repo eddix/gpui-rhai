@@ -65,9 +65,13 @@ const LAUNCH_DEFAULT: &str =
 
 /// On macOS the Gallery window has no platform title bar: its own `TitleBar`
 /// moves the window and leaves this much room for the window buttons, which
-/// sit at [`MACOS_TRAFFIC_LIGHTS`].
+/// sit at [`MACOS_TRAFFIC_LIGHTS`] until [`titlebar_traffic_lights`] centres
+/// them on the bar.
 const MACOS_TITLEBAR_INSET: u32 = 72;
 const MACOS_TRAFFIC_LIGHTS: (f32, f32) = (12.0, 11.0);
+/// The window buttons go this far above the middle of the bar: the comfortable
+/// bar, 36pt with its bottom hairline, has them at 11.
+const MACOS_TRAFFIC_LIGHTS_ABOVE_MIDDLE: f32 = 7.0;
 
 /// Every Gallery page ID, in navigation order, read from the page modules'
 /// `pages()` lists.
@@ -285,6 +289,38 @@ pub fn prepare(launch: &AcceptanceLaunch) -> Result<PreparedScriptView, String> 
     view(launch)?.prepare().map_err(|error| error.to_string())
 }
 
+/// Where the macOS window buttons go so they sit in the middle of the
+/// Gallery's `TitleBar`, from its height as last laid out: the bar is the
+/// top-most toolbar. Density changes the bar's height (36pt comfortable, 32pt
+/// compact, hairline included), so the Host moves the buttons after each
+/// committed render.
+/// `None` before the bar has been laid out.
+///
+/// # Errors
+///
+/// Returns an error from the mounted view's semantics snapshot.
+pub fn titlebar_traffic_lights(
+    view: &ScriptViewHandle,
+    cx: &App,
+) -> Result<Option<gpui_rhai::gpui::Point<gpui_rhai::gpui::Pixels>>, String> {
+    let snapshot = view
+        .accessibility_snapshot(cx)
+        .map_err(|error| error.to_string())?;
+    let bar = snapshot
+        .nodes()
+        .filter(|node| node.role == "toolbar")
+        .filter_map(|node| node.geometry.map(|geometry| geometry.visual))
+        .filter(|bounds| bounds.height > 0.0)
+        .min_by(|a, b| a.y.total_cmp(&b.y));
+    #[allow(clippy::cast_possible_truncation)]
+    Ok(bar.map(|bar| {
+        point(
+            px(MACOS_TRAFFIC_LIGHTS.0),
+            px(bar.height as f32 / 2.0 - MACOS_TRAFFIC_LIGHTS_ABOVE_MIDDLE),
+        )
+    }))
+}
+
 /// Report the live audit finding count to the Gallery's status bar, once per
 /// change.
 ///
@@ -326,6 +362,30 @@ struct GalleryRoot {
     /// The committed revision last audited: frames that only repaint (hover,
     /// scrolling, a caret) are not audited again.
     audited_revision: Option<u64>,
+    /// Whether the Gallery draws its own title bar, and where the window
+    /// buttons were last put on it.
+    own_titlebar: bool,
+    traffic_lights: Option<gpui_rhai::gpui::Point<gpui_rhai::gpui::Pixels>>,
+}
+
+impl GalleryRoot {
+    /// Keep the macOS window buttons in the middle of the title bar, whose
+    /// height follows the density. Only macOS draws its own bar.
+    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    fn place_traffic_lights(&mut self, view: &ScriptViewHandle, window: &mut Window, cx: &App) {
+        if !self.own_titlebar {
+            return;
+        }
+        match titlebar_traffic_lights(view, cx) {
+            Ok(Some(position)) if self.traffic_lights != Some(position) => {
+                #[cfg(target_os = "macos")]
+                window.set_traffic_light_position(position);
+                self.traffic_lights = Some(position);
+            }
+            Ok(_) => {}
+            Err(error) => eprintln!("gpui-rhai gallery: window buttons: {error}"),
+        }
+    }
 }
 
 impl Render for GalleryRoot {
@@ -337,18 +397,19 @@ impl Render for GalleryRoot {
                 .unwrap_or_else(|| "Mounting the Gallery".to_owned());
             return self.host.container(gpui_rhai::gpui::div().child(message));
         };
-        // The audit reads committed geometry, so it runs after a frame that
-        // follows a new render, and only then.
+        // The audit and the window buttons read committed geometry, so they run
+        // after a frame that follows a new render, and only then.
         let revision = view.committed_revision(cx).ok();
         if revision != self.audited_revision {
             self.audited_revision = revision;
             let entity = cx.entity();
             window.on_next_frame(move |window, cx| {
                 entity.update(cx, |root, cx| {
-                    if let Some(view) = root.view.clone()
-                        && let Err(error) = report_audit(&view, &mut root.audit, window, cx)
-                    {
-                        eprintln!("gpui-rhai gallery: audit failed: {error}");
+                    if let Some(view) = root.view.clone() {
+                        root.place_traffic_lights(&view, window, cx);
+                        if let Err(error) = report_audit(&view, &mut root.audit, window, cx) {
+                            eprintln!("gpui-rhai gallery: audit failed: {error}");
+                        }
                     }
                 });
             });
@@ -425,6 +486,8 @@ pub fn run(launch: &AcceptanceLaunch) -> Result<(), String> {
                 error: None,
                 audit: None,
                 audited_revision: None,
+                own_titlebar,
+                traffic_lights: None,
             });
             let weak = root.downgrade();
             window.defer(cx, move |window, cx| {

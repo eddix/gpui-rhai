@@ -83,6 +83,9 @@ for upgrading; copied official components move to 0.2.1 through `gpui-rhai updat
 - `alpha`, `mix` and `readable` accept an integer factor or ratio.
 - A native-collection Table no longer builds the full next selection for every
   visible row; nothing has read it since 0.2.0.
+- The Gallery keeps the macOS window buttons in the middle of its title bar in
+  either density; in compact they sat about 2pt low, placed once for the
+  comfortable bar.
 - The Gallery's title bar fits narrow windows: the density and corner toggles,
   then the theme picker, give way to the title, and the Commands palette still
   reaches them.
