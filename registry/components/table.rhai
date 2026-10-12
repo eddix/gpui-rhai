@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/badge"],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.2.0",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
         tokens: ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
@@ -139,7 +139,7 @@ define_component(#{
             } } }, required: false, sensitive: false,
                 doc: "Current sort; the caller stores the `sort_change` payload. A NativeCollection is sorted by it; array rows keep the order given." },
             group_by: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                doc: "Column key whose values, non-empty strings, group the rows under headers in first-seen order." },
+                doc: "Column key whose values, non-empty strings, group the rows under headers in first-seen order; a header shows the value as the rows carry it." },
             collapsed_groups: #{ schema: #{ type: "array", max_items: 100000, items: #{ type: "string" } }, required: false, sensitive: false,
                 "default": #{ type: "array", value: [] },
                 doc: "Group values whose rows are hidden; needs `group_by`, and the caller toggles the `group_toggle` payload in it." },
@@ -283,11 +283,14 @@ fn next_selection(mode, selected, key) {
     }
 }
 // A click builds the next selection for the clicked row alone, from the selection the table
-// was rendered with, so the row data carries only the selected flag.
-fn row_action(mode, selected, ctx, key) {
+// was rendered with, so the row data carries only the selected flag. The press focused the
+// row; `focus` (the table's ref key, or `()` when the table takes no keys) hands the focus
+// back to the table, which owns the keys and shows the cursor frame.
+fn row_action(mode, selected, focus, ctx, key) {
     ctx.emit("row_click", key);
     let selection = next_selection(mode, selected, key);
     if selection != () { ctx.emit("selection_change", selection); }
+    if focus != () { try { ctx.focus(focus); } catch { } }
 }
 fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
 // Keyboard row navigation moves the selection and keeps the row revealed.
@@ -342,7 +345,7 @@ fn column_resize_key(ctx, payload) {
 }
 
 fn render_table_row(resize_signals, numeric, roles, context, total_rows, selection_mode, selected,
-        ctx, payload) {
+        focus, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         let indicator = image_source(asset(if item.collapsed {
@@ -352,8 +355,9 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, selecti
             .with_style(ctx.component_style("group_indicator", style()
                 .width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
                 .text_color(theme_color("text_muted"))));
-        // A group header is structure, not data: the label voice, like the column headers.
-        let label = text(item.group.to_upper()).with_key(`${payload.key}-label`)
+        // A group header is structure: the label voice's type, like the column headers. Its
+        // text is a cell value, often a case-sensitive identifier, so it keeps its case.
+        let label = text(item.group).with_key(`${payload.key}-label`)
             .with_style(ctx.component_style("group_label",
                 style().flex_grow().typography("label").text_color(theme_color("text_muted"))));
         let count = text(`${item.count}`).with_key(`${payload.key}-count`)
@@ -452,7 +456,8 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, selecti
     if roles.len() > 0 { node = node.audit_allow(["mixed-type-in-row"]); }
     // A row is a pointer target only: the table is the one tab stop, and its keys move
     // the selection.
-    node.on_click_value(Fn("row_action").curry(selection_mode).curry(selected), payload.key)
+    node.on_click_value(Fn("row_action").curry(selection_mode).curry(selected).curry(focus),
+            payload.key)
         .tab_stop(false)
 }
 
@@ -868,16 +873,20 @@ fn render_Table(ctx, props) {
     let body_style = if fill_height {
         style().flex_grow().min_width(px(0)).min_height(px(0))
     } else { style().min_width(px(0)) };
+    // The table is a tab stop when it takes keys; a row click hands the focus back to it.
+    let focus = if context || neighbors != () && neighbors.first != () { `${props.key}-focus` }
+        else { () };
     // The selection reaches the row renderer once, not every row: a click builds the next
     // selection, so the row data stays linear in the rows.
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns))
             .curry(column_typography(columns)).curry(context).curry(data.len)
-            .curry(selection_mode).curry(selected))
+            .curry(selection_mode).curry(selected).curry(focus))
         .with_style(ctx.component_style("body", body_style));
     let framed = if selection_mode == "none" { context }
         else { neighbors != () && neighbors.first != () && neighbors.current == () };
     let table = with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1,framed), neighbors);
+    if focus != () { table = table.with_ref(element_ref(focus)); }
     if context && neighbors != () && neighbors.first != () {
         let target = #{ key: neighbors.current, collection: collection.key,
             index: if native_data { neighbors.current_index } else { row_index(data, neighbors.current) } };

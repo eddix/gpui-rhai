@@ -43,6 +43,27 @@ Option rows carry only their selected flag: a pick, or Enter on the active
 option, builds the next selection from `selected` when it happens, so the row
 data stays linear in the options however many are selected.
 
+A searchable Combobox can also take typed free text, such as a new service name
+next to a list of recent ones. With `on_submit`, Enter in the search field
+emits `submit` with the query when no enabled option matches it (nothing is
+active to pick); while an option is active, Enter still picks it. Nothing else
+happens on submit: the selection is unchanged and the panel stays open, so the
+caller decides whether to store the value, close the panel or reset the query.
+Without `on_submit` Enter in the search field behaves as before. Select does
+not forward `on_submit`: it chooses among its options.
+
+```rhai
+combobox::Combobox(#{ key: "service", label: "Service", searchable: true,
+    options: recent, selected: [ctx.get_state("service")], open: ctx.get_state("open"),
+    query: ctx.get_state("query"),
+    on_change: Fn("picked"), on_open_change: Fn("opened"),
+    on_query_change: Fn("queried"), on_submit: Fn("typed") })
+```
+
+The trigger shows the selected labels, or the placeholder, on one line that
+gives way first: a long text ends in an ellipsis, so the clear button and the
+chevron stay inside a fixed-width trigger.
+
 The component has no asset requirement and no privileged Rust constructor.
 Its public dependencies are only `components/input` plus runtime atoms. See
 [Select](select.md) for the scalar form-field adapter and the complete style,

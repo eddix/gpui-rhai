@@ -1,6 +1,6 @@
 # Table
 
-`components/table` · export `Table` · version 0.2.0. Generated from
+`components/table` · export `Table` · version 0.2.1. Generated from
 [`registry/components/table.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/table.rhai); do not edit.
 
 Data-backed Table composed entirely from public Box/Text/virtual_collection APIs. Use either a positive logical-pixel height or fill_height for flex layouts.
@@ -24,7 +24,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `empty_text` | string | `"No results"` | Muted text shown when no row is left after filtering and paging, unless `empty` is given. |
 | `estimated_row_height` | number > 0 | `32.0` | Row height in logical pixels the virtual body assumes before rows are measured; rows draw at `metrics.row`. |
 | `fill_height` | bool | `false` | Grows into the free height of a flex parent instead of a fixed `height`; give exactly one of the two. |
-| `group_by` | string or `()` | — | Column key whose values, non-empty strings, group the rows under headers in first-seen order. |
+| `group_by` | string or `()` | — | Column key whose values, non-empty strings, group the rows under headers in first-seen order; a header shows the value as the rows carry it. |
 | `height` | number > 0 or `()` | — | Height of the rows area below the header in logical pixels; give exactly one of `height` or `fill_height`. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name of the table; rows are announced as `<label> row <n>`. |

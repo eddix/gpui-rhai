@@ -58,12 +58,14 @@ table::Table(#{
 ```
 
 The flattened virtual sequence contains one synthetic header followed by that
-group's visible data rows. Headers show the value and total row count, have
-stable collision-free internal keys, count toward virtual length/budgets, and
-never participate in row selection or `row_click`. `collapsed_groups` is fully
-controlled; `group_toggle` emits the original group string and the caller
-returns the next array through props. Stale collapsed keys are harmless when
-data changes.
+group's visible data rows. Headers show the value and total row count in the
+label voice's mono type and muted color, the value as the rows carry it: it is
+data, often a case-sensitive identifier, so unlike a column title it is not
+uppercased. Headers have stable collision-free internal keys, count toward
+virtual length/budgets, and never participate in row selection or `row_click`.
+`collapsed_groups` is fully controlled; `group_toggle` emits the original group
+string and the caller returns the next array through props. Stale collapsed
+keys are harmless when data changes.
 
 Array input preserves caller row order, so group order is first appearance and
 row order within each group is the incoming order. NativeCollection first
@@ -209,6 +211,10 @@ The request is `#{ key, column, anchor, source }`:
 - Without a `selection_mode` there is no current row: `on_context_request`
   alone makes the table one tab stop, and Shift+F10 or the menu key asks for
   the whole table (`key` and `column` are `()`, `anchor` is the table).
+
+When the table takes keys (a selection mode or `on_context_request`), a click
+on a row leaves the keyboard focus on the table rather than on the row, so the
+arrows continue from the clicked row and its focus frame shows.
 
 Both data sources behave the same; a NativeCollection finds the current row
 in native code. `ctx.virtual_item_bounds(collection_key, index)` is the

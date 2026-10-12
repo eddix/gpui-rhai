@@ -2,7 +2,7 @@
 {
   "id": "components/list",
   "export": "List",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/badge"],
   "capabilities": {},
@@ -30,7 +30,7 @@
 import "components/badge" as badge;
 
 define_component(#{
-    metadata: #{ id: "components/list", "export": "List", version: "0.2.0",
+    metadata: #{ id: "components/list", "export": "List", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
         tokens: [
@@ -81,15 +81,22 @@ define_component(#{
                 doc: "`inline` sets `secondary` beside the title at body size; `below` sets it on a caption line under it." },
             dividers: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false }, doc: "Draws a 1px border under every row." },
-            badge_width: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0 } },
+            badge_width: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
+                #{ type: "number", exclusive_min: 0.0 }, #{ type: "length" }] } },
                 required: false, sensitive: false,
-                doc: "Badge slot width in logical pixels, reserved on every row so the titles align; `()` fits each badge." },
-            height: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0 } },
+                doc: "Badge slot width reserved on every row so the titles align: logical pixels, or a Length resolved in the list's density; `()` fits each badge." },
+            height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
+                #{ type: "number", exclusive_min: 0.0 }, #{ type: "length" }] } },
                 required: false, sensitive: false,
-                doc: "Viewport height in logical pixels; give exactly one of `height` or `fill_height`." },
+                doc: "Viewport height: logical pixels, or a Length such as `theme_length(\"metrics.row\") * 6`; give exactly one of `height` or `fill_height`." },
             fill_height: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Grows into the free height of a flex parent instead of a fixed `height`; give exactly one of the two." },
+            loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false },
+                doc: "Shows `loading_content` in the list's place instead of the rows." },
+            loading_content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Node shown while `loading`; `()` shows a muted \"Loading…\" line." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "No items" },
                 doc: "Muted text shown when `items` is empty, unless `empty` is given." },
@@ -126,10 +133,13 @@ define_component(#{
                     doc: "`pointer` for a right press, `keyboard` for Shift+F10 or the menu key." },
             } }, doc: "Emitted on a right press on a row, after selecting it unless the selection holds it, or on Shift+F10 or the menu key: for the selected row with a selection mode, for the list without one." },
         },
-        slots: #{ empty: #{ required: false, multiple: false,
-            doc: "Node shown instead of `empty_text` when `items` is empty." } },
+        slots: #{
+            loading_content: #{ required: false, multiple: false, doc: "Node shown in the list's place while `loading`." },
+            empty: #{ required: false, multiple: false,
+                doc: "Node shown instead of `empty_text` when `items` is empty." },
+        },
         parts: ["root", "row", "row_selected", "badge", "title", "secondary", "meta", "indicator_bar",
-            "cursor", "focus_frame", "empty"],
+            "cursor", "focus_frame", "loading", "empty"],
     },
     render: Fn("render_List")
 });
@@ -137,13 +147,18 @@ define_component(#{
 fn List(props) { render_component("components/list", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn field_or(item, name, fallback) { if name in item && item[name] != () { item[name] } else { fallback } }
+// `height` takes logical pixels or a Length.
+fn list_length(value) { if type_of(value) == "Length" { value } else { px(value) } }
 
 // A click builds the next selection for the clicked row alone, from the selection the list
-// was rendered with, so the rows carry only their selected flag.
-fn row_action(mode, selected, ctx, key) {
+// was rendered with, so the rows carry only their selected flag. The press focused the row;
+// `focus` (the list's ref key, or `()` when the list takes no keys) hands the focus back to
+// the list, which owns the keys and shows the cursor frame.
+fn row_action(mode, selected, focus, ctx, key) {
     ctx.emit("row_click", key);
     let selection = next_selection(mode, selected, key);
     if selection != () { ctx.emit("selection_change", selection); }
+    if focus != () { try { ctx.focus(focus); } catch { } }
 }
 // Keyboard navigation moves the selection and keeps the row revealed, as in Table.
 fn keyboard_select(ctx, key) { ctx.emit("selection_change", [key]); handled() }
@@ -195,7 +210,7 @@ fn row_neighbors(keys, chosen) {
         current: if current >= 0 { keys[current] } else { () } }
 }
 
-fn render_list_row(below, dividers, badge_width, context, total, mode, selected, ctx, payload) {
+fn render_list_row(below, dividers, badge_slot, context, total, mode, selected, focus, ctx, payload) {
     let item = payload.item;
     let children = [];
     let badge = if item.badge == () { () } else {
@@ -204,15 +219,23 @@ fn render_list_row(below, dividers, badge_width, context, total, mode, selected,
             .with_key(`${payload.key}-badge`)
             .with_style(ctx.component_style("badge", style().flex_shrink(false)))
     };
-    if badge_width != () {
+    if type_of(badge_slot) == "UiNode" {
+        // A Length slot: a zero-height spacer of that width with the badge under it.
+        children.push(column(if badge == () { [badge_slot] } else { [badge_slot, badge] })
+            .with_key(`${payload.key}-slot`).with_style(style().flex_shrink(false).items_start()));
+    } else if badge_slot != () {
         children.push(row(if badge == () { [] } else { [badge] }).with_key(`${payload.key}-slot`)
-            .with_style(style().width(px(badge_width)).flex_shrink(false).items_center()));
+            .with_style(style().width(px(badge_slot)).flex_shrink(false).items_center()));
     } else if badge != () { children.push(badge); }
     let title = text(item.title).with_key(`${payload.key}-title`)
         .with_style(ctx.component_style("title", style().min_width(px(0)).whitespace_nowrap()
             .text_ellipsis().typography("body")
             .text_color(if item.disabled { theme_color("disabled") } else { theme_color("text_primary") })));
     let label = item.title;
+    // On the selection tint the supporting text takes the title's color: text_muted is
+    // tuned for the surfaces, not for the tint.
+    let supporting = if item.selected && !item.disabled { theme_color("text_primary") }
+        else { theme_color("text_muted") };
     if item.secondary != () {
         label = `${label}, ${item.secondary}`;
         // Beside the title the secondary text keeps the body size, so the row shares one
@@ -220,7 +243,7 @@ fn render_list_row(below, dividers, badge_width, context, total, mode, selected,
         let secondary = text(item.secondary).with_key(`${payload.key}-secondary`)
             .with_style(ctx.component_style("secondary", style().min_width(px(0)).whitespace_nowrap()
                 .text_ellipsis().typography(if below { "caption" } else { "body" })
-                .text_color(theme_color("text_muted"))));
+                .text_color(supporting)));
         if below {
             children.push(column([title, secondary]).with_key(`${payload.key}-text`)
                 .with_style(style().flex_grow().min_width(px(0))));
@@ -238,7 +261,7 @@ fn render_list_row(below, dividers, badge_width, context, total, mode, selected,
         label = `${label}, ${item.meta}`;
         children.push(text(item.meta).with_key(`${payload.key}-meta`)
             .with_style(ctx.component_style("meta", style().flex_shrink(false).whitespace_nowrap()
-                .typography("body").font_feature("tnum", 1).text_color(theme_color("text_muted")))));
+                .typography("body").font_feature("tnum", 1).text_color(supporting))));
     }
     // Selection is the table selection tint plus the 2px indicator bar on the row start;
     // while the list has keyboard focus the selected row also shows the focus frame.
@@ -274,8 +297,17 @@ fn render_list_row(below, dividers, badge_width, context, total, mode, selected,
         node = node.on("pointer_down", Fn("row_context").curry(#{ key: payload.key, select: select }));
     }
     // A row is a pointer target only: the list is the one tab stop.
-    node.on_click_value(Fn("row_action").curry(mode).curry(selected), payload.key)
+    node.on_click_value(Fn("row_action").curry(mode).curry(selected).curry(focus), payload.key)
         .tab_stop(false)
+}
+
+// The loading and empty states take the list's place and size, in muted body text.
+fn list_state(ctx, props, size, part, content) {
+    column([content]).with_key(props.key)
+        .with_style(ctx.component_style(part, size.min_width(px(0))
+            .padding_x(theme_length("metrics.inset")).padding_y(theme_spacing("sm"))
+            .typography("body").text_color(theme_color("text_muted"))))
+        .accessibility_role("list").accessibility_label(props.label)
 }
 
 fn render_List(ctx, props) {
@@ -285,15 +317,20 @@ fn render_List(ctx, props) {
     let mode = prop_or(props, "selection_mode", "none");
     let selected = prop_or(props, "selected_keys", []);
     let below = prop_or(props, "secondary_layout", "inline") == "below";
-    let size = if fill_height { style().flex_grow().min_height(px(0)) } else { style().height(px(props.height)) };
+    // A virtual collection takes only a pixel height: under a Length height the rows fill a
+    // column of that height instead.
+    let length_height = has_height && type_of(props.height) == "Length";
+    let size = if fill_height { style().flex_grow().min_height(px(0)) } else { style().height(list_length(props.height)) };
+    if prop_or(props, "loading", false) {
+        let loading = if "loading_content" in props && props.loading_content != () {
+            props.loading_content
+        } else { text("Loading…") };
+        return list_state(ctx, props, size, "loading", loading);
+    }
     if props.items.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No items")) };
-        return column([empty]).with_key(props.key)
-            .with_style(ctx.component_style("empty", size.min_width(px(0))
-                .padding_x(theme_length("metrics.inset")).padding_y(theme_spacing("sm"))
-                .typography("body").text_color(theme_color("text_muted"))))
-            .accessibility_role("list").accessibility_label(props.label);
+        return list_state(ctx, props, size, "empty", empty);
     }
     // The rows stay linear in the items: each carries its selected flag, and the selection
     // reaches the row renderer once (a click builds the next selection then), so the data
@@ -316,17 +353,28 @@ fn render_List(ctx, props) {
     let collection = #{ key: `${props.key}-rows`, label: props.label, data: data,
         estimated_height: if below { 48.0 } else { 32.0 }, overdraw_pixels: 128.0,
         alignment: "top", follow_tail: false };
-    if fill_height { collection.fill_height = true; } else { collection.height = props.height; }
+    let fills = fill_height || length_height;
+    if fills { collection.fill_height = true; } else { collection.height = props.height; }
     let neighbors = ();
     if mode != "none" {
         neighbors = row_neighbors(enabled, chosen);
         if neighbors.current != () { collection.reveal_key = neighbors.current; }
     }
     let context = "on_context_request" in props && props.on_context_request != ();
+    // A row renderer's curry is plain data, which a Length is not: a Length badge width
+    // reaches the rows as a spacer node of that width.
+    let badge_slot = prop_or(props, "badge_width", ());
+    if type_of(badge_slot) == "Length" {
+        badge_slot = row([]).with_style(style().width(badge_slot));
+    }
+    // The list is a tab stop when it takes keys; a row click hands the focus back to it.
+    let focus = if mode == "none" && context || mode != "none" && neighbors.first != () {
+        `${props.key}-focus`
+    } else { () };
     let rows = virtual_collection(collection,
         Fn("render_list_row").curry(below).curry(prop_or(props, "dividers", false))
-            .curry(prop_or(props, "badge_width", ())).curry(context).curry(data.len)
-            .curry(mode).curry(selected));
+            .curry(badge_slot).curry(context).curry(data.len)
+            .curry(mode).curry(selected).curry(focus));
     if mode == "none" && context {
         // Without a selection mode there is no current row: the list is a tab stop for the
         // keyboard request alone, which is for the whole list. A wrapper holds that focus and
@@ -336,22 +384,26 @@ fn render_List(ctx, props) {
             .left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
             .border(px(2)).border_color(rgba(0x00000000))
             .group_focus(style().border_color(theme_color("focus_ring")))));
-        let fill = if fill_height { style().flex_grow().min_height(px(0)) }
+        let fill = if fills { style().flex_grow().min_height(px(0)) }
             else { style().height(px(props.height)) };
         return column([rows.with_style(fill.min_width(px(0))), frame]).with_key(props.key)
+            .with_ref(element_ref(focus))
             .with_style(ctx.component_style("root", size.min_width(px(0)).relative().focus(style())))
             .accessibility_role("list").accessibility_label(props.label)
             .tab_stop(true)
             .on_key_value("shift+f10", Fn("keyboard_context"), target)
             .on_key_value("menu", Fn("keyboard_context"), target);
     }
-    let root = rows.with_key(props.key)
+    let root = if length_height {
+        column([rows.with_style(style().flex_grow().min_height(px(0)).min_width(px(0)))])
+    } else { rows };
+    root = root.with_key(props.key)
         .with_style(ctx.component_style("root", size.min_width(px(0)).focus(style())))
         .accessibility_role(if mode == "none" { "list" } else { "listbox" })
         .accessibility_label(props.label);
     if mode == "none" { return root; }
     if neighbors.first == () { return root; }
-    root = root.tab_stop(true)
+    root = root.with_ref(element_ref(focus)).tab_stop(true)
         .on_key_value("up", Fn("keyboard_select"), neighbors.previous)
         .on_key_value("down", Fn("keyboard_select"), neighbors.next)
         .on_key_value("home", Fn("keyboard_select"), neighbors.first)

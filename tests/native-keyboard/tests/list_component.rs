@@ -455,3 +455,138 @@ fn clicks_build_the_next_selection_from_few_to_many_selected_rows(cx: &mut TestA
         "sel:2:false:r1 many sel:399:false:r399 sel:400:true:r2"
     );
 }
+
+/// The bounds of the list itself (role `listbox` or `list`, named Tickets).
+fn list_bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> GeometryBounds {
+    visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| (node.role == "listbox" || node.role == "list") && node.name == "Tickets")
+            .and_then(|node| node.geometry)
+            .expect("no list named Tickets")
+            .visual
+    })
+}
+
+fn texts(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
+    visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .filter(|node| node.role == "text")
+            .map(|node| node.name.clone())
+            .collect()
+    })
+}
+
+/// `badge_width` takes a Length (#139b) as well as pixels; both line the titles up alike.
+#[gpui::test]
+fn a_badge_width_length_lines_the_titles_up_like_pixels(cx: &mut TestAppContext) {
+    let title_x = |visual: &mut VisualTestContext, view: &ScriptViewHandle, name: &str| {
+        named_bounds(visual, view, "text", name).x
+    };
+    let (mut visual, view) = mount(cx, script("single", ",badge_width:64.0"));
+    assert_eq!(last_error(&mut visual, &view), None);
+    let pixels = title_x(&mut visual, &view, "Alpha");
+    let (mut visual, view) = mount(
+        cx,
+        script("single", r#",badge_width:theme_length("metrics.row")*2"#),
+    );
+    assert_eq!(last_error(&mut visual, &view), None);
+    let alpha = title_x(&mut visual, &view, "Alpha");
+    let charlie = title_x(&mut visual, &view, "Charlie");
+    assert!(
+        (alpha - charlie).abs() < 0.5,
+        "titles at {alpha} and {charlie}"
+    );
+    assert!(
+        (alpha - pixels).abs() < 0.5,
+        "metrics.row * 2 is 64px in comfortable density: {alpha} vs {pixels}"
+    );
+}
+
+/// `height` takes a Length (#139b), resolved in the list's density, and the list keeps its
+/// keyboard model.
+#[gpui::test]
+fn a_height_length_sizes_the_list_in_its_density(cx: &mut TestAppContext) {
+    let length =
+        script("single", "").replace("height:200.0", r#"height:theme_length("metrics.row")*2"#);
+    assert!(length.contains("metrics.row"));
+    let (mut visual, view) = mount(cx, length.clone());
+    assert_eq!(last_error(&mut visual, &view), None);
+    let list = list_bounds(&mut visual, &view);
+    assert!(
+        (list.height - 64.0).abs() < 0.5,
+        "two comfortable rows: {list:?}"
+    );
+    visual.update(|window, cx| window.focus_next(cx));
+    settle(&mut visual);
+    visual.simulate_keystrokes("down");
+    settle(&mut visual);
+    assert_eq!(log(&mut visual, &view), r#"sel:["a"]"#);
+    let compact = length.replace(
+        "]).with_style(style().width(px(400)))",
+        r#"]).with_style(style().width(px(400))).env(#{density:"compact"})"#,
+    );
+    assert!(compact.contains("compact"));
+    let (mut visual, view) = mount(cx, compact);
+    assert_eq!(last_error(&mut visual, &view), None);
+    let list = list_bounds(&mut visual, &view);
+    assert!(
+        (list.height - 56.0).abs() < 0.5,
+        "two compact rows: {list:?}"
+    );
+    // Without a selection mode a context request keeps its framed wrapper.
+    let (mut visual, view) = mount(
+        cx,
+        length.replace(r#"selection_mode:"single""#, r#"selection_mode:"none""#),
+    );
+    assert_eq!(last_error(&mut visual, &view), None);
+    let list = list_bounds(&mut visual, &view);
+    assert!((list.height - 64.0).abs() < 0.5, "{list:?}");
+}
+
+/// `loading` (#139c) shows `loading_content`, or a muted line, in the list's place and size,
+/// as Table does.
+#[gpui::test]
+fn a_loading_list_shows_its_loading_content_in_place_of_the_rows(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, script("single", ",loading:true"));
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert!(rows(&mut visual, &view).is_empty(), "no rows while loading");
+    let shown = texts(&mut visual, &view);
+    assert!(shown.iter().any(|text| text == "Loading…"), "{shown:?}");
+    let list = list_bounds(&mut visual, &view);
+    assert!(
+        (list.height - 200.0).abs() < 0.5,
+        "the list's height: {list:?}"
+    );
+    let (mut visual, view) = mount(
+        cx,
+        script(
+            "single",
+            r#",loading:true,loading_content:text("Fetching tickets")"#,
+        ),
+    );
+    assert_eq!(last_error(&mut visual, &view), None);
+    let shown = texts(&mut visual, &view);
+    assert!(
+        shown.iter().any(|text| text == "Fetching tickets")
+            && !shown.iter().any(|text| text == "Loading…"),
+        "{shown:?}"
+    );
+    // Loading wins over an empty list.
+    let source = script("single", ",loading:true").replace(
+        r#"items:[#{key:"a",title:"Alpha",meta:"09:41",badge:#{text:"Run",variant:"accent"}},
+            #{key:"b",title:"Bravo",secondary:"T2",disabled:true},
+            #{key:"c",title:"Charlie",secondary:"T3"}],"#,
+        r#"items:[],empty_text:"No tickets","#,
+    );
+    let (mut visual, view) = mount(cx, source);
+    let shown = texts(&mut visual, &view);
+    assert!(
+        shown.iter().any(|text| text == "Loading…")
+            && !shown.iter().any(|text| text == "No tickets"),
+        "{shown:?}"
+    );
+}

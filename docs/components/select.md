@@ -20,7 +20,9 @@ nor Combobox has a privileged Rust node or private state machine.
 Relative width and caller-applied flex sizing are forwarded through the
 Combobox root. The trigger consumes that realized allocation and the popup
 panel matches the trigger after layout; a sibling Select with a fixed width can
-therefore remain fixed while another Combobox grows with the row.
+therefore remain fixed while another Combobox grows with the row. In a fixed
+width the trigger's label or placeholder stays on one line and ends in an
+ellipsis when it does not fit, so the clear button and the chevron stay inside.
 
 Rhai `()` is the only empty-value sentinel. Empty-string option values remain
 legal and distinct from null. Option values must be unique, and a disabled

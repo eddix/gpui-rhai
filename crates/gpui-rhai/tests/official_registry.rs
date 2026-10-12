@@ -1063,6 +1063,22 @@ fn bundled_palettes_meet_the_theme_authoring_constraints() {
                 "{name}: text.{fill} is unreadable on tonal blocks"
             );
         }
+        // Derived fills that carry text: a neutral Tag facet, selected Table and List rows.
+        for (background, base) in [
+            ("tag.facet", "surface_hover"),
+            ("table.selection", "surface"),
+        ] {
+            let ratio = color("text_primary").contrast_ratio(color(background));
+            assert!(
+                ratio >= 4.5,
+                "{name}: text_primary on {background} is {ratio:.2}:1"
+            );
+            assert_ne!(
+                color(background),
+                color(base),
+                "{name}: {background} is {base}"
+            );
+        }
         assert!(
             color("focus_ring").contrast_ratio(color("surface")) >= 3.0,
             "{name}: focus"

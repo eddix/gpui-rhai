@@ -149,7 +149,9 @@ Derived roles from the token base: `text.accent`, `text.danger`,
 tonal blocks, used whenever a status or accent color is text), `control.hover`
 (tonal block hover step), `tag.facet` (the darker tonal step of a Tag facet),
 `table.selection`, `tabs.foreground`, `scrollbar.thumb` and
-`scrollbar.thumb_hover`. See [themes.md](themes.md).
+`scrollbar.thumb_hover`. `tag.facet` and `table.selection` carry
+`text_primary`, so each backs off toward its base just enough to keep 4.5:1.
+See [themes.md](themes.md).
 
 ## 5. Marker system: Button, Tag, Badge, Kbd
 
@@ -290,10 +292,15 @@ navigation lists and Table rows share one row grammar:
   optional leading status Badge, the title, a muted secondary text beside the
   title (`body`, one line box) or below it (`caption`, `secondary_layout:
   "below"`, rows grow to two lines) and trailing `meta` in `text_muted` with
-  tabular figures. Rows carry `metrics.inset`, so in a bled DataView or Region
+  tabular figures; on a selected row the secondary text and `meta` take
+  `text_primary`, as `text_muted` is tuned for the surfaces, not for the
+  selection tint. Rows carry `metrics.inset`, so in a bled DataView or Region
   body their text starts on the title's edge; `dividers: true` adds hairlines.
-  Badges of different widths push titles apart: `badge_width` (pixels)
-  reserves one leading slot on every row so the titles share an edge.
+  Badges of different widths push titles apart: `badge_width` (pixels or a
+  Length) reserves one leading slot on every row so the titles share an edge.
+- `height` takes pixels or a Length (`theme_length("metrics.row") * n` for n
+  rows in either density). While `loading` the list shows `loading_content`
+  (a muted "Loading…" line by default) in its place, as Table does.
 - Selection follows Table: `table.selection` and the indicator bar, the focus
   frame on the selected row while the list has focus, one tab stop whose
   arrows move the selection, Enter for `row_click`, `on_context_request` for
@@ -308,6 +315,10 @@ navigation lists and Table rows share one row grammar:
 - Header row in the label voice on `surface`, hairline bottom border; sticky
   copy indistinguishable from the natural row. Only sortable headers react to
   hover.
+- Group headers (`group_by`) set the group value and row count in the label
+  type (mono 12/16, `text_muted`) on `surface_raised`, but keep the value's
+  case: it is a cell value, often a case-sensitive identifier, not a label the
+  author wrote, so it is not uppercased.
 - Body rows `metrics.row`, cell text at `metrics.inset`, hairline separators in
   `border`, no zebra striping by default (`striped` remains opt-in).
 - Selected rows use `table.selection` and the indicator bar on the row start.
