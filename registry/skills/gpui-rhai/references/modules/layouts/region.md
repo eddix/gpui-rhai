@@ -1,6 +1,6 @@
 # Region
 
-`layouts/region` · export `Region` · version 0.2.0. Generated from
+`layouts/region` · export `Region` · version 0.2.1. Generated from
 [`registry/layouts/region.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/layouts/region.rhai); do not edit.
 
 Region is one working area: a header with the region's title and actions, an optional toolbar, a body that fills the remaining height, and a footer pinned to the bottom.
@@ -25,7 +25,7 @@ region::Region(#{ label: "Hosts", title: "Hosts", toolbar: toolbar_node, body: t
 | `body` | node | required | Main content; fills the remaining height and clips, or scrolls with `scroll`. |
 | `external_title` | bool | `false` | The title is drawn elsewhere (a TitleBar or a tab); the region then takes no `title`. |
 | `fill` | bool | `true` | Grows the region to the remaining height of its parent, so the body can fill it. |
-| `footer` | array of node (at most 16) | `[]` | Status items in a caption row pinned to the bottom under a hairline, `group` apart. |
+| `footer` | array of node (at most 16) | `[]` | Status items in a caption row pinned to the bottom under a hairline, `group` apart; it wraps when wider than the region and clips at its edge. |
 | `inset` | bool | `true` | Pads the region by `metrics.inset` at the top and bottom and each part at the sides. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name of the region. |

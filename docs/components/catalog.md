@@ -60,6 +60,9 @@ dimensions, optional boundary containment, optional aspect ratio, a keyboard
 step, disabled state, and one `resize({x,y,width,height})` proposal shaped exactly like `rect`.
 Pointer moves update four optional-float native signals; Rhai runs only for the
 final proposal. Style parts are `root`, `surface`, `content`, and `handle`.
+A decorative grip (`grips`) covers its handle, so an edge grip shows the
+handle's resize cursor itself; a corner grip keeps the default cursor, since
+styles offer no diagonal resize cursor.
 
 Source: [resizable.rhai](../../registry/components/resizable.rhai).
 Runnable story: `gpui-rhai gallery --story components/resizable`.
@@ -245,7 +248,8 @@ Runnable story: `gpui-rhai gallery --story components/list`.
 `TabBar` is a controlled strip of document tabs that belong to the panel under
 them (the panel is the caller's; give it `tabbar.active` so the selected tab
 joins it). Tabs keep their width and scroll sideways; the selected tab stays
-revealed.
+revealed, also when the caller reorders, adds or removes tabs while it is in
+view; a strip scrolled away from it by hand stays where it is.
 
 | Tab field | Contract |
 |---|---|

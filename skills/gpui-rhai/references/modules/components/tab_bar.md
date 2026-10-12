@@ -1,6 +1,6 @@
 # TabBar
 
-`components/tab_bar` · export `TabBar` · version 0.2.0. Generated from
+`components/tab_bar` · export `TabBar` · version 0.2.1. Generated from
 [`registry/components/tab_bar.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tab_bar.rhai); do not edit.
 
 Controlled document tabs that belong to the panel under them: the selected tab takes the panel's surface (`tabbar.active`) and covers the bar's bottom line, so the panel's extent says what the tabs switch. Tabs keep their width and the strip scrolls sideways when they do not fit; the selected tab stays revealed.

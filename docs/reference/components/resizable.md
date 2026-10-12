@@ -1,6 +1,6 @@
 # Resizable
 
-`components/resizable` · export `Resizable` · version 0.2.0. Generated from
+`components/resizable` · export `Resizable` · version 0.2.1. Generated from
 [`registry/components/resizable.rhai`](../../../registry/components/resizable.rhai); do not edit.
 
 Controlled single-element rectangle resizing inside one local boundary. State: only native pointer preview; application rectangle remains controlled.
