@@ -43,8 +43,10 @@ Values a style is built from; read lengths and colors from theme tokens.
 | Call | Description |
 |---|---|
 | `alpha(color: ColorValue, factor: float) -> ColorValue` | Returns `color` with its alpha multiplied by `factor` (0 to 1); a token color resolves when the node renders. |
+| `alpha(color: ColorValue, factor: int) -> ColorValue` | Returns `color` with its alpha multiplied by `factor` (0 to 1); a token color resolves when the node renders. |
 | `color(value: String) -> ColorValue` | Parses a color literal: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, a CSS basic name, `transparent`, or an `rgb()`, `hsl()` or `hwb()` form. |
 | `mix(base: ColorValue, other: ColorValue, weight: float) -> ColorValue` | Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders. |
+| `mix(base: ColorValue, other: ColorValue, weight: int) -> ColorValue` | Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders. |
 | `offset_px(value: float) -> SignedLength` | Creates a signed offset in logical pixels for margins and insets; any finite value, negative included. |
 | `offset_px(value: int) -> SignedLength` | Creates a signed offset in logical pixels for margins and insets; negative values are allowed. |
 | `offset_relative(fraction: float) -> SignedLength` | Creates a signed offset as a fraction of the parent's size, from -10 to 10, for margins and insets. |
@@ -54,6 +56,7 @@ Values a style is built from; read lengths and colors from theme tokens.
 | `px(value: float) -> Length` | Creates a length in logical pixels; `value` must be finite and non-negative. |
 | `px(value: int) -> Length` | Creates a length in logical pixels; `value` must be non-negative. |
 | `readable(color: ColorValue, toward: ColorValue, background: ColorValue, ratio: float) -> ColorValue` | Moves `color` toward `toward` just far enough to reach WCAG contrast `ratio` (1 to 21) against `background`, when the node renders. |
+| `readable(color: ColorValue, toward: ColorValue, background: ColorValue, ratio: int) -> ColorValue` | Moves `color` toward `toward` just far enough to reach WCAG contrast `ratio` (1 to 21) against `background`, when the node renders. |
 | `relative(fraction: float) -> Length` | Creates a length as a fraction of the parent's size, from 0 to 1: `relative(0.5)` is half. |
 | `relative(fraction: int) -> Length` | Creates a length as a fraction of the parent's size; as an integer only 0 or 1, and `relative(1)` fills the parent. |
 | `rem(value: float) -> Length` | Creates a length in rems, multiples of the window's rem size; `value` must be finite and non-negative. |

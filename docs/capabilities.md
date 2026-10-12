@@ -114,6 +114,34 @@ click starts completes as `TaskCompletion { started_by: UserInput { .. } }`, so
 user input. The origin is one field set on each dispatch path and read only by
 handlers that ask for it.
 
+Task and subscription handlers receive the same context when they start.
+`AsyncCapabilityHandler::start_with` and
+`SubscriptionCapabilityHandler::subscribe_with` default to `start` and
+`subscribe`; override them to decide before any work runs. A save dialog or a
+package install started by `ctx.start_task` can refuse automation:
+
+```rust
+impl AsyncCapabilityHandler for Save {
+    fn start(&mut self, _: &str, _: UiValue) -> Result<TaskWork, String> {
+        Err("start_with is the entry point".into())
+    }
+
+    fn start_with(&mut self, context: &InvocationContext, method: &str, input: UiValue)
+        -> Result<TaskWork, String> {
+        if !context.origin.is_user_input() {
+            return Err("save needs user input".into());
+        }
+        self.save(method, input)
+    }
+}
+```
+
+A subscription starts in an effect, so its origin is `Effect`; the context
+still names the view and the component. A Host calling the registry directly
+uses `CapabilityRegistry::call_with`, `start_task_with` and
+`start_subscription_with`; `call`, `start_task` and `start_subscription` pass
+`Lifecycle`, no view and the root component.
+
 ## Subscription producer lifetime
 
 `SubscriptionWork` owns the complete producer loop. It must remain running for

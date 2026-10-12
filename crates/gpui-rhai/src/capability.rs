@@ -128,6 +128,18 @@ pub struct InvocationContext {
     pub component: crate::ComponentInstancePath,
 }
 
+impl InvocationContext {
+    /// The context of a call the Host makes directly through the registry:
+    /// `Lifecycle`, no view, the root component.
+    fn host() -> Self {
+        Self {
+            origin: InvocationOrigin::default(),
+            view_id: None,
+            component: crate::ComponentInstancePath::root("App", "root"),
+        }
+    }
+}
+
 pub trait CapabilityHandler {
     /// Execute a schema-validated capability method.
     ///
@@ -189,6 +201,24 @@ pub trait AsyncCapabilityHandler {
     ///
     /// Returns a human-readable setup error before a task is spawned.
     fn start(&mut self, method: &str, input: UiValue) -> Result<TaskWork, String>;
+
+    /// Build the work with the context of the call that starts the task, as
+    /// [`CapabilityHandler::call_with`] receives it. Override it to gate work
+    /// on user input before it runs (`context.origin.is_user_input()`); the
+    /// default forwards to [`Self::start`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start`].
+    fn start_with(
+        &mut self,
+        context: &InvocationContext,
+        method: &str,
+        input: UiValue,
+    ) -> Result<TaskWork, String> {
+        let _ = context;
+        self.start(method, input)
+    }
 }
 
 /// One continuous subscription producer.
@@ -248,6 +278,23 @@ pub trait SubscriptionCapabilityHandler {
     ///
     /// Returns a human-readable setup error before subscription startup.
     fn subscribe(&mut self, method: &str, input: UiValue) -> Result<SubscriptionWork, String>;
+
+    /// Build the producer with the context of the call that starts the
+    /// subscription: an effect start, with its view and component. The
+    /// default forwards to [`Self::subscribe`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::subscribe`].
+    fn subscribe_with(
+        &mut self,
+        context: &InvocationContext,
+        method: &str,
+        input: UiValue,
+    ) -> Result<SubscriptionWork, String> {
+        let _ = context;
+        self.subscribe(method, input)
+    }
 }
 
 struct CapabilityEntry {
@@ -400,12 +447,7 @@ impl CapabilityRegistry {
         method: &str,
         input: UiValue,
     ) -> Result<UiValue, CapabilityError> {
-        let context = InvocationContext {
-            origin: InvocationOrigin::default(),
-            view_id: None,
-            component: crate::ComponentInstancePath::root("App", "root"),
-        };
-        self.call_with(&context, id, method, input)
+        self.call_with(&InvocationContext::host(), id, method, input)
     }
 
     /// Invoke an activated method with the context of the call.
@@ -476,13 +518,28 @@ impl CapabilityRegistry {
         method: &str,
         input: UiValue,
     ) -> Result<(TaskWork, ValueSchema), CapabilityError> {
+        self.start_task_with(&InvocationContext::host(), id, method, input)
+    }
+
+    /// Build one-shot work with the context of the call that starts it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start_task`].
+    pub fn start_task_with(
+        &mut self,
+        context: &InvocationContext,
+        id: &CapabilityId,
+        method: &str,
+        input: UiValue,
+    ) -> Result<(TaskWork, ValueSchema), CapabilityError> {
         let (entry, schema) = self.entry_and_method(id, method, &input)?;
         let handler = entry
             .task
             .as_mut()
             .ok_or(CapabilityError::UnsupportedMode("task"))?;
         let work = handler
-            .start(method, input)
+            .start_with(context, method, input)
             .map_err(|message| CapabilityError::Handler {
                 id: id.clone(),
                 method: method.to_owned(),
@@ -502,19 +559,33 @@ impl CapabilityRegistry {
         method: &str,
         input: UiValue,
     ) -> Result<(SubscriptionWork, ValueSchema), CapabilityError> {
+        self.start_subscription_with(&InvocationContext::host(), id, method, input)
+    }
+
+    /// Build continuous work with the context of the call that starts it.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::start_subscription`].
+    pub fn start_subscription_with(
+        &mut self,
+        context: &InvocationContext,
+        id: &CapabilityId,
+        method: &str,
+        input: UiValue,
+    ) -> Result<(SubscriptionWork, ValueSchema), CapabilityError> {
         let (entry, schema) = self.entry_and_method(id, method, &input)?;
         let handler = entry
             .subscription
             .as_mut()
             .ok_or(CapabilityError::UnsupportedMode("subscription"))?;
-        let work =
-            handler
-                .subscribe(method, input)
-                .map_err(|message| CapabilityError::Handler {
-                    id: id.clone(),
-                    method: method.to_owned(),
-                    message,
-                })?;
+        let work = handler
+            .subscribe_with(context, method, input)
+            .map_err(|message| CapabilityError::Handler {
+                id: id.clone(),
+                method: method.to_owned(),
+                message,
+            })?;
         Ok((work, schema.output))
     }
 
@@ -875,5 +946,96 @@ mod tests {
         let value = work.run(crate::TaskCancellation::default()).unwrap();
         output.validate_ui_value(&value).unwrap();
         assert_eq!(value, UiValue::String("async".to_owned()));
+    }
+
+    #[test]
+    fn task_and_subscription_starts_receive_the_invocation_context() {
+        type Seen = std::rc::Rc<std::cell::RefCell<Vec<InvocationOrigin>>>;
+        struct Gated(Seen);
+        impl AsyncCapabilityHandler for Gated {
+            fn start(&mut self, _: &str, _: UiValue) -> Result<TaskWork, String> {
+                Err("start_with is the entry point".to_owned())
+            }
+            fn start_with(
+                &mut self,
+                context: &InvocationContext,
+                _: &str,
+                input: UiValue,
+            ) -> Result<TaskWork, String> {
+                self.0.borrow_mut().push(context.origin.clone());
+                if !context.origin.is_user_input() {
+                    return Err("needs user input".to_owned());
+                }
+                Ok(TaskWork::new(move || Ok(input)))
+            }
+        }
+        impl SubscriptionCapabilityHandler for Gated {
+            fn subscribe(&mut self, _: &str, _: UiValue) -> Result<SubscriptionWork, String> {
+                Err("subscribe_with is the entry point".to_owned())
+            }
+            fn subscribe_with(
+                &mut self,
+                context: &InvocationContext,
+                _: &str,
+                _: UiValue,
+            ) -> Result<SubscriptionWork, String> {
+                self.0.borrow_mut().push(context.origin.clone());
+                Ok(SubscriptionWork::new(|_| {}))
+            }
+        }
+
+        let seen = Seen::default();
+        let id = CapabilityId::parse("app.echo").unwrap();
+        let mut registry = CapabilityRegistry::new();
+        registry
+            .register_async(descriptor(), Gated(seen.clone()))
+            .unwrap();
+        registry
+            .register_subscription(descriptor(), Gated(seen.clone()))
+            .unwrap();
+        registry
+            .activate(&BTreeMap::from([(id.clone(), VersionReq::STAR)]))
+            .unwrap();
+        let click = InvocationContext {
+            origin: InvocationOrigin::UserInput {
+                event: "click".to_owned(),
+            },
+            view_id: Some("main".to_owned()),
+            component: crate::ComponentInstancePath::root("App", "root"),
+        };
+        let input = || UiValue::String("value".to_owned());
+        assert!(
+            registry
+                .start_task_with(&click, &id, "echo", input())
+                .is_ok()
+        );
+        // Without a context the Host call is `Lifecycle`, not user input.
+        assert!(matches!(
+            registry.start_task(&id, "echo", input()),
+            Err(CapabilityError::Handler { message, .. }) if message == "needs user input"
+        ));
+        let automation = InvocationContext {
+            origin: InvocationOrigin::Automation,
+            ..click.clone()
+        };
+        assert!(
+            registry
+                .start_task_with(&automation, &id, "echo", input())
+                .is_err()
+        );
+        registry
+            .start_subscription_with(&automation, &id, "echo", input())
+            .unwrap();
+        registry.start_subscription(&id, "echo", input()).unwrap();
+        assert_eq!(
+            *seen.borrow(),
+            [
+                click.origin,
+                InvocationOrigin::Lifecycle,
+                InvocationOrigin::Automation,
+                InvocationOrigin::Automation,
+                InvocationOrigin::Lifecycle,
+            ]
+        );
     }
 }
