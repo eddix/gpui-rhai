@@ -1301,26 +1301,119 @@ mod tests {
             .collect()
     }
 
-    fn code_lines(source: &str) -> impl Iterator<Item = &str> {
-        source
-            .split("*/")
-            .nth(1)
-            .unwrap_or(source)
-            .lines()
-            .map(|line| line.split("//").next().unwrap_or(line))
-    }
-
-    /// Component contract C7 and the geometry rules of docs/design/atoms.md, checked on
-    /// source text: every literal token a component reads is declared, the header and
-    /// the runtime metadata agree, and literal sizes are only structural constants.
-    #[test]
-    fn components_declare_what_they_read_and_keep_geometry_in_tokens() {
-        let mut problems = Vec::new();
-        for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+    /// Every bundled module an app imports by ID: components, layouts, patterns and
+    /// charts. The source lints below run over all of them, so a new module is covered
+    /// without editing a list.
+    fn ui_sources() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+        BUNDLED_COMPONENT_SOURCES_BY_ID
             .iter()
             .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
             .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
-        {
+            .chain(BUNDLED_CHART_SOURCES_BY_ID)
+    }
+
+    /// The lines after the header comment with their 1-based line numbers in the file,
+    /// without `//` comments.
+    fn code_lines(source: &str) -> impl Iterator<Item = (usize, &str)> {
+        let (header, body) = source.split_once("*/").unwrap_or(("", source));
+        let first = header.matches('\n').count() + 1;
+        body.lines()
+            .enumerate()
+            .map(move |(index, line)| (first + index, line.split("//").next().unwrap_or(line)))
+    }
+
+    /// The argument text of every `call` in `line`, up to the next `)`. A `*` in `call`
+    /// stands for any `_suffix`: `.padding*(px(` also matches `.padding_start(px(`.
+    fn call_arguments<'line>(line: &'line str, call: &str) -> Vec<&'line str> {
+        let (head, tail) = call.split_once('*').unwrap_or((call, ""));
+        line.match_indices(head)
+            .filter_map(|(index, _)| {
+                let rest = line[index + head.len()..]
+                    .trim_start_matches(|character: char| {
+                        !tail.is_empty() && (character == '_' || character.is_ascii_lowercase())
+                    })
+                    .strip_prefix(tail)?;
+                Some(rest.split(')').next().unwrap_or(rest).trim())
+            })
+            .collect()
+    }
+
+    /// A numeric `px(...)` argument; `None` for a prop or computed value, which is the
+    /// caller's to choose.
+    fn pixels(argument: &str) -> Option<f64> {
+        argument.parse().ok()
+    }
+
+    fn never(_: &str) -> bool {
+        false
+    }
+
+    fn zero(argument: &str) -> bool {
+        pixels(argument) == Some(0.0)
+    }
+
+    /// Hairlines, focus borders, indicator bars, lamps, slider tracks, grab zones and
+    /// close glyphs: the structural constants of docs/design/atoms.md section 2.
+    fn structural_size(argument: &str) -> bool {
+        pixels(argument).is_none_or(|value| value <= 14.0)
+    }
+
+    /// A call matched in code (see [`call_arguments`]), whether one of its arguments is
+    /// structure rather than design, and the fix for one that is not.
+    type VisualRule = (&'static str, fn(&str) -> bool, &'static str);
+
+    /// One rule table for the visual contract of docs/design/atoms.md (sections 1, 2 and
+    /// 11): no decoration, literal color, font size, line height, control height or
+    /// spacing in official source.
+    const VISUAL_RULES: &[VisualRule] = &[
+        ("shadow(", never, "decoration belongs to themes"),
+        ("linear_gradient(", never, "decoration belongs to themes"),
+        // Fully transparent is structure: it reserves a border in idle geometry.
+        (
+            "rgba(",
+            |argument| argument == "0x00000000",
+            "use theme_color",
+        ),
+        ("rgb(", never, "use theme_color"),
+        ("font_size(px(", never, "use a typography role"),
+        ("line_height(px(", never, "use a typography role"),
+        (".height(px(", structural_size, "use a metrics token"),
+        ("min_height(px(", structural_size, "use a metrics token"),
+        // 240px and wider is a layout width (dialogs, popovers, toasts), not rhythm.
+        (
+            ".width(px(",
+            |argument| {
+                structural_size(argument) || pixels(argument).is_some_and(|value| value >= 240.0)
+            },
+            "use a metrics token",
+        ),
+        // A literal radius only turns a structural shape into a semantic circle.
+        (
+            "radius*(px(",
+            |argument| pixels(argument).is_none_or(|value| value <= 7.0),
+            "use theme_radius",
+        ),
+        (".padding*(px(", zero, "use a spacing or metrics token"),
+        (".margin*(px(", zero, "use a spacing or metrics token"),
+        (".gap(px(", zero, "use a spacing or metrics token"),
+    ];
+
+    /// Code lines the rules cannot tell from structure, each with its reason. An entry
+    /// that no longer matches fails the lint, so this list cannot go stale.
+    const VISUAL_EXCEPTIONS: &[(&str, &str)] = &[
+        // The caller's inset clears the platform window buttons; it is not spacing.
+        ("components/title_bar", ".padding_start(px(inset))"),
+    ];
+
+    /// Component contract C7 and the visual rules of docs/design/atoms.md, checked on the
+    /// source text of every component, layout, pattern and chart: every literal token a
+    /// module reads is declared, the header and the runtime metadata agree, and visual
+    /// values come from tokens except where [`VISUAL_RULES`] allows a structural literal.
+    #[test]
+    fn components_declare_what_they_read_and_keep_geometry_in_tokens() {
+        let mut problems = Vec::new();
+        let mut matched_exceptions = BTreeSet::new();
+        for (id, source) in ui_sources() {
             let (header, body) = source.split_once("*/").unwrap();
             let tokens = declared_list(header, "\"tokens\":");
             let metadata = body.split("schema:").next().unwrap();
@@ -1333,7 +1426,10 @@ mod tests {
                     "{id}: header and metadata environment lists differ"
                 ));
             }
-            let code = code_lines(source).collect::<Vec<_>>().join("\n");
+            let code = code_lines(source)
+                .map(|(_, line)| line)
+                .collect::<Vec<_>>()
+                .join("\n");
             let mut read = literal_arguments(&code, "theme_color(", "");
             read.extend(literal_arguments(&code, "theme_length(", ""));
             read.extend(literal_arguments(&code, "theme_spacing(", "spacing."));
@@ -1343,32 +1439,33 @@ mod tests {
             if !undeclared.is_empty() {
                 problems.push(format!("{id} reads undeclared tokens: {undeclared:?}"));
             }
-            for line in code_lines(source) {
-                for call in [
-                    ".height(px(",
-                    "min_height(px(",
-                    ".width(px(",
-                    "font_size(px(",
-                ] {
-                    for (index, _) in line.match_indices(call) {
-                        let number = line[index + call.len()..]
-                            .chars()
-                            .take_while(char::is_ascii_digit)
-                            .collect::<String>();
-                        let Ok(value) = number.parse::<u32>() else {
+            for (number, line) in code_lines(source) {
+                for (call, allowed, fix) in VISUAL_RULES {
+                    for argument in call_arguments(line, call) {
+                        if allowed(argument) {
                             continue;
-                        };
-                        let structural = call != "font_size(px(" && value <= 14;
-                        // Width literals above 14px are layout widths (dialogs,
-                        // popovers, toasts), not geometry rhythm.
-                        let layout_width = call == ".width(px(" && value >= 240;
-                        if !(value == 0 || structural || layout_width) {
-                            problems.push(format!(
-                                "{id} hard-codes {call}{value}): use a metrics token"
-                            ));
+                        }
+                        match VISUAL_EXCEPTIONS
+                            .iter()
+                            .position(|(module, fragment)| module == id && line.contains(fragment))
+                        {
+                            Some(exception) => {
+                                matched_exceptions.insert(exception);
+                            }
+                            None => problems.push(format!(
+                                "registry/{id}.rhai:{number}: {fix}: {}",
+                                line.trim()
+                            )),
                         }
                     }
                 }
+            }
+        }
+        for (index, (module, fragment)) in VISUAL_EXCEPTIONS.iter().enumerate() {
+            if !matched_exceptions.contains(&index) {
+                problems.push(format!(
+                    "stale visual exception: {module} no longer needs `{fragment}`"
+                ));
             }
         }
         assert!(problems.is_empty(), "{}", problems.join("\n"));
@@ -1379,11 +1476,7 @@ mod tests {
     #[test]
     fn every_bundled_asset_is_declared_by_a_module() {
         let mut declared = BTreeSet::new();
-        for (_, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
-            .iter()
-            .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
-            .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
-        {
+        for (_, source) in ui_sources() {
             let (header, _) = source.split_once("*/").unwrap();
             declared.extend(declared_list(header, "\"assets\":"));
         }

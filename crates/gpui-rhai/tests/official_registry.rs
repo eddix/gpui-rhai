@@ -1,65 +1,20 @@
+mod common;
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
-use gpui_rhai::{
-    AssetData, ColorValue, ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource,
-    ExecutionPhase, InMemoryAssetProvider, ModuleId, OpaqueHandle, RestrictedModuleResolver,
-    RuntimeEngine, ScriptCallback, ScriptLifecycle, StateField, UiContext, UiNodeKind,
-    UiRuntimeState, UiValue, ValueSchema, parse_component_header,
+use common::{
+    compile, compile_official, engine_with, environment, lifecycle_for, lifecycle_with_schema,
+    mount, new_runtime, official_modules, official_source, render, root_path, try_render_in,
 };
+use gpui_rhai::{
+    AssetData, ColorValue, ComponentStateSchema, InMemoryAssetProvider, ModuleId, OpaqueHandle,
+    RuntimeEngine, ScriptCallback, ScriptLifecycle, StateField, UiNodeKind, UiRuntimeState,
+    UiValue, ValueSchema, parse_component_header,
+};
+use gpui_rhai_registry as registry;
 
-const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
-const ICON_BUTTON: &str = include_str!("../../../registry/components/icon_button.rhai");
-const LABEL: &str = include_str!("../../../registry/components/label.rhai");
-const ICON: &str = include_str!("../../../registry/components/icon.rhai");
-const INPUT: &str = include_str!("../../../registry/components/input.rhai");
-const TEXTAREA: &str = include_str!("../../../registry/components/textarea.rhai");
-const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
-const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
-const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
-const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
-const SELECT: &str = include_str!("../../../registry/components/select.rhai");
-const DATE_PICKER: &str = include_str!("../../../registry/components/date_picker.rhai");
-const TABLE: &str = include_str!("../../../registry/components/table.rhai");
-const PAGINATION: &str = include_str!("../../../registry/components/pagination.rhai");
-const CHECKBOX: &str = include_str!("../../../registry/components/checkbox.rhai");
-const RADIO: &str = include_str!("../../../registry/components/radio.rhai");
-const RADIO_GROUP: &str = include_str!("../../../registry/components/radio_group.rhai");
-const SWITCH: &str = include_str!("../../../registry/components/switch.rhai");
-const TAG: &str = include_str!("../../../registry/components/tag.rhai");
-const AVATAR: &str = include_str!("../../../registry/components/avatar.rhai");
-const PROGRESS: &str = include_str!("../../../registry/components/progress.rhai");
-const SKELETON: &str = include_str!("../../../registry/components/skeleton.rhai");
-const FORM_FIELD: &str = include_str!("../../../registry/components/form_field.rhai");
-const COLLAPSIBLE: &str = include_str!("../../../registry/components/collapsible.rhai");
-const ACCORDION: &str = include_str!("../../../registry/components/accordion.rhai");
-const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
-const TOOLTIP: &str = include_str!("../../../registry/components/tooltip.rhai");
-const MENU: &str = include_str!("../../../registry/components/menu.rhai");
-const TOAST: &str = include_str!("../../../registry/components/toast.rhai");
-const ALERT: &str = include_str!("../../../registry/components/alert.rhai");
-const ALERT_DIALOG: &str = include_str!("../../../registry/components/alert_dialog.rhai");
-const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
-const BUTTON_GROUP: &str = include_str!("../../../registry/components/button_group.rhai");
-const CARD: &str = include_str!("../../../registry/components/card.rhai");
-const EMPTY: &str = include_str!("../../../registry/components/empty.rhai");
-const GROUP_BOX: &str = include_str!("../../../registry/components/group_box.rhai");
-const INPUT_GROUP: &str = include_str!("../../../registry/components/input_group.rhai");
-const KBD: &str = include_str!("../../../registry/components/kbd.rhai");
-const TOGGLE: &str = include_str!("../../../registry/components/toggle.rhai");
-const TOGGLE_GROUP: &str = include_str!("../../../registry/components/toggle_group.rhai");
-const SLIDER: &str = include_str!("../../../registry/components/slider.rhai");
-const CONTEXT_MENU: &str = include_str!("../../../registry/components/context_menu.rhai");
-const SHEET: &str = include_str!("../../../registry/components/sheet.rhai");
-const COMMAND: &str = include_str!("../../../registry/components/command.rhai");
-const COMMAND_DIALOG: &str = include_str!("../../../registry/components/command_dialog.rhai");
-const SPINNER: &str = include_str!("../../../registry/components/spinner.rhai");
-const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
-const TITLE_BAR: &str = include_str!("../../../registry/components/title_bar.rhai");
-const STATUS_BAR: &str = include_str!("../../../registry/components/status_bar.rhai");
-const CODE_VIEWER: &str = include_str!("../../../registry/components/code_viewer.rhai");
-const DIFF_VIEWER: &str = include_str!("../../../registry/components/diff_viewer.rhai");
 const DATE_PICKER_TEST_APP: &str = r#"
     import "components/date_picker" as date_picker;
     fn changed(ctx, value) { () }
@@ -73,7 +28,7 @@ const DATE_PICKER_TEST_APP: &str = r#"
         })
     }
 "#;
-const M2_COMPOSITES_APP: &str = r#"
+const COMPOSITES_APP: &str = r#"
     import "components/form_field" as form_field;
     import "components/collapsible" as collapsible;
     import "components/accordion" as accordion;
@@ -109,64 +64,12 @@ const M2_COMPOSITES_APP: &str = r#"
         ])
     }
 "#;
-const DEFAULT_LIGHT: &str = include_str!("../../../registry/themes/default_light.rhai");
-const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
-const TOKYO_NIGHT: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
-const TOKYO_STORM: &str = include_str!("../../../registry/themes/tokyo_storm.rhai");
-const CATPPUCCIN_LATTE: &str = include_str!("../../../registry/themes/catppuccin_latte.rhai");
-const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
-const ETHEREAL: &str = include_str!("../../../registry/themes/ethereal.rhai");
-const EVERFOREST: &str = include_str!("../../../registry/themes/everforest.rhai");
-const GRUVBOX: &str = include_str!("../../../registry/themes/gruvbox.rhai");
-const HACKERMAN: &str = include_str!("../../../registry/themes/hackerman.rhai");
-const NORD: &str = include_str!("../../../registry/themes/nord.rhai");
-const RETRO_82: &str = include_str!("../../../registry/themes/retro_82.rhai");
-const HERMARCHY: &str = include_str!("../../../registry/themes/hermarchy.rhai");
-const FUTURISM: &str = include_str!("../../../registry/themes/futurism.rhai");
-const AETHERIA: &str = include_str!("../../../registry/themes/aetheria.rhai");
 
-const BUNDLED_THEMES: &[(&str, &str)] = &[
-    ("default_light", DEFAULT_LIGHT),
-    ("default_dark", DEFAULT_DARK),
-    ("tokyo_night", TOKYO_NIGHT),
-    ("tokyo_storm", TOKYO_STORM),
-    ("catppuccin_latte", CATPPUCCIN_LATTE),
-    ("catppuccin_mocha", CATPPUCCIN_MOCHA),
-    ("ethereal", ETHEREAL),
-    ("everforest", EVERFOREST),
-    ("gruvbox", GRUVBOX),
-    ("hackerman", HACKERMAN),
-    ("nord", NORD),
-    ("retro_82", RETRO_82),
-    ("hermarchy", HERMARCHY),
-    ("futurism", FUTURISM),
-    ("aetheria", AETHERIA),
-];
-
-fn pagination_source() -> EmbeddedScriptSource {
-    EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/pagination").unwrap(),
-            PAGINATION.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
-        (
-            ModuleId::parse("components/select").unwrap(),
-            SELECT.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            COMBOBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]))
+/// The bundled English locale, as the date and pagination components read it.
+fn english(engine: &RuntimeEngine) -> gpui_rhai::LocaleManager {
+    let locale =
+        gpui_rhai::load_locale_source(engine.engine(), "en.rhai", registry::EN_LOCALE).unwrap();
+    gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap()
 }
 
 fn contains_global_call(source: &str, name: &str) -> bool {
@@ -189,16 +92,7 @@ fn official_registry_has_no_privileged_component_constructors() {
         "toast_host",
         "virtual_list",
     ];
-    for (id, source) in [
-        ("combobox", COMBOBOX),
-        ("select", SELECT),
-        ("date_picker", DATE_PICKER),
-        ("table", TABLE),
-        ("pagination", PAGINATION),
-        ("menu", MENU),
-        ("tabs", TABS),
-        ("toast", TOAST),
-    ] {
+    for (id, source) in official_modules() {
         for constructor in &forbidden {
             assert!(
                 !contains_global_call(source, constructor),
@@ -206,75 +100,6 @@ fn official_registry_has_no_privileged_component_constructors() {
             );
         }
     }
-}
-
-fn combobox_source() -> EmbeddedScriptSource {
-    EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            COMBOBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]))
-}
-
-fn accessible_name_contract_source() -> EmbeddedScriptSource {
-    EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/textarea").unwrap(),
-            TEXTAREA.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/divider").unwrap(),
-            DIVIDER.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            COMBOBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/select").unwrap(),
-            SELECT.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/date_picker").unwrap(),
-            DATE_PICKER.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/pagination").unwrap(),
-            PAGINATION.to_owned(),
-        ),
-        (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-        (
-            ModuleId::parse("components/context_menu").unwrap(),
-            CONTEXT_MENU.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/popover").unwrap(),
-            POPOVER.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/tooltip").unwrap(),
-            TOOLTIP.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/progress").unwrap(),
-            PROGRESS.to_owned(),
-        ),
-    ]))
 }
 
 fn target_handler(node: &gpui_rhai::UiNode, event: &str) -> (ScriptCallback, UiValue) {
@@ -595,18 +420,14 @@ define_component(#{
 fn DocProbe(props) { render_component("components/doc_probe", props) }
 fn render_DocProbe(ctx, props) { text("probe") }
 "#;
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(id.clone(), probe.to_owned())]));
-    let resolver = RestrictedModuleResolver::from_source(&source).unwrap();
-    let mut runtime = RuntimeEngine::new();
-    runtime.set_module_resolver(resolver);
-    runtime
-        .compile_self_contained_named(
-            "ui/main.rhai",
-            "import \"components/doc_probe\" as probe;\nfn view(ctx) { text(\"ok\") }\n",
-        )
-        .unwrap();
-    let registry = runtime.component_exports().unwrap();
-    let schema = &registry.get(&id).unwrap().schema;
+    let mut runtime = engine_with([(id.as_str(), probe)]);
+    compile(
+        &mut runtime,
+        "ui/main.rhai",
+        "import \"components/doc_probe\" as probe;\nfn view(ctx) { text(\"ok\") }\n",
+    );
+    let exports = runtime.component_exports().unwrap();
+    let schema = &exports.get(&id).unwrap().schema;
     let items = &schema.props["items"];
     assert_eq!(items.doc.as_deref(), Some("Rows to show."));
     let gpui_rhai::ValueSchema::Array { items: row, .. } = &items.schema else {
@@ -631,23 +452,16 @@ fn render_DocProbe(ctx, props) { text("probe") }
 }
 
 #[test]
-fn official_m0_components_compile_export_and_render_together() {
-    let button_id = ModuleId::parse("components/button").unwrap();
-    let label_id = ModuleId::parse("components/label").unwrap();
-    assert_eq!(parse_component_header(BUTTON).unwrap().id, button_id);
-    assert_eq!(parse_component_header(LABEL).unwrap().id, label_id);
-
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (button_id, BUTTON.to_owned()),
-        (label_id, LABEL.to_owned()),
-    ]));
-    let resolver = RestrictedModuleResolver::from_source(&source).unwrap();
-    let mut runtime = RuntimeEngine::new();
-    runtime.set_module_resolver(resolver);
-    let compiled = runtime
-        .compile_self_contained_named(
-            "ui/main.rhai",
-            r#"
+fn button_and_label_compile_export_and_render_together() {
+    for id in ["components/button", "components/label"] {
+        assert_eq!(
+            parse_component_header(official_source(id)).unwrap().id,
+            ModuleId::parse(id).unwrap()
+        );
+    }
+    let (mut runtime, compiled) = compile_official(
+        "ui/main.rhai",
+        r#"
                 import "components/button" as button;
                 import "components/label" as label;
 
@@ -664,16 +478,8 @@ fn official_m0_components_compile_export_and_render_together() {
                     ])
                 }
             "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
     );
-    let root = runtime.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut runtime, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("official component composition did not return a container");
     };
@@ -705,16 +511,9 @@ fn official_m0_components_compile_export_and_render_together() {
 
 #[test]
 fn official_components_validate_props_and_merge_standard_style_overrides() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/button").unwrap(),
-        BUTTON.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/style_override.rhai",
-            r#"
+    let (mut engine, compiled) = compile_official(
+        "ui/style_override.rhai",
+        r#"
                 import "components/button" as button;
                 fn view() {
                     button::Button(#{
@@ -725,8 +524,7 @@ fn official_components_validate_props_and_merge_standard_style_overrides() {
                     })
                 }
             "#,
-        )
-        .unwrap();
+    );
     let root = engine.render(&compiled).unwrap();
     assert_eq!(
         root.style().base.width,
@@ -738,29 +536,21 @@ fn official_components_validate_props_and_merge_standard_style_overrides() {
     );
     assert!(matches!(root.kind(), UiNodeKind::Box { children } if children.len() == 3));
 
-    let mut rejecting_engine = RuntimeEngine::new();
-    rejecting_engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let invalid = rejecting_engine
-        .compile_self_contained_named(
-            "ui/invalid_button.rhai",
-            r#"
+    let (mut rejecting_engine, invalid) = compile_official(
+        "ui/invalid_button.rhai",
+        r#"
                 import "components/button" as button;
                 fn view() { button::Button(#{ text: "Save", unknown: true }) }
             "#,
-        )
-        .unwrap();
+    );
     assert!(rejecting_engine.render(&invalid).is_err());
 }
 
 #[test]
 fn interactive_component_contracts_require_explicit_accessible_names() {
-    let source = accessible_name_contract_source();
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    engine
-        .compile_self_contained_named(
-            "ui/accessible_names.rhai",
-            r#"
+    let (engine, _) = compile_official(
+        "ui/accessible_names.rhai",
+        r#"
                 import "components/input" as input;
                 import "components/textarea" as textarea;
                 import "components/combobox" as combobox;
@@ -774,9 +564,8 @@ fn interactive_component_contracts_require_explicit_accessible_names() {
                 import "components/progress" as progress;
                 fn view() { text("ok") }
             "#,
-        )
-        .unwrap();
-    let registry = engine.component_exports().unwrap();
+    );
+    let exports = engine.component_exports().unwrap();
     for id in [
         "components/input",
         "components/textarea",
@@ -790,7 +579,7 @@ fn interactive_component_contracts_require_explicit_accessible_names() {
         "components/tooltip",
         "components/progress",
     ] {
-        let definition = registry
+        let definition = exports
             .get(&ModuleId::parse(id).unwrap())
             .unwrap_or_else(|| panic!("missing imported component {id}"));
         let label = definition
@@ -808,33 +597,14 @@ fn interactive_component_contracts_require_explicit_accessible_names() {
 
 #[test]
 fn unlabeled_icon_is_decorative_presentation() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/icon").unwrap(),
-        ICON.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/decorative_icon.rhai",
-            r#"
+    let (mut engine, compiled) = compile_official(
+        "ui/decorative_icon.rhai",
+        r#"
                 import "components/icon" as icon;
                 fn view(ctx) { icon::Icon(#{ source: asset("app/check"), size: "sm" }) }
             "#,
-        )
-        .unwrap();
-    let root = engine
-        .render_with_context(
-            &compiled,
-            UiContext::new(
-                Rc::new(RefCell::new(UiRuntimeState::new())),
-                ComponentInstancePath::root("App", "root"),
-                Some("main".to_owned()),
-                ExecutionPhase::Render,
-                BTreeMap::new(),
-            ),
-        )
-        .unwrap();
+    );
+    let root = render(&mut engine, &compiled);
     assert_eq!(
         root.attributes().get("role"),
         Some(&UiValue::String("presentation".to_owned()))
@@ -842,39 +612,26 @@ fn unlabeled_icon_is_decorative_presentation() {
     assert!(!root.attributes().contains_key("label"));
 }
 
-const TOKEN_BASE: &str = include_str!("../../../registry/tokens.rhai");
-
-fn load_bundled(engine: &RuntimeEngine, name: &str, source: &str) -> gpui_rhai::ThemeVariant {
-    let base = gpui_rhai::load_token_base(engine.engine(), "tokens.rhai", TOKEN_BASE).unwrap();
+/// A bundled palette layered over the bundled token base, as an app loads it.
+fn load_bundled(engine: &RuntimeEngine, file: &str, source: &str) -> gpui_rhai::ThemeVariant {
+    let base =
+        gpui_rhai::load_token_base(engine.engine(), "tokens.rhai", registry::TOKEN_BASE_SOURCE)
+            .unwrap();
     gpui_rhai::load_theme_with_layers(
         engine.engine(),
         Some(&base),
-        &format!("{name}.rhai"),
+        file,
         source,
         &gpui_rhai::ThemeTokenOverrides::default(),
     )
-    .unwrap_or_else(|error| panic!("{name}: {error}"))
-}
-
-fn environment(pairs: &[(&str, &str)]) -> gpui_rhai::Environment {
-    pairs.iter().fold(
-        gpui_rhai::Environment::EMPTY,
-        |environment, (name, value)| {
-            environment
-                .with(
-                    gpui_rhai::Symbol::intern(name),
-                    gpui_rhai::Symbol::intern(value),
-                )
-                .unwrap()
-        },
-    )
+    .unwrap_or_else(|error| panic!("{file}: {error}"))
 }
 
 #[test]
 fn official_default_theme_pair_satisfies_one_semantic_contract() {
     let engine = RuntimeEngine::new();
-    let light = load_bundled(&engine, "default_light", DEFAULT_LIGHT);
-    let dark = load_bundled(&engine, "default_dark", DEFAULT_DARK);
+    let light = load_bundled(&engine, "default_light.rhai", registry::DEFAULT_LIGHT_THEME);
+    let dark = load_bundled(&engine, "default_dark.rhai", registry::DEFAULT_THEME);
     assert_eq!(light.family, dark.family);
     assert_eq!(light.mode, gpui_rhai::ThemeMode::Light);
     assert_eq!(dark.mode, gpui_rhai::ThemeMode::Dark);
@@ -909,9 +666,8 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
         ("label", 12.0, 16.0, 400),
         ("code", 13.0, 20.0, 400),
     ];
-    for &(name, source) in BUNDLED_THEMES {
-        let palette =
-            gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
+    for &(name, source) in registry::BUNDLED_THEME_SOURCES {
+        let palette = gpui_rhai::load_theme_source(engine.engine(), name, source).unwrap();
         assert!(
             palette.tokens.spacing.is_empty()
                 && palette.tokens.radii.is_empty()
@@ -976,8 +732,7 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
 fn field_text_clears_a_capsule_end_in_every_corner_style() {
     use gpui_rhai::{ColorResolver, Length};
     let engine = RuntimeEngine::new();
-    let (name, source) = BUNDLED_THEMES[0];
-    let theme = load_bundled(&engine, name, source);
+    let theme = load_bundled(&engine, "default_light.rhai", registry::DEFAULT_LIGHT_THEME);
     let pixels = |token: &str, pairs: &[(&str, &str)]| match theme
         .resolve_length_in(Length::token(token).unwrap(), &environment(pairs))
     {
@@ -1042,7 +797,7 @@ fn hue_distance(left: f64, right: f64) -> f64 {
 #[test]
 fn bundled_palettes_meet_the_theme_authoring_constraints() {
     let engine = RuntimeEngine::new();
-    for &(name, source) in BUNDLED_THEMES {
+    for &(name, source) in registry::BUNDLED_THEME_SOURCES {
         let theme = load_bundled(&engine, name, source);
         let color = |token: &str| theme.tokens.color(token).unwrap();
         for foreground in ["text_primary", "text_muted"] {
@@ -1124,7 +879,7 @@ fn bundled_palettes_meet_the_theme_authoring_constraints() {
 #[test]
 fn the_token_base_materializes_complete_derived_palettes() {
     let engine = RuntimeEngine::new();
-    for &(name, source) in BUNDLED_THEMES {
+    for &(name, source) in registry::BUNDLED_THEME_SOURCES {
         let theme = load_bundled(&engine, name, source);
         for token in [
             "syntax.comment",
@@ -1182,168 +937,159 @@ fn the_token_base_materializes_complete_derived_palettes() {
     }
 }
 
-#[test]
-fn official_component_sources_reject_decorative_visual_drift() {
-    for (id, source) in [
-        ("button", BUTTON),
-        ("icon_button", ICON_BUTTON),
-        ("checkbox", CHECKBOX),
-        ("radio", RADIO),
-        ("switch", SWITCH),
-        ("tag", TAG),
-        ("input", INPUT),
-        ("textarea", TEXTAREA),
-        ("combobox", COMBOBOX),
-        ("select", SELECT),
-        ("date_picker", DATE_PICKER),
-        ("table", TABLE),
-        ("pagination", PAGINATION),
-        ("dialog", DIALOG),
-        ("popover", POPOVER),
-        ("tooltip", TOOLTIP),
-        ("menu", MENU),
-        ("toast", TOAST),
-        ("tabs", TABS),
-        ("accordion", ACCORDION),
-        ("alert", ALERT),
-        ("alert_dialog", ALERT_DIALOG),
-        ("badge", BADGE),
-        ("button_group", BUTTON_GROUP),
-        ("card", CARD),
-        ("empty", EMPTY),
-        ("group_box", GROUP_BOX),
-        ("input_group", INPUT_GROUP),
-        ("kbd", KBD),
-        ("toggle", TOGGLE),
-        ("toggle_group", TOGGLE_GROUP),
-        ("slider", SLIDER),
-        ("context_menu", CONTEXT_MENU),
-        ("sheet", SHEET),
-        ("command", COMMAND),
-        ("command_dialog", COMMAND_DIALOG),
-        ("spinner", SPINNER),
-        ("scroll_area", SCROLL_AREA),
-        ("title_bar", TITLE_BAR),
-        ("status_bar", STATUS_BAR),
-    ] {
-        for prohibited in [
-            "shadow(",
-            "linear_gradient(",
-            "radius(px(10",
-            "radius(px(12",
-            "font_size(px(",
-            "line_height(px(",
-        ] {
-            assert!(
-                !source.contains(prohibited),
-                "official component {id} contains prohibited visual pattern {prohibited}"
-            );
-        }
-        for line in source.lines().filter(|line| line.contains("rgba(0x")) {
-            assert!(
-                line.contains("rgba(0x00000000)"),
-                "official component {id} hard-codes a palette color: {line}"
-            );
-        }
-        for line in source.lines().filter(|line| {
-            [
-                ".padding(px(",
-                ".padding_x(px(",
-                ".padding_y(px(",
-                ".padding_start(px(",
-                ".padding_end(px(",
-                ".gap(px(",
-                ".margin(px(",
-            ]
-            .iter()
-            .any(|pattern| line.contains(pattern))
-        }) {
-            let allowed_structure = (id == "icon_button" && line.contains(".padding(px(0))"))
-                || (id == "switch" && line.contains(".padding(px(2))"))
-                || (id == "command_dialog"
-                    && (line.contains(".border(px(0)).padding(px(0))")
-                        || line.contains(".gap(px(0))")))
-                || (id == "title_bar"
-                    && (line.contains("gap(px(0))") || line.contains("padding_start(px(inset))")));
-            assert!(
-                allowed_structure,
-                "official component {id} hard-codes visual spacing: {line}"
-            );
-        }
+/// Asserts that no state of `node` or its descendants sets a font weight.
+fn assert_no_font_weight(node: &gpui_rhai::UiNode) {
+    let style = node.style();
+    for state in [
+        Some(&style.base),
+        style.hover.as_ref(),
+        style.active.as_ref(),
+        style.focus.as_ref(),
+        style.group_focus.as_ref(),
+        style.disabled.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        assert_eq!(state.font_weight, None, "{node:?}");
+    }
+    if let UiNodeKind::Box { children } = node.kind() {
+        children.iter().for_each(assert_no_font_weight);
     }
 }
 
 #[test]
-fn tabs_and_table_use_semantic_theme_state_surfaces() {
-    // Tabs: one tonal track, a raised thumb inset by xxs that carries the list focus,
-    // control type at a single weight so widths never jitter.
-    assert!(TABS.contains("padding(theme_spacing(\"xxs\"))"));
-    assert!(
-        TABS.contains("theme_radius(if orientation == \"vertical\" { \"lg\" } else { \"md\" })")
+fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
+    use gpui_rhai::{CornerLengths, EdgeLengths, Length};
+    let (mut engine, compiled) = compile_official(
+        "ui/state_surfaces.rhai",
+        r#"
+            import "components/tabs" as tabs;
+            import "components/table" as table;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                let items = [
+                    #{ value: "general", label: "General" },
+                    #{ value: "advanced", label: "Advanced" }
+                ];
+                column([
+                    tabs::Tabs(#{ value: "general", label: "Settings", tabs: items,
+                        panel: false, on_change: Fn("changed") }),
+                    tabs::Tabs(#{ value: "general", label: "Sections", tabs: items,
+                        orientation: "vertical", panel: false, on_change: Fn("changed") }),
+                    table::Table(#{
+                        key: "users", label: "Users", row_key: "id", height: 120,
+                        rows: [#{ id: "a", name: "Ada" }, #{ id: "b", name: "Lin" }],
+                        columns: [#{ key: "name", title: "Name",
+                            width: #{ kind: "fixed", value: 120 } }],
+                        selection_mode: "single", selected_keys: ["a"],
+                        part_styles: #{
+                            indicator_bar: style().background(theme_color("danger")),
+                            row_selected: style().text_color(theme_color("accent"))
+                        }
+                    })
+                ])
+            }
+        "#,
     );
-    assert!(TABS.contains("background(theme_color(\"surface_hover\"))"));
-    assert!(TABS.contains("group_focus(style().border_color(theme_color(\"focus_ring\")))"));
-    assert!(TABS.contains("typography(\"control\")"));
-    assert!(!TABS.contains("font_weight("));
-    // Table: label-voice header, metrics.row rows, the selection tint and indicator bar.
-    assert!(TABLE.contains("theme_color(\"table.selection\")"));
-    assert!(TABLE.contains("typography(\"label\")"));
-    assert!(TABLE.contains("height(theme_length(\"metrics.row\"))"));
-    assert!(TABLE.contains("ctx.component_style(\"indicator_bar\""));
-    assert!(TABLE.contains("if item.selected { \"row_selected\" }"));
+    let lifecycle = mount(&mut engine, compiled, &new_runtime());
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("state surface specimen must render a column");
+    };
+    let token = |name: &str| Some(ColorValue::Token(name.to_owned()));
+    let row = Length::token("metrics.row").unwrap();
+
+    // Tabs: one tonal track inset by xxs, rounded by its orientation's role; a raised
+    // thumb that carries the list focus; control type at one weight so widths never
+    // jitter.
+    for (tabs, corner) in [(&children[0], "md"), (&children[1], "lg")] {
+        assert_eq!(
+            tabs.attributes().get("role"),
+            Some(&UiValue::String("tablist".to_owned()))
+        );
+        let track = &tabs.style().base;
+        assert_eq!(track.background, token("surface_hover"));
+        assert_eq!(
+            track.padding,
+            EdgeLengths::all(Length::theme_spacing("xxs").unwrap())
+        );
+        assert_eq!(
+            track.radii,
+            CornerLengths::all(Length::theme_radius(corner).unwrap())
+        );
+        let UiNodeKind::Box { children: slots } = tabs.kind() else {
+            panic!("Tabs list must hold its tab slots");
+        };
+        for slot in slots {
+            assert_eq!(slot.style().base.typography.as_deref(), Some("control"));
+            assert_no_font_weight(slot);
+        }
+        let UiNodeKind::Box { children: selected } = slots[0].kind() else {
+            panic!("the selected tab must hold its thumb");
+        };
+        let thumb = selected[0].style();
+        assert_eq!(thumb.base.background, token("surface_raised"));
+        assert_eq!(
+            thumb.group_focus.as_ref().unwrap().border_color,
+            token("focus_ring")
+        );
+    }
+
+    // Table: label-voice header, metrics.row rows, the selection tint and the
+    // indicator bar, each a part the caller can restyle.
+    let UiNodeKind::Box { children: table } = children[2].kind() else {
+        panic!("Table must be a Box composition");
+    };
+    assert_eq!(table[0].style().base.height, Some(row.into()));
+    let UiNodeKind::Box { children: headers } = table[0].kind() else {
+        panic!("Table header must be a row");
+    };
+    assert_eq!(headers[0].style().base.typography.as_deref(), Some("label"));
+    assert_eq!(headers[0].style().base.height, Some(row.into()));
+    let UiNodeKind::VirtualCollection { spec } = table[1].kind() else {
+        panic!("Table body must be a virtual collection");
+    };
+    let (selected, unselected) = (&spec.realized[&0], &spec.realized[&1]);
+    for row_node in [selected, unselected] {
+        assert_eq!(row_node.style().base.height, Some(row.into()));
+    }
+    assert_eq!(selected.style().base.background, token("table.selection"));
+    assert_eq!(selected.style().base.text_color, token("accent"));
+    assert_eq!(unselected.style().base.text_color, token("text_primary"));
+    let UiNodeKind::Box { children: cells } = selected.kind() else {
+        panic!("Table row must be a row");
+    };
+    let bar = &cells[cells.len() - 2].style().base;
+    assert_eq!(bar.width, Some(Length::Pixels(2.0).into()));
+    assert_eq!(bar.background, token("danger"));
 }
 
 #[test]
 fn window_bars_are_source_owned_compositions_without_native_authority() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/title_bar").unwrap(),
-            TITLE_BAR.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/status_bar").unwrap(),
-            STATUS_BAR.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/window_bars.rhai",
-            r#"
-                import "components/title_bar" as title_bar;
-                import "components/status_bar" as status_bar;
-                fn drag(ctx, payload) { handled() }
-                fn view(ctx) {
-                    let breadcrumb = row([text("Workspace").with_style(style().font_weight(700)),
-                        text("/ panel").with_style(style().text_color(theme_color("text_muted")))])
-                        .with_key("breadcrumb").on("pointer_down", Fn("drag"))
-                        .accessibility_role("group").accessibility_label("Workspace breadcrumb");
-                    column([
-                        title_bar::TitleBar(#{ label: "Workbench", title: breadcrumb,
-                            subtitle: text("main"), inset_start: 70,
-                            center: [text("Editor")], end: [text("Run")] }),
-                        text("Content"),
-                        status_bar::StatusBar(#{ label: "Editor status",
-                            start: [text("Ready")], center: [text("main")],
-                            end: [text("UTF-8")] })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let root = engine
-        .render_with_context(
-            &compiled,
-            UiContext::new(
-                Rc::new(RefCell::new(UiRuntimeState::new())),
-                ComponentInstancePath::root("App", "root"),
-                Some("main".to_owned()),
-                ExecutionPhase::Render,
-                BTreeMap::new(),
-            ),
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/window_bars.rhai",
+        r#"
+            import "components/title_bar" as title_bar;
+            import "components/status_bar" as status_bar;
+            fn drag(ctx, payload) { handled() }
+            fn view(ctx) {
+                let breadcrumb = row([text("Workspace").with_style(style().font_weight(700)),
+                    text("/ panel").with_style(style().text_color(theme_color("text_muted")))])
+                    .with_key("breadcrumb").on("pointer_down", Fn("drag"))
+                    .accessibility_role("group").accessibility_label("Workspace breadcrumb");
+                column([
+                    title_bar::TitleBar(#{ label: "Workbench", title: breadcrumb,
+                        subtitle: text("main"), inset_start: 70,
+                        center: [text("Editor")], end: [text("Run")] }),
+                    text("Content"),
+                    status_bar::StatusBar(#{ label: "Editor status",
+                        start: [text("Ready")], center: [text("main")],
+                        end: [text("UTF-8")] })
+                ])
+            }
+        "#,
+    );
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("window bar specimen must render a column");
     };
@@ -1372,109 +1118,49 @@ fn window_bars_are_source_owned_compositions_without_native_authority() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn public_launch_static_components_compile_and_compose() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/alert").unwrap(),
-            ALERT.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/alert_dialog").unwrap(),
-            ALERT_DIALOG.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/badge").unwrap(),
-            BADGE.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/button_group").unwrap(),
-            BUTTON_GROUP.to_owned(),
-        ),
-        (ModuleId::parse("components/card").unwrap(), CARD.to_owned()),
-        (
-            ModuleId::parse("components/empty").unwrap(),
-            EMPTY.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/group_box").unwrap(),
-            GROUP_BOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input_group").unwrap(),
-            INPUT_GROUP.to_owned(),
-        ),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/dialog").unwrap(),
-            DIALOG.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/public_launch_static_components.rhai",
-            r#"
-                import "components/alert" as alert;
-                import "components/alert_dialog" as alert_dialog;
-                import "components/badge" as badge;
-                import "components/button" as button;
-                import "components/button_group" as button_group;
-                import "components/card" as card;
-                import "components/empty" as empty;
-                import "components/group_box" as group_box;
-                import "components/input" as input;
-                import "components/input_group" as input_group;
-                import "components/kbd" as kbd;
-                fn ignored(ctx, value) { () }
-                fn view(ctx) {
-                    let primary = button::Button(#{ text: "Save", on_click: Fn("ignored") });
-                    let secondary = button::Button(#{ text: "Cancel", variant: "secondary", on_click: Fn("ignored") });
-                    column([
-                        alert::Alert(#{ title: "Saved", description: "Changes are live.",
-                            variant: "success", actions: [secondary] }),
-                        alert_dialog::AlertDialog(#{ key: "confirm", open: false,
-                            title: "Delete item?", description: "This cannot be undone.",
-                            on_confirm: Fn("ignored"), on_cancel: Fn("ignored"),
-                            on_open_change: Fn("ignored") }),
-                        badge::Badge(#{ text: "Ready", variant: "success", dot: true }),
-                        button_group::ButtonGroup(#{ label: "Actions", buttons: [primary, secondary] }),
-                        card::Card(#{ header: text("Profile"), content: text("Ada"),
-                            footer: text("Updated now"), variant: "block" }),
-                        empty::Empty(#{ title: "No projects", description: "Create one to begin.",
-                            actions: [primary] }),
-                        group_box::GroupBox(#{ label: "Sync", description: "Cloud settings",
-                            content: text("Enabled") }),
-                        input_group::InputGroup(#{ label: "Search", prefix: text("⌕"),
-                            suffix: kbd::Kbd(#{ text: "⌘ K" }),
-                            control: input::Input(#{ key: "search", label: "Search", value: "", placeholder: "Search" }) }),
-                        kbd::Kbd(#{ text: "⌘ K", label: "Command K" })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let root = engine
-        .render_with_context(
-            &compiled,
-            UiContext::new(
-                Rc::new(RefCell::new(UiRuntimeState::new())),
-                ComponentInstancePath::root("App", "root"),
-                Some("main".to_owned()),
-                ExecutionPhase::Render,
-                BTreeMap::new(),
-            ),
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/public_launch_static_components.rhai",
+        r#"
+            import "components/alert" as alert;
+            import "components/alert_dialog" as alert_dialog;
+            import "components/badge" as badge;
+            import "components/button" as button;
+            import "components/button_group" as button_group;
+            import "components/card" as card;
+            import "components/empty" as empty;
+            import "components/group_box" as group_box;
+            import "components/input" as input;
+            import "components/input_group" as input_group;
+            import "components/kbd" as kbd;
+            fn ignored(ctx, value) { () }
+            fn view(ctx) {
+                let primary = button::Button(#{ text: "Save", on_click: Fn("ignored") });
+                let secondary = button::Button(#{ text: "Cancel", variant: "secondary", on_click: Fn("ignored") });
+                column([
+                    alert::Alert(#{ title: "Saved", description: "Changes are live.",
+                        variant: "success", actions: [secondary] }),
+                    alert_dialog::AlertDialog(#{ key: "confirm", open: false,
+                        title: "Delete item?", description: "This cannot be undone.",
+                        on_confirm: Fn("ignored"), on_cancel: Fn("ignored"),
+                        on_open_change: Fn("ignored") }),
+                    badge::Badge(#{ text: "Ready", variant: "success", dot: true }),
+                    button_group::ButtonGroup(#{ label: "Actions", buttons: [primary, secondary] }),
+                    card::Card(#{ header: text("Profile"), content: text("Ada"),
+                        footer: text("Updated now"), variant: "block" }),
+                    empty::Empty(#{ title: "No projects", description: "Create one to begin.",
+                        actions: [primary] }),
+                    group_box::GroupBox(#{ label: "Sync", description: "Cloud settings",
+                        content: text("Enabled") }),
+                    input_group::InputGroup(#{ label: "Search", prefix: text("⌕"),
+                        suffix: kbd::Kbd(#{ text: "⌘ K" }),
+                        control: input::Input(#{ key: "search", label: "Search", value: "", placeholder: "Search" }) }),
+                    kbd::Kbd(#{ text: "⌘ K", label: "Command K" })
+                ])
+            }
+        "#,
+    );
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("public launch static specimen must render a column");
     };
@@ -1483,28 +1169,22 @@ fn public_launch_static_components_compile_and_compose() {
 
 #[test]
 fn official_icon_uses_only_logical_asset_and_opaque_image_handle() {
-    let icon_id = ModuleId::parse("components/icon").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(icon_id, ICON.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/icon_test.rhai",
-            r#"
-                import "components/icon" as icon;
-                fn init(ctx) {
-                    ctx.set_state("image", ctx.load_image(asset("app/check")));
-                }
-                fn view(ctx) {
-                    icon::Icon(#{
-                        source: ctx.get_state("image"),
-                        size: "sm",
-                        label: "Complete"
-                    })
-                }
-            "#,
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/icon_test.rhai",
+        r#"
+            import "components/icon" as icon;
+            fn init(ctx) {
+                ctx.set_state("image", ctx.load_image(asset("app/check")));
+            }
+            fn view(ctx) {
+                icon::Icon(#{
+                    source: ctx.get_state("image"),
+                    size: "sm",
+                    label: "Complete"
+                })
+            }
+        "#,
+    );
     let runtime_state = UiRuntimeState::new();
     runtime_state
         .assets
@@ -1514,12 +1194,12 @@ fn official_icon_uses_only_logical_asset_and_opaque_image_handle() {
                 "check".to_owned(),
                 AssetData {
                     mime_type: "image/svg+xml".to_owned(),
-                    bytes: include_bytes!("../../../registry/assets/icons/check.svg").to_vec(),
+                    bytes: registry::CHECK_SVG.as_bytes().to_vec(),
                 },
             )])),
         )
         .unwrap();
-    let runtime_state = Rc::new(RefCell::new(runtime_state));
+    let runtime = Rc::new(RefCell::new(runtime_state));
     let state_schema = ComponentStateSchema::new(BTreeMap::from([(
         "image".to_owned(),
         StateField::new(
@@ -1530,15 +1210,7 @@ fn official_icon_uses_only_logical_asset_and_opaque_image_handle() {
         ),
     )]))
     .unwrap();
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        runtime_state,
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &state_schema,
-    )
-    .unwrap();
+    let mut lifecycle = lifecycle_with_schema(compiled, &runtime, &state_schema);
     let root = lifecycle.start(&mut engine).unwrap();
     assert!(matches!(
         root.kind(),
@@ -1550,25 +1222,19 @@ fn official_icon_uses_only_logical_asset_and_opaque_image_handle() {
 
 #[test]
 fn official_icon_selects_explicit_rtl_resource_pair() {
-    let icon_id = ModuleId::parse("components/icon").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(icon_id, ICON.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/directional_icon_test.rhai",
-            r#"
-                import "components/icon" as icon;
-                fn view(ctx) {
-                    icon::Icon(#{
-                        source: ctx.get_state("ltr"),
-                        rtl_source: ctx.get_state("rtl"),
-                        label: "Forward"
-                    })
-                }
-            "#,
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/directional_icon_test.rhai",
+        r#"
+            import "components/icon" as icon;
+            fn view(ctx) {
+                icon::Icon(#{
+                    source: ctx.get_state("ltr"),
+                    rtl_source: ctx.get_state("rtl"),
+                    label: "Forward"
+                })
+            }
+        "#,
+    );
     let state_schema = ComponentStateSchema::new(BTreeMap::from([
         (
             "ltr".to_owned(),
@@ -1590,16 +1256,7 @@ fn official_icon_selects_explicit_rtl_resource_pair() {
         ),
     ]))
     .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "main"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &state_schema,
-    )
-    .unwrap();
+    let mut lifecycle = lifecycle_with_schema(compiled, &new_runtime(), &state_schema);
     let root = lifecycle.start(&mut engine).unwrap();
     assert!(matches!(
         root.kind(),
@@ -1611,21 +1268,18 @@ fn official_icon_selects_explicit_rtl_resource_pair() {
 }
 
 #[test]
-fn m1_palette_adaptations_implement_the_semantic_contract() {
+fn tokyo_night_and_catppuccin_palettes_form_theme_families() {
     let engine = RuntimeEngine::new();
-    let tokyo_night =
-        gpui_rhai::load_theme_source(engine.engine(), "tokyo_night.rhai", TOKYO_NIGHT).unwrap();
-    let tokyo_storm =
-        gpui_rhai::load_theme_source(engine.engine(), "tokyo_storm.rhai", TOKYO_STORM).unwrap();
+    let load = |file: &str, source: &str| {
+        gpui_rhai::load_theme_source(engine.engine(), file, source).unwrap()
+    };
+    let tokyo_night = load("tokyo_night.rhai", registry::TOKYO_NIGHT_THEME);
+    let tokyo_storm = load("tokyo_storm.rhai", registry::TOKYO_STORM_THEME);
     assert_eq!(tokyo_night.family, "Tokyo Night");
     assert_eq!(tokyo_storm.family, "Tokyo Night");
 
-    let latte =
-        gpui_rhai::load_theme_source(engine.engine(), "catppuccin_latte.rhai", CATPPUCCIN_LATTE)
-            .unwrap();
-    let mocha =
-        gpui_rhai::load_theme_source(engine.engine(), "catppuccin_mocha.rhai", CATPPUCCIN_MOCHA)
-            .unwrap();
+    let latte = load("catppuccin_latte.rhai", registry::CATPPUCCIN_LATTE_THEME);
+    let mocha = load("catppuccin_mocha.rhai", registry::CATPPUCCIN_MOCHA_THEME);
     gpui_rhai::ThemeFamily {
         name: "Catppuccin".to_owned(),
         variants: BTreeMap::from([("Latte".to_owned(), latte), ("Mocha".to_owned(), mocha)]),
@@ -1638,37 +1292,24 @@ fn m1_palette_adaptations_implement_the_semantic_contract() {
 
 #[test]
 fn official_input_wraps_keyed_native_text_input_primitive() {
-    let input_id = ModuleId::parse("components/input").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(input_id, INPUT.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/input_test.rhai",
-            r#"
-                import "components/input" as input;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    input::Input(#{
-                        key: "name",
-                        label: "Name",
-                        value: "Alice",
-                        placeholder: "Name",
-                        read_only: true,
-                        on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/input_test.rhai",
+        r#"
+            import "components/input" as input;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                input::Input(#{
+                    key: "name",
+                    label: "Name",
+                    value: "Alice",
+                    placeholder: "Name",
+                    read_only: true,
+                    on_change: Fn("changed")
+                })
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Custom { primitive } = root.kind() else {
         panic!("Input must wrap the native TextInput primitive");
     };
@@ -1682,34 +1323,21 @@ fn official_input_wraps_keyed_native_text_input_primitive() {
 
 #[test]
 fn official_textarea_wraps_independent_multiline_primitive() {
-    let textarea_id = ModuleId::parse("components/textarea").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(textarea_id, TEXTAREA.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/textarea_test.rhai",
-            r#"
-                import "components/textarea" as textarea;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    textarea::Textarea(#{
-                        key: "notes", label: "Notes", value: "Line one\nLine two",
-                        min_rows: 2, max_rows: 6, max_length: 100,
-                        on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/textarea_test.rhai",
+        r#"
+            import "components/textarea" as textarea;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                textarea::Textarea(#{
+                    key: "notes", label: "Notes", value: "Line one\nLine two",
+                    min_rows: 2, max_rows: 6, max_length: 100,
+                    on_change: Fn("changed")
+                })
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("Textarea must render its source-owned root wrapper");
     };
@@ -1737,32 +1365,19 @@ fn official_textarea_wraps_independent_multiline_primitive() {
 
 #[test]
 fn official_divider_is_typed_decorative_layout() {
-    let divider_id = ModuleId::parse("components/divider").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(divider_id, DIVIDER.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/divider_test.rhai",
-            r#"
-                import "components/divider" as divider;
-                fn view(ctx) {
-                    column([
-                        divider::Divider(#{}),
-                        divider::Divider(#{ orientation: "vertical", thickness: 2 })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/divider_test.rhai",
+        r#"
+            import "components/divider" as divider;
+            fn view(ctx) {
+                column([
+                    divider::Divider(#{}),
+                    divider::Divider(#{ orientation: "vertical", thickness: 2 })
+                ])
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("divider showcase must render a container");
     };
@@ -1783,53 +1398,36 @@ fn official_divider_is_typed_decorative_layout() {
 
 #[test]
 fn official_popover_and_dialog_use_native_overlay_nodes() {
-    let popover_id = ModuleId::parse("components/popover").unwrap();
-    let dialog_id = ModuleId::parse("components/dialog").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (popover_id, POPOVER.to_owned()),
-        (dialog_id, DIALOG.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/overlay_test.rhai",
-            r#"
-                import "components/popover" as popover;
-                import "components/dialog" as dialog;
-                fn set_open(ctx, open) { () }
-                fn view(ctx) {
-                    column([
-                        popover::Popover(#{
-                            key: "help",
-                            label: "Help",
-                            trigger: text("Help"),
-                            content: text("Popover content"),
-                            open: true,
-                            placement: "right",
-                            on_open_change: Fn("set_open")
-                        }),
-                        dialog::Dialog(#{
-                            key: "confirm",
-                            open: true,
-                            title: "Confirm",
-                            content: text("Continue?"),
-                            actions: [text("Cancel"), text("Continue")],
-                            on_open_change: Fn("set_open")
-                        })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/overlay_test.rhai",
+        r#"
+            import "components/popover" as popover;
+            import "components/dialog" as dialog;
+            fn set_open(ctx, open) { () }
+            fn view(ctx) {
+                column([
+                    popover::Popover(#{
+                        key: "help",
+                        label: "Help",
+                        trigger: text("Help"),
+                        content: text("Popover content"),
+                        open: true,
+                        placement: "right",
+                        on_open_change: Fn("set_open")
+                    }),
+                    dialog::Dialog(#{
+                        key: "confirm",
+                        open: true,
+                        title: "Confirm",
+                        content: text("Continue?"),
+                        actions: [text("Cancel"), text("Continue")],
+                        on_open_change: Fn("set_open")
+                    })
+                ])
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("overlay showcase must render a container");
     };
@@ -1850,59 +1448,30 @@ fn official_popover_and_dialog_use_native_overlay_nodes() {
 
 #[test]
 fn context_menu_and_sheet_use_generic_pointer_and_edge_overlay_policies() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/divider").unwrap(),
-            DIVIDER.to_owned(),
-        ),
-        (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-        (
-            ModuleId::parse("components/context_menu").unwrap(),
-            CONTEXT_MENU.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/sheet").unwrap(),
-            SHEET.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/context_menu_sheet.rhai",
-            r#"
-                import "components/context_menu" as context_menu;
-                import "components/sheet" as sheet;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    column([
-                        context_menu::ContextMenu(#{
-                            key: "row-actions", label: "Row actions", trigger: text("Right click"), open: false,
-                            active_value: "copy", items: [
-                                #{ kind: "item", value: "copy", label: "Copy", shortcut: "⌘C" }
-                            ], on_action: Fn("changed"), on_active_change: Fn("changed"),
-                            on_open_change: Fn("changed")
-                        }),
-                        sheet::Sheet(#{ key: "inspector", open: true, side: "end",
-                            title: "Inspector", content: text("Details"),
-                            on_open_change: Fn("changed") })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        runtime,
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/context_menu_sheet.rhai",
+        r#"
+            import "components/context_menu" as context_menu;
+            import "components/sheet" as sheet;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                column([
+                    context_menu::ContextMenu(#{
+                        key: "row-actions", label: "Row actions", trigger: text("Right click"), open: false,
+                        active_value: "copy", items: [
+                            #{ kind: "item", value: "copy", label: "Copy", shortcut: "⌘C" }
+                        ], on_action: Fn("changed"), on_active_change: Fn("changed"),
+                        on_open_change: Fn("changed")
+                    }),
+                    sheet::Sheet(#{ key: "inspector", open: true, side: "end",
+                        title: "Inspector", content: text("Details"),
+                        on_open_change: Fn("changed") })
+                ])
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("overlay policy specimen must render a column");
     };
@@ -1922,66 +1491,32 @@ fn context_menu_and_sheet_use_generic_pointer_and_edge_overlay_policies() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/command").unwrap(),
-            COMMAND.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/command_dialog").unwrap(),
-            COMMAND_DIALOG.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/dialog").unwrap(),
-            DIALOG.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/command.rhai",
-            r#"
-                import "components/command" as command;
-                fn state_schema() { #{ fields: #{
-                    action: #{ schema: #{ type: "string" },
-                        "default": #{ type: "string", value: "" } }
-                } } }
-                fn run(ctx, value) { ctx.set_state("action", value); }
-                fn queried(ctx, value) { () }
-                fn view(ctx) {
-                    column([
-                        command::Command(#{ key: "palette", label: "Commands", query: "opn", active_value: "open",
-                            items: [
-                                #{ value: "new", label: "New file", group: "File", shortcut: "⌘N" },
-                                #{ value: "open", label: "Open file", keywords: ["load document"], group: "File", shortcut: "⌘O" },
-                                #{ value: "close", label: "Close window", group: "Window", disabled: true }
-                            ], on_query_change: Fn("queried"), on_action: Fn("run") })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        path.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/command.rhai",
+        r#"
+            import "components/command" as command;
+            fn state_schema() { #{ fields: #{
+                action: #{ schema: #{ type: "string" },
+                    "default": #{ type: "string", value: "" } }
+            } } }
+            fn run(ctx, value) { ctx.set_state("action", value); }
+            fn queried(ctx, value) { () }
+            fn view(ctx) {
+                column([
+                    command::Command(#{ key: "palette", label: "Commands", query: "opn", active_value: "open",
+                        items: [
+                            #{ value: "new", label: "New file", group: "File", shortcut: "⌘N" },
+                            #{ value: "open", label: "Open file", keywords: ["load document"], group: "File", shortcut: "⌘O" },
+                            #{ value: "close", label: "Close window", group: "Window", disabled: true }
+                        ], on_query_change: Fn("queried"), on_action: Fn("run") })
+                ])
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let path = root_path();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("command test root must render a column");
     };
@@ -2030,51 +1565,27 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
 
 #[test]
 fn command_array_items_keep_text_semantics_with_rich_visual_content() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/command").unwrap(),
-            COMMAND.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/rich_command.rhai",
-            r#"
-                import "components/command" as command;
-                fn view(ctx) {
-                    command::Command(#{
-                        key: "palette", label: "Commands", query: "server",
-                        active_value: "open", items: [#{
-                            value: "open", label: "Open server config",
-                            keywords: ["remote"],
-                            content: row([
-                                text("Server").with_style(style().text_color(theme_color("text_muted"))),
-                                text("Open config")
-                            ]).with_key("rich-command-content")
-                        }]
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        runtime,
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/rich_command.rhai",
+        r#"
+            import "components/command" as command;
+            fn view(ctx) {
+                command::Command(#{
+                    key: "palette", label: "Commands", query: "server",
+                    active_value: "open", items: [#{
+                        value: "open", label: "Open server config",
+                        keywords: ["remote"],
+                        content: row([
+                            text("Server").with_style(style().text_color(theme_color("text_muted"))),
+                            text("Open config")
+                        ]).with_key("rich-command-content")
+                    }]
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let collection = find_virtual_collection(lifecycle.root().unwrap()).unwrap();
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
         unreachable!()
@@ -2098,40 +1609,19 @@ fn command_array_items_keep_text_semantics_with_rich_visual_content() {
 
 #[test]
 fn icon_button_owns_a_square_target_and_selected_icon_state() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/icon_button").unwrap(),
-            ICON_BUTTON.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/icon_button.rhai",
-            r#"
-                import "components/icon_button" as icon_button;
-                fn view(ctx) {
-                    icon_button::IconButton(#{
-                        icon: svg("<svg width='24' height='24' viewBox='0 0 24 24'><path fill='currentColor' d='M4 4L20 20M20 4L4 20'/></svg>"),
-                        label: "Close", size: "md", variant: "ghost", selected: true
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/icon_button.rhai",
+        r#"
+            import "components/icon_button" as icon_button;
+            fn view(ctx) {
+                icon_button::IconButton(#{
+                    icon: svg("<svg width='24' height='24' viewBox='0 0 24 24'><path fill='currentColor' d='M4 4L20 20M20 4L4 20'/></svg>"),
+                    label: "Close", size: "md", variant: "ghost", selected: true
+                })
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let control = gpui_rhai::Length::token("metrics.control").unwrap();
     assert_eq!(root.style().base.width, Some(control.into()));
     assert_eq!(root.style().base.height, Some(control.into()));
@@ -2165,40 +1655,24 @@ fn icon_button_owns_a_square_target_and_selected_icon_state() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/command").unwrap(),
-            COMMAND.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/native_command.rhai",
-            r#"
-                import "components/command" as command;
-                fn state_schema() { #{ fields: #{
-                    action: #{ schema: #{ type: "string" },
-                        "default": #{ type: "string", value: "" } }
-                } } }
-                fn run(ctx, value) { ctx.set_state("action", value); }
-                fn queried(ctx, value) { () }
-                fn view(ctx) {
-                    command::Command(#{ key: "native-palette", label: "Commands", query: "opn", active_value: "open",
-                        items: ctx.get_native_collection("commands"),
-                        on_query_change: Fn("queried"), on_action: Fn("run") })
-                }
-            "#,
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/native_command.rhai",
+        r#"
+            import "components/command" as command;
+            fn state_schema() { #{ fields: #{
+                action: #{ schema: #{ type: "string" },
+                    "default": #{ type: "string", value: "" } }
+            } } }
+            fn run(ctx, value) { ctx.set_state("action", value); }
+            fn queried(ctx, value) { () }
+            fn view(ctx) {
+                command::Command(#{ key: "native-palette", label: "Commands", query: "opn", active_value: "open",
+                    items: ctx.get_native_collection("commands"),
+                    on_query_change: Fn("queried"), on_action: Fn("run") })
+            }
+        "#,
+    );
     let rows = gpui_rhai::NativeCollection::new(
         "id",
         [
@@ -2224,24 +1698,14 @@ fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
         ],
     )
     .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let runtime = new_runtime();
     runtime
         .borrow_mut()
         .native_collections
         .register("commands", rows)
         .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        path.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let path = root_path();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let collection = find_virtual_collection(lifecycle.root().unwrap()).unwrap();
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
         unreachable!()
@@ -2275,25 +1739,11 @@ fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn command_array_and_native_models_share_one_enabled_active_sequence() {
     for native in [false, true] {
         for grouped in [false, true] {
             for disabled_first in [false, true] {
-                let source = EmbeddedScriptSource::new(BTreeMap::from([
-                    (
-                        ModuleId::parse("components/command").unwrap(),
-                        COMMAND.to_owned(),
-                    ),
-                    (
-                        ModuleId::parse("components/input").unwrap(),
-                        INPUT.to_owned(),
-                    ),
-                    (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-                ]));
-                let mut engine = RuntimeEngine::new();
-                engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-                let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+                let runtime = new_runtime();
                 let groups = if grouped {
                     ["G1", "G1", "G2"]
                 } else {
@@ -2348,19 +1798,8 @@ fn command_array_and_native_models_share_one_enabled_active_sequence() {
                             }})
                         }}"#
                 );
-                let compiled = engine
-                    .compile_self_contained_named("command-navigation", &entry)
-                    .unwrap();
-                let mut lifecycle = ScriptLifecycle::new(
-                    compiled,
-                    runtime,
-                    ComponentInstancePath::root("App", "command-navigation"),
-                    None,
-                    BTreeMap::new(),
-                    &ComponentStateSchema::default(),
-                )
-                .unwrap();
-                lifecycle.start(&mut engine).unwrap();
+                let (mut engine, compiled) = compile_official("command-navigation", &entry);
+                let lifecycle = mount(&mut engine, compiled, &runtime);
                 let root = lifecycle.root().unwrap();
                 let UiNodeKind::VirtualCollection { spec } =
                     find_virtual_collection(root).unwrap().kind()
@@ -2401,20 +1840,7 @@ fn command_array_and_native_models_share_one_enabled_active_sequence() {
 fn command_empty_and_all_disabled_models_have_no_navigation_owner() {
     for native in [false, true] {
         for query in ["", "missing"] {
-            let source = EmbeddedScriptSource::new(BTreeMap::from([
-                (
-                    ModuleId::parse("components/command").unwrap(),
-                    COMMAND.to_owned(),
-                ),
-                (
-                    ModuleId::parse("components/input").unwrap(),
-                    INPUT.to_owned(),
-                ),
-                (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-            ]));
-            let mut engine = RuntimeEngine::new();
-            engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-            let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+            let runtime = new_runtime();
             runtime
                 .borrow_mut()
                 .native_collections
@@ -2446,19 +1872,8 @@ fn command_empty_and_all_disabled_models_have_no_navigation_owner() {
                             query: "{query}", active_value: "", items: {items} }})
                     }}"#
             );
-            let compiled = engine
-                .compile_self_contained_named("command-empty-navigation", &entry)
-                .unwrap();
-            let mut lifecycle = ScriptLifecycle::new(
-                compiled,
-                runtime,
-                ComponentInstancePath::root("App", "command-empty-navigation"),
-                None,
-                BTreeMap::new(),
-                &ComponentStateSchema::default(),
-            )
-            .unwrap();
-            lifecycle.start(&mut engine).unwrap();
+            let (mut engine, compiled) = compile_official("command-empty-navigation", &entry);
+            let lifecycle = mount(&mut engine, compiled, &runtime);
             let root = lifecycle.root().unwrap();
             for event in ["key:up", "key:down", "key:home", "key:end", "key:enter"] {
                 assert!(root.handler(event).is_none(), "unexpected handler {event}");
@@ -2479,37 +1894,23 @@ fn command_empty_and_all_disabled_models_have_no_navigation_owner() {
 
 #[test]
 fn code_and_diff_viewers_accept_inline_and_host_owned_documents() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/code_viewer").unwrap(),
-            CODE_VIEWER.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/diff_viewer").unwrap(),
-            DIFF_VIEWER.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/document_viewers.rhai",
-            r#"
-                import "components/code_viewer" as code_viewer;
-                import "components/diff_viewer" as diff_viewer;
-                fn view(ctx) {
-                    column([
-                        code_viewer::CodeViewer(#{ key: "code", source: ctx.get_native_text_document("config"),
-                            label: "Rhai", language: "rhai" }),
-                        diff_viewer::DiffViewer(#{ key: "diff", mode: "split",
-                            left: #{ source: "port = 80\n", label: "Server A", language: "rhai" },
-                            right: #{ source: ctx.get_native_text_document("config"), label: "Server B", language: "rhai" } })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let (mut engine, compiled) = compile_official(
+        "ui/document_viewers.rhai",
+        r#"
+            import "components/code_viewer" as code_viewer;
+            import "components/diff_viewer" as diff_viewer;
+            fn view(ctx) {
+                column([
+                    code_viewer::CodeViewer(#{ key: "code", source: ctx.get_native_text_document("config"),
+                        label: "Rhai", language: "rhai" }),
+                    diff_viewer::DiffViewer(#{ key: "diff", mode: "split",
+                        left: #{ source: "port = 80\n", label: "Server A", language: "rhai" },
+                        right: #{ source: ctx.get_native_text_document("config"), label: "Server B", language: "rhai" } })
+                ])
+            }
+        "#,
+    );
+    let runtime = new_runtime();
     runtime
         .borrow_mut()
         .native_documents
@@ -2518,17 +1919,7 @@ fn code_and_diff_viewers_accept_inline_and_host_owned_documents() {
             gpui_rhai::NativeTextDocument::new("server-b", 1, "port = 443\n").unwrap(),
         )
         .unwrap();
-    let path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        path,
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("document viewer app must render a column");
     };
@@ -2552,66 +1943,45 @@ fn code_and_diff_viewers_accept_inline_and_host_owned_documents() {
 
 #[test]
 fn official_combobox_is_public_overlay_and_virtual_collection_composition() {
-    let combobox_id = ModuleId::parse("components/combobox").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (combobox_id, COMBOBOX.to_owned()),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/combobox_test.rhai",
-            r#"
-                import "components/combobox" as combobox_component;
-                fn selected(ctx, values) { () }
-                fn opened(ctx, open) { () }
-                fn queried(ctx, query) { () }
-                fn view(ctx) {
-                    combobox_component::Combobox(#{
-                        key: "theme",
-                        label: "Theme",
-                        options: [
-                            #{ value: "default", label: "Default" },
-                            #{ value: "tokyo", label: "Tokyo Night", keywords: ["night"] },
-                            #{ value: "mocha", label: "Mocha", disabled: true }
-                        ],
-                        mode: "multiple",
-                        selected: ["default", "tokyo"],
-                        open: true,
-                        searchable: true,
-                        query: "night",
-                        placeholder: "Theme",
-                        search_placeholder: "Search themes",
-                        empty_text: "No themes",
-                        trigger: text("Custom theme trigger")
-                            .with_style(style().background(theme_color("surface_raised"))),
-                        header: text("Theme header"),
-                        footer: text("Theme footer"),
-                        empty: text("Custom empty state"),
-                        part_styles: #{ option: style().height(px(41)) },
-                        on_change: Fn("selected"),
-                        on_open_change: Fn("opened"),
-                        on_query_change: Fn("queried")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/combobox_test.rhai",
+        r#"
+            import "components/combobox" as combobox_component;
+            fn selected(ctx, values) { () }
+            fn opened(ctx, open) { () }
+            fn queried(ctx, query) { () }
+            fn view(ctx) {
+                combobox_component::Combobox(#{
+                    key: "theme",
+                    label: "Theme",
+                    options: [
+                        #{ value: "default", label: "Default" },
+                        #{ value: "tokyo", label: "Tokyo Night", keywords: ["night"] },
+                        #{ value: "mocha", label: "Mocha", disabled: true }
+                    ],
+                    mode: "multiple",
+                    selected: ["default", "tokyo"],
+                    open: true,
+                    searchable: true,
+                    query: "night",
+                    placeholder: "Theme",
+                    search_placeholder: "Search themes",
+                    empty_text: "No themes",
+                    trigger: text("Custom theme trigger")
+                        .with_style(style().background(theme_color("surface_raised"))),
+                    header: text("Theme header"),
+                    footer: text("Theme footer"),
+                    empty: text("Custom empty state"),
+                    part_styles: #{ option: style().height(px(41)) },
+                    on_change: Fn("selected"),
+                    on_open_change: Fn("opened"),
+                    on_query_change: Fn("queried")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Overlay { trigger, spec, .. } = lifecycle.root().unwrap().kind() else {
         panic!("Combobox must compose the generic Overlay node");
     };
@@ -2649,39 +2019,25 @@ fn official_combobox_is_public_overlay_and_virtual_collection_composition() {
 
 #[test]
 fn official_combobox_groups_and_routes_keyboard_in_rhai() {
-    let source = combobox_source();
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/combobox_keyboard.rhai",
-            r#"
-                import "components/combobox" as combobox;
-                fn view(ctx) {
-                    combobox::Combobox(#{
-                        key: "grouped", label: "Grouped choices", open: false, selected: [], query: "",
-                        options: [
-                            #{ value: "a", label: "Alpha", group: "Second" },
-                            #{ value: "b", label: "Beta", group: "First", disabled: true },
-                            #{ value: "c", label: "Charlie", group: "Second" },
-                            #{ value: "d", label: "Delta" }
-                        ]
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/combobox_keyboard.rhai",
+        r#"
+            import "components/combobox" as combobox;
+            fn view(ctx) {
+                combobox::Combobox(#{
+                    key: "grouped", label: "Grouped choices", open: false, selected: [], query: "",
+                    options: [
+                        #{ value: "a", label: "Alpha", group: "Second" },
+                        #{ value: "b", label: "Beta", group: "First", disabled: true },
+                        #{ value: "c", label: "Charlie", group: "Second" },
+                        #{ value: "d", label: "Delta" }
+                    ]
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
 
     let collection = find_virtual_collection(lifecycle.root().unwrap()).unwrap();
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
@@ -2759,9 +2115,6 @@ fn official_combobox_rejects_invalid_choice_identity() {
             "[]",
         ),
     ] {
-        let source = combobox_source();
-        let mut engine = RuntimeEngine::new();
-        engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
         let script = format!(
             r#"
                 import "components/combobox" as combobox;
@@ -2773,70 +2126,35 @@ fn official_combobox_rejects_invalid_choice_identity() {
             "#
         );
         let script_name = format!("ui/combobox_{name}.rhai");
-        let compiled = engine
-            .compile_self_contained_named(&script_name, &script)
-            .unwrap();
-        let mut lifecycle = ScriptLifecycle::new(
-            compiled,
-            Rc::new(RefCell::new(UiRuntimeState::new())),
-            ComponentInstancePath::root("App", "root"),
-            Some("main".to_owned()),
-            BTreeMap::new(),
-            &ComponentStateSchema::default(),
-        )
-        .unwrap();
+        let (mut engine, compiled) = compile_official(&script_name, &script);
+        let mut lifecycle = lifecycle_for(&engine, compiled, &new_runtime());
         assert!(lifecycle.start(&mut engine).is_err(), "case {name}");
     }
 }
 
 #[test]
 fn official_select_uses_scalar_controlled_choice_semantics() {
-    let select_id = ModuleId::parse("components/select").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (select_id, SELECT.to_owned()),
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            COMBOBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/select_test.rhai",
-            r#"
-                import "components/select" as select;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    select::Select(#{
-                        key: "country", label: "Country", value: (), open: false, query: "",
-                        searchable: true, clearable: true,
-                        empty_text: "No countries",
-                        options: [
-                            #{ value: "cn", label: "China", group: "Asia" },
-                            #{ value: "fr", label: "France", group: "Europe" }
-                        ],
-                        on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        runtime,
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/select_test.rhai",
+        r#"
+            import "components/select" as select;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                select::Select(#{
+                    key: "country", label: "Country", value: (), open: false, query: "",
+                    searchable: true, clearable: true,
+                    empty_text: "No countries",
+                    options: [
+                        #{ value: "cn", label: "China", group: "Asia" },
+                        #{ value: "fr", label: "France", group: "Europe" }
+                    ],
+                    on_change: Fn("changed")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Overlay { spec, .. } = lifecycle.root().unwrap().kind() else {
         panic!("Select must compose Combobox over generic Overlay");
     };
@@ -2845,35 +2163,12 @@ fn official_select_uses_scalar_controlled_choice_semantics() {
 
 #[test]
 fn official_date_picker_consumes_locale_and_strict_iso_values() {
-    let date_picker_id = ModuleId::parse("components/date_picker").unwrap();
-    let source =
-        EmbeddedScriptSource::new(BTreeMap::from([(date_picker_id, DATE_PICKER.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/date_picker_test.rhai", DATE_PICKER_TEST_APP)
-        .unwrap();
-    let locale = gpui_rhai::load_locale_source(
-        engine.engine(),
-        "en.rhai",
-        include_str!("../../../registry/locales/en.rhai"),
-    )
-    .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    runtime.borrow_mut().locale =
-        Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    let (mut engine, compiled) = compile_official("ui/date_picker_test.rhai", DATE_PICKER_TEST_APP);
+    let runtime = new_runtime();
+    runtime.borrow_mut().locale = Some(english(&engine));
     runtime.borrow_mut().calendar_clock =
         gpui_rhai::CalendarClock::fixed(gpui_rhai::GregorianDate::parse_iso("2026-08-30").unwrap());
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Overlay {
         trigger,
         content,
@@ -2944,65 +2239,40 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
 }
 
 #[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "Keep the complete source-backed Table specimen and its composition assertions together"
-)]
 fn official_table_is_public_data_backed_rhai_composition() {
-    let table_id = ModuleId::parse("components/table").unwrap();
-    let skeleton_id = ModuleId::parse("components/skeleton").unwrap();
-    let badge_id = ModuleId::parse("components/badge").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (table_id, TABLE.to_owned()),
-        (skeleton_id, SKELETON.to_owned()),
-        (badge_id, BADGE.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/table_test.rhai",
-            r#"
-                import "components/table" as table;
-                fn sorted(ctx, value) { () }
-                fn selected(ctx, value) { () }
-                fn clicked(ctx, value) { () }
-                fn view(ctx) {
-                    table::Table(#{
-                        key: "users", label: "Users", row_key: "id", fill_height: true,
-                        rows: [
-                            #{ id: "u1", name: "Ada", score: 12.5, joined: "2026-08-30", status: "Active",
-                                status_label: "Updated +1", status_variant: "success" },
-                            #{ id: "u2", name: "Lin", score: 9, joined: "2026-08-31", status: "Away",
-                                status_label: "Deploying", status_variant: "accent" }
-                        ],
-                        columns: [
-                            #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 }, sortable: true,
-                                adornments: [#{ text_key: "status_label", variant_key: "status_variant" }] },
-                            #{ key: "score", title: "Score", width: #{ kind: "flex", value: 2 } },
-                            #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 30 } },
-                            #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 } }
-                        ],
-                        loading: false, selection_mode: "multiple", resizable_columns: true,
-                        selected_keys: ["u1"], striped: true,
-                        on_sort_change: Fn("sorted"), on_selection_change: Fn("selected"),
-                        on_row_click: Fn("clicked")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        runtime,
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/table_test.rhai",
+        r#"
+            import "components/table" as table;
+            fn sorted(ctx, value) { () }
+            fn selected(ctx, value) { () }
+            fn clicked(ctx, value) { () }
+            fn view(ctx) {
+                table::Table(#{
+                    key: "users", label: "Users", row_key: "id", fill_height: true,
+                    rows: [
+                        #{ id: "u1", name: "Ada", score: 12.5, joined: "2026-08-30", status: "Active",
+                            status_label: "Updated +1", status_variant: "success" },
+                        #{ id: "u2", name: "Lin", score: 9, joined: "2026-08-31", status: "Away",
+                            status_label: "Deploying", status_variant: "accent" }
+                    ],
+                    columns: [
+                        #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 }, sortable: true,
+                            adornments: [#{ text_key: "status_label", variant_key: "status_variant" }] },
+                        #{ key: "score", title: "Score", width: #{ kind: "flex", value: 2 } },
+                        #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 30 } },
+                        #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 } }
+                    ],
+                    loading: false, selection_mode: "multiple", resizable_columns: true,
+                    selected_keys: ["u1"], striped: true,
+                    on_sort_change: Fn("sorted"), on_selection_change: Fn("selected"),
+                    on_row_click: Fn("clicked")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("Table must be a public Box composition");
     };
@@ -3044,7 +2314,7 @@ fn official_table_is_public_data_backed_rhai_composition() {
     );
     let cells = &row_children[..4];
     assert_eq!(header_cells.len(), 4);
-    assert!(TABLE.contains(".with_table_track("));
+    assert!(official_source("components/table").contains(".with_table_track("));
     assert_table_columns_delegate_width_to_native_track(header_cells);
     assert_table_columns_delegate_width_to_native_track(cells);
     assert_table_resize_handles(header_cells, &["Name", "Score", "Joined", "Status"]);
@@ -3065,66 +2335,41 @@ fn official_table_is_public_data_backed_rhai_composition() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn official_table_groups_array_rows_with_controlled_collapse() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/table").unwrap(),
-            TABLE.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/badge").unwrap(),
-            BADGE.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/grouped_table_test.rhai",
-            r#"
-                import "components/table" as table;
-                fn state_schema() { #{ fields: #{
-                    collapsed: #{ schema: #{ type: "array", max_items: 8,
-                        items: #{ type: "string" } },
-                        "default": #{ type: "array", value: [] } }
-                } } }
-                fn toggled(ctx, group) { ctx.set_state("collapsed", [group]); }
-                fn view(ctx) {
-                    table::Table(#{
-                        key: "clusters", label: "Clusters", row_key: "id", height: 120,
-                        rows: [
-                            #{ id: "a", track: "alpha", state: "Ready" },
-                            #{ id: "b", track: "beta", state: "Drift" },
-                            #{ id: "c", track: "alpha", state: "Drift" }
-                        ],
-                        columns: [
-                            #{ key: "track", title: "Track",
-                                width: #{ kind: "fixed", value: 120 } },
-                            #{ key: "state", title: "State",
-                                width: #{ kind: "fixed", value: 100 } }
-                        ],
-                        group_by: "track",
-                        selection_mode: "multiple", selected_keys: ["b"],
-                        collapsed_groups: ctx.get_state("collapsed"),
-                        on_group_toggle: Fn("toggled")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/grouped_table_test.rhai",
+        r#"
+            import "components/table" as table;
+            fn state_schema() { #{ fields: #{
+                collapsed: #{ schema: #{ type: "array", max_items: 8,
+                    items: #{ type: "string" } },
+                    "default": #{ type: "array", value: [] } }
+            } } }
+            fn toggled(ctx, group) { ctx.set_state("collapsed", [group]); }
+            fn view(ctx) {
+                table::Table(#{
+                    key: "clusters", label: "Clusters", row_key: "id", height: 120,
+                    rows: [
+                        #{ id: "a", track: "alpha", state: "Ready" },
+                        #{ id: "b", track: "beta", state: "Drift" },
+                        #{ id: "c", track: "alpha", state: "Drift" }
+                    ],
+                    columns: [
+                        #{ key: "track", title: "Track",
+                            width: #{ kind: "fixed", value: 120 } },
+                        #{ key: "state", title: "State",
+                            width: #{ kind: "fixed", value: 100 } }
+                    ],
+                    group_by: "track",
+                    selection_mode: "multiple", selected_keys: ["b"],
+                    collapsed_groups: ctx.get_state("collapsed"),
+                    on_group_toggle: Fn("toggled")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
 
     assert_table_has_no_width_signals(lifecycle.root().unwrap());
 
@@ -3179,40 +2424,26 @@ fn official_table_groups_array_rows_with_controlled_collapse() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn official_table_groups_native_collection_without_materializing_rows_in_rhai() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/table").unwrap(),
-            TABLE.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/badge").unwrap(),
-            BADGE.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/native_grouped_table_test.rhai",
-            r#"
-                import "components/table" as table;
-                fn view(ctx) {
-                    table::Table(#{
-                        key: "clusters", label: "Clusters", row_key: "id", height: 120,
-                        rows: ctx.get_native_collection("clusters"), group_by: "track",
-                        resizable_columns: true,
-                        columns: [
-                            #{ key: "track", title: "Track",
-                                width: #{ kind: "fixed", value: 120 } },
-                            #{ key: "state", title: "State",
-                                width: #{ kind: "flex", value: 2 },
-                                adornments: [#{ text_key: "status_label", variant_key: "status_variant", dot: true }] }
-                        ]
-                    })
-                }
-            "#,
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/native_grouped_table_test.rhai",
+        r#"
+            import "components/table" as table;
+            fn view(ctx) {
+                table::Table(#{
+                    key: "clusters", label: "Clusters", row_key: "id", height: 120,
+                    rows: ctx.get_native_collection("clusters"), group_by: "track",
+                    resizable_columns: true,
+                    columns: [
+                        #{ key: "track", title: "Track",
+                            width: #{ kind: "fixed", value: 120 } },
+                        #{ key: "state", title: "State",
+                            width: #{ kind: "flex", value: 2 },
+                            adornments: [#{ text_key: "status_label", variant_key: "status_variant", dot: true }] }
+                    ]
+                })
+            }
+        "#,
+    );
     let rows = gpui_rhai::NativeCollection::new(
         "id",
         [
@@ -3258,22 +2489,13 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
         ],
     )
     .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let runtime = new_runtime();
     runtime
         .borrow_mut()
         .native_collections
         .register("clusters", rows)
         .unwrap();
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        runtime,
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
 
     let UiNodeKind::VirtualCollection { spec } = find_virtual_collection(lifecycle.root().unwrap())
         .expect("native grouped Table must use virtual_collection")
@@ -3314,67 +2536,24 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
 
 #[test]
 fn official_pagination_is_pure_rhai_composition() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/pagination").unwrap(),
-            PAGINATION.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
-        (
-            ModuleId::parse("components/select").unwrap(),
-            SELECT.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            COMBOBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/pagination_test.rhai",
-            r#"
-                import "components/pagination" as pagination;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    pagination::Pagination(#{
-                        key: "users-pages", label: "Users pagination", total_items: 5000,
-                        current_page: 250, page_size: 10,
-                        page_size_options: [10, 25, 50],
-                        on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let locale = gpui_rhai::load_locale_source(
-        engine.engine(),
-        "en.rhai",
-        include_str!("../../../registry/locales/en.rhai"),
-    )
-    .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    runtime.borrow_mut().locale =
-        Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        runtime,
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/pagination_test.rhai",
+        r#"
+            import "components/pagination" as pagination;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                pagination::Pagination(#{
+                    key: "users-pages", label: "Users pagination", total_items: 5000,
+                    current_page: 250, page_size: 10,
+                    page_size_options: [10, 25, 50],
+                    on_change: Fn("changed")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    runtime.borrow_mut().locale = Some(english(&engine));
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let root = lifecycle.root().unwrap();
     assert!(matches!(root.kind(), UiNodeKind::Box { .. }));
     assert!(contains_overlay(root));
@@ -3402,127 +2581,49 @@ fn official_pagination_is_pure_rhai_composition() {
 
 #[test]
 fn official_pagination_rejects_duplicate_page_sizes() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/pagination").unwrap(),
-            PAGINATION.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
-        (
-            ModuleId::parse("components/select").unwrap(),
-            SELECT.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            COMBOBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/pagination_duplicate_test.rhai",
-            r#"
-                import "components/pagination" as pagination;
-                fn view(ctx) {
-                    pagination::Pagination(#{
-                        key: "pages", label: "Pagination", total_items: 100, current_page: 1,
-                        page_size: 10, page_size_options: [10, 10]
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let locale = gpui_rhai::load_locale_source(
-        engine.engine(),
-        "en.rhai",
-        include_str!("../../../registry/locales/en.rhai"),
-    )
-    .unwrap();
-    let mut state = UiRuntimeState::new();
-    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
-    let context = UiContext::new(
-        Rc::new(RefCell::new(state)),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/pagination_duplicate_test.rhai",
+        r#"
+            import "components/pagination" as pagination;
+            fn view(ctx) {
+                pagination::Pagination(#{
+                    key: "pages", label: "Pagination", total_items: 100, current_page: 1,
+                    page_size: 10, page_size_options: [10, 10]
+                })
+            }
+        "#,
     );
-    let error = engine.render_with_context(&compiled, context).unwrap_err();
+    let mut state = UiRuntimeState::new();
+    state.locale = Some(english(&engine));
+    let error = try_render_in(&mut engine, &compiled, state).unwrap_err();
     assert!(error.to_string().contains("duplicate value 10"));
 }
 
 #[test]
 fn official_pagination_page_window_covers_ellipsis_transitions() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/pagination").unwrap(),
-            PAGINATION.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
-        (
-            ModuleId::parse("components/select").unwrap(),
-            SELECT.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            COMBOBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            INPUT.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/pagination_windows.rhai",
-            r#"
-                import "components/pagination" as pagination;
-                fn window_nodes(values) {
-                    let nodes = [];
-                    for value in values { nodes.push(text(`${value}`)); }
-                    row(nodes)
-                }
-                fn view(ctx) {
-                    column([
-                        window_nodes(pagination::page_window(1, 1, 1, 1)),
-                        window_nodes(pagination::page_window(5, 3, 1, 1)),
-                        window_nodes(pagination::page_window(7, 1, 1, 1)),
-                        window_nodes(pagination::page_window(7, 3, 1, 1)),
-                        window_nodes(pagination::page_window(7, 4, 1, 1)),
-                        window_nodes(pagination::page_window(7, 5, 1, 1)),
-                        window_nodes(pagination::page_window(100, 50, 2, 2)),
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let root = engine
-        .render_with_context(
-            &compiled,
-            UiContext::new(
-                Rc::new(RefCell::new(UiRuntimeState::new())),
-                ComponentInstancePath::root("App", "root"),
-                Some("main".to_owned()),
-                ExecutionPhase::Render,
-                BTreeMap::new(),
-            ),
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/pagination_windows.rhai",
+        r#"
+            import "components/pagination" as pagination;
+            fn window_nodes(values) {
+                let nodes = [];
+                for value in values { nodes.push(text(`${value}`)); }
+                row(nodes)
+            }
+            fn view(ctx) {
+                column([
+                    window_nodes(pagination::page_window(1, 1, 1, 1)),
+                    window_nodes(pagination::page_window(5, 3, 1, 1)),
+                    window_nodes(pagination::page_window(7, 1, 1, 1)),
+                    window_nodes(pagination::page_window(7, 3, 1, 1)),
+                    window_nodes(pagination::page_window(7, 4, 1, 1)),
+                    window_nodes(pagination::page_window(7, 5, 1, 1)),
+                    window_nodes(pagination::page_window(100, 50, 2, 2)),
+                ])
+            }
+        "#,
+    );
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children: cases } = root.kind() else {
         panic!("pagination page-window probe must render a column");
     };
@@ -3557,56 +2658,34 @@ fn official_pagination_page_window_covers_ellipsis_transitions() {
 
 #[test]
 fn official_pagination_page_size_emits_one_atomic_reset() {
-    let source = pagination_source();
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/pagination_atomic.rhai",
-            r#"
-                import "components/pagination" as pagination;
-                fn state_schema() { #{ fields: #{
-                    current_page: #{ schema: #{ type: "integer", min: 1 },
-                        "default": #{ type: "integer", value: 4 } },
-                    page_size: #{ schema: #{ type: "integer", min: 1 },
-                        "default": #{ type: "integer", value: 10 } },
-                } } }
-                fn changed(ctx, value) {
-                    ctx.set_state("current_page", value.current_page);
-                    ctx.set_state("page_size", value.page_size);
-                }
-                fn view(ctx) {
-                    pagination::Pagination(#{
-                        key: "pages", label: "Pagination", total_items: 100,
-                        current_page: ctx.get_state("current_page"),
-                        page_size: ctx.get_state("page_size"),
-                        page_size_options: [10, 25], on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let locale = gpui_rhai::load_locale_source(
-        engine.engine(),
-        "en.rhai",
-        include_str!("../../../registry/locales/en.rhai"),
-    )
-    .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    runtime.borrow_mut().locale =
-        Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
-    let path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        path.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/pagination_atomic.rhai",
+        r#"
+            import "components/pagination" as pagination;
+            fn state_schema() { #{ fields: #{
+                current_page: #{ schema: #{ type: "integer", min: 1 },
+                    "default": #{ type: "integer", value: 4 } },
+                page_size: #{ schema: #{ type: "integer", min: 1 },
+                    "default": #{ type: "integer", value: 10 } },
+            } } }
+            fn changed(ctx, value) {
+                ctx.set_state("current_page", value.current_page);
+                ctx.set_state("page_size", value.page_size);
+            }
+            fn view(ctx) {
+                pagination::Pagination(#{
+                    key: "pages", label: "Pagination", total_items: 100,
+                    current_page: ctx.get_state("current_page"),
+                    page_size: ctx.get_state("page_size"),
+                    page_size_options: [10, 25], on_change: Fn("changed")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    runtime.borrow_mut().locale = Some(english(&engine));
+    let path = root_path();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let collection = find_virtual_collection(lifecycle.root().unwrap())
         .expect("page-size Select virtual options");
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
@@ -3649,75 +2728,44 @@ fn official_pagination_page_size_emits_one_atomic_reset() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
-fn m2_control_sources_emit_typed_values_and_roving_keys() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/checkbox").unwrap(),
-            CHECKBOX.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/radio").unwrap(),
-            RADIO.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/radio_group").unwrap(),
-            RADIO_GROUP.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/switch").unwrap(),
-            SWITCH.to_owned(),
-        ),
-        (ModuleId::parse("components/tag").unwrap(), TAG.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/m2_controls.rhai",
-            r#"
-                import "components/checkbox" as checkbox;
-                import "components/radio_group" as radio_group;
-                import "components/switch" as switch_component;
-                import "components/tag" as tag;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    column([
-                        checkbox::Checkbox(#{
-                            checked: false, indeterminate: true, label: "Mixed",
-                            on_change: Fn("changed")
-                        }),
-                        switch_component::Switch(#{
-                            checked: true, label: "Sync", on_change: Fn("changed")
-                        }),
-                        radio_group::RadioGroup(#{
-                            value: "b", label: "Choice",
-                            options: [
-                                #{ value: "a", label: "A" },
-                                #{ value: "b", label: "B" },
-                                #{ value: "c", label: "C", disabled: true }
-                            ],
-                            on_change: Fn("changed")
-                        }),
-                        tag::Tag(#{
-                            text: "Rust", variant: "accent", closable: true,
-                            on_close: Fn("changed")
-                        })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+fn checkbox_switch_radio_group_and_tag_emit_typed_payloads_and_roving_keys() {
+    let (mut engine, compiled) = compile_official(
+        "ui/controls.rhai",
+        r#"
+            import "components/checkbox" as checkbox;
+            import "components/radio_group" as radio_group;
+            import "components/switch" as switch_component;
+            import "components/tag" as tag;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                column([
+                    checkbox::Checkbox(#{
+                        checked: false, indeterminate: true, label: "Mixed",
+                        on_change: Fn("changed")
+                    }),
+                    switch_component::Switch(#{
+                        checked: true, label: "Sync", on_change: Fn("changed")
+                    }),
+                    radio_group::RadioGroup(#{
+                        value: "b", label: "Choice",
+                        options: [
+                            #{ value: "a", label: "A" },
+                            #{ value: "b", label: "B" },
+                            #{ value: "c", label: "C", disabled: true }
+                        ],
+                        on_change: Fn("changed")
+                    }),
+                    tag::Tag(#{
+                        text: "Rust", variant: "accent", closable: true,
+                        on_close: Fn("changed")
+                    })
+                ])
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
-        panic!("M2 controls must compose into a container");
+        panic!("controls must compose into a container");
     };
     assert!(matches!(
         children[0].handler_payload("click"),
@@ -3764,55 +2812,31 @@ fn m2_control_sources_emit_typed_values_and_roving_keys() {
 
 #[test]
 fn radio_group_forwards_pointer_and_keyboard_changes_to_its_caller() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/radio").unwrap(),
-            RADIO.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/radio_group").unwrap(),
-            RADIO_GROUP.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/radio_group_event_boundary.rhai",
-            r#"
-                import "components/radio_group" as radio_group;
-                fn state_schema() { #{ fields: #{
-                    region: #{ schema: #{ type: "string" },
-                        "default": #{ type: "string", value: "b" } }
-                } } }
-                fn changed(ctx, value) { ctx.set_state("region", value); }
-                fn view(ctx) {
-                    radio_group::RadioGroup(#{
-                        value: ctx.get_state("region"), label: "Region",
-                        options: [
-                            #{ value: "a", label: "A" },
-                            #{ value: "b", label: "B" },
-                            #{ value: "c", label: "C" }
-                        ],
-                        on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        path.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/radio_group_event_boundary.rhai",
+        r#"
+            import "components/radio_group" as radio_group;
+            fn state_schema() { #{ fields: #{
+                region: #{ schema: #{ type: "string" },
+                    "default": #{ type: "string", value: "b" } }
+            } } }
+            fn changed(ctx, value) { ctx.set_state("region", value); }
+            fn view(ctx) {
+                radio_group::RadioGroup(#{
+                    value: ctx.get_state("region"), label: "Region",
+                    options: [
+                        #{ value: "a", label: "A" },
+                        #{ value: "b", label: "B" },
+                        #{ value: "c", label: "C" }
+                    ],
+                    on_change: Fn("changed")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let path = root_path();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
 
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("RadioGroup must render its Radio options in a Box");
@@ -3856,66 +2880,33 @@ fn radio_group_forwards_pointer_and_keyboard_changes_to_its_caller() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)]
 fn toggle_group_routes_pointer_and_roving_keyboard_changes_to_caller_state() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/button_group").unwrap(),
-            BUTTON_GROUP.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/toggle").unwrap(),
-            TOGGLE.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/toggle_group").unwrap(),
-            TOGGLE_GROUP.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/toggle_group_controlled.rhai",
-            r#"
-                import "components/toggle_group" as toggle_group;
-                fn state_schema() { #{ fields: #{
-                    formats: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "string" } },
-                        "default": #{ type: "array", value: [] } }
-                } } }
-                fn changed(ctx, values) { ctx.set_state("formats", values); }
-                fn view(ctx) {
-                    toggle_group::ToggleGroup(#{
-                        key: "format", label: "Formatting", mode: "multiple",
-                        values: ctx.get_state("formats"),
-                        items: [
-                            #{ value: "bold", label: "Bold" },
-                            #{ value: "italic", label: "Italic" },
-                            #{ value: "code", label: "Code", disabled: true }
-                        ],
-                        on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        path.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/toggle_group_controlled.rhai",
+        r#"
+            import "components/toggle_group" as toggle_group;
+            fn state_schema() { #{ fields: #{
+                formats: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "string" } },
+                    "default": #{ type: "array", value: [] } }
+            } } }
+            fn changed(ctx, values) { ctx.set_state("formats", values); }
+            fn view(ctx) {
+                toggle_group::ToggleGroup(#{
+                    key: "format", label: "Formatting", mode: "multiple",
+                    values: ctx.get_state("formats"),
+                    items: [
+                        #{ value: "bold", label: "Bold" },
+                        #{ value: "italic", label: "Italic" },
+                        #{ value: "code", label: "Code", disabled: true }
+                    ],
+                    on_change: Fn("changed")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let path = root_path();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
 
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("ToggleGroup must render its segments");
@@ -3978,38 +2969,19 @@ fn toggle_group_routes_pointer_and_roving_keyboard_changes_to_caller_state() {
 
 #[test]
 fn slider_uses_the_public_native_range_input_with_range_semantics() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/slider").unwrap(),
-        SLIDER.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/slider.rhai",
-            r#"
-                import "components/slider" as slider;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    slider::Slider(#{ key: "volume", label: "Volume",
-                        value: 40, min: 0, max: 100, step: 5,
-                        on_change: Fn("changed") })
-                }
-            "#,
-        )
-        .unwrap();
-    let root = engine
-        .render_with_context(
-            &compiled,
-            UiContext::new(
-                Rc::new(RefCell::new(UiRuntimeState::new())),
-                ComponentInstancePath::root("App", "root"),
-                Some("main".to_owned()),
-                ExecutionPhase::Render,
-                BTreeMap::new(),
-            ),
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/slider.rhai",
+        r#"
+            import "components/slider" as slider;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                slider::Slider(#{ key: "volume", label: "Volume",
+                    value: 40, min: 0, max: 100, step: 5,
+                    on_change: Fn("changed") })
+            }
+        "#,
+    );
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("Slider must render label/value and native control");
     };
@@ -4033,37 +3005,18 @@ fn slider_uses_the_public_native_range_input_with_range_semantics() {
 
 #[test]
 fn scroll_area_decorates_the_generic_retained_scroll_node() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/scroll_area").unwrap(),
-        SCROLL_AREA.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/scroll_area.rhai",
-            r#"
-                import "components/scroll_area" as scroll_area;
-                fn view(ctx) {
-                    scroll_area::ScrollArea(#{ key: "logs", label: "Logs", width: px(240), height: px(120),
-                        axis: "vertical", vertical_scrollbar: "always",
-                        content: column([text("one"), text("two"), text("three")]) })
-                }
-            "#,
-        )
-        .unwrap();
-    let root = engine
-        .render_with_context(
-            &compiled,
-            UiContext::new(
-                Rc::new(RefCell::new(UiRuntimeState::new())),
-                ComponentInstancePath::root("App", "root"),
-                Some("main".to_owned()),
-                ExecutionPhase::Render,
-                BTreeMap::new(),
-            ),
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/scroll_area.rhai",
+        r#"
+            import "components/scroll_area" as scroll_area;
+            fn view(ctx) {
+                scroll_area::ScrollArea(#{ key: "logs", label: "Logs", width: px(240), height: px(120),
+                    axis: "vertical", vertical_scrollbar: "always",
+                    content: column([text("one"), text("two"), text("three")]) })
+            }
+        "#,
+    );
+    let root = render(&mut engine, &compiled);
     assert_eq!(
         root.attributes().get("scrollbar_horizontal"),
         Some(&UiValue::String("hidden".to_owned()))
@@ -4080,55 +3033,26 @@ fn scroll_area_decorates_the_generic_retained_scroll_node() {
 }
 
 #[test]
-fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/avatar").unwrap(),
-            AVATAR.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/progress").unwrap(),
-            PROGRESS.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/skeleton").unwrap(),
-            SKELETON.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/spinner").unwrap(),
-            SPINNER.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/m2_visuals.rhai",
-            r#"
-                import "components/avatar" as avatar;
-                import "components/progress" as progress;
-                import "components/skeleton" as skeleton;
-                import "components/spinner" as spinner;
-                fn view(ctx) {
-                    column([
-                        avatar::Avatar(#{ name: "Ada", presence: "online" }),
-                        progress::Progress(#{ key: "download", label: "Download", value: 42, max: 100 }),
-                        progress::Progress(#{ key: "loading", label: "Loading", indeterminate: true }),
-                        skeleton::Skeleton(#{ key: "card", width: 240, height: 80 }),
-                        spinner::Spinner(#{ key: "loading-spinner", label: "Loading" })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+fn avatar_progress_skeleton_and_spinner_render_fallbacks_and_native_motion() {
+    let (mut engine, compiled) = compile_official(
+        "ui/visuals.rhai",
+        r#"
+            import "components/avatar" as avatar;
+            import "components/progress" as progress;
+            import "components/skeleton" as skeleton;
+            import "components/spinner" as spinner;
+            fn view(ctx) {
+                column([
+                    avatar::Avatar(#{ name: "Ada", presence: "online" }),
+                    progress::Progress(#{ key: "download", label: "Download", value: 42, max: 100 }),
+                    progress::Progress(#{ key: "loading", label: "Loading", indeterminate: true }),
+                    skeleton::Skeleton(#{ key: "card", width: 240, height: 80 }),
+                    spinner::Spinner(#{ key: "loading-spinner", label: "Loading" })
+                ])
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("visual primitives must compose into a container");
     };
@@ -4176,41 +3100,11 @@ fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
 }
 
 #[test]
-fn m2_composites_export_slots_animation_and_keyboard_payloads() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/label").unwrap(),
-            LABEL.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/form_field").unwrap(),
-            FORM_FIELD.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/collapsible").unwrap(),
-            COLLAPSIBLE.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/accordion").unwrap(),
-            ACCORDION.to_owned(),
-        ),
-        (ModuleId::parse("components/tabs").unwrap(), TABS.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/m2_composites.rhai", M2_COMPOSITES_APP)
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
-    );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+fn form_field_and_disclosure_composites_wire_labels_motion_and_keys() {
+    let (mut engine, compiled) = compile_official("ui/composites.rhai", COMPOSITES_APP);
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
-        panic!("M2 composites must compose into a container");
+        panic!("composites must compose into a container");
     };
     assert_eq!(
         children[0].attributes().get("invalid"),
@@ -4277,58 +3171,35 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
 
 #[test]
 fn tooltip_and_menu_use_window_overlay_policies() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/divider").unwrap(),
-            DIVIDER.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/tooltip").unwrap(),
-            TOOLTIP.to_owned(),
-        ),
-        (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/tooltip_menu.rhai",
-            r#"
-                import "components/tooltip" as tooltip;
-                import "components/menu" as menu;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    column([
-                        tooltip::Tooltip(#{
-                            key: "help", label: "Help", trigger: text("?"), content: text("Help"),
-                            show_delay_ms: 250, hide_delay_ms: 75
-                        }),
-                        menu::Menu(#{
-                            key: "file", label: "File menu", trigger: text("File"), open: true,
-                            active_value: "open",
-                            items: [
-                                #{ kind: "item", value: "new", label: "New", shortcut: "⌘N" },
-                                #{ kind: "separator" },
-                                #{ kind: "item", value: "open", label: "Open", checked: true }
-                            ],
-                            on_action: Fn("changed"),
-                            on_active_change: Fn("changed"),
-                            on_open_change: Fn("changed")
-                        })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/tooltip_menu.rhai",
+        r#"
+            import "components/tooltip" as tooltip;
+            import "components/menu" as menu;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                column([
+                    tooltip::Tooltip(#{
+                        key: "help", label: "Help", trigger: text("?"), content: text("Help"),
+                        show_delay_ms: 250, hide_delay_ms: 75
+                    }),
+                    menu::Menu(#{
+                        key: "file", label: "File menu", trigger: text("File"), open: true,
+                        active_value: "open",
+                        items: [
+                            #{ kind: "item", value: "new", label: "New", shortcut: "⌘N" },
+                            #{ kind: "separator" },
+                            #{ kind: "item", value: "open", label: "Open", checked: true }
+                        ],
+                        on_action: Fn("changed"),
+                        on_active_change: Fn("changed"),
+                        on_open_change: Fn("changed")
+                    })
+                ])
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("Tooltip and Menu must compose into a container");
     };
@@ -4357,51 +3228,32 @@ fn tooltip_and_menu_use_window_overlay_policies() {
 
 #[test]
 fn nested_menu_preserves_parent_overlay_identity() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
-        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
-        (
-            ModuleId::parse("components/divider").unwrap(),
-            DIVIDER.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/nested_menu.rhai",
-            r#"
-                import "components/menu" as menu;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    let child = menu::Menu(#{
-                        key: "file-more", label: "More actions", parent_overlay: "file", trigger: text("More"),
-                        open: true, active_value: "export", placement: "right",
-                        items: [#{ kind: "item", value: "export", label: "Export" }],
-                        on_action: Fn("changed"), on_active_change: Fn("changed"),
-                        on_open_change: Fn("changed")
-                    });
-                    menu::Menu(#{
-                        key: "file", label: "File menu", trigger: text("File"), open: true,
-                        active_value: "more",
-                        items: [#{
-                            kind: "submenu", value: "more", label: "More", submenu: child
-                        }],
-                        on_action: Fn("changed"), on_active_change: Fn("changed"),
-                        on_open_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        ExecutionPhase::Render,
-        BTreeMap::new(),
+    let (mut engine, compiled) = compile_official(
+        "ui/nested_menu.rhai",
+        r#"
+            import "components/menu" as menu;
+            fn changed(ctx, value) { () }
+            fn view(ctx) {
+                let child = menu::Menu(#{
+                    key: "file-more", label: "More actions", parent_overlay: "file", trigger: text("More"),
+                    open: true, active_value: "export", placement: "right",
+                    items: [#{ kind: "item", value: "export", label: "Export" }],
+                    on_action: Fn("changed"), on_active_change: Fn("changed"),
+                    on_open_change: Fn("changed")
+                });
+                menu::Menu(#{
+                    key: "file", label: "File menu", trigger: text("File"), open: true,
+                    active_value: "more",
+                    items: [#{
+                        kind: "submenu", value: "more", label: "More", submenu: child
+                    }],
+                    on_action: Fn("changed"), on_active_change: Fn("changed"),
+                    on_open_change: Fn("changed")
+                })
+            }
+        "#,
     );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+    let root = render(&mut engine, &compiled);
     let UiNodeKind::Overlay { content, spec, .. } = root.kind() else {
         panic!("parent Menu must render an overlay");
     };
@@ -4422,46 +3274,29 @@ fn nested_menu_preserves_parent_overlay_identity() {
 
 #[test]
 fn toast_source_builds_public_layers_and_declarative_timers() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/toast").unwrap(),
-        TOAST.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/toast_test.rhai",
-            r#"
-                import "components/toast" as toast;
-                fn dismissed(ctx, id) { () }
-                fn view(ctx) {
-                    toast::Toast(#{
-                        key: "notifications",
-                        max_visible: 2,
-                        items: [
-                            #{ id: "saved", title: "Saved", variant: "success", duration_ms: 1200 },
-                            #{ id: "warning", title: "Warning", message: "Check input", variant: "warning", paused: true }
-                        ],
-                        part_styles: #{ title: style().font_size(px(18)) },
-                        on_dismiss: Fn("dismissed")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
+    let (mut engine, compiled) = compile_official(
+        "ui/toast_test.rhai",
+        r#"
+            import "components/toast" as toast;
+            fn dismissed(ctx, id) { () }
+            fn view(ctx) {
+                toast::Toast(#{
+                    key: "notifications",
+                    max_visible: 2,
+                    items: [
+                        #{ id: "saved", title: "Saved", variant: "success", duration_ms: 1200 },
+                        #{ id: "warning", title: "Warning", message: "Check input", variant: "warning", paused: true }
+                    ],
+                    part_styles: #{ title: style().font_size(px(18)) },
+                    on_dismiss: Fn("dismissed")
+                })
+            }
+        "#,
+    );
     let manual_clock = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let runtime = new_runtime();
     runtime.borrow_mut().clock = manual_clock.clock();
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let UiNodeKind::Box { children: layers } = lifecycle.root().unwrap().kind() else {
         panic!("Toast must be a public Box/Layer composition");
     };

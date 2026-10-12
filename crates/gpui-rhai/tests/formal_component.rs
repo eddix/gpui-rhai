@@ -1,13 +1,15 @@
+mod common;
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use common::{compile, engine_with, mount, new_runtime, official_engine, root_path, try_render_in};
 use gpui_rhai::{
     ActionId, AsyncCapabilityHandler, CalendarClock, CapabilityDescriptor, CapabilityId,
-    CapabilityMethod, ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource,
-    ExecutionOperation, GregorianDate, ModuleId, RestrictedModuleResolver, RuntimeEngine,
-    ScriptLifecycle, StateField, StoreId, TaskWork, UiNodeKind, UiRuntimeState, UiValue,
-    ValueSchema,
+    CapabilityMethod, ComponentInstancePath, ComponentStateSchema, ExecutionOperation,
+    GregorianDate, RuntimeEngine, ScriptLifecycle, StateField, StoreId, TaskWork, UiNodeKind,
+    UiRuntimeState, UiValue, ValueSchema,
 };
 use semver::{Version, VersionReq};
 
@@ -408,23 +410,13 @@ fn view(ctx) {
 }
 "#;
 
-fn source() -> EmbeddedScriptSource {
-    EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/counter").unwrap(),
-        COUNTER.to_owned(),
-    )]))
+fn counter_engine() -> RuntimeEngine {
+    engine_with([("components/counter", COUNTER)])
 }
 
 fn equivalence_engine_and_compiled() -> (RuntimeEngine, gpui_rhai::CompiledUi) {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/equivalence_counter").unwrap(),
-        EQUIVALENCE_COUNTER.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/equivalence.rhai", EQUIVALENCE_APP)
-        .unwrap();
+    let mut engine = engine_with([("components/equivalence_counter", EQUIVALENCE_COUNTER)]);
+    let compiled = compile(&mut engine, "ui/equivalence.rhai", EQUIVALENCE_APP);
     (engine, compiled)
 }
 
@@ -439,37 +431,17 @@ struct RootDirtyFixture {
 }
 
 fn root_dirty_fixture() -> RootDirtyFixture {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/equivalence_counter").unwrap(),
-            EQUIVALENCE_COUNTER.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/counter_panel").unwrap(),
-            COUNTER_PANEL.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/root_dirty.rhai", ROOT_DIRTY_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
+    let mut engine = engine_with([
+        ("components/equivalence_counter", EQUIVALENCE_COUNTER),
+        ("components/counter_panel", COUNTER_PANEL),
+    ]);
+    let compiled = compile(&mut engine, "ui/root_dirty.rhai", ROOT_DIRTY_APP);
+    let runtime = new_runtime();
+    let root = root_path();
     let panel = root.child("CounterPanel", "panel");
     let left = panel.child("EquivalenceCounter", "left");
     let right = panel.child("EquivalenceCounter", "right");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     RootDirtyFixture {
         engine,
         runtime,
@@ -645,25 +617,11 @@ fn assert_incremental_counter_timing(engine: &mut RuntimeEngine) {
 
 #[test]
 fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source()).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/formal_counter.rhai", APP)
-        .unwrap();
+    let mut engine = counter_engine();
+    let compiled = compile(&mut engine, "ui/formal_counter.rhai", APP);
     let runtime = runtime_with_async_echo();
-    let root_path = ComponentInstancePath::root("App", "root");
-    let component_path = root_path.child("Counter", "primary");
-    let root_schema = engine.root_state_schema(&compiled).unwrap();
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root_path,
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &root_schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let component_path = root_path().child("Counter", "primary");
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
     assert_counter_recipe(&engine, &component_path);
     assert_eq!(
         runtime
@@ -744,68 +702,44 @@ fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
 
 #[test]
 fn duplicate_stateful_component_keys_are_rejected() {
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source()).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/duplicate_counter.rhai",
-            r#"
-                import "components/counter" as counter;
-                fn view(ctx) {
-                    column([
-                        counter::Counter(#{ key: "same" }),
-                        counter::Counter(#{ key: "same" })
-                    ])
-                }
-            "#,
-        )
-        .unwrap();
-    let context = gpui_rhai::UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        gpui_rhai::ExecutionPhase::Render,
-        BTreeMap::new(),
+    let mut engine = counter_engine();
+    let compiled = compile(
+        &mut engine,
+        "ui/duplicate_counter.rhai",
+        r#"
+            import "components/counter" as counter;
+            fn view(ctx) {
+                column([
+                    counter::Counter(#{ key: "same" }),
+                    counter::Counter(#{ key: "same" })
+                ])
+            }
+        "#,
     );
-    assert!(engine.render_with_context(&compiled, context).is_err());
+    assert!(try_render_in(&mut engine, &compiled, UiRuntimeState::new()).is_err());
 }
 
 #[test]
 fn callback_props_execute_in_the_caller_state_scope() {
-    let button = include_str!("../../../registry/components/button.rhai");
-    let module = ModuleId::parse("components/button").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(module, button.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/caller_scope.rhai",
-            r#"
-                import "components/button" as button;
-                fn state_schema() {
-                    #{ fields: #{ count: #{ schema: #{ type: "integer" },
-                        "default": #{ type: "integer", value: 0 } } } }
-                }
-                fn increment(ctx, payload) {
-                    ctx.set_state("count", ctx.get_state("count") + 1);
-                }
-                fn view(ctx) { button::Button(#{ text: "Add", on_click: Fn("increment") }) }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut engine = official_engine();
+    let compiled = compile(
+        &mut engine,
+        "ui/caller_scope.rhai",
+        r#"
+            import "components/button" as button;
+            fn state_schema() {
+                #{ fields: #{ count: #{ schema: #{ type: "integer" },
+                    "default": #{ type: "integer", value: 0 } } } }
+            }
+            fn increment(ctx, payload) {
+                ctx.set_state("count", ctx.get_state("count") + 1);
+            }
+            fn view(ctx) { button::Button(#{ text: "Add", on_click: Fn("increment") }) }
+        "#,
+    );
+    let runtime = new_runtime();
+    let root = root_path();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let click = script_handler(&lifecycle, "click");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Null)
@@ -818,53 +752,29 @@ fn callback_props_execute_in_the_caller_state_scope() {
 
 #[test]
 fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
-    let combobox = include_str!("../../../registry/components/combobox.rhai");
-    let input = include_str!("../../../registry/components/input.rhai");
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            combobox.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            input.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/native_caller_scope.rhai",
-            r#"
-                import "components/combobox" as combobox;
-                fn state_schema() {
-                    #{ fields: #{ open: #{ schema: #{ type: "bool" },
-                        "default": #{ type: "bool", value: true } } } }
-                }
-                fn set_open(ctx, value) { ctx.set_state("open", value); }
-                fn view(ctx) {
-                    combobox::Combobox(#{
-                        key: "theme", label: "Theme", options: [#{ value: "dark", label: "Dark" }],
-                        selected: [], open: ctx.get_state("open"), query: "",
-                        on_open_change: Fn("set_open")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut engine = official_engine();
+    let compiled = compile(
+        &mut engine,
+        "ui/native_caller_scope.rhai",
+        r#"
+            import "components/combobox" as combobox;
+            fn state_schema() {
+                #{ fields: #{ open: #{ schema: #{ type: "bool" },
+                    "default": #{ type: "bool", value: true } } } }
+            }
+            fn set_open(ctx, value) { ctx.set_state("open", value); }
+            fn view(ctx) {
+                combobox::Combobox(#{
+                    key: "theme", label: "Theme", options: [#{ value: "dark", label: "Dark" }],
+                    selected: [], open: ctx.get_state("open"), query: "",
+                    on_open_change: Fn("set_open")
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let root = root_path();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let open_change = script_handler(&lifecycle, "open_change");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &open_change, UiValue::Bool(false))
@@ -895,43 +805,26 @@ fn first_click_handler(node: &gpui_rhai::UiNode) -> Option<gpui_rhai::ScriptCall
 
 #[test]
 fn raw_node_slots_keep_the_callers_callback_provenance() {
-    let title_bar = include_str!("../../../registry/components/title_bar.rhai");
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/title_bar").unwrap(),
-        title_bar.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/titlebar_slot_scope.rhai",
-            r#"
-                import "components/title_bar" as title_bar;
-                fn state_schema() { #{ fields: #{ menu_open: #{ schema: #{ type: "bool" },
-                    "default": #{ type: "bool", value: false } } } } }
-                fn toggle_menu(ctx, payload) { ctx.set_state("menu_open", true); }
-                fn view(ctx) {
-                    let menu = text("Menu").on_click(Fn("toggle_menu"));
-                    title_bar::TitleBar(#{
-                        label: "Chrome", title: "Workspace", end: [menu],
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut engine = official_engine();
+    let compiled = compile(
+        &mut engine,
+        "ui/titlebar_slot_scope.rhai",
+        r#"
+            import "components/title_bar" as title_bar;
+            fn state_schema() { #{ fields: #{ menu_open: #{ schema: #{ type: "bool" },
+                "default": #{ type: "bool", value: false } } } } }
+            fn toggle_menu(ctx, payload) { ctx.set_state("menu_open", true); }
+            fn view(ctx) {
+                let menu = text("Menu").on_click(Fn("toggle_menu"));
+                title_bar::TitleBar(#{
+                    label: "Chrome", title: "Workspace", end: [menu],
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let root = root_path();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
 
     let handler = first_click_handler(lifecycle.root().unwrap())
         .expect("raw TitleBar slot must retain its click callback");
@@ -979,43 +872,24 @@ fn nested_callback_scope_is_never_inferred_from_a_private_function_name() {
             inner::InnerCollision(#{ on_change: Fn("collide") })
         }
     "#;
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/inner_collision").unwrap(),
-            inner.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/outer_collision").unwrap(),
-            outer.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/callback_name_collision.rhai",
-            r#"
-                import "components/outer_collision" as outer;
-                fn state_schema() { #{ fields: #{ observed: #{ schema: #{ type: "integer" },
-                    "default": #{ type: "integer", value: 0 } } } } }
-                fn collide(offset, ctx, value) { ctx.set_state("observed", value + offset); }
-                fn view(ctx) { outer::OuterCollision(#{ on_change: Fn("collide").curry(1000) }) }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut engine = engine_with([
+        ("components/inner_collision", inner),
+        ("components/outer_collision", outer),
+    ]);
+    let compiled = compile(
+        &mut engine,
+        "ui/callback_name_collision.rhai",
+        r#"
+            import "components/outer_collision" as outer;
+            fn state_schema() { #{ fields: #{ observed: #{ schema: #{ type: "integer" },
+                "default": #{ type: "integer", value: 0 } } } } }
+            fn collide(offset, ctx, value) { ctx.set_state("observed", value + offset); }
+            fn view(ctx) { outer::OuterCollision(#{ on_change: Fn("collide").curry(1000) }) }
+        "#,
+    );
+    let runtime = new_runtime();
+    let root = root_path();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     let click = script_handler(&lifecycle, "click");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Integer(1))
@@ -1039,54 +913,28 @@ fn nested_callback_scope_is_never_inferred_from_a_private_function_name() {
 
 #[test]
 fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/select").unwrap(),
-            include_str!("../../../registry/components/select.rhai").to_owned(),
-        ),
-        (
-            ModuleId::parse("components/combobox").unwrap(),
-            include_str!("../../../registry/components/combobox.rhai").to_owned(),
-        ),
-        (
-            ModuleId::parse("components/input").unwrap(),
-            include_str!("../../../registry/components/input.rhai").to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named(
-            "ui/transparent_select.rhai",
-            r#"
-                import "components/select" as select;
-                fn view(ctx) {
-                    select::Select(#{
-                        key: "region",
-                        label: "Region",
-                        options: [#{ value: "cn", label: "China" }],
-                        value: (), open: true, query: "",
-                        empty_text: "No regions",
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
+    let mut engine = official_engine();
+    let compiled = compile(
+        &mut engine,
+        "ui/transparent_select.rhai",
+        r#"
+            import "components/select" as select;
+            fn view(ctx) {
+                select::Select(#{
+                    key: "region",
+                    label: "Region",
+                    options: [#{ value: "cn", label: "China" }],
+                    value: (), open: true, query: "",
+                    empty_text: "No regions",
+                })
+            }
+        "#,
+    );
+    let runtime = new_runtime();
+    let root = root_path();
     let select = root.child("Select", "region");
     let combobox = select.child("Combobox", "region-combobox");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root,
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
 
     assert_eq!(lifecycle.root().unwrap().component_root(), Some(&select));
     assert!(
@@ -1117,26 +965,11 @@ fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
 
 #[test]
 fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
-    let module = ModuleId::parse("components/effect_probe").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(module, EFFECT_PROBE.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/effect_probe.rhai", EFFECT_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
+    let mut engine = engine_with([("components/effect_probe", EFFECT_PROBE)]);
+    let compiled = compile(&mut engine, "ui/effect_probe.rhai", EFFECT_APP);
     let runtime = effect_audit_runtime();
-    let root = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled.clone(),
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let root = root_path();
+    let mut lifecycle = mount(&mut engine, compiled.clone(), &runtime);
     assert_eq!(runtime.borrow().effects.len(), 1);
     assert_eq!(runtime.borrow().tasks.active_count(), 1);
     assert_eq!(runtime.borrow().timers.active_count(), 1);
@@ -1209,25 +1042,10 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
 
 #[test]
 fn suspension_cleans_effects_and_resume_restarts_fresh_activations() {
-    let module = ModuleId::parse("components/effect_probe").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(module, EFFECT_PROBE.to_owned())]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/effect_suspend.rhai", EFFECT_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
+    let mut engine = engine_with([("components/effect_probe", EFFECT_PROBE)]);
+    let compiled = compile(&mut engine, "ui/effect_suspend.rhai", EFFECT_APP);
     let runtime = effect_audit_runtime();
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
     assert_eq!(runtime.borrow().effects.len(), 1);
     assert_eq!(runtime.borrow().tasks.active_count(), 1);
 
@@ -1263,29 +1081,14 @@ fn suspension_cleans_effects_and_resume_restarts_fresh_activations() {
 fn incremental_component_renders_match_forced_full_renders_over_event_sequences() {
     let (mut incremental_engine, incremental_compiled) = equivalence_engine_and_compiled();
     let (mut full_engine, full_compiled) = equivalence_engine_and_compiled();
-    let incremental_runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let full_runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
-    let mut incremental = ScriptLifecycle::new(
+    let incremental_runtime = new_runtime();
+    let full_runtime = new_runtime();
+    let mut incremental = mount(
+        &mut incremental_engine,
         incremental_compiled,
-        Rc::clone(&incremental_runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    let mut full = ScriptLifecycle::new(
-        full_compiled,
-        Rc::clone(&full_runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    incremental.start(&mut incremental_engine).unwrap();
-    full.start(&mut full_engine).unwrap();
+        &incremental_runtime,
+    );
+    let mut full = mount(&mut full_engine, full_compiled, &full_runtime);
     assert_eq!(normalized_root(&incremental), normalized_root(&full));
     let _ = incremental_engine.take_timings();
     let _ = full_engine.take_timings();
@@ -1483,28 +1286,11 @@ fn component_reuse_invalidates_on_calendar_environment_change() {
 
 #[test]
 fn reused_component_preserves_effect_and_async_ownership() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/effect_probe").unwrap(),
-        EFFECT_PROBE.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/effect_reuse.rhai", EFFECT_REUSE_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
+    let mut engine = engine_with([("components/effect_probe", EFFECT_PROBE)]);
+    let compiled = compile(&mut engine, "ui/effect_reuse.rhai", EFFECT_REUSE_APP);
     let runtime = effect_audit_runtime();
-    let root = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let root = root_path();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
     assert_eq!(runtime.borrow().effects.len(), 1);
     assert_eq!(runtime.borrow().tasks.active_count(), 1);
@@ -1539,16 +1325,8 @@ fn reused_component_preserves_effect_and_async_ownership() {
 
 #[test]
 fn reused_component_keeps_store_reader_dependency() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/store_reader").unwrap(),
-        STORE_READER.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/store_reuse.rhai", STORE_REUSE_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
+    let mut engine = engine_with([("components/store_reader", STORE_READER)]);
+    let compiled = compile(&mut engine, "ui/store_reuse.rhai", STORE_REUSE_APP);
     let mut state = UiRuntimeState::new();
     state
         .stores
@@ -1562,18 +1340,9 @@ fn reused_component_keeps_store_reader_dependency() {
         )
         .unwrap();
     let runtime = Rc::new(RefCell::new(state));
-    let root = ComponentInstancePath::root("App", "root");
+    let root = root_path();
     let reader = root.child("StoreReader", "reader");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled.clone(),
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut lifecycle = mount(&mut engine, compiled.clone(), &runtime);
 
     assert!(
         runtime
@@ -1601,32 +1370,14 @@ fn reused_component_keeps_store_reader_dependency() {
 
 #[test]
 fn hot_reload_cleans_old_effect_context_before_starting_new_generation() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/effect_probe").unwrap(),
-        EFFECT_PROBE.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let active = engine
-        .compile_self_contained_named("ui/effect_probe.rhai", EFFECT_APP)
-        .unwrap();
+    let mut engine = engine_with([("components/effect_probe", EFFECT_PROBE)]);
+    let active = compile(&mut engine, "ui/effect_probe.rhai", EFFECT_APP);
     let schema = engine.root_state_schema(&active).unwrap();
     let runtime = effect_audit_runtime();
-    let mut lifecycle = ScriptLifecycle::new(
-        active,
-        Rc::clone(&runtime),
-        ComponentInstancePath::root("App", "root"),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut lifecycle = mount(&mut engine, active, &runtime);
     assert_eq!(runtime.borrow().tasks.active_count(), 1);
 
-    let candidate = engine
-        .compile_self_contained_named("ui/effect_probe.rhai", EFFECT_APP)
-        .unwrap();
+    let candidate = compile(&mut engine, "ui/effect_probe.rhai", EFFECT_APP);
     let candidate_generation = candidate.generation();
     lifecycle.reload(&mut engine, candidate, &schema).unwrap();
     assert_eq!(lifecycle.generation(), candidate_generation);
@@ -1648,29 +1399,12 @@ fn hot_reload_cleans_old_effect_context_before_starting_new_generation() {
 
 #[test]
 fn native_signal_updates_preserve_identity_without_component_invalidation() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/signal_probe").unwrap(),
-        SIGNAL_PROBE.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/signal_probe.rhai", SIGNAL_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
+    let mut engine = engine_with([("components/signal_probe", SIGNAL_PROBE)]);
+    let compiled = compile(&mut engine, "ui/signal_probe.rhai", SIGNAL_APP);
+    let runtime = new_runtime();
+    let root = root_path();
     let component = root.child("SignalProbe", "primary");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled.clone(),
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut lifecycle = mount(&mut engine, compiled.clone(), &runtime);
     assert_eq!(lifecycle.root().unwrap().signal_bindings().len(), 1);
     let signal = runtime
         .borrow()
@@ -1709,28 +1443,11 @@ fn native_signal_updates_preserve_identity_without_component_invalidation() {
 
 #[test]
 fn element_refs_follow_retained_node_identity_and_fail_stale_after_unmount() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/ref_probe").unwrap(),
-        REF_PROBE.to_owned(),
-    )]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/ref_probe.rhai", REF_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root_path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled.clone(),
-        Rc::clone(&runtime),
-        root_path.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut engine = engine_with([("components/ref_probe", REF_PROBE)]);
+    let compiled = compile(&mut engine, "ui/ref_probe.rhai", REF_APP);
+    let runtime = new_runtime();
+    let root = root_path();
+    let mut lifecycle = mount(&mut engine, compiled.clone(), &runtime);
     let reference = lifecycle.root().unwrap().element_ref().unwrap().clone();
     let node_id = runtime.borrow().element_refs.resolve(&reference).unwrap();
     assert_eq!(Some(node_id), lifecycle.retained().root_id());
@@ -1738,7 +1455,7 @@ fn element_refs_follow_retained_node_identity_and_fail_stale_after_unmount() {
     assert!(
         runtime
             .borrow_mut()
-            .set_component_state_from_host(&root_path, "revision", UiValue::Integer(1))
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(1))
             .unwrap()
     );
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
@@ -1765,36 +1482,16 @@ struct NodePropFixture {
 }
 
 fn node_prop_fixture() -> NodePropFixture {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/node_prop_stateful").unwrap(),
-            NODE_PROP_STATEFUL.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/node_prop_receiver").unwrap(),
-            NODE_PROP_RECEIVER.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/node_prop_replay.rhai", NODE_PROP_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
+    let mut engine = engine_with([
+        ("components/node_prop_stateful", NODE_PROP_STATEFUL),
+        ("components/node_prop_receiver", NODE_PROP_RECEIVER),
+    ]);
+    let compiled = compile(&mut engine, "ui/node_prop_replay.rhai", NODE_PROP_APP);
+    let runtime = new_runtime();
+    let root = root_path();
     let stateful = root.child("NodePropStateful", "stateful");
     let receiver = root.child("NodePropReceiver", "receiver");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
     NodePropFixture {
         engine,
         runtime,
@@ -1918,35 +1615,19 @@ fn receiver_rerender_replays_the_latest_node_prop_component_snapshot() {
 
 #[test]
 fn receiver_rerender_does_not_restart_replayed_node_prop_resources() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/effect_probe").unwrap(),
-            EFFECT_PROBE.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/node_prop_receiver").unwrap(),
-            NODE_PROP_RECEIVER.to_owned(),
-        ),
-    ]));
-    let mut engine = RuntimeEngine::new();
-    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = engine
-        .compile_self_contained_named("ui/node_prop_effect.rhai", NODE_PROP_EFFECT_APP)
-        .unwrap();
-    let schema = engine.root_state_schema(&compiled).unwrap();
+    let mut engine = engine_with([
+        ("components/effect_probe", EFFECT_PROBE),
+        ("components/node_prop_receiver", NODE_PROP_RECEIVER),
+    ]);
+    let compiled = compile(
+        &mut engine,
+        "ui/node_prop_effect.rhai",
+        NODE_PROP_EFFECT_APP,
+    );
     let runtime = effect_audit_runtime();
-    let root = ComponentInstancePath::root("App", "root");
+    let root = root_path();
     let receiver = root.child("NodePropReceiver", "receiver");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &schema,
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],
@@ -2071,18 +1752,8 @@ fn data_backed_virtual_collection_realizes_only_requested_items_off_layout_path(
             "#,
         )
         .unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root.clone(),
-        Some("main".to_owned()),
-        BTreeMap::new(),
-        &ComponentStateSchema::default(),
-    )
-    .unwrap();
-    lifecycle.start(&mut engine).unwrap();
+    let runtime = new_runtime();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
     let gpui_rhai::UiNodeKind::VirtualCollection { spec } = lifecycle.root().unwrap().kind() else {
         panic!("root must be virtual collection");
     };
