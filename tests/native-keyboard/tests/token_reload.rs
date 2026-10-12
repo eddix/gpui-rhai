@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
 use gpui_rhai::*;
@@ -97,7 +97,8 @@ impl App {
         let view = saved.borrow().clone().unwrap();
         let visual = VisualTestContext::from_window(*window, cx);
         let mut app = Self { dir, visual, view };
-        app.settle();
+        // The watcher scanned the files when the view mounted: one poll and the view is ready.
+        app.poll();
         app
     }
 
@@ -105,14 +106,30 @@ impl App {
         std::fs::write(self.dir.join(file), source).unwrap();
     }
 
-    /// Let the file watcher see the edit and the view apply it.
-    fn settle(&mut self) {
-        for _ in 0..15 {
-            std::thread::sleep(Duration::from_millis(100));
-            self.visual
-                .executor()
-                .advance_clock(Duration::from_millis(120));
-            self.visual.run_until_parked();
+    /// Give the file watcher (a thread polling every 100ms of real time) a moment, then let
+    /// the view's reload poll (100ms on the test clock) take what it found.
+    fn poll(&mut self) {
+        std::thread::sleep(Duration::from_millis(20));
+        self.visual
+            .executor()
+            .advance_clock(Duration::from_millis(120));
+        self.visual.run_until_parked();
+    }
+
+    /// Let the file watcher see the edit and the view apply or reject it: poll until `done`
+    /// says the view has taken the edit, for at most 10 seconds.
+    fn settle_until(&mut self, what: &str, done: impl Fn(&mut Self) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            self.poll();
+            if done(self) {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the view did not take the edit within 10s: expected {what}, error {:?}",
+                self.error()
+            );
         }
     }
 
@@ -162,13 +179,13 @@ fn a_token_edit_preparation_would_reject_keeps_the_last_good_theme(cx: &mut Test
     let mut app = App::new(cx, "required");
     assert_eq!(app.height(), 40.0);
     app.write("tokens.rhai", "fn tokens(){#{metrics:#{unit:px(50)}}}");
-    app.settle();
+    app.settle_until("height 50", |app| app.height() == 50.0);
     assert_eq!(app.height(), 50.0, "a valid edit applies");
     assert_eq!(app.error(), None);
 
     // Removing a token a component declares: rejected, as by preparation.
     app.write("tokens.rhai", "fn tokens(){#{}}");
-    app.settle();
+    app.settle_until("an error", |app| app.error().is_some());
     let error = app.error().expect("the rejected edit is reported");
     assert!(error.contains("metrics.unit"), "{error}");
     assert_eq!(app.height(), 50.0, "the last-good theme keeps rendering");
@@ -177,13 +194,15 @@ fn a_token_edit_preparation_would_reject_keeps_the_last_good_theme(cx: &mut Test
 
     // A broken expression: rejected the same way.
     app.write("tokens.rhai", "fn tokens(){#{metrics:#{unit:px(}}");
-    app.settle();
+    app.settle_until("another error", |app| {
+        app.error().is_some_and(|next| next != error)
+    });
     assert!(app.error().is_some());
     assert_eq!(app.height(), 50.0);
 
     // Fixing the file applies it and clears the error.
     app.write("tokens.rhai", "fn tokens(){#{metrics:#{unit:px(60)}}}");
-    app.settle();
+    app.settle_until("height 60", |app| app.height() == 60.0);
     assert_eq!(app.error(), None);
     assert_eq!(app.height(), 60.0);
     app.dispose();
@@ -200,7 +219,7 @@ fn a_new_component_requirement_and_its_token_apply_in_one_batch(cx: &mut TestApp
         "fn tokens(){#{metrics:#{unit:px(40), extra:px(70)}}}",
     );
     app.write("components/probe.rhai", &component(true));
-    app.settle();
+    app.settle_until("height 70", |app| app.height() == 70.0);
     assert_eq!(app.error(), None);
     assert_eq!(app.height(), 70.0);
     app.dispose();
@@ -211,7 +230,7 @@ fn a_component_that_needs_a_missing_token_is_not_reloaded(cx: &mut TestAppContex
     let mut app = App::new(cx, "script");
     assert_eq!(app.height(), 40.0);
     app.write("components/probe.rhai", &component(true));
-    app.settle();
+    app.settle_until("an error", |app| app.error().is_some());
     let error = app.error().expect("the script edit is rejected");
     assert!(error.contains("metrics.extra"), "{error}");
     assert_eq!(app.height(), 40.0, "the last-good program keeps rendering");
@@ -221,7 +240,7 @@ fn a_component_that_needs_a_missing_token_is_not_reloaded(cx: &mut TestAppContex
         "tokens.rhai",
         "fn tokens(){#{metrics:#{unit:px(40), extra:px(70)}}}",
     );
-    app.settle();
+    app.settle_until("height 70", |app| app.height() == 70.0);
     assert_eq!(app.error(), None);
     assert_eq!(app.height(), 70.0);
     app.dispose();
