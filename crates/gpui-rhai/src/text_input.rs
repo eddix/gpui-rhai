@@ -320,8 +320,10 @@ impl TextInputEntity {
         if self.disabled || self.read_only {
             return;
         }
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.buffer.replace(None, &text.replace('\n', " "));
+        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text())
+            && let Some(text) = single_line(&text)
+        {
+            self.buffer.replace(None, &text);
             self.emit_change(window, cx);
             cx.notify();
         }
@@ -453,7 +455,10 @@ impl EntityInputHandler for TextInputEntity {
         if self.disabled || self.read_only {
             return;
         }
-        self.buffer.replace(range_utf16.as_ref(), text);
+        let Some(text) = single_line(text) else {
+            return;
+        };
+        self.buffer.replace(range_utf16.as_ref(), &text);
         self.emit_change(window, cx);
         cx.notify();
     }
@@ -469,9 +474,12 @@ impl EntityInputHandler for TextInputEntity {
         if self.disabled || self.read_only {
             return;
         }
+        let Some(text) = single_line(text) else {
+            return;
+        };
         // Composition steps only show in the field; `change` waits for the commit.
         self.buffer
-            .replace_and_mark(range_utf16.as_ref(), text, selected_utf16);
+            .replace_and_mark(range_utf16.as_ref(), &text, selected_utf16);
         cx.notify();
     }
 
@@ -944,6 +952,26 @@ fn sync_controlled(buffer: &mut TextBuffer, value: &str) {
     }
 }
 
+/// Text for a single-line field. A text of line breaks alone, the Enter key
+/// reaching the input handler unhandled, inserts nothing; line breaks inside
+/// other text become spaces, as in a paste. GPUI refuses to shape a line that
+/// holds a line break.
+fn single_line(text: &str) -> Option<std::borrow::Cow<'_, str>> {
+    if !text.is_empty()
+        && text
+            .chars()
+            .all(|character| matches!(character, '\n' | '\r'))
+    {
+        return None;
+    }
+    if text.contains(['\n', '\r']) {
+        return Some(std::borrow::Cow::Owned(
+            text.replace("\r\n", " ").replace(['\n', '\r'], " "),
+        ));
+    }
+    Some(std::borrow::Cow::Borrowed(text))
+}
+
 fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
     let change_events = events.clone();
     let submit_events = events.clone();
@@ -1087,6 +1115,15 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_single_line_field_keeps_line_breaks_out() {
+        assert_eq!(single_line("\n"), None);
+        assert_eq!(single_line("\r\n"), None);
+        assert_eq!(single_line("").as_deref(), Some(""));
+        assert_eq!(single_line("svc").as_deref(), Some("svc"));
+        assert_eq!(single_line("a\nb\r\nc").as_deref(), Some("a b c"));
+    }
 
     #[test]
     fn grapheme_navigation_does_not_split_emoji_or_combining_text() {
