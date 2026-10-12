@@ -1,0 +1,105 @@
+name: Release
+
+# Publishes gpui-rhai, gpui-rhai-registry and gpui-rhai-cli to crates.io with
+# Trusted Publishing: each crate's crates.io settings name this repository, this
+# file (release.yml) and the `crates-io` environment, and the job exchanges its
+# GitHub OIDC identity for a crates.io token that lives 30 minutes. No token is
+# stored anywhere. See docs/release-checklist.md.
+#
+# A `v*` tag on main runs both jobs. A manual run (workflow_dispatch), or a pull
+# request that changes this file, runs only `verify`: it packages and builds the
+# three crates and publishes nothing.
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['.github/workflows/release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+      - name: The tag names the workspace version and is on main
+        if: github.event_name == 'push'
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "gpui-rhai") | .version')
+          if [[ "v${version}" != "${GITHUB_REF_NAME}" ]]; then
+            echo "tag ${GITHUB_REF_NAME} does not name the workspace version ${version}"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "tag ${GITHUB_REF_NAME} is not on main"
+            exit 1
+          fi
+      - name: Install native Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libxcb1-dev \
+            libfontconfig1-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
+      # Builds each package from its packaged sources; the CLI resolves the core
+      # and registry from the local packages, before either is on crates.io.
+      - name: Package and verify the three crates
+        run: cargo package --workspace --locked
+
+  publish:
+    needs: verify
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Protect this environment: deployments from `v*` tags only, and a required
+    # reviewer, so a pushed tag waits for approval before anything is published.
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+      # The token lives 30 minutes, so it is requested only after `verify` has
+      # built everything; publishing below packages and uploads without building.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      # Dependency order. `cargo publish` waits until each crate is in the index
+      # before the next one resolves it. A version crates.io already serves is
+      # skipped, so a rerun finishes a partial release.
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for crate in gpui-rhai gpui-rhai-registry gpui-rhai-cli; do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --user-agent "gpui-rhai release workflow (github.com/eddix/gpui-rhai)" \
+              "https://crates.io/api/v1/crates/${crate}/${version}")
+            if [[ "${status}" == "200" ]]; then
+              echo "${crate} ${version} is already on crates.io; skipped"
+              continue
+            fi
+            cargo publish --package "${crate}" --locked --no-verify
+          done
