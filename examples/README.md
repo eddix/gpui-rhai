@@ -46,12 +46,8 @@ The following retain stable Cargo target names for CI and benchmark scripts,
 but live under `crates/gpui-rhai/examples/internal/` because they are not API
 tutorials:
 
-- `performance_probe` — retained diff and virtual-list policy micro-probe.
 - `table_1000` — end-to-end 1,000-row Table performance baseline.
-- `native_overlay_smoke` — native overlay/focus launch smoke.
-- `native_virtual_list_smoke` — native virtual-collection launch smoke.
 - `phase0_probe` — raw phase-zero renderer launch smoke.
 
-The canonical target inventory is `scripts/verification-manifest.json`; the
-verification script resolves Cargo metadata, so explicitly located internal
-targets cannot silently fall out of CI.
+`scripts/release-smoke.sh` launches every example target Cargo reports, so an
+internal target cannot fall out of the smoke run.

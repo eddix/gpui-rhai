@@ -57,10 +57,12 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
 - The representative 1,000-node probe records cold compile plus p95 cached view
   and `UiNode`-to-element conversion over 50 iterations.
 
-Run on a release build:
+`crates/gpui-rhai/tests/policy_scale.rs` checks a 100,000-row variable-height
+list (only the rows around its viewport realize) and a 2,000-row keyed reorder
+(every node survives). It prints their timings; run it on a release build:
 
 ```text
-cargo run --release -p gpui-rhai --example performance_probe
+cargo test --release -p gpui-rhai --test policy_scale -- --nocapture
 ```
 
 ## Frame cost
