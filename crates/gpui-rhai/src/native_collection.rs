@@ -945,9 +945,7 @@ struct TableProjection {
     label: String,
     row_key: String,
     columns: Vec<TableColumn>,
-    selected_keys: Vec<String>,
     selected: BTreeSet<String>,
-    selection_mode: SelectionMode,
     striped: bool,
     row_height: f64,
     sort: Option<SortSpec>,
@@ -977,13 +975,6 @@ struct TableAdornment {
     dot: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SelectionMode {
-    None,
-    Single,
-    Multiple,
-}
-
 impl TableProjection {
     fn decode(config: UiValue, source_key: &str) -> Result<Self, NativeCollectionError> {
         let UiValue::Map(mut config) = config else {
@@ -1003,7 +994,7 @@ impl TableProjection {
             .into_iter()
             .map(TableColumn::decode)
             .collect::<Result<Vec<_>, _>>()?;
-        let selected_keys = take_array(&mut config, "selected_keys")?
+        let selected = take_array(&mut config, "selected_keys")?
             .into_iter()
             .enumerate()
             .map(|(index, value)| match value {
@@ -1012,18 +1003,15 @@ impl TableProjection {
                     "selected_keys[{index}] must be a string"
                 ))),
             })
-            .collect::<Result<Vec<_>, _>>()?;
-        let selected = selected_keys.iter().cloned().collect();
-        let selection_mode = match take_string(&mut config, "selection_mode")?.as_str() {
-            "none" => SelectionMode::None,
-            "single" => SelectionMode::Single,
-            "multiple" => SelectionMode::Multiple,
-            value => {
-                return Err(NativeCollectionError::InvalidTableConfig(format!(
-                    "unknown selection mode `{value}`"
-                )));
-            }
-        };
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        // A row is drawn from its selected flag; a click builds the next
+        // selection in Rhai, so the mode is only validated here.
+        let selection_mode = take_string(&mut config, "selection_mode")?;
+        if !matches!(selection_mode.as_str(), "none" | "single" | "multiple") {
+            return Err(NativeCollectionError::InvalidTableConfig(format!(
+                "unknown selection mode `{selection_mode}`"
+            )));
+        }
         let striped = take_bool(&mut config, "striped")?;
         let row_height = take_number(&mut config, "row_height")?;
         if !row_height.is_finite() || row_height <= 0.0 {
@@ -1045,9 +1033,7 @@ impl TableProjection {
             label,
             row_key,
             columns,
-            selected_keys,
             selected,
-            selection_mode,
             striped,
             row_height,
             sort,
@@ -1183,34 +1169,15 @@ impl TableProjection {
                 Ok(UiValue::Map(cell))
             })
             .collect::<Result<Vec<_>, NativeCollectionError>>()?;
-        let selection = match self.selection_mode {
-            SelectionMode::None => UiValue::Null,
-            SelectionMode::Single if selected => UiValue::Array(Vec::new()),
-            SelectionMode::Single => UiValue::Array(vec![UiValue::String(key.clone())]),
-            SelectionMode::Multiple => {
-                let mut next = self
-                    .selected_keys
-                    .iter()
-                    .filter(|candidate| *candidate != &key)
-                    .cloned()
-                    .map(UiValue::String)
-                    .collect::<Vec<_>>();
-                if !selected {
-                    next.push(UiValue::String(key.clone()));
-                }
-                UiValue::Array(next)
-            }
-        };
         Ok(UiValue::Map(BTreeMap::from([
             ("kind".to_owned(), UiValue::String("row".to_owned())),
-            ("key".to_owned(), UiValue::String(key.clone())),
+            ("key".to_owned(), UiValue::String(key)),
             (
                 "label".to_owned(),
                 UiValue::String(format!("{} row {}", self.label, index + 1)),
             ),
             ("cells".to_owned(), UiValue::Array(cells)),
             ("selected".to_owned(), UiValue::Bool(selected)),
-            ("selection".to_owned(), selection),
             (
                 "striped".to_owned(),
                 UiValue::Bool(self.striped && index % 2 == 1),
@@ -2353,6 +2320,52 @@ mod tests {
             UiValue::String("track-a".into())
         );
         assert_eq!(field(&values[4], "key"), UiValue::String("a".into()));
+    }
+
+    #[test]
+    fn table_rows_carry_their_selected_flag_but_not_the_next_selection() {
+        let source = grouped_rows();
+        for (mode, selected) in [
+            ("multiple", vec!["a", "b"]),
+            ("single", vec!["a"]),
+            ("none", vec![]),
+        ] {
+            let mut config = table_config(&[]);
+            config.insert("group_by".into(), Dynamic::UNIT);
+            config.insert("selection_mode".into(), Dynamic::from(mode));
+            config.insert(
+                "selected_keys".into(),
+                Dynamic::from_array(selected.iter().copied().map(Dynamic::from).collect()),
+            );
+            let view = source.table_view(config).unwrap();
+            for index in 0..view.len() {
+                let UiValue::Map(row) = view.item(index).unwrap().unwrap() else {
+                    panic!("projected table row must be a map");
+                };
+                let UiValue::String(key) = &row["key"] else {
+                    panic!("projected table row key must be a string");
+                };
+                assert_eq!(
+                    row["selected"],
+                    UiValue::Bool(selected.contains(&key.as_str())),
+                    "{mode} {key}"
+                );
+                assert_eq!(
+                    row.keys().map(String::as_str).collect::<Vec<_>>(),
+                    [
+                        "cells", "height", "key", "kind", "label", "selected", "striped"
+                    ],
+                    "{mode} {key}"
+                );
+            }
+        }
+        let mut config = table_config(&[]);
+        config.insert("selection_mode".into(), Dynamic::from("several"));
+        assert!(matches!(
+            source.table_view(config),
+            Err(NativeCollectionError::InvalidTableConfig(message))
+                if message == "unknown selection mode `several`"
+        ));
     }
 
     #[test]

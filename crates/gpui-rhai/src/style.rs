@@ -3000,7 +3000,8 @@ fn register_token_api(engine: &mut Engine) {
         );
 }
 
-/// Color expressions over theme tokens: `mix`, `alpha` and `readable`.
+/// Color expressions over theme tokens: `mix`, `alpha` and `readable`. Each
+/// numeric argument takes an integer or a float.
 fn register_color_expression_api(engine: &mut Engine) {
     FuncRegistration::new("mix")
         .in_global_namespace()
@@ -3014,6 +3015,18 @@ fn register_color_expression_api(engine: &mut Engine) {
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         );
+    FuncRegistration::new("mix")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |base: ColorValue,
+             other: ColorValue,
+             weight: INT|
+             -> Result<ColorValue, Box<EvalAltResult>> {
+                base.mix(other, numeric_to_f64(&weight)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
     FuncRegistration::new("alpha")
         .in_global_namespace()
         .register_into_engine(
@@ -3021,6 +3034,16 @@ fn register_color_expression_api(engine: &mut Engine) {
             |color: ColorValue, alpha: FLOAT| -> Result<ColorValue, Box<EvalAltResult>> {
                 color
                     .alpha(alpha)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    FuncRegistration::new("alpha")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |color: ColorValue, alpha: INT| -> Result<ColorValue, Box<EvalAltResult>> {
+                color
+                    .alpha(numeric_to_f64(&alpha)?)
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         );
@@ -3035,6 +3058,20 @@ fn register_color_expression_api(engine: &mut Engine) {
              -> Result<ColorValue, Box<EvalAltResult>> {
                 color
                     .readable(toward, background, ratio)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    FuncRegistration::new("readable")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |color: ColorValue,
+             toward: ColorValue,
+             background: ColorValue,
+             ratio: INT|
+             -> Result<ColorValue, Box<EvalAltResult>> {
+                color
+                    .readable(toward, background, numeric_to_f64(&ratio)?)
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         );
@@ -3435,6 +3472,53 @@ mod tests {
         ] {
             let style: Style = engine.eval(script).unwrap();
             assert_eq!(style.base.text_align, Some(align), "{script}");
+        }
+    }
+
+    #[test]
+    fn color_expressions_take_integer_factors() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let accent = || ColorValue::Token("accent".to_owned());
+        let surface = || ColorValue::Token("surface".to_owned());
+        for (script, expected) in [
+            (
+                r#"alpha(theme_color("accent"), 1)"#,
+                accent().alpha(1.0).unwrap(),
+            ),
+            (
+                r#"theme_color("accent").alpha(0)"#,
+                accent().alpha(0.0).unwrap(),
+            ),
+            (
+                r#"mix(theme_color("accent"), theme_color("surface"), 1)"#,
+                accent().mix(surface(), 1.0).unwrap(),
+            ),
+            (
+                r#"readable(theme_color("accent"), theme_color("text_primary"), theme_color("surface"), 4)"#,
+                accent()
+                    .readable(ColorValue::Token("text_primary".to_owned()), surface(), 4.0)
+                    .unwrap(),
+            ),
+        ] {
+            let color: ColorValue = engine
+                .eval(script)
+                .unwrap_or_else(|error| panic!("{script}: {error}"));
+            assert_eq!(color, expected, "{script}");
+        }
+        for (script, message) in [
+            (r#"alpha(theme_color("accent"), 2)"#, "color factor"),
+            (
+                r#"mix(theme_color("accent"), theme_color("surface"), -1)"#,
+                "color factor",
+            ),
+            (
+                r#"readable(theme_color("accent"), theme_color("text_primary"), theme_color("surface"), 22)"#,
+                "contrast ratio",
+            ),
+        ] {
+            let error = engine.eval::<ColorValue>(script).unwrap_err().to_string();
+            assert!(error.contains(message), "{script}: {error}");
         }
     }
 

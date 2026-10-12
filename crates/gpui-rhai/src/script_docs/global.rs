@@ -20,6 +20,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Returns `color` with its alpha multiplied by `factor` (0 to 1); a token color resolves when the node renders.",
     },
     ScriptFnDoc {
+        signature: "alpha(_: ColorValue, _: i64) -> core::result::Result<gpui_rhai::style::ColorValue,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["color", "factor"],
+        doc: "Returns `color` with its alpha multiplied by `factor` (0 to 1); a token color resolves when the node renders.",
+    },
+    ScriptFnDoc {
         signature: "asset(_: string) -> core::result::Result<gpui_rhai::asset::AssetId,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["id"],
         doc: "Parses a logical asset ID of two or more `/`-separated segments of letters, digits, `_` or `-`, such as `\"app/icons/check\"`.",
@@ -261,6 +266,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     },
     ScriptFnDoc {
         signature: "mix(_: ColorValue, _: ColorValue, _: f64) -> core::result::Result<gpui_rhai::style::ColorValue,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["base", "other", "weight"],
+        doc: "Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders.",
+    },
+    ScriptFnDoc {
+        signature: "mix(_: ColorValue, _: ColorValue, _: i64) -> core::result::Result<gpui_rhai::style::ColorValue,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["base", "other", "weight"],
         doc: "Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders.",
     },
@@ -525,6 +535,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     },
     ScriptFnDoc {
         signature: "readable(_: ColorValue, _: ColorValue, _: ColorValue, _: f64) -> core::result::Result<gpui_rhai::style::ColorValue,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["color", "toward", "background", "ratio"],
+        doc: "Moves `color` toward `toward` just far enough to reach WCAG contrast `ratio` (1 to 21) against `background`, when the node renders.",
+    },
+    ScriptFnDoc {
+        signature: "readable(_: ColorValue, _: ColorValue, _: ColorValue, _: i64) -> core::result::Result<gpui_rhai::style::ColorValue,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["color", "toward", "background", "ratio"],
         doc: "Moves `color` toward `toward` just far enough to reach WCAG contrast `ratio` (1 to 21) against `background`, when the node renders.",
     },

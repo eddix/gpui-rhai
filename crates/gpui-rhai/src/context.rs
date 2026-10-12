@@ -2347,11 +2347,7 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        let context = crate::InvocationContext {
-            origin: runtime.origin.clone(),
-            view_id: self.view.clone(),
-            component: self.component.clone(),
-        };
+        let context = self.invocation_context(&runtime);
         let output = runtime
             .capabilities
             .call_with(&context, &id, method, input)?;
@@ -2363,6 +2359,15 @@ impl UiContext {
             true,
         );
         Ok(output)
+    }
+
+    /// The context a capability handler receives for a call made here.
+    fn invocation_context(&self, runtime: &UiRuntimeState) -> crate::InvocationContext {
+        crate::InvocationContext {
+            origin: runtime.origin.clone(),
+            view_id: self.view.clone(),
+            component: self.component.clone(),
+        }
     }
 
     fn read_locale<T>(
@@ -3428,7 +3433,10 @@ impl UiContext {
             runtime.tasks.active_count().saturating_add(1),
             runtime.budgets.background_tasks,
         )?;
-        let (work, output) = runtime.capabilities.start_task(&id, method, input)?;
+        let context = self.invocation_context(&runtime);
+        let (work, output) = runtime
+            .capabilities
+            .start_task_with(&context, &id, method, input)?;
         let handle = runtime.tasks.spawn_cancellable(
             self.async_scope
                 .clone()
@@ -3482,9 +3490,10 @@ impl UiContext {
             runtime.subscriptions.active_count().saturating_add(1),
             runtime.budgets.subscriptions,
         )?;
+        let context = self.invocation_context(&runtime);
         let (work, output) = runtime
             .capabilities
-            .start_subscription(&id, method, input)?;
+            .start_subscription_with(&context, &id, method, input)?;
         let registration = SubscriptionRegistration::new(
             format!("{capability}.{method}"),
             self.async_scope
