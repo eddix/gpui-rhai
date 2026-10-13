@@ -201,8 +201,12 @@ fn view(ctx) { text("ok") }
 `import "<module id>" as <alias>;` at the top of a script makes a module's
 exports reachable as `alias::Name`. The id is the registry path
 (`components/button`, `layouts/region`, `patterns/app_shell`), not a file path.
-A module cannot see the functions of the script that imports it, so callbacks
-are passed as `Fn("name")` pointers to the importer's functions.
+Pass callbacks to a module as `Fn("name")` pointers to the importer's
+functions; do not call the importer's functions from the module by name.
+`gpui-rhai check` rejects a call to a function the module does not define. At
+run time Rhai looks such a call up in the module first and then in the script
+that called it, so it may reach an importer's function, and which one depends
+on the caller.
 
 ## Nodes and styles
 
