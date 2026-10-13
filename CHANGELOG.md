@@ -5,6 +5,47 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.2.2 - Unreleased
+
+A compatible patch release of 0.2: Toast's stacked layout, a Host hook for the
+Rhai engine, a focus event for scripts, and fixes. See the
+[0.2.2 release notes](docs/releases/0.2.2.md) for upgrading; the copied Toast
+moves to 0.2.2 through `gpui-rhai update`.
+
+- Toast gains `layout: "stack"`: each corner piles its toasts behind the
+  newest, with up to two 6px edges and a count. Hovering the pile or moving
+  keyboard focus into it expands it into a list, newest nearest the corner,
+  under `heading` and the count with a `clear_label` button that dismisses
+  every toast of the corner; Escape collapses it, and every countdown of the
+  corner pauses while it is held. In a stack every item counts down;
+  `max_visible` applies to the flat layout (#148).
+- Toast gains `on_activate` / `activate`: with it a toast is a button that a
+  click or Enter activates. Close buttons, and activatable toasts, show the
+  focus frame.
+- `on_focus_within_change(Fn)` and `on_focus_within_value(Fn, value)` tell a
+  script when keyboard focus enters a node or anything inside it (`true`) and
+  when it leaves them all or the window loses focus (`false`), whatever element
+  holds it. Such a node takes focus when pressed where nothing inside took the
+  press, as a node with a ref does.
+- `ScriptViewExtension::configure_rhai_engine(&mut rhai::Engine)` lets a Host
+  disable or replace the Rhai standard-library functions its scripts call
+  (`sleep`, `exit`, `eval`, `timestamp`, `parse_json`, `print`, ...). It runs
+  on every engine the runtime builds for a view: preparation, script windows
+  and dev-reload candidates. gpui-rhai still restricts none of them itself;
+  INTENT.md section 12 no longer says it rejects `eval`. `gpui_rhai::rhai`
+  re-exports the Rhai crate (#151).
+- A value matching no `one_of` variant names the path inside each variant
+  (`variant 1: $.fields: expected map, got string`), so capability input errors
+  name the wrong field. Capability errors print the id as `app.echo` instead of
+  `CapabilityId("app.echo")`, and `CapabilityId` implements Display (#154).
+- `style().hidden()` hides a `row` or `column`; their flex direction turned
+  display back on.
+- The Rhai reference says what a module's call to a function it does not define
+  does: `check` rejects it, and at run time it may reach the calling script's
+  function (#155).
+- SplitPane's absolute-content test covers a full-width clipping stage, the
+  treemap shape of #156, which paints on 0.2.1.
+
 ## 0.2.1 - 2026-10-12
 
 A compatible patch release of 0.2: fixes for what applications met after moving
