@@ -78,6 +78,14 @@ fn set_value(key, ctx, value) {
 fn set_checked(key, ctx, payload) { set_value(key, ctx, payload.checked); }
 // Store a fixed value under `key`, ignoring the event payload (button presses).
 fn put_value(key, value, ctx, payload) { set_value(key, ctx, value); }
+// Remove the item whose `id` is the payload from the list under `key` (Toast dismissals).
+fn remove_item(key, ctx, id) {
+    let values = ctx.get_state("values");
+    let kept = [];
+    if key in values { for item in values[key] { if item.id != id { kept.push(item); } } }
+    values[key] = kept;
+    ctx.set_state("values", values);
+}
 // Not `index_of`: an entry function wins over the built-in string method of the
 // same arity inside imported modules, which would break Command's fuzzy search.
 fn order_position(values, key) {
@@ -213,7 +221,7 @@ fn page_view(ctx, h, v, id) {
 
 fn handlers() {
     #{ set: Fn("set_value"), put: Fn("put_value"), checked: Fn("set_checked"), reorder: Fn("reorder"), drop: Fn("drop_to"),
-        noop: Fn("noop"), navigate: Fn("go_to") }
+        remove: Fn("remove_item"), noop: Fn("noop"), navigate: Fn("go_to") }
 }
 
 fn navigation(ctx, v, page) {
