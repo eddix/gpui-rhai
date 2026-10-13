@@ -102,10 +102,24 @@ fn toast_page(h, v) {
         #{ id: "saved", title: "Changes saved", variant: "success", duration_ms: 4000 },
         #{ id: "sync", title: "Sync delayed", message: "Retrying in 30 seconds.", variant: "warning", paused: true },
     ]);
+    // Stacked in the bottom right corner, newest last: hover or Tab into the pile to open it.
+    let piled = kit::val(v, "toast.stack", []);
+    let pile = kit::put(h, "toast.stack", [
+        #{ id: "upload", title: "Upload finished", message: "report.pdf, 2.4 MB", variant: "success",
+            region: "bottom_right", duration_ms: 8000 },
+        #{ id: "copied", title: "Link copied", region: "bottom_right", duration_ms: 8000 },
+        #{ id: "deploy", title: "Deploy failed", message: "api-01 did not respond.", variant: "danger",
+            region: "bottom_right", paused: true },
+    ]);
     kit::page(h, v, "toast", "Toast", "Notifications as raised blocks; status toasts carry the square lamp.", [
         kit::sec("Show", kit::pile([
             button::Button(#{ key: "toast-show", text: "Show notifications", on_click: push }),
-            toast::Toast(#{ key: "toast-region", items: shown, on_dismiss: kit::store(h, "toast.dismissed") }),
+            toast::Toast(#{ key: "toast-region", items: shown, on_dismiss: kit::remove(h, "toast.items") }),
+        ])),
+        kit::sec("Stack", kit::pile([
+            button::Button(#{ key: "toast-stack-show", text: "Show a stack", on_click: pile }),
+            toast::Toast(#{ key: "toast-stack", layout: "stack", items: piled,
+                on_dismiss: kit::remove(h, "toast.stack") }),
         ])),
     ])
 }

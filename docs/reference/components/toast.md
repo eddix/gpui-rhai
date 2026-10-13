@@ -1,9 +1,9 @@
 # Toast
 
-`components/toast` · export `Toast` · version 0.2.0. Generated from
+`components/toast` · export `Toast` · version 0.2.2. Generated from
 [`registry/components/toast.rhai`](../../../registry/components/toast.rhai); do not edit.
 
-Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events. State: caller owns items; runtime timers own one-shot deadline and pause/resume state.
+Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events. State: caller owns items; runtime timers own one-shot deadline and pause/resume state; the stack layout keeps which corner the pointer and keyboard focus are in. `layout: "stack"` piles each corner's toasts behind its newest, the last of that corner's items: up to two 6px edges peek out and a count marks the pile. Hovering the pile or moving keyboard focus into it expands it into a list, newest nearest the corner, under a heading with a Clear all button, and holds every countdown in that corner until pointer and focus leave; Escape collapses it.
 
 ```rhai
 import "components/toast" as toast;
@@ -15,11 +15,15 @@ toast::Toast(#{ key: "toasts", items: items, on_dismiss: Fn("dismissed") })
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `clear_label` | string | `"Clear all"` | Label of an expanded stack's button that dismisses every toast in its corner. |
 | `dismiss_label` | string | `"Dismiss notification"` | Accessible name of each toast's close button. |
+| `heading` | string | `"Notifications"` | Heading of an expanded stack, followed by the number of toasts in it; also names the pile. |
 | `items` | array of object (at most 100) | required | The notifications in display order; the caller removes an item when it is dismissed. |
 | `key` | string | required | Identity of the toast stack; the ids of its four corner layers derive from it. |
+| `layout` | `"flat"` or `"stack"` | `"flat"` | `flat` lists each corner's toasts in a column; `stack` piles them behind the newest and expands the pile while it is hovered or holds keyboard focus. In `stack` every item joins its corner's pile and counts down: `max_visible` applies to `flat` only. |
 | `max_visible` | integer 1–10 | `3` | How many items, counted from the start of `items` across all regions, show at once; the rest wait without a countdown. |
-| `on_dismiss` | callback | required | Called with a toast's `id` when its countdown ends or its close button is pressed. |
+| `on_activate` | callback or `()` | — | Called with a toast's `id` when it is clicked or Enter is pressed on it; without it a toast is not a button. |
+| `on_dismiss` | callback | required | Called with a toast's `id` when its countdown ends, its close button is pressed or Clear all dismisses its stack. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `style` | style | — | Style merged over the root part. |
 
@@ -40,13 +44,14 @@ toast::Toast(#{ key: "toasts", items: items, on_dismiss: Fn("dismissed") })
 
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
-| `dismiss` | `on_dismiss` | string | Emitted when a toast's countdown ends or its close button is pressed; the payload is the item's `id`. |
+| `activate` | `on_activate` | string | Emitted when a toast is clicked or Enter is pressed on it while `on_activate` is set; the payload is the item's `id`. |
+| `dismiss` | `on_dismiss` | string | Emitted when a toast's countdown ends, its close button is pressed or Clear all dismisses its stack; the payload is the item's `id`. |
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `close`, `lamp`, `message`, `region`, `root`, `title`, `toast`, `toast_danger`, `toast_neutral`, `toast_success`, `toast_warning`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `close`, `lamp`, `message`, `region`, `root`, `stack_clear`, `stack_count`, `stack_edge`, `stack_header`, `stack_list`, `title`, `toast`, `toast_danger`, `toast_neutral`, `toast_success`, `toast_warning`.
 
 ## Theme
 
-- Tokens: `border`, `danger`, `metrics.icon`, `metrics.inset`, `radius.lg`, `space.related`, `spacing.sm`, `spacing.xxs`, `success`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `warning`
+- Tokens: `border`, `danger`, `focus_ring`, `metrics.icon`, `metrics.inset`, `radius.lg`, `radius.sm`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `success`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`, `warning`
 - Environment: `corners`, `density`

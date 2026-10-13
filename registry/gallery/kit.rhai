@@ -19,6 +19,9 @@ fn put(h, key, value) { h.put.curry(key).curry(value) }
 // A Checkbox change handler that stores the new checked state under `key`.
 fn checked(h, key) { h.checked.curry(key) }
 
+// A handler that removes the item whose `id` is the payload from the list under `key`.
+fn remove(h, key) { h.remove.curry(key) }
+
 // Page header: the title and one line of description, as a single heading block.
 fn heading(title, description) {
     column([
