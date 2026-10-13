@@ -3139,6 +3139,9 @@ fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> b
         || !disabled
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)
+                // The view tracks its focus handle here, so focus inside it is
+                // focus within the node.
+                || !node.event_handlers("focus_within_change").is_empty()
                 || node.style().hover.is_some()
                 || node.style().group_hover.is_some()
                 || node.style().active.is_some()

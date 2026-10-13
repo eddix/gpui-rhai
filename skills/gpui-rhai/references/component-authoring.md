@@ -488,6 +488,13 @@ not an authorization mechanism or a replacement for modal Overlay policy.
 `#{ hovered: bool, value: UiValue }`, which lets source components pause keyed
 timers without retaining closures.
 
+`on_focus_within_change(callback)` and `on_focus_within_value(callback, value)`
+do the same for keyboard focus: `true` when focus enters the node or anything
+inside it, whichever element holds it, and `false` when focus leaves them all
+or the window loses focus. Moving focus between elements inside the node emits
+nothing. The node takes focus when it is pressed and no control inside it took
+the press.
+
 Use `node.test_id("stable-id")` only for non-semantic automation identity.
 Accessible roles, labels, relationships, and IDs remain the user-facing
 contract; automation locators reject missing or duplicate test IDs rather than
