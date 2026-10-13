@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.2.2 - Unreleased
+## 0.2.2 - 2026-10-13
 
 A compatible patch release of 0.2: Toast's stacked layout, a Host hook for the
 Rhai engine, a focus event for scripts, and fixes. See the
