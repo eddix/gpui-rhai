@@ -5724,7 +5724,10 @@ fn apply_flex_alignment(
     text_direction: TextDirection,
 ) -> Div {
     if let Some(direction) = style.direction {
-        element = element.flex();
+        // `row` and `column` carry a direction; `hidden()` still takes them out of layout.
+        if style.display != Some(DisplayMode::None) {
+            element = element.flex();
+        }
         element = match (direction, text_direction) {
             (FlexDirection::Row, TextDirection::LeftToRight) => element.flex_row(),
             (FlexDirection::Row, TextDirection::RightToLeft) => element.flex_row_reverse(),
