@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
+use gpui_rhai::rhai;
 use gpui_rhai::*;
 
 const THEME: &str = r#"fn theme(){#{family:"Reload",name:"Dark",mode:"dark",tokens:#{colors:#{accent:0x3366ffff}}}}"#;
@@ -61,6 +62,15 @@ struct App {
 
 impl App {
     fn new(cx: &mut TestAppContext, name: &str) -> Self {
+        Self::with(cx, name, |view| view)
+    }
+
+    /// [`App::new`], with `configure` applied to the view before it is prepared.
+    fn with(
+        cx: &mut TestAppContext,
+        name: &str,
+        configure: impl FnOnce(FileScriptView) -> FileScriptView,
+    ) -> Self {
         let dir =
             std::env::temp_dir().join(format!("gpui-rhai-reload-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -78,8 +88,7 @@ impl App {
             "fn tokens(){#{metrics:#{unit:px(40)}}}",
         )
         .unwrap();
-        let prepared = FileScriptView::new(dir.join("main.rhai"))
-            .development(true)
+        let prepared = configure(FileScriptView::new(dir.join("main.rhai")).development(true))
             .prepare()
             .unwrap();
         cx.update(gpui_rhai::install);
@@ -243,5 +252,38 @@ fn a_component_that_needs_a_missing_token_is_not_reloaded(cx: &mut TestAppContex
     app.settle_until("height 70", |app| app.height() == 70.0);
     assert_eq!(app.error(), None);
     assert_eq!(app.height(), 70.0);
+    app.dispose();
+}
+
+/// Registers `host_engine()`, numbering each engine it configures.
+#[derive(Clone, Default)]
+struct EngineCounter(Rc<std::cell::Cell<i64>>);
+
+impl ScriptViewExtension for EngineCounter {
+    fn configure_rhai_engine(&self, engine: &mut rhai::Engine) -> Result<(), String> {
+        self.0.set(self.0.get() + 1);
+        let number = self.0.get();
+        engine.register_fn("host_engine", move || number);
+        Ok(())
+    }
+}
+
+#[gpui::test]
+fn a_reload_candidate_gets_the_host_engine_configuration(cx: &mut TestAppContext) {
+    let counter = EngineCounter::default();
+    let extension = counter.clone();
+    let mut app = App::with(cx, "rhai-engine", move |view| view.extension(extension));
+    assert_eq!(app.height(), 40.0);
+    assert_eq!(counter.0.get(), 1);
+    // `host_engine()` exists only where `configure_rhai_engine` registered it; the candidate
+    // that replaces the program is the second engine.
+    app.write(
+        "main.rhai",
+        r#"fn view(ctx){box([text("Token")]).accessibility_role("group").test_id("cell")
+            .with_style(style().width(px(100)).height(px(30 + host_engine() * 10)))}"#,
+    );
+    app.settle_until("height 50", |app| app.height() == 50.0);
+    assert_eq!(app.error(), None);
+    assert_eq!(counter.0.get(), 2);
     app.dispose();
 }
