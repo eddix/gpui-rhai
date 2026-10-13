@@ -4,7 +4,8 @@
 //!
 //! Each pane gets a 40x30 probe at (10, 10). `direct` makes the probe the pane's content;
 //! `filled` puts it in a clipping box that fills the pane with `flex_grow`, the shape of a
-//! canvas or treemap stage whose children are all absolute. The panes are flex columns, so
+//! canvas or treemap stage whose children are all absolute; `wide` also gives that box
+//! `width(relative(1.0))`, as #156's treemap viewport does. The panes are flex columns, so
 //! that box is as tall as the pane; in a block pane it would collapse to its in-flow content,
 //! which is nothing, and clip the probe away.
 
@@ -57,12 +58,14 @@ fn bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle, role: &str, n
 enum Shape {
     Direct,
     Filled,
+    Wide,
 }
 
 fn probe(shape: Shape, color: u32) -> String {
     match shape {
         Shape::Direct => format!("probe(rgba({color:#x}))"),
         Shape::Filled => format!("filled(rgba({color:#x}))"),
+        Shape::Wide => format!("wide(rgba({color:#x}))"),
     }
 }
 
@@ -77,6 +80,9 @@ fn probe(color) {{
 }}
 fn filled(color) {{
     box([probe(color)]).with_style(style().flex_grow().relative().overflow_hidden())
+}}
+fn wide(color) {{
+    box([probe(color)]).with_style(style().flex_grow().width(relative(1.0)).relative().overflow_hidden())
 }}
 fn view(ctx) {{ column([
     box([split_pane::SplitPane(#{{ key: "layout", label: "Resize panels", size: 0.5,
@@ -105,7 +111,7 @@ fn assert_probe(visual: &mut VisualTestContext, color: u32, pane: Rect, case: &s
 
 #[gpui::test]
 fn absolute_content_paints_in_both_panes(cx: &mut TestAppContext) {
-    for shape in [Shape::Direct, Shape::Filled] {
+    for shape in [Shape::Direct, Shape::Filled, Shape::Wide] {
         for orientation in ["horizontal", "vertical"] {
             for grip in [false, true] {
                 for locale in ["en", "ar"] {
@@ -152,7 +158,7 @@ fn absolute_content_paints_in_both_panes(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn absolute_content_paints_beside_a_collapsed_pane(cx: &mut TestAppContext) {
-    for shape in [Shape::Direct, Shape::Filled] {
+    for shape in [Shape::Direct, Shape::Filled, Shape::Wide] {
         for (collapsed, color) in [("start_collapsed", END), ("end_collapsed", START)] {
             let case = format!("{shape:?} {collapsed}");
             let main = script(
