@@ -453,18 +453,10 @@ impl ValueSchema {
                 if failures.iter().any(Option::is_none) {
                     None
                 } else {
-                    Some(SchemaIssue::new(
+                    let failures = failures.into_iter().flatten().collect::<Vec<_>>();
+                    Some(one_of_issue(
                         path,
-                        format!(
-                            "value did not match any one_of variant ({})",
-                            failures
-                                .into_iter()
-                                .enumerate()
-                                .filter_map(|(index, issue)| issue
-                                    .map(|issue| format!("variant {index}: {}", issue.message)))
-                                .collect::<Vec<_>>()
-                                .join("; ")
-                        ),
+                        failures.iter().map(std::slice::from_ref),
                     ))
                 }
             }
@@ -783,23 +775,34 @@ fn validate_one_of(
         }
         branch_issues.push(candidate);
     }
-    let summary = branch_issues
-        .iter()
+    issues.push(one_of_issue(path, branch_issues.iter().map(Vec::as_slice)));
+}
+
+/// The one issue a value matching no variant reports at `path`: each variant's issues in
+/// order, each named by its own path when it lies below `path` (e.g. `$.fields`).
+fn one_of_issue<'a>(path: &str, variants: impl Iterator<Item = &'a [SchemaIssue]>) -> SchemaIssue {
+    let summary = variants
         .enumerate()
-        .map(|(index, candidate)| {
-            let messages = candidate
+        .map(|(index, issues)| {
+            let messages = issues
                 .iter()
-                .map(|issue| issue.message.as_str())
+                .map(|issue| {
+                    if issue.path == path {
+                        issue.message.clone()
+                    } else {
+                        format!("{}: {}", issue.path, issue.message)
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("variant {index}: {messages}")
         })
         .collect::<Vec<_>>()
         .join("; ");
-    issues.push(SchemaIssue::new(
+    SchemaIssue::new(
         path,
         format!("value did not match any one_of variant ({summary})"),
-    ));
+    )
 }
 
 fn validate_length(value: &Dynamic, path: &str, issues: &mut Vec<SchemaIssue>) {
@@ -1210,6 +1213,40 @@ mod tests {
         assert_eq!(error.issues.len(), 1);
         assert!(error.issues[0].message.contains("integer <= 3"));
         assert!(error.issues[0].message.contains("expected string"));
+    }
+
+    #[test]
+    fn one_of_failures_name_the_path_inside_each_variant() {
+        // A link, or a resource whose `fields` is a map.
+        let schema = ValueSchema::one_of([
+            ValueSchema::string(),
+            ValueSchema::Object {
+                fields: BTreeMap::from([(
+                    "fields".to_owned(),
+                    ObjectField::optional(ValueSchema::Map {
+                        values: Box::new(ValueSchema::UiValue),
+                    }),
+                )]),
+                allow_unknown: true,
+            },
+        ]);
+        let value = UiValue::Map(BTreeMap::from([(
+            "fields".to_owned(),
+            UiValue::String("not a map".to_owned()),
+        )]));
+        let expected = vec![SchemaIssue::new(
+            "$",
+            "value did not match any one_of variant (variant 0: expected string, got map; \
+             variant 1: $.fields: expected map, got string)",
+        )];
+        assert_eq!(
+            schema.validate_ui_value(&value).unwrap_err().issues,
+            expected
+        );
+        assert_eq!(
+            schema.validate_ui_value_first(&value).unwrap_err().issues,
+            expected
+        );
     }
 
     #[test]
