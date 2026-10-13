@@ -45,6 +45,12 @@ impl TryFrom<String> for CapabilityId {
     }
 }
 
+impl fmt::Display for CapabilityId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 impl From<CapabilityId> for String {
     fn from(value: CapabilityId) -> Self {
         value.0
@@ -730,41 +736,41 @@ pub enum CapabilityError {
         #[source]
         source: semver::Error,
     },
-    #[error("capability `{0:?}` was registered with conflicting descriptors")]
+    #[error("capability `{0}` was registered with conflicting descriptors")]
     DescriptorMismatch(CapabilityId),
     #[error("capability handler mode `{0}` is already registered")]
     DuplicateMode(&'static str),
     #[error("capability does not implement `{0}` mode")]
     UnsupportedMode(&'static str),
-    #[error("capability `{0:?}` must declare at least one method")]
+    #[error("capability `{0}` must declare at least one method")]
     NoMethods(CapabilityId),
     #[error("capability method `{0}` must be a `snake_case` identifier")]
     InvalidMethod(String),
-    #[error("required capability `{0:?}` is not registered")]
+    #[error("required capability `{0}` is not registered")]
     Missing(CapabilityId),
-    #[error("capability `{id:?}` requires {required}, host provides {actual}")]
+    #[error("capability `{id}` requires {required}, host provides {actual}")]
     VersionMismatch {
         id: CapabilityId,
         required: VersionReq,
         actual: Version,
     },
-    #[error("capability `{0:?}` was not declared by the application manifest")]
+    #[error("capability `{0}` was not declared by the application manifest")]
     NotDeclared(CapabilityId),
-    #[error("capability `{id:?}` has no method `{method}`")]
+    #[error("capability `{id}` has no method `{method}`")]
     UnknownMethod { id: CapabilityId, method: String },
-    #[error("input for `{id:?}.{method}` is invalid: {source}")]
+    #[error("input for `{id}.{method}` is invalid: {source}")]
     InvalidInput {
         id: CapabilityId,
         method: String,
         source: SchemaValidationError,
     },
-    #[error("output from `{id:?}.{method}` is invalid: {source}")]
+    #[error("output from `{id}.{method}` is invalid: {source}")]
     InvalidOutput {
         id: CapabilityId,
         method: String,
         source: SchemaValidationError,
     },
-    #[error("capability `{id:?}.{method}` failed: {message}")]
+    #[error("capability `{id}.{method}` failed: {message}")]
     Handler {
         id: CapabilityId,
         method: String,
@@ -773,14 +779,14 @@ pub enum CapabilityError {
     #[error("application requires runtime API {required}, current API is {actual}")]
     RuntimeApiMismatch { required: u32, actual: u32 },
     #[error(
-        "component `{component}` requires capability `{capability:?}` missing from the app manifest"
+        "component `{component}` requires capability `{capability}` missing from the app manifest"
     )]
     ComponentCapabilityMissing {
         component: ModuleId,
         capability: CapabilityId,
     },
     #[error(
-        "component `{component}` requires capability `{capability:?}` at {component_required}, but the app declares {app_declared}"
+        "component `{component}` requires capability `{capability}` at {component_required}, but the app declares {app_declared}"
     )]
     ComponentCapabilityMismatch {
         component: ModuleId,
@@ -924,6 +930,26 @@ mod tests {
             ),
             Err(CapabilityError::InvalidOutput { .. })
         ));
+    }
+
+    #[test]
+    fn errors_name_the_capability_by_its_id() {
+        let mut registry = CapabilityRegistry::new();
+        registry.register(descriptor(), Echo).unwrap();
+        let id = CapabilityId::parse("app.echo").unwrap();
+        registry
+            .activate(&BTreeMap::from([(id.clone(), VersionReq::STAR)]))
+            .unwrap();
+        let error = registry.call(&id, "echo", UiValue::Integer(1)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "input for `app.echo.echo` is invalid: $: expected string, got i64"
+        );
+        let error = registry.call(&id, "missing", UiValue::Null).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "capability `app.echo` has no method `missing`"
+        );
     }
 
     #[test]
