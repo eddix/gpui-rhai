@@ -282,3 +282,20 @@ fn view(ctx) {
         .with_style(style().gap(theme_length("space.group")))
 }
 ```
+
+## The standard library
+
+Scripts get Rhai's standard library, and gpui-rhai restricts none of it. Some of
+it does not belong in a view:
+
+- `sleep` blocks the window until it returns, and the operation limit does not
+  stop it.
+- `exit` in an event callback ends the callback and shows
+  `NOT AN ERROR - exit value` as the view's error.
+- `eval` runs source the view builds at run time.
+- `timestamp()` reads the system clock, not the clock the Host gives the view.
+- `print` and `debug` write to the Host's standard output unless the Host routes
+  them.
+
+A Host can disable or replace any standard function for its views, so a view
+that calls one may fail in another Host.

@@ -732,6 +732,60 @@ the Rust root/layout. Disposing the owner does not close Rust's window; native
 closure disposes retained view handles. See the multi-window guide for the
 queued-operation boundary and cleanup rules.
 
+### The Rhai standard library in view scripts
+
+View scripts get Rhai's standard library as `rhai::Engine::new()` sets it up,
+including `sleep`, `exit`, `eval`, `timestamp`, `parse_json`, `print` and
+`debug`; gpui-rhai restricts none of it. A Host decides what its views keep in
+`ScriptViewExtension::configure_rhai_engine`, which receives every engine the
+runtime builds for the view (preparation, each script window and each
+dev-reload candidate) after every extension's `configure_engine`:
+
+```rust
+use gpui_rhai::rhai::{Dynamic, Engine, EvalAltResult};
+
+struct ViewPolicy;
+
+impl gpui_rhai::ScriptViewExtension for ViewPolicy {
+    fn configure_rhai_engine(&self, engine: &mut Engine) -> Result<(), String> {
+        type Refused = Result<(), Box<EvalAltResult>>;
+        fn refuse(name: &str) -> Refused {
+            Err(format!("`{name}` is not available in a view").into())
+        }
+        // A keyword: a script that uses it fails to compile.
+        engine.disable_symbol("eval");
+        // A function: register every overload under the same name.
+        engine.register_fn("sleep", |_: f64| -> Refused { refuse("sleep") });
+        engine.register_fn("sleep", |_: i64| -> Refused { refuse("sleep") });
+        engine.register_fn("exit", || -> Refused { refuse("exit") });
+        engine.register_fn("exit", |_: Dynamic| -> Refused { refuse("exit") });
+        engine.on_print(|text| eprintln!("[view] {text}"));
+        Ok(())
+    }
+}
+```
+
+What the functions a Host most often limits do in a view:
+
+- `sleep` blocks the window's thread, and the operation budget does not see it:
+  it is one native call. A float too large for a `Duration` panics.
+- `exit` in an event callback ends the callback; the view reports
+  `NOT AN ERROR - exit value` as its error.
+- `eval` compiles and runs source the script builds.
+- `timestamp()` reads `Instant::now()`, not the Host's `runtime_clock`.
+- `parse_json` decodes with serde_json, because gpui-rhai turns on Rhai's
+  `metadata` feature. If any crate in the build turns on serde_json's
+  `arbitrary_precision`, every number that is not an integer arrives as a map;
+  register your own `parse_json` to decode numbers your way.
+- `print` and `debug` write to standard output unless the Host sets `on_print`
+  and `on_debug`.
+
+A registered function replaces only the overload with its parameter types. The
+operation budget runs in the engine's `on_progress` callback; replacing that
+callback removes the budget. `gpui-rhai check` does not run the Host's
+extensions: a script that uses a disabled keyword passes `check` and fails when
+the Host prepares it.
+
 ## 8. Layout, text, images, and assets
 
 Use `row` and `column` for ordinary flex containers:

@@ -413,10 +413,12 @@ certification.
 Scripts are trusted application source inside a restricted capability
 environment, not hostile code in a strong sandbox. The runtime still replaces
 Rhai's default filesystem resolver, uses Simple optimization, configures
-operation/depth/collection limits, rejects arbitrary eval/path loading, and
-enforces Host budgets at every retained boundary. Rhai limits are defense in
-depth; they cannot interrupt blocking Rust and do not cover every collection
-mutation path.
+operation/depth/collection limits, rejects path loading, and enforces Host
+budgets at every retained boundary. It keeps Rhai's standard library, `eval`
+and `sleep` included; the Host decides what its scripts may call and disables
+or replaces the rest through `ScriptViewExtension::configure_rhai_engine`. Rhai
+limits are defense in depth; they cannot interrupt blocking Rust and do not
+cover every collection mutation path.
 
 The Host budgets UiValue size/depth, retained nodes, styles, handlers, signals,
 effects, tasks, Canvas commands, layers, virtual data/overdraw, assets, dirty

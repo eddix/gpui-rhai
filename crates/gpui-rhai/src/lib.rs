@@ -89,6 +89,9 @@ pub mod motion;
 
 pub use gpui;
 pub use gpui_platform;
+/// The Rhai crate the runtime is built on, for `RuntimeEngine::engine` and
+/// `ScriptViewExtension::configure_rhai_engine`.
+pub use rhai;
 
 pub use accessibility::{
     AccessibilityError, AccessibilityNode, AccessibilityTree, CommittedSemanticFrame,

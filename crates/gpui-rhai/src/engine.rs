@@ -1833,6 +1833,11 @@ impl RuntimeEngine {
         &self.engine
     }
 
+    /// The Rhai engine for [`crate::ScriptViewExtension::configure_rhai_engine`].
+    pub(crate) fn engine_mut(&mut self) -> &mut Engine {
+        &mut self.engine
+    }
+
     /// Generate the official Rhai language-server definition source for every
     /// function/type/module registered on this engine.
     ///

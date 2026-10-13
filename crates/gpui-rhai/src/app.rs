@@ -1642,6 +1642,25 @@ pub trait ScriptViewExtension {
         Ok(())
     }
 
+    /// Change the Rhai engine itself before scripts compile, for what [`RuntimeEngine`] does
+    /// not cover: disable a keyword (`disable_symbol("eval")`), replace a standard-library
+    /// function by registering one with the same name and parameter types (each overload,
+    /// such as `sleep(i64)` and `sleep(f64)`, separately), or route `print` and `debug`
+    /// (`on_print`, `on_debug`). The runtime calls it on every engine it builds for the view
+    /// (preparation, each script window and each dev-reload candidate), after every
+    /// extension's [`Self::configure_engine`].
+    ///
+    /// The runtime restricts nothing itself: scripts get Rhai's standard library as
+    /// `rhai::Engine::new()` sets it up. The operation budget runs in the engine's
+    /// `on_progress` callback, so replacing that callback removes the budget.
+    ///
+    /// # Errors
+    ///
+    /// Returns an application-facing extension diagnostic.
+    fn configure_rhai_engine(&self, _engine: &mut rhai::Engine) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Register and activate capabilities or stores before lifecycle init.
     ///
     /// # Errors
@@ -1664,6 +1683,21 @@ pub trait ScriptViewExtension {
     ) -> Result<(), String> {
         Ok(())
     }
+}
+
+/// Every extension's [`ScriptViewExtension::configure_engine`], then every
+/// [`ScriptViewExtension::configure_rhai_engine`], on one engine built for the view.
+fn configure_extension_engine(
+    extensions: &[Box<dyn ScriptViewExtension>],
+    engine: &mut RuntimeEngine,
+) -> Result<(), String> {
+    for extension in extensions {
+        extension.configure_engine(engine)?;
+    }
+    for extension in extensions {
+        extension.configure_rhai_engine(engine.engine_mut())?;
+    }
+    Ok(())
 }
 
 fn motion_preference_from_env() -> MotionPreference {
@@ -1848,11 +1882,7 @@ impl FileScriptView {
         let extensions = Rc::new(self.extensions);
         let mut engine = RuntimeEngine::new();
         self.execution_policy.apply(&mut engine);
-        for extension in extensions.iter() {
-            extension
-                .configure_engine(&mut engine)
-                .map_err(ScriptViewError::Extension)?;
-        }
+        configure_extension_engine(&extensions, &mut engine).map_err(ScriptViewError::Extension)?;
         let theme_layers = file_theme_layers(
             engine.engine(),
             &self.entry,
@@ -2147,11 +2177,7 @@ impl EmbeddedScriptView {
         let extensions = Rc::new(self.extensions);
         let mut engine = RuntimeEngine::new();
         self.execution_policy.apply(&mut engine);
-        for extension in extensions.iter() {
-            extension
-                .configure_engine(&mut engine)
-                .map_err(ScriptViewError::Extension)?;
-        }
+        configure_extension_engine(&extensions, &mut engine).map_err(ScriptViewError::Extension)?;
         let theme_layers = embedded_theme_layers(
             engine.engine(),
             self.token_base.as_deref(),
@@ -2867,11 +2893,8 @@ impl ScriptWindowFactory {
     ) -> Result<(RuntimeEngine, ScriptLifecycle, PrimitiveRegistry), ScriptViewError> {
         let mut engine = RuntimeEngine::new();
         self.execution_policy.apply(&mut engine);
-        for extension in self.extensions.iter() {
-            extension
-                .configure_engine(&mut engine)
-                .map_err(ScriptViewError::Extension)?;
-        }
+        configure_extension_engine(&self.extensions, &mut engine)
+            .map_err(ScriptViewError::Extension)?;
         let program = self.program.borrow().clone();
         engine.restore_component_exports(program.component_exports.clone())?;
         engine.restore_component_renderers(program.component_renderers.clone())?;
@@ -6393,11 +6416,8 @@ impl ScriptHostView {
             .map_err(|error| ScriptFailure::plain(error.to_string()))?;
         let changed_modules = changed_module_ids(&root, changed_paths);
         let mut candidate_engine = self.engine.candidate_engine();
-        for extension in self.factory.extensions.iter() {
-            extension
-                .configure_engine(&mut candidate_engine)
-                .map_err(ScriptFailure::plain)?;
-        }
+        configure_extension_engine(&self.factory.extensions, &mut candidate_engine)
+            .map_err(ScriptFailure::plain)?;
         let mut candidate_cache = self.module_cache.clone();
         let refresh = candidate_cache
             .refresh(candidate_engine.engine(), &file_source, changed_modules)

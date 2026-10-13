@@ -1,4 +1,5 @@
 use gpui::{AppContext, Context, IntoElement, Render, TestAppContext, VisualTestContext, Window};
+use gpui_rhai::rhai;
 use gpui_rhai::*;
 use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
@@ -274,6 +275,156 @@ fn expression_depth_host_policy_mounts_the_same_file_and_embedded_tree(cx: &mut 
         });
         assert_eq!(names, vec!["depth-ok"]);
         assert_eq!(view.state(), ScriptViewState::Active);
+        remove(window, cx);
+    }
+}
+
+/// A Host's policy for the Rhai standard library, applied with `configure_rhai_engine`:
+/// `eval` disabled, every overload of `sleep`, `exit` and `timestamp` replaced with one that
+/// fails, and `print` routed to the Host. `host_engine()` names the engine it configured, so
+/// a script window shows which engine renders it.
+#[derive(Clone, Default)]
+struct StdPolicy {
+    engines: Rc<std::cell::Cell<usize>>,
+    printed: Rc<RefCell<Vec<String>>>,
+}
+
+impl ScriptViewExtension for StdPolicy {
+    fn configure_rhai_engine(&self, engine: &mut rhai::Engine) -> Result<(), String> {
+        use rhai::{Dynamic, EvalAltResult};
+        type Refused = Result<(), Box<EvalAltResult>>;
+        fn refuse(name: &str) -> Refused {
+            Err(format!("`{name}` is not available in a view").into())
+        }
+        self.engines.set(self.engines.get() + 1);
+        let engine_number = i64::try_from(self.engines.get()).unwrap();
+        engine.disable_symbol("eval");
+        engine.register_fn("sleep", |_: f64| -> Refused { refuse("sleep") });
+        engine.register_fn("sleep", |_: i64| -> Refused { refuse("sleep") });
+        engine.register_fn("exit", || -> Refused { refuse("exit") });
+        engine.register_fn("exit", |_: Dynamic| -> Refused { refuse("exit") });
+        engine.register_fn("timestamp", || -> Refused { refuse("timestamp") });
+        let printed = self.printed.clone();
+        engine.on_print(move |text| printed.borrow_mut().push(text.to_owned()));
+        engine.register_fn("host_engine", move || engine_number);
+        Ok(())
+    }
+}
+
+fn statuses(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
+    visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .filter(|node| node.role == "status")
+            .map(|node| node.name.clone())
+            .collect()
+    })
+}
+
+#[gpui::test]
+fn a_host_replaces_standard_library_functions_in_file_and_embedded_views(cx: &mut TestAppContext) {
+    const SOURCE: &str = r#"
+fn view(ctx) {
+    print("printed by the view");
+    let results = [];
+    try { sleep(0.05); results.push("sleep(0.05) ran"); } catch (error) { results.push(error); }
+    try { sleep(1); results.push("sleep(1) ran"); } catch (error) { results.push(error); }
+    try { exit(); results.push("exit() ran"); } catch (error) { results.push(error); }
+    try { exit(1); results.push("exit(1) ran"); } catch (error) { results.push(error); }
+    try { timestamp(); results.push("timestamp() ran"); } catch (error) { results.push(error); }
+    let nodes = [];
+    for result in results { nodes.push(text(result).accessibility_role("status")); }
+    column(nodes)
+}
+"#;
+    for file_source in [false, true] {
+        let policy = StdPolicy::default();
+        let fixture = Fixture::new(SOURCE);
+        let prepared = if file_source {
+            fixture.builder().extension(policy.clone()).prepare()
+        } else {
+            embedded(SOURCE).extension(policy.clone()).prepare()
+        }
+        .unwrap();
+        let (window, result) = mount_result(cx, prepared, "std", false);
+        let view = result.unwrap();
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        assert_eq!(
+            statuses(&mut visual, &view),
+            [
+                "`sleep` is not available in a view",
+                "`sleep` is not available in a view",
+                "`exit` is not available in a view",
+                "`exit` is not available in a view",
+                "`timestamp` is not available in a view",
+            ],
+            "file={file_source}"
+        );
+        assert!(
+            policy
+                .printed
+                .borrow()
+                .iter()
+                .any(|text| text == "printed by the view"),
+            "file={file_source}: print reaches the Host: {:?}",
+            policy.printed.borrow()
+        );
+        remove(window, cx);
+
+        // A disabled keyword fails preparation.
+        let eval = "fn view(ctx) { text(`${eval(\"40 + 2\")}`) }";
+        let fixture = Fixture::new(eval);
+        let error = if file_source {
+            fixture.builder().extension(StdPolicy::default()).prepare()
+        } else {
+            embedded(eval).extension(StdPolicy::default()).prepare()
+        }
+        .err()
+        .expect("eval is disabled")
+        .to_string();
+        assert!(
+            error.contains("'eval' is disabled"),
+            "file={file_source}: {error}"
+        );
+    }
+}
+
+#[gpui::test]
+fn a_script_window_gets_its_own_configured_engine(cx: &mut TestAppContext) {
+    const SOURCE: &str = r#"
+fn open(ctx,payload){ctx.open_window("child","Child",400,300,false);}
+fn view(ctx){if ctx.window_id()=="child"{text(`engine ${host_engine()}`)}
+ else{text(`engine ${host_engine()}`).test_id("open").on_click(Fn("open"))}}
+"#;
+    for file_source in [false, true] {
+        let policy = StdPolicy::default();
+        let fixture = Fixture::new(SOURCE);
+        let prepared = if file_source {
+            fixture.builder().extension(policy.clone()).prepare()
+        } else {
+            embedded(SOURCE).extension(policy.clone()).prepare()
+        }
+        .unwrap();
+        let (window, result) = mount_result(cx, prepared, "root", true);
+        let view = result.unwrap();
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        dispatch(&mut visual, &view, by_test_id("open"), "click").unwrap();
+        visual.run_until_parked();
+        // The child renders `host_engine()`, which only `configure_rhai_engine` registers.
+        assert_eq!(cx.windows().len(), 2, "file={file_source}");
+        assert_eq!(last_error(&mut visual, &view), None);
+        assert_eq!(
+            policy.engines.get(),
+            2,
+            "preparation, then the child window"
+        );
+        for child in cx.windows().into_iter().filter(|handle| *handle != *window) {
+            cx.update(|cx| {
+                cx.update_window(child, |_, window, _| window.remove_window())
+                    .unwrap()
+            });
+        }
         remove(window, cx);
     }
 }
