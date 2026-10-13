@@ -1,6 +1,7 @@
 //! Layout of regions, toolbars, split panes, stretch, scroll areas, long text and the L2 patterns.
 
 mod fixed_chrome;
+mod hidden;
 mod l2_patterns;
 mod long_text_wrap;
 mod region_footer_overflow;
