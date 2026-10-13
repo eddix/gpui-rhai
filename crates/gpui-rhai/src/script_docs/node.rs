@@ -270,6 +270,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Appends a Rust native click handler that receives `value` as its payload, not shared with other click handlers; its descriptor must declare `click`.",
     },
     ScriptFnDoc {
+        signature: "on_focus_within_change(_: &mut UiNode, _: Fn) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["handler"],
+        doc: "Appends a handler called with `true` when keyboard focus enters the node or anything inside it, and `false` when focus leaves them all or the window loses focus.",
+    },
+    ScriptFnDoc {
+        signature: "on_focus_within_value(_: &mut UiNode, _: Fn, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["handler", "value"],
+        doc: "Appends a focus-within handler whose payload is `#{ focused, value }`: `focused` is `true` when focus enters the node or anything inside it and `false` when it leaves. Other focus-within handlers keep theirs.",
+    },
+    ScriptFnDoc {
         signature: "on_hover_change(_: &mut UiNode, _: Fn) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["handler"],
         doc: "Appends a handler called with `true` when the pointer enters the node and `false` when it leaves.",

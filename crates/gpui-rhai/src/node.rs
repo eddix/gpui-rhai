@@ -2495,6 +2495,21 @@ fn register_value_event_methods(builder: &mut TypeBuilder<UiNode>) {
                     payload,
                 ))
             },
+        )
+        .with_fn(
+            "on_focus_within_value",
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
+             callback: FnPtr,
+             payload: Dynamic|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let payload = dynamic_ui_value(payload)?;
+                Ok(node.clone().with_value_handler(
+                    "focus_within_change",
+                    retained_script_callback(&call, callback)?,
+                    payload,
+                ))
+            },
         );
 }
 
@@ -2728,6 +2743,7 @@ pub(crate) fn canonical_key_name(present: [bool; 4], key: &str) -> String {
 fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
     for (method, event) in [
         ("on_hover_change", "hover_change"),
+        ("on_focus_within_change", "focus_within_change"),
         ("on_open_change", "open_change"),
         ("on_change", "change"),
     ] {

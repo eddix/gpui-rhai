@@ -3189,6 +3189,7 @@ impl PreparedScriptView {
                 native_windows: Rc::clone(native_windows),
                 host_focus,
                 focus_handles: BTreeMap::new(),
+                focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
@@ -3574,6 +3575,7 @@ fn open_secondary_window(
                 native_windows: Rc::clone(&view_native_windows),
                 host_focus,
                 focus_handles: BTreeMap::new(),
+                focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
@@ -3886,6 +3888,8 @@ struct ScriptHostView {
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
     host_focus: FocusHandle,
     focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
+    /// Focus-in and focus-out listeners of each node with a `focus_within_change` handler.
+    focus_within_listeners: BTreeMap<crate::NodeId, [Subscription; 2]>,
     scroll_handles: BTreeMap<crate::NodeId, ScrollHandle>,
     scroll_anchors: BTreeMap<crate::NodeId, ScrollAnchor>,
     text_selection: crate::renderer::TextSelectionRegistry,
@@ -5035,7 +5039,7 @@ impl ScriptHostView {
             .geometry_for(Some(&self.view_id))
             .begin_frame();
         self.text_selection.retain(self.lifecycle.retained());
-        self.sync_focus_handles(cx);
+        self.sync_focus_handles(window, cx);
         self.process_element_commands(window, cx);
     }
 
@@ -5055,6 +5059,96 @@ impl ScriptHostView {
         self.sync_viewport_class(window);
         debug_assert!(self.engine.is_current(self.lifecycle.generation()));
         self.reconcile_primitive_lifecycle();
+    }
+
+    /// Listens for focus entering and leaving each node with a `focus_within_change` handler,
+    /// through the focus handle the renderer tracks on it. GPUI reports both after a frame,
+    /// from the focus path of that frame, so focus inside the node's subtree counts whether or
+    /// not the focused element has a handle of the view's own.
+    fn sync_focus_within_listeners(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let watched = self
+            .lifecycle
+            .retained()
+            .nodes()
+            .filter(|node| !node.event_handlers("focus_within_change").is_empty())
+            .map(crate::RetainedNode::id)
+            .collect::<BTreeSet<_>>();
+        self.focus_within_listeners
+            .retain(|node, _| watched.contains(node));
+        for node in watched {
+            if self.focus_within_listeners.contains_key(&node) {
+                continue;
+            }
+            let Some(handle) = self.focus_handles.get(&node).cloned() else {
+                continue;
+            };
+            let focus_in = cx.on_focus_in(&handle, window, move |_, window, cx| {
+                cx.defer_in(window, move |view, window, cx| {
+                    view.dispatch_focus_within_change(node, true, window, cx);
+                });
+            });
+            let focus_out = cx.on_focus_out(&handle, window, move |_, _, window, cx| {
+                cx.defer_in(window, move |view, window, cx| {
+                    view.dispatch_focus_within_change(node, false, window, cx);
+                });
+            });
+            self.focus_within_listeners
+                .insert(node, [focus_in, focus_out]);
+        }
+    }
+
+    /// Runs the node's `focus_within_change` handlers; the listeners defer it past the frame
+    /// that reported the change, since scripts never run inside a draw.
+    fn dispatch_focus_within_change(
+        &mut self,
+        node: crate::NodeId,
+        focused: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.get() != ScriptViewState::Active {
+            return;
+        }
+        let Some(retained) = self.lifecycle.retained().node(node) else {
+            return;
+        };
+        let value = retained.node_payload("focus_within_change").cloned();
+        // A handler with a value, its own or the node's, receives `#{ focused, value }`; a
+        // plain handler receives the bool, as with `hover_change`.
+        let calls = retained
+            .event_handlers("focus_within_change")
+            .iter()
+            .filter(|binding| binding.phase() == crate::EventPhase::Target)
+            .map(|binding| {
+                let payload =
+                    binding
+                        .value()
+                        .or(value.as_ref())
+                        .map_or(UiValue::Bool(focused), |value| {
+                            UiValue::Map(BTreeMap::from([
+                                ("focused".to_owned(), UiValue::Bool(focused)),
+                                ("value".to_owned(), value.clone()),
+                            ]))
+                        });
+                (binding.handler().clone(), payload)
+            })
+            .collect::<Vec<_>>();
+        let target = self
+            .lifecycle
+            .runtime()
+            .borrow()
+            .geometry_for(Some(&self.view_id))
+            .get(node)
+            .map(|geometry| geometry.visual);
+        for (handler, payload) in calls {
+            let crate::UiEventHandler::Script(callback) = handler else {
+                continue;
+            };
+            let origin = crate::InvocationOrigin::UserInput {
+                event: "focus_within_change".to_owned(),
+            };
+            self.handle_node_event(&callback, payload, target, origin, window, cx);
+        }
     }
 
     /// The focused retained node followed by its ancestors, for `group_focus`
@@ -5085,7 +5179,7 @@ impl ScriptHostView {
         path
     }
 
-    fn sync_focus_handles(&mut self, cx: &mut Context<Self>) {
+    fn sync_focus_handles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let active = self
             .lifecycle
             .retained()
@@ -5096,6 +5190,7 @@ impl ScriptHostView {
                 node.element_ref().is_some()
                     || node.focus_styled()
                     || node.kind() == crate::UiNodeKindTag::Overlay
+                    || !node.event_handlers("focus_within_change").is_empty()
             })
             .map(crate::RetainedNode::id)
             .collect::<BTreeSet<_>>();
@@ -5105,6 +5200,7 @@ impl ScriptHostView {
                 .entry(node)
                 .or_insert_with(|| cx.focus_handle());
         }
+        self.sync_focus_within_listeners(window, cx);
         let scrollable = self
             .lifecycle
             .retained()

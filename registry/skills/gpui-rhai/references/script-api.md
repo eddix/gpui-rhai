@@ -317,6 +317,8 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.on_click(handler: NativeHandlerRef) -> UiNode` | Appends a Rust native click handler, run like a script one; the handler's descriptor must declare `click`. |
 | `node.on_click_value(handler: FnPtr, value: ?) -> UiNode` | Appends a click handler that receives `value` as its payload, so one named function can serve many nodes; other click handlers keep theirs. |
 | `node.on_click_value(handler: NativeHandlerRef, value: ?) -> UiNode` | Appends a Rust native click handler that receives `value` as its payload, not shared with other click handlers; its descriptor must declare `click`. |
+| `node.on_focus_within_change(handler: FnPtr) -> UiNode` | Appends a handler called with `true` when keyboard focus enters the node or anything inside it, and `false` when focus leaves them all or the window loses focus. |
+| `node.on_focus_within_value(handler: FnPtr, value: ?) -> UiNode` | Appends a focus-within handler whose payload is `#{ focused, value }`: `focused` is `true` when focus enters the node or anything inside it and `false` when it leaves. Other focus-within handlers keep theirs. |
 | `node.on_hover_change(handler: FnPtr) -> UiNode` | Appends a handler called with `true` when the pointer enters the node and `false` when it leaves. |
 | `node.on_hover_value(handler: FnPtr, value: ?) -> UiNode` | Appends a hover handler whose payload is `#{ hovered, value }`: `hovered` is `true` on enter and `false` on leave. Other hover handlers keep theirs. |
 | `node.on_key_value(key: String, handler: FnPtr, value: ?) -> UiNode` | Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with its own `value` as payload. |
