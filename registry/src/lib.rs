@@ -78,6 +78,26 @@ bundled_components!(
         "components/date_picker",
         "../components/date_picker.rhai"
     ),
+    (
+        CALENDAR_SOURCE,
+        "components/calendar",
+        "../components/calendar.rhai"
+    ),
+    (
+        TIME_INPUT_SOURCE,
+        "components/time_input",
+        "../components/time_input.rhai"
+    ),
+    (
+        TIMELINE_SOURCE,
+        "components/timeline",
+        "../components/timeline.rhai"
+    ),
+    (
+        TIME_RANGE_PICKER_SOURCE,
+        "components/time_range_picker",
+        "../components/time_range_picker.rhai"
+    ),
     (TABLE_SOURCE, "components/table", "../components/table.rhai"),
     (
         SPLIT_PANE_SOURCE,
@@ -505,6 +525,10 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
     (
         "gallery/retained_page_panel",
         include_str!("../gallery/retained_page_panel.rhai"),
+    ),
+    (
+        "gallery/pages/temporal",
+        include_str!("../gallery/pages/temporal.rhai"),
     ),
     (
         "gallery/pages/foundations",
@@ -1524,8 +1548,8 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 66);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 66);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 70);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 70);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);

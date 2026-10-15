@@ -1,8 +1,20 @@
 fn locale() {
     #{
         locale: "zh-CN",
+        time: #{ hour_cycle: "h23", short: "HH:mm", medium: "HH:mm:ss", am: "上午", pm: "下午",
+            units: ["天", "小时", "分钟", "秒"], past: "{value}前", future: "{value}后", now: "现在" },
         direction: "left_to_right",
         messages: #{
+            "time.apply": "应用", "time.start": "开始", "time.end": "结束", "time.zone": "时区",
+            "time.updated": "时间范围已更改，正在更新草稿",
+            "time.local": "本地", "time.custom": "自定义范围", "time.presets": "相对时间范围",
+            "time.last": "最近{value}", "time.gap": "此本地时间不存在",
+            "time.fold": "选择此次时间的具体时刻", "time.invalid": "请输入有效日期和时间",
+            "time.bounds": "时间范围超出限制", "time.order": "结束时间必须晚于开始时间",
+            "time.previous": "上一时间范围", "time.next": "下一时间范围", "time.today": "今天", "time.yesterday": "昨天",
+            "timeline.pending": "待处理", "timeline.running": "进行中", "timeline.success": "成功",
+            "timeline.warning": "警告", "timeline.failed": "失败", "timeline.skipped": "已跳过", "timeline.canceled": "已取消",
+            "timeline.expand": "展开", "timeline.collapse": "折叠",
             "calendar.clear": "清除日期",
             "calendar.next_month": "下个月",
             "calendar.open": "打开日历",

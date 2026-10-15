@@ -106,6 +106,7 @@ pub struct UiRuntimeState {
     pub timers: crate::TimerRegistry,
     pub locale: Option<LocaleManager>,
     pub calendar_clock: CalendarClock,
+    pub wall_clock: crate::WallClock,
     pub clock: crate::RuntimeClock,
     pub theme: Option<ThemeManager>,
     component_styles: crate::ComponentStyleSheet,
@@ -2763,13 +2764,109 @@ impl UiContext {
     ///
     /// Returns a borrow error when another callback owns the runtime state.
     pub fn today(&self) -> Result<String, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        runtime
+            .calendar_clock
+            .presentation_today(&runtime.wall_clock)
+            .map(crate::GregorianDate::to_iso)
+            .map_err(|error| LocaleError::Decode(error.to_string()).into())
+    }
+
+    /// Current epoch milliseconds from the Host presentation wall clock.
+    ///
+    /// # Errors
+    /// Returns a runtime borrow error.
+    pub fn now(&self) -> Result<i64, UiContextError> {
         Ok(self
             .runtime
             .try_borrow()
             .map_err(|_| UiContextError::Borrowed)?
-            .calendar_clock
-            .today()
-            .to_iso())
+            .wall_clock
+            .now_ms())
+    }
+
+    /// Format an epoch instant with selected locale metadata and an explicit zone.
+    ///
+    /// # Errors
+    /// Returns locale, instant, style, timezone or runtime borrow errors.
+    pub fn format_time(&self, ms: i64, style: &str, zone: &str) -> Result<String, UiContextError> {
+        self.read_locale(|locale, window, component| {
+            let bundle = locale.selected_bundle(window, Some(component))?;
+            crate::time::format_time(
+                ms,
+                style,
+                zone,
+                &bundle.time,
+                &bundle.calendar,
+                &bundle.number,
+            )
+            .map_err(|e| LocaleError::Decode(e.to_string()))
+        })
+    }
+
+    /// Format a signed elapsed duration with selected locale units and digits.
+    ///
+    /// # Errors
+    /// Returns locale-selection or runtime borrow errors.
+    pub fn format_duration(&self, ms: i64) -> Result<String, UiContextError> {
+        self.read_locale(|locale, window, component| {
+            let bundle = locale.selected_bundle(window, Some(component))?;
+            Ok(crate::time::format_duration(
+                ms,
+                &bundle.time,
+                &bundle.number,
+            ))
+        })
+    }
+
+    /// Format an instant relative to the injected wall clock.
+    ///
+    /// # Errors
+    /// Returns locale-selection or runtime borrow errors.
+    pub fn format_relative(&self, ms: i64) -> Result<String, UiContextError> {
+        let now = self.now()?;
+        self.read_locale(|locale, window, component| {
+            let bundle = locale.selected_bundle(window, Some(component))?;
+            Ok(crate::time::format_relative(
+                ms,
+                now,
+                &bundle.time,
+                &bundle.number,
+            ))
+        })
+    }
+
+    /// Detached locale time patterns, periods, duration units and relative messages.
+    ///
+    /// # Errors
+    /// Returns locale-selection, serialization or runtime borrow errors.
+    pub fn time_metadata(&self) -> Result<Map, UiContextError> {
+        let metadata = self.read_locale(|locale, window, component| {
+            Ok(locale
+                .selected_bundle(window, Some(component))?
+                .time
+                .clone())
+        })?;
+        rhai::serde::to_dynamic(metadata)
+            .map(Dynamic::cast::<Map>)
+            .map_err(|e| LocaleError::Decode(e.to_string()).into())
+    }
+
+    /// Parse a localized time field; incomplete/invalid text returns no value.
+    ///
+    /// # Errors
+    /// Returns locale-selection or runtime borrow errors.
+    pub fn parse_time(&self, value: &str, precision: &str) -> Result<Dynamic, UiContextError> {
+        self.read_locale(|locale, window, component| {
+            let bundle = locale.selected_bundle(window, Some(component))?;
+            Ok(
+                crate::time::parse_time(value, precision, &bundle.time, &bundle.number)
+                    .map_or(Dynamic::UNIT, Dynamic::from),
+            )
+        })
     }
 
     /// Format a strict ISO date through the selected locale.
@@ -4581,7 +4678,53 @@ fn subscription_options(mut options: Map) -> Result<SubscriptionOptions, Box<Eva
     })
 }
 
+fn register_time_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn("is_visible", |context: &mut UiContext| {
+            context
+                .is_visible()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn("now", |context: &mut UiContext| {
+            context
+                .now()
+                .map_err(|e| Box::new(context_runtime_error(&e)))
+        })
+        .with_fn("time", |context: &mut UiContext| {
+            context
+                .time_metadata()
+                .map_err(|e| Box::new(context_runtime_error(&e)))
+        })
+        .with_fn(
+            "parse_time",
+            |context: &mut UiContext, value: ImmutableString, precision: ImmutableString| {
+                context
+                    .parse_time(&value, &precision)
+                    .map_err(|e| Box::new(context_runtime_error(&e)))
+            },
+        )
+        .with_fn(
+            "format_time",
+            |context: &mut UiContext, ms: INT, style: ImmutableString, zone: ImmutableString| {
+                context
+                    .format_time(ms, &style, &zone)
+                    .map_err(|e| Box::new(context_runtime_error(&e)))
+            },
+        )
+        .with_fn("format_duration", |context: &mut UiContext, ms: INT| {
+            context
+                .format_duration(ms)
+                .map_err(|e| Box::new(context_runtime_error(&e)))
+        })
+        .with_fn("format_relative", |context: &mut UiContext, ms: INT| {
+            context
+                .format_relative(ms)
+                .map_err(|e| Box::new(context_runtime_error(&e)))
+        });
+}
+
 fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    register_time_context_methods(builder);
     builder
         .with_fn("t", |context: &mut UiContext, key: ImmutableString| {
             context
@@ -4599,11 +4742,6 @@ fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
         .with_fn("text_direction", |context: &mut UiContext| {
             context
                 .text_direction()
-                .map_err(|error| Box::new(context_runtime_error(&error)))
-        })
-        .with_fn("is_visible", |context: &mut UiContext| {
-            context
-                .is_visible()
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         })
         .with_fn("today", |context: &mut UiContext| {

@@ -82,7 +82,11 @@ manual_clock.advance(std::time::Duration::from_millis(16));
 
 The injected clock drives both animation sampling and declarative timer
 deadlines. Civil-date behavior remains independently controlled by
-`calendar_clock`.
+`calendar_clock` when explicitly injected. `wall_clock(WallClock::fixed(ms))`
+pins presentation instants separately: `ctx.now()` and the default `ctx.today()`
+derive from it. An explicit calendar clock remains the date-only override;
+timezone-aware temporal controls derive their calendar date from the wall
+instant and selected timezone. See [temporal controls](temporal.md).
 
 `PreparedScriptView::mount` consumes the prepared value. Prepare again for a
 second instance, even when it uses the same source. This preserves handler and

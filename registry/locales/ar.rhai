@@ -1,8 +1,20 @@
 fn locale() {
     #{
         locale: "ar",
+        time: #{ hour_cycle: "h12", short: "hh:mm a", medium: "hh:mm:ss a", am: "ص", pm: "م",
+            units: ["ي", "س", "د", "ث"], past: "منذ {value}", future: "خلال {value}", now: "الآن" },
         direction: "right_to_left",
         messages: #{
+            "time.apply": "تطبيق", "time.start": "البداية", "time.end": "النهاية", "time.zone": "المنطقة الزمنية",
+            "time.updated": "تغير النطاق؛ جارٍ تحديث المسودة",
+            "time.local": "محلي", "time.custom": "نطاق مخصص", "time.presets": "نطاقات نسبية",
+            "time.last": "آخر {value}", "time.gap": "هذا الوقت المحلي غير موجود",
+            "time.fold": "اختر التوقيت المقصود", "time.invalid": "أدخل تاريخًا ووقتًا صالحين",
+            "time.bounds": "النطاق خارج الحدود المسموحة", "time.order": "يجب أن تكون النهاية بعد البداية",
+            "time.previous": "النطاق السابق", "time.next": "النطاق التالي", "time.today": "اليوم", "time.yesterday": "أمس",
+            "timeline.pending": "قيد الانتظار", "timeline.running": "جارٍ", "timeline.success": "نجاح",
+            "timeline.warning": "تحذير", "timeline.failed": "فشل", "timeline.skipped": "تم التخطي", "timeline.canceled": "ملغى",
+            "timeline.expand": "توسيع", "timeline.collapse": "طي",
             "calendar.clear": "مسح التاريخ",
             "calendar.next_month": "الشهر التالي",
             "calendar.open": "فتح التقويم",

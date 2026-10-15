@@ -1,8 +1,20 @@
 fn locale() {
     #{
         locale: "en",
+        time: #{ hour_cycle: "h12", short: "hh:mm a", medium: "hh:mm:ss a", am: "AM", pm: "PM",
+            units: ["d", "h", "m", "s"], past: "{value} ago", future: "in {value}", now: "now" },
         direction: "left_to_right",
         messages: #{
+            "time.apply": "Apply", "time.start": "Start", "time.end": "End", "time.zone": "Time zone",
+            "time.updated": "The range changed; updating the draft",
+            "time.local": "Local", "time.custom": "Custom range", "time.presets": "Relative ranges",
+            "time.last": "Last {value}", "time.gap": "This local time does not exist",
+            "time.fold": "Choose which occurrence", "time.invalid": "Enter a valid date and time",
+            "time.bounds": "Range is outside the allowed bounds or span", "time.order": "End must be after start",
+            "time.previous": "Previous range", "time.next": "Next range", "time.today": "Today", "time.yesterday": "Yesterday",
+            "timeline.pending": "pending", "timeline.running": "running", "timeline.success": "success",
+            "timeline.warning": "warning", "timeline.failed": "failed", "timeline.skipped": "skipped", "timeline.canceled": "canceled",
+            "timeline.expand": "Expand", "timeline.collapse": "Collapse",
             "calendar.clear": "Clear date",
             "calendar.next_month": "Next month",
             "calendar.open": "Open calendar",

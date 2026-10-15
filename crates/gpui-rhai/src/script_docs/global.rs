@@ -5,6 +5,26 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "time_parts(_: i64, _: string) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["ms", "zone"],
+        doc: "Returns date, time, offset_minutes and zone for an epoch instant; date/time are ISO and HH:MM:SS.",
+    },
+    ScriptFnDoc {
+        signature: "time_local_candidates(_: string, _: string, _: string) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["date", "time", "zone"],
+        doc: "Returns ordered epoch-ms instants for a local date/time: zero in a DST gap, two in a fold, one otherwise; never guesses.",
+    },
+    ScriptFnDoc {
+        signature: "time_range_resolve(_: map, _: i64) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["value", "now_ms"],
+        doc: "Resolves a relative duration at query time or preserves an absolute range, returning start/end epoch milliseconds.",
+    },
+    ScriptFnDoc {
+        signature: "time_range_error(_: map, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> string",
+        params: &["value", "min", "max", "max_span_ms"],
+        doc: "Returns an empty string for a valid relative/absolute range, otherwise a validation explanation; optional epoch bounds and span use ().",
+    },
+    ScriptFnDoc {
         signature: "*(_: Length, _: f64) -> core::result::Result<gpui_rhai::style::Length,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["length", "factor"],
         doc: "Scales `length` by a non-negative `factor`; a token keeps the factor until it resolves, and a relative result must stay within 0 to 1.",

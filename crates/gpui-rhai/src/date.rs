@@ -485,27 +485,39 @@ pub trait CalendarClockSource: fmt::Debug {
 }
 
 #[derive(Clone)]
-pub struct CalendarClock(Rc<dyn CalendarClockSource>);
+pub struct CalendarClock(Rc<dyn CalendarClockSource>, bool);
 
 impl CalendarClock {
     #[must_use]
     pub fn system() -> Self {
-        Self(Rc::new(SystemCalendarClock))
+        Self(Rc::new(SystemCalendarClock), true)
     }
 
     #[must_use]
     pub fn fixed(date: GregorianDate) -> Self {
-        Self(Rc::new(FixedCalendarClock(date)))
+        Self(Rc::new(FixedCalendarClock(date)), false)
     }
 
     #[must_use]
     pub fn from_source(source: impl CalendarClockSource + 'static) -> Self {
-        Self(Rc::new(source))
+        Self(Rc::new(source), false)
     }
 
     #[must_use]
     pub fn today(&self) -> GregorianDate {
         self.0.today()
+    }
+
+    pub(crate) fn presentation_today(
+        &self,
+        wall_clock: &crate::WallClock,
+    ) -> Result<GregorianDate, DateError> {
+        if !self.1 {
+            return Ok(self.today());
+        }
+        let parts = crate::time::time_parts(wall_clock.now_ms(), "local")
+            .map_err(|error| DateError::Format(error.to_string()))?;
+        GregorianDate::parse_iso(&parts.date)
     }
 }
 

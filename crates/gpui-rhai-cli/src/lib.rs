@@ -3176,7 +3176,7 @@ mod tests {
             .apply()
             .unwrap();
         let report = project.check().unwrap();
-        assert_eq!(report.components, 10);
+        assert_eq!(report.components, 11);
         for component in [
             "badge.rhai",
             "button.rhai",
@@ -3188,6 +3188,7 @@ mod tests {
             "table.rhai",
             "textarea.rhai",
             "date_picker.rhai",
+            "calendar.rhai",
         ] {
             assert!(
                 directory
@@ -3222,8 +3223,8 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        // 66 components, 10 motion, 5 charts, 4 layouts, 10 patterns.
-        assert_eq!(registry.entries.len(), 66 + 10 + 5 + 4 + 10);
+        // 70 components, 10 motion, 5 charts, 4 layouts, 10 patterns.
+        assert_eq!(registry.entries.len(), 70 + 10 + 5 + 4 + 10);
         let requested = registry
             .entries
             .keys()

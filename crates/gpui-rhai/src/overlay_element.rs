@@ -680,7 +680,10 @@ impl ScriptOverlayElement {
             if self.restore_focus_on_close {
                 state.previous_focus = window.focused(cx).map(|focus| focus.downgrade());
             }
-            if self.spec.modal || self.spec.kind == OverlayKind::Menu {
+            if self.spec.modal
+                || self.spec.kind == OverlayKind::Menu
+                || self.spec.initial_focus == OverlayInitialFocus::First
+            {
                 focus_during_layout(&state.panel_focus, window, cx);
                 if self.spec.initial_focus == OverlayInitialFocus::First {
                     // Initial focus is bound to the closed -> open presentation

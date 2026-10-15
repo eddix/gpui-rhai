@@ -18,6 +18,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/badge`](components/badge.md) | `Badge` | Badge marks a read-only status: a square lamp followed by its label. |
 | [`components/button`](components/button.md) | `Button` | Button presents a desktop action: a large block with a centered label. |
 | [`components/button_group`](components/button_group.md) | `ButtonGroup` | Visually joins related buttons into one horizontal or vertical control. |
+| [`components/calendar`](components/calendar.md) | `Calendar` | The single calendar engine shared by DatePicker and TimeRangePicker. |
 | [`components/card`](components/card.md) | `Card` | General themed content surface with optional header and footer slots. |
 | [`components/checkbox`](components/checkbox.md) | `Checkbox` | Controlled checkbox with checked, unchecked, and indeterminate states. |
 | [`components/code_viewer`](components/code_viewer.md) | `CodeViewer` | Native, virtualized, selectable read-only source document surface. |
@@ -71,6 +72,9 @@ The functions, methods and native primitives a script calls are in the
 | [`components/tabs`](components/tabs.md) | `Tabs` | Controlled tabs with one tab stop and orientation-aware arrow selection. |
 | [`components/tag`](components/tag.md) | `Tag` | Tag labels a category: a flat tonal tape with an optional facet segment. |
 | [`components/textarea`](components/textarea.md) | `Textarea` | Textarea is a controlled multiline field with native IME, selection, wrapping, and auto-grow. |
+| [`components/time_input`](components/time_input.md) | `TimeInput` | Controlled locale-aware clock editing; partial text remains an editable draft. |
+| [`components/time_range_picker`](components/time_range_picker.md) | `TimeRangePicker` | Controlled relative windows and explicit date-time drafts, committed only on Apply. |
+| [`components/timeline`](components/timeline.md) | `Timeline` | A source-owned, controlled timeline. |
 | [`components/title_bar`](components/title_bar.md) | `TitleBar` | Source-owned application chrome with logical start, center, and end regions. |
 | [`components/toast`](components/toast.md) | `Toast` | Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events. |
 | [`components/toggle`](components/toggle.md) | `Toggle` | Controlled pressed-state tool button, distinct from Checkbox and Switch. |
