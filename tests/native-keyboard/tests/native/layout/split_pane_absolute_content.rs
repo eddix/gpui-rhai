@@ -175,3 +175,55 @@ fn absolute_content_paints_beside_a_collapsed_pane(cx: &mut TestAppContext) {
         }
     }
 }
+
+#[gpui::test]
+fn committed_ref_geometry_sizes_absolute_content_in_either_pane(cx: &mut TestAppContext) {
+    // #156's updated report concerns a stage whose own ref sizes its absolute child,
+    // not the absolute positioning itself. Keep an executable control for that feedback.
+    const STAGE: &str = r#"
+define_component(#{
+    metadata: #{id:"tests/measured_stage", "export":"MeasuredStage", version:"0.0.1",
+        runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
+    schema: #{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},
+        color:#{schema:#{type:"integer"},required:true,sensitive:false}},
+        state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},
+    render:Fn("measured_stage")
+});
+fn measured_stage(ctx, props) {
+    let target = element_ref("mosaic");
+    let facts = ctx.element_bounds(target);
+    let width = if facts == () {0.0} else {facts.layout.width};
+    let height = if facts == () {0.0} else {facts.layout.height};
+    box([box([]).with_key("canvas").with_style(style().absolute().left(px(0)).top(px(0))
+        .width(px(width)).height(px(height)).background(rgba(props.color)))])
+        .with_key("mosaic").with_ref(target)
+        .with_style(style().flex_grow().width(relative(1.0)).relative().overflow_hidden())
+}
+"#;
+    for orientation in ["horizontal", "vertical"] {
+        for locale in ["en", "ar"] {
+            let main = format!(
+                "{STAGE}\n{}",
+                script(
+                    locale,
+                    &format!(
+                    "orientation: \"{orientation}\", \
+                     start: render_component(\"tests/measured_stage\", #{{key:\"start-stage\",color:{START}}}), \
+                     end: render_component(\"tests/measured_stage\", #{{key:\"end-stage\",color:{END}}})"
+                    )
+                )
+            );
+            let (mut visual, _) = mount(cx, &main);
+            crate::support::settle(&mut visual, Step::Tick, 6);
+            for color in [START, END] {
+                let painted = visible(&mut visual, color);
+                assert!(
+                    painted
+                        .iter()
+                        .any(|(_, _, width, height)| *width > 100.0 && *height > 100.0),
+                    "{orientation} {locale}: measured stage must paint, got {painted:?}"
+                );
+            }
+        }
+    }
+}
