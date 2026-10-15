@@ -6,6 +6,7 @@ fn locale() {
         direction: "left_to_right",
         messages: #{
             "time.apply": "应用", "time.start": "开始", "time.end": "结束", "time.zone": "时区",
+            "time.updated": "时间范围已更改，正在更新草稿",
             "time.local": "本地", "time.custom": "自定义范围", "time.presets": "相对时间范围",
             "time.last": "最近{value}", "time.gap": "此本地时间不存在",
             "time.fold": "选择此次时间的具体时刻", "time.invalid": "请输入有效日期和时间",

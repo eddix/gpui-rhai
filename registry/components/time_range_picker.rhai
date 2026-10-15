@@ -20,6 +20,7 @@ define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRa
             duration_ms:#{schema:#{type:"integer",min:1},required:true,sensitive:false,doc:"Positive trailing duration in milliseconds."}}}},required:false,sensitive:false,"default":#{type:"array",value:[]},doc:"Quick relative presets; unset uses localized 15 minute, hour, day and week choices."},
         time_zone:#{schema:#{type:"string"},required:false,sensitive:false,"default":#{type:"string",value:"local"},doc:"local, UTC, offset:<minutes>, or IANA zone shared with charts."},
         precision:#{schema:#{type:"string",allowed:["minute","second"]},required:false,sensitive:false,"default":#{type:"string",value:"minute"},doc:"Native time field precision."},
+        revision:#{schema:#{type:"integer"},required:false,sensitive:false,"default":#{type:"integer",value:0},doc:"Caller revision token; change it to replace an open draft even when the range value is equal."},
         min:#{schema:#{type:"optional",value:#{type:"integer"}},required:false,sensitive:false,doc:"Earliest allowed absolute epoch instant, inclusive."},
         max:#{schema:#{type:"optional",value:#{type:"integer"}},required:false,sensitive:false,doc:"Latest allowed absolute epoch instant, inclusive; unset permits future instants."},
         max_span_ms:#{schema:#{type:"optional",value:#{type:"integer",min:1}},required:false,sensitive:false,doc:"Maximum duration for either range kind."},
@@ -37,20 +38,27 @@ define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRa
         start_choice:#{schema:#{type:"optional",value:#{type:"integer"}},"default":#{type:"null"}},end_choice:#{schema:#{type:"optional",value:#{type:"integer"}},"default":#{type:"null"}},
         selecting_end:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}},
         preset_index:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},
+        draft_base:#{schema:#{type:"ui_value"},"default":#{type:"null"}},
     }},events:#{change:#{payload:#{type:"ui_value"},doc:"A validated controlled range proposal; no event fires for half-edited drafts or cancel."}},slots:#{},
-    parts:["root","trigger","trigger_value","panel","presets","preset","calendar","fields","field","zone","error","actions"]},render:Fn("render_TimeRangePicker")});
+    parts:["root","trigger","trigger_value","panel","presets","preset","calendar","fields","field","zone","error","actions"],effects:["controlled_draft"]},render:Fn("render_TimeRangePicker")});
 fn TimeRangePicker(props){render_component("components/time_range_picker",props)}
 fn option(props,name){if name in props&&props[name]!=(){props[name]}else{()}}
 fn clock_style(precision){if precision=="second"{"medium"}else{"short"}}
-fn reset_draft(ctx,value,zone,precision){
+fn make_draft(ctx,value,zone,precision){
     let resolved=time_range_resolve(value,ctx.now());let start=time_parts(resolved.start,zone);let finish=time_parts(resolved.end,zone);
-    ctx.set_state("start_date",start.date);ctx.set_state("end_date",finish.date);
-    ctx.set_state("start_time",ctx.format_time(resolved.start,clock_style(precision),zone));
-    ctx.set_state("end_time",ctx.format_time(resolved.end,clock_style(precision),zone));
-    ctx.set_state("start_choice",resolved.start);ctx.set_state("end_choice",resolved.end);
-    ctx.set_state("zone",zone);ctx.set_state("selecting_end",false);
+    #{start_date:start.date,end_date:finish.date,start_time:ctx.format_time(resolved.start,clock_style(precision),zone),
+        end_time:ctx.format_time(resolved.end,clock_style(precision),zone),start_choice:resolved.start,end_choice:resolved.end,zone:zone}
 }
-fn opened(value,zone,precision,ctx,open){ctx.set_state("open",open);if open{reset_draft(ctx,value,zone,precision);}handled()}
+fn reset_draft(ctx,value,zone,precision){
+    let values=make_draft(ctx,value,zone,precision);for field in values.keys(){ctx.set_state(field,values[field]);}
+    ctx.set_state("selecting_end",false);
+}
+fn opened(identity,ctx,open){ctx.set_state("open",open);if open{
+    reset_draft(ctx,identity.value,identity.zone,identity.precision);ctx.set_state("draft_base",identity);}handled()}
+fn synchronize_draft(ctx,payload){if payload.open&&ctx.get_state("draft_base")!=payload.identity{
+    reset_draft(ctx,payload.identity.value,payload.identity.zone,payload.identity.precision);
+    ctx.set_state("draft_base",payload.identity);}}
+fn cleanup_draft(ctx,payload){}
 fn edited(field,ctx,value){ctx.set_state(field,value);ctx.set_state(if field=="start_date"||field=="start_time"{"start_choice"}else{"end_choice"},());}
 fn calendar_changed(ctx,date){
     if !ctx.get_state("selecting_end")||date<ctx.get_state("start_date"){
@@ -60,7 +68,8 @@ fn calendar_changed(ctx,date){
 }
 fn chosen_instant(field,ctx,instant){ctx.set_state(field,instant);}
 fn apply_range(ctx,value){ctx.emit("change",value);ctx.set_state("open",false);handled()}
-fn apply_button(value,ctx,payload){apply_range(ctx,value)}
+fn apply_button(value,identity,ctx,payload){if ctx.get_state("draft_base")!=identity||!ctx.get_state("open"){return handled();}apply_range(ctx,value)}
+fn shift_button(value,ctx,payload){apply_range(ctx,value)}
 fn occurrence_button(field,instant,ctx,payload){chosen_instant(field,ctx,instant);}
 fn preset_cursor(ctx,index){ctx.set_state("preset_index",index);handled()}
 fn switch_zone(value,precision,zone,ctx,payload){reset_draft(ctx,value,zone,precision);handled()}
@@ -88,14 +97,14 @@ fn occurrence_choices(ctx,label,candidates,choice,field,zone){
         .accessibility_label(`${label}, ${ctx.t("time.fold")}, ${ctx.format_time(instant,"long",zone)}`));}}
     column(nodes).with_style(style().gap(theme_spacing("xs")))
 }
-fn draft_field(ctx,props,label,date_field,time_field,candidates,zone){
-    let date=ctx.get_state(date_field);let clock=ctx.get_state(time_field);let choice_field=if date_field=="start_date"{"start_choice"}else{"end_choice"};
+fn draft_field(ctx,props,values,label,date_field,time_field,candidates,zone){
+    let date=values[date_field];let clock=values[time_field];let choice_field=if date_field=="start_date"{"start_choice"}else{"end_choice"};
     column([text(label).with_style(style().typography("body")),
         input::Input(#{key:`${props.key}-${date_field}`,label:`${label} ${ctx.t("time.custom")}`,value:date,
             on_change:Fn("edited").curry(date_field)}),
         time_input::TimeInput(#{key:`${props.key}-${time_field}`,label:label,value:clock,precision:props.precision,
             on_change:Fn("edited").curry(time_field)}),
-        occurrence_choices(ctx,label,candidates,ctx.get_state(choice_field),choice_field,zone)])
+        occurrence_choices(ctx,label,candidates,values[choice_field],choice_field,zone)])
         .with_style(ctx.component_style("field",style().gap(theme_spacing("xs"))))
 }
 fn picker_presets(ctx,props,presets){
@@ -137,6 +146,13 @@ fn render_TimeRangePicker(ctx,props){
         else{`${ctx.format_time(resolved.start,"long",props.time_zone)} – ${ctx.format_time(resolved.end,"long",props.time_zone)}`};
     for preset in presets{if props.value.kind=="relative"&&preset.duration_ms==props.value.duration_ms{display=preset.label;}}
     let open=ctx.get_state("open");
+    let identity=#{value:props.value,zone:props.time_zone,precision:props.precision,revision:props.revision,
+        time:ctx.time(),number:ctx.number(),calendar:ctx.calendar(),direction:ctx.text_direction()};
+    effect("controlled_draft",#{open:open,identity:identity},Fn("synchronize_draft"),Fn("cleanup_draft"));
+    let stale=open&&ctx.get_state("draft_base")!=identity;
+    let values=if stale{make_draft(ctx,props.value,props.time_zone,props.precision)}else{#{
+        start_date:ctx.get_state("start_date"),end_date:ctx.get_state("end_date"),start_time:ctx.get_state("start_time"),end_time:ctx.get_state("end_time"),
+        start_choice:ctx.get_state("start_choice"),end_choice:ctx.get_state("end_choice"),zone:ctx.get_state("zone")}};
     let trigger=row([text(`${display} · ${zone_label}`).with_style(ctx.component_style("trigger_value",style()))])
         .with_key(`${props.key}-trigger`).with_style(ctx.component_style("trigger",style().min_height(theme_length("metrics.control"))
             .padding_x(theme_length("metrics.field_pad")).items_center().border(px(2)).border_color(theme_color("border"))
@@ -144,25 +160,26 @@ fn render_TimeRangePicker(ctx,props){
             .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(true).accessibility_role("combobox").accessibility_label(props.label).accessibility_expanded(open)
         .accessibility_value(`${ctx.format_time(resolved.start,"long",props.time_zone)} – ${ctx.format_time(resolved.end,"long",props.time_zone)} ${zone_label}`);
-    let zone=ctx.get_state("zone");if zone==""{zone=props.time_zone;}
-    let draft=parse_draft(ctx,ctx.get_state("start_date"),ctx.get_state("start_time"),ctx.get_state("end_date"),ctx.get_state("end_time"),zone,props.precision,
-        ctx.get_state("start_choice"),ctx.get_state("end_choice"),min,max,span);
+    let zone=values.zone;if zone==""{zone=props.time_zone;}
+    let draft=parse_draft(ctx,values.start_date,values.start_time,values.end_date,values.end_time,zone,props.precision,
+        values.start_choice,values.end_choice,min,max,span);
+    if stale{draft.value=();draft.error=ctx.t("time.updated");}
     let date_min=if min==(){()}else{time_parts(min,zone).date};let date_max=if max==(){()}else{time_parts(max,zone).date};
     let dates=[];
     if open{dates.push(calendar::Calendar(#{key:`${props.key}-calendar`,label:ctx.t("time.custom"),mode:"range",months:2,
-        value:valid_date_or(ctx.get_state("start_date"),time_parts(resolved.start,zone).date),
-        end:if ctx.get_state("selecting_end"){()}else{valid_date_or(ctx.get_state("end_date"),time_parts(resolved.end,zone).date)},
+        value:valid_date_or(values.start_date,time_parts(resolved.start,zone).date),
+        end:if !stale&&ctx.get_state("selecting_end"){()}else{valid_date_or(values.end_date,time_parts(resolved.end,zone).date)},
         min_date:date_min,max_date:date_max,today:time_parts(ctx.now(),zone).date,on_change:Fn("calendar_changed")})
-        .with_style(ctx.component_style("calendar",style())).tab_stop(false));}
+        .with_style(ctx.component_style("calendar",style())));}
     let custom_nodes=dates+[row([
-        draft_field(ctx,props,ctx.t("time.start"),"start_date","start_time",draft.start_candidates,zone),
-        draft_field(ctx,props,ctx.t("time.end"),"end_date","end_time",draft.end_candidates,zone)])
+        draft_field(ctx,props,values,ctx.t("time.start"),"start_date","start_time",draft.start_candidates,zone),
+        draft_field(ctx,props,values,ctx.t("time.end"),"end_date","end_time",draft.end_candidates,zone)])
         .with_style(ctx.component_style("fields",style().gap(theme_spacing("sm")).items_start()))];
     if draft.error!=""{custom_nodes.push(text(draft.error).with_style(ctx.component_style("error",style().typography("caption").text_color(theme_color("text.danger"))))
             .accessibility_role("status"));}
     custom_nodes.push(row([
         button::Button(#{key:`${props.key}-apply`,text:ctx.t("time.apply"),variant:"primary",disabled:draft.value==(),
-            on_click:Fn("apply_button").curry(draft.value)})]).with_style(ctx.component_style("actions",style().justify_end())));
+            on_click:Fn("apply_button").curry(draft.value,identity)})]).with_style(ctx.component_style("actions",style().justify_end())));
     let custom=column(custom_nodes).with_style(style().gap(theme_spacing("sm")));
     let draft_offset=time_parts(if draft.value==(){resolved.start}else{draft.value.start},zone).zone;
     let zones=[text(`${ctx.t("time.zone")}: ${zone} UTC${draft_offset}`).with_style(ctx.component_style("zone",style().typography("caption")))];
@@ -177,11 +194,11 @@ fn render_TimeRangePicker(ctx,props){
     let config=#{id:props.key,kind:"popover",open:open,placement:"bottom",align:"start",gap:4,modal:false,
         initial_focus:"first",dismiss_on_escape:true,dismiss_on_outside:true};
     if option(props,"parent_overlay")!=(){config.parent=props.parent_overlay;}
-    let picker=overlay(trigger,panel,config).with_key(props.key).on_open_change(Fn("opened").curry(props.value,props.time_zone,props.precision));
+    let picker=overlay(trigger,panel,config).with_key(props.key).on_open_change(Fn("opened").curry(identity));
     let nodes=[picker];if props.shift_buttons{let width=resolved.end-resolved.start;
         for direction in [-1,1]{let shifted=#{kind:"absolute",start:resolved.start+direction*width,end:resolved.end+direction*width};
             nodes.push(button::Button(#{key:`${props.key}-shift-${direction}`,text:if direction<0{"‹"}else{"›"},variant:"ghost",
-                disabled:time_range_error(shifted,min,max,span)!="",on_click:Fn("apply_button").curry(shifted)})
+                disabled:time_range_error(shifted,min,max,span)!="",on_click:Fn("shift_button").curry(shifted)})
                 .accessibility_label(ctx.t(if direction<0{"time.previous"}else{"time.next"})));}}
     let root=row(nodes).with_style(ctx.component_style("root",style().gap(theme_spacing("xs")).items_center())).disabled(props.disabled);
     if "size" in props&&props.size!=(){root.env(#{size:props.size})}else{root}

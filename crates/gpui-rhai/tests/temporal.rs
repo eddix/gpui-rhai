@@ -1,30 +1,8 @@
 mod common;
 
-use common::{mount, new_runtime};
+use common::{compile_official, mount, new_runtime};
 use gpui_rhai::{LocaleManager, UiValue, WallClock, load_locale_source};
 use gpui_rhai_registry as registry;
-
-fn compile_official(name: &str, source: &str) -> (gpui_rhai::RuntimeEngine, gpui_rhai::CompiledUi) {
-    // Read source-owned modules at execution time so edit/verify loops test the exact
-    // current copies, including Gallery modules which are not runtime constructors.
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../registry");
-    let modules = common::official_modules()
-        .map(|(id, _)| {
-            (
-                id.to_owned(),
-                std::fs::read_to_string(root.join(format!("{id}.rhai"))).unwrap(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let mut engine = common::engine_with(
-        modules
-            .iter()
-            .map(|(id, source)| (id.as_str(), source.as_str())),
-    );
-    let compiled = common::compile(&mut engine, name, source);
-    (engine, compiled)
-}
-
 #[test]
 fn temporal_components_evaluate_with_pinned_clock_and_each_locale() {
     let source = r#"

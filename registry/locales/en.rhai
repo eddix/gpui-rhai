@@ -6,6 +6,7 @@ fn locale() {
         direction: "left_to_right",
         messages: #{
             "time.apply": "Apply", "time.start": "Start", "time.end": "End", "time.zone": "Time zone",
+            "time.updated": "The range changed; updating the draft",
             "time.local": "Local", "time.custom": "Custom range", "time.presets": "Relative ranges",
             "time.last": "Last {value}", "time.gap": "This local time does not exist",
             "time.fold": "Choose which occurrence", "time.invalid": "Enter a valid date and time",
