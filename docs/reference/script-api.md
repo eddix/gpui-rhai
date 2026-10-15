@@ -816,7 +816,7 @@ Official components wrap them; application components may too.
 | `label` | string | required | Accessible document name. |
 | `link_style` | style | required | Style of the Markdown link part. |
 | `loading_style` | style | required | Style of the Markdown loading part. |
-| `max_height` | length or `()` | — | Maximum content height; longer content scrolls natively. |
+| `max_height` | length or `()` | — | Maximum content height as an absolute-resolvable Length (px/rem); relative lengths are not supported. Longer content scrolls natively. |
 | `on_link` | callback or `()` | — | Emits href and visible text. Does not open a browser. |
 | `paragraph_style` | style | required | Style of the Markdown paragraph part. |
 | `quote_style` | style | required | Style of the Markdown quote part. |
