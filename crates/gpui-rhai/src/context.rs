@@ -111,6 +111,7 @@ pub struct UiRuntimeState {
     component_styles: crate::ComponentStyleSheet,
     pub assets: AssetRegistry,
     pub motions: MotionRuntime,
+    pub(crate) page_visibility: crate::retained_page::PageVisibility,
     pub effects: crate::EffectRegistry,
     pub signals: crate::SignalRegistry,
     pub element_refs: crate::ElementRefRegistry,
@@ -142,6 +143,18 @@ pub struct UiRuntimeState {
 }
 
 impl UiRuntimeState {
+    pub(crate) fn reconcile_page_visibility(
+        &mut self,
+        tree: &crate::RetainedUiTree,
+        root: &ComponentInstancePath,
+        domain: &str,
+    ) {
+        let dirty =
+            self.page_visibility
+                .reconcile(tree, root, domain, &mut self.motions, self.clock.now());
+        self.mark_dirty(dirty);
+    }
+
     /// What the running script invocation responds to.
     #[must_use]
     pub fn invocation_origin(&self) -> &crate::InvocationOrigin {
@@ -527,6 +540,8 @@ impl UiRuntimeState {
             locale.remove_scope(root);
         }
         let window_scope = format!("window:{window}");
+        self.page_visibility
+            .remove_scope(root, &format!("{window_scope}/"));
         self.motions.release_node_scope(&window_scope);
         let removed_ghosts = self
             .motion_ghosts
@@ -690,6 +705,7 @@ impl UiRuntimeState {
     }
 
     pub(crate) fn reset_component_readers(&mut self, component: &ComponentInstancePath) {
+        self.page_visibility.reset_reader(component);
         self.stores.reset_reader(component);
         self.native_collections.reset_reader(component);
         self.native_documents.reset_reader(component);
@@ -818,6 +834,7 @@ impl UiRuntimeState {
             presentation.geometry.retain_reader_scope(root, active);
         }
         self.environment_dependencies.retain_scope(root, active);
+        self.page_visibility.retain_scope(root, active);
         self.dirty
             .retain(|path| !path.is_within(root) || path == root || active.contains(path));
         self.component_incarnations
@@ -861,6 +878,7 @@ impl UiRuntimeState {
             component_styles: self.component_styles.clone(),
             component_style_generation: self.component_style_generation,
             motions: self.motions.transaction_snapshot(),
+            page_visibility: self.page_visibility.clone(),
             effects: self.effects.clone(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
@@ -919,6 +937,7 @@ impl UiRuntimeState {
         self.component_styles = snapshot.component_styles;
         self.component_style_generation = snapshot.component_style_generation;
         self.motions = snapshot.motions;
+        self.page_visibility = snapshot.page_visibility;
         self.effects = snapshot.effects;
         self.signals = snapshot.signals;
         self.element_refs = snapshot.element_refs;
@@ -1046,6 +1065,7 @@ pub struct UiStateSnapshot {
     component_styles: crate::ComponentStyleSheet,
     component_style_generation: u64,
     motions: MotionRuntime,
+    page_visibility: crate::retained_page::PageVisibility,
     effects: crate::EffectRegistry,
     signals: crate::SignalRegistry,
     element_refs: crate::ElementRefRegistry,
@@ -1089,6 +1109,7 @@ impl Clone for UiStateSnapshot {
             component_styles: self.component_styles.clone(),
             component_style_generation: self.component_style_generation,
             motions: self.motions.transaction_snapshot(),
+            page_visibility: self.page_visibility.clone(),
             effects: self.effects.clone(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
@@ -1157,6 +1178,23 @@ pub struct UiContext {
 }
 
 impl UiContext {
+    /// Last committed retained-page visibility, tracked during render.
+    /// Returns false before first placement. Hiding never cancels work; use
+    /// this value in application-owned effect dependencies/pause policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UiContextError::Borrowed`] during a conflicting runtime borrow.
+    pub fn is_visible(&self) -> Result<bool, UiContextError> {
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime
+            .page_visibility
+            .read(&self.component, self.phase == ExecutionPhase::Render))
+    }
+
     #[must_use]
     pub fn new(
         runtime: Rc<RefCell<UiRuntimeState>>,
@@ -2433,14 +2471,20 @@ impl UiContext {
     }
 
     /// Resolve the logical text direction for this component scope.
+    /// Defaults to left-to-right without a locale manager, like native rendering.
     ///
     /// # Errors
     ///
-    /// Returns [`UiContextError::LocaleUnavailable`], locale, or borrow errors.
+    /// Returns locale or borrow errors.
     pub fn text_direction(&self) -> Result<String, UiContextError> {
-        match self
-            .read_locale(|locale, window, component| locale.direction(window, Some(component)))?
+        let direction = match self
+            .read_locale(|locale, window, component| locale.direction(window, Some(component)))
         {
+            Ok(direction) => direction,
+            Err(UiContextError::LocaleUnavailable) => TextDirection::LeftToRight,
+            Err(error) => return Err(error),
+        };
+        match direction {
             TextDirection::LeftToRight => Ok("ltr".to_owned()),
             TextDirection::RightToLeft => Ok("rtl".to_owned()),
         }
@@ -4290,6 +4334,11 @@ fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
         .with_fn("text_direction", |context: &mut UiContext| {
             context
                 .text_direction()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn("is_visible", |context: &mut UiContext| {
+            context
+                .is_visible()
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         })
         .with_fn("today", |context: &mut UiContext| {

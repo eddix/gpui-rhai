@@ -28,6 +28,51 @@ actual opener and restores focus where possible. The application owns the
 stack; Back emits a proposal rather than changing application routes itself.
 Host Back delegates to the focused inner stack before its outer navigation.
 
+The shared mechanism is `.retained_page(visible)` on an ordinary keyed node.
+The accepted subtree remains in `RetainedUiTree`, the primitive registry and
+handle maps. The renderer stops before building a hidden page's descendant
+GPUI elements; it does not lay native scroll/editing surfaces out at zero size.
+Ordinary `style().hidden()` is not this lifecycle contract. Nested visibility
+is the conjunction of retained-page ancestors. Hidden pages lose pointer
+capture and leave native focus traversal and presented accessibility while
+their native editor and scroll identities remain owned. Node-motion scopes
+freeze without elapsed-time catch-up. No business work is cancelled.
+
+`ctx.is_visible()` tracks **last committed placement**, not ambient construction
+environment. It returns false before first placement; a changed committed
+placement invalidates only readers through the normal incremental-render path.
+Thus eagerly constructed covered deep-link pages never read an optimistic
+visible value. Initially visible pages and the root become true after their
+first placement commit. Failed candidates restore placement/dependency/motion
+state with the existing runtime checkpoint. Construction ownership remains ADR
+0019's; this does not adopt ADR 0023's deferred/placement-owned construction.
+Applications use visibility in effect dependencies or explicitly pause their
+own polling. Purely visual clocks may use it to avoid hidden redraws.
+
+`Tabs.keep_mounted` defaults to false. When enabled, every supplied panel uses
+the shared mechanism with its tab value as identity. Even in selected-only
+mode, eagerly constructed components keep caller-owned Rhai state and effects;
+only retained presentation promises native continuity. Mount-on-first-visit is
+implemented by the caller choosing which content to construct.
+
+`patterns/navigation_stack.NavigationStack` accepts a non-empty controlled
+`stack` of `{key,title,content}`, bounded by `max_depth`. Unique visit keys allow
+repeated record ids. `on_pop({depth,source})` proposes the number of entries to
+keep; it does not change routes or load data. Back, breadcrumb and none headers
+share the same retained pages. Narrow breadcrumb trails collapse middle visits
+into a keyboard-operable Menu. RTL mirrors the back affordance and page motion;
+motion follows Host preferences. Push focuses the current heading; pop restores
+a surviving opener and otherwise falls back to the page heading.
+
+Hosts inspect `navigation_stacks(window,cx)` and call
+`navigate_back(window,cx) -> bool` before outer navigation. Only the deepest
+visible focused scope with a pop handler handles Back; another view never wins
+by recency. False delegates outward. Ignored or failed proposals still count
+as handled, preventing a failed inner pop from also navigating the outer Host.
+`NavigateBack` is the equivalent focus-routed GPUI action. The SDK installs no
+global chord; Hosts bind their platform policy. A component's optional
+`back_key` is local to that scope.
+
 ### Scrolling
 
 ScrollHandle, uniform-list handles and ListState adapt to a shared themed
