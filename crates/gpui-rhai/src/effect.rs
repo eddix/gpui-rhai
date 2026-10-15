@@ -38,6 +38,17 @@ impl EffectCascadeBudget {
         self.checkpoint = checkpoint;
     }
 
+    /// Only after the outermost transaction completes: a nested candidate may
+    /// still roll back to a different generation and need its rejection epoch.
+    pub(crate) fn collect_retired_rejections(&mut self) {
+        let generations = &self.checkpoint.generations;
+        self.rejections.retain(|root, epochs| {
+            let current = generations.get(root).copied().unwrap_or_default();
+            epochs.retain(|generation, _| *generation == current);
+            !epochs.is_empty()
+        });
+    }
+
     pub(crate) fn restart(&mut self, root: &ComponentInstancePath) {
         self.checkpoint.callbacks.remove(root);
         self.checkpoint.quiescent.remove(root);
@@ -533,6 +544,92 @@ pub enum EffectError {
 mod tests {
     use super::*;
     use crate::RuntimeEngine;
+
+    #[test]
+    fn retired_rejections_wait_for_outer_rollback_and_do_not_accumulate_failed_candidates() {
+        for quarantined in [false, true] {
+            let mut engine = RuntimeEngine::new();
+            let active = engine
+                .compile("fn view(ctx) { text(\"active\") }")
+                .unwrap()
+                .generation();
+            let root = ComponentInstancePath::root("App", "active");
+            let unregistered = ComponentInstancePath::root("App", "default_generation");
+            let mut runtime = crate::UiRuntimeState::new();
+            runtime.effect_cascades.register_generation(&root, active);
+            if quarantined {
+                runtime.effect_cascades.reject(&root);
+            }
+            runtime.effect_cascades.reject(&unregistered);
+            for _ in 0..12 {
+                let outer = runtime.begin_transaction().unwrap();
+                let inner = runtime.begin_transaction().unwrap();
+                let candidate = engine
+                    .compile("fn view(ctx) { text(\"candidate\") }")
+                    .unwrap()
+                    .generation();
+                runtime
+                    .effect_cascades
+                    .register_generation(&root, candidate);
+                assert_eq!(runtime.effect_cascades.charge(&root, 65), Err(65));
+                runtime.rollback_transaction(inner).unwrap();
+                assert_eq!(runtime.effect_cascades.generation_for(&root), Some(active));
+                assert_eq!(runtime.effect_cascades.blocked(&root), quarantined);
+                assert_eq!(
+                    runtime.effect_cascades.rejections[&root].len(),
+                    usize::from(quarantined) + 1,
+                    "nested rollback cannot retire candidate/old graph records yet"
+                );
+                runtime.rollback_transaction(outer).unwrap();
+                assert_eq!(
+                    runtime
+                        .effect_cascades
+                        .rejections
+                        .get(&root)
+                        .map_or(0, BTreeMap::len),
+                    usize::from(quarantined)
+                );
+                assert_eq!(runtime.effect_cascades.blocked(&root), quarantined);
+                assert!(runtime.effect_cascades.blocked(&unregistered));
+                assert_eq!(
+                    runtime.effect_cascades.rejections[&unregistered].len(),
+                    1,
+                    "unregistered roots keep their default-generation semantics"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn outer_commit_collects_old_generations_without_changing_current_quarantine() {
+        let mut engine = RuntimeEngine::new();
+        let first = engine
+            .compile("fn view(ctx) { text(\"first\") }")
+            .unwrap()
+            .generation();
+        let second = engine
+            .compile("fn view(ctx) { text(\"second\") }")
+            .unwrap()
+            .generation();
+        let root = ComponentInstancePath::root("App", "main");
+        let mut runtime = crate::UiRuntimeState::new();
+        runtime.effect_cascades.register_generation(&root, first);
+        runtime.effect_cascades.reject(&root);
+        let _outer = runtime.begin_transaction().unwrap();
+        let _inner = runtime.begin_transaction().unwrap();
+        runtime.effect_cascades.register_generation(&root, second);
+        runtime.effect_cascades.reject(&root);
+        runtime.commit_transaction().unwrap();
+        assert_eq!(
+            runtime.effect_cascades.rejections[&root].len(),
+            2,
+            "nested commit must preserve first's rollback history"
+        );
+        runtime.commit_transaction().unwrap();
+        assert_eq!(runtime.effect_cascades.rejections[&root].len(), 1);
+        assert!(runtime.effect_cascades.rejections[&root].contains_key(&second));
+        assert!(runtime.effect_cascades.blocked(&root));
+    }
 
     #[test]
     fn cascade_budget_survives_yields_and_rejection_survives_rollback() {
