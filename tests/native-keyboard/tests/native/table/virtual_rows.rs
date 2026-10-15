@@ -265,7 +265,11 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         "first group did not remain pinned: header={alpha:?}, viewport={viewport:?}"
     );
 
-    scroll(&mut visual, -300.0);
+    // Native height hints expose the complete extent from the first frame.
+    // Do not depend on the old unmeasured suffix clamping away part of each
+    // wheel step: these intermediate distances deliberately traverse rows
+    // 15, 19 and 25 before the final beta-header geometry assertion.
+    scroll(&mut visual, -200.0);
     cx.background_executor
         .advance_clock(std::time::Duration::from_millis(16));
     wait_for_view_text(
@@ -274,7 +278,7 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         "row-15",
         "the next virtual target must settle before crossing the group",
     );
-    scroll(&mut visual, -300.0);
+    scroll(&mut visual, -140.0);
     cx.background_executor
         .advance_clock(std::time::Duration::from_millis(16));
     wait_for_view_text(
@@ -292,7 +296,7 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         "beta",
         "the second group must enter the realized virtual window",
     );
-    scroll(&mut visual, -200.0);
+    scroll(&mut visual, -120.0);
     cx.background_executor
         .advance_clock(std::time::Duration::from_millis(16));
     wait_for_view_text(
