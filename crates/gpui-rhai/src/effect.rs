@@ -12,6 +12,7 @@ pub(crate) const EFFECT_TRANSITION_CALLBACK_BUDGET: usize = 64;
 pub(crate) struct EffectCascadeCheckpoint {
     callbacks: BTreeMap<ComponentInstancePath, usize>,
     accepted_rejections: BTreeMap<ComponentInstancePath, u64>,
+    generations: BTreeMap<ComponentInstancePath, ScriptGeneration>,
 }
 
 /// Foreground delivery bookkeeping, not a second scheduler. Rejection epochs
@@ -69,6 +70,47 @@ impl EffectCascadeBudget {
             .any(|root| component.is_within(root) && self.blocked(root))
     }
 
+    pub(crate) fn dispatch_token(
+        &self,
+        component: &ComponentInstancePath,
+    ) -> Option<(ComponentInstancePath, u64)> {
+        self.checkpoint
+            .accepted_rejections
+            .keys()
+            .filter(|root| component.is_within(root))
+            .max()
+            .map(|root| {
+                (
+                    root.clone(),
+                    self.rejections.get(root).copied().unwrap_or_default(),
+                )
+            })
+    }
+
+    pub(crate) fn accepts_dispatch(&self, root: &ComponentInstancePath, epoch: u64) -> bool {
+        !self.blocked(root) && self.rejections.get(root).copied().unwrap_or_default() == epoch
+    }
+
+    pub(crate) fn register_generation(
+        &mut self,
+        root: &ComponentInstancePath,
+        generation: ScriptGeneration,
+    ) {
+        self.checkpoint.generations.insert(root.clone(), generation);
+    }
+
+    pub(crate) fn generation_for(
+        &self,
+        component: &ComponentInstancePath,
+    ) -> Option<ScriptGeneration> {
+        self.checkpoint
+            .generations
+            .iter()
+            .filter(|(root, _)| component.is_within(root))
+            .max_by_key(|(root, _)| *root)
+            .map(|(_, generation)| *generation)
+    }
+
     pub(crate) fn charge(
         &mut self,
         root: &ComponentInstancePath,
@@ -86,12 +128,16 @@ impl EffectCascadeBudget {
             .unwrap_or_default()
             .saturating_add(count);
         if total > EFFECT_TRANSITION_CALLBACK_BUDGET {
-            let epoch = self.rejections.entry(root.clone()).or_default();
-            *epoch = epoch.saturating_add(1);
+            self.reject(root);
             return Err(total);
         }
         self.checkpoint.callbacks.insert(root.clone(), total);
         Ok(())
+    }
+
+    pub(crate) fn reject(&mut self, root: &ComponentInstancePath) {
+        let epoch = self.rejections.entry(root.clone()).or_default();
+        *epoch = epoch.saturating_add(1);
     }
 
     pub(crate) fn settle<'a>(
@@ -112,6 +158,9 @@ impl EffectCascadeBudget {
             .retain(|path, _| !path.is_within(root));
         self.checkpoint
             .accepted_rejections
+            .retain(|path, _| !path.is_within(root));
+        self.checkpoint
+            .generations
             .retain(|path, _| !path.is_within(root));
         self.rejections.retain(|path, _| !path.is_within(root));
     }

@@ -101,6 +101,9 @@ impl ScriptLifecycle {
             transaction.mount(root_path.clone(), state_schema)?;
             runtime_state.component_state.commit_render(transaction);
             runtime_state.ensure_component_incarnation(&root_path);
+            runtime_state
+                .effect_cascades
+                .register_generation(&root_path, compiled.generation());
         }
         Ok(Self {
             compiled,
@@ -759,14 +762,30 @@ impl ScriptLifecycle {
         self.validate_callback_owner(callback)?;
         // Effect-generated semantic events retain their origin when delivered
         // later. They are part of the same cascade, not new user operations.
-        if self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .invocation_origin()
-            != &crate::InvocationOrigin::Effect
         {
-            self.restart_effect_cascade()?;
+            let mut runtime = self
+                .runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?;
+            if runtime.invocation_origin() == &crate::InvocationOrigin::Effect {
+                let root = runtime
+                    .dispatch_owner
+                    .as_ref()
+                    .and_then(crate::SemanticDispatchOwner::cascade_root)
+                    .cloned()
+                    .unwrap_or_else(|| self.root_path.clone());
+                if runtime.effect_cascades.blocked(&root) {
+                    return Ok(Dynamic::UNIT);
+                }
+                // Pure semantic recursion may never restart an effect. Every
+                // effect-origin callback shares the graph's transition budget.
+                runtime
+                    .effect_cascades
+                    .charge(&root, 1)
+                    .map_err(LifecycleError::EffectBudget)?;
+            } else {
+                runtime.effect_cascades.restart(&self.root_path);
+            }
         }
         let root_context = self.context(ExecutionPhase::Event);
         let context = callback
@@ -848,12 +867,14 @@ impl ScriptLifecycle {
         .with_generation(self.compiled.generation())
         .with_native_context(delivery.callback.native_context().cloned())
         .with_async_scope(scope);
-        self.with_origin(origin, || {
-            Ok(engine.invoke_callback(
-                &self.compiled,
-                &delivery.callback,
-                (context, delivery.payload.into_dynamic()),
-            )?)
+        self.with_dispatch_owner(None, || {
+            self.with_origin(origin, || {
+                Ok(engine.invoke_callback(
+                    &self.compiled,
+                    &delivery.callback,
+                    (context, delivery.payload.into_dynamic()),
+                )?)
+            })
         })
     }
 
@@ -914,6 +935,14 @@ impl ScriptLifecycle {
         engine: &RuntimeEngine,
         pending: crate::PendingEvent,
     ) -> Result<Option<Dynamic>, LifecycleError> {
+        if !self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .dispatch_owner_active(pending.owner.as_ref())
+        {
+            return Ok(None);
+        }
         let callback = self
             .runtime
             .try_borrow()
@@ -921,9 +950,78 @@ impl ScriptLifecycle {
             .component_event_handler(&pending.target, &pending.event.name);
         callback
             .map(|callback| {
-                self.invoke_callback_transactional(engine, &callback, pending.event.payload)
+                self.with_dispatch_owner(pending.owner, || {
+                    self.with_origin(pending.origin, || {
+                        self.invoke_callback_transactional(engine, &callback, pending.event.payload)
+                    })
+                })
             })
             .transpose()
+    }
+
+    /// Deliver a queued semantic action with its original origin and opaque
+    /// provenance. Stale generation, mount, activation or rejected derivations
+    /// are ignored, including clones retained by an external Host.
+    ///
+    /// # Errors
+    /// Returns callback, effect-budget or transaction errors.
+    pub fn invoke_action_transactional(
+        &self,
+        engine: &RuntimeEngine,
+        pending: crate::ActionInvocation,
+    ) -> Result<Dynamic, LifecycleError> {
+        if pending.callback.generation() != self.generation()
+            || !self
+                .runtime
+                .try_borrow()
+                .map_err(|_| LifecycleError::Borrowed)?
+                .dispatch_owner_active(pending.owner.as_ref())
+        {
+            return Ok(Dynamic::UNIT);
+        }
+        self.with_dispatch_owner(pending.owner, || {
+            self.with_origin(pending.origin, || {
+                self.invoke_callback_transactional(engine, &pending.callback, pending.payload)
+            })
+        })
+    }
+
+    fn with_dispatch_owner<T>(
+        &self,
+        owner: Option<crate::SemanticDispatchOwner>,
+        invoke: impl FnOnce() -> Result<T, LifecycleError>,
+    ) -> Result<T, LifecycleError> {
+        let previous = {
+            let mut runtime = self
+                .runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?;
+            std::mem::replace(&mut runtime.dispatch_owner, owner)
+        };
+        let result = invoke();
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .dispatch_owner = previous;
+        result
+    }
+
+    pub(crate) fn reject_semantic_dispatch_budget(
+        &self,
+        origin: &crate::InvocationOrigin,
+        owner: Option<&crate::SemanticDispatchOwner>,
+    ) -> Result<(), LifecycleError> {
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?;
+        if origin == &crate::InvocationOrigin::Effect && runtime.dispatch_owner_active(owner) {
+            let root = owner
+                .and_then(crate::SemanticDispatchOwner::cascade_root)
+                .unwrap_or(&self.root_path);
+            runtime.effect_cascades.reject(root);
+        }
+        Ok(())
     }
 
     /// Transactionally run candidate `init(ctx)` and `view(ctx)` during hot reload.
@@ -1432,6 +1530,11 @@ impl ScriptLifecycle {
         declarations: RetainedDeclarations,
         previous_state: Option<crate::StateStore>,
     ) -> Result<(), LifecycleError> {
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effect_cascades
+            .register_generation(&self.root_path, candidate.generation());
         let plan = self
             .runtime
             .try_borrow()
@@ -1533,13 +1636,15 @@ impl ScriptLifecycle {
             })
             .with_native_context(callback.native_context().cloned())
             .with_async_scope(scope);
-        self.with_origin(crate::InvocationOrigin::Effect, || {
-            let _ = engine.invoke_callback_for_generation(
-                compiled,
-                callback,
-                (context, dependencies.into_dynamic()),
-            )?;
-            Ok(())
+        self.with_dispatch_owner(None, || {
+            self.with_origin(crate::InvocationOrigin::Effect, || {
+                let _ = engine.invoke_callback_for_generation(
+                    compiled,
+                    callback,
+                    (context, dependencies.into_dynamic()),
+                )?;
+                Ok(())
+            })
         })
     }
 
@@ -1923,6 +2028,72 @@ mod tests {
             .invoke_callback_transactional(&engine, &followup, UiValue::Null)
             .unwrap();
         assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    }
+
+    #[test]
+    fn pure_event_loop_without_effect_transitions_shares_budget_and_prunes_restored_queue() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+            fn echo(ctx, payload) { ctx.emit("tick", ()); }
+            fn view(ctx) { text("stable") }
+        "#,
+            )
+            .unwrap();
+        let mut echo = engine.callback(&compiled, "echo").unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let root = ComponentInstancePath::root("App", "pure_event");
+        let events = BTreeMap::from([(
+            "tick".to_owned(),
+            crate::EventSchema::new(ValueSchema::Null),
+        )]);
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root.clone(),
+            None,
+            events.clone(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        echo.bind_component_scope_if_unset(
+            &root,
+            runtime.borrow().component_incarnation(&root).unwrap(),
+            events,
+        );
+        runtime.borrow_mut().replace_component_event_handlers(
+            &root,
+            BTreeMap::from([((root.clone(), "tick".to_owned()), echo)]),
+        );
+        let context = lifecycle.context(ExecutionPhase::Event);
+        lifecycle
+            .with_origin(crate::InvocationOrigin::Effect, || {
+                context.emit("tick", Dynamic::UNIT).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        let checkpoint = runtime.borrow_mut().begin_transaction().unwrap();
+        let mut rejected = false;
+        for _ in 0..65 {
+            let pending = runtime.borrow_mut().drain_batch().events.pop().unwrap();
+            match lifecycle.invoke_component_event_transactional(&engine, pending) {
+                Ok(Some(_)) => (),
+                Err(LifecycleError::EffectBudget(65)) => {
+                    rejected = true;
+                    break;
+                }
+                result => panic!("unexpected pure event result {result:?}"),
+            }
+        }
+        assert!(rejected);
+        runtime
+            .borrow_mut()
+            .rollback_transaction(checkpoint)
+            .unwrap();
+        assert!(runtime.borrow_mut().drain_batch().events.is_empty());
+        assert!(!lifecycle.render_dirty(&mut engine).unwrap());
     }
 
     fn state_schema() -> ComponentStateSchema {

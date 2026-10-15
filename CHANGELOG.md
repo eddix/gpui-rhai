@@ -7,6 +7,14 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- Committed effect state and direct Host document/collection/state/environment
+  mutations wake the existing foreground pump without waiting for a clock tick.
+  The existing 64-callback effect-graph budget also bounds pure semantic loops;
+  rejected derivations stay inactive across rollback, old wakes and external
+  recovery. Rust Hosts add `owner: None` to hand-built `PendingEvent` and
+  `ActionInvocation` literals, preserve the opaque owner on runtime-produced
+  messages, and deliver them through the lifecycle's transactional event/action
+  entry points so origin, generation, mount and activation checks are retained.
 - The Gallery's Menu page opens its menu. Its trigger was a Button whose
   `on_click` did nothing; a script click handler stops the click, so the menu
   never saw it. The Button now opens the menu, and Menu's and Popover's
