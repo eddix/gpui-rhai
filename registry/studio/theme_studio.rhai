@@ -5,6 +5,10 @@ import "components/icon_button" as icon_button;
 import "components/checkbox" as checkbox;
 import "components/collapsible" as collapsible;
 import "components/date_picker" as date_picker;
+import "components/calendar" as calendar;
+import "components/time_input" as time_input;
+import "components/time_range_picker" as time_range_picker;
+import "components/timeline" as timeline;
 import "components/dialog" as dialog;
 import "components/divider" as divider;
 import "components/combobox" as combobox;
@@ -85,6 +89,8 @@ fn state_schema() {
     #{ fields: #{
         specimen_column_path: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[]}},
         specimen_card_values: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[#{type:"string",value:"east"}]}},
+        specimen_clock: #{schema:#{type:"string"},"default":#{type:"string",value:""}},
+        specimen_time_range: #{schema:#{type:"ui_value"},"default":#{type:"map",value:#{kind:#{type:"string",value:"relative"},duration_ms:#{type:"integer",value:3600000}}}},
         path: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __PATH__ } },
         family: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __FAMILY__ } },
         variant: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __VARIANT__ } },
@@ -783,6 +789,18 @@ fn specimen_data(ctx) {
 
 fn set_specimen_column_path(ctx, value) { ctx.set_state("specimen_column_path", value.path); }
 fn set_specimen_card_values(ctx, value) { ctx.set_state("specimen_card_values", value); }
+fn set_specimen_clock(ctx, value) { ctx.set_state("specimen_clock", value); }
+fn set_specimen_time_range(ctx, value) { ctx.set_state("specimen_time_range", value); }
+fn specimen_time(ctx) {
+    let clock=ctx.get_state("specimen_clock");
+    column([
+        calendar::Calendar(#{key:"specimen-calendar",label:"Calendar",value:ctx.get_state("specimen_date"),on_change:Fn("set_specimen_date")}),
+        time_input::TimeInput(#{key:"specimen-clock",label:"Time",value:if clock==""{ctx.format_time(0,"short","UTC")}else{clock},on_change:Fn("set_specimen_clock")}),
+        time_range_picker::TimeRangePicker(#{key:"specimen-time-range",label:"Query range",value:ctx.get_state("specimen_time_range"),on_change:Fn("set_specimen_time_range")}),
+        timeline::Timeline(#{key:"specimen-timeline",label:"Deployment",height:160,items:[
+            #{key:"build",title:"Build",status:"success"},#{key:"deploy",title:"Deploy",status:"running",current:true}]}),
+    ]).with_style(style().gap(theme_spacing("sm")))
+}
 fn specimen_columns(ctx) {
     let path = ctx.get_state("specimen_column_path");
     let columns = [#{key:"theme-family",title:"Family",items:[
@@ -972,6 +990,7 @@ fn specimen(ctx) {
         columns,
         specimen_data(ctx),
         specimen_columns(ctx),
+        specimen_time(ctx),
         selectable_card_group::SelectableCardGroup(#{key:"specimen-cards",label:"Deployment region",
             values:ctx.get_state("specimen_card_values"),on_change:Fn("set_specimen_card_values"),
             items:[#{value:"east",label:"East",content:text("Healthy")},

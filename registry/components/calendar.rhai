@@ -2,6 +2,7 @@
 {"id":"components/calendar","export":"Calendar","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["surface_hover","accent","accent_hover","on_accent","text.accent","text_primary","text_muted","disabled","focus_ring","selection","metrics.control","metrics.marker","spacing.xs","spacing.sm","radius.md","typography.control","typography.label","typography.body"],"environment":["size","density","corners"]}
 */
 // The single calendar engine shared by DatePicker and TimeRangePicker.
+// Example: Calendar(#{key:"day",label:"Date",value:"2026-10-16",on_change:Fn("date_changed")})
 define_component(#{metadata:#{id:"components/calendar","export":"Calendar",version:"0.2.2",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
     tokens:["surface_hover","accent","accent_hover","on_accent","text.accent","text_primary","text_muted","disabled","focus_ring","selection","metrics.control","metrics.marker","spacing.xs","spacing.sm","radius.md","typography.control","typography.label","typography.body"],environment:["size","density","corners"]},

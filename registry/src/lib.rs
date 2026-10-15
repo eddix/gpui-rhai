@@ -1548,8 +1548,8 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 66);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 66);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 70);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 70);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);

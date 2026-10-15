@@ -3,7 +3,7 @@
 `components/date_picker` · export `DatePicker` · version 0.2.0. Generated from
 [`registry/components/date_picker.rhai`](../../../registry/components/date_picker.rhai); do not edit.
 
-Controlled single-date field composed from public date data helpers, atoms, and Overlay. State: keyed open/visible-month/focused-date transients.
+Controlled single-date field composed from public date data helpers, atoms, and Overlay. State: keyed overlay open; Calendar owns visible-month and focused-date transients.
 
 ```rhai
 import "components/date_picker" as date_picker;
@@ -56,3 +56,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `clear`, `day`, `day_dis
 
 - Tokens: `accent`, `accent_hover`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.marker`, `on_accent`, `radius.lg`, `radius.md`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
 - Environment: `corners`, `density`, `size`
+
+## Dependencies
+
+[`components/calendar`](../components/calendar.md)

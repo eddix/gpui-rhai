@@ -1,6 +1,9 @@
 /* gpui-rhai
 {"id":"components/time_range_picker","export":"TimeRangePicker","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/calendar","components/time_input","components/input","components/button"],"capabilities":{},"tokens":["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],"environment":["size","density","corners"]}
 */
+// Controlled relative windows and explicit date-time drafts, committed only on Apply.
+// Example: TimeRangePicker(#{key:"period",label:"Query period",
+//     value:#{kind:"relative",duration_ms:3600000},on_change:Fn("range_changed")})
 import "components/calendar" as calendar;
 import "components/time_input" as time_input;
 import "components/input" as input;
