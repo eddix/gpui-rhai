@@ -1,5 +1,5 @@
 /* gpui-rhai
-{"id":"components/time_range_picker","export":"TimeRangePicker","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/calendar","components/time_input","components/input","components/button"],"capabilities":{},"tokens":["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],"environment":["size","density","corners"]}
+{"id":"components/time_range_picker","export":"TimeRangePicker","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/calendar","components/time_input","components/input","components/button"],"capabilities":{},"tokens":["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],"environment":["size","density","corners"]}
 */
 // Controlled relative windows and explicit date-time drafts, committed only on Apply.
 // Example: TimeRangePicker(#{key:"period",label:"Query period",
@@ -11,7 +11,7 @@ import "components/button" as button;
 // The controlled value changes only through presets, shifts, or Apply. A draft never queries.
 define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRangePicker",version:"0.2.2",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:["components/calendar","components/time_input","components/input","components/button"],capabilities:#{},
-    tokens:["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],environment:["size","density","corners"]},
+    tokens:["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],environment:["size","density","corners"]},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Stable picker and overlay identity."},
         label:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Accessible picker name."},
@@ -47,6 +47,16 @@ define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRa
 fn TimeRangePicker(props){render_component("components/time_range_picker",props)}
 fn option(props,name){if name in props&&props[name]!=(){props[name]}else{()}}
 fn clock_style(precision){if precision=="second"{"medium"}else{"short"}}
+// Compare the controlled contract explicitly, not nested Dynamic map equality.
+// Locale metadata is detached plain data; its stable array/map display is only an
+// equality token, never a value decoder or a serialized business range.
+fn same_identity(left,right){
+    if left==()||right==(){return false;}
+    if left.zone!=right.zone||left.precision!=right.precision||left.revision!=right.revision||left.locale_key!=right.locale_key{return false;}
+    if left.value.kind!=right.value.kind{return false;}
+    if left.value.kind=="relative"{left.value.duration_ms==right.value.duration_ms}
+    else{left.value.start==right.value.start&&left.value.end==right.value.end}
+}
 fn make_draft(ctx,value,zone,precision){
     let resolved=time_range_resolve(value,ctx.now());let start=time_parts(resolved.start,zone);let finish=time_parts(resolved.end,zone);
     #{start_date:start.date,end_date:finish.date,start_time:ctx.format_time(resolved.start,clock_style(precision),zone),
@@ -58,7 +68,7 @@ fn reset_draft(ctx,value,zone,precision){
 }
 fn opened(identity,ctx,open){ctx.set_state("open",open);if open{
     reset_draft(ctx,identity.value,identity.zone,identity.precision);ctx.set_state("draft_base",identity);}handled()}
-fn synchronize_draft(ctx,payload){if payload.open&&ctx.get_state("draft_base")!=payload.identity{
+fn synchronize_draft(ctx,payload){if payload.open&&!same_identity(ctx.get_state("draft_base"),payload.identity){
     reset_draft(ctx,payload.identity.value,payload.identity.zone,payload.identity.precision);
     ctx.set_state("draft_base",payload.identity);}}
 fn cleanup_draft(ctx,payload){}
@@ -71,7 +81,7 @@ fn calendar_changed(ctx,date){
 }
 fn chosen_instant(field,ctx,instant){ctx.set_state(field,instant);}
 fn apply_range(ctx,value){ctx.emit("change",value);ctx.set_state("open",false);handled()}
-fn apply_button(value,identity,ctx,payload){if ctx.get_state("draft_base")!=identity||!ctx.get_state("open"){return handled();}apply_range(ctx,value)}
+fn apply_button(value,identity,ctx,payload){if !same_identity(ctx.get_state("draft_base"),identity)||!ctx.get_state("open"){return handled();}apply_range(ctx,value)}
 fn shift_button(value,ctx,payload){apply_range(ctx,value)}
 fn occurrence_button(field,instant,ctx,payload){chosen_instant(field,ctx,instant);}
 fn preset_cursor(ctx,index){ctx.set_state("preset_index",index);handled()}
@@ -98,7 +108,7 @@ fn occurrence_choices(ctx,label,candidates,choice,field,zone){
         text:ctx.format_time(instant,"long",zone),variant:if instant==choice{"secondary"}else{"outline"},
         on_click:Fn("occurrence_button").curry(field,instant)})
         .accessibility_label(`${label}, ${ctx.t("time.fold")}, ${ctx.format_time(instant,"long",zone)}`));}}
-    column(nodes).with_style(style().gap(theme_spacing("xs")))
+    column(nodes).with_style(style().gap(theme_spacing("xxs")))
 }
 fn draft_field(ctx,props,values,label,date_field,time_field,candidates,zone){
     let date=values[date_field];let clock=values[time_field];let choice_field=if date_field=="start_date"{"start_choice"}else{"end_choice"};
@@ -149,10 +159,10 @@ fn render_TimeRangePicker(ctx,props){
         else{`${ctx.format_time(resolved.start,"long",props.time_zone)} – ${ctx.format_time(resolved.end,"long",props.time_zone)}`};
     for preset in presets{if props.value.kind=="relative"&&preset.duration_ms==props.value.duration_ms{display=preset.label;}}
     let open=ctx.get_state("open");
-    let identity=#{value:props.value,zone:props.time_zone,precision:props.precision,revision:props.revision,
-        time:ctx.time(),number:ctx.number(),calendar:ctx.calendar(),direction:ctx.text_direction()};
+    let locale_key=`${[ctx.time(),ctx.number(),ctx.calendar(),ctx.text_direction()]}`;
+    let identity=#{value:props.value,zone:props.time_zone,precision:props.precision,revision:props.revision,locale_key:locale_key};
     effect("controlled_draft",#{open:open,identity:identity},Fn("synchronize_draft"),Fn("cleanup_draft"));
-    let stale=open&&ctx.get_state("draft_base")!=identity;
+    let stale=open&&!same_identity(ctx.get_state("draft_base"),identity);
     let values=if stale{make_draft(ctx,props.value,props.time_zone,props.precision)}else{#{
         start_date:ctx.get_state("start_date"),end_date:ctx.get_state("end_date"),start_time:ctx.get_state("start_time"),end_time:ctx.get_state("end_time"),
         start_choice:ctx.get_state("start_choice"),end_choice:ctx.get_state("end_choice"),zone:ctx.get_state("zone")}};
@@ -191,7 +201,7 @@ fn render_TimeRangePicker(ctx,props){
     let panel=column([row(zones).with_style(style().items_center().gap(theme_spacing("xs"))),
         row([picker_presets(ctx,props,presets),custom]).with_style(style().items_start().gap(theme_spacing("lg")))])
         .with_key(`${props.key}-panel`).with_style(ctx.component_style("panel",style().padding(theme_length("metrics.inset"))
-            .gap(theme_spacing("sm")).border(px(1)).border_color(theme_color("border")).radius(theme_radius("lg"))
+            .gap(theme_spacing("lg")).border(px(1)).border_color(theme_color("border")).radius(theme_radius("lg"))
             .background(theme_color("surface_raised")).text_color(theme_color("text_primary"))))
         .accessibility_role("dialog").accessibility_label(props.label);
     let config=#{id:props.key,kind:"popover",open:open,placement:"bottom",align:"start",gap:4,modal:false,

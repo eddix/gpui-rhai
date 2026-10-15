@@ -77,7 +77,7 @@ fn calendar_month(ctx,props,month,focus,start,finish,min_date,max_date){
     children.push(row(weekday_nodes).with_style(ctx.component_style("weekdays",style())));
     children.push(column(weeks).with_style(ctx.component_style("grid",style())).accessibility_role("grid").accessibility_label(ctx.format_month_year(month)));
     column(children)
-        .with_key(month).with_style(style().gap(theme_spacing("xs")))
+        .with_key(month)
 }
 fn render_Calendar(ctx,props){
     let start=option(props,"value");let finish=option(props,"end");let min_date=option(props,"min_date");let max_date=option(props,"max_date");

@@ -261,7 +261,7 @@ fn render_DatePicker(ctx, props) {
     panel_children.push(panel_focus_frame(ctx));
     let panel = column(panel_children).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().relative().gap(theme_spacing("xs")).padding(theme_length("metrics.inset"))
+            style().relative().gap(theme_spacing("sm")).padding(theme_length("metrics.inset"))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("lg")).background(theme_color("surface_raised"))
                 .typography("body")

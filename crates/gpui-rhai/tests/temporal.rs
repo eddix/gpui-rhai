@@ -77,6 +77,12 @@ fn range_draft_handles_dst_choices_invalid_text_bounds_and_future() {
         r#"
         import "components/time_range_picker" as picker;
         fn view(ctx){
+            let identity=#{value:#{kind:"absolute",start:1000,end:2000},zone:"UTC",precision:"minute",revision:0,locale_key:"locale"};
+            if !picker::same_identity(identity,identity){throw "matching draft identity was rejected";}
+            let replacement=identity;replacement.value.end=3000;
+            if picker::same_identity(identity,replacement){throw "changed range must invalidate draft identity";}
+            let revision=identity;revision.revision=1;
+            if picker::same_identity(identity,revision){throw "revision must invalidate draft identity";}
             let fold=picker::parse_draft(ctx,"2026-11-01","01:30 AM","2026-11-01","02:30 AM","America/New_York","minute",(),(),(),(),());
             if fold.error!=ctx.t("time.fold")||fold.start_candidates.len!=2{throw "fold must require a choice";}
             let chosen=picker::parse_draft(ctx,"2026-11-01","01:30 AM","2026-11-01","02:30 AM","America/New_York","minute",fold.start_candidates[1],(),(),(),());
