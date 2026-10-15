@@ -444,6 +444,13 @@ first value. Geometry dependencies follow a ref across retained `NodeId`
 replacement. Event handlers use `ctx.element_bounds("local_ref_key")`, because
 custom `ElementRef` values intentionally cannot cross the retained callback
 data boundary. Geometry changes dirty only components that read that exact ref.
+For accessibility relationships, use the read-only `reference.semantic_id`
+getter with `accessibility_id`, `accessibility_labelled_by` and
+`accessibility_described_by`. It losslessly encodes the typed component path
+and local ref key into a deterministic, whitespace-free ID, so equal local
+keys in separate components cannot collide. Treat the ID as opaque. The older
+`reference.scope` getter remains a readable diagnostic label; delimiter-bearing
+keys make its displayed path unsuitable as a globally unique semantic ID.
 Event handlers can call `ctx.focus(ref)` or `ctx.focus("local_ref_key")`; focus
 is executed as a window-scoped retained command after the transaction commits.
 Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,
