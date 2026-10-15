@@ -3,6 +3,7 @@
 //!
 //! usage: gallery_baselines <output-dir> [case-name]
 //!        gallery_baselines <output-dir> --pages [density] [theme] [locale]
+//!        gallery_baselines <output-dir> --page <id> [density] [theme] [locale]
 //!
 //! `--pages` renders every Gallery page instead of the baseline cases, for a
 //! visual review sweep; those images are not baselines.
@@ -54,7 +55,19 @@ mod capture {
         );
         let only = args.next();
         let cases: Vec<(String, String, String, String, String)> =
-            if only.as_deref() == Some("--pages") {
+            if only.as_deref() == Some("--page") {
+                let page = args.next().ok_or("--page requires a Gallery page id")?;
+                if !acceptance::page_ids().contains(&page) {
+                    return Err(format!("unknown Gallery page {page}"));
+                }
+                vec![(
+                    page.replace('.', "-"),
+                    page,
+                    args.next().unwrap_or_else(|| "comfortable".to_owned()),
+                    args.next().unwrap_or_else(|| "default-dark".to_owned()),
+                    args.next().unwrap_or_else(|| "en".to_owned()),
+                )]
+            } else if only.as_deref() == Some("--pages") {
                 let density = args.next().unwrap_or_else(|| "comfortable".to_owned());
                 let theme = args.next().unwrap_or_else(|| "default-dark".to_owned());
                 let locale = args.next().unwrap_or_else(|| "en".to_owned());
