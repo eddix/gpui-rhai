@@ -381,6 +381,18 @@ fn find_label<'a>(node: &'a gpui_rhai::UiNode, label: &str) -> Option<&'a gpui_r
     }
 }
 
+fn find_role<'a>(node: &'a gpui_rhai::UiNode, role: &str) -> Option<&'a gpui_rhai::UiNode> {
+    if node.attributes().get("role") == Some(&UiValue::String(role.to_owned())) {
+        return Some(node);
+    }
+    match node.kind() {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            children.iter().find_map(|child| find_role(child, role))
+        }
+        _ => None,
+    }
+}
+
 #[test]
 fn schema_docs_are_read_and_exported() {
     // `doc` on props, nested object fields, events and slots is metadata for references
@@ -2187,10 +2199,8 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
     assert!(
         matches!(&trigger_children[0].kind(), UiNodeKind::Text { text } if text == "09/01/2026")
     );
-    let UiNodeKind::Box { children } = content.kind() else {
-        unreachable!()
-    };
-    let UiNodeKind::Box { children: weeks } = children[2].kind() else {
+    let grid = find_role(content, "grid").expect("shared Calendar grid");
+    let UiNodeKind::Box { children: weeks } = grid.kind() else {
         unreachable!()
     };
     assert_eq!(weeks.len(), 6);
@@ -2217,25 +2227,40 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
     let UiNodeKind::Overlay { content, .. } = lifecycle.root().unwrap().kind() else {
         unreachable!()
     };
-    let (right, payload) = target_handler(content, "key:right");
+    let calendar = find_label(content, "Appointment date").expect("shared Calendar");
+    let calendar_component = calendar.component_root().unwrap().clone();
+    let (right, payload) = target_handler(calendar, "key:right");
     invoke_and_render(&mut lifecycle, &mut engine, &right, payload);
     assert_eq!(
         runtime
             .borrow()
             .component_state
-            .get(&component, "focused_date"),
+            .get(&calendar_component, "focused"),
         Some(&UiValue::String("2026-09-02".to_owned()))
     );
     let UiNodeKind::Overlay { content, .. } = lifecycle.root().unwrap().kind() else {
         unreachable!()
     };
-    let (commit, payload) = target_handler(content, "key:enter");
-    invoke_and_render(&mut lifecycle, &mut engine, &commit, payload);
+    let calendar = find_label(content, "Appointment date").expect("shared Calendar");
+    let (commit, payload) = target_handler(calendar, "key:enter");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &commit, payload)
+        .unwrap();
     let events = runtime.borrow_mut().drain_batch().events;
     assert!(events.iter().any(|event| {
         event.event.name == "change"
             && event.event.payload == UiValue::String("2026-09-02".to_owned())
     }));
+    for event in events {
+        let _ = lifecycle
+            .invoke_component_event_transactional(&engine, event)
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_eq!(
+        runtime.borrow().component_state.get(&component, "open"),
+        Some(&UiValue::Bool(false))
+    );
 }
 
 #[test]

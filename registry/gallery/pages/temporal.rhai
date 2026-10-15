@@ -23,13 +23,15 @@ fn calendar_page(h,v){kit::page(h,v,"calendar","Calendar","One locale-aware grid
     kit::sec("Density",kit::densities(calendar_sample(h,v,"calendar.comfortable","comfortable"),calendar_sample(h,v,"calendar.compact","compact"))),
     kit::note("Arrows move by day or week; Home/End use the locale week. Page Up/Down changes month. Enter selects."),
 ])}
-fn time_input_page(ctx,h,v){kit::page(h,v,"time_input","TimeInput","Native clock editing follows the locale hour cycle and digits.",[
+fn time_input_page(ctx,h,v){let editable_error=kit::val(v,"clock.invalid","99:99");
+    kit::page(h,v,"time_input","TimeInput","Native clock editing follows the locale hour cycle and digits.",[
     kit::sec("Precision",kit::line([
         time_input::TimeInput(#{key:"clock-minute",label:"Minute precision",value:kit::val(v,"clock.minute",ctx.format_time(0,"short","UTC")),on_change:kit::store(h,"clock.minute")}),
         time_input::TimeInput(#{key:"clock-second",label:"Second precision",value:kit::val(v,"clock.second",ctx.format_time(0,"medium","UTC")),precision:"second",on_change:kit::store(h,"clock.second")}),
     ])),
     kit::sec("States",kit::line([
-        time_input::TimeInput(#{key:"clock-invalid",label:"Invalid time",value:"99:99",error:true,on_change:h.noop}),
+        time_input::TimeInput(#{key:"clock-invalid",label:"Invalid time",value:editable_error,
+            error:ctx.parse_time(editable_error,"minute")==(),on_change:kit::store(h,"clock.invalid")}),
         time_input::TimeInput(#{key:"clock-disabled",label:"Disabled time",value:ctx.format_time(0,"short","UTC"),disabled:true}),
     ])),kit::note("Up/Down steps one minute or second. Incomplete text is a draft, not a substituted time."),
 ])}
@@ -56,6 +58,7 @@ fn timeline_page(ctx,h,v){
         kit::sec("Stages",timeline::Timeline(#{key:"pipeline",label:"Release pipeline",items:timeline_items(ctx.now()),
             expanded:kit::val(v,"timeline.expanded",["build"]),on_expanded_change:kit::store(h,"timeline.expanded"),
             selection_mode:"single",selected_keys:kit::val(v,"timeline.selected",[]),on_selection_change:kit::store(h,"timeline.selected"),
+            details:#{canary:kit::note("A rich detail node retains its caller ownership.")},
             time_display:kit::val(v,"timeline.mode","relative"),time_zone:"UTC",height:300})),
         kit::sec("Long history",timeline::Timeline(#{key:"history",label:"Job run history",items:feed,selection_mode:"single",
             selected_keys:kit::val(v,"timeline.feed",[]),on_selection_change:kit::store(h,"timeline.feed"),time_display:"absolute",time_zone:"UTC",day_headers:true,height:260})),

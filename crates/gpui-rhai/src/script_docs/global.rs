@@ -20,7 +20,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Resolves a relative duration at query time or preserves an absolute range, returning start/end epoch milliseconds.",
     },
     ScriptFnDoc {
-        signature: "time_range_error(_: map, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> alloc::string::String",
+        signature: "time_range_error(_: map, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> string",
         params: &["value", "min", "max", "max_span_ms"],
         doc: "Returns an empty string for a valid relative/absolute range, otherwise a validation explanation; optional epoch bounds and span use ().",
     },

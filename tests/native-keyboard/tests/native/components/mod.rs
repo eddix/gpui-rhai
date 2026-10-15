@@ -11,3 +11,4 @@ mod selectable_card_group;
 mod shortcut_legend;
 mod tab_bar;
 mod tab_bar_overflow_trigger;
+mod temporal;

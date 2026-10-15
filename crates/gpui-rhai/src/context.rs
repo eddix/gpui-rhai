@@ -2771,7 +2771,7 @@ impl UiContext {
         runtime
             .calendar_clock
             .presentation_today(&runtime.wall_clock)
-            .map(|date| date.to_iso())
+            .map(crate::GregorianDate::to_iso)
             .map_err(|error| LocaleError::Decode(error.to_string()).into())
     }
 
@@ -2851,7 +2851,7 @@ impl UiContext {
                 .clone())
         })?;
         rhai::serde::to_dynamic(metadata)
-            .map(|v| v.cast::<Map>())
+            .map(Dynamic::cast::<Map>)
             .map_err(|e| LocaleError::Decode(e.to_string()).into())
     }
 
@@ -4678,34 +4678,11 @@ fn subscription_options(mut options: Map) -> Result<SubscriptionOptions, Box<Eva
     })
 }
 
-fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
+fn register_time_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
-        .with_fn("t", |context: &mut UiContext, key: ImmutableString| {
-            context
-                .text(key.as_str())
-                .map_err(|error| Box::new(context_runtime_error(&error)))
-        })
-        .with_fn(
-            "set_locale",
-            |context: &mut UiContext, locale: ImmutableString| {
-                context
-                    .set_locale(locale.as_str())
-                    .map_err(|error| Box::new(context_runtime_error(&error)))
-            },
-        )
-        .with_fn("text_direction", |context: &mut UiContext| {
-            context
-                .text_direction()
-                .map_err(|error| Box::new(context_runtime_error(&error)))
-        })
         .with_fn("is_visible", |context: &mut UiContext| {
             context
                 .is_visible()
-                .map_err(|error| Box::new(context_runtime_error(&error)))
-        })
-        .with_fn("today", |context: &mut UiContext| {
-            context
-                .today()
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         })
         .with_fn("now", |context: &mut UiContext| {
@@ -4743,6 +4720,34 @@ fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
             context
                 .format_relative(ms)
                 .map_err(|e| Box::new(context_runtime_error(&e)))
+        });
+}
+
+fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    register_time_context_methods(builder);
+    builder
+        .with_fn("t", |context: &mut UiContext, key: ImmutableString| {
+            context
+                .text(key.as_str())
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn(
+            "set_locale",
+            |context: &mut UiContext, locale: ImmutableString| {
+                context
+                    .set_locale(locale.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn("text_direction", |context: &mut UiContext| {
+            context
+                .text_direction()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn("today", |context: &mut UiContext| {
+            context
+                .today()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
         })
         .with_fn(
             "format_date",

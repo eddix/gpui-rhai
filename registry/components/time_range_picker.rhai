@@ -38,7 +38,7 @@ define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRa
         selecting_end:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}},
         preset_index:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},
     }},events:#{change:#{payload:#{type:"ui_value"},doc:"A validated controlled range proposal; no event fires for half-edited drafts or cancel."}},slots:#{},
-    parts:["root","trigger","trigger_value","panel","presets","preset","calendar","fields","field","zone","error","actions","focus_frame"]},render:Fn("render_TimeRangePicker")});
+    parts:["root","trigger","trigger_value","panel","presets","preset","calendar","fields","field","zone","error","actions"]},render:Fn("render_TimeRangePicker")});
 fn TimeRangePicker(props){render_component("components/time_range_picker",props)}
 fn option(props,name){if name in props&&props[name]!=(){props[name]}else{()}}
 fn clock_style(precision){if precision=="second"{"medium"}else{"short"}}
@@ -154,15 +154,16 @@ fn render_TimeRangePicker(ctx,props){
         end:if ctx.get_state("selecting_end"){()}else{valid_date_or(ctx.get_state("end_date"),time_parts(resolved.end,zone).date)},
         min_date:date_min,max_date:date_max,today:time_parts(ctx.now(),zone).date,on_change:Fn("calendar_changed")})
         .with_style(ctx.component_style("calendar",style())).tab_stop(false));}
-    let custom=column(dates+[row([
+    let custom_nodes=dates+[row([
         draft_field(ctx,props,ctx.t("time.start"),"start_date","start_time",draft.start_candidates,zone),
         draft_field(ctx,props,ctx.t("time.end"),"end_date","end_time",draft.end_candidates,zone)])
-        .with_style(ctx.component_style("fields",style().gap(theme_spacing("sm")).items_start())),
-        text(draft.error).with_style(ctx.component_style("error",style().typography("caption").text_color(theme_color("text.danger"))))
-            .accessibility_role("status"),
+        .with_style(ctx.component_style("fields",style().gap(theme_spacing("sm")).items_start()))];
+    if draft.error!=""{custom_nodes.push(text(draft.error).with_style(ctx.component_style("error",style().typography("caption").text_color(theme_color("text.danger"))))
+            .accessibility_role("status"));}
+    custom_nodes.push(row([
         button::Button(#{key:`${props.key}-apply`,text:ctx.t("time.apply"),variant:"primary",disabled:draft.value==(),
-            on_click:Fn("apply_button").curry(draft.value)})])
-        .with_style(style().gap(theme_spacing("sm")));
+            on_click:Fn("apply_button").curry(draft.value)})]).with_style(ctx.component_style("actions",style().justify_end())));
+    let custom=column(custom_nodes).with_style(style().gap(theme_spacing("sm")));
     let draft_offset=time_parts(if draft.value==(){resolved.start}else{draft.value.start},zone).zone;
     let zones=[text(`${ctx.t("time.zone")}: ${zone} UTC${draft_offset}`).with_style(ctx.component_style("zone",style().typography("caption")))];
     if props.zone_switch{for candidate in ["local","UTC"]{zones.push(button::Button(#{key:`zone-${candidate}`,text:if candidate=="local"{ctx.t("time.local")}else{"UTC"},variant:"ghost",
