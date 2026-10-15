@@ -111,6 +111,6 @@ fn retained_specimen() {
 
 fn source_sample() {
     let source = "// Native uniform-list document viewport\n";
-    for index in 0..60 { source += `let event_${index} = "The same themed scrollbar, without a second position engine";\n`; }
+    for index in 0..60 { source += `let event_${index} = "The same themed scrollbar, without a second position engine";` + "\n"; }
     source
 }
