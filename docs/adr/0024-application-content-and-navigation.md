@@ -37,6 +37,11 @@ is the conjunction of retained-page ancestors. Hidden pages lose pointer
 capture and leave native focus traversal and presented accessibility while
 their native editor and scroll identities remain owned. Node-motion scopes
 freeze without elapsed-time catch-up. No business work is cancelled.
+Page hiding and whole-view suspension compose in the existing motion runtime:
+the first applicable suspension reason freezes active time, intermediate
+reasons do not resample it, and only the final removal restarts the clock.
+Ordinary selectable-text ranges also remain retained, but a hidden owner cannot
+handle the view's Copy action. Revealing it restores the same range.
 
 `ctx.is_visible()` tracks **last committed placement**, not ambient construction
 environment. It returns false before first placement; a changed committed
@@ -46,6 +51,9 @@ visible value. Initially visible pages and the root become true after their
 first placement commit. Failed candidates restore placement/dependency/motion
 state with the existing runtime checkpoint. Construction ownership remains ADR
 0019's; this does not adopt ADR 0023's deferred/placement-owned construction.
+Placement includes all co-located construction owners when wrappers directly
+return an inner component or an eagerly constructed Node prop, rather than
+only the outermost visual replacement marker.
 Applications use visibility in effect dependencies or explicitly pause their
 own polling. Purely visual clocks may use it to avoid hidden redraws.
 
@@ -63,6 +71,12 @@ share the same retained pages. Narrow breadcrumb trails collapse middle visits
 into a keyboard-operable Menu. RTL mirrors the back affordance and page motion;
 motion follows Host preferences. Push focuses the current heading; pop restores
 a surviving opener and otherwise falls back to the page heading.
+Recovery is eligible only while that stack owns focus, or the window has no
+focus. A deferred request records the exact focus owner, window and transition
+epoch; newer user/Host focus intent, another transition, suspension or reload
+invalidates it. Initial mounting cannot take focus from another view or a
+Gallery sidebar, and revealing an unchanged stack inside a tab leaves focus on
+the tab list.
 
 Hosts inspect `navigation_stacks(window,cx)` and call
 `navigate_back(window,cx) -> bool` before outer navigation. Only the deepest

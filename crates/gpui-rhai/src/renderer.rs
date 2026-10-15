@@ -4817,9 +4817,17 @@ impl TextSelectionRegistry {
         selection.range
     }
 
-    pub(crate) fn selected_text(&self) -> Option<String> {
+    pub(crate) fn selected_text(&self, tree: &RetainedUiTree) -> Option<String> {
         let active = self.active.borrow();
         let selection = active.as_ref()?;
+        // Retain the range for reveal, but invisible content cannot take a
+        // keyboard Copy action from the tab list or another visible owner.
+        if selection
+            .node
+            .is_some_and(|node| !tree.is_page_visible(node))
+        {
+            return None;
+        }
         let (start, end) = selection.range?;
         selection.text.get(start..end).map(ToOwned::to_owned)
     }

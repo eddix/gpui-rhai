@@ -39,6 +39,14 @@ Construction ownership and presentation ownership remain separate:
 - Completing another formal component seals its root: mutations accumulated
   while composing its children become part of that new component's owned
   snapshot.
+- Direct return/forwarding can place several construction owners on the same
+  visual root (including a caller-owned node prop whose owner is not an
+  ancestor of the receiver). The outermost root remains the single replacement
+  and snapshot owner. A lazy shared list of overwritten construction paths
+  records co-located placement for visibility; it retains no additional
+  callbacks, snapshots or lifecycle handles and does not adopt/reparent state.
+  Returning `Inner(...)` or a Node prop directly therefore cannot erase the
+  inner component's committed visibility or its render-read invalidation.
 - Fluent mutations made after a component-root boundary are recorded as typed
   presentation operations while also updating the effective node. The tracked
   surface includes keys, style/part style, attributes and handler payloads,

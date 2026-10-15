@@ -500,6 +500,120 @@ struct Pair {
     host: gpui_rhai::ScriptViewHost,
     views: Vec<gpui_rhai::ScriptViewHandle>,
 }
+
+#[gpui::test]
+fn deferred_navigation_recovery_never_overrides_a_new_host_focus_intent(cx: &mut TestAppContext) {
+    for host_target in [0, 1] {
+        cx.update(gpui_rhai::install);
+        let prepared = [
+            Mount::components(NAVIGATION).modules(BUNDLED_LAYOUT_SOURCES_BY_ID).modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+                .module("patterns/navigation_stack", source_file("patterns/navigation_stack.rhai")).motion(MotionPreference::None).prepare().unwrap(),
+            Mount::new("fn view(ctx) { text(\"Host target\").with_style(style().width(px(240)).height(px(200))) }").prepare().unwrap(),
+        ];
+        let saved = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let capture = saved.clone();
+        let window = cx.add_window(move |window, cx| {
+            let host = gpui_rhai::ScriptViewHost::new("focus-pair", cx).unwrap();
+            let views = prepared
+                .into_iter()
+                .zip(["one", "two"])
+                .map(|(prepared, id)| {
+                    prepared
+                        .mount(
+                            gpui_rhai::ScriptViewConfig::new(id),
+                            host.clone(),
+                            window,
+                            cx,
+                        )
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            views[1].focus(window, cx).unwrap();
+            *capture.borrow_mut() = Some(views.clone());
+            Pair { host, views }
+        });
+        let views = saved.borrow().clone().unwrap();
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        let startup_focus = visual.update(|window, cx| window.focused(cx));
+        settle(&mut visual, Step::Frame, 3);
+        assert_eq!(
+            visual.update(|window, cx| window.focused(cx)),
+            startup_focus,
+            "mounting a stack may not steal focus from the Host's chosen view"
+        );
+        let open = node_by_test_id(&mut visual, &views[0], "open:0")
+            .geometry
+            .unwrap()
+            .visual;
+        crate::support::click_center(&mut visual, open);
+        visual.run_until_parked();
+        visual
+            .update(|window, cx| views[host_target].focus(window, cx))
+            .unwrap();
+        let requested = visual.update(|window, cx| window.focused(cx));
+        settle(&mut visual, Step::Frame, 3);
+        assert_eq!(
+            visual.update(|window, cx| window.focused(cx)),
+            requested,
+            "a newer same-view or other-view Host focus request wins over queued page-heading focus"
+        );
+        assert!(
+            snapshot(&mut visual, &views[0])
+                .find_by_test_id("open:1")
+                .next()
+                .is_some()
+        );
+    }
+}
+
+#[gpui::test]
+fn hidden_selectable_text_keeps_its_range_but_cannot_handle_copy(cx: &mut TestAppContext) {
+    let source = r#"
+fn state_schema() { #{ fields: #{ show: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: true } } } } }
+fn toggle(ctx, event) { ctx.set_state("show", !ctx.get_state("show")); }
+fn view(ctx) { column([
+    text("Toggle").with_key("toggle").test_id("toggle").on_click(Fn("toggle")),
+    column([text("Keep this selected text").with_key("copy").test_id("copy").selectable(true)])
+        .with_key("page").retained_page(ctx.get_state("show")),
+]).with_style(style().width(px(400)).height(px(200))) }
+"#;
+    let (mut visual, view) = Mount::new(source).mount(cx);
+    settle(&mut visual, Step::Frame, 3);
+    let bounds = node_by_test_id(&mut visual, &view, "copy")
+        .geometry
+        .unwrap()
+        .visual;
+    let start = point(px((bounds.x + 1.0) as f32), px((bounds.y + 2.0) as f32));
+    let end = point(
+        px((bounds.x + bounds.width - 1.0) as f32),
+        px((bounds.y + bounds.height - 1.0) as f32),
+    );
+    visual.simulate_mouse_down(start, gpui::MouseButton::Left, gpui::Modifiers::none());
+    visual.simulate_mouse_move(end, gpui::MouseButton::Left, gpui::Modifiers::none());
+    visual.simulate_mouse_up(end, gpui::MouseButton::Left, gpui::Modifiers::none());
+    visual.simulate_keystrokes("cmd-c");
+    let selected = visual
+        .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
+        .unwrap();
+    assert!(!selected.is_empty());
+    action(&mut visual, &view, "toggle");
+    visual.update(|_, cx| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("sentinel".to_owned()))
+    });
+    visual.simulate_keystrokes("cmd-c");
+    assert_eq!(
+        visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text())),
+        Some("sentinel".to_owned()),
+        "copy cannot expose text retained in an invisible page"
+    );
+    action(&mut visual, &view, "toggle");
+    visual.simulate_keystrokes("cmd-c");
+    assert_eq!(
+        visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text())),
+        Some(selected),
+        "reveal restores the retained range without dragging again"
+    );
+}
 impl Render for Pair {
     fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
         self.host.container(
