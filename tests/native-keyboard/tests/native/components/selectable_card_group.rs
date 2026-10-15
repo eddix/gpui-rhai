@@ -4,7 +4,8 @@ use gpui_rhai::UiValue;
 use gpui_rhai_registry::{AR_LOCALE, DEFAULT_LIGHT_THEME, DEFAULT_THEME, EN_LOCALE};
 
 use crate::support::{
-    Mount, ReplaceOnce, bounds, click_center, last_error, node_by_test_id, nodes, text_of,
+    Mount, ReplaceOnce, bounds, by_test_id, click_center, dispatch, last_error, node_by_test_id,
+    nodes, text_of,
 };
 
 const SOURCE: &str = r#"
@@ -29,6 +30,69 @@ fn view(ctx) { column([
     text(`${ctx.get_state("values")}:${ctx.get_state("changes")}:${ctx.get_state("actions")}`).test_id("state"),
 ]).with_style(style().width(px(600))) }
 "#;
+
+const SCOPED_PANES: &str = r#"
+import "components/selectable_card_group" as cards;
+define_component(#{
+    metadata: #{id:"test/scoped_choice_pane", "export":"ScopedChoicePane", version:"0.2.2",
+        runtime_api:#{min_inclusive:3,max_exclusive:4}, dependencies:["components/selectable_card_group"], capabilities:#{}},
+    schema:#{props:#{label:#{schema:#{type:"string"},required:true,sensitive:false}},
+        state:#{fields:#{values:#{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[]}}}},
+        events:#{},slots:#{},parts:[]},render:Fn("render_scoped_choice_pane")
+});
+fn scoped_choice_changed(ctx,values){ctx.set_state("values",values);}
+fn render_scoped_choice_pane(ctx,props){
+    cards::SelectableCardGroup(#{key:"choices",label:`${props.label} choices`,values:ctx.get_state("values"),
+        items:[#{value:"a",label:`${props.label} choice`,content:text(`${props.label} description`)}],
+        on_change:Fn("scoped_choice_changed")}).with_style(style().width(px(260)))
+}
+fn choice_pane(key,label){render_component("test/scoped_choice_pane",#{key:key,label:label})}
+fn state_schema(){#{fields:#{show:#{schema:#{type:"bool"},"default":#{type:"bool",value:true}}}}}
+fn toggle_scoped_pages(ctx,payload){ctx.set_state("show",!ctx.get_state("show"));}
+fn view(ctx){column([
+    text("Toggle").with_key("toggle").test_id("toggle").on_click(Fn("toggle_scoped_pages")),
+    SCOPED_CONTENT,
+]).with_style(style().width(px(600)))}
+"#;
+
+#[gpui::test]
+fn cards_same_local_keys_in_sibling_component_scopes_keep_distinct_descriptions(
+    cx: &mut TestAppContext,
+) {
+    // The space and literal escape-looking key also exercise ID-list escaping.
+    let source = SCOPED_PANES.replace_once(
+        "SCOPED_CONTENT",
+        r#"row([choice_pane("left pane","Left"),choice_pane("left%20;pane","Right")])"#,
+    );
+    let (mut visual, view) = Mount::components(source).mount(cx);
+    let snapshot = nodes(&mut visual, &view);
+    for name in ["Left", "Right"] {
+        let radio = snapshot
+            .iter()
+            .find(|node| node.role == "radio" && node.name == format!("{name} choice"))
+            .unwrap();
+        assert_eq!(radio.description, format!("{name} description"));
+    }
+    let ids = snapshot
+        .iter()
+        .filter_map(|node| node.semantic_id.as_ref())
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids.len(),
+        2,
+        "local choices keys may not alias semantic IDs"
+    );
+    assert!(ids.iter().all(|id| !id.chars().any(char::is_whitespace)));
+    dispatch(&mut visual, &view, by_test_id("toggle"), "click").unwrap();
+    visual.run_until_parked();
+    let rerendered_ids = nodes(&mut visual, &view)
+        .into_iter()
+        .filter_map(|node| node.semantic_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(rerendered_ids, ids, "scoped IDs must be deterministic");
+    assert_eq!(last_error(&mut visual, &view), None);
+}
 
 #[gpui::test]
 fn cards_focus_grid_disabled_home_end_and_independent_actions(cx: &mut TestAppContext) {
