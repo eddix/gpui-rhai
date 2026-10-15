@@ -47,6 +47,14 @@ after start and within explicit epoch bounds and span cap. Future instants
 are valid unless `max` forbids them. The shift buttons, when requested, emit an
 absolute snapshot shifted by its own duration.
 
+An external controlled value, timezone, precision, revision token or locale
+display-metadata replacement rebases an open draft to that new input without
+emitting a change. Apply is disabled during the stale render, and each Apply
+callback checks its captured draft identity before proposing a value. Callers
+may increment `revision` to replace an open draft even with an equal range.
+The calendar is one reachable Tab stop between presets and the native date/time
+fields; arrows operate its shared cursor and Enter proposes the next endpoint.
+
 Time fields use the locale's hour cycle, day periods and digits, and Up/Down
 step a minute or second. Gaps show an inline error. Repeated local times show
 two explicit instant buttons, distinguished by UTC offset; Apply stays
@@ -94,6 +102,12 @@ revealed when present in the visible projection. Selectable timelines are one
 tab stop: Up/Down/Home/End navigate, Enter activates and Left/Right folds or
 opens groups. List/listitem position and level metadata remain available to
 assistive technology. Relative accessible labels also include absolute time.
+
+External `selected_keys` changes synchronize the keyboard cursor and reveal
+target to that selection. The first presentation reveals the current step
+even when a different item is selected; this initial reveal is separate from
+the keyboard target. Pointer activation focuses the same root owner used by
+keyboard navigation, so click followed by an arrow continues at that row.
 
 Missing endpoints display an em dash. Running durations use now; a skewed end
 or future relative timestamp falls back to absolute presentation. Running lamps

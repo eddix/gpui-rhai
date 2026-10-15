@@ -6,6 +6,7 @@ fn locale() {
         direction: "right_to_left",
         messages: #{
             "time.apply": "تطبيق", "time.start": "البداية", "time.end": "النهاية", "time.zone": "المنطقة الزمنية",
+            "time.updated": "تغير النطاق؛ جارٍ تحديث المسودة",
             "time.local": "محلي", "time.custom": "نطاق مخصص", "time.presets": "نطاقات نسبية",
             "time.last": "آخر {value}", "time.gap": "هذا الوقت المحلي غير موجود",
             "time.fold": "اختر التوقيت المقصود", "time.invalid": "أدخل تاريخًا ووقتًا صالحين",

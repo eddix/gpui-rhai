@@ -26,11 +26,14 @@ define_component(#{metadata:#{id:"components/timeline","export":"Timeline",versi
     },state:#{fields:#{
         cursor:#{schema:#{type:"string"},"default":#{type:"string",value:""}},
         tick:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},
+        observed_selection:#{schema:#{type:"optional",value:#{type:"array",items:#{type:"string"},max_items:1}},"default":#{type:"null"}},
+        initialized:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}},
+        reveal:#{schema:#{type:"string"},"default":#{type:"string",value:""}},
     }},events:#{
         expanded_change:#{payload:#{type:"array",items:#{type:"string"},max_items:10000},doc:"Proposed expansion after group activation."},
         selection_change:#{payload:#{type:"array",items:#{type:"string"},max_items:1},doc:"Proposed single selection."},
         item_click:#{payload:#{type:"string"},doc:"Activated event key."},
-    },slots:#{},parts:["root","row","rail","lamp","time","title","description","detail","meta","disclosure","day_header","indicator_bar","cursor"]},render:Fn("render_Timeline")});
+    },slots:#{},parts:["root","row","rail","lamp","time","title","description","detail","meta","disclosure","day_header","indicator_bar","cursor"],effects:["selection_cursor"]},render:Fn("render_Timeline")});
 fn Timeline(props){render_component("components/timeline",props)}
 fn field(item,name,fallback){if name in item&&item[name]!=(){item[name]}else{fallback}}
 fn timeline_records(items,expanded,order,depth,parent){
@@ -63,8 +66,12 @@ fn timeline_keys(items,seen){for item in items{
     let children=field(item,"children",[]);if children.len>0{seen=timeline_keys(children,seen);}
 }seen}
 fn timeline_toggle(expanded,ctx,key){let next=[];for value in expanded{if value!=key{next.push(value);}}if !(key in expanded){next.push(key);}ctx.emit("expanded_change",next);handled()}
-fn timeline_activate(mode,ctx,key){ctx.set_state("cursor",key);ctx.emit("item_click",key);if mode=="single"{ctx.emit("selection_change",[key]);}handled()}
-fn timeline_move(mode,ctx,key){ctx.set_state("cursor",key);if mode=="single"{ctx.emit("selection_change",[key]);}handled()}
+fn timeline_activate(mode,focus,ctx,key){ctx.set_state("cursor",key);ctx.set_state("reveal",key);ctx.emit("item_click",key);if mode=="single"{ctx.emit("selection_change",[key]);}
+    if focus!=(){ctx.focus(focus);}handled()}
+fn timeline_move(mode,ctx,key){ctx.set_state("cursor",key);ctx.set_state("reveal",key);if mode=="single"{ctx.emit("selection_change",[key]);}handled()}
+fn synchronize_selection(ctx,payload){ctx.set_state("observed_selection",payload.selected);ctx.set_state("initialized",true);
+    if payload.cursor!=(){ctx.set_state("cursor",payload.cursor);}if payload.reveal!=(){ctx.set_state("reveal",payload.reveal);}}
+fn cleanup_selection(ctx,payload){}
 fn timeline_tick(ctx,value){ctx.set_state("tick",value+1);}
 fn timeline_keyboard(expanded,mode,ctx,action){
     if action.kind=="toggle"{timeline_toggle(expanded,ctx,action.key);}
@@ -82,7 +89,7 @@ fn timeline_time(ctx,item,mode,zone,now){
         if finish==(){return "—";}
     }ctx.format_time(start,"short",zone)
 }
-fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,ctx,payload){
+fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,focus,ctx,payload){
     let item=payload.item;let current=field(item,"current",false);let chosen=item.key in selected;
     let content=[];let status=ctx.t(`timeline.${item.status}`);let start=field(item,"start",());
     let absolute=if start==(){"—"}else{ctx.format_time(start,"long",zone)};
@@ -127,7 +134,7 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,ctx
         .accessibility_role("listitem").accessibility_label(`${item.title}, ${status}, ${absolute}, ${timeline_time(ctx,item,display,zone,now)}`)
         .accessibility_selected(chosen).accessibility_level(item.depth+1).accessibility_position_in_set(payload.index+1).accessibility_size_of_set(total);
     if current{node=node.accessibility_current("step");}if item.has_children{node=node.accessibility_expanded(item.expanded);}
-    node.on_click_value(Fn("timeline_activate").curry(mode),item.key).tab_stop(false)
+    node.on_click_value(Fn("timeline_activate").curry(mode,focus),item.key).tab_stop(false)
 }
 fn render_Timeline(ctx,props){
     timeline_keys(props.items,#{});let records=timeline_records(props.items,props.expanded,props.order,0,());
@@ -138,15 +145,22 @@ fn render_Timeline(ctx,props){
             if day!=previous_day{let today=time_parts(now,props.time_zone).date;item.day_header=if day==today{ctx.t("time.today")}
                 else if day==date_checked_add_days(today,-1){ctx.t("time.yesterday")}else{ctx.format_date(day,"medium")};previous_day=day;records[i]=item;}}
     }
-    if !(cursor in visible_keys)&&records.len>0{cursor=if props.selected_keys.len>0&&props.selected_keys[0] in visible_keys{props.selected_keys[0]}else if first_current!=(){first_current}else{records[0].key};
+    let initialized=ctx.get_state("initialized");let external_selection=initialized&&ctx.get_state("observed_selection")!=props.selected_keys;
+    if (!initialized||external_selection||!(cursor in visible_keys))&&records.len>0{cursor=if props.selected_keys.len>0&&props.selected_keys[0] in visible_keys{props.selected_keys[0]}else if first_current!=(){first_current}else{records[0].key};
         for i in 0..records.len{if records[i].key==cursor{index=i;}}}
     if records.len==0{cursor="";}
+    let reveal=if !initialized&&first_current!=(){first_current}else if external_selection{cursor}
+        else if ctx.get_state("reveal") in visible_keys{ctx.get_state("reveal")}else{cursor};
+    effect("selection_cursor",#{selected:props.selected_keys,cursor:if !initialized||external_selection{cursor}else{()},
+        reveal:if !initialized||external_selection{reveal}else{()}},Fn("synchronize_selection"),Fn("cleanup_selection"));
     let tick=ctx.get_state("tick");
     if props.time_display!="absolute"{timeout("relative-labels",60000,!props.visible,Fn("timeline_tick"),tick);}
     let config=#{key:`${props.key}-rows`,label:props.label,data:records,height:props.height,estimated_height:48.0};
-    if cursor!=""{config.reveal_key=cursor;}
+    if reveal!=""{config.reveal_key=reveal;}
+    let focus=if props.selection_mode=="single"{`${props.key}-focus`}else{()};
     let node=virtual_collection(config,Fn("timeline_row").curry(props.expanded,props.selected_keys,cursor,props.selection_mode,
-        props.time_display,props.time_zone,now,props.details,records.len)).with_key(props.key)
+        props.time_display,props.time_zone,now,props.details,records.len,focus)).with_key(props.key)
+        .with_ref(element_ref(`${props.key}-focus`))
         .with_style(ctx.component_style("root",style().focus(style()))).tab_stop(props.selection_mode=="single")
         .accessibility_role("list").accessibility_label(props.label);
     if records.len>0{let item=records[index];let left=if item.has_children&&item.expanded{#{kind:"toggle",key:item.key}}
@@ -159,6 +173,6 @@ fn render_Timeline(ctx,props){
             .on_key_value("end",Fn("timeline_move").curry(props.selection_mode),records[records.len-1].key)
             .on_key_value("left",Fn("timeline_keyboard").curry(props.expanded,props.selection_mode),left)
             .on_key_value("right",Fn("timeline_keyboard").curry(props.expanded,props.selection_mode),right)
-            .on_key_value("enter",Fn("timeline_activate").curry(props.selection_mode),cursor);
+            .on_key_value("enter",Fn("timeline_activate").curry(props.selection_mode,focus),cursor);
     }if "size" in props&&props.size!=(){node.env(#{size:props.size})}else{node}
 }

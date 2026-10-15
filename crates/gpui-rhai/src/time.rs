@@ -149,12 +149,19 @@ impl TimeMetadata {
                 "time requires h12/h23, four unit names, day periods and relative patterns".into(),
             );
         }
-        for pattern in [&self.short, &self.medium] {
+        for (style, pattern) in [("short", &self.short), ("medium", &self.medium)] {
             if pattern.is_empty()
                 || !pattern.contains("mm")
                 || !(pattern.contains("HH") || pattern.contains("hh"))
             {
                 return Err("time patterns require HH or hh and mm".into());
+            }
+            let hour_token = if self.hour_cycle == "h12" { "hh" } else { "HH" };
+            if pattern.matches(hour_token).count() != 1
+                || pattern.matches("mm").count() != 1
+                || pattern.matches("ss").count() != usize::from(style == "medium")
+            {
+                return Err("short time requires hours/minutes; medium additionally requires seconds, each exactly once".into());
             }
             if (self.hour_cycle == "h12" && (!pattern.contains("hh") || !pattern.contains('a')))
                 || (self.hour_cycle == "h23" && (!pattern.contains("HH") || pattern.contains('a')))
@@ -672,5 +679,17 @@ mod tests {
             Some("00:00:01")
         );
         assert!(parse_time("AM 12.00.99", "second", &time, &number).is_none());
+        let no_seconds = TimeMetadata {
+            medium: "HH:mm".into(),
+            ..TimeMetadata::default()
+        };
+        assert!(no_seconds.validate().is_err());
+        let no_seconds_12 = TimeMetadata {
+            hour_cycle: "h12".into(),
+            short: "hh:mm a".into(),
+            medium: "hh:mm a".into(),
+            ..TimeMetadata::default()
+        };
+        assert!(no_seconds_12.validate().is_err());
     }
 }
