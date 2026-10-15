@@ -26,6 +26,9 @@
 // them the `handle` background to keep the lane still. `line: false` drops the native line
 // for a grip that draws its own. Each pane is a flex column, so content with `flex_grow`
 // fills it, and absolute content is placed from the pane's corner.
+// A styled thin separator keeps its grip centred on the measured lane. For an invisible
+// wider hit area, give `grip` a transparent background and `border(px(0))`; clear its state
+// borders too if those should remain invisible on hover, focus and drag.
 // Example: SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
