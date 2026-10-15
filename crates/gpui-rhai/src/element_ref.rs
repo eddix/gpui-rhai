@@ -322,6 +322,16 @@ pub(crate) enum ElementCommand {
         window: String,
         text: String,
     },
+    ScrollCollectionBy {
+        window: String,
+        id: crate::VirtualCollectionId,
+        distance: f64,
+    },
+    ScrollCollection {
+        window: String,
+        id: crate::VirtualCollectionId,
+        end: bool,
+    },
     Focus {
         window: String,
         node: NodeId,
@@ -342,6 +352,8 @@ impl ElementCommand {
     pub(crate) fn window(&self) -> &str {
         match self {
             Self::CopyText { window, .. }
+            | Self::ScrollCollectionBy { window, .. }
+            | Self::ScrollCollection { window, .. }
             | Self::Focus { window, .. }
             | Self::ScrollTo { window, .. }
             | Self::ScrollIntoView { window, .. } => window,

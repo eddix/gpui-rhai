@@ -24,6 +24,7 @@ mod handle_state;
 pub mod host_slot;
 pub mod inline_svg;
 mod interaction;
+mod intrinsic;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
@@ -263,7 +264,10 @@ pub use script_lint::{
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
-pub use scrollbar::{ScrollbarSpec, ScrollbarVisibility};
+pub use scrollbar::{
+    SCROLLBAR_TRACK_WIDTH, ScrollbarContext, ScrollbarSource, ScrollbarSourceHandle, ScrollbarSpec,
+    ScrollbarVisibility,
+};
 pub use selection_area::{SelectionAreaPrimitiveHandler, selection_area_primitive_descriptor};
 pub use signal::{
     NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry,
@@ -309,8 +313,9 @@ pub use value::{
     OpaqueHandle, UiValue, UiValueError, UiValuePath, UiValuePathError, UiValuePathSegment,
 };
 pub use virtual_list::{
-    VariableListSpec, VariableListState, VariableListWindow, VirtualCollectionId,
-    VirtualCollectionMetrics, VirtualCollectionNodeSpec, VirtualListError, VirtualRequestRegistry,
+    VariableListSpec, VariableListState, VariableListWindow, VirtualCollectionFollowStatus,
+    VirtualCollectionId, VirtualCollectionMetrics, VirtualCollectionNodeSpec,
+    VirtualCollectionScrollHandle, VirtualListError, VirtualRequestRegistry,
 };
 pub use window::{
     QueuedWindowCommand, ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy,

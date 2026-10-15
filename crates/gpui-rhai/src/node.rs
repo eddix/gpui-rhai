@@ -1914,6 +1914,9 @@ impl UiNode {
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => {}
             UiNodeKind::VirtualCollection { spec } => {
+                if let Some(callback) = &mut spec.on_follow_change {
+                    callback.bind_generation(generation);
+                }
                 for item in spec.realized.values_mut() {
                     item.bind_generation(generation);
                 }
@@ -1986,6 +1989,12 @@ impl UiNode {
                 content.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::VirtualCollection { spec } => {
+                if let Some(callback) = &mut spec.on_follow_change {
+                    callback.bind_component_scope_if_unset(component, incarnation, events.clone());
+                    if let Some(context) = native_context {
+                        callback.bind_native_context_if_unset(context.clone());
+                    }
+                }
                 if spec.inherited_motion_group.is_some() && spec.inherited_motion_scope.is_none() {
                     spec.inherited_motion_scope = Some(component.to_string());
                 }
@@ -4058,6 +4067,7 @@ mod tests {
                 overdraw_pixels: 120.0,
                 bottom_align: false,
                 follow_tail: false,
+                on_follow_change: None,
                 reveal_key: None,
                 sticky_headers: std::sync::Arc::new(std::collections::BTreeSet::new()),
                 inherited_motion_group: None,

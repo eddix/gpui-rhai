@@ -1,9 +1,69 @@
 //! CodeViewer and DiffViewer mount native document surfaces, and a text document revision
 //! invalidates exactly the viewer that reads it.
 
-use crate::support::{Mount, bounds, last_error, palette_texts, wait_for_view_text};
+use crate::support::{
+    Mount, ReplaceOnce, Step, bounds, filled, last_error, palette_texts, settle, wait_for_view_text,
+};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::UiRuntimeState;
+
+#[gpui::test]
+fn code_and_diff_use_shared_themed_bars_for_uniform_and_split_pane_sources(
+    cx: &mut TestAppContext,
+) {
+    for (mode, bars) in [("code", 2), ("unified", 2), ("split", 3)] {
+        let main = r#"
+import "components/code_viewer" as code;
+import "components/diff_viewer" as diff;
+fn lines(prefix) {
+    let value = "";
+    for index in 0..80 {
+        value += `${prefix} ${index}: a deliberately wide native document line that extends beyond a narrow viewport, with unchanged native keyboard and selection ownership.` + "\n";
+    }
+    if value.split("\n").len != 81 || value.contains("\\n") { throw "expected eighty real line breaks"; }
+    value
+}
+fn view(ctx) {
+    let parts = #{scrollbar_thumb: style().background(rgba(0x12fc34ff)),
+        scrollbar_thumb_hover: style().background(rgba(0x12fc34ff))};
+    let viewer = if "MODE" == "code" {
+        code::CodeViewer(#{key:"source", label:"Wide source", source:lines("left"), scrollbar:"always", part_styles:parts})
+    } else {
+        diff::DiffViewer(#{key:"comparison", mode:"MODE", context_lines:"all", scrollbar:"always", part_styles:parts,
+            left:#{source:lines("left"), label:"Left"}, right:#{source:lines("right"), label:"Right"}})
+    };
+    viewer.with_style(style().width(px(500)).height(px(220)))
+}
+"#.replace_exactly("MODE", mode, 2);
+        let (mut visual, view) = Mount::new(main)
+            .registry("components/code_viewer")
+            .registry("components/diff_viewer")
+            .id(&format!("shared-document-bars-{mode}"))
+            .mount(cx);
+        settle(&mut visual, Step::Tick, 16);
+        assert!(last_error(&mut visual, &view).is_none());
+        let thumbs = filled(&mut visual, 0x12fc_34ff);
+        assert_eq!(
+            thumbs.len(),
+            bars,
+            "{mode} forwards common scrollbar part styles to every native source"
+        );
+        assert!(
+            thumbs
+                .iter()
+                .any(|thumb| thumb.visible().height > thumb.visible().width),
+            "{mode} has the shared vertical bar"
+        );
+        assert_eq!(
+            thumbs
+                .iter()
+                .filter(|thumb| thumb.visible().width > thumb.visible().height)
+                .count(),
+            bars - 1,
+            "{mode} has the correct number of independent horizontal bars"
+        );
+    }
+}
 
 #[gpui::test]
 fn code_and_diff_viewers_mount_native_document_surfaces(cx: &mut TestAppContext) {

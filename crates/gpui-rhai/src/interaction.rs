@@ -2,12 +2,12 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::Duration;
 
 use gpui::{
     App, DispatchPhase, EntityId, Hitbox, ListState, MouseButton, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollHandle, Window, WindowId, point, px,
+    Pixels, Point, ScrollHandle, ScrollWheelEvent, Window, WindowId, point, px,
 };
 
 use crate::{GeometryBounds, UiValue};
@@ -459,6 +459,42 @@ struct InteractionState {
     virtual_scrolls: BTreeMap<String, VirtualScrollTarget>,
     parents: BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
     scroll_tick_queued: bool,
+    wheel_regions: BTreeMap<InteractionOwner, NativeWheelRegion>,
+}
+
+#[derive(Clone)]
+struct NativeWheelRegion {
+    source: usize,
+    ancestors: Vec<usize>,
+    hitbox: Hitbox,
+    order: u64,
+    handler: Rc<NativeWheelHandler>,
+}
+
+pub(crate) type NativeWheelHandler = dyn Fn(&ScrollWheelEvent, &mut Window, &mut App);
+
+#[derive(Default)]
+struct NativeWheelCaptures {
+    next_epoch: u64,
+    events: BTreeMap<WindowId, NativeWheelCapture>,
+}
+
+impl gpui::Global for NativeWheelCaptures {}
+
+struct NativeWheelCapture {
+    epoch: u64,
+    next_order: u64,
+    participants: Vec<Weak<RefCell<InteractionState>>>,
+}
+
+impl NativeWheelCapture {
+    fn clear(self) {
+        for participant in self.participants {
+            if let Some(state) = participant.upgrade() {
+                state.borrow_mut().wheel_regions.clear();
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -488,6 +524,129 @@ impl WindowInteractionCoordinator {
         state.drop_targets.clear();
         state.next_drop_order = 0;
         state.virtual_scrolls.clear();
+        state.wheel_regions.clear();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn register_wheel_region(
+        &self,
+        owner: InteractionOwner,
+        source: usize,
+        ancestors: Vec<usize>,
+        hitbox: Hitbox,
+        handler: Rc<NativeWheelHandler>,
+        window: &Window,
+        cx: &mut App,
+    ) {
+        self.begin_wheel_capture(window, cx);
+        let capture = cx
+            .default_global::<NativeWheelCaptures>()
+            .events
+            .get_mut(&window.window_handle().window_id())
+            .expect("capture was opened");
+        let order = capture.next_order;
+        capture.next_order = order.wrapping_add(1);
+        let mut state = self.0.borrow_mut();
+        state.wheel_regions.insert(
+            owner,
+            NativeWheelRegion {
+                source,
+                ancestors,
+                hitbox,
+                order,
+                handler,
+            },
+        );
+    }
+
+    fn wheel_region_handler(
+        capture: &NativeWheelCapture,
+        window: &Window,
+    ) -> Option<Rc<NativeWheelHandler>> {
+        let candidates = capture
+            .participants
+            .iter()
+            .filter_map(Weak::upgrade)
+            .flat_map(|state| {
+                state
+                    .borrow()
+                    .wheel_regions
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .filter(|region| region.hitbox.should_handle_scroll(window))
+            .collect::<Vec<_>>();
+        // Explicit native ancestry wins over overlay paint order. An outer
+        // document overlay painted last must not preempt its table/cell.
+        candidates
+            .iter()
+            .filter(|candidate| {
+                !candidates.iter().any(|other| {
+                    other.source != candidate.source && other.ancestors.contains(&candidate.source)
+                })
+            })
+            .max_by_key(|region| region.order)
+            .map(|region| Rc::clone(&region.handler))
+    }
+
+    fn begin_wheel_capture(&self, window: &Window, cx: &mut App) {
+        let window_id = window.window_handle().window_id();
+        let weak = Rc::downgrade(&self.0);
+        let (opened, joined) = {
+            let captures = cx.default_global::<NativeWheelCaptures>();
+            let opened = if captures.events.contains_key(&window_id) {
+                None
+            } else {
+                captures.next_epoch = captures.next_epoch.wrapping_add(1);
+                let epoch = captures.next_epoch;
+                captures.events.insert(
+                    window_id,
+                    NativeWheelCapture {
+                        epoch,
+                        next_order: 0,
+                        participants: Vec::new(),
+                    },
+                );
+                Some(epoch)
+            };
+            let capture = captures.events.get_mut(&window_id).expect("capture exists");
+            let joined = !capture
+                .participants
+                .iter()
+                .any(|participant| participant.ptr_eq(&weak));
+            if joined {
+                capture.participants.push(weak);
+            }
+            (opened, joined)
+        };
+        if joined {
+            self.0.borrow_mut().wheel_regions.clear();
+        }
+        if let Some(epoch) = opened {
+            // Capture may be stopped before any bubble handler. Its input-local
+            // registrations must still die, without erasing a newer event.
+            cx.defer(move |cx| {
+                let captures = cx.default_global::<NativeWheelCaptures>();
+                if captures
+                    .events
+                    .get(&window_id)
+                    .is_some_and(|capture| capture.epoch == epoch)
+                    && let Some(capture) = captures.events.remove(&window_id)
+                {
+                    capture.clear();
+                }
+            });
+        }
+    }
+
+    pub(crate) fn install_wheel_capture_start(&self, window: &mut Window) {
+        let coordinator = self.clone();
+        window.on_mouse_event(move |_: &ScrollWheelEvent, phase, window, cx| {
+            if phase == DispatchPhase::Capture {
+                coordinator.begin_wheel_capture(window, cx);
+            }
+        });
     }
 
     pub(crate) fn set_pointer_routes(
@@ -892,6 +1051,10 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn cancel_view(&self, view: &str, window: &mut Window, cx: &mut App) -> bool {
+        self.0
+            .borrow_mut()
+            .wheel_regions
+            .retain(|owner, _| !owner.belongs_to(view));
         let active = {
             let mut state = self.0.borrow_mut();
             if state
@@ -1070,6 +1233,23 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn install(&self, window: &mut Window) {
+        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+            if phase != DispatchPhase::Bubble {
+                return;
+            }
+            let capture = cx
+                .default_global::<NativeWheelCaptures>()
+                .events
+                .remove(&window.window_handle().window_id());
+            let Some(capture) = capture else {
+                return;
+            };
+            let handler = Self::wheel_region_handler(&capture, window);
+            capture.clear();
+            if let Some(handler) = handler {
+                handler(event, window, cx);
+            }
+        });
         let move_coordinator = self.clone();
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
             if phase != DispatchPhase::Capture {

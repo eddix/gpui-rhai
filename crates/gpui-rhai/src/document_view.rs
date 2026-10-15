@@ -33,6 +33,87 @@ use crate::{
 const CODE_CONTEXT: &str = "GPUIRhaiCodeViewer";
 const DIFF_CONTEXT: &str = "GPUIRhaiDiffViewer";
 
+#[derive(Clone, Debug, PartialEq)]
+struct DocumentScrollbarConfig {
+    spec: crate::ScrollbarSpec,
+    parts: [Style; 3],
+}
+
+impl DocumentScrollbarConfig {
+    fn parse(props: &PrimitiveProps) -> Result<Self, String> {
+        let visibility = props.string("scrollbar").unwrap_or("auto");
+        Ok(Self {
+            spec: crate::ScrollbarSpec::new(visibility, visibility)?,
+            parts: [
+                "scrollbar_track_style",
+                "scrollbar_thumb_style",
+                "scrollbar_thumb_hover_style",
+            ]
+            .map(|part| props.style(part).cloned().unwrap_or_default()),
+        })
+    }
+
+    fn context(
+        &self,
+        events: &PrimitiveContext,
+        theme: &PrimitiveTheme,
+    ) -> crate::ScrollbarContext {
+        events
+            .scrollbars(theme)
+            .with_part_styles(&self.parts[0], &self.parts[1], &self.parts[2])
+    }
+}
+
+fn document_scrollbar_props() -> Vec<(String, ObjectField)> {
+    let mut props = vec![("scrollbar".to_owned(),
+        ObjectField::optional(ValueSchema::enumeration(["auto", "always", "hidden"]))
+            .with_default(UiValue::String("auto".to_owned()))
+            .with_doc("Shared overlay scrollbar visibility; keyboard scrolling remains owned by the document."))];
+    props.extend(
+        [
+            "scrollbar_track_style",
+            "scrollbar_thumb_style",
+            "scrollbar_thumb_hover_style",
+        ]
+        .map(|name| {
+            (
+                name.to_owned(),
+                ObjectField::optional(ValueSchema::Style)
+                    .with_doc("Background override for the corresponding shared scrollbar part."),
+            )
+        }),
+    );
+    props
+}
+
+/// Split panes share the list's vertical viewport and retain only their own
+/// native horizontal `ScrollHandle`. This adapts geometry, never position.
+struct DocumentPaneScrollSource {
+    viewport: gpui::UniformListScrollHandle,
+    horizontal: ScrollHandle,
+    right: bool,
+}
+
+impl crate::ScrollbarSource for DocumentPaneScrollSource {
+    fn viewport(&self) -> Bounds<Pixels> {
+        let mut bounds = self.viewport.0.borrow().base_handle.bounds();
+        bounds.size.width /= 2.0;
+        if self.right {
+            bounds.origin.x += bounds.size.width;
+        }
+        bounds
+    }
+    fn offset(&self) -> gpui::Point<Pixels> {
+        gpui::point(self.horizontal.offset().x, px(0.0))
+    }
+    fn max_offset(&self) -> gpui::Point<Pixels> {
+        gpui::point(self.horizontal.max_offset().x, px(0.0))
+    }
+    fn set_offset(&self, offset: gpui::Point<Pixels>) {
+        self.horizontal.set_offset(gpui::point(offset.x, px(0.0)));
+    }
+}
+
 actions!(
     gpui_rhai_document,
     [
@@ -209,6 +290,7 @@ enum CodeViewerHeight {
 
 #[derive(Clone, Debug, PartialEq)]
 struct CodeViewerConfig {
+    scrollbar: DocumentScrollbarConfig,
     descriptor: DocumentDescriptor,
     show_line_numbers: bool,
     wrap: DocumentWrap,
@@ -393,6 +475,7 @@ struct CodeViewerEntity {
     document_runtime: DocumentRuntimeConfig,
     focus: FocusHandle,
     scroll: gpui::UniformListScrollHandle,
+    scroll_source: crate::ScrollbarSourceHandle,
     prepared: Option<Arc<PreparedDocument>>,
     display: Arc<[DisplaySegment]>,
     display_columns: Option<usize>,
@@ -459,6 +542,8 @@ impl CodeViewerEntity {
                 cx,
             )
         });
+        let scroll = gpui::UniformListScrollHandle::new();
+        let scroll_source = crate::ScrollbarSourceHandle::new(scroll.clone());
         Self {
             config,
             events,
@@ -466,7 +551,8 @@ impl CodeViewerEntity {
             syntaxes,
             document_runtime,
             focus: cx.focus_handle(),
-            scroll: gpui::UniformListScrollHandle::new(),
+            scroll,
+            scroll_source,
             prepared: None,
             display: Arc::from([]),
             display_columns: None,
@@ -966,7 +1052,22 @@ impl CodeViewerEntity {
         .size_full()
         .opacity(if self.loading { 0.62 } else { 1.0 });
         let _ = cx;
-        list.into_any_element()
+        div()
+            .relative()
+            .size_full()
+            .overflow_hidden()
+            .child(list)
+            .child(
+                self.config
+                    .scrollbar
+                    .context(&self.events, &self.theme)
+                    .element_with_wheel_routing(
+                        "code-scrollbar",
+                        self.scroll_source.clone(),
+                        self.config.scrollbar.spec,
+                    ),
+            )
+            .into_any_element()
     }
 
     fn content_measure(&self, max_height: Option<f32>) -> CodeContentMeasure {
@@ -1467,6 +1568,12 @@ fn code_line_element(
             .h_full()
             .flex_1()
             .min_w(px(0.0))
+            .when(matches!(config.wrap, DocumentWrap::None), |content| {
+                // Preserve intrinsic text width in the uniform list's
+                // MaxContent measurement; a zero flex basis reports only the
+                // gutter and makes the native horizontal extent disappear.
+                content.flex_none().whitespace_nowrap()
+            })
             .flex()
             .items_center()
             .font_family(config.monospace_family.clone())
@@ -1484,6 +1591,9 @@ fn code_line_element(
         div()
             .w_full()
             .h(px(line_height.max(16.0)))
+            .when(matches!(config.wrap, DocumentWrap::None), |row| {
+                row.w_auto().min_w_full()
+            })
             .flex()
             .flex_row()
             .items_center()
@@ -1780,6 +1890,7 @@ fn parse_code_config(
         Some(other) => return Err(format!("unknown CodeViewer height `{other}`")),
     };
     Ok(CodeViewerConfig {
+        scrollbar: DocumentScrollbarConfig::parse(props)?,
         descriptor,
         show_line_numbers: props.boolean("show_line_numbers").unwrap_or(true),
         wrap,
@@ -2220,7 +2331,7 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                     "Called with the 1-based `#{ line, column }` when the text is double-clicked or Enter is pressed.",
                 ),
             ),
-        ]),
+        ]).into_iter().chain(document_scrollbar_props()).collect(),
         events: BTreeMap::from([(
             "location_activate".to_owned(),
             EventSchema {
@@ -2239,6 +2350,7 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
 
 #[derive(Clone, Debug, PartialEq)]
 struct DiffViewerConfig {
+    scrollbar: DocumentScrollbarConfig,
     left: DocumentDescriptor,
     right: DocumentDescriptor,
     mode: DiffViewMode,
@@ -2344,6 +2456,8 @@ struct DiffViewerEntity {
     scroll: gpui::UniformListScrollHandle,
     left_horizontal: ScrollHandle,
     right_horizontal: ScrollHandle,
+    scroll_source: crate::ScrollbarSourceHandle,
+    pane_sources: [crate::ScrollbarSourceHandle; 2],
     prepared: Option<Arc<PreparedDiff>>,
     display: Arc<[DiffRenderRow]>,
     display_columns: Option<usize>,
@@ -2408,6 +2522,18 @@ impl DiffViewerEntity {
                 cx,
             )
         });
+        let scroll = gpui::UniformListScrollHandle::new();
+        let left_horizontal = ScrollHandle::new();
+        let right_horizontal = ScrollHandle::new();
+        let scroll_source = crate::ScrollbarSourceHandle::new(scroll.clone());
+        let pane_sources =
+            [(&left_horizontal, false), (&right_horizontal, true)].map(|(horizontal, right)| {
+                crate::ScrollbarSourceHandle::new(DocumentPaneScrollSource {
+                    viewport: scroll.clone(),
+                    horizontal: horizontal.clone(),
+                    right,
+                })
+            });
         Self {
             config,
             events,
@@ -2415,9 +2541,11 @@ impl DiffViewerEntity {
             syntaxes,
             document_runtime,
             focus: cx.focus_handle(),
-            scroll: gpui::UniformListScrollHandle::new(),
-            left_horizontal: ScrollHandle::new(),
-            right_horizontal: ScrollHandle::new(),
+            scroll,
+            left_horizontal,
+            right_horizontal,
+            scroll_source,
+            pane_sources,
             prepared: None,
             display: Arc::from([]),
             display_columns: None,
@@ -3230,7 +3358,56 @@ impl DiffViewerEntity {
         .flex_1()
         .min_h(px(0.0))
         .opacity(if self.loading { 0.62 } else { 1.0 });
-        list.into_any_element()
+        self.scrolled_content(list)
+    }
+
+    fn scrolled_content(&self, list: impl IntoElement) -> AnyElement {
+        let scrollbars = self.config.scrollbar.context(&self.events, &self.theme);
+        let split = self.config.mode == DiffViewMode::Split;
+        let spec = if split {
+            crate::ScrollbarSpec::new("hidden", self.config.scrollbar.spec.vertical().as_str())
+                .expect("validated visibility")
+        } else {
+            self.config.scrollbar.spec
+        };
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_hidden()
+            .child(list)
+            .child(
+                scrollbars
+                    .clone()
+                    .with_scroll_axis(split.then_some(gpui::Axis::Vertical))
+                    .element_with_wheel_routing("diff-scrollbar", self.scroll_source.clone(), spec),
+            )
+            .when(
+                split && matches!(self.config.wrap, DocumentWrap::None),
+                |root| {
+                    let spec = crate::ScrollbarSpec::new(
+                        self.config.scrollbar.spec.horizontal().as_str(),
+                        "hidden",
+                    )
+                    .expect("validated visibility");
+                    let panes = scrollbars
+                        .with_scroll_axis(Some(gpui::Axis::Horizontal))
+                        .with_scroll_parent(self.scroll_source.clone(), Some(gpui::Axis::Vertical));
+                    root.child(panes.element_with_wheel_routing(
+                        "left-scrollbar",
+                        self.pane_sources[0].clone(),
+                        spec,
+                    ))
+                    .child(panes.element_with_wheel_routing(
+                        "right-scrollbar",
+                        self.pane_sources[1].clone(),
+                        spec,
+                    ))
+                },
+            )
+            .into_any_element()
     }
 }
 
@@ -3937,6 +4114,10 @@ fn diff_cell(
             .flex_1()
             .min_w(px(0.0))
             .px(px(8.0))
+            .when(
+                matches!(config.wrap, DocumentWrap::None) && horizontal.is_none(),
+                |content| content.flex_none().whitespace_nowrap(),
+            )
             .flex()
             .items_center()
             .font_family(config.monospace_family.clone())
@@ -3952,6 +4133,10 @@ fn diff_cell(
     );
     let row = div()
         .size_full()
+        .when(
+            matches!(config.wrap, DocumentWrap::None) && horizontal.is_none(),
+            |row| row.w_auto().min_w_full(),
+        )
         .flex()
         .bg(rgba(background.as_rgba_hex()))
         .child(gutter)
@@ -4098,6 +4283,7 @@ fn parse_diff_config(
         Some(other) => return Err(format!("unknown DiffViewer wrap mode `{other}`")),
     };
     Ok(DiffViewerConfig {
+        scrollbar: DocumentScrollbarConfig::parse(props)?,
         left: descriptor("left")?,
         right: descriptor("right")?,
         mode,
@@ -4163,6 +4349,7 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
     let mut props = BTreeMap::new();
     props.extend(optional_document_fields("left"));
     props.extend(optional_document_fields("right"));
+    props.extend(document_scrollbar_props());
     props.extend([
         (
             "mode".to_owned(),

@@ -95,12 +95,51 @@ Official virtual lists and document surfaces use the same rendering, theme,
 RTL and cancellation policy as Host extensions. Scrollbar dragging preserves
 ListState's measured-height freeze contract.
 
+Trusted Rust obtains a `ScrollbarContext` from
+`PrimitiveContext::scrollbars(&PrimitiveTheme)` or
+`ScriptViewHost::scrollbars(scope, &PrimitiveTheme)`. Its `element(id, source,
+spec)` accepts the public `ScrollbarSource` contract, implemented for all three
+GPUI handles. The factory owns only interaction/theme scope, never a second
+position engine. `with_part_styles(track, thumb, thumb_hover)` resolves the
+same background overrides as retained nodes, and `SCROLLBAR_TRACK_WIDTH`
+lets a Host reserve row space. Host surfaces render under the Host container;
+primitive scopes inherit retained-node teardown. The scrollbar is not a focus
+or keyboard owner.
+
+Native ancestry can be declared with `with_scroll_parent(source, axis)`, which
+adds the new nearest parent before the inherited SDK chain. Add farther parents
+first: document then table yields table → document → Rhai/SDK ancestors.
+Retained/primitive factories inherit the SDK chain automatically. Track wheel
+routing applies only actual per-axis movement and chains
+the residual; fully unhandled input is not swallowed. This scoped policy does
+not replace GPUI's whole-window wheel dispatch. `ScrollbarSourceHandle` is a
+retained lease for sources replaced under a stable element id, so a captured
+gesture cannot continue against a retired source. Raw adapters require an id
+change on replacement when the Host does not retain such a lease.
+
+Native viewports may opt into `element_with_wheel_routing` with a retained
+`ScrollbarSourceHandle`. The same window coordinator arbitrates clipped,
+unoccluded regions in capture phase, before GPUI's automatic list/div wheel
+listeners. Explicit nearest-parent source leases select the innermost native
+region even when its parent's overlay paints later. The existing per-axis
+residual algorithm applies movement once, with no second position cache or
+global wheel router; completely unconsumed input propagates unchanged.
+
 Virtual collection following is a state machine, not an unconditional scroll
 on render. Reader input pauses following; reaching the tail or an explicit
 jump resumes it. Updating realized rows must not change reading position.
 Keyed data edits preserve the reader's item and intra-item offset where that
 key survives. There is one authoritative native scroll state; SDK key caches
 must not introduce another competing position or follow state.
+
+`follow_tail` uses GPUI `FollowMode::Tail`. Component-local start/end/by commands
+are transactional; `on_follow_change` reports only changed presented native
+following and unseen-key counts. The adapter preserves native height facts as
+hints when the pinned splice/width-invalidation API requires re-seeding, and a
+one-pixel native measurement sentinel prevents an unknown suffix from looking
+like the true tail. Stable frames and realization-only updates never re-seed
+the native tree. The source component, not virtualization, owns keyboard
+selection and viewport shortcuts.
 
 ### Documents and composition
 

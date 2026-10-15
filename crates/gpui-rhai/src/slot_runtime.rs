@@ -29,6 +29,8 @@ pub(crate) struct NodeSlotRuntime {
     pub focus_owners: BTreeMap<crate::NodeId, gpui::FocusHandle>,
     pub scroll_handles: BTreeMap<crate::NodeId, gpui::ScrollHandle>,
     pub scroll_anchors: BTreeMap<crate::NodeId, gpui::ScrollAnchor>,
+    pub wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
+    pub intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     pub virtual_requests: crate::VirtualRequestRegistry,
     pub text_selection: crate::renderer::TextSelectionRegistry,
     pub host_focus: Option<gpui::FocusHandle>,
@@ -50,11 +52,17 @@ pub(crate) struct NodeSlotRuntime {
 }
 
 impl NodeSlotRuntime {
-    pub(crate) fn render(&self, node: &UiNode, slot: &str) -> AnyElement {
-        self.render_at(
+    pub(crate) fn render_with_intrinsic_size(
+        &self,
+        node: &UiNode,
+        slot: &str,
+        intrinsic_size: Option<&crate::intrinsic::IntrinsicSizeInvalidator>,
+    ) -> AnyElement {
+        self.render_at_with_intrinsic_size(
             node,
             &format!("{}/{slot}", self.base_path),
             self.retained_roots.get(slot).copied(),
+            intrinsic_size,
         )
     }
 
@@ -63,6 +71,16 @@ impl NodeSlotRuntime {
         node: &UiNode,
         path: &str,
         root: Option<crate::NodeId>,
+    ) -> AnyElement {
+        self.render_at_with_intrinsic_size(node, path, root, self.intrinsic_size.as_ref())
+    }
+
+    fn render_at_with_intrinsic_size(
+        &self,
+        node: &UiNode,
+        path: &str,
+        root: Option<crate::NodeId>,
+        intrinsic_size: Option<&crate::intrinsic::IntrinsicSizeInvalidator>,
     ) -> AnyElement {
         let resources = WindowRenderResources {
             now: self.now,
@@ -81,6 +99,8 @@ impl NodeSlotRuntime {
             focus_owners: &self.focus_owners,
             scroll_handles: &self.scroll_handles,
             scroll_anchors: &self.scroll_anchors,
+            wheel_parents: &self.wheel_parents,
+            intrinsic_size,
             virtual_requests: &self.virtual_requests,
             text_selection: &self.text_selection,
             host_focus: self.host_focus.as_ref(),

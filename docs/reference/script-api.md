@@ -183,6 +183,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.cancel_timeout(key: String) -> bool` | Cancels this component's declared `timeout` `key` until its declaration changes; returns `false` when no such timer is active. |
 | `ctx.clear_close_handler()` | Removes the current window's close handler, so a native close request closes the window again; not allowed during render. |
 | `ctx.close_window(id: String)` | Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render. |
+| `ctx.collection_follow_status(key: String) -> ?` | Reads this component's presented collection status as `#{ following, unseen }`, or `()` while absent. An event-time query, not a render dependency; use `on_follow_change` for reactive state. |
 | `ctx.component_style(part: String, base: Style) -> Style` | Returns `base` merged with the stylesheet rule, the caller's `style` (root only) and `part_styles` for the declared part `part`. |
 | `ctx.copy_text(text: String)` | Queues a bounded text clipboard write after commit. Requires an attached view/window and direct user input or explicit automation; rejects render, timers, effects and asynchronous callbacks, and rolls back with failed callbacks. |
 | `ctx.dispatch_action(action: String, payload: ?)` | Queues the action `action` with `payload` to run after the current callback; raises an error when it is unknown or disabled. |
@@ -233,6 +234,9 @@ Methods of the context a view, callback or effect receives.
 | `ctx.restart_motion(handle: MotionHandle)` | Restarts the timeline behind `handle` from zero, the only way to rewind; not allowed during render. |
 | `ctx.resume_motion(handle: MotionHandle)` | Resumes the timeline behind `handle`, the same as `play_motion`; not allowed during render. |
 | `ctx.resume_timeout(key: String) -> bool` | Clears an explicit pause of this component's declared `timeout` `key`; returns `false` when no such timer is active. |
+| `ctx.scroll_collection_by(key: String, distance: ?)` | Queues native pixel scrolling for this component's collection; positive distance moves toward the end, upward input pauses tail following. Integers and floats must be finite. Runs after accepted data/anchor synchronization; forbidden during render. |
+| `ctx.scroll_collection_to_end(key: String)` | Queues a jump to this component's collection tail, resuming native following when enabled. Applies to newly committed data after anchor synchronization, never to another component's equal key; forbidden during render. |
+| `ctx.scroll_collection_to_start(key: String)` | Queues a jump to this component's collection start and pauses native following. Applies after newly committed data/anchor synchronization; an absent collection is ignored. Forbidden during render. |
 | `ctx.scroll_into_view(reference: ElementRef)` | Queues scrolling the nearest retained scroll ancestor so a ref's node shows on the next frame; not allowed during render. |
 | `ctx.scroll_into_view(key: String)` | Queues scrolling the nearest retained scroll ancestor to reveal the node of a component-local ref key; not allowed during render. |
 | `ctx.scroll_to(reference: ElementRef, x: float, y: float)` | Queues a scroll offset for a ref's scroll container, applied after commit; `x` and `y` must be finite and non-negative. |
@@ -647,6 +651,10 @@ Official components wrap them; application components may too.
 | `loading_style` | style | required | Style of the placeholder shown while the document is first prepared in the background. |
 | `max_height` | length or `()` | — | Most a `content` viewer grows, in pixels, rems or a length token; taller documents scroll inside. Ignored with `fill`. |
 | `on_location_activate` | callback or `()` | — | Called with the 1-based `#{ line, column }` when the text is double-clicked or Enter is pressed. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared overlay scrollbar visibility; keyboard scrolling remains owned by the document. |
+| `scrollbar_thumb_hover_style` | style | — | Background override for the corresponding shared scrollbar part. |
+| `scrollbar_thumb_style` | style | — | Background override for the corresponding shared scrollbar part. |
+| `scrollbar_track_style` | style | — | Background override for the corresponding shared scrollbar part. |
 | `search_style` | style | required | Style of the find bar that Cmd-F opens. |
 | `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter on the first row of each line; with `false` the gutter stays, empty. |
 | `source` | string or native document | required | The document: an inline string or a `NativeTextDocument` from `ctx.get_native_text_document`. |
@@ -701,6 +709,10 @@ Official components wrap them; application components may too.
 | `right_label` | string | required | Name of the right side in the header, and its file name in a unified patch copied with Option-Cmd-C. |
 | `right_language` | string or `()` | — | Syntax name or extension for the right side, ahead of `right_file_name`; unknown ones fall back to it. |
 | `right_source` | string or native document | required | The right document: an inline string or a `NativeTextDocument`; left and right are neutral, not old and new. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared overlay scrollbar visibility; keyboard scrolling remains owned by the document. |
+| `scrollbar_thumb_hover_style` | style | — | Background override for the corresponding shared scrollbar part. |
+| `scrollbar_thumb_style` | style | — | Background override for the corresponding shared scrollbar part. |
+| `scrollbar_track_style` | style | — | Background override for the corresponding shared scrollbar part. |
 | `search_style` | style | required | Style of the find bar that Cmd-F opens; it searches both documents. |
 | `show_line_numbers` | bool | `true` | Shows each side's 1-based line numbers in the gutter. |
 | `status_style` | style | required | Style of the bottom status bar that shows the current change and the change-navigation keys. |

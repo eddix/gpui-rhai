@@ -54,7 +54,7 @@ realize normally as edge auto-scroll advances the destination viewport.
 
 Top-aligned selection and navigation components can pass `reveal_key`, using
 the same stable key exposed by `config.data`. The runtime reacts only when that
-controlled key changes (or when the ordered key set itself changes): it keeps a
+controlled key changes (or after a fresh collection/content session): it keeps a
 measured target visible and top-aligns an unmeasured offscreen target so GPUI
 can realize it on the next frame.
 
@@ -69,11 +69,52 @@ virtual_collection(#{
 }, Fn("render_result"))
 ```
 
-Ordinary renders and viewport realization do not reapply `reveal_key`, so
+Ordinary renders, keyed data edits, and viewport realization do not reapply `reveal_key`, so
 wheel/trackpad scrolling remains under the user's control until the controlled
 target changes. `follow_tail` and `reveal_key` are mutually exclusive because
 they represent competing automatic-scroll policies. An empty or unknown reveal
 key is rejected at the script boundary.
+
+## Following growing content
+
+`follow_tail: true` enables GPUI's native `FollowMode::Tail`, not an imperative
+scroll on every render. Wheel/trackpad input up or a scrollbar drag away from
+the end pauses it. Reaching the bottom resumes it. A growing last row taller
+than the viewport follows its bottom, not the top of that row. Realization and
+payload-only renders never force a paused reader back to the tail.
+
+An optional named `on_follow_change` callback receives `#{ following, unseen }`
+after presented native state changes. `unseen` counts distinct new data keys
+received while paused, not rerenders, streaming chunks, or row realization.
+Deleted unseen keys are removed from the count; following or an explicit tail
+jump clears it. The callback is scoped to the declaring component and script
+generation and is not emitted on unchanged frames.
+
+```rhai
+fn follow_changed(ctx, status) {
+    ctx.set_state("following", status.following);
+    ctx.set_state("unseen", status.unseen);
+}
+fn latest(ctx, value) { ctx.scroll_collection_to_end("messages"); }
+fn beginning(ctx, value) { ctx.scroll_collection_to_start("messages"); }
+```
+
+Both commands address the caller's component-local collection key and execute
+only after its transaction succeeds. The end command resumes tail following
+when enabled; the start command pauses it. An unmounted collection is ignored.
+Commands run after the native view synchronizes newly committed data, keyed
+anchors, reveal and follow policy. Thus a callback that prepends and explicitly
+jumps to the start cannot have its command overwritten by anchor restoration.
+`ctx.collection_follow_status(key)` reads the current native status or null;
+it is an event-time query, not a render dependency. Use the callback to store
+reactive status. The owning component can bind End/Home to these commands;
+the virtualizer does not steal Table/List selection keys or introduce a tab
+stop. The Gallery's **Scrolling** page demonstrates this pattern.
+
+Trusted Rust can resolve `ScriptViewHandle::collection_scroll_handle(id, cx)`
+(or `VirtualRequestRegistry::scroll_handle(id)`) for `status`, `scroll_to_end`,
+`scroll_to_start`, `scroll_by`, and `pause_following`. Handles keep native GPUI state only;
+resolve again after unmount/replacement. An ID in another view cannot resolve.
 
 ## Focus and active-item ownership
 
@@ -158,21 +199,40 @@ loop.
 Realized windows replace offscreen item subtrees and clean their component
 state/tasks/effects. The GPUI `ListState` is not reset when only the realized map
 or item payload changes while ordered stable keys stay identical, preserving
-measured heights and the user's scroll anchor. A key-order or estimated-height
-change resets measurements; the controlled reveal policy is then applied once.
+measured heights and the user's scroll anchor. Keyed insertions, deletions and
+appends splice only native changed ranges and restore the surviving reader's
+key and intra-row offset. Reordering keeps a maximal ordered subsequence of
+native rows; moved rows are remeasured. Theme/environment changes
+invalidate measurements without resetting the reader or the native follow
+state. Replacing every key is treated as new content and resets naturally.
 Data and realized item counts have separate Host budgets.
 
-The deterministic `VariableListState` policy core uses a Fenwick prefix tree to
+The separate deterministic `VariableListState` policy core uses a Fenwick prefix tree to
 compute pixel-overdraw windows, preserve measured heights by key across
 reorder/filter, return anchor scroll correction after remeasurement, and
-compute bottom/tail offsets. Tests cover 10,000 policy items, formal component
+compute bottom/tail offsets. It does not drive the rendered collection or add
+a competing position engine. Rendered collections use one GPUI `ListState`.
+The initial native scrollbar extent uses `estimated_height`; actual native
+measurements replace hints as rows are encountered. GPUI 0.3.7's splice API does
+not accept per-item size hints. After structural insertions/moves the adapter
+therefore re-seeds the native hint tree: already measured native dimensions
+remain exact height hints, unknown/moved rows use the estimate, and only
+encountered viewport/overdraw rows are remeasured. Deletion-only edits keep
+native measured entries. The first/changed-width native layout clears hints,
+so they are seeded once after that pass, not on every frame. A minimum one-pixel
+native measurement sentinel (also when configured overdraw is zero) prevents
+an unknown, provisionally zero-height suffix from looking like the true tail.
+No SDK height cache or competing follow/position engine is involved. Per-item
+size hints and transfer of private native measured objects for moved rows are
+not exposed by the pinned GPUI API.
+Tests cover 10,000 policy items, formal component
 state cleanup, off-layout realization, and the 2,000-item Chat acceptance app.
 
 `UiRuntimeState::virtual_requests.inspect()` and the development Inspector expose
 one transaction-aware `VirtualCollectionMetrics` record per retained
 collection: item/realized/requested counts and ranges, GPUI visible range,
 viewport height, logical top item/offset, scrolled state, alignment, and
-follow-tail policy, plus the active sticky-header index. Frame reports derive
+follow-tail policy, native `is_following_tail` and `unseen_count`, plus the active sticky-header index. Frame reports derive
 visible range from measured GPUI item bounds when available and otherwise use
 the pre-realized window; scroll changes update it immediately from
 `ListScrollEvent`.

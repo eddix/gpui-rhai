@@ -64,6 +64,15 @@ different components therefore retain independent native Entities, while keyed
 reorder preserves them. Direct ephemeral rendering rejects lifecycle
 primitives instead of falling back to a view-global key.
 
+An asynchronous native commit can change a primitive's intrinsic size without
+changing any script data. After committing that size, call
+`context.invalidate_intrinsic_size(cx)` as well as notifying your native Entity.
+The context defers and coalesces measurement invalidation for its current virtual
+row and any enclosing rows; it does not run Rhai or scan the collection. Keep the
+current context, not one captured by an obsolete job. Old primitive/row leases
+and script generations are ignored. Hidden retained rows keep the dirty
+measurement until presentation resumes, without starting a repaint timer.
+
 Every retained `PrimitiveInstance` also exposes `instance.resources()`. Register
 each durable native task, subscription, watcher, capture helper, or other
 resource with a safe label and cancellation closure:
@@ -89,6 +98,24 @@ registry or resource scope itself in a cleanup closure. Native changes made by
 `update` cannot be cloned by the runtime: stage them until success or make
 `update(previous, next)` idempotent so a failed outer render can safely retry.
 
+When native content inside a virtual row changes its intrinsic size without a
+Rhai state change, call `context.invalidate_intrinsic_size(cx)` once **after**
+committing the new native content or width-dependent display. Use the current
+`PrimitiveContext` held by the live native viewer, not a context captured at the
+start of an asynchronous job. This hook does not request a script render: GPUI
+remeasures only the current leased row and preserves its native scroll anchor.
+Nested virtual rows propagate invalidation to their enclosing row in turn.
+
+The hook defers/coalesces foreground work and is safe from native render,
+prepaint, or Entity updates; it never synchronously reenters a parent Entity.
+Primitive resource identity, script generation, stable row key and retained
+row identity are checked when deferred work executes. Removed/replaced leases
+are ignored, even if a new instance reuses the same local key. Outside a
+virtual row (or for an ephemeral primitive) the hook is a no-op. Hidden retained
+rows may become dirty, but repeated commits do not start timers or a repaint
+loop; measurement resumes when they are presented. This is not a per-frame
+notification API: call only after a meaningful committed size change.
+
 Emit only declared events through `PrimitiveContext`; the runtime validates
 payloads and dispatches the generation-bound callback. The emitter keeps only a
 weak reference back to the registry, so an Entity whose callbacks retain the
@@ -113,3 +140,77 @@ add geometry to the emitted event contract.
 
 See `extension_host.rs` for rendering and `tests/custom_primitive.rs` for the
 downstream registration contract.
+
+## Shared native scrollbars
+
+Native surfaces do not need to copy scrollbar geometry or the private gesture
+coordinator. `PrimitiveContext::scrollbars(theme)` returns a scoped
+`ScrollbarContext`; `element(id, source, spec)` accepts a `ScrollHandle`,
+`ListState`, `UniformListScrollHandle`, or a Host-defined `ScrollbarSource`.
+Render the viewport first and the returned overlay last in a relative, clipped
+container. IDs must be stable and unique within that primitive's scope.
+
+```rust
+let bars = context.scrollbars(theme).with_part_styles(
+    &track_style, &thumb_style, &thumb_hover_style,
+);
+let overlay = bars.element("transcript-scrollbar", list_state.clone(),
+    ScrollbarSpec::new("hidden", "auto")?);
+```
+
+The three part backgrounds override transparent track / `scrollbar.thumb` /
+`scrollbar.thumb_hover` defaults. `SCROLLBAR_TRACK_WIDTH` exposes the logical
+12px pointer-track width for optional row insets. Direction comes from the
+theme snapshot; vertical bars occupy the logical end edge. Short/zero
+viewports and non-scrollable axes never produce oversized thumbs.
+
+For a non-primitive Host view use `host.scrollbars("unique-surface", &theme)`
+and render under `host.container(...)`. A Host can capture its own read-only
+resolver with `PrimitiveTheme::from_colors(&resolver, direction)`.
+The same window coordinator arbitrates drag, Escape, disappearance, suspension,
+disposal and window deactivation. `ListState`'s native measured-height freeze
+starts on thumb down and ends exactly once on release/cancellation; a drop
+backstop also releases it when a window goes away. The scrollbar never takes
+focus or claims Home/End: keyboard behavior belongs to the viewport/component.
+Wheel input over its track drives that viewport, not an enclosing scroller.
+
+Track wheel routing consumes the actual clamped movement per axis, then sends
+only residual delta through the SDK ancestor chain. Unsupported axes and fully
+unconsumed boundary input bubble normally. For a native hierarchy, add its
+nearest measured parent with
+`with_scroll_parent(parent_source, Some(gpui::Axis::Vertical))` (`None` permits
+both axes). Each call prepends the new nearest parent ahead of inherited SDK
+ancestors. Add farther parents first: calling with document then table routes
+residual input through table → document → inherited Rhai/SDK ancestors.
+`with_scroll_axis(...)` restricts the viewport's own wheel axes
+independently of bar visibility. This is scoped track routing, not a replacement
+for GPUI's whole-window wheel infrastructure.
+
+For a native viewport whose automatic GPUI wheel listener would otherwise
+reapply the same delta to an ancestor, opt in with
+`element_with_wheel_routing(id, source_handle, spec)` in place of `element`.
+Keep that `ScrollbarSourceHandle` alongside the native viewport and pass the
+same retained handle to each child's `with_scroll_parent`. The coordinator
+selects the innermost clipped, unoccluded registered viewport before GPUI's
+automatic scrolling. Explicit native parent links take precedence over overlay
+paint order; unrelated overlapping regions use front-to-back paint priority.
+The selected viewport applies the existing per-axis/residual algorithm once;
+fully unconsumed input still propagates. A normal hitbox leaves click,
+selection, focus and keyboard ownership unchanged. Registration lasts only for
+the current input event: replayed capture listeners register its regions, then
+the first Host bubble boundary chooses and drains all participating Hosts'
+regions before native automatic bubbling. A short-lived App-owned per-window
+input collection joins multiple overlapping Hosts; deferred epoch-checked
+cleanup also discards events stopped early during capture.
+This also works inside `Entity::cached(style)` without replaying prepaint side
+effects or retaining historical hitboxes. Hidden/unmounted/replaced regions
+cannot register unless their listener and clipped hitbox are still presented.
+This is opt-in native viewport routing, not a global window wheel handler.
+CodeViewer and DiffViewer use it for their uniform list and split pane sources.
+
+GPUI's raw handles do not expose comparable native identity. If a source can
+be replaced under a stable scrollbar id, retain a
+`ScrollbarSourceHandle::new(source)` alongside it and pass clones to `element`.
+Replacing that adapter retires an old captured gesture and ends its freeze.
+Alternatively change the scrollbar id when replacing a raw source. Built-in
+virtual collections retire their source epoch automatically.

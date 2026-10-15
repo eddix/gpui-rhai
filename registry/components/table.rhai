@@ -7,7 +7,7 @@
   "dependencies": ["components/badge"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"],
-  "tokens": ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
+  "tokens": ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
   "environment": ["density"]
 }
 */
@@ -22,11 +22,13 @@ define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
-        tokens: ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
+        tokens: ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
         environment: ["density"],
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{
         props: #{
+            scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "auto" }, doc: "Shared native body scrollbar visibility; selection keeps its keyboard ownership." },
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Accessible name of the table; rows are announced as `<label> row <n>`." },
@@ -216,7 +218,7 @@ define_component(#{
         },
         parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header", "indicator_bar", "cursor", "focus_frame",
             "group_indicator", "group_label", "group_count", "row", "row_selected",
-            "loading", "empty"],
+            "loading", "empty", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Table")
 });
@@ -225,6 +227,12 @@ import "components/badge" as badge;
 
 fn Table(props) { render_component("components/table", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+fn collection_scrollbars(ctx, props, node) {
+    node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
+        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))))
+        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover", style().background(theme_color("scrollbar.thumb_hover"))))
+        .scrollbars("hidden", prop_or(props, "scrollbar", "auto"))
+}
 fn optional_or(props, name, fallback) {
     if name in props && props[name] != () { props[name] } else { fallback }
 }
@@ -739,11 +747,11 @@ fn render_Table(ctx, props) {
         else { () };
     // The selection reaches the row renderer once, not every row: a click builds the next
     // selection, so the row data stays linear in the rows.
-    let body = virtual_collection(collection,
+    let body = collection_scrollbars(ctx, props, virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns))
             .curry(column_typography(columns)).curry(context).curry(data.len)
             .curry(selection_mode).curry(selected).curry(focus))
-        .with_style(ctx.component_style("body", body_style));
+        .with_style(ctx.component_style("body", body_style)));
     let framed = if selection_mode == "none" { context }
         else { neighbors != () && neighbors.first != () && neighbors.current == () };
     let table = with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1,framed), neighbors);

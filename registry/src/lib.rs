@@ -531,6 +531,10 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
         include_str!("../gallery/pages/temporal.rhai"),
     ),
     (
+        "gallery/pages/scrolling",
+        include_str!("../gallery/pages/scrolling.rhai"),
+    ),
+    (
         "gallery/pages/foundations",
         include_str!("../gallery/pages/foundations.rhai"),
     ),

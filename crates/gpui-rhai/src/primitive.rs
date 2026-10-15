@@ -191,6 +191,24 @@ impl Default for PrimitiveTheme {
 }
 
 impl PrimitiveTheme {
+    /// Capture a Host's read-only color/token resolver for native components.
+    /// Capture a fresh snapshot after the Host theme or direction changes.
+    #[must_use]
+    pub fn from_colors(
+        colors: &(impl ColorResolver + ?Sized),
+        direction: crate::TextDirection,
+    ) -> Self {
+        Self::capture_with_environment(
+            colors,
+            direction,
+            "en",
+            None,
+            crate::RuntimeClock::default(),
+            crate::MotionPreference::Normal,
+            crate::MotionQuality::High,
+        )
+    }
+
     #[cfg(test)]
     pub(crate) fn capture(colors: &impl ColorResolver) -> Self {
         Self::capture_with_direction(colors, crate::TextDirection::LeftToRight)
@@ -801,6 +819,10 @@ pub struct PrimitiveContext {
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
+    wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
+    intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
+    intrinsic_generation: ScriptGeneration,
+    intrinsic_lease: Option<Weak<RefCell<PrimitiveResourceState>>>,
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
     retained_node: Option<crate::NodeId>,
@@ -819,6 +841,61 @@ pub struct PrimitiveSemanticProposal {
 }
 
 impl PrimitiveContext {
+    /// Invalidate this retained native primitive's enclosing virtual-row size.
+    ///
+    /// Call once after committing an intrinsic size change (for example an
+    /// asynchronous document parse or a width-dependent native layout change),
+    /// using the primitive's current context. Do not call on every render.
+    /// Calls are coalesced and deferred, so calling from native render/update
+    /// cannot reenter a parent entity. Only the current live row is remeasured
+    /// by GPUI; nested virtual rows propagate to their enclosing row in turn.
+    /// No Rhai execution or whole-collection measurement is requested.
+    ///
+    /// Outside a virtual row this is a no-op. Unmounted/replaced primitive or
+    /// row leases and contexts from an older script generation are ignored at
+    /// execution time. Hidden retained rows can become dirty without timers or
+    /// continuous repaint; their measurement is refreshed when presented.
+    pub fn invalidate_intrinsic_size(&self, cx: &mut App) {
+        let (Some(invalidator), Some(instance), Some(lease)) = (
+            self.intrinsic_size.clone(),
+            self.instance.clone(),
+            self.intrinsic_lease.clone(),
+        ) else {
+            return;
+        };
+        let registry = self.registry.clone();
+        let generation = self.intrinsic_generation;
+        // The registry is itself borrowed during PrimitiveHandler::render.
+        // Validate after that operation has committed, never synchronously.
+        invalidator.invalidate_if(cx, move || {
+            let Some(registry) = registry.upgrade() else {
+                return false;
+            };
+            registry.try_borrow().is_ok_and(|inner| {
+                inner.generation == generation
+                    && inner.mounted.get(&instance).is_some_and(|mounted| {
+                        mounted
+                            .resources
+                            .as_ref()
+                            .is_some_and(|resources| lease.ptr_eq(&Rc::downgrade(&resources.inner)))
+                    })
+            })
+        });
+    }
+
+    /// Create a themed scrollbar factory owned by this retained primitive.
+    /// Dragging is cancelled on unmount, suspension, disposal, Escape and window
+    /// deactivation by the same private coordinator as built-in controls.
+    #[must_use]
+    pub fn scrollbars(&self, theme: &PrimitiveTheme) -> crate::ScrollbarContext {
+        crate::ScrollbarContext::new(
+            self.interaction_owner("scrollbars"),
+            self.interactions.clone(),
+            theme,
+        )
+        .with_wheel_parents(self.wheel_parents.clone())
+    }
+
     pub(crate) fn observes(&self, event: &str) -> bool {
         self.callbacks.contains_key(event)
     }
@@ -1284,6 +1361,7 @@ struct PrimitiveEntry {
 struct PrimitiveRegistryInner {
     entries: BTreeMap<PrimitiveId, PrimitiveEntry>,
     mounted: BTreeMap<PrimitiveInstanceId, PrimitiveInstance>,
+    generation: ScriptGeneration,
 }
 
 #[derive(Clone, Default)]
@@ -1305,6 +1383,14 @@ impl fmt::Debug for PrimitiveRegistry {
 }
 
 impl PrimitiveRegistry {
+    pub(crate) fn generation(&self) -> ScriptGeneration {
+        self.inner.borrow().generation
+    }
+
+    pub(crate) fn set_generation(&self, generation: ScriptGeneration) {
+        self.inner.borrow_mut().generation = generation;
+    }
+
     /// The descriptors of every registered primitive, in id order.
     #[must_use]
     pub fn descriptors(&self) -> Vec<PrimitiveDescriptor> {
@@ -1750,6 +1836,7 @@ impl PrimitiveRegistry {
                 });
             }
         }
+        let intrinsic_generation = inner.generation;
         let entry = inner
             .entries
             .get_mut(&instance.node.primitive)
@@ -1789,6 +1876,10 @@ impl PrimitiveRegistry {
             }
             let mut scoped_events = events.clone();
             scoped_events.instance.clone_from(&instance_id);
+            scoped_events.intrinsic_generation = intrinsic_generation;
+            scoped_events.intrinsic_lease = resources
+                .as_ref()
+                .map(|resources| Rc::downgrade(&resources.inner));
             guard_primitive_panic(&instance.node.primitive, "render", || {
                 entry
                     .handler
@@ -1897,6 +1988,8 @@ pub(crate) struct PrimitiveWindowContext {
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
+    wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
+    intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     view_id: String,
 }
 
@@ -1911,8 +2004,26 @@ impl PrimitiveWindowContext {
             dispatcher,
             interactions,
             scroll_handles,
+            wheel_parents: Vec::new(),
+            intrinsic_size: None,
             view_id: view_id.into(),
         }
+    }
+
+    pub(crate) fn with_wheel_parents(
+        mut self,
+        parents: Vec<crate::scrollbar::ScrollWheelSource>,
+    ) -> Self {
+        self.wheel_parents = parents;
+        self
+    }
+
+    pub(crate) fn with_intrinsic_size(
+        mut self,
+        invalidator: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
+    ) -> Self {
+        self.intrinsic_size = invalidator;
+        self
     }
 }
 
@@ -1952,6 +2063,10 @@ impl RenderOnce for RegisteredPrimitiveElement {
             dispatcher: self.runtime.dispatcher,
             interactions: self.runtime.interactions,
             scroll_handles: self.runtime.scroll_handles,
+            wheel_parents: self.runtime.wheel_parents,
+            intrinsic_size: self.runtime.intrinsic_size,
+            intrinsic_generation: ScriptGeneration::default(),
+            intrinsic_lease: None,
             view_id: self.runtime.view_id,
             instance: None,
             retained_node: self.retained.as_ref().map(|(node, _)| *node),
@@ -2599,6 +2714,10 @@ mod tests {
             dispatcher: None,
             interactions: crate::interaction::WindowInteractionCoordinator::default(),
             scroll_handles: Vec::new(),
+            wheel_parents: Vec::new(),
+            intrinsic_size: None,
+            intrinsic_generation: ScriptGeneration::default(),
+            intrinsic_lease: None,
             view_id: "test".to_owned(),
             instance: None,
             retained_node: None,
