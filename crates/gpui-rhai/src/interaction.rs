@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use gpui::{
     App, DispatchPhase, EntityId, Hitbox, ListState, MouseButton, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollHandle, Window, WindowId, point, px,
+    Pixels, Point, ScrollHandle, ScrollWheelEvent, Window, WindowId, point, px,
 };
 
 use crate::{GeometryBounds, UiValue};
@@ -468,7 +468,10 @@ struct NativeWheelRegion {
     ancestors: Vec<usize>,
     hitbox: Hitbox,
     order: u64,
+    handler: Rc<NativeWheelHandler>,
 }
+
+pub(crate) type NativeWheelHandler = dyn Fn(&ScrollWheelEvent, &mut Window, &mut App);
 
 #[derive(Clone)]
 struct VirtualScrollTarget {
@@ -507,6 +510,7 @@ impl WindowInteractionCoordinator {
         source: usize,
         ancestors: Vec<usize>,
         hitbox: Hitbox,
+        handler: Rc<NativeWheelHandler>,
     ) {
         let mut state = self.0.borrow_mut();
         let order = state.next_wheel_order;
@@ -518,16 +522,12 @@ impl WindowInteractionCoordinator {
                 ancestors,
                 hitbox,
                 order,
+                handler,
             },
         );
     }
 
-    pub(crate) fn is_wheel_region_target(
-        &self,
-        owner: &InteractionOwner,
-        source: usize,
-        window: &Window,
-    ) -> bool {
+    fn wheel_region_handler(&self, window: &Window) -> Option<Rc<NativeWheelHandler>> {
         let state = self.0.borrow();
         let candidates = state
             .wheel_regions
@@ -544,7 +544,18 @@ impl WindowInteractionCoordinator {
                 })
             })
             .max_by_key(|(_, region)| region.order)
-            .is_some_and(|(target, region)| *target == owner && region.source == source)
+            .map(|(_, region)| Rc::clone(&region.handler))
+    }
+
+    pub(crate) fn install_wheel_capture_start(&self, window: &mut Window) {
+        let coordinator = self.clone();
+        window.on_mouse_event(move |_: &ScrollWheelEvent, phase, _, _| {
+            if phase == DispatchPhase::Capture {
+                let mut state = coordinator.0.borrow_mut();
+                state.wheel_regions.clear();
+                state.next_wheel_order = 0;
+            }
+        });
     }
 
     pub(crate) fn set_pointer_routes(
@@ -1131,6 +1142,17 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn install(&self, window: &mut Window) {
+        let coordinator = self.clone();
+        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+            if phase != DispatchPhase::Capture {
+                return;
+            }
+            let handler = coordinator.wheel_region_handler(window);
+            coordinator.0.borrow_mut().wheel_regions.clear();
+            if let Some(handler) = handler {
+                handler(event, window, cx);
+            }
+        });
         let move_coordinator = self.clone();
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
             if phase != DispatchPhase::Capture {

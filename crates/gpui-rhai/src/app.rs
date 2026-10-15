@@ -709,6 +709,9 @@ impl Element for ScriptViewHostFrame {
         window: &mut Window,
         cx: &mut App,
     ) {
+        // Event boundaries, unlike prepaint side effects, are replayed by a
+        // cached native child. Collect its body regions anew for each wheel.
+        self.host.interactions().install_wheel_capture_start(window);
         child.paint(window, cx);
         self.host.inner.borrow_mut().frame_active = false;
         let (overlays, interactions, container_bounds) = {
