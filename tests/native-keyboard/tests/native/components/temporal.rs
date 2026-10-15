@@ -436,3 +436,41 @@ fn timeline_initial_current_reveal_and_external_selection_target_are_independent
     );
     assert!(last_error(&mut visual, &view).is_none());
 }
+
+#[gpui::test]
+fn formal_effect_state_commit_renders_without_clock_tick_or_further_input(cx: &mut TestAppContext) {
+    let app = r#"
+        define_component(#{metadata:#{id:"test/native_effect_copy","export":"NativeEffectCopy",version:"0.2.2",runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
+            schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},value:#{schema:#{type:"integer"},required:true,sensitive:false}},
+                state:#{fields:#{copied:#{schema:#{type:"integer"},"default":#{type:"integer",value:-1}}}},events:#{},slots:#{},parts:[],effects:["copy"]},render:Fn("render_native_copy")});
+        fn state_schema(){#{fields:#{value:#{schema:#{type:"integer"},"default":#{type:"integer",value:1}}}}}
+        fn copy_native_value(ctx,value){ctx.set_state("copied",value);}
+        fn copy_native_cleanup(ctx,value){ctx.get_state("copied");}
+        fn render_native_copy(ctx,props){effect("copy",props.value,Fn("copy_native_value"),Fn("copy_native_cleanup"));
+            text(`${ctx.get_state("copied")}`).test_id("effect-copy")}
+        fn external_native_replacement(ctx,payload){ctx.set_state("value",2);}
+        fn view(ctx){column([
+            render_component("test/native_effect_copy",#{key:"copy",value:ctx.get_state("value")}),
+            row([text("Replace source")]).with_key("replace-source").test_id("replace-source")
+                .accessibility_role("button").accessibility_label("Replace source").on_click(Fn("external_native_replacement")),
+            text(`${ctx.get_state("value")}`).test_id("source-value")
+        ])}
+    "#;
+    let (mut visual, view) = Mount::components(app).mount(cx);
+    settle(&mut visual, Step::Frame, 4);
+    // Frame intentionally does not advance the virtual clock. Effect-owned
+    // presentation state must not wait for the host's 16ms background poll.
+    assert_eq!(node_by_test_id(&mut visual, &view, "effect-copy").name, "1");
+    dispatch(&mut visual, &view, by_test_id("replace-source"), "click").unwrap();
+    settle(&mut visual, Step::Frame, 4);
+    assert_eq!(
+        node_by_test_id(&mut visual, &view, "source-value").name,
+        "2"
+    );
+    assert_eq!(
+        node_by_test_id(&mut visual, &view, "effect-copy").name,
+        "2",
+        "committed effect state must schedule/drain its follow-up render without a clock tick or another input"
+    );
+    assert!(last_error(&mut visual, &view).is_none());
+}
