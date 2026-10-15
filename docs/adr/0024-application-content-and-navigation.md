@@ -106,9 +106,11 @@ lets a Host reserve row space. Host surfaces render under the Host container;
 primitive scopes inherit retained-node teardown. The scrollbar is not a focus
 or keyboard owner.
 
-Raw Host ancestry can be declared nearest-first with
-`with_scroll_parent(source, axis)`; retained/primitive factories inherit the SDK
-chain. Track wheel routing applies only actual per-axis movement and chains
+Native ancestry can be declared with `with_scroll_parent(source, axis)`, which
+adds the new nearest parent before the inherited SDK chain. Add farther parents
+first: document then table yields table → document → Rhai/SDK ancestors.
+Retained/primitive factories inherit the SDK chain automatically. Track wheel
+routing applies only actual per-axis movement and chains
 the residual; fully unhandled input is not swallowed. This scoped policy does
 not replace GPUI's whole-window wheel dispatch. `ScrollbarSourceHandle` is a
 retained lease for sources replaced under a stable element id, so a captured
