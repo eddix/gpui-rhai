@@ -540,7 +540,8 @@ Properties and methods of handles, signals, documents, collections and canvas va
 | `canvas_command.translate(x: float, y: float) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. |
 | `canvas_command.translate(x: ?, y: ?) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. Numbers may be integers or floats. |
 | `element_ref.key -> String` | The component-local key the ref was declared with in `element_ref(key)`. |
-| `element_ref.scope -> String` | The ref's full identity, `<component path>:<key>`, which tells apart refs with the same key in different components. |
+| `element_ref.scope -> String` | A readable `<component path>:<key>` scope label for diagnostics. Displayed paths are not a lossless identity encoding; use semantic_id for accessibility relationships. |
+| `element_ref.semantic_id -> String` | An opaque, deterministic, whitespace-free accessibility ID encoded losslessly from the typed component path and ref key. Use it for accessibility_id and labelled_by/described_by relationships; unlike diagnostic scope, embedded path delimiters cannot alias another path. |
 | `event_response.capture_pointer() -> EventResponse` | Captures the pointer for the handler's node, so its later move and up events go to that node until released. |
 | `event_response.prevent_default() -> EventResponse` | Prevents the event's native default, such as an ancestor taking focus on press or an enclosing window drag area moving the window. |
 | `event_response.release_pointer() -> EventResponse` | Releases this pointer's capture, so its later events hit-test normally again. |
