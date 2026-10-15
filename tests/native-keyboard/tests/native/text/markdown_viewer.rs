@@ -406,8 +406,8 @@ fn a_wide_markdown_table_keeps_its_vertical_track_inside_the_visible_width(
         ));
     }
     for rtl in [false, true] {
-        for content in [true, false] {
-            check_wide_markdown_table_track(cx, &source, rtl, content);
+        for (content, bounded) in [(true, false), (false, false), (true, true)] {
+            check_wide_markdown_table_track(cx, &source, rtl, content, bounded);
         }
     }
 }
@@ -417,18 +417,20 @@ fn check_wide_markdown_table_track(
     source: &str,
     rtl: bool,
     content: bool,
+    bounded: bool,
 ) {
-    // Content height has no document bar. Fill height has both bars and must
-    // reserve one logical track inward so the parent cannot cover the table.
+    // Unbounded content needs no document gutter. Fill and clamped content
+    // reserve a stable logical lane so the parent cannot cover the table bar.
     let locale = if rtl { "ar" } else { "en" };
     let height = if content { "content" } else { "fill" };
     let fixed_height = if content { "" } else { ".height(px(180))" };
+    let cap = if bounded { "max_height:180," } else { "" };
     let main = format!(
         r#"
 import "components/markdown_viewer" as markdown;
 fn init(ctx) {{ ctx.set_locale("{locale}"); }}
 fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
-    source: {source:?}, height: "{height}"}}).with_style(style().width(px(420)){fixed_height}) }}
+    source: {source:?}, {cap} height: "{height}"}}).with_style(style().width(px(420)){fixed_height}) }}
 "#
     );
     let (mut visual, view) = Mount::new(main)
@@ -441,7 +443,7 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
             "ar.rhai",
             include_str!("../../../../../registry/locales/ar.rhai"),
         )
-        .id(&format!("markdown-visible-y-track-{locale}-{height}"))
+        .id(&format!("markdown-visible-y-track-{locale}-{height}-{bounded}"))
         .mount(cx);
     settle(&mut visual, Step::Frame, 5);
     assert_eq!(last_error(&mut visual, &view), None);
@@ -451,7 +453,7 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
         table.size.width < px(500.0),
         "logical 600px table is clipped: {table:?}"
     );
-    let inset = if content {
+    let inset = if content && !bounded {
         px(0.0)
     } else {
         gpui_rhai::SCROLLBAR_TRACK_WIDTH
@@ -461,17 +463,24 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
     } else {
         table.right() - inset - px(6.0)
     };
-    let track = point(x, table.top() + px(if content { 240.0 } else { 140.0 }));
-    visual.simulate_mouse_move(track, None, Modifiers::default());
+    // Native measured lists refine their extent as rows become known. The
+    // thumb can cover the entire visible part of a clipped 320px track, so a
+    // click at 140px is a valid thumb press, not a page/jump request. Drag the
+    // visible thumb instead of assuming an estimated thumb length.
+    let start = point(x, table.top() + px(20.0));
+    let end = point(x, table.top() + px(if content && !bounded { 240.0 } else { 140.0 }));
+    visual.simulate_mouse_move(start, None, Modifiers::default());
     settle(&mut visual, Step::Frame, 1);
-    visual.simulate_mouse_down(track, MouseButton::Left, Modifiers::default());
-    visual.simulate_mouse_up(track, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, Some(MouseButton::Left), Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     settle(&mut visual, Step::Frame, 3);
     let after = visual.debug_bounds("markdown-table:0").unwrap();
     assert_eq!(after, table, "the table viewport itself must not move");
     assert!(
-        visual.debug_bounds("markdown-cell:0:0:0").is_none(),
-        "clicking the visible Y track must scroll past the header, not miss at the offscreen 600px logical edge"
+        visual.debug_bounds("markdown-cell:0:0:0").is_none_or(|header| header.bottom() <= table.top()),
+        "dragging the visible Y thumb must move the header outside the viewport (overscan may retain it): rtl={rtl}, content={content}, table={table:?}, start={start:?}, end={end:?}, header before={header:?}, after={:?}",
+        visual.debug_bounds("markdown-cell:0:0:0")
     );
     let later_cell = [
         "markdown-cell:0:10:0",

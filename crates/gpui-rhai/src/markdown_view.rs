@@ -1,6 +1,6 @@
 //! Retained native Markdown surface over the shared document text machinery.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::{
@@ -93,6 +93,7 @@ struct MarkdownViewerEntity {
     scroll: ListState,
     scroll_source: crate::ScrollbarSourceHandle,
     tables: Rc<RefCell<BTreeMap<usize, TableState>>>,
+    table_viewport_policy: Rc<Cell<(bool, crate::TextDirection)>>,
     width: Option<gpui::Pixels>,
     task: Option<Task<()>>,
     canceled: Arc<AtomicBool>,
@@ -304,6 +305,15 @@ impl Focusable for MarkdownViewerEntity {
 impl Render for MarkdownViewerEntity {
     #[allow(clippy::too_many_lines)] // One document viewport, focus command route and measured-width recorder.
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Reserve a stable logical gutter whenever this document can scroll.
+        // Descendant prepaint runs while GPUI mutably borrows the parent list;
+        // it must not query that ancestor's range or introduce a layout feedback
+        // loop. Sharing policy also updates retained tables after direction or
+        // height-mode changes without replacing their native scroll identities.
+        self.table_viewport_policy.set((
+            !self.config.content || self.config.max_height.is_some(),
+            self.theme.direction(),
+        ));
         let mut root = div()
             .id("markdown-document")
             .relative()
@@ -350,7 +360,7 @@ impl Render for MarkdownViewerEntity {
             mono: self.mono.clone(),
             disabled: self.loading,
             tables: self.tables.clone(),
-            document_scroll: self.scroll.clone(),
+            table_viewport_policy: self.table_viewport_policy.clone(),
             document_source: self.scroll_source.clone(),
         };
         // Infer measures with MaxContent width before prepaint. Constrain its
@@ -453,7 +463,7 @@ struct Paint {
     mono: SharedString,
     disabled: bool,
     tables: Rc<RefCell<BTreeMap<usize, TableState>>>,
-    document_scroll: ListState,
+    table_viewport_policy: Rc<Cell<(bool, crate::TextDirection)>>,
     document_source: crate::ScrollbarSourceHandle,
 }
 
@@ -480,8 +490,7 @@ struct CellState {
 struct TableRowsSource {
     rows: ListState,
     horizontal: ScrollHandle,
-    document: ListState,
-    direction: crate::TextDirection,
+    policy: Rc<Cell<(bool, crate::TextDirection)>>,
 }
 
 impl crate::ScrollbarSource for TableRowsSource {
@@ -490,12 +499,13 @@ impl crate::ScrollbarSource for TableRowsSource {
             .rows
             .viewport_bounds()
             .intersect(&self.horizontal.bounds());
-        if self.document.max_offset_for_scrollbar().y > px(0.0) {
+        let (reserve_document_track, direction) = self.policy.get();
+        if reserve_document_track {
             // A document-level Y bar paints later. Keep the nested bar one
             // logical track inward so the parent cannot cover its hitbox.
             let inset = crate::SCROLLBAR_TRACK_WIDTH.min(viewport.size.width);
             viewport.size.width -= inset;
-            if self.direction == crate::TextDirection::RightToLeft {
+            if direction == crate::TextDirection::RightToLeft {
                 viewport.origin.x += inset;
             }
         }
@@ -926,8 +936,7 @@ impl Paint {
                     rows_source: crate::ScrollbarSourceHandle::new(TableRowsSource {
                         rows: rows.clone(),
                         horizontal: horizontal.clone(),
-                        document: self.document_scroll.clone(),
-                        direction: self.theme.direction(),
+                        policy: self.table_viewport_policy.clone(),
                     }),
                     rows,
                     horizontal_source: crate::ScrollbarSourceHandle::new(horizontal.clone()),
@@ -1326,6 +1335,7 @@ impl PrimitiveHandler for MarkdownViewerPrimitiveHandler {
                     scroll_source: crate::ScrollbarSourceHandle::new(scroll.clone()),
                     scroll,
                     tables: Rc::new(RefCell::new(BTreeMap::new())),
+                    table_viewport_policy: Rc::new(Cell::new((false, theme.direction()))),
                     width: None,
                     task: None,
                     canceled: Arc::new(AtomicBool::new(false)),

@@ -60,6 +60,11 @@ uses a complete semantic parse rather than an unsafe tail-only optimization.
 GPUI measures and virtualizes block heights. Long paragraphs/code/cells are
 split at UTF-8 boundaries into at most 4 KiB text segments; large tables use a
 bounded nested measured list and retain horizontal scrolling.
+Nested table/cell viewports share the native scrollbar's residual wheel policy;
+unsupported axes are not converted. Fill and clamped-content viewers reserve
+a stable logical scrollbar gutter so document and table thumbs cannot overlap.
+This is presentation policy, not a second scroll position or a child layout
+query into its parent's actively borrowed native list.
 Oversized cells have their own bounded fragment viewport: fragments never
 become logical table rows, and normal copy stays in logical row/cell order.
 The default `DocumentLimits::max_markdown_table_columns` is 128; wider input
