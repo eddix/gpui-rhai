@@ -7,10 +7,10 @@ use std::rc::{Rc, Weak};
 use gpui::prelude::FluentBuilder as _;
 
 use gpui::{
-    AnyElement, App, Bounds, Context, InteractiveElement, IntoElement, ListAlignment, ListState,
-    Modifiers, MouseButton, ParentElement, Pixels, Point, Render, ScrollDelta, ScrollHandle,
-    ScrollWheelEvent, StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext,
-    Window, div, list, point, px,
+    AnyElement, App, AppContext as _, Bounds, Context, InteractiveElement, IntoElement,
+    ListAlignment, ListState, Modifiers, MouseButton, ParentElement, Pixels, Point, Render,
+    ScrollDelta, ScrollHandle, ScrollWheelEvent, StatefulInteractiveElement, Styled,
+    TestAppContext, VisualTestContext, Window, div, list, point, px,
 };
 use gpui_rhai::{
     ColorValue, ComponentStateSchema, PrimitiveContext, PrimitiveDescriptor, PrimitiveHandler,
@@ -518,7 +518,10 @@ struct CachedBodyHost {
 impl Render for CachedBodyHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let style = gpui::StyleRefinement {
-            size: gpui::size(Some(px(300.0).into()), Some(px(300.0).into())),
+            size: gpui::SizeRefinement {
+                width: Some(px(300.0).into()),
+                height: Some(px(300.0).into()),
+            },
             ..Default::default()
         };
         self.host.container(
@@ -608,6 +611,103 @@ fn cached_native_body_replays_current_event_regions_after_unrelated_sibling_upda
         );
         settle(&mut visual, Step::Frame, 3);
     }
+}
+
+struct OverlappingBodyHosts {
+    surfaces: [NestedBodyHost; 2],
+    stop_capture: Rc<Cell<bool>>,
+}
+
+impl Render for OverlappingBodyHosts {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let [back, front] = &self.surfaces;
+        let stop = Rc::clone(&self.stop_capture);
+        div()
+            .relative()
+            .w(px(300.0))
+            .h(px(300.0))
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .child(back.host.container(back.content())),
+            )
+            .child(
+                gpui::canvas(
+                    |_, _, _| (),
+                    move |_, (), window, _| {
+                        let stop = Rc::clone(&stop);
+                        window.on_mouse_event(move |_: &ScrollWheelEvent, phase, _, cx| {
+                            if phase == gpui::DispatchPhase::Capture && stop.get() {
+                                cx.stop_propagation();
+                            }
+                        });
+                    },
+                )
+                .absolute()
+                .inset_0(),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .child(front.host.container(front.content())),
+            )
+    }
+}
+
+#[gpui::test]
+fn overlapping_hosts_collect_every_capture_before_frontmost_body_consumes(cx: &mut TestAppContext) {
+    let states = std::array::from_fn::<_, 2, _>(|_| (ScrollHandle::new(), ScrollHandle::new()));
+    let sources = states.clone();
+    let stop_capture = Rc::new(Cell::new(true));
+    let stop = Rc::clone(&stop_capture);
+    let window = cx.add_window(move |_, cx| OverlappingBodyHosts {
+        surfaces: [0, 1].map(|index| {
+            let (outer, inner) = sources[index].clone();
+            NestedBodyHost {
+                host: ScriptViewHost::new(format!("overlapping-{index}"), cx).unwrap(),
+                outer_source: ScrollbarSourceHandle::new(outer.clone()),
+                inner_source: ScrollbarSourceHandle::new(inner.clone()),
+                outer,
+                inner,
+                occluded: Rc::new(Cell::new(false)),
+            }
+        }),
+        stop_capture: stop,
+    });
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    settle(&mut visual, Step::Frame, 3);
+    let event = || ScrollWheelEvent {
+        position: states[1].1.bounds().center(),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-24.0))),
+        ..Default::default()
+    };
+    visual.simulate_event(event());
+    assert!(
+        states
+            .iter()
+            .all(|(outer, inner)| outer.offset().y.is_zero() && inner.offset().y.is_zero()),
+        "capture stopped between Hosts must consume no native movement"
+    );
+    stop_capture.set(false);
+    visual.simulate_event(event());
+    assert_eq!(
+        states[0].1.offset().y,
+        px(0.0),
+        "back Host must not consume before front Host registers"
+    );
+    assert_eq!(
+        states[1].1.offset().y,
+        px(-24.0),
+        "only the later-painted front Host consumes"
+    );
+    assert!(
+        states.iter().all(|(outer, _)| outer.offset().y.is_zero()),
+        "neither native ancestor duplicates consumed movement"
+    );
 }
 
 struct NativeHost {
