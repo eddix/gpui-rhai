@@ -9,6 +9,7 @@ mod region_scroll;
 mod region_toolbar;
 mod scroll_area;
 mod split_pane_absolute_content;
+mod split_pane_grip_geometry;
 mod split_pane_hover_style;
 mod stretch;
 mod toolbar_tabs_overflow;

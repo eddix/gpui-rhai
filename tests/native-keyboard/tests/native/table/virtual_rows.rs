@@ -1,10 +1,12 @@
-//! Table rows in the native virtual list: grouped headers stick, and the 1000-row workload
-//! tracks a resized window viewport.
+//! Table rows in the native virtual list: fill-height respects a minimum inside a scroll
+//! container, grouped headers stick, and the 1000-row workload tracks a resized window.
 
 use std::time::Duration;
 
 use super::{mount_example, mount_refreshed, table, table_1000_example};
-use crate::support::{dispatch_script_button, wait_for_view_text};
+use crate::support::{
+    ReplaceOnce, Step, dispatch_script_button, settle, snapshot, wait_for_view_text,
+};
 use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px, size};
 use gpui_rhai::{ExecutionOperation, UiNode, UiValue};
 
@@ -39,6 +41,107 @@ fn virtual_realized_window(node: &UiNode) -> Option<(std::ops::Range<usize>, usi
             Some((min..max.saturating_add(1), spec.realized.len()))
         }
         _ => None,
+    }
+}
+
+#[gpui::test]
+fn fill_height_table_honors_min_height_inside_scroll_fallback(cx: &mut TestAppContext) {
+    // Below the minimum the parent scrolls; above it the Table fills the available height.
+    // Both must measure a nonzero body viewport and actually present rows below the header.
+    for parent_height in [180, 360] {
+        let main = r#"
+            import "components/table" as table;
+            fn view(ctx) {
+                let rows = [];
+                for index in 0..15 {
+                    rows.push(#{ id: `row-${index}`, value: `Value ${index}` });
+                }
+                column([
+                    table::Table(#{
+                        key: "constrained", label: "Constrained table", row_key: "id",
+                        rows: rows, fill_height: true,
+                        columns: [
+                            #{ key: "id", title: "ID",
+                                width: #{ kind: "fixed", value: 120 } },
+                            #{ key: "value", title: "Value",
+                                width: #{ kind: "flex", value: 1 } },
+                        ],
+                    }).with_style(style().min_height(px(240)))
+                ]).accessibility_role("group").accessibility_label("Scroll fallback")
+                    .with_style(style().width(px(480)).height(px(PARENT_HEIGHT))
+                        .min_height(px(0)).overflow_y_scroll())
+            }
+        "#
+        .replace_once("PARENT_HEIGHT", &parent_height.to_string());
+        let id = format!("constrained-table-{parent_height}");
+        let (window, view) = mount_refreshed(cx, table(main).id(&id));
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        advance(&mut visual, 4);
+        wait_for_view_text(
+            &mut visual,
+            &view,
+            "Value 0",
+            "a min-height fill Table inside a scroll fallback must realize its rows",
+        );
+        settle(&mut visual, Step::Frame, 2);
+
+        let tree = snapshot(&mut visual, &view);
+        // Compare layout boxes, not visual boxes with border/paint offsets.
+        let layout = |role, name| {
+            tree.find_by_role_and_name(role, name)
+                .next()
+                .expect("the Table and its first row must be accessible")
+                .geometry
+                .expect("the node must have committed layout geometry")
+                .layout
+        };
+        let parent = layout("group", "Scroll fallback");
+        let table = layout("table", "Constrained table");
+        // Header cells are centered inside a bordered row and can have a half-pixel
+        // offset; the header row itself is what consumes the Table's height.
+        let header = tree
+            .nodes()
+            .find(|node| node.role == "row" && node.row_index == Some(1))
+            .expect("the Table must present its header row")
+            .geometry
+            .expect("the header row must have committed layout geometry")
+            .layout;
+        let row = layout("row", "Constrained table row 1");
+        let viewport = visual
+            .debug_bounds("virtual-list:constrained-body")
+            .expect("the fill-height Table body must have a native viewport");
+        assert!(
+            (parent.height - f64::from(parent_height)).abs() < 0.5,
+            "the scroll parent must keep its declared height: {parent:?}"
+        );
+        assert!(
+            (table.height - f64::from(parent_height.max(240))).abs() < 0.5,
+            "Table must honor its minimum or fill the taller parent: {table:?}"
+        );
+        assert!(
+            viewport.size.height > px(0.0)
+                && (f64::from(viewport.origin.y) - (header.y + header.height)).abs() < 0.5
+                && (f64::from(viewport.origin.y + viewport.size.height) - (table.y + table.height))
+                    .abs()
+                    < 0.5,
+            "the body must fill the Table below its header: {viewport:?}, {header:?}, {table:?}"
+        );
+        assert!(
+            row.height > 0.0
+                && row.y >= f64::from(viewport.origin.y) - 0.5
+                && row.y + row.height <= f64::from(viewport.origin.y + viewport.size.height) + 0.5,
+            "the first row must be presented inside the body: {row:?}, {viewport:?}"
+        );
+        let performance = visual
+            .update(|_, cx| view.take_performance_snapshot(cx))
+            .unwrap();
+        let metrics = performance.virtual_collections.first().unwrap();
+        assert_eq!(metrics.item_count, 15);
+        assert!(metrics.realized_count > 0);
+        assert!(
+            (metrics.viewport_height - f64::from(viewport.size.height)).abs() < 0.5,
+            "virtualization must use the laid-out body, not the parent: {metrics:?}"
+        );
     }
 }
 
