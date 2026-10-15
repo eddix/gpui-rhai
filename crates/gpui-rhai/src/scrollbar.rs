@@ -282,15 +282,20 @@ impl ScrollbarContext {
         self
     }
 
-    /// Add an explicit Host-native ancestor, nearest first. SDK primitives and
-    /// retained nodes receive their measured ancestor chain automatically.
+    /// Add the source's nearest native parent, ahead of inherited SDK ancestors.
+    /// Later calls add a nearer parent: `.with_scroll_parent(document, axis)`
+    /// followed by `.with_scroll_parent(table, axis)` routes residual input to
+    /// table, document, then the automatically inherited Rhai/SDK chain.
     #[must_use]
     pub fn with_scroll_parent(mut self, source: impl ScrollbarSource, axis: Option<Axis>) -> Self {
-        self.wheel_parents.push(ScrollWheelSource::new(
-            source,
-            (axis != Some(Axis::Vertical), axis != Some(Axis::Horizontal)),
-            false,
-        ));
+        self.wheel_parents.insert(
+            0,
+            ScrollWheelSource::new(
+                source,
+                (axis != Some(Axis::Vertical), axis != Some(Axis::Horizontal)),
+                false,
+            ),
+        );
         self
     }
 
@@ -971,6 +976,8 @@ fn axis_interaction_owner(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
 
     #[test]
@@ -989,5 +996,70 @@ mod tests {
         assert_eq!(ltr.origin.x, viewport.right() - TRACK_WIDTH);
         assert_eq!(rtl.origin.x, viewport.origin.x);
         assert_eq!(ltr.size, rtl.size);
+    }
+
+    #[derive(Clone)]
+    struct OrderedParent {
+        name: &'static str,
+        offset: Rc<Cell<Point<Pixels>>>,
+        max: Pixels,
+        writes: Rc<RefCell<Vec<&'static str>>>,
+    }
+
+    impl ScrollbarSource for OrderedParent {
+        fn viewport(&self) -> Bounds<Pixels> {
+            Bounds::new(point(px(0.0), px(0.0)), size(px(100.0), px(100.0)))
+        }
+        fn offset(&self) -> Point<Pixels> {
+            self.offset.get()
+        }
+        fn max_offset(&self) -> Point<Pixels> {
+            point(px(0.0), self.max)
+        }
+        fn set_offset(&self, offset: Point<Pixels>) {
+            self.offset.set(offset);
+            self.writes.borrow_mut().push(self.name);
+        }
+    }
+
+    #[test]
+    fn explicit_native_parents_precede_inherited_ancestors_nearest_last_added() {
+        let writes = Rc::new(RefCell::new(Vec::new()));
+        let parent = |name, max| OrderedParent {
+            name,
+            offset: Rc::new(Cell::new(point(px(0.0), px(0.0)))),
+            max: px(max),
+            writes: Rc::clone(&writes),
+        };
+        let table = parent("table", 20.0);
+        let document = parent("document", 30.0);
+        let inherited = parent("rhai", 100.0);
+        let theme = crate::PrimitiveTheme::from_colors(
+            &crate::LiteralColorResolver,
+            TextDirection::LeftToRight,
+        );
+        let bars = ScrollbarContext::new(
+            crate::interaction::InteractionOwner::new("test", "parent-order"),
+            crate::interaction::WindowInteractionCoordinator::default(),
+            &theme,
+        )
+        .with_wheel_parents(vec![ScrollWheelSource::new(
+            inherited.clone(),
+            (false, true),
+            false,
+        )])
+        .with_scroll_parent(document.clone(), Some(Axis::Vertical))
+        .with_scroll_parent(table.clone(), Some(Axis::Vertical));
+        let residual = bars
+            .wheel_parents
+            .iter()
+            .fold(point(px(0.0), px(-80.0)), |remaining, source| {
+                source.apply(point(px(10.0), px(10.0)), remaining)
+            });
+        assert_eq!(*writes.borrow(), ["table", "document", "rhai"]);
+        assert_eq!(table.offset().y, px(-20.0));
+        assert_eq!(document.offset().y, px(-30.0));
+        assert_eq!(inherited.offset().y, px(-30.0));
+        assert_eq!(residual, point(px(0.0), px(0.0)));
     }
 }

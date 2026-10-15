@@ -176,10 +176,13 @@ Wheel input over its track drives that viewport, not an enclosing scroller.
 
 Track wheel routing consumes the actual clamped movement per axis, then sends
 only residual delta through the SDK ancestor chain. Unsupported axes and fully
-unconsumed boundary input bubble normally. For a raw Host-native hierarchy,
-append measured parents nearest-first with
+unconsumed boundary input bubble normally. For a native hierarchy, add its
+nearest measured parent with
 `with_scroll_parent(parent_source, Some(gpui::Axis::Vertical))` (`None` permits
-both axes). `with_scroll_axis(...)` restricts the viewport's own wheel axes
+both axes). Each call prepends the new nearest parent ahead of inherited SDK
+ancestors. Add farther parents first: calling with document then table routes
+residual input through table → document → inherited Rhai/SDK ancestors.
+`with_scroll_axis(...)` restricts the viewport's own wheel axes
 independently of bar visibility. This is scoped track routing, not a replacement
 for GPUI's whole-window wheel infrastructure.
 
