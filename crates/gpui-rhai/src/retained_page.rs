@@ -231,7 +231,7 @@ fn view(ctx) { column([
         for owner in [&eager, &nested] {
             assert!(!runtime.borrow_mut().page_visibility.read(owner, false));
         }
-        lifecycle
+        let _ = lifecycle
             .invoke_callback_transactional(&engine, &callback, UiValue::Null)
             .unwrap();
         lifecycle.render_dirty(&mut engine).unwrap();
