@@ -278,6 +278,32 @@ fn external_range_and_zone_replacement_rebases_the_open_draft(cx: &mut TestAppCo
     );
     assert_eq!(node_by_test_id(&mut visual, &view, "changes").name, "0");
     let apply = bounds(&mut visual, &view, "button", "Apply");
+    let viewport = visual.update(|window, _| {
+        (
+            f64::from(window.viewport_size().width),
+            f64::from(window.viewport_size().height),
+        )
+    });
+    let before_apply = snapshot(&mut visual, &view);
+    let apply_node = before_apply
+        .find_by_role_and_name("button", "Apply")
+        .next()
+        .unwrap();
+    let statuses = before_apply
+        .nodes()
+        .filter(|node| node.role == "status")
+        .map(|node| node.name.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        !apply_node.disabled,
+        "rebased Apply is disabled: bounds={apply:?}, viewport={viewport:?}, statuses={statuses:?}"
+    );
+    let center_x = apply.x + apply.width / 2.0;
+    let center_y = apply.y + apply.height / 2.0;
+    assert!(
+        center_x >= 0.0 && center_x < viewport.0 && center_y >= 0.0 && center_y < viewport.1,
+        "Apply pointer target must be inside viewport: bounds={apply:?}, viewport={viewport:?}"
+    );
     click_center(&mut visual, apply);
     settle(&mut visual, Step::Frame, 3);
     assert_eq!(node_by_test_id(&mut visual, &view, "changes").name, "1");

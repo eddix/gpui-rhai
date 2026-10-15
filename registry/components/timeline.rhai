@@ -101,28 +101,33 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,foc
     if item.status=="running"{lamp=lamp.motion(motion_transition("opacity",0.45,1.0,
         #{duration_ms:ctx.motion_duration("ambient"),easing:"ease_in_out",iterations:"infinite",autoreverse:true,intent:"essential"}));}
     // 6px lamp, 1px rail and 2px cursor are structural signatures, not sizing tokens.
-    let rail_top=row([]).with_style(style().width(px(1)).height(theme_spacing("sm")).background(theme_color("border")));
+    let rail_top=row([]).with_style(style().width(px(1)).height(theme_length("metrics.control")*0.5).background(theme_color("border")));
     let rail_bottom=row([]).with_style(style().width(px(1)).flex_grow().background(theme_color("border")));
-    let rail=column([rail_top,lamp,rail_bottom]).with_style(ctx.component_style("rail",style().width(theme_length("metrics.control"))
-        .self_stretch().items_center()));
+    let rail=column([rail_top,lamp,rail_bottom]).with_key("rail").with_style(ctx.component_style("rail",style().width(theme_length("metrics.control"))
+        .flex_shrink(false).self_stretch().items_center()));
     let title=text(item.title).with_style(ctx.component_style("title",style().typography("body")
         .text_color(if current{theme_color("text.accent")}else{theme_color("text_primary")})));
-    let title_nodes=[title];
-    if item.has_children{title_nodes.insert(0,row([text(if item.expanded{"−"}else{"+"})]).with_key("disclosure")
+    let disclosure=row([]).with_style(style().width(theme_length("metrics.control")).flex_shrink(false));
+    if item.has_children{disclosure=row([text(if item.expanded{"−"}else{"+"})]).with_key("disclosure")
         .with_style(ctx.component_style("disclosure",style().width(theme_length("metrics.control")).min_height(theme_length("metrics.control"))
-            .items_center().justify_center().border(px(2)).border_color(rgba(0x00000000)).focus(style().border_color(theme_color("focus_ring")))))
+            .flex_shrink(false).items_center().justify_center().border(px(2)).border_color(rgba(0x00000000)).focus(style().border_color(theme_color("focus_ring")))))
         .accessibility_role("button").accessibility_label(`${ctx.t(if item.expanded{"timeline.collapse"}else{"timeline.expand"})} ${item.title}`)
-        .on_click_value(Fn("timeline_toggle").curry(expanded),item.key).tab_stop(mode=="none"));}
-    let body=[row(title_nodes).with_style(style().items_center().gap(theme_spacing("xs")))];
+        .on_click_value(Fn("timeline_toggle").curry(expanded),item.key).tab_stop(mode=="none");}
+    let body=[row([title]).with_key("title-line").with_style(style().min_height(theme_length("metrics.control")).items_center())];
     if field(item,"description","")!=""{body.push(text(item.description).with_style(ctx.component_style("description",style()
         .typography("caption").text_color(theme_color("text_muted")))));}
     if item.key in details{body.push(details[item.key].with_style(ctx.component_style("detail",style())));}
-    let time=text(timeline_time(ctx,item,display,zone,now)).with_style(ctx.component_style("time",style().typography("body").font_feature("tnum",1)
-        .width(theme_length("metrics.label_column")).flex_shrink(false)
-        .padding_top(theme_spacing("xs")).text_color(theme_color("text_muted"))));
-    let indent=row([]).with_style(style().width(theme_spacing("lg")*item.depth));
-    content.push(row([indent,rail,time,column(body).with_style(style().flex_grow().min_width(px(0)).gap(theme_spacing("xs")).padding_y(theme_spacing("xs"))),
-        text(field(item,"meta","")).with_style(ctx.component_style("meta",style().typography("body").font_feature("tnum",1).padding_top(theme_spacing("xs")).text_color(theme_color("text_muted"))))])
+    let time=text(timeline_time(ctx,item,display,zone,now)).with_style(style().typography("body").font_feature("tnum",1).text_color(theme_color("text_muted")));
+    let time_line=row([time]).with_style(style().min_height(theme_length("metrics.control")).items_center());
+    let time_column=column([time_line]).with_key("time-column").with_style(ctx.component_style("time",style()
+        .width(theme_length("metrics.label_column")).flex_shrink(false).padding_top(theme_spacing("xs"))));
+    let body_text=column(body).with_key("content-column").with_style(style().flex_grow().flex_basis(px(0)).min_width(px(0)).gap(theme_spacing("xs")));
+    let body_column=row([disclosure,body_text]).with_style(style().flex_grow().flex_basis(px(0)).min_width(px(0)).gap(theme_spacing("xs")).padding_y(theme_spacing("xs")).items_start());
+    let meta=text(field(item,"meta","")).with_style(style().typography("body").font_feature("tnum",1).text_color(theme_color("text_muted")));
+    let meta_line=row([meta]).with_style(style().min_height(theme_length("metrics.control")).items_center());
+    let meta_column=column([meta_line]).with_key("meta-column").with_style(ctx.component_style("meta",style().flex_shrink(false).padding_top(theme_spacing("xs"))));
+    let indent=row([]).with_style(style().width(theme_spacing("lg")*item.depth).flex_shrink(false));
+    content.push(row([indent,rail,time_column,body_column,meta_column])
         .with_style(style().gap(theme_spacing("sm")).min_height(theme_length("metrics.row")).items_start()));
     if chosen||current{content.push(row([]).with_style(ctx.component_style("indicator_bar",style().absolute().inset_start(px(0))
         .top(px(0)).bottom(px(0)).width(px(2)).background(theme_color("accent")))));}
