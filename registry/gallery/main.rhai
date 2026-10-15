@@ -15,6 +15,7 @@ import "gallery/pages/foundations" as foundations;
 import "gallery/pages/markers" as markers;
 import "gallery/pages/fields" as fields;
 import "gallery/pages/lists" as lists;
+import "gallery/pages/browsers" as browsers;
 import "gallery/pages/overlays" as overlays;
 import "gallery/pages/containers" as containers;
 import "gallery/pages/display" as display;
@@ -164,17 +165,18 @@ fn nav_expand(ctx, keys) { set_value("gallery.nav_expanded", ctx, keys); }
 
 fn sections() {
     [
-        #{ title: "Foundations", pages: foundations::pages() },
-        #{ title: "Markers", pages: markers::pages() },
-        #{ title: "Fields", pages: fields::pages() },
-        #{ title: "Lists", pages: lists::pages() },
-        #{ title: "Overlays", pages: overlays::pages() },
-        #{ title: "Containers", pages: containers::pages() },
-        #{ title: "Display", pages: display::pages() },
-        #{ title: "Interaction", pages: interaction::pages() },
-        #{ title: "Layouts and patterns", pages: composition::pages() },
-        #{ title: "Scenes", pages: scenes::pages() },
-        #{ title: "Effects", pages: effects::pages() },
+        #{ title: "Foundations", source_module: "gallery/pages/foundations", pages: foundations::pages() },
+        #{ title: "Markers", source_module: "gallery/pages/markers", pages: markers::pages() },
+        #{ title: "Fields", source_module: "gallery/pages/fields", pages: fields::pages() },
+        #{ title: "Lists", source_module: "gallery/pages/lists", pages: lists::pages() },
+        #{ title: "Browsers", source_module: "gallery/pages/browsers", pages: browsers::pages() },
+        #{ title: "Overlays", source_module: "gallery/pages/overlays", pages: overlays::pages() },
+        #{ title: "Containers", source_module: "gallery/pages/containers", pages: containers::pages() },
+        #{ title: "Display", source_module: "gallery/pages/display", pages: display::pages() },
+        #{ title: "Interaction", source_module: "gallery/pages/interaction", pages: interaction::pages() },
+        #{ title: "Layouts and patterns", source_module: "gallery/pages/composition", pages: composition::pages() },
+        #{ title: "Scenes", source_module: "gallery/pages/scenes", pages: scenes::pages() },
+        #{ title: "Effects", source_module: "gallery/pages/effects", pages: effects::pages() },
     ]
 }
 
@@ -193,8 +195,7 @@ fn page_module(id) {
     for section in sections() {
         for page in section.pages {
             if page.id == id {
-                return if section.title == "Layouts and patterns" { "gallery/pages/composition" }
-                    else { `gallery/pages/${section.title.to_lower()}` };
+                return section.source_module;
             }
         }
     }
@@ -206,6 +207,7 @@ fn page_view(ctx, h, v, id) {
     if node == () { node = markers::view(ctx, h, v, id); }
     if node == () { node = fields::view(ctx, h, v, id); }
     if node == () { node = lists::view(ctx, h, v, id); }
+    if node == () { node = browsers::view(ctx, h, v, id); }
     if node == () { node = overlays::view(ctx, h, v, id); }
     if node == () { node = containers::view(ctx, h, v, id); }
     if node == () { node = display::view(ctx, h, v, id); }

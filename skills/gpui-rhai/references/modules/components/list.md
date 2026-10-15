@@ -18,18 +18,21 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `active` | bool | `true` | Draws the selected cursor as active; false keeps ancestor selection visible without its focus frame. |
 | `badge_width` | number > 0 or length or `()` | — | Badge slot width reserved on every row so the titles align: logical pixels, or a Length resolved in the list's density; `()` fits each badge. |
 | `dividers` | bool | `false` | Draws a 1px border under every row. |
 | `empty` | node or `()` | — | Node shown instead of `empty_text` when `items` is empty. |
 | `empty_text` | string | `"No items"` | Muted text shown when `items` is empty, unless `empty` is given. |
 | `fill_height` | bool | `false` | Grows into the free height of a flex parent instead of a fixed `height`; give exactly one of the two. |
 | `height` | number > 0 or length or `()` | — | Viewport height: logical pixels, or a Length such as `theme_length("metrics.row") * 6`; give exactly one of `height` or `fill_height`. |
-| `items` | array of object (at most 10000) | required | Rows in display order. |
+| `items` | native collection or array of object (at most 10000) | required | Rows in display order; a NativeCollection is normalized and navigated in Rust without enumerating it in Rhai. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
+| `keyboard_navigation` | bool | `true` | Owns the single tab stop and navigation keys. Set false only when a parent such as ColumnBrowser owns keyboard navigation and focus; selected rows still remain revealed. |
 | `label` | string | required | Accessible name of the list. |
 | `loading` | bool | `false` | Shows `loading_content` in the list's place instead of the rows. |
 | `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted "Loading…" line. |
 | `on_context_request` | callback or `()` | — | Called with `#{ key, anchor, source }` when a row is right-pressed or Shift+F10 or the menu key is pressed; without a selection mode it makes the list a tab stop for those keys. |
+| `on_row_activate` | callback or `()` | — | Called with #{ key, has_children } on a double click; useful to distinguish browsing selection from leaf activation. |
 | `on_row_click` | callback or `()` | — | Called with the row key when an enabled row is clicked, or Enter is pressed on the selected row. |
 | `on_selection_change` | callback or `()` | — | Called with the next selected keys when a row is clicked, Up, Down, Home or End is pressed, or a context request selects a row. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
@@ -44,6 +47,7 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 |---|---|---|---|
 | `badge` | object or `()` | — | Leading status Badge, before the title; see `badge_width` to align titles. |
 | `disabled` | bool | `false` | Mutes the row; it ignores clicks and the keyboard skips it. |
+| `has_children` | bool | `false` | Shows a logical child disclosure indicator for hierarchical browsing. |
 | `key` | string | required | Unique row key, used in `selected_keys` and every event. |
 | `meta` | string or `()` | — | Trailing muted text such as a time or a count, in tabular figures. |
 | `secondary` | string or `()` | — | Muted text beside the title or below it, as `secondary_layout` sets. |
@@ -62,6 +66,7 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
 | `context_request` | `on_context_request` | object | Emitted on a right press on a row, after selecting it unless the selection holds it, or on Shift+F10 or the menu key: for the selected row with a selection mode, for the list without one. |
+| `row_activate` | `on_row_activate` | object | Emitted when an enabled row is double-clicked. |
 | `row_click` | `on_row_click` | string | Emitted when an enabled row is clicked or Enter is pressed on the selected row; the payload is the row key. |
 | `selection_change` | `on_selection_change` | array of string (at most 10000) | Emitted when a click, Up, Down, Home, End or a context request selects rows; the payload is the next selection. |
 

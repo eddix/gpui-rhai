@@ -12,6 +12,10 @@
 */
 // Controlled Miller columns. Data loading, cancellation, request revisions and
 // dropping descendants belong to the caller, not this presentational component.
+//
+// Example: ColumnBrowser(#{ key: "files", label: "Files", columns: [
+//     #{ key: "root", title: "Root", items: [#{ key: "config", title: "Configuration", has_children: true }] }
+// ] })
 import "components/list" as list;
 import "components/button" as button;
 

@@ -32,6 +32,7 @@ pub const BUNDLED_SKILL_FILES: &[(&str, &str)] = &[
     ("gpui-rhai/references/modules/components/checkbox.md", include_str!("../skills/gpui-rhai/references/modules/components/checkbox.md")),
     ("gpui-rhai/references/modules/components/code_viewer.md", include_str!("../skills/gpui-rhai/references/modules/components/code_viewer.md")),
     ("gpui-rhai/references/modules/components/collapsible.md", include_str!("../skills/gpui-rhai/references/modules/components/collapsible.md")),
+    ("gpui-rhai/references/modules/components/column_browser.md", include_str!("../skills/gpui-rhai/references/modules/components/column_browser.md")),
     ("gpui-rhai/references/modules/components/combobox.md", include_str!("../skills/gpui-rhai/references/modules/components/combobox.md")),
     ("gpui-rhai/references/modules/components/command.md", include_str!("../skills/gpui-rhai/references/modules/components/command.md")),
     ("gpui-rhai/references/modules/components/command_dialog.md", include_str!("../skills/gpui-rhai/references/modules/components/command_dialog.md")),

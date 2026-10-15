@@ -9,7 +9,7 @@
 //! live audit count shown in the status bar.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use gpui_rhai::gpui::prelude::*;
@@ -18,9 +18,9 @@ use gpui_rhai::gpui::{
 };
 use gpui_rhai::{
     ActionId, AssetData, AutomationCommand, EmbeddedScriptSource, EmbeddedScriptView,
-    KeyBindingSpec, ModuleId, MotionPreference, NativeTextDocument, PreparedScriptView,
-    ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost, UiRuntimeState,
-    UiValue, install,
+    KeyBindingSpec, ModuleId, MotionPreference, NativeCollection, NativeTextDocument,
+    PreparedScriptView, ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
+    UiRuntimeState, UiValue, install,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -82,22 +82,95 @@ pub fn page_ids() -> Vec<String> {
         if !id.starts_with("gallery/pages/") {
             continue;
         }
-        let Some(start) = source.find("fn pages()") else {
-            continue;
-        };
-        let body = &source[start..];
-        let end = body.find("\n}").unwrap_or(body.len());
-        let mut rest = &body[..end];
-        while let Some(index) = rest.find("id: \"") {
-            let after = &rest[index + 5..];
-            let Some(close) = after.find('"') else {
-                break;
-            };
-            ids.push(after[..close].to_owned());
-            rest = &after[close..];
-        }
+        ids.extend(
+            literal_page_ids(source)
+                .unwrap_or_else(|error| panic!("invalid bundled Gallery catalog {id}: {error}")),
+        );
     }
     ids
+}
+
+// Evaluate just the literal `pages()` body in a bounded raw engine: imports,
+// definitions and views never execute. Formatting is not part of the catalog ABI.
+fn literal_page_ids(source: &str) -> Result<Vec<String>, String> {
+    let Some(start) = source.find("fn pages") else {
+        return Ok(Vec::new());
+    };
+    let open = source[start..]
+        .find('{')
+        .map(|offset| start + offset)
+        .ok_or_else(|| "pages has no body".to_owned())?;
+    let bytes = source.as_bytes();
+    let (mut depth, mut quoted, mut escaped, mut line_comment, mut block_comment) =
+        (0, false, false, false, false);
+    let mut index = open;
+    let mut close = None;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        let next = bytes.get(index + 1).copied();
+        if line_comment {
+            if byte == b'\n' {
+                line_comment = false;
+            }
+        } else if block_comment {
+            if byte == b'*' && next == Some(b'/') {
+                block_comment = false;
+                index += 1;
+            }
+        } else if quoted {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                quoted = false;
+            }
+        } else {
+            match (byte, next) {
+                (b'/', Some(b'/')) => {
+                    line_comment = true;
+                    index += 1;
+                }
+                (b'/', Some(b'*')) => {
+                    block_comment = true;
+                    index += 1;
+                }
+                (b'"', _) => quoted = true,
+                (b'{', _) => depth += 1,
+                (b'}', _) => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(index);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+    let close = close.ok_or_else(|| "pages body is unterminated".to_owned())?;
+    let mut engine = gpui_rhai::rhai::Engine::new_raw();
+    engine.set_max_operations(10_000);
+    engine.set_max_array_size(256);
+    engine.set_max_map_size(2_048);
+    engine.set_max_string_size(65_536);
+    let pages = engine
+        .eval::<gpui_rhai::rhai::Array>(&source[open..=close])
+        .map_err(|error| error.to_string())?;
+    pages
+        .into_iter()
+        .map(|page| {
+            let map = page
+                .try_cast::<gpui_rhai::rhai::Map>()
+                .ok_or_else(|| "a page must be a map".to_owned())?;
+            map.get("id")
+                .cloned()
+                .and_then(gpui_rhai::rhai::Dynamic::try_cast::<gpui_rhai::rhai::ImmutableString>)
+                .map(|id| id.to_string())
+                .ok_or_else(|| "a page needs a string id".to_owned())
+        })
+        .collect()
 }
 
 /// The document name under which a Gallery module's source is shown.
@@ -107,11 +180,18 @@ pub fn source_document_name(module: &str) -> String {
 }
 
 #[derive(Clone)]
-struct GallerySources {
+struct GalleryFixtures {
     documents: Vec<(String, NativeTextDocument)>,
 }
 
-impl ScriptViewExtension for GallerySources {
+impl ScriptViewExtension for GalleryFixtures {
+    fn configure_rhai_engine(&self, engine: &mut gpui_rhai::rhai::Engine) -> Result<(), String> {
+        gpui_rhai::rhai::FuncRegistration::new("gallery_reply_document")
+            .in_global_namespace()
+            .register_into_engine(engine, reply_document);
+        Ok(())
+    }
+
     fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
         for (name, document) in &self.documents {
             runtime
@@ -119,8 +199,42 @@ impl ScriptViewExtension for GallerySources {
                 .register(name, document.clone())
                 .map_err(|error| error.to_string())?;
         }
+        runtime
+            .native_collections
+            .register("gallery_formatted_rows", formatted_rows()?)
+            .map_err(|error| error.to_string())?;
         Ok(())
     }
+}
+
+const REPLY_STEPS: i64 = 24;
+const REPLY_MARKDOWN: &str = "## Investigation\n\nThe response is a sequence of **Rust-owned document snapshots**. Rhai stores only the message id and progress counter.\n\n1. Inspect the failed health check.\n2. Compare the active configuration.\n3. Retry only the affected host.\n\n```rhai\nfn healthy(ctx) {\n    text(\"Ready · 中文 · العربية\")\n}\n```\n\n| Host | Result |\n|:--|--:|\n| edge-01 | Ready |\n| edge-03 | Retry |\n\n[Inspect the runbook](https://example.com/runbook)\n\n- [x] No network request was made\n- [x] Stop leaves the partial reply visible\n- [x] You can draft the next message while busy\n";
+
+fn reply_document(
+    message: gpui_rhai::rhai::INT,
+    progress: gpui_rhai::rhai::INT,
+) -> Result<NativeTextDocument, Box<gpui_rhai::rhai::EvalAltResult>> {
+    let error = |message: String| {
+        Box::new(gpui_rhai::rhai::EvalAltResult::ErrorRuntime(
+            message.into(),
+            gpui_rhai::rhai::Position::NONE,
+        ))
+    };
+    if message < 0 || !(0..=REPLY_STEPS).contains(&progress) {
+        return Err(error(
+            "invalid Gallery reply identity or progress".to_owned(),
+        ));
+    }
+    let progress = usize::try_from(progress).map_err(|err| error(err.to_string()))?;
+    let count = REPLY_MARKDOWN.chars().count() * progress
+        / usize::try_from(REPLY_STEPS).expect("24 fits usize");
+    let text = REPLY_MARKDOWN.chars().take(count).collect::<String>();
+    NativeTextDocument::new(
+        format!("gallery.reply.{message}"),
+        u64::try_from(progress).expect("progress below 25 fits u64") + 1,
+        Arc::<str>::from(text),
+    )
+    .map_err(|err| error(err.to_string()))
 }
 
 fn validate(launch: &AcceptanceLaunch) -> Result<(), String> {
@@ -201,7 +315,60 @@ fn modules(
     Ok(modules)
 }
 
-fn source_documents() -> Result<GallerySources, String> {
+// Immutable source data is shared across Gallery mounts; query/selection state remains
+// view-local. Thirty thousand display/rank pairs never become a Rhai Array.
+fn formatted_rows() -> Result<NativeCollection, String> {
+    static ROWS: OnceLock<Result<NativeCollection, String>> = OnceLock::new();
+    ROWS.get_or_init(|| {
+        let rows = (0..30_000).map(|index| {
+            let rank = index % 3;
+            let seconds = index % 7_200;
+            let missing = index % 17 == 0;
+            BTreeMap::from([
+                (
+                    "id".to_owned(),
+                    UiValue::String(format!("instance-{index:05}")),
+                ),
+                (
+                    "name".to_owned(),
+                    UiValue::String(format!("api-{index:05}")),
+                ),
+                (
+                    "status".to_owned(),
+                    UiValue::String(["critical", "warning", "healthy"][rank].to_owned()),
+                ),
+                (
+                    "status_rank".to_owned(),
+                    UiValue::Integer(i64::try_from(rank).expect("three ranks fit i64")),
+                ),
+                (
+                    "duration".to_owned(),
+                    UiValue::String(if missing {
+                        "—".to_owned()
+                    } else if seconds < 60 {
+                        "<1m".to_owned()
+                    } else {
+                        format!("{}h {:02}m", seconds / 3_600, seconds / 60 % 60)
+                    }),
+                ),
+                (
+                    "duration_seconds".to_owned(),
+                    if missing {
+                        UiValue::Null
+                    } else {
+                        UiValue::Integer(
+                            i64::try_from(seconds).expect("seconds below 7200 fit i64"),
+                        )
+                    },
+                ),
+            ])
+        });
+        NativeCollection::new("id", rows).map_err(|error| error.to_string())
+    })
+    .clone()
+}
+
+fn source_documents() -> Result<GalleryFixtures, String> {
     let mut documents = Vec::new();
     for (id, source) in GALLERY_SOURCES_BY_ID {
         let name = source_document_name(id);
@@ -209,7 +376,16 @@ fn source_documents() -> Result<GallerySources, String> {
             .map_err(|error| error.to_string())?;
         documents.push((name, document));
     }
-    Ok(GallerySources { documents })
+    let markdown = "# Native Markdown\n\nThis document stays in Rust. **Select across blocks**, copy code, or inspect a link without opening a browser.\n\n- Native document revisions\n- Theme-aware typography\n- Keyboard and selection\n\n```rhai\nfn view(ctx) { text(\"Hello from Rhai\") }\n```\n\n| Region | State |\n|:--|--:|\n| Singapore | Ready |\n| Frankfurt | Waiting |\n\n[Inspect a link](https://example.com/docs)\n\n- [x] Native source\n- [ ] No automatic network requests\n";
+    for (name, text) in [
+        ("gallery.markdown.reference", markdown.to_owned()),
+        ("gallery.markdown.large", format!("# Large native document\n\n{}", "A streamed reply can be longer than the Rhai string budget. 中文、العربية and code remain native.\n\n".repeat(14_000))),
+        ("gallery.markdown.stream", "# Streaming reply\n\nReady to stream.\n".to_owned()),
+    ] {
+        documents.push((name.to_owned(), NativeTextDocument::new(name, 1, Arc::<str>::from(text))
+            .map_err(|error| error.to_string())?));
+    }
+    Ok(GalleryFixtures { documents })
 }
 
 fn key_bindings() -> Result<Vec<KeyBindingSpec>, String> {
@@ -566,6 +742,31 @@ mod tests {
         assert!(found.is_empty(), "{}", found.join("\n"));
     }
 
+    #[test]
+    fn gallery_native_fixtures_are_bounded_and_revisioned() {
+        assert_eq!(formatted_rows().unwrap().len(), 30_000);
+        let partial = reply_document(7, 12).unwrap();
+        let complete = reply_document(7, REPLY_STEPS).unwrap();
+        assert_eq!(partial.identity(), complete.identity());
+        assert!(partial.revision() < complete.revision());
+        assert_eq!(complete.text(), REPLY_MARKDOWN);
+        assert!(complete.text().starts_with(partial.text()));
+        assert!(reply_document(-1, 1).is_err());
+        assert!(reply_document(7, REPLY_STEPS + 1).is_err());
+        let fixtures = source_documents().unwrap();
+        let mut runtime = UiRuntimeState::new();
+        fixtures.configure_runtime(&mut runtime).unwrap();
+        assert!(
+            runtime
+                .native_documents
+                .get("gallery.markdown.large")
+                .unwrap()
+                .text()
+                .len()
+                > 1_048_576
+        );
+    }
+
     fn gallery_entry_source() -> String {
         GALLERY_SOURCES_BY_ID
             .iter()
@@ -587,6 +788,17 @@ mod tests {
         }
         let unique = ids.iter().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(unique.len(), ids.len(), "page IDs are unique");
+    }
+
+    #[test]
+    fn gallery_catalog_is_independent_of_whitespace_and_later_demo_data() {
+        for source in [
+            "fn pages(){[#{id:\"one\",title:\"{quoted}\"},#{id:\"two\"}]}\nfn view(){#{id:\"not-a-page\"}}",
+            "fn pages() { /* } */ [#{ id: \"one\" }, #{ id: \"two\" }] // }\n}\nfn view(){}",
+        ] {
+            assert_eq!(literal_page_ids(source).unwrap(), ["one", "two"]);
+        }
+        assert!(literal_page_ids("fn pages(){loop {}}").is_err());
     }
 
     #[test]

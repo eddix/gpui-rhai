@@ -33,6 +33,7 @@ import "components/rotatable" as rotatable;
 import "components/selection_area" as selection_area;
 import "components/tree" as tree;
 import "components/list" as list;
+import "components/column_browser" as column_browser;
 import "components/tab_bar" as tab_bar;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
@@ -81,6 +82,7 @@ fn color_field(name, value) {
 
 fn state_schema() {
     #{ fields: #{
+        specimen_column_path: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[]}},
         path: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __PATH__ } },
         family: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __FAMILY__ } },
         variant: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __VARIANT__ } },
@@ -777,6 +779,19 @@ fn specimen_data(ctx) {
     ]).with_style(style().gap(px(7)))
 }
 
+fn set_specimen_column_path(ctx, value) { ctx.set_state("specimen_column_path", value.path); }
+fn specimen_columns(ctx) {
+    let path = ctx.get_state("specimen_column_path");
+    let columns = [#{key:"theme-family",title:"Family",items:[
+        #{key:"default",title:"Default",has_children:true},
+        #{key:"catppuccin",title:"Catppuccin",has_children:true}]}];
+    if path.len > 0 { columns.push(#{key:`variants-${path[0]}`,title:"Variant",items:[
+        #{key:"light",title:"Light"},#{key:"dark",title:"Dark"}]}); }
+    column_browser::ColumnBrowser(#{key:"specimen-column-browser",label:"Theme hierarchy",
+        path:path,columns:columns,height:140.0,column_width:144.0,
+        on_select:Fn("set_specimen_column_path")})
+}
+
 fn specimen_documents() {
     let left = "fn deploy(host) {\n    let port = 8080;\n    log(`deploy ${host}:${port}`);\n}\n";
     let right = "fn deploy(host) {\n    let port = 8443;\n    log(`deploy ${host}:${port}`);\n    verify(host);\n}\n";
@@ -953,6 +968,7 @@ fn specimen(ctx) {
             .border_bottom(px(1)).border_color(theme_color("border"))),
         columns,
         specimen_data(ctx),
+        specimen_columns(ctx),
         specimen_documents(),
         specimen_p0(ctx)
     ]).with_style(style().padding(px(16)).gap(px(14)).typography("body"))

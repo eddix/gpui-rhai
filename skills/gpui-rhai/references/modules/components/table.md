@@ -46,7 +46,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `search_fields` | array of string (at most 256) | `[]` | Row fields `query` searches; each is `row_key` or a declared column key. |
 | `selected_keys` | array of string (at most 100000) | `[]` | Selected row keys; the caller stores the `selection_change` payload and passes it back. |
 | `selection_mode` | `"none"` or `"single"` or `"multiple"` | `"none"` | `single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none`, or `on_context_request`, makes the table one tab stop. |
-| `sort` | object or `()` | — | Current sort; the caller stores the `sort_change` payload. A NativeCollection is sorted by it; array rows keep the order given. |
+| `sort` | object or `()` | — | Current sort names a declared column key, never its sort_key; both array and NativeCollection rows sort in Rust, before filtering, paging and grouping, with stable ties and nulls last in either direction. |
 | `sticky_group_headers` | bool | `true` | Keeps the current group header pinned at the top of the rows while they scroll. |
 | `striped` | bool | `false` | Tints every second displayed row with `surface_raised`. |
 | `style` | style | — | Style merged over the root part. |
@@ -62,6 +62,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `min_width` | number > 0, ≤ 16384 or `()` | — | Smallest width in logical pixels a resize may reach; `()` means 48. |
 | `numeric` | bool | `false` | Sets the cells in tabular figures and aligns them to the end unless `align` is given. |
 | `resizable` | bool or `()` | — | Turns resizing on or off for this column; `()` follows `resizable_columns`. |
+| `sort_key` | string or `()` | — | Row field compared in Rust when this column is sorted; defaults to key. Missing/null values always sort last. Non-null values must be consistently comparable scalars. |
 | `sortable` | bool | `false` | Makes the header clickable; clicks cycle ascending, descending and unsorted through `sort_change`. |
 | `title` | string | required | Header text, shown in capitals in the label voice. |
 | `typography` | string or `()` | — | Typography role of the column's cells, such as `code` for identifiers that must tell 0 from O. |
