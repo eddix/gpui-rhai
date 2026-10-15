@@ -17,6 +17,7 @@ import "gallery/pages/fields" as fields;
 import "gallery/pages/lists" as lists;
 import "gallery/pages/browsers" as browsers;
 import "gallery/pages/inputs_and_choices" as inputs_and_choices;
+import "gallery/pages/navigation" as navigation_pages;
 import "gallery/pages/overlays" as overlays;
 import "gallery/pages/containers" as containers;
 import "gallery/pages/display" as display;
@@ -175,6 +176,7 @@ fn sections() {
         #{ title: "Lists", source_module: "gallery/pages/lists", pages: lists::pages() },
         #{ title: "Browsers", source_module: "gallery/pages/browsers", pages: browsers::pages() },
         #{ title: "Inputs and choices", source_module: "gallery/pages/inputs_and_choices", pages: inputs_and_choices::pages() },
+        #{ title: "Navigation", source_module: "gallery/pages/navigation", pages: navigation_pages::pages() },
         #{ title: "Overlays", source_module: "gallery/pages/overlays", pages: overlays::pages() },
         #{ title: "Containers", source_module: "gallery/pages/containers", pages: containers::pages() },
         #{ title: "Display", source_module: "gallery/pages/display", pages: display::pages() },
@@ -214,6 +216,7 @@ fn page_view(ctx, h, v, id) {
     if node == () { node = lists::view(ctx, h, v, id); }
     if node == () { node = browsers::view(ctx, h, v, id); }
     if node == () { node = inputs_and_choices::view(ctx, h, v, id); }
+    if node == () { node = navigation_pages::view(ctx, h, v, id); }
     if node == () { node = overlays::view(ctx, h, v, id); }
     if node == () { node = containers::view(ctx, h, v, id); }
     if node == () { node = display::view(ctx, h, v, id); }

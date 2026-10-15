@@ -15,6 +15,7 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `keep_mounted` | bool | `false` | Retains all supplied panels, including native scrolling, caret/selection/undo and focus identity. Hidden panels have no layout, input or presented accessibility. Business effects keep running; use ctx.is_visible() for an explicit application pause policy. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name of the tab list, and of the group that holds the list and the panel. |
 | `layout` | `"content"` or `"equal"` | `"content"` | Tab widths of a horizontal list: `content` fits each label, `equal` fills the width and shares it equally. |
@@ -32,7 +33,7 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 
 | Field | Type | Required or default | Description |
 |---|---|---|---|
-| `content` | node or `()` | — | Panel shown while this tab is selected. |
+| `content` | node or `()` | — | Caller-owned panel. Eagerly constructed components keep Rhai state/effects even when omitted (ADR 0019); keep_mounted also preserves native scroll/editing state. |
 | `disabled` | bool | `false` | Whether the tab ignores clicks; arrow keys skip it. |
 | `icon` | node or `()` | — | Node drawn at icon size before the label. |
 | `label` | string | required | Tab text and accessible name. |

@@ -108,6 +108,7 @@ pub const BUNDLED_SKILL_FILES: &[(&str, &str)] = &[
     ("gpui-rhai/references/modules/patterns/form_layout.md", include_str!("../skills/gpui-rhai/references/modules/patterns/form_layout.md")),
     ("gpui-rhai/references/modules/patterns/inline_state.md", include_str!("../skills/gpui-rhai/references/modules/patterns/inline_state.md")),
     ("gpui-rhai/references/modules/patterns/list_detail.md", include_str!("../skills/gpui-rhai/references/modules/patterns/list_detail.md")),
+    ("gpui-rhai/references/modules/patterns/navigation_stack.md", include_str!("../skills/gpui-rhai/references/modules/patterns/navigation_stack.md")),
     ("gpui-rhai/references/modules/patterns/section.md", include_str!("../skills/gpui-rhai/references/modules/patterns/section.md")),
     ("gpui-rhai/references/modules/patterns/stat.md", include_str!("../skills/gpui-rhai/references/modules/patterns/stat.md")),
     ("gpui-rhai/references/recipes.md", include_str!("../skills/gpui-rhai/references/recipes.md")),
