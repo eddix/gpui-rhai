@@ -22,6 +22,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/checkbox`](components/checkbox.md) | `Checkbox` | Controlled checkbox with checked, unchecked, and indeterminate states. |
 | [`components/code_viewer`](components/code_viewer.md) | `CodeViewer` | Native, virtualized, selectable read-only source document surface. |
 | [`components/collapsible`](components/collapsible.md) | `Collapsible` | Controlled disclosure with trigger/content slots and Rust clip animation. |
+| [`components/column_browser`](components/column_browser.md) | `ColumnBrowser` | Controlled Miller columns. |
 | [`components/combobox`](components/combobox.md) | `Combobox` | Public Rhai choice composition over Overlay, Input, and virtual_collection. |
 | [`components/command`](components/command.md) | `Command` | Embeddable keyboard-first command search with deterministic fuzzy ranking. |
 | [`components/command_dialog`](components/command_dialog.md) | `CommandDialog` | Controlled modal presentation of Command without registering a global shortcut. |

@@ -3222,8 +3222,8 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        // 64 components, 10 motion, 5 charts, 4 layouts, 8 patterns.
-        assert_eq!(registry.entries.len(), 64 + 10 + 5 + 4 + 8);
+        // 65 components, 10 motion, 5 charts, 4 layouts, 8 patterns.
+        assert_eq!(registry.entries.len(), 65 + 10 + 5 + 4 + 8);
         let requested = registry
             .entries
             .keys()

@@ -127,6 +127,11 @@ bundled_components!(
     (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
     (LIST_SOURCE, "components/list", "../components/list.rhai"),
     (
+        COLUMN_BROWSER_SOURCE,
+        "components/column_browser",
+        "../components/column_browser.rhai"
+    ),
+    (
         TAB_BAR_SOURCE,
         "components/tab_bar",
         "../components/tab_bar.rhai"
@@ -491,6 +496,10 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
     (
         "gallery/pages/lists",
         include_str!("../gallery/pages/lists.rhai"),
+    ),
+    (
+        "gallery/pages/browsers",
+        include_str!("../gallery/pages/browsers.rhai"),
     ),
     (
         "gallery/pages/overlays",
@@ -1490,8 +1499,8 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 64);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 64);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 65);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 65);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
