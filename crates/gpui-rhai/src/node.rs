@@ -1574,6 +1574,13 @@ impl UiNode {
         self
     }
 
+    /// Keep native state mounted while excluding a covered page from GPUI
+    /// layout, input and accessibility. This does not suspend business work.
+    #[must_use]
+    pub fn retained_page(self, visible: bool) -> Self {
+        self.with_attribute(crate::retained_page::PAGE_VISIBLE, UiValue::Bool(visible))
+    }
+
     #[must_use]
     pub fn with_handler(
         mut self,
@@ -2265,6 +2272,24 @@ impl CustomType for UiNode {
 #[allow(clippy::too_many_lines)]
 fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
     builder
+        .with_fn("retained_page", |node: &mut UiNode, visible: bool| {
+            node.clone().retained_page(visible)
+        })
+        .with_fn(
+            "navigation_scope",
+            |node: &mut UiNode, depth: INT| -> Result<UiNode, Box<EvalAltResult>> {
+                if !(1..=128).contains(&depth) {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "navigation depth must be 1–128".into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node.clone().with_attribute(
+                    crate::retained_page::NAVIGATION_DEPTH,
+                    UiValue::Integer(depth),
+                ))
+            },
+        )
         .with_fn("motion", |node: &mut UiNode, animation: MotionSource| {
             node.clone().with_motion(animation)
         })

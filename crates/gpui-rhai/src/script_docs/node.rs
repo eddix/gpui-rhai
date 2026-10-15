@@ -5,6 +5,16 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "retained_page(_: &mut UiNode, _: bool) -> UiNode",
+        params: &["visible"],
+        doc: "Retains the complete native page subtree while excluding hidden content from layout, input and presented accessibility. Invisible motion freezes; hiding alone never cancels business work.",
+    },
+    ScriptFnDoc {
+        signature: "navigation_scope(_: &mut UiNode, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["depth"],
+        doc: "Declares a controlled navigation scope of depth 1–128. Its navigation_back handler receives #{ depth, source }; the focus-scoped NavigateBack action and Host.navigate_back propose to the innermost focused scope, without installing key bindings.",
+    },
+    ScriptFnDoc {
         signature: "accessibility_checked(_: &mut UiNode, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["checked"],
         doc: "Sets the checked state, `true`, `false` or `\"mixed\"`: checkbox, radio and switch roles report it as toggled unless `accessibility_pressed` is set; tabs, options, rows, grid cells and menu items as selected, a combobox as expanded.",

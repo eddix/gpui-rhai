@@ -1183,7 +1183,12 @@ impl ScriptLifecycle {
         let usage = runtime.motions.resource_usage();
         let active = usage.active.saturating_add(usage.geometry_slots);
         crate::RuntimeBudgets::check("active_motions", active, runtime.budgets.active_motions)?;
-        runtime.motion_values = values;
+        runtime.reconcile_page_visibility(retained, &self.root_path, &domain);
+        runtime.motion_values = if values.is_empty() {
+            values
+        } else {
+            runtime.motions.snapshot(now)
+        };
         Ok(())
     }
 
@@ -1598,7 +1603,13 @@ impl ScriptLifecycle {
             .retain_nodes(&nodes);
         runtime
             .pointer_capture_for(self.presentation_scope())
-            .retain_nodes(&nodes);
+            .retain_nodes(
+                &retained
+                    .nodes()
+                    .filter(|node| retained.is_page_visible(node.id()))
+                    .map(crate::RetainedNode::id)
+                    .collect(),
+            );
         Ok(())
     }
 

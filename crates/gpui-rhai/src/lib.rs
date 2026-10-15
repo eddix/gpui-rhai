@@ -42,6 +42,7 @@ pub mod renderer;
 pub mod resizable;
 pub mod responsive;
 pub mod retained;
+mod retained_page;
 pub mod rotatable;
 pub mod schema;
 pub mod script_docs;
@@ -89,6 +90,7 @@ pub mod motion;
 
 pub use gpui;
 pub use gpui_platform;
+pub use retained_page::NavigationStackInfo;
 /// The Rhai crate the runtime is built on, for `RuntimeEngine::engine` and
 /// `ScriptViewExtension::configure_rhai_engine`.
 pub use rhai;
@@ -101,8 +103,8 @@ pub use action::{
     KeyBindingSpec, KeyChord,
 };
 pub use app::{
-    EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
-    ScriptViewError, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
+    EmbeddedScriptView, FileScriptView, NavigateBack, PreparedScriptView, ScriptApplication,
+    ScriptViewConfig, ScriptViewError, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
     ScriptViewPerformanceSnapshot, ScriptViewState, ThemeHandle, install,
 };
 pub use asset::{

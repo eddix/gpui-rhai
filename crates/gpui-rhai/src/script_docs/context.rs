@@ -10,6 +10,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Queues a bounded text clipboard write after commit. Requires an attached view/window and direct user input or explicit automation; rejects render, timers, effects and asynchronous callbacks, and rolls back with failed callbacks.",
     },
     ScriptFnDoc {
+        signature: "is_visible(_: &mut UiContext) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &[],
+        doc: "Reads this component's last committed retained-page placement; false before first placement. Tracked in render. Visibility does not cancel tasks/subscriptions: use it in application-owned effect dependencies or pause policy.",
+    },
+    ScriptFnDoc {
         signature: "action_enabled(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["action"],
         doc: "Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered.",
@@ -444,7 +449,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "text_direction(_: &mut UiContext) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &[],
-        doc: "Returns `ltr` or `rtl` for the locale of the current component scope; records a locale dependency in render.",
+        doc: "Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render.",
     },
     ScriptFnDoc {
         signature: "theme_variant(_: &mut UiContext) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
