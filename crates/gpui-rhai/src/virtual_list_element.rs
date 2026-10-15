@@ -518,6 +518,15 @@ impl VirtualListView {
     }
 
     fn seed_viewport_hints(&mut self, cx: &mut Context<Self>) {
+        // Finish the initial controlled reveal while this native prepaint's
+        // measured item bounds still exist. Rehinting below converts measured
+        // entries to hinted entries; doing the reveal next render would then
+        // mistake an already-visible target for an unmeasured offscreen row.
+        if self.pending_reveal && self.scroll.viewport_bounds().size.height > px(0.0) {
+            self.pending_reveal = false;
+            self.reveal_controlled_target();
+            cx.notify();
+        }
         let width = self.scroll.viewport_bounds().size.width;
         if width > px(0.0) && self.hinted_width != Some(width) {
             // List::prepaint clears all hints on its first/changed-width pass.
@@ -580,10 +589,6 @@ fn estimated_target_is_initially_visible(
 
 impl Render for VirtualListView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        if self.pending_reveal && self.scroll.viewport_bounds().size.height > px(0.0) {
-            self.pending_reveal = false;
-            self.reveal_controlled_target();
-        }
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
         let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);

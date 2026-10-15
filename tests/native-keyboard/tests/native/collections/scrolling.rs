@@ -567,9 +567,13 @@ fn scroll_track_routes_unsupported_axes_and_only_boundary_residual_to_sdk_ancest
     cx: &mut TestAppContext,
 ) {
     let main = r#"
+define_component(#{metadata:#{id:"tests/residual_scroll","export":"ResidualScroll",version:"0.0.1",
+    runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
+    schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
+        state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},render:Fn("render_scroll")});
 fn reset(ctx,value){ctx.scroll_to("outer",0,0);}
 fn item(ctx,payload){text(payload.item.key).with_style(style().height(px(40)))}
-fn view(ctx){
+fn render_scroll(ctx,props){
     let rows=[];for index in 0..30 {rows.push(#{key:`row-${index}`});}
     let collection=virtual_collection(#{key:"inner",label:"Inner",data:rows,estimated_height:40,height:100},Fn("item"))
         .with_style(style().width(px(180))).scrollbars("hidden","always");
@@ -580,6 +584,7 @@ fn view(ctx){
         box([content]).with_key("outer").with_ref(element_ref("outer"))
             .with_style(style().width(px(240)).height(px(160)).overflow_scroll())])
 }
+fn view(ctx){render_component("tests/residual_scroll",#{key:"chain"})}
 
 "#;
     let (mut visual, view) = Mount::new(main).id("residual-scroll-chain").mount(cx);
