@@ -57,7 +57,9 @@ fn file_items() {
 }
 
 fn menu_page(h, v) {
-    let trigger = button::Button(#{ key: "menu-trigger", text: "File", variant: "secondary", on_click: h.noop });
+    // The Button handles its own click, which stops there: it opens the menu itself.
+    let trigger = button::Button(#{ key: "menu-trigger", text: "File", variant: "secondary",
+        on_click: kit::put(h, "menu.open", true) });
     kit::page(h, v, "menu", "Menu", "Transient list: the cursor is a selection block with the indicator bar. Enter runs.", [
         kit::sec("Open", column([menu::Menu(#{ key: "menu-file", label: "File", trigger: trigger,
             open: kit::val(v, "menu.open", false), active_value: kit::val(v, "menu.active", "open"), items: file_items(),
