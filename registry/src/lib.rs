@@ -44,6 +44,11 @@ bundled_components!(
         "../components/textarea.rhai"
     ),
     (
+        SELECTABLE_CARD_GROUP_SOURCE,
+        "components/selectable_card_group",
+        "../components/selectable_card_group.rhai"
+    ),
+    (
         DIVIDER_SOURCE,
         "components/divider",
         "../components/divider.rhai"
