@@ -538,22 +538,9 @@ pub(crate) struct ThemedScrollbar {
 impl ThemedScrollbar {
     fn body_hitbox(&self, viewport: Bounds<Pixels>, window: &mut Window) -> Option<Hitbox> {
         (self.wheel_body && !self.disabled).then(|| {
-            let hitbox = window
-                .with_content_mask(Some(ContentMask { bounds: viewport }), |window| {
-                    window.insert_hitbox(viewport, HitboxBehavior::Normal)
-                });
-            self.interactions.register_wheel_region(
-                self.interaction_owner.clone(),
-                self.handle
-                    .identity()
-                    .expect("body routing requires a retained source handle"),
-                self.wheel_parents
-                    .iter()
-                    .filter_map(|parent| parent.source.identity())
-                    .collect(),
-                hitbox.clone(),
-            );
-            hitbox
+            window.with_content_mask(Some(ContentMask { bounds: viewport }), |window| {
+                window.insert_hitbox(viewport, HitboxBehavior::Normal)
+            })
         })
     }
 
@@ -770,6 +757,12 @@ impl Element for ThemedScrollbar {
                         .handle
                         .identity()
                         .expect("body routing requires a retained source handle"),
+                    ancestors: self
+                        .wheel_parents
+                        .iter()
+                        .filter_map(|parent| parent.source.identity())
+                        .collect(),
+                    hitbox: prepaint.body.clone().expect("body hitbox was prepared"),
                 },
             ),
             self.disabled,
@@ -913,6 +906,8 @@ enum WheelHitRegion {
         coordinator: crate::interaction::WindowInteractionCoordinator,
         owner: crate::interaction::InteractionOwner,
         source: usize,
+        ancestors: Vec<usize>,
+        hitbox: Hitbox,
     },
 }
 
@@ -925,46 +920,55 @@ fn register_wheel_listener(
     disabled: bool,
     window: &mut Window,
 ) {
+    let apply: Rc<crate::interaction::NativeWheelHandler> = Rc::new(move |event, window, cx| {
+        let delta = event.delta.pixel_delta(window.line_height());
+        let remaining = chain.iter().fold(delta, |remaining, source| {
+            source.apply(event.position, remaining)
+        });
+        if remaining != delta {
+            cx.stop_propagation();
+            window.refresh();
+        }
+        let mut inner = state.0.get();
+        if let Some(source) = chain.first() {
+            inner.last_offset = source.source.offset();
+        }
+        inner.last_activity = Some(Instant::now());
+        state.0.set(inner);
+        cx.notify(view);
+    });
     window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
-        if viewport.contains(&event.position) {
-            let handles = match (&region, phase) {
+        if !disabled && viewport.contains(&event.position) {
+            match (&region, phase) {
                 (
                     WheelHitRegion::Body {
                         coordinator,
                         owner,
                         source,
+                        ancestors,
+                        hitbox,
                     },
                     DispatchPhase::Capture,
                 ) => {
-                    if !coordinator.is_wheel_region_target(owner, *source, window) {
-                        return;
+                    if hitbox.should_handle_scroll(window) {
+                        coordinator.register_wheel_region(
+                            owner.clone(),
+                            *source,
+                            ancestors.clone(),
+                            hitbox.clone(),
+                            Rc::clone(&apply),
+                        );
                     }
-                    true
                 }
-                (WheelHitRegion::Tracks(tracks), DispatchPhase::Bubble) => tracks
-                    .iter()
-                    .any(|track| track.should_handle_scroll(window)),
-                _ => return,
-            };
-            if !disabled && handles {
-                let delta = event.delta.pixel_delta(window.line_height());
-                let remaining = chain.iter().fold(delta, |remaining, source| {
-                    source.apply(event.position, remaining)
-                });
-                if remaining != delta {
-                    // Every known ancestor receives only its residual. Do not
-                    // let GPUI's immutable original delta apply a second time.
-                    cx.stop_propagation();
-                    window.refresh();
+                (WheelHitRegion::Tracks(tracks), DispatchPhase::Bubble)
+                    if tracks
+                        .iter()
+                        .any(|track| track.should_handle_scroll(window)) =>
+                {
+                    apply(event, window, cx)
                 }
+                _ => {}
             }
-            let mut inner = state.0.get();
-            if let Some(source) = chain.first() {
-                inner.last_offset = source.source.offset();
-            }
-            inner.last_activity = Some(Instant::now());
-            state.0.set(inner);
-            cx.notify(view);
         }
     });
 }

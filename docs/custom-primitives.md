@@ -197,7 +197,11 @@ paint order; unrelated overlapping regions use front-to-back paint priority.
 The selected viewport applies the existing per-axis/residual algorithm once;
 fully unconsumed input still propagates. A normal hitbox leaves click,
 selection, focus and keyboard ownership unchanged. Registration lasts only for
-the presented frame and is removed on hiding/unmount or source replacement.
+the current input event: replayed capture listeners register its regions, then
+the Host's capture boundary chooses and drains them before native bubbling.
+This also works inside `Entity::cached(style)` without replaying prepaint side
+effects or retaining historical hitboxes. Hidden/unmounted/replaced regions
+cannot register unless their listener and clipped hitbox are still presented.
 This is opt-in native viewport routing, not a global window wheel handler.
 CodeViewer and DiffViewer use it for their uniform list and split pane sources.
 

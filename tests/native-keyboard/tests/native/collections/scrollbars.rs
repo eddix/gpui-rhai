@@ -371,8 +371,8 @@ struct NestedBodyHost {
     occluded: Rc<Cell<bool>>,
 }
 
-impl Render for NestedBodyHost {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+impl NestedBodyHost {
+    fn content(&self) -> AnyElement {
         let theme = PrimitiveTheme::default();
         let bars = self.host.scrollbars("nested-body", &theme).unwrap();
         let spec = ScrollbarSpec::new("hidden", "hidden").unwrap();
@@ -381,45 +381,50 @@ impl Render for NestedBodyHost {
             .with_scroll_axis(Some(gpui::Axis::Vertical))
             .with_scroll_parent(self.outer_source.clone(), Some(gpui::Axis::Vertical))
             .element_with_wheel_routing("inner", self.inner_source.clone(), spec);
-        self.host.container(
-            div()
-                .relative()
-                .w(px(300.0))
-                .h(px(300.0))
-                .overflow_hidden()
-                .child(
-                    div()
-                        .id("body-outer")
-                        .size_full()
-                        .overflow_y_scroll()
-                        .track_scroll(&self.outer)
-                        .child(
-                            div()
-                                .relative()
-                                .w(px(240.0))
-                                .h(px(160.0))
-                                .flex_none()
-                                .child(
-                                    div()
-                                        .id("body-inner")
-                                        .size_full()
-                                        .overflow_y_scroll()
-                                        .track_scroll(&self.inner)
-                                        .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
-                                )
-                                .child(inner),
-                        )
-                        .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
-                )
-                // Deliberately later-painted than the nested body router.
-                .child(
-                    bars.with_scroll_axis(Some(gpui::Axis::Vertical))
-                        .element_with_wheel_routing("outer", self.outer_source.clone(), spec),
-                )
-                .when(self.occluded.get(), |root| {
-                    root.child(div().absolute().inset_0().occlude())
-                }),
-        )
+        div()
+            .relative()
+            .w(px(300.0))
+            .h(px(300.0))
+            .overflow_hidden()
+            .child(
+                div()
+                    .id("body-outer")
+                    .size_full()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.outer)
+                    .child(
+                        div()
+                            .relative()
+                            .w(px(240.0))
+                            .h(px(160.0))
+                            .flex_none()
+                            .child(
+                                div()
+                                    .id("body-inner")
+                                    .size_full()
+                                    .overflow_y_scroll()
+                                    .track_scroll(&self.inner)
+                                    .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
+                            )
+                            .child(inner),
+                    )
+                    .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
+            )
+            // Deliberately later-painted than the nested body router.
+            .child(
+                bars.with_scroll_axis(Some(gpui::Axis::Vertical))
+                    .element_with_wheel_routing("outer", self.outer_source.clone(), spec),
+            )
+            .when(self.occluded.get(), |root| {
+                root.child(div().absolute().inset_0().occlude())
+            })
+            .into_any_element()
+    }
+}
+
+impl Render for NestedBodyHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.host.container(self.content())
     }
 }
 
@@ -483,6 +488,126 @@ fn nested_body_region_wins_over_parent_overlay_and_chains_only_boundary_residual
         before,
         "an occluding overlay blocks both shared body routing and native scrolling"
     );
+}
+
+struct CachedBody {
+    content: NestedBodyHost,
+    renders: Rc<Cell<usize>>,
+}
+
+impl Render for CachedBody {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.renders.set(self.renders.get() + 1);
+        self.content.content()
+    }
+}
+
+struct UnrelatedSibling(usize);
+impl Render for UnrelatedSibling {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().child(format!("Unrelated {}", self.0))
+    }
+}
+
+struct CachedBodyHost {
+    host: ScriptViewHost,
+    body: gpui::Entity<CachedBody>,
+    sibling: gpui::Entity<UnrelatedSibling>,
+}
+
+impl Render for CachedBodyHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let style = gpui::StyleRefinement {
+            size: gpui::size(Some(px(300.0).into()), Some(px(300.0).into())),
+            ..Default::default()
+        };
+        self.host.container(
+            div()
+                .flex()
+                .flex_col()
+                .child(self.body.clone().cached(style))
+                .child(self.sibling.clone()),
+        )
+    }
+}
+
+#[gpui::test]
+fn cached_native_body_replays_current_event_regions_after_unrelated_sibling_updates(
+    cx: &mut TestAppContext,
+) {
+    let outer = ScrollHandle::new();
+    let inner = ScrollHandle::new();
+    let outer_state = outer.clone();
+    let inner_state = inner.clone();
+    let renders = Rc::new(Cell::new(0));
+    let render_count = Rc::clone(&renders);
+    let sibling = Rc::new(RefCell::new(None));
+    let capture = Rc::clone(&sibling);
+    let window = cx.add_window(move |_, cx| {
+        let host = ScriptViewHost::new("cached-body", cx).unwrap();
+        let body = cx.new(|_| CachedBody {
+            content: NestedBodyHost {
+                host: host.clone(),
+                outer_source: ScrollbarSourceHandle::new(outer_state.clone()),
+                inner_source: ScrollbarSourceHandle::new(inner_state.clone()),
+                outer: outer_state,
+                inner: inner_state,
+                occluded: Rc::new(Cell::new(false)),
+            },
+            renders: render_count,
+        });
+        let sibling = cx.new(|_| UnrelatedSibling(0));
+        *capture.borrow_mut() = Some(sibling.clone());
+        CachedBodyHost {
+            host,
+            body,
+            sibling,
+        }
+    });
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    settle(&mut visual, Step::Frame, 3);
+    let sibling = sibling.borrow().as_ref().unwrap().clone();
+    for boundary in [false, true] {
+        if boundary {
+            inner.set_offset(point(px(0.0), -inner.max_offset().y + px(8.0)));
+            visual.update(|window, _| window.refresh());
+            settle(&mut visual, Step::Frame, 3);
+        }
+        let before = renders.get();
+        visual.update(|_, cx| {
+            sibling.update(cx, |sibling, cx| {
+                sibling.0 += 1;
+                cx.notify();
+            })
+        });
+        settle(&mut visual, Step::Frame, 2);
+        assert_eq!(
+            renders.get(),
+            before,
+            "precondition: unrelated sibling redraw must reuse cached native prepaint/paint"
+        );
+        visual.simulate_event(ScrollWheelEvent {
+            position: inner.bounds().center(),
+            delta: ScrollDelta::Pixels(point(px(0.0), px(-24.0))),
+            ..Default::default()
+        });
+        assert_eq!(
+            inner.offset().y,
+            if boundary {
+                -inner.max_offset().y
+            } else {
+                px(-24.0)
+            }
+        );
+        assert_eq!(
+            outer.offset().y,
+            if boundary { px(-16.0) } else { px(0.0) },
+            "cached listeners must register the current region and consume only native residual"
+        );
+        settle(&mut visual, Step::Frame, 3);
+    }
 }
 
 struct NativeHost {
