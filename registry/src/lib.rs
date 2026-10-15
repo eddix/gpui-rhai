@@ -448,6 +448,10 @@ pub const BUNDLED_LAYOUT_SOURCES_BY_ID: &[(&str, &str)] = &[
 
 /// Opinionated composite components (`patterns/*`).
 pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
+    (
+        "patterns/composer",
+        include_str!("../patterns/composer.rhai"),
+    ),
     ("patterns/section", include_str!("../patterns/section.rhai")),
     (
         "patterns/description_list",
