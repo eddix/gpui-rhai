@@ -89,6 +89,24 @@ registry or resource scope itself in a cleanup closure. Native changes made by
 `update` cannot be cloned by the runtime: stage them until success or make
 `update(previous, next)` idempotent so a failed outer render can safely retry.
 
+When native content inside a virtual row changes its intrinsic size without a
+Rhai state change, call `context.invalidate_intrinsic_size(cx)` once **after**
+committing the new native content or width-dependent display. Use the current
+`PrimitiveContext` held by the live native viewer, not a context captured at the
+start of an asynchronous job. This hook does not request a script render: GPUI
+remeasures only the current leased row and preserves its native scroll anchor.
+Nested virtual rows propagate invalidation to their enclosing row in turn.
+
+The hook defers/coalesces foreground work and is safe from native render,
+prepaint, or Entity updates; it never synchronously reenters a parent Entity.
+Primitive resource identity, script generation, stable row key and retained
+row identity are checked when deferred work executes. Removed/replaced leases
+are ignored, even if a new instance reuses the same local key. Outside a
+virtual row (or for an ephemeral primitive) the hook is a no-op. Hidden retained
+rows may become dirty, but repeated commits do not start timers or a repaint
+loop; measurement resumes when they are presented. This is not a per-frame
+notification API: call only after a meaningful committed size change.
+
 Emit only declared events through `PrimitiveContext`; the runtime validates
 payloads and dispatches the generation-bound callback. The emitter keeps only a
 weak reference back to the registry, so an Entity whose callbacks retain the

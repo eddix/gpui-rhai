@@ -24,6 +24,7 @@ mod handle_state;
 pub mod host_slot;
 pub mod inline_svg;
 mod interaction;
+mod intrinsic;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;

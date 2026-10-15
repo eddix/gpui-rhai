@@ -2,6 +2,7 @@
 
 mod column_browser;
 mod focus_frame;
+mod intrinsic;
 mod list;
 mod scrollbars;
 mod scrolling;

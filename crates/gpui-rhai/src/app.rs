@@ -4632,6 +4632,7 @@ impl Render for ScriptHostView {
         }
         self.consume_pending_interaction_cancel(window, cx);
         self.prepare_host_render(window, cx);
+        self.primitives.set_generation(self.lifecycle.generation());
         let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let (motion_active, committed_motion_events) = self.sample_motion_frame(&motion_root);
         let dispatcher = script_node_dispatcher(
@@ -4673,6 +4674,7 @@ impl Render for ScriptHostView {
             scroll_handles: &self.scroll_handles,
             scroll_anchors: &self.scroll_anchors,
             wheel_parents: &[],
+            intrinsic_size: None,
             virtual_requests: &snapshot.virtual_requests,
             text_selection: &self.text_selection,
             host_focus: Some(&self.host_focus),
@@ -5802,6 +5804,7 @@ impl ScriptHostView {
     }
 
     fn reconcile_primitive_lifecycle(&mut self) {
+        self.primitives.set_generation(self.lifecycle.generation());
         if !self.lifecycle.retained().is_empty()
             && let Err(error) = self.primitives.retain_tree(self.lifecycle.retained())
         {
