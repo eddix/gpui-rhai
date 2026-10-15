@@ -7,7 +7,7 @@ use std::rc::{Rc, Weak};
 use gpui::prelude::FluentBuilder as _;
 
 use gpui::{
-    AnyElement, App, AppContext as _, Bounds, Context, InteractiveElement, IntoElement,
+    AnyElement, App, AppContext as _, Bounds, Context, InteractiveElement, IntoElement, IsZero as _,
     ListAlignment, ListState, Modifiers, MouseButton, ParentElement, Pixels, Point, Render,
     ScrollDelta, ScrollHandle, ScrollWheelEvent, StatefulInteractiveElement, Styled,
     TestAppContext, VisualTestContext, Window, div, list, point, px,
