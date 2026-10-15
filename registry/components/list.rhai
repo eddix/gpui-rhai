@@ -9,7 +9,7 @@
   "tokens": [
     "table.selection", "surface_hover", "accent", "focus_ring", "border", "text_primary",
     "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-    "typography.body", "typography.caption"
+    "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
   "environment": ["density"]
 }
@@ -36,11 +36,13 @@ define_component(#{
         tokens: [
             "table.selection", "surface_hover", "accent", "focus_ring", "border", "text_primary",
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-            "typography.body", "typography.caption"
+            "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
         environment: ["density"] },
     schema: #{
         props: #{
+            scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "auto" }, doc: "Shared native viewport scrollbar visibility." },
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Accessible name of the list." },
@@ -151,13 +153,19 @@ define_component(#{
                 doc: "Node shown instead of `empty_text` when `items` is empty." },
         },
         parts: ["root", "row", "row_selected", "badge", "title", "secondary", "meta", "indicator_bar",
-            "cursor", "focus_frame", "loading", "empty"],
+            "cursor", "focus_frame", "loading", "empty", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_List")
 });
 
 fn List(props) { render_component("components/list", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+fn collection_scrollbars(ctx, props, node) {
+    node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
+        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))))
+        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover", style().background(theme_color("scrollbar.thumb_hover"))))
+        .scrollbars("hidden", prop_or(props, "scrollbar", "auto"))
+}
 fn field_or(item, name, fallback) { if name in item && item[name] != () { item[name] } else { fallback } }
 fn is_rtl(ctx) { let rtl = false; try { rtl = ctx.text_direction() == "rtl"; } catch { } rtl }
 // `height` takes logical pixels or a Length.
@@ -372,10 +380,10 @@ fn render_List(ctx, props) {
     let focus = if keyboard && (mode == "none" && context || mode != "none" && neighbors.first != ()) {
         `${props.key}-focus`
     } else { () };
-    let rows = virtual_collection(collection,
+    let rows = collection_scrollbars(ctx, props, virtual_collection(collection,
         Fn("render_list_row").curry(prop_or(props, "active", true)).curry(below).curry(prop_or(props, "dividers", false))
             .curry(badge_slot).curry(context).curry(data.len)
-            .curry(mode).curry(selected).curry(focus));
+            .curry(mode).curry(selected).curry(focus)));
     if keyboard && mode == "none" && context {
         // Without a selection mode there is no current row: the list is a tab stop for the
         // keyboard request alone, which is for the whole list. A wrapper holds that focus and

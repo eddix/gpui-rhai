@@ -45,6 +45,26 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Parses localized minute/second clock text to HH:MM:SS, or returns () for incomplete or invalid text.",
     },
     ScriptFnDoc {
+        signature: "collection_follow_status(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key"],
+        doc: "Reads this component's presented collection status as `#{ following, unseen }`, or `()` while absent. An event-time query, not a render dependency; use `on_follow_change` for reactive state.",
+    },
+    ScriptFnDoc {
+        signature: "scroll_collection_by(_: &mut UiContext, _: string, _: types::dynamic::Dynamic) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "distance"],
+        doc: "Queues native pixel scrolling for this component's collection; positive distance moves toward the end, upward input pauses tail following. Integers and floats must be finite. Runs after accepted data/anchor synchronization; forbidden during render.",
+    },
+    ScriptFnDoc {
+        signature: "scroll_collection_to_end(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key"],
+        doc: "Queues a jump to this component's collection tail, resuming native following when enabled. Applies to newly committed data after anchor synchronization, never to another component's equal key; forbidden during render.",
+    },
+    ScriptFnDoc {
+        signature: "scroll_collection_to_start(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key"],
+        doc: "Queues a jump to this component's collection start and pauses native following. Applies after newly committed data/anchor synchronization; an absent collection is ignored. Forbidden during render.",
+    },
+    ScriptFnDoc {
         signature: "action_enabled(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["action"],
         doc: "Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered.",

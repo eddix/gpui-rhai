@@ -9,7 +9,7 @@
   "tokens": [
     "surface_raised", "border", "surface_hover", "selection", "accent", "text_primary",
     "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-    "radius.lg", "typography.body", "typography.label"
+    "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
   "environment": ["density", "corners"]
 }
@@ -29,11 +29,13 @@ define_component(#{
         tokens: [
             "surface_raised", "border", "surface_hover", "selection", "accent", "text_primary",
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-            "radius.lg", "typography.body", "typography.label"
+            "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
         environment: ["density", "corners"] },
     schema: #{
         props: #{
+            scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "auto" }, doc: "Shared command-list scrollbar visibility; the search field keeps keyboard focus." },
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Accessible name of the search field and the command list." },
@@ -100,13 +102,19 @@ define_component(#{
                 doc: "Emitted when a command is clicked or activated with Enter, after its bound action; the payload is its value." },
         },
         slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty",
-            "indicator_bar"],
+            "indicator_bar", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Command")
 });
 
 fn Command(props) { render_component("components/command", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+fn collection_scrollbars(ctx, props, node) {
+    node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
+        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))))
+        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover", style().background(theme_color("scrollbar.thumb_hover"))))
+        .scrollbars("hidden", prop_or(props, "scrollbar", "auto"))
+}
 fn item_disabled(item) { "disabled" in item && item.disabled }
 fn item_group(item) { if "group" in item && item.group != () { item.group } else { "" } }
 
@@ -365,8 +373,8 @@ fn render_Command(ctx, props) {
             collection.reveal_key = if is_native_collection(data) { active } else { `item:${active}` };
         }
         // A whole number of metrics.row rows in either density.
-        column([virtual_collection(collection,
-            Fn("render_command_row").curry(model.content).curry(data.len))])
+        column([collection_scrollbars(ctx, props, virtual_collection(collection,
+            Fn("render_command_row").curry(model.content).curry(data.len)))])
             .with_style(ctx.component_style("list", style()
                 .height(theme_length("metrics.row") * visible_rows)))
     };

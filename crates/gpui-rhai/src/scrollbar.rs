@@ -37,6 +37,120 @@ pub trait ScrollbarSource: 'static {
     fn set_offset(&self, offset: Point<Pixels>);
     fn drag_started(&self) {}
     fn drag_ended(&self) {}
+    /// Optional identity for retained wrappers; a changed identity retires a
+    /// gesture that captured an older native source under the same element id.
+    fn identity(&self) -> Option<usize> {
+        None
+    }
+}
+
+/// Retain this adapter alongside a Host-native scroll state when that state may
+/// be replaced under a stable scrollbar id. Clones share a source lease;
+/// constructing a replacement adapter retires an old captured thumb drag.
+#[derive(Clone)]
+pub struct ScrollbarSourceHandle(Rc<dyn ScrollbarSource>);
+
+impl ScrollbarSourceHandle {
+    #[must_use]
+    pub fn new(source: impl ScrollbarSource) -> Self {
+        Self(Rc::new(source))
+    }
+}
+
+impl ScrollbarSource for ScrollbarSourceHandle {
+    fn viewport(&self) -> Bounds<Pixels> {
+        self.0.viewport()
+    }
+    fn offset(&self) -> Point<Pixels> {
+        self.0.offset()
+    }
+    fn max_offset(&self) -> Point<Pixels> {
+        self.0.max_offset()
+    }
+    fn set_offset(&self, value: Point<Pixels>) {
+        self.0.set_offset(value);
+    }
+    fn drag_started(&self) {
+        self.0.drag_started();
+    }
+    fn drag_ended(&self) {
+        self.0.drag_ended();
+    }
+    fn identity(&self) -> Option<usize> {
+        Some(Rc::as_ptr(&self.0).cast::<()>() as usize)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ScrollWheelSource {
+    source: Rc<dyn ScrollbarSource>,
+    axes: (bool, bool),
+    translate: bool,
+}
+
+impl ScrollWheelSource {
+    pub(crate) fn new(source: impl ScrollbarSource, axes: (bool, bool), translate: bool) -> Self {
+        Self {
+            source: Rc::new(source),
+            axes,
+            translate,
+        }
+    }
+
+    fn apply(&self, position: Point<Pixels>, mut remaining: Point<Pixels>) -> Point<Pixels> {
+        if !self.source.viewport().contains(&position) {
+            return remaining;
+        }
+        let max = self.source.max_offset();
+        let clamp = |value: Point<Pixels>| {
+            point(
+                value.x.clamp(-max.x.max(px(0.0)), px(0.0)),
+                value.y.clamp(-max.y.max(px(0.0)), px(0.0)),
+            )
+        };
+        let before = clamp(self.source.offset());
+        let translate_y = self.translate && self.axes == (true, false) && remaining.x.is_zero();
+        let translate_x = self.translate && self.axes == (false, true) && remaining.y.is_zero();
+        let delta = point(
+            if self.axes.0 {
+                if translate_y {
+                    remaining.y
+                } else {
+                    remaining.x
+                }
+            } else {
+                px(0.0)
+            },
+            if self.axes.1 {
+                if translate_x {
+                    remaining.x
+                } else {
+                    remaining.y
+                }
+            } else {
+                px(0.0)
+            },
+        );
+        let target = clamp(before + delta);
+        if target == before {
+            return remaining;
+        }
+        self.source.set_offset(target);
+        // Native tail anchors can report past max until their next layout;
+        // normalize the native report, never invent a parallel position cache.
+        let applied = clamp(self.source.offset()) - before;
+        if translate_y {
+            remaining.y -= applied.x;
+        } else {
+            remaining.x -= applied.x;
+        }
+        if translate_x {
+            remaining.x -= applied.y;
+        } else {
+            remaining.y -= applied.y;
+        }
+        remaining
+    }
 }
 
 /// End the native drag even if its window/coordinator is dropped before it can
@@ -126,6 +240,9 @@ pub struct ScrollbarContext {
     colors: (Rgba8, Rgba8, Rgba8),
     theme: crate::PrimitiveTheme,
     disabled: bool,
+    wheel_parents: Vec<ScrollWheelSource>,
+    wheel_axes: (bool, bool),
+    translate_wheel: bool,
 }
 
 impl ScrollbarContext {
@@ -151,7 +268,41 @@ impl ScrollbarContext {
             ),
             theme: theme.clone(),
             disabled: theme.inherited_disabled(),
+            wheel_parents: Vec::new(),
+            wheel_axes: (true, true),
+            translate_wheel: false,
         }
+    }
+
+    /// Restrict wheel ownership independently of visual bar visibility.
+    /// `None` permits both axes; unsupported axes remain available to parents.
+    #[must_use]
+    pub fn with_scroll_axis(mut self, axis: Option<Axis>) -> Self {
+        self.wheel_axes = (axis != Some(Axis::Vertical), axis != Some(Axis::Horizontal));
+        self
+    }
+
+    /// Add an explicit Host-native ancestor, nearest first. SDK primitives and
+    /// retained nodes receive their measured ancestor chain automatically.
+    #[must_use]
+    pub fn with_scroll_parent(mut self, source: impl ScrollbarSource, axis: Option<Axis>) -> Self {
+        self.wheel_parents.push(ScrollWheelSource::new(
+            source,
+            (axis != Some(Axis::Vertical), axis != Some(Axis::Horizontal)),
+            false,
+        ));
+        self
+    }
+
+    pub(crate) fn with_wheel_parents(mut self, parents: Vec<ScrollWheelSource>) -> Self {
+        self.wheel_parents = parents;
+        self
+    }
+
+    pub(crate) fn with_wheel_policy(mut self, axes: (bool, bool), translate: bool) -> Self {
+        self.wheel_axes = axes;
+        self.translate_wheel = translate;
+        self
     }
 
     /// Override the backgrounds of the three standard scrollbar parts. Empty
@@ -199,6 +350,9 @@ impl ScrollbarContext {
             self.colors,
         );
         scrollbar.disabled = self.disabled;
+        scrollbar.wheel_parents = self.wheel_parents.clone();
+        scrollbar.wheel_axes = self.wheel_axes;
+        scrollbar.translate_wheel = self.translate_wheel;
         scrollbar.into_any_element()
     }
 }
@@ -283,6 +437,7 @@ struct ScrollbarStateInner {
     last_offset: Point<Pixels>,
     last_activity: Option<Instant>,
     idle_timer_scheduled: bool,
+    source_identity: Option<usize>,
 }
 
 #[derive(Clone, Default)]
@@ -339,6 +494,9 @@ pub(crate) struct ThemedScrollbar {
     thumb: Rgba8,
     thumb_hover: Rgba8,
     disabled: bool,
+    wheel_parents: Vec<ScrollWheelSource>,
+    wheel_axes: (bool, bool),
+    translate_wheel: bool,
 }
 
 impl ThemedScrollbar {
@@ -363,6 +521,9 @@ impl ThemedScrollbar {
             thumb,
             thumb_hover,
             disabled: false,
+            wheel_parents: Vec::new(),
+            wheel_axes: (true, true),
+            translate_wheel: false,
         }
     }
 }
@@ -425,6 +586,17 @@ impl Element for ThemedScrollbar {
         let now = Instant::now();
         let offset = self.handle.offset();
         let mut inner = state.0.get();
+        let identity = self.handle.identity();
+        if inner.source_identity != identity {
+            for axis in [Axis::Horizontal, Axis::Vertical] {
+                self.interactions.cancel_owner(
+                    &axis_interaction_owner(&self.interaction_owner, axis),
+                    window,
+                    cx,
+                );
+            }
+            inner.source_identity = identity;
+        }
         if inner.last_offset != offset {
             inner.last_offset = offset;
             inner.last_activity = Some(now);
@@ -509,15 +681,20 @@ impl Element for ThemedScrollbar {
         let viewport = prepaint.viewport;
         let state = prepaint.state.clone();
         register_hover_listener(viewport, state.clone(), view, window);
+        let mut wheel_chain = vec![ScrollWheelSource {
+            source: self.handle.clone(),
+            axes: self.wheel_axes,
+            translate: self.translate_wheel,
+        }];
+        wheel_chain.extend(self.wheel_parents.clone());
         register_wheel_listener(
             viewport,
-            self.handle.clone(),
+            wheel_chain,
             state.clone(),
             view,
             prepaint
                 .axes
                 .iter()
-                .filter(|axis| axis.visible)
                 .map(|axis| axis.bar_hitbox.clone())
                 .collect(),
             self.disabled,
@@ -657,7 +834,7 @@ fn register_hover_listener(
 
 fn register_wheel_listener(
     viewport: Bounds<Pixels>,
-    handle: Rc<dyn ScrollbarSource>,
+    chain: Vec<ScrollWheelSource>,
     state: ScrollbarState,
     view: gpui::EntityId,
     tracks: Vec<Hitbox>,
@@ -666,18 +843,26 @@ fn register_wheel_listener(
 ) {
     window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
         if phase == DispatchPhase::Bubble && viewport.contains(&event.position) {
-            if !disabled && tracks.iter().any(|track| track.is_hovered(window)) {
-                let delta = event.delta.pixel_delta(px(16.0));
-                let max = handle.max_offset();
-                let offset = handle.offset() + delta;
-                handle.set_offset(point(
-                    offset.x.clamp(-max.x, px(0.0)),
-                    offset.y.clamp(-max.y, px(0.0)),
-                ));
-                cx.stop_propagation();
+            if !disabled
+                && tracks
+                    .iter()
+                    .any(|track| track.should_handle_scroll(window))
+            {
+                let delta = event.delta.pixel_delta(window.line_height());
+                let remaining = chain.iter().fold(delta, |remaining, source| {
+                    source.apply(event.position, remaining)
+                });
+                if remaining != delta {
+                    // Every known ancestor receives only its residual. Do not
+                    // let GPUI's immutable original delta apply a second time.
+                    cx.stop_propagation();
+                    window.refresh();
+                }
             }
             let mut inner = state.0.get();
-            inner.last_offset = handle.offset();
+            if let Some(source) = chain.first() {
+                inner.last_offset = source.source.offset();
+            }
             inner.last_activity = Some(Instant::now());
             state.0.set(inner);
             cx.notify(view);

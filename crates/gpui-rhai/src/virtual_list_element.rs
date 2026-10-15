@@ -1,13 +1,13 @@
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, GlobalElementId,
-    HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement, LayoutId, ListAlignment,
-    ListOffset, ListState, ParentElement, Pixels, Render, SharedString, Styled, Window, div, list,
-    px,
+    AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, FollowMode,
+    GlobalElementId, HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement, LayoutId,
+    ListAlignment, ListOffset, ListState, ParentElement, Pixels, Render, SharedString, Styled,
+    Window, div, list, px,
 };
 
 use crate::VirtualCollectionNodeSpec;
@@ -18,6 +18,8 @@ pub(crate) struct VirtualListEntityElement {
     content: VirtualCollectionNodeSpec,
     runtime: NodeSlotRuntime,
     retained_node: Option<crate::NodeId>,
+    scrollbars: crate::ScrollbarContext,
+    scrollbar_spec: crate::ScrollbarSpec,
 }
 
 impl VirtualListEntityElement {
@@ -26,12 +28,16 @@ impl VirtualListEntityElement {
         spec: VirtualCollectionNodeSpec,
         runtime: NodeSlotRuntime,
         retained_node: Option<crate::NodeId>,
+        scrollbars: crate::ScrollbarContext,
+        scrollbar_spec: crate::ScrollbarSpec,
     ) -> Self {
         Self {
             id: SharedString::from(format!("{path}/virtual-collection-entity")).into(),
             content: spec,
             runtime,
             retained_node,
+            scrollbars,
+            scrollbar_spec,
         }
     }
 }
@@ -68,11 +74,20 @@ impl Element for VirtualListEntityElement {
             global_id.expect("virtual list element is keyed"),
             |state, window| {
                 let state = state.unwrap_or_else(|| VirtualListElementState {
-                    view: cx
-                        .new(|_| VirtualListView::new(self.content.clone(), self.runtime.clone())),
+                    view: cx.new(|cx| {
+                        VirtualListView::new(
+                            self.content.clone(),
+                            self.runtime.clone(),
+                            cx.entity_id(),
+                            self.scrollbars.clone(),
+                            self.scrollbar_spec,
+                        )
+                    }),
                 });
                 state.view.update(cx, |view, cx| {
                     view.synchronize(self.content.clone(), self.runtime.clone(), cx);
+                    view.scrollbars = self.scrollbars.clone();
+                    view.scrollbar_spec = self.scrollbar_spec;
                 });
                 let mut element = div()
                     .flex()
@@ -108,6 +123,10 @@ impl Element for VirtualListEntityElement {
         // bounds. Scroll physics still use ListState's measured viewport.
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         frame.element.prepaint(window, cx);
+        frame.view.update(cx, VirtualListView::seed_viewport_hints);
+        frame
+            .view
+            .update(cx, |view, cx| view.publish_follow_status(window, cx));
         let scroll = frame.view.read(cx).scroll.clone();
         self.runtime.interactions.register_virtual_scroll(
             format!("{}:{}", self.content.id.component, self.content.id.key),
@@ -205,10 +224,20 @@ struct VirtualListView {
     pending_reveal: bool,
     /// The item-bounds reader this list installed in the runtime registry.
     bounds_reader: Option<crate::virtual_list::ItemBoundsReader>,
+    unseen: Rc<RefCell<BTreeSet<String>>>,
+    notify: gpui::EntityId,
+    last_follow_status: Option<crate::VirtualCollectionFollowStatus>,
+    scrollbars: crate::ScrollbarContext,
+    scrollbar_spec: crate::ScrollbarSpec,
+    hinted_width: Option<Pixels>,
+    scroll_source_epoch: u64,
 }
 
 impl Drop for VirtualListView {
     fn drop(&mut self) {
+        self.runtime
+            .virtual_requests
+            .remove_scroll_handle(&self.content.id, &self.unseen);
         if let Some(reader) = self.bounds_reader.take() {
             self.runtime
                 .virtual_requests
@@ -225,7 +254,13 @@ struct StickyHeaderFrame {
 }
 
 impl VirtualListView {
-    fn new(content: VirtualCollectionNodeSpec, runtime: NodeSlotRuntime) -> Self {
+    fn new(
+        content: VirtualCollectionNodeSpec,
+        runtime: NodeSlotRuntime,
+        notify: gpui::EntityId,
+        scrollbars: crate::ScrollbarContext,
+        scrollbar_spec: crate::ScrollbarSpec,
+    ) -> Self {
         let scroll = list_state(&content);
         let mut this = Self {
             content,
@@ -234,6 +269,13 @@ impl VirtualListView {
             frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
             pending_reveal: false,
             bounds_reader: None,
+            unseen: Rc::default(),
+            notify,
+            last_follow_status: None,
+            scrollbars,
+            scrollbar_spec,
+            hinted_width: None,
+            scroll_source_epoch: 0,
         };
         this.reveal_controlled_target();
         this.install_metrics_handler();
@@ -253,27 +295,162 @@ impl VirtualListView {
             || !self.runtime.colors.same_tokens(&runtime.colors);
         let changed = self.content != content || geometry_changed;
         let recreate = collection_requires_recreation(&self.content, &content);
-        let reset = collection_requires_reset(&self.content, &content) || geometry_changed;
+        let data_changed = self.content.data != content.data;
+        let key_order_changed = data_changed && !same_key_order(&self.content.data, &content.data);
+        let was_following = self.scroll.is_following_tail();
+        let old_anchor = self.scroll.logical_scroll_top();
+        let old_key = self
+            .content
+            .data
+            .key(old_anchor.item_ix)
+            .map(ToOwned::to_owned);
+        let old_keys = if key_order_changed {
+            collection_keys(&self.content.data)
+        } else {
+            BTreeSet::new()
+        };
+        let next_keys = if key_order_changed {
+            collection_keys(&content.data)
+        } else {
+            BTreeSet::new()
+        };
+        let replaced = key_order_changed
+            && !old_keys.is_empty()
+            && !next_keys.is_empty()
+            && old_keys.iter().all(|key| !next_keys.contains(key));
+        let follow_changed = self.content.follow_tail != content.follow_tail;
+        let preserve_reader =
+            recreate && self.content.id == content.id && !replaced && !follow_changed;
+        if key_order_changed && !recreate && !replaced {
+            self.apply_keyed_edits(
+                &content,
+                old_anchor,
+                old_key.as_deref(),
+                was_following,
+                (&old_keys, &next_keys),
+            );
+        }
         let reveal_changed = self.content.reveal_key != content.reveal_key;
         self.content = content;
         self.runtime = runtime;
         if recreate {
             self.scroll = list_state(&self.content);
-        } else if reset {
-            self.scroll.reset(self.content.data.len());
+            self.hinted_width = None;
+            let unseen = if preserve_reader {
+                self.unseen.borrow().clone()
+            } else {
+                BTreeSet::new()
+            };
+            self.unseen = Rc::new(RefCell::new(unseen));
+            if preserve_reader && !was_following {
+                self.scroll.pause_following_tail();
+                if let Some(key) = old_key.as_deref() {
+                    self.restore_reader(key, old_anchor.offset_in_item);
+                }
+            }
+        } else if replaced {
+            self.scroll.reset_with_uniform_height(
+                self.content.data.len(),
+                px(finite_to_f32(self.content.estimated_height)),
+            );
+            self.unseen = Rc::default();
+            if self.content.follow_tail {
+                self.scroll.set_follow_mode(FollowMode::Tail);
+            }
+        } else if geometry_changed {
+            // GPUI owns remeasurement and anchor correction. Invalidate heights
+            // without resetting identity, position or native follow state.
+            self.scroll.remeasure_items(0..self.content.data.len());
+        }
+        if recreate || replaced {
+            // Source replacement must retire a captured thumb gesture even
+            // when the retained collection key itself survives.
+            self.scroll_source_epoch = self.scroll_source_epoch.wrapping_add(1);
+            self.last_follow_status = None;
+        }
+        if follow_changed && !recreate {
+            self.scroll.set_follow_mode(if self.content.follow_tail {
+                FollowMode::Tail
+            } else {
+                FollowMode::Normal
+            });
+            self.unseen.borrow_mut().clear();
         }
         self.install_metrics_handler();
         if changed {
-            if reveal_changed || reset || recreate {
+            if reveal_changed || replaced || recreate {
                 self.reveal_controlled_target();
             }
-            if self.content.follow_tail && !self.content.data.is_empty() {
-                self.scroll.scroll_to(ListOffset {
-                    item_ix: self.content.data.len() - 1,
-                    offset_in_item: px(0.0),
-                });
-            }
             cx.notify();
+        }
+        // Explicit commands have priority over keyed anchor preservation,
+        // controlled reveal and follow synchronization in this same commit.
+        self.apply_scroll_commands(cx);
+    }
+
+    fn apply_keyed_edits(
+        &mut self,
+        content: &VirtualCollectionNodeSpec,
+        old_anchor: ListOffset,
+        old_key: Option<&str>,
+        was_following: bool,
+        keys: (&BTreeSet<String>, &BTreeSet<String>),
+    ) {
+        let splices = keyed_splices(&self.content.data, &content.data);
+        let has_insertions = splices.iter().any(|(_, count)| *count > 0);
+        for (range, count) in splices {
+            self.scroll.splice(range, count);
+        }
+        if has_insertions {
+            // GPUI cannot hint just a splice. This preserves cached native
+            // dimensions as hints and fills unknown dimensions with the estimate.
+            self.scroll = self
+                .scroll
+                .clone()
+                .with_uniform_item_height(px(finite_to_f32(content.estimated_height)));
+        }
+        if !was_following
+            && let Some(key) = old_key
+            && let Some(index) =
+                (0..content.data.len()).find(|index| content.data.key(*index) == Some(key))
+        {
+            self.scroll.scroll_to(ListOffset {
+                item_ix: index,
+                offset_in_item: old_anchor.offset_in_item,
+            });
+        }
+        let mut unseen = self.unseen.borrow_mut();
+        unseen.retain(|key| keys.1.contains(key));
+        if content.follow_tail && !was_following {
+            unseen.extend(keys.1.difference(keys.0).cloned());
+        }
+    }
+
+    fn restore_reader(&self, key: &str, offset: Pixels) {
+        if let Some(index) =
+            (0..self.content.data.len()).find(|index| self.content.data.key(*index) == Some(key))
+        {
+            self.scroll.scroll_to(ListOffset {
+                item_ix: index,
+                offset_in_item: offset,
+            });
+        }
+    }
+
+    fn apply_scroll_commands(&self, cx: &mut Context<Self>) {
+        let handle = self.scroll_handle();
+        for command in self
+            .runtime
+            .virtual_requests
+            .take_scroll_commands(&self.content.id)
+        {
+            match command {
+                crate::virtual_list::CollectionScrollCommand::Start => handle.scroll_to_start(cx),
+                crate::virtual_list::CollectionScrollCommand::End => handle.scroll_to_end(cx),
+                crate::virtual_list::CollectionScrollCommand::By(distance) => {
+                    handle.scroll_by(px(crate::renderer::f64_to_f32(distance)), cx)
+                }
+            }
         }
     }
 
@@ -315,6 +492,7 @@ impl VirtualListView {
         let metrics = self.runtime.virtual_requests.clone();
         let id = self.content.id.clone();
         let scroll = self.scroll.clone();
+        metrics.set_scroll_handle(id.clone(), self.scroll_handle());
         self.bounds_reader = Some(metrics.set_item_bounds_reader(id.clone(), move |index| {
             scroll
                 .bounds_for_item(index)
@@ -328,6 +506,65 @@ impl VirtualListView {
         self.scroll.set_scroll_handler(move |event, _, _| {
             metrics.report_scroll(&id, event.visible_range.clone(), event.is_scrolled);
         });
+    }
+
+    fn scroll_handle(&self) -> crate::VirtualCollectionScrollHandle {
+        crate::VirtualCollectionScrollHandle {
+            state: self.scroll.clone(),
+            unseen: Rc::clone(&self.unseen),
+            follow_tail: self.content.follow_tail,
+            notify: self.notify,
+        }
+    }
+
+    fn seed_viewport_hints(&mut self, cx: &mut Context<Self>) {
+        let width = self.scroll.viewport_bounds().size.width;
+        if width > px(0.0) && self.hinted_width != Some(width) {
+            // List::prepaint clears all hints on its first/changed-width pass.
+            // Seed once after that pass, never on stable frames or realization.
+            self.hinted_width = Some(width);
+            self.scroll = self
+                .scroll
+                .clone()
+                .with_uniform_item_height(px(finite_to_f32(self.content.estimated_height)));
+            cx.notify();
+        }
+    }
+
+    fn publish_follow_status(&mut self, window: &mut Window, cx: &mut App) {
+        let status = self.scroll_handle().status();
+        if status.following {
+            self.unseen.borrow_mut().clear();
+        }
+        self.runtime
+            .virtual_requests
+            .report_follow(&self.content.id, status);
+        if self.last_follow_status == Some(status) {
+            return;
+        }
+        self.last_follow_status = Some(status);
+        if let Some(callback) = self.content.on_follow_change.clone() {
+            let dispatcher = self.runtime.dispatcher.clone();
+            let registry = self.runtime.virtual_requests.clone();
+            let id = self.content.id.clone();
+            let lease = Rc::clone(&self.unseen);
+            window.defer(cx, move |window, cx| {
+                if !registry
+                    .scroll_handle(&id)
+                    .is_some_and(|handle| Rc::ptr_eq(&handle.unseen, &lease))
+                {
+                    return;
+                }
+                dispatcher.dispatch(
+                    *callback,
+                    "follow_change",
+                    status.to_ui_value(),
+                    None,
+                    window,
+                    cx,
+                );
+            });
+        }
     }
 }
 
@@ -358,7 +595,11 @@ impl Render for VirtualListView {
             measured_visible,
         );
         let content = self.content.clone();
-        let runtime = self.runtime.clone();
+        let mut runtime = self.runtime.clone();
+        runtime.wheel_parents.insert(
+            0,
+            crate::scrollbar::ScrollWheelSource::new(self.scroll.clone(), (false, true), false),
+        );
         let frame_indices = Rc::new(RefCell::new(BTreeSet::new()));
         self.frame_indices = Rc::clone(&frame_indices);
         let sticky = sticky_header_frame(&self.scroll, &content, &runtime, viewport);
@@ -411,6 +652,11 @@ impl Render for VirtualListView {
                         .child(element),
                 )
             })
+            .child(self.scrollbars.element(
+                SharedString::from(format!("scrollbar-{}", self.scroll_source_epoch)),
+                self.scroll.clone(),
+                self.scrollbar_spec,
+            ))
     }
 }
 
@@ -534,12 +780,10 @@ fn collection_requires_recreation(
         || current.bottom_align != next.bottom_align
 }
 
-fn collection_requires_reset(
-    current: &VirtualCollectionNodeSpec,
-    next: &VirtualCollectionNodeSpec,
-) -> bool {
-    current.estimated_height.to_bits() != next.estimated_height.to_bits()
-        || !same_key_order(&current.data, &next.data)
+fn collection_keys(data: &crate::VirtualCollectionData) -> BTreeSet<String> {
+    (0..data.len())
+        .filter_map(|index| data.key(index).map(ToOwned::to_owned))
+        .collect()
 }
 
 fn same_key_order(
@@ -550,16 +794,88 @@ fn same_key_order(
         && (0..current.len()).all(|index| current.key(index) == next.key(index))
 }
 
+/// Preserve a maximal ordered subsequence of native rows. Only gaps are
+/// spliced, from the end, retaining GPUI's measured items and anchor logic for
+/// ordinary insert/delete/append operations. Moved rows are remeasured.
+fn keyed_splices(
+    current: &crate::VirtualCollectionData,
+    next: &crate::VirtualCollectionData,
+) -> Vec<(std::ops::Range<usize>, usize)> {
+    // Common growth/edit paths do not need an index map or LIS allocation.
+    let prefix = (0..current.len().min(next.len()))
+        .take_while(|index| current.key(*index) == next.key(*index))
+        .count();
+    let suffix = (0..(current.len() - prefix).min(next.len() - prefix))
+        .take_while(|index| {
+            current.key(current.len() - index - 1) == next.key(next.len() - index - 1)
+        })
+        .count();
+    let old_end = current.len() - suffix;
+    let new_end = next.len() - suffix;
+    if prefix == old_end || prefix == new_end {
+        return if old_end == new_end {
+            Vec::new()
+        } else {
+            vec![(prefix..old_end, new_end - prefix)]
+        };
+    }
+    let old = (0..current.len())
+        .filter_map(|index| current.key(index).map(|key| (key, index)))
+        .collect::<BTreeMap<_, _>>();
+    let pairs = (0..next.len())
+        .filter_map(|index| old.get(next.key(index)?).map(|old| (*old, index)))
+        .collect::<Vec<_>>();
+    let mut tails: Vec<usize> = Vec::new();
+    let mut previous = vec![None; pairs.len()];
+    for (index, (old, _)) in pairs.iter().enumerate() {
+        let slot = tails.partition_point(|tail| pairs[*tail].0 < *old);
+        if slot > 0 {
+            previous[index] = Some(tails[slot - 1]);
+        }
+        if slot == tails.len() {
+            tails.push(index);
+        } else {
+            tails[slot] = index;
+        }
+    }
+    let mut kept = Vec::with_capacity(tails.len() + 1);
+    let mut cursor = tails.last().copied();
+    while let Some(index) = cursor {
+        kept.push(pairs[index]);
+        cursor = previous[index];
+    }
+    kept.reverse();
+    kept.push((current.len(), next.len()));
+    let mut from = (0, 0);
+    let mut splices = Vec::new();
+    for to in kept {
+        if from != to {
+            splices.push((from.0..to.0, to.1 - from.1));
+        }
+        from = (to.0.saturating_add(1), to.1.saturating_add(1));
+    }
+    splices.reverse();
+    splices
+}
+
 fn list_state(spec: &VirtualCollectionNodeSpec) -> ListState {
-    ListState::new(
+    let state = ListState::new(
         spec.data.len(),
         if spec.bottom_align {
             ListAlignment::Bottom
         } else {
             ListAlignment::Top
         },
-        px(finite_to_f32(spec.overdraw_pixels)),
+        // A one-pixel native measurement sentinel prevents zero-height unknown
+        // rows beyond the viewport from looking like the true tail when the
+        // caller requests zero overdraw. It does not create follow state.
+        px(finite_to_f32(spec.overdraw_pixels)).max(px(1.0)),
     )
+    .with_uniform_item_height(px(finite_to_f32(spec.estimated_height)));
+    if spec.follow_tail {
+        state.set_follow_mode(FollowMode::Tail);
+    }
+    state
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -575,6 +891,69 @@ mod tests {
 
     fn indices(range: std::ops::Range<usize>) -> BTreeSet<usize> {
         range.collect()
+    }
+
+    fn data(keys: impl IntoIterator<Item = String>) -> crate::VirtualCollectionData {
+        keys.into_iter()
+            .map(|key| {
+                crate::UiValue::Map(BTreeMap::from([(
+                    "key".to_owned(),
+                    crate::UiValue::String(key),
+                )]))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn keyed_diff_keeps_native_rows_for_insert_delete_and_large_append() {
+        let current = data((0..30_000).map(|index| format!("row-{index}")));
+        let appended = data((0..30_001).map(|index| format!("row-{index}")));
+        assert_eq!(keyed_splices(&current, &current), Vec::new());
+        assert_eq!(
+            keyed_splices(&current, &appended),
+            vec![(30_000..30_000, 1)]
+        );
+        assert_eq!(
+            keyed_splices(&appended, &current),
+            vec![(30_000..30_001, 0)]
+        );
+        let mut keys = (0..30_000)
+            .map(|index| format!("row-{index}"))
+            .collect::<Vec<_>>();
+        keys.insert(12_000, "inserted".to_owned());
+        assert_eq!(
+            keyed_splices(&current, &data(keys)),
+            vec![(12_000..12_000, 1)]
+        );
+    }
+
+    #[test]
+    fn keyed_diff_reorders_by_splicing_only_gaps_and_never_resets_surviving_rows() {
+        let original = ["a", "b", "c", "d", "e"];
+        let reordered = ["c", "a", "inserted", "b", "e"];
+        let current = data(original.map(ToOwned::to_owned));
+        let next = data(reordered.map(ToOwned::to_owned));
+        let splices = keyed_splices(&current, &next);
+        let mut rows = original.map(ToOwned::to_owned).to_vec();
+        // Inserted payload comes from the corresponding final index, computed
+        // from the edit's running length delta when applying in ascending order.
+        let mut shift: isize = 0;
+        for (range, count) in splices.iter().rev() {
+            let target = range.start.checked_add_signed(shift).unwrap();
+            shift += isize::try_from(*count).unwrap() - isize::try_from(range.len()).unwrap();
+            rows.splice(
+                target..target + range.len(),
+                reordered[target..target + count]
+                    .iter()
+                    .map(|key| (*key).to_owned()),
+            );
+        }
+        assert_eq!(rows, reordered);
+        assert!(
+            splices
+                .iter()
+                .all(|(range, _)| range.len() < original.len())
+        );
     }
 
     #[test]
@@ -644,6 +1023,7 @@ mod tests {
             overdraw_pixels: 64.0,
             bottom_align: false,
             follow_tail: false,
+            on_follow_change: None,
             reveal_key: None,
             sticky_headers: std::sync::Arc::new(BTreeSet::new()),
             inherited_motion_group: None,

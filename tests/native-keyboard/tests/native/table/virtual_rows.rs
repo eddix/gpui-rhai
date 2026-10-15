@@ -44,6 +44,23 @@ fn virtual_realized_window(node: &UiNode) -> Option<(std::ops::Range<usize>, usi
     }
 }
 
+fn virtual_spec(node: &UiNode) -> Option<&gpui_rhai::VirtualCollectionNodeSpec> {
+    match node.kind() {
+        gpui_rhai::UiNodeKind::VirtualCollection { spec } => Some(spec),
+        gpui_rhai::UiNodeKind::Box { children } | gpui_rhai::UiNodeKind::Fragment { children } => {
+            children.iter().find_map(virtual_spec)
+        }
+        gpui_rhai::UiNodeKind::Overlay {
+            trigger, content, ..
+        } => virtual_spec(trigger).or_else(|| virtual_spec(content)),
+        gpui_rhai::UiNodeKind::Layer { content, .. } => virtual_spec(content),
+        gpui_rhai::UiNodeKind::ErrorBoundary { child, fallback } => {
+            virtual_spec(child).or_else(|| virtual_spec(fallback))
+        }
+        _ => None,
+    }
+}
+
 #[gpui::test]
 fn fill_height_table_honors_min_height_inside_scroll_fallback(cx: &mut TestAppContext) {
     // Below the minimum the parent scrolls; above it the Table fills the available height.
@@ -364,15 +381,79 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
             "stable frames must not keep invoking virtual item Rhai renderers"
         );
     }
+    // Read from the middle so a full reorder has room on both sides to retain
+    // the reader, rather than hitting a natural start/end clamp.
+    let collection = settled.virtual_collections[0].id.clone();
+    visual.update(|_, cx| {
+        view.collection_scroll_handle(&collection, cx)
+            .unwrap()
+            .unwrap()
+            .scroll_by(px(15_000.0), cx)
+    });
+    settle(&mut visual, Step::Tick, 8);
+    let reader_metrics = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections[0]
+        .clone();
+    let reader_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let reader_key = virtual_spec(&reader_root)
+        .unwrap()
+        .data
+        .key(reader_metrics.scroll_item)
+        .unwrap();
+    let reader_name = format!("Account {}", reader_key.strip_prefix("row-").unwrap());
+    let reader = snapshot(&mut visual, &view)
+        .nodes()
+        .find(|node| node.name == reader_name)
+        .expect("the actual native reader anchor has presented account text")
+        .clone();
+    let reader_y = reader.geometry.unwrap().visual.y;
     dispatch_script_button(&mut visual, &view, "Reverse 1,000 rows");
-    advance(&mut visual, 4);
-    wait_for_view_text(
-        &mut visual,
-        &view,
-        "Account 0999",
-        "native Table sorting should project the descending Rust order",
+    settle(&mut visual, Step::Tick, 8);
+    let descending = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let descending = &virtual_spec(&descending).unwrap().data;
+    assert_eq!(
+        descending.key(0),
+        Some("row-0999"),
+        "the full native projection really reordered"
+    );
+    assert_eq!(descending.key(descending.len() - 1), Some("row-0000"));
+    let after = snapshot(&mut visual, &view)
+        .nodes()
+        .find(|node| node.name == reader.name)
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    assert!(
+        (after.y - reader_y).abs() < 1.0,
+        "sorting preserves the surviving reader's presented coordinate"
     );
     dispatch_script_button(&mut visual, &view, "Reverse 1,000 rows");
+    settle(&mut visual, Step::Tick, 8);
+    let ascending = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let ascending = &virtual_spec(&ascending).unwrap().data;
+    assert_eq!(ascending.key(0), Some("row-0000"));
+    assert_eq!(ascending.key(ascending.len() - 1), Some("row-0999"));
+    let after = snapshot(&mut visual, &view)
+        .nodes()
+        .find(|node| node.name == reader.name)
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    assert!(
+        (after.y - reader_y).abs() < 1.0,
+        "restoring order also preserves the reader"
+    );
+    // Explicit navigation, not a sort/reset side effect, returns to the start.
+    visual.update(|_, cx| {
+        view.collection_scroll_handle(&collection, cx)
+            .unwrap()
+            .unwrap()
+            .scroll_to_start(cx)
+    });
     advance(&mut visual, 4);
     wait_for_view_text(
         &mut visual,
@@ -401,18 +482,28 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         node.bounds.expect("node has committed bounds")
     };
     visual.simulate_resize(size(px(820.0), px(620.0)));
-    advance(&mut visual, 3);
+    settle(&mut visual, Step::Tick, 8);
     let compact = node_bounds(&mut visual, "table", "One thousand deterministic accounts");
     let compact_email = node_bounds(&mut visual, "columnheader", "Email");
     let compact_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let (_, compact_realized) = virtual_realized_window(&compact_root).unwrap();
+    let compact_metrics = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections[0]
+        .clone();
 
     visual.simulate_resize(size(px(1_180.0), px(820.0)));
-    advance(&mut visual, 3);
+    settle(&mut visual, Step::Tick, 8);
     let expanded = node_bounds(&mut visual, "table", "One thousand deterministic accounts");
     let expanded_email = node_bounds(&mut visual, "columnheader", "Email");
     let expanded_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let (expanded_range, expanded_realized) = virtual_realized_window(&expanded_root).unwrap();
+    let expanded_metrics = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections[0]
+        .clone();
 
     assert!(
         expanded.width > compact.width + 300.0,
@@ -427,8 +518,9 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         "percentage column did not relayout after resize: compact={compact_email:?}, expanded={expanded_email:?}"
     );
     assert!(
-        expanded_realized > compact_realized + 2,
-        "the virtual row window did not follow the taller viewport: compact={compact_realized}, expanded={expanded_realized}"
+        expanded_metrics.visible_range.len() > compact_metrics.visible_range.len() + 2
+            && expanded_realized >= expanded_metrics.visible_range.len(),
+        "presented rows must follow the taller measured viewport (cached halos may differ): compact={compact_metrics:?}/{compact_realized}, expanded={expanded_metrics:?}/{expanded_realized}"
     );
 
     let coordinate = |value: f64| px(value.to_string().parse::<f32>().unwrap());

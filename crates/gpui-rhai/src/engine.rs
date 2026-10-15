@@ -3561,6 +3561,7 @@ struct DecodedVirtualCollection {
     overdraw_pixels: f64,
     bottom_align: bool,
     follow_tail: bool,
+    on_follow_change: Option<FnPtr>,
     reveal_key: Option<String>,
     sticky_headers: Arc<BTreeSet<usize>>,
 }
@@ -3581,6 +3582,7 @@ impl DecodedVirtualCollection {
             overdraw_pixels: self.overdraw_pixels,
             bottom_align: self.bottom_align,
             follow_tail: self.follow_tail,
+            on_follow_change: None,
             reveal_key: self.reveal_key,
             sticky_headers: self.sticky_headers,
             inherited_motion_group: None,
@@ -3635,6 +3637,7 @@ fn decode_virtual_collection(
         }
     };
     let follow_tail = collection_optional_bool(&mut config, "follow_tail")?.unwrap_or(false);
+    let on_follow_change = collection_optional_follow_callback(&mut config)?;
     let data = collection_data(&mut config)?;
     let reveal_key = collection_optional_string(&mut config, "reveal_key")?;
     if reveal_key.as_deref() == Some("") {
@@ -3681,6 +3684,7 @@ fn decode_virtual_collection(
         overdraw_pixels,
         bottom_align,
         follow_tail,
+        on_follow_change,
         reveal_key,
         sticky_headers,
     })
@@ -3697,7 +3701,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                   renderer: FnPtr|
                   -> Result<UiNode, Box<EvalAltResult>> {
                 validate_virtual_renderer(&renderer)?;
-                let decoded = decode_virtual_collection(config)?;
+                let mut decoded = decode_virtual_collection(config)?;
 
                 let VirtualCollectionContext {
                     component,
@@ -3716,6 +3720,21 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     .with_generation(generation);
                 let native_context =
                     crate::invocation::ScriptInvocationContext::capture_retained(&call);
+                let on_follow_change = decoded
+                    .on_follow_change
+                    .take()
+                    .map(|callback| {
+                        let mut callback = ScriptCallback::try_from_fn_ptr(callback, generation)
+                            .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                        callback.bind_component_scope_if_unset(
+                            context.callback_component_path(),
+                            context.callback_component_incarnation(),
+                            context.callback_event_schemas().clone(),
+                        );
+                        callback.bind_native_context_if_unset(native_context.clone());
+                        Ok::<_, Box<EvalAltResult>>(callback)
+                    })
+                    .transpose()?;
                 let realized = realize_seeded_virtual_collection(
                     &call,
                     &renderer,
@@ -3752,9 +3771,27 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                         decoded.key, id.component
                     ))));
                 }
-                Ok(UiNode::virtual_collection(decoded.into_spec(id, realized)))
+                let mut spec = decoded.into_spec(id, realized);
+                spec.on_follow_change = on_follow_change.map(Box::new);
+                Ok(UiNode::virtual_collection(spec))
             },
         );
+}
+
+fn collection_optional_follow_callback(
+    config: &mut Map,
+) -> Result<Option<FnPtr>, Box<EvalAltResult>> {
+    config
+        .remove("on_follow_change")
+        .filter(|value| !value.is_unit())
+        .map(|value| {
+            value.try_cast::<FnPtr>().ok_or_else(|| {
+                Box::new(component_render_error(
+                    "virtual collection on_follow_change must be a named callback",
+                ))
+            })
+        })
+        .transpose()
 }
 
 fn validate_virtual_renderer(renderer: &FnPtr) -> Result<(), Box<EvalAltResult>> {

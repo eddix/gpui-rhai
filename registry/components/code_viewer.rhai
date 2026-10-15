@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["surface", "surface_raised"],
+  "tokens": ["surface", "surface_raised", "scrollbar.thumb", "scrollbar.thumb_hover"],
   "environment": []
 }
 */
@@ -16,7 +16,7 @@
 define_component(#{
     metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.2.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["surface", "surface_raised"],
+        tokens: ["surface", "surface_raised", "scrollbar.thumb", "scrollbar.thumb_hover"],
         environment: [] },
     schema: #{
         props: #{
@@ -44,6 +44,8 @@ define_component(#{
             tab_size: #{ schema: #{ type: "integer", min: 1, max: 16 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 4 },
                 doc: "Columns between tab stops when tabs are expanded for display." },
+            scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "auto" }, doc: "Shared themed scrollbar visibility; the viewport keeps keyboard focus." },
             height: #{ schema: #{ type: "string", allowed: ["fill", "content"] }, required: false,
                 sensitive: false, "default": #{ type: "string", value: "fill" },
                 doc: "`fill` fills the viewer's box; `content` makes it as tall as its rows at the current width, wrapped rows included, up to `max_height`." },
@@ -60,7 +62,8 @@ define_component(#{
             column: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false,
                 doc: "One-based column, counted in characters from the start of the line." },
         } }, doc: "Emitted on a double-click or Enter in the text; the payload is the one-based source location." } },
-        slots: #{}, parts: ["root", "gutter", "line", "text", "loading", "error", "search"],
+        slots: #{}, parts: ["root", "gutter", "line", "text", "loading", "error", "search",
+            "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_CodeViewer")
 });
@@ -86,6 +89,10 @@ fn render_CodeViewer(ctx, props) {
         wrap: prop_or(props, "wrap", "none"),
         wrap_column: prop_or(props, "wrap_column", 100),
         tab_size: prop_or(props, "tab_size", 4),
+        scrollbar: prop_or(props, "scrollbar", "auto"),
+        scrollbar_track_style: ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))),
+        scrollbar_thumb_style: ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))),
+        scrollbar_thumb_hover_style: ctx.component_style("scrollbar_thumb_hover", style().background(theme_color("scrollbar.thumb_hover"))),
         height: height,
         max_height: if type_of(max_height) == "i64" { px(max_height) } else { max_height },
         gutter_style: ctx.component_style("gutter", style()
