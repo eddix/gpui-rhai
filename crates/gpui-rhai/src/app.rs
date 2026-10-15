@@ -5243,6 +5243,9 @@ impl ScriptHostView {
         let mut deferred = Vec::new();
         for command in commands {
             match command {
+                crate::element_ref::ElementCommand::CopyText { text, .. } => {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                }
                 crate::element_ref::ElementCommand::Focus { node, .. } => {
                     if let Some(handle) = self.focus_handles.get(&node) {
                         handle.focus(window, cx);

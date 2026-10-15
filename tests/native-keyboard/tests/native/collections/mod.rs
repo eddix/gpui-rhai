@@ -1,5 +1,6 @@
 //! List, virtual collections and collection selection.
 
+mod column_browser;
 mod focus_frame;
 mod list;
 mod selection_data_size;

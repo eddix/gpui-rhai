@@ -15,6 +15,7 @@ mod frame_demand;
 mod group_value_case;
 mod header_on_raised_surface;
 mod keyboard;
+mod sort_key;
 mod sticky_header;
 mod virtual_rows;
 

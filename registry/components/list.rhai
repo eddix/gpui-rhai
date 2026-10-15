@@ -44,7 +44,7 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Accessible name of the list." },
-            items: #{ schema: #{ type: "array", max_items: 10000, items: #{
+            items: #{ schema: #{ type: "one_of", variants: [#{ type: "collection" }, #{ type: "array", max_items: 10000, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                         doc: "Unique row key, used in `selected_keys` and every event." },
@@ -69,7 +69,13 @@ define_component(#{
                     disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                         "default": #{ type: "bool", value: false },
                         doc: "Mutes the row; it ignores clicks and the keyboard skips it." },
-                } } }, required: true, sensitive: false, doc: "Rows in display order." },
+                    has_children: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                        "default": #{ type: "bool", value: false }, doc: "Shows a logical child disclosure indicator for hierarchical browsing." },
+                } } }] }, required: true, sensitive: false, doc: "Rows in display order; a NativeCollection is normalized and navigated in Rust without enumerating it in Rhai." },
+            keyboard_navigation: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true }, doc: "Owns the single tab stop and navigation keys. Set false only when a parent such as ColumnBrowser owns keyboard navigation and focus; selected rows still remain revealed." },
+            active: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true }, doc: "Draws the selected cursor as active; false keeps ancestor selection visible without its focus frame." },
             selection_mode: #{ schema: #{ type: "string", allowed: ["none", "single", "multiple"] },
                 required: false, sensitive: false, "default": #{ type: "string", value: "none" },
                 doc: "`single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none`, or `on_context_request`, makes the list one tab stop." },
@@ -106,6 +112,8 @@ define_component(#{
                 doc: "Called with the next selected keys when a row is clicked, Up, Down, Home or End is pressed, or a context request selects a row." },
             on_row_click: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with the row key when an enabled row is clicked, or Enter is pressed on the selected row." },
+            on_row_activate: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with #{ key, has_children } on a double click; useful to distinguish browsing selection from leaf activation." },
             on_context_request: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with `#{ key, anchor, source }` when a row is right-pressed or Shift+F10 or the menu key is pressed; without a selection mode it makes the list a tab stop for those keys." },
         },
@@ -115,6 +123,10 @@ define_component(#{
                 doc: "Emitted when a click, Up, Down, Home, End or a context request selects rows; the payload is the next selection." },
             row_click: #{ payload: #{ type: "string" },
                 doc: "Emitted when an enabled row is clicked or Enter is pressed on the selected row; the payload is the row key." },
+            row_activate: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
+                key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                has_children: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
+            } }, doc: "Emitted when an enabled row is double-clicked." },
             context_request: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
                 key: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: true, sensitive: false,
                     doc: "Row the menu is for; `()` from the keyboard when no row is selected or without a selection mode, a menu for the whole list." },
@@ -147,6 +159,7 @@ define_component(#{
 fn List(props) { render_component("components/list", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn field_or(item, name, fallback) { if name in item && item[name] != () { item[name] } else { fallback } }
+fn is_rtl(ctx) { let rtl = false; try { rtl = ctx.text_direction() == "rtl"; } catch { } rtl }
 // `height` takes logical pixels or a Length.
 fn list_length(value) { if type_of(value) == "Length" { value } else { px(value) } }
 
@@ -159,6 +172,13 @@ fn row_action(mode, selected, focus, ctx, key) {
     let selection = next_selection(mode, selected, key);
     if selection != () { ctx.emit("selection_change", selection); }
     if focus != () { try { ctx.focus(focus); } catch { } }
+}
+fn row_pointer(mode, selected, focus, key, has_children, ctx, event) {
+    row_action(mode, selected, focus, ctx, key);
+    if type_of(event) == "map" && "click_count" in event && event.click_count >= 2 {
+        ctx.emit("row_activate", #{ key: key, has_children: has_children });
+    }
+    handled()
 }
 // Keyboard navigation moves the selection and keeps the row revealed, as in Table.
 fn keyboard_select(ctx, key) { ctx.emit("selection_change", [key]); handled() }
@@ -197,21 +217,9 @@ fn next_selection(mode, selected, key) {
     }
 }
 
-// Keyboard targets among the enabled rows: the current row is the first selected one; Up and
-// Down move one row and stop at the ends, and go to the first row when none is current.
-// `chosen` is the selection as a map from key to true.
-fn row_neighbors(keys, chosen) {
-    if keys.len == 0 { return #{ first: (), last: (), previous: (), next: (), current: (), index: () }; }
-    let current = -1;
-    for index in 0..keys.len { if current < 0 && keys[index] in chosen { current = index; } }
-    let previous = if current <= 0 { 0 } else { current - 1 };
-    let next = if current < 0 { 0 } else if current + 1 < keys.len { current + 1 } else { current };
-    #{ first: keys[0], last: keys[keys.len - 1], previous: keys[previous], next: keys[next],
-        current: if current >= 0 { keys[current] } else { () } }
-}
-
-fn render_list_row(below, dividers, badge_slot, context, total, mode, selected, focus, ctx, payload) {
+fn render_list_row(active, below, dividers, badge_slot, context, total, mode, selected, focus, ctx, payload) {
     let item = payload.item;
+    item.active = active;
     let children = [];
     let badge = if item.badge == () { () } else {
         badge::Badge(#{ key: `${payload.key}-badge`, text: item.badge.text,
@@ -263,16 +271,21 @@ fn render_list_row(below, dividers, badge_slot, context, total, mode, selected, 
             .with_style(ctx.component_style("meta", style().flex_shrink(false).whitespace_nowrap()
                 .typography("body").font_feature("tnum", 1).text_color(supporting))));
     }
+    if item.has_children {
+        children.push(text(if is_rtl(ctx) { "‹" } else { "›" })
+            .with_style(style().flex_shrink(false).text_color(theme_color("text_muted"))));
+    }
     // Selection is the table selection tint plus the 2px indicator bar on the row start;
     // while the list has keyboard focus the selected row also shows the focus frame.
     if item.selected {
         children.push(row([]).with_style(ctx.component_style("indicator_bar", style()
             .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
             .width(px(2)).background(theme_color("accent")))));
-        children.push(row([]).with_style(ctx.component_style("cursor", style()
+        let cursor = style()
             .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
             .border(px(2)).border_color(rgba(0x00000000))
-            .group_focus(style().border_color(theme_color("focus_ring"))))));
+            .group_focus(style().border_color(theme_color("focus_ring")));
+        if item.active { children.push(row([]).with_style(ctx.component_style("cursor", cursor))); }
     }
     let base = style().relative().width(relative(1.0)).items_center().gap(theme_spacing("sm"))
         .padding_x(theme_length("metrics.inset"))
@@ -283,7 +296,8 @@ fn render_list_row(below, dividers, badge_slot, context, total, mode, selected, 
     if !item.selected && !item.disabled {
         base = base.hover(style().background(theme_color("surface_hover")));
     }
-    let node = row(children).with_key(payload.key)
+    let node = row(children).with_key(payload.key);
+    node = node
         .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
         .disabled(item.disabled)
         .accessibility_role(if mode != "none" { "option" } else { "listitem" })
@@ -297,7 +311,7 @@ fn render_list_row(below, dividers, badge_slot, context, total, mode, selected, 
         node = node.on("pointer_down", Fn("row_context").curry(#{ key: payload.key, select: select }));
     }
     // A row is a pointer target only: the list is the one tab stop.
-    node.on_click_value(Fn("row_action").curry(mode).curry(selected).curry(focus), payload.key)
+    node.on("click", Fn("row_pointer").curry(mode).curry(selected).curry(focus).curry(payload.key).curry(item.has_children))
         .tab_stop(false)
 }
 
@@ -307,7 +321,7 @@ fn list_state(ctx, props, size, part, content) {
         .with_style(ctx.component_style(part, size.min_width(px(0))
             .padding_x(theme_length("metrics.inset")).padding_y(theme_spacing("sm"))
             .typography("body").text_color(theme_color("text_muted"))))
-        .accessibility_role("list").accessibility_label(props.label)
+        .accessibility_role(if prop_or(props, "selection_mode", "none") == "none" { "list" } else { "listbox" }).accessibility_label(props.label)
 }
 
 fn render_List(ctx, props) {
@@ -316,6 +330,7 @@ fn render_List(ctx, props) {
     if has_height == fill_height { throw "List requires exactly one of height or fill_height"; }
     let mode = prop_or(props, "selection_mode", "none");
     let selected = prop_or(props, "selected_keys", []);
+    let keyboard = prop_or(props, "keyboard_navigation", true);
     let below = prop_or(props, "secondary_layout", "inline") == "below";
     // A virtual collection takes only a pixel height: under a Length height the rows fill a
     // column of that height instead.
@@ -335,21 +350,7 @@ fn render_List(ctx, props) {
     // The rows stay linear in the items: each carries its selected flag, and the selection
     // reaches the row renderer once (a click builds the next selection then), so the data
     // does not grow with rows times selected keys.
-    let chosen = #{};
-    if mode != "none" { for key in selected { chosen[key] = true; } }
-    let data = [];
-    let enabled = [];
-    for item in props.items {
-        let disabled = field_or(item, "disabled", false);
-        data.push(#{ key: item.key, title: item.title, secondary: field_or(item, "secondary", ()),
-            meta: field_or(item, "meta", ()),
-            badge: if "badge" in item && item.badge != () {
-                #{ text: item.badge.text, variant: field_or(item.badge, "variant", "neutral"),
-                    dot: field_or(item.badge, "dot", true) }
-            } else { () },
-            disabled: disabled, selected: item.key in chosen });
-        if !disabled { enabled.push(item.key); }
-    }
+    let data = native_list_view(props.items, if mode == "none" { [] } else { selected });
     let collection = #{ key: `${props.key}-rows`, label: props.label, data: data,
         estimated_height: if below { 48.0 } else { 32.0 }, overdraw_pixels: 128.0,
         alignment: "top", follow_tail: false };
@@ -357,7 +358,7 @@ fn render_List(ctx, props) {
     if fills { collection.fill_height = true; } else { collection.height = props.height; }
     let neighbors = ();
     if mode != "none" {
-        neighbors = row_neighbors(enabled, chosen);
+        neighbors = native_list_neighbors(data, selected);
         if neighbors.current != () { collection.reveal_key = neighbors.current; }
     }
     let context = "on_context_request" in props && props.on_context_request != ();
@@ -368,14 +369,14 @@ fn render_List(ctx, props) {
         badge_slot = row([]).with_style(style().width(badge_slot));
     }
     // The list is a tab stop when it takes keys; a row click hands the focus back to it.
-    let focus = if mode == "none" && context || mode != "none" && neighbors.first != () {
+    let focus = if keyboard && (mode == "none" && context || mode != "none" && neighbors.first != ()) {
         `${props.key}-focus`
     } else { () };
     let rows = virtual_collection(collection,
-        Fn("render_list_row").curry(below).curry(prop_or(props, "dividers", false))
+        Fn("render_list_row").curry(prop_or(props, "active", true)).curry(below).curry(prop_or(props, "dividers", false))
             .curry(badge_slot).curry(context).curry(data.len)
             .curry(mode).curry(selected).curry(focus));
-    if mode == "none" && context {
+    if keyboard && mode == "none" && context {
         // Without a selection mode there is no current row: the list is a tab stop for the
         // keyboard request alone, which is for the whole list. A wrapper holds that focus and
         // draws the 2px container frame over the list's edge while it does.
@@ -398,10 +399,10 @@ fn render_List(ctx, props) {
         column([rows.with_style(style().flex_grow().min_height(px(0)).min_width(px(0)))])
     } else { rows };
     root = root.with_key(props.key)
-        .with_style(ctx.component_style("root", size.min_width(px(0)).focus(style())))
+        .with_style(ctx.component_style("root", if keyboard { size.min_width(px(0)).focus(style()) } else { size.min_width(px(0)) }))
         .accessibility_role(if mode == "none" { "list" } else { "listbox" })
         .accessibility_label(props.label);
-    if mode == "none" { return root; }
+    if mode == "none" || !keyboard { return root; }
     if neighbors.first == () { return root; }
     root = root.with_ref(element_ref(focus)).tab_stop(true)
         .on_key_value("up", Fn("keyboard_select"), neighbors.previous)
@@ -412,8 +413,7 @@ fn render_List(ctx, props) {
         root = root.on_key_value("enter", Fn("keyboard_activate"), neighbors.current);
     }
     if context {
-        let index = ();
-        for position in 0..data.len { if index == () && data[position].key == neighbors.current { index = position; } }
+        let index = neighbors.current_index;
         let target = #{ key: neighbors.current, collection: collection.key, index: index };
         root = root.on_key_value("shift+f10", Fn("keyboard_context"), target)
             .on_key_value("menu", Fn("keyboard_context"), target);

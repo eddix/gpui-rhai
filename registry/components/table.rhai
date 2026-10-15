@@ -55,6 +55,8 @@ define_component(#{
                 type: "object", allow_unknown: false, fields: #{
                     key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                         doc: "Row field the column shows; unique among the columns." },
+                    sort_key: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
+                        doc: "Row field compared in Rust when this column is sorted; defaults to key. Missing/null values always sort last. Non-null values must be consistently comparable scalars." },
                     title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                         doc: "Header text, shown in capitals in the label voice." },
                     width: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
@@ -137,7 +139,7 @@ define_component(#{
                 direction: #{ schema: #{ type: "string", allowed: ["ascending", "descending"] }, required: true, sensitive: false,
                     doc: "Sort direction, shown by the header icon." },
             } } }, required: false, sensitive: false,
-                doc: "Current sort; the caller stores the `sort_change` payload. A NativeCollection is sorted by it; array rows keep the order given." },
+                doc: "Current sort names a declared column key, never its sort_key; both array and NativeCollection rows sort in Rust, before filtering, paging and grouping, with stable ties and nulls last in either direction." },
             group_by: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                 doc: "Column key whose values, non-empty strings, group the rows under headers in first-seen order; a header shows the value as the rows carry it." },
             collapsed_groups: #{ schema: #{ type: "array", max_items: 100000, items: #{ type: "string" } }, required: false, sensitive: false,
@@ -461,68 +463,6 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, selecti
         .tab_stop(false)
 }
 
-fn table_row_item(source, source_index, columns, row_key, label, selected,
-        striped, row_height, display_index) {
-    let key = `${source[row_key]}`;
-    let is_selected = key in selected;
-    let cells = [];
-    for column in columns {
-        let adornments = [];
-        for spec in prop_or(column, "adornments", []) {
-            let adornment_text = if spec.text_key in source { `${source[spec.text_key]}` } else { "" };
-            if adornment_text != "" {
-                let variant = if "variant_key" in spec && spec.variant_key != () && spec.variant_key in source {
-                    `${source[spec.variant_key]}`
-                } else { prop_or(spec, "variant", "neutral") };
-                if !(variant in ["neutral", "accent", "success", "warning", "danger"]) {
-                    throw `Table row ${source_index} adornment variant ${variant} is invalid`;
-                }
-                adornments.push(#{ text: adornment_text, variant: variant, dot: prop_or(spec, "dot", false) });
-            }
-        }
-        let cell = #{
-            key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
-            width: column.width, align: prop_or(column, "align", "start"), adornments: adornments,
-        };
-        if "resize_signal_key" in column {
-            cell.resize_signal_key = column.resize_signal_key;
-        }
-        cells.push(cell);
-    }
-    #{ kind: "row", key: key, label: `${label} row ${source_index + 1}`, cells: cells,
-        selected: is_selected, striped: striped && display_index % 2 == 1, height: row_height }
-}
-
-fn unique_group_header_key(value, row_keys, header_keys) {
-    let key = `__gpui_rhai_group__:${value}`;
-    while key in row_keys || key in header_keys { key = `_${key}`; }
-    key
-}
-
-fn table_row_matches(source, query, search_fields) {
-    if query == "" { return true; }
-    for field in search_fields {
-        if field in source && `${source[field]}`.to_lower().contains(query) { return true; }
-    }
-    false
-}
-
-fn table_array_page(rows, query, search_fields, page, page_size) {
-    let filtered = [];
-    for index in 0..rows.len {
-        if table_row_matches(rows[index], query, search_fields) {
-            filtered.push(#{ source: rows[index], index: index });
-        }
-    }
-    if page_size == () { return filtered; }
-    let start = (page - 1) * page_size;
-    if start >= filtered.len { return []; }
-    let end = if start + page_size < filtered.len { start + page_size } else { filtered.len };
-    let paged = [];
-    for index in start..end { paged.push(filtered[index]); }
-    paged
-}
-
 fn table_column_model(props) {
     let table_resizable = prop_or(props, "resizable_columns", false);
     let requested = false;
@@ -545,6 +485,7 @@ fn table_column_model(props) {
             key: source.key, title: source.title, width: source.width,
             align: optional_or(source, "align", if prop_or(source, "numeric", false) { "end" } else { "start" }),
             sortable: prop_or(source, "sortable", false),
+            sort_key: optional_or(source, "sort_key", source.key),
             resize_enabled: enabled, adornments: prop_or(source, "adornments", []),
         };
         if enabled {
@@ -688,27 +629,6 @@ fn table_focus_frame(ctx, framed) {
     row([]).with_style(ctx.component_style("focus_frame", frame))
 }
 
-// One tab stop for the rows: arrows move the selection, Enter activates the row.
-// Keyboard targets of displayed array rows, by the rule native_table_neighbors applies to
-// a NativeCollection: the current row is the first displayed selected row; Up and Down
-// move one row and stop at the ends, and go to the first row when none is current.
-fn row_neighbors(keys, selected) {
-    if keys.len == 0 { return #{ first: (), last: (), previous: (), next: (), current: () }; }
-    let current = -1;
-    for index in 0..keys.len { if current < 0 && keys[index] in selected { current = index; } }
-    let previous = if current <= 0 { 0 } else { current - 1 };
-    let next = if current < 0 { 0 } else if current + 1 < keys.len { current + 1 } else { current };
-    #{ first: keys[0], last: keys[keys.len - 1], previous: keys[previous], next: keys[next],
-        current: if current >= 0 { keys[current] } else { () } }
-}
-
-// The display index of the row with this key, for its bounds.
-fn row_index(data, key) {
-    if key == () { return (); }
-    for index in 0..data.len { if data[index].kind == "row" && data[index].key == key { return index; } }
-    ()
-}
-
 fn with_row_keys(table, neighbors) {
     if neighbors == () || neighbors.first == () { return table; }
     let node = table.tab_stop(true)
@@ -770,7 +690,6 @@ fn render_Table(ctx, props) {
     let group_toggle = "on_group_toggle" in props && props.on_group_toggle != ();
     let context = "on_context_request" in props && props.on_context_request != ();
     let sticky_groups = prop_or(props, "sticky_group_headers", true);
-    let native_data = is_native_collection(props.rows);
     let query = prop_or(props, "query", "").to_lower();
     let search_fields = prop_or(props, "search_fields", []);
     if query != "" && search_fields.len == 0 {
@@ -783,66 +702,14 @@ fn render_Table(ctx, props) {
     }
     let page = prop_or(props, "page", 1);
     let page_size = if "page_size" in props { props.page_size } else { () };
-    let array_rows = if native_data { [] }
-        else { table_array_page(props.rows, query, search_fields, page, page_size) };
-    let data;
-    let sticky_headers = [];
-    if native_data {
-        data = native_table_view(props.rows, #{
+    // Both public data forms share one native projection and sort grammar.
+    let data = native_table_view(props.rows, #{
             row_key: props.row_key, label: props.label, columns: columns,
             selected_keys: selected, selection_mode: selection_mode,
             striped: striped, row_height: row_height, sort: current_sort,
             group_by: group_by, collapsed_groups: collapsed, group_toggle: group_toggle,
             query: query, search_fields: search_fields, page: page, page_size: page_size,
         });
-    } else if group_by == () {
-        data = [];
-        for display_index in 0..array_rows.len {
-            let row = array_rows[display_index];
-            data.push(table_row_item(row.source, row.index, columns, props.row_key,
-                props.label, selected, striped, row_height, display_index));
-        }
-    } else {
-        data = [];
-        let group_order = [];
-        let buckets = #{};
-        let row_keys = [];
-        for entry in array_rows {
-            let source = entry.source;
-            let index = entry.index;
-            let group = if group_by in source { source[group_by] } else { () };
-            if type_of(group) != "string" || group == "" {
-                throw `Table row ${index} group field ${group_by} must be a non-empty string`;
-            }
-            let key = `${source[props.row_key]}`;
-            row_keys.push(key);
-            if !(group in buckets) {
-                group_order.push(group);
-                buckets[group] = [];
-            }
-            let bucket = buckets[group];
-            bucket.push(#{ source: source, index: index });
-            buckets[group] = bucket;
-        }
-        let header_keys = [];
-        let display_index = 0;
-        for group in group_order {
-            let rows = buckets[group];
-            let header_key = unique_group_header_key(group, row_keys, header_keys);
-            header_keys.push(header_key);
-            sticky_headers.push(data.len);
-            let is_collapsed = group in collapsed;
-            data.push(#{ kind: "group", key: header_key, group: group, count: rows.len,
-                collapsed: is_collapsed, toggle: group_toggle, height: row_height });
-            if !is_collapsed {
-                for row in rows {
-                    data.push(table_row_item(row.source, row.index, columns, props.row_key,
-                        props.label, selected, striped, row_height, display_index));
-                    display_index += 1;
-                }
-            }
-        }
-    }
     if data.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
@@ -858,16 +725,10 @@ fn render_Table(ctx, props) {
     // collection finds its targets in native code, without enumerating rows in Rhai.
     let neighbors = ();
     if selection_mode != "none" {
-        if native_data {
-            neighbors = native_table_neighbors(data, selected);
-        } else {
-            let row_keys = [];
-            for item in data { if item.kind == "row" { row_keys.push(item.key); } }
-            neighbors = row_neighbors(row_keys, selected);
-        }
+        neighbors = native_table_neighbors(data, selected);
         if neighbors.current != () { collection.reveal_key = neighbors.current; }
     }
-    if !native_data || !sticky_groups { collection.sticky_headers = if sticky_groups { sticky_headers } else { [] }; }
+    if !sticky_groups { collection.sticky_headers = []; }
     if fill_height { collection.fill_height = true; }
     else { collection.height = props.height; }
     let body_style = if fill_height {
@@ -889,7 +750,7 @@ fn render_Table(ctx, props) {
     if focus != () { table = table.with_ref(element_ref(focus)); }
     if context && neighbors != () && neighbors.first != () {
         let target = #{ key: neighbors.current, collection: collection.key,
-            index: if native_data { neighbors.current_index } else { row_index(data, neighbors.current) } };
+            index: neighbors.current_index };
         table = table.on_key_value("shift+f10", Fn("keyboard_context"), target)
             .on_key_value("menu", Fn("keyboard_context"), target);
     } else if context && selection_mode == "none" {

@@ -1876,6 +1876,35 @@ impl UiContext {
         Ok(())
     }
 
+    /// Queue a clipboard write after the current transaction commits.
+    ///
+    /// # Errors
+    ///
+    /// Requires an attached view/window and direct user input or an explicit
+    /// automation command. Render, timers, effects and asynchronous deliveries
+    /// cannot write, even when originally started by user input. Text uses the
+    /// ordinary bounded `UiValue` string validation.
+    pub fn copy_text(&self, text: String) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        self.view.as_ref().ok_or(UiContextError::MissingView)?;
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        UiValue::String(text.clone()).validate()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        if !matches!(
+            runtime.origin,
+            crate::InvocationOrigin::UserInput { .. } | crate::InvocationOrigin::Automation
+        ) {
+            return Err(UiContextError::ClipboardRequiresUserInput);
+        }
+        runtime
+            .pending_element_commands
+            .push(crate::element_ref::ElementCommand::CopyText { window, text });
+        Ok(())
+    }
+
     /// Resolve and reveal a component-local ref key.
     ///
     /// # Errors
@@ -4087,6 +4116,14 @@ fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .scroll_element_into_view_by_key(key.as_str())
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
+        )
+        .with_fn(
+            "copy_text",
+            |context: &mut UiContext, text: ImmutableString| {
+                context
+                    .copy_text(text.to_string())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
         );
 }
 
@@ -4732,6 +4769,8 @@ fn context_runtime_error(error: &UiContextError) -> EvalAltResult {
 
 #[derive(Debug, Error)]
 pub enum UiContextError {
+    #[error("clipboard writes require direct user input or an explicit automation command")]
+    ClipboardRequiresUserInput,
     #[error("UI runtime state is already mutably borrowed by another callback")]
     Borrowed,
     #[error("state mutation and effects are forbidden during view rendering")]
@@ -6009,6 +6048,76 @@ mod tests {
                     && (*x - 12.0).abs() < f64::EPSILON
                     && (*y - 24.0).abs() < f64::EPSILON
         ));
+    }
+
+    #[test]
+    fn copy_text_is_user_activated_window_scoped_bounded_and_transactional() {
+        let context = mounted_context(ExecutionPhase::Event).with_view_id("view");
+        assert!(matches!(
+            context.copy_text("path".into()),
+            Err(UiContextError::ClipboardRequiresUserInput)
+        ));
+        for origin in [
+            crate::InvocationOrigin::UserInput {
+                event: "click".into(),
+            },
+            crate::InvocationOrigin::Automation,
+        ] {
+            context.runtime().borrow_mut().replace_origin(origin);
+            let checkpoint = context.runtime().borrow_mut().begin_transaction().unwrap();
+            context
+                .copy_text("payments/checkout/timeout_ms".into())
+                .unwrap();
+            context
+                .runtime()
+                .borrow_mut()
+                .rollback_transaction(checkpoint)
+                .unwrap();
+            assert!(
+                context
+                    .runtime()
+                    .borrow_mut()
+                    .take_window_element_commands("main")
+                    .is_empty()
+            );
+        }
+        context.copy_text("committed".into()).unwrap();
+        assert!(
+            context
+                .runtime()
+                .borrow_mut()
+                .take_window_element_commands("other")
+                .is_empty()
+        );
+        assert!(
+            matches!(context.runtime().borrow_mut().take_window_element_commands("main").as_slice(),
+            [crate::element_ref::ElementCommand::CopyText { text, .. }] if text == "committed")
+        );
+        context
+            .runtime()
+            .borrow_mut()
+            .replace_origin(crate::InvocationOrigin::Timer {
+                started_by: Box::new(crate::InvocationOrigin::UserInput {
+                    event: "click".into(),
+                }),
+            });
+        assert!(context.copy_text("late".into()).is_err());
+        assert!(
+            mounted_context(ExecutionPhase::Render)
+                .with_view_id("view")
+                .copy_text("render".into())
+                .is_err()
+        );
+        assert!(
+            mounted_context(ExecutionPhase::Event)
+                .copy_text("unbound".into())
+                .is_err()
+        );
+        context
+            .runtime()
+            .borrow_mut()
+            .replace_origin(crate::InvocationOrigin::Automation);
+        assert!(context.copy_text("x".repeat(16 * 1024 * 1024 + 1)).is_err());
     }
 
     #[test]

@@ -285,6 +285,10 @@ pub enum ElementRefError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ElementCommand {
+    CopyText {
+        window: String,
+        text: String,
+    },
     Focus {
         window: String,
         node: NodeId,
@@ -304,7 +308,8 @@ pub(crate) enum ElementCommand {
 impl ElementCommand {
     pub(crate) fn window(&self) -> &str {
         match self {
-            Self::Focus { window, .. }
+            Self::CopyText { window, .. }
+            | Self::Focus { window, .. }
             | Self::ScrollTo { window, .. }
             | Self::ScrollIntoView { window, .. } => window,
         }
