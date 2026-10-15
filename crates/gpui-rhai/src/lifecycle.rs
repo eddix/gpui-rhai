@@ -553,6 +553,7 @@ impl ScriptLifecycle {
             });
         }
         let snapshot = self.begin_runtime_transaction()?;
+        self.restart_effect_cascade()?;
         let result = (|| {
             self.reconcile_effect_candidate(
                 engine,
@@ -598,6 +599,7 @@ impl ScriptLifecycle {
             });
         }
         let snapshot = self.begin_runtime_transaction()?;
+        self.restart_effect_cascade()?;
         let checkpoint = engine.execution_checkpoint();
         let result = (|| {
             engine.call_optional_lifecycle(
@@ -658,6 +660,7 @@ impl ScriptLifecycle {
             });
         }
         let snapshot = self.begin_runtime_transaction()?;
+        self.restart_effect_cascade()?;
         let checkpoint = engine.execution_checkpoint();
         let suspended_at = self
             .suspended_at
@@ -709,7 +712,7 @@ impl ScriptLifecycle {
             .map_err(|_| LifecycleError::Borrowed)?
             .effects
             .plan(&self.root_path, BTreeMap::new());
-        if plan.transition_count() > 64 {
+        if plan.transition_count() > crate::effect::EFFECT_TRANSITION_CALLBACK_BUDGET {
             return Err(LifecycleError::EffectBudget(plan.transition_count()));
         }
         for (descriptor, scope) in plan.cleanup_descriptors() {
@@ -754,6 +757,17 @@ impl ScriptLifecycle {
         event_target: Option<crate::GeometryBounds>,
     ) -> Result<Dynamic, LifecycleError> {
         self.validate_callback_owner(callback)?;
+        // Effect-generated semantic events retain their origin when delivered
+        // later. They are part of the same cascade, not new user operations.
+        if self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .invocation_origin()
+            != &crate::InvocationOrigin::Effect
+        {
+            self.restart_effect_cascade()?;
+        }
         let root_context = self.context(ExecutionPhase::Event);
         let context = callback
             .component()
@@ -813,6 +827,7 @@ impl ScriptLifecycle {
             return Ok(Dynamic::UNIT);
         }
         self.validate_callback_owner(&delivery.callback)?;
+        self.restart_effect_cascade()?;
         let component = delivery
             .callback
             .component()
@@ -932,6 +947,7 @@ impl ScriptLifecycle {
             });
         }
         let snapshot = self.begin_runtime_transaction()?;
+        self.restart_effect_cascade()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let result: Result<
             (UiNode, crate::RetainedUiTree, crate::CommittedSemanticFrame),
@@ -1014,6 +1030,7 @@ impl ScriptLifecycle {
             });
         }
         let snapshot = self.begin_runtime_transaction()?;
+        self.restart_effect_cascade()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let suspended_at = self
             .suspended_at
@@ -1106,6 +1123,7 @@ impl ScriptLifecycle {
     /// Returns lifecycle or script errors from either stage.
     pub fn start(&mut self, engine: &mut RuntimeEngine) -> Result<&UiNode, LifecycleError> {
         let runtime_snapshot = self.begin_runtime_transaction()?;
+        self.restart_effect_cascade()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let lifecycle_checkpoint = self.execution_checkpoint();
         let result = (|| {
@@ -1421,9 +1439,12 @@ impl ScriptLifecycle {
             .effects
             .plan(&self.root_path, declarations.effects);
         let transition_count = plan.transition_count();
-        if transition_count > 64 {
-            return Err(LifecycleError::EffectBudget(transition_count));
-        }
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effect_cascades
+            .charge(&self.root_path, transition_count)
+            .map_err(LifecycleError::EffectBudget)?;
         if plan.has_cleanup()
             && let Some(previous_state) = previous_state
         {
@@ -1623,6 +1644,15 @@ impl ScriptLifecycle {
             .map_err(|_| LifecycleError::Borrowed)?
             .begin_transaction()
             .map_err(LifecycleError::from)
+    }
+
+    fn restart_effect_cascade(&self) -> Result<(), LifecycleError> {
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effect_cascades
+            .restart(&self.root_path);
+        Ok(())
     }
 
     fn commit_runtime_transaction(&self) -> Result<(), LifecycleError> {
@@ -1852,6 +1882,48 @@ mod tests {
     };
     use semver::{Version, VersionReq};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn effect_origin_followup_does_not_restart_a_rejected_cascade() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+            fn followup(ctx, payload) { ctx.set_state("phase", "changed"); }
+            fn view(ctx) { text(ctx.get_state("phase")) }
+        "#,
+            )
+            .unwrap();
+        let followup = engine.callback(&compiled, "followup").unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let root = ComponentInstancePath::root("App", "main");
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root.clone(),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &state_schema(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        {
+            let mut runtime = runtime.borrow_mut();
+            runtime.effect_cascades.restart(&root);
+            runtime.effect_cascades.charge(&root, 64).unwrap();
+            assert!(runtime.effect_cascades.charge(&root, 1).is_err());
+        }
+        let _ = lifecycle
+            .with_origin(crate::InvocationOrigin::Effect, || {
+                lifecycle.invoke_callback_transactional(&engine, &followup, UiValue::Null)
+            })
+            .unwrap();
+        assert!(!lifecycle.render_dirty(&mut engine).unwrap());
+        let _ = lifecycle
+            .invoke_callback_transactional(&engine, &followup, UiValue::Null)
+            .unwrap();
+        assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    }
 
     fn state_schema() -> ComponentStateSchema {
         ComponentStateSchema::new(BTreeMap::from([(

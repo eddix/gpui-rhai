@@ -4,6 +4,119 @@ use thiserror::Error;
 
 use crate::{ComponentInstancePath, ScriptCallback, ScriptGeneration, UiValue};
 
+/// The existing semantic effect-transition budget also bounds a post-commit
+/// cascade; yielding to the foreground pump must not reset its allowance.
+pub(crate) const EFFECT_TRANSITION_CALLBACK_BUDGET: usize = 64;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct EffectCascadeCheckpoint {
+    callbacks: BTreeMap<ComponentInstancePath, usize>,
+    accepted_rejections: BTreeMap<ComponentInstancePath, u64>,
+}
+
+/// Foreground delivery bookkeeping, not a second scheduler. Rejection epochs
+/// deliberately survive rollback: an already queued wake cannot restart a
+/// rejected graph. Accepting a new external turn is itself transactional.
+#[derive(Debug, Default)]
+pub(crate) struct EffectCascadeBudget {
+    checkpoint: EffectCascadeCheckpoint,
+    rejections: BTreeMap<ComponentInstancePath, u64>,
+}
+
+impl EffectCascadeBudget {
+    pub(crate) fn checkpoint(&self) -> EffectCascadeCheckpoint {
+        self.checkpoint.clone()
+    }
+
+    pub(crate) fn restore(&mut self, checkpoint: EffectCascadeCheckpoint) {
+        self.checkpoint = checkpoint;
+    }
+
+    pub(crate) fn restart(&mut self, root: &ComponentInstancePath) {
+        self.checkpoint.callbacks.remove(root);
+        self.checkpoint.accepted_rejections.insert(
+            root.clone(),
+            self.rejections.get(root).copied().unwrap_or_default(),
+        );
+    }
+
+    pub(crate) fn restart_containing(&mut self, component: &ComponentInstancePath) {
+        let roots = self
+            .checkpoint
+            .accepted_rejections
+            .keys()
+            .filter(|root| component.is_within(root) || root.is_within(component))
+            .cloned()
+            .collect::<Vec<_>>();
+        for root in roots {
+            self.restart(&root);
+        }
+    }
+
+    pub(crate) fn blocked(&self, root: &ComponentInstancePath) -> bool {
+        self.rejections.get(root).copied().unwrap_or_default()
+            > self
+                .checkpoint
+                .accepted_rejections
+                .get(root)
+                .copied()
+                .unwrap_or_default()
+    }
+
+    pub(crate) fn blocked_component(&self, component: &ComponentInstancePath) -> bool {
+        self.rejections
+            .keys()
+            .any(|root| component.is_within(root) && self.blocked(root))
+    }
+
+    pub(crate) fn charge(
+        &mut self,
+        root: &ComponentInstancePath,
+        count: usize,
+    ) -> Result<(), usize> {
+        self.checkpoint
+            .accepted_rejections
+            .entry(root.clone())
+            .or_default();
+        let total = self
+            .checkpoint
+            .callbacks
+            .get(root)
+            .copied()
+            .unwrap_or_default()
+            .saturating_add(count);
+        if total > EFFECT_TRANSITION_CALLBACK_BUDGET {
+            let epoch = self.rejections.entry(root.clone()).or_default();
+            *epoch = epoch.saturating_add(1);
+            return Err(total);
+        }
+        self.checkpoint.callbacks.insert(root.clone(), total);
+        Ok(())
+    }
+
+    pub(crate) fn settle<'a>(
+        &mut self,
+        dirty: &std::collections::BTreeSet<ComponentInstancePath>,
+        pending_effect_scopes: impl IntoIterator<Item = &'a ComponentInstancePath>,
+    ) {
+        let pending = pending_effect_scopes.into_iter().collect::<Vec<_>>();
+        self.checkpoint.callbacks.retain(|root, _| {
+            dirty.iter().any(|path| path.is_within(root))
+                || pending.iter().any(|path| path.is_within(root))
+        });
+    }
+
+    pub(crate) fn remove_scope(&mut self, root: &ComponentInstancePath) {
+        self.checkpoint
+            .callbacks
+            .retain(|path, _| !path.is_within(root));
+        self.checkpoint
+            .accepted_rejections
+            .retain(|path, _| !path.is_within(root));
+        self.rejections.retain(|path, _| !path.is_within(root));
+    }
+}
+
 /// Stable identity of one declarative component effect.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectId {
@@ -275,6 +388,48 @@ pub enum EffectError {
 mod tests {
     use super::*;
     use crate::RuntimeEngine;
+
+    #[test]
+    fn cascade_budget_survives_yields_and_rejection_survives_rollback() {
+        let root = ComponentInstancePath::root("View", "main");
+        let sibling = ComponentInstancePath::root("View", "other");
+        let mut budget = EffectCascadeBudget::default();
+        budget.restart(&root);
+        budget
+            .charge(&root, EFFECT_TRANSITION_CALLBACK_BUDGET)
+            .unwrap();
+        let last_good = budget.checkpoint();
+        budget.settle(
+            &std::collections::BTreeSet::from([root.child("Child", "a")]),
+            [],
+        );
+        assert_eq!(budget.charge(&root, 1), Err(65));
+        budget.restore(last_good.clone());
+        assert!(
+            budget.blocked(&root),
+            "rollback must not retry a rejected cascade"
+        );
+        assert!(budget.blocked_component(&root.child("Child", "a")));
+        assert!(!budget.blocked_component(&sibling));
+        budget.charge(&sibling, 1).unwrap();
+
+        budget.restart(&root);
+        assert!(!budget.blocked(&root));
+        budget.charge(&root, 1).unwrap();
+        budget.restore(last_good);
+        assert!(
+            budget.blocked(&root),
+            "failed recovery must stay quarantined"
+        );
+        budget.restart(&root);
+        budget.charge(&root, 1).unwrap();
+        budget.settle(&std::collections::BTreeSet::new(), []);
+        budget
+            .charge(&root, EFFECT_TRANSITION_CALLBACK_BUDGET)
+            .unwrap();
+        budget.remove_scope(&root);
+        assert!(!budget.blocked(&root));
+    }
 
     fn callback(name: &str) -> ScriptCallback {
         let mut engine = RuntimeEngine::new();

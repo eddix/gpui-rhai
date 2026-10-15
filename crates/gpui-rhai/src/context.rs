@@ -113,6 +113,7 @@ pub struct UiRuntimeState {
     pub motions: MotionRuntime,
     pub(crate) page_visibility: crate::retained_page::PageVisibility,
     pub effects: crate::EffectRegistry,
+    pub(crate) effect_cascades: crate::effect::EffectCascadeBudget,
     pub signals: crate::SignalRegistry,
     pub element_refs: crate::ElementRefRegistry,
     pub(crate) geometry: crate::GeometryRegistry,
@@ -271,7 +272,7 @@ impl UiRuntimeState {
     ) -> Result<bool, crate::StateError> {
         let changed = self.component_state.set(component, field, value)?;
         if changed {
-            self.dirty.insert(component.clone());
+            self.mark_dirty_from_host([component.clone()]);
         }
         Ok(changed)
     }
@@ -288,7 +289,7 @@ impl UiRuntimeState {
     ) -> Result<bool, crate::NativeCollectionError> {
         let invalidated = self.native_collections.replace(name, collection)?;
         let changed = !invalidated.is_empty();
-        self.dirty.extend(invalidated);
+        self.mark_dirty_from_host(invalidated);
         Ok(changed)
     }
 
@@ -307,7 +308,7 @@ impl UiRuntimeState {
         let invalidated = self
             .native_collections
             .register_with_invalidated(name.to_owned(), collection)?;
-        self.dirty.extend(invalidated);
+        self.mark_dirty_from_host(invalidated);
         Ok(())
     }
 
@@ -323,7 +324,7 @@ impl UiRuntimeState {
     ) -> Result<bool, crate::DocumentError> {
         let invalidated = self.native_documents.replace(name, document)?;
         let changed = !invalidated.is_empty();
-        self.dirty.extend(invalidated);
+        self.mark_dirty_from_host(invalidated);
         Ok(changed)
     }
 
@@ -369,7 +370,7 @@ impl UiRuntimeState {
             .as_mut()
             .ok_or(crate::ThemeError::NoVariants)?
             .replace_variant(variant)?;
-        self.dirty.extend(self.component_state.paths());
+        self.mark_dirty_from_host(self.component_state.paths());
         Ok(())
     }
 
@@ -391,7 +392,7 @@ impl UiRuntimeState {
         let changed = theme.generation() != previous;
         if changed {
             let invalidated = self.environment_dependencies.invalidate_theme_app();
-            self.dirty.extend(invalidated);
+            self.mark_dirty_from_host(invalidated);
             self.mark_all_windows_dirty();
         }
         Ok(changed)
@@ -412,7 +413,7 @@ impl UiRuntimeState {
         let changed = locales.generation() != previous;
         if changed {
             let invalidated = self.environment_dependencies.invalidate_locale_app();
-            self.dirty.extend(invalidated);
+            self.mark_dirty_from_host(invalidated);
             self.mark_all_windows_repaint();
         }
         Ok(changed)
@@ -430,6 +431,7 @@ impl UiRuntimeState {
         if changed {
             let now = self.clock.now();
             self.motion_values = self.motions.snapshot(now);
+            self.mark_dirty_from_host(self.component_state.paths());
             self.mark_all_windows_dirty();
         }
         changed
@@ -448,7 +450,7 @@ impl UiRuntimeState {
         }
         self.component_styles = styles;
         self.component_style_generation = self.component_style_generation.saturating_add(1);
-        self.dirty.extend(self.component_state.paths());
+        self.mark_dirty_from_host(self.component_state.paths());
         true
     }
 
@@ -504,6 +506,7 @@ impl UiRuntimeState {
         self.native_collections.remove_reader_scope(root);
         self.native_documents.remove_reader_scope(root);
         self.component_state.remove_scope(root);
+        self.effect_cascades.remove_scope(root);
         self.component_event_handlers
             .retain(|(path, _), _| !path.is_within(root));
         self.component_incarnations
@@ -657,7 +660,9 @@ impl UiRuntimeState {
     }
 
     pub(crate) fn has_window_dirty(&self, root: &ComponentInstancePath) -> bool {
-        self.dirty.iter().any(|path| path.is_within(root))
+        self.dirty
+            .iter()
+            .any(|path| path.is_within(root) && !self.effect_cascades.blocked_component(path))
     }
 
     pub(crate) fn flush_geometry_dependencies(&mut self) {
@@ -765,7 +770,7 @@ impl UiRuntimeState {
     }
 
     pub(crate) fn mark_all_windows_dirty(&mut self) {
-        self.dirty.extend(
+        self.mark_dirty(
             self.windows
                 .open_ids()
                 .into_iter()
@@ -777,15 +782,70 @@ impl UiRuntimeState {
         &mut self,
         components: impl IntoIterator<Item = ComponentInstancePath>,
     ) {
-        self.dirty.extend(components);
+        let mut invalidated = false;
+        for component in components {
+            self.dirty.insert(component);
+            invalidated = true;
+        }
+        if invalidated {
+            self.publish_committed_work();
+        }
+    }
+
+    fn mark_dirty_from_host(
+        &mut self,
+        components: impl IntoIterator<Item = ComponentInstancePath>,
+    ) {
+        let components = components.into_iter().collect::<Vec<_>>();
+        if self.origin != crate::InvocationOrigin::Effect {
+            for component in &components {
+                self.effect_cascades.restart_containing(component);
+            }
+        }
+        self.mark_dirty(components);
+    }
+
+    /// A successful mutation outside an explicit transaction is already
+    /// committed. Inside one, only the outermost successful commit may publish.
+    fn publish_committed_work(&mut self) {
+        if self.transaction_depth != 0 {
+            return;
+        }
+        let pending_effect_scopes = self
+            .pending_events
+            .iter()
+            .filter(|pending| pending.origin == crate::InvocationOrigin::Effect)
+            .map(|pending| &pending.target)
+            .chain(
+                self.pending_actions
+                    .iter()
+                    .filter(|pending| pending.origin == crate::InvocationOrigin::Effect)
+                    .filter_map(|pending| pending.callback.component()),
+            );
+        self.effect_cascades
+            .settle(&self.dirty, pending_effect_scopes);
+        if self
+            .dirty
+            .iter()
+            .any(|path| !self.effect_cascades.blocked_component(path))
+            || self.has_pending_dispatch()
+            || !self.repaint_windows.is_empty()
+        {
+            // The existing foreground delivery pump drains all runtime work,
+            // not only task deliveries. It coalesces these post-commit edges;
+            // never evaluate script synchronously from a mutation or draw.
+            self.tasks.wake().notify();
+        }
     }
 
     pub(crate) fn mark_all_windows_repaint(&mut self) {
         self.repaint_windows.extend(self.windows.open_ids());
+        self.publish_committed_work();
     }
 
     pub(crate) fn mark_window_repaint(&mut self, window: impl Into<String>) {
         self.repaint_windows.insert(window.into());
+        self.publish_committed_work();
     }
 
     pub(crate) fn take_window_repaint(&mut self, window: &str) -> bool {
@@ -880,6 +940,7 @@ impl UiRuntimeState {
             motions: self.motions.transaction_snapshot(),
             page_visibility: self.page_visibility.clone(),
             effects: self.effects.clone(),
+            effect_cascades: self.effect_cascades.checkpoint(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
             geometry: self.geometry.snapshot(),
@@ -939,6 +1000,7 @@ impl UiRuntimeState {
         self.motions = snapshot.motions;
         self.page_visibility = snapshot.page_visibility;
         self.effects = snapshot.effects;
+        self.effect_cascades.restore(snapshot.effect_cascades);
         self.signals = snapshot.signals;
         self.element_refs = snapshot.element_refs;
         self.geometry.restore(snapshot.geometry);
@@ -996,6 +1058,7 @@ impl UiRuntimeState {
         self.tasks.commit_transaction();
         self.subscriptions.commit_transaction();
         self.transaction_depth -= 1;
+        self.publish_committed_work();
         Ok(())
     }
 
@@ -1067,6 +1130,7 @@ pub struct UiStateSnapshot {
     motions: MotionRuntime,
     page_visibility: crate::retained_page::PageVisibility,
     effects: crate::EffectRegistry,
+    effect_cascades: crate::effect::EffectCascadeCheckpoint,
     signals: crate::SignalRegistry,
     element_refs: crate::ElementRefRegistry,
     geometry: crate::geometry::GeometrySnapshot,
@@ -1111,6 +1175,7 @@ impl Clone for UiStateSnapshot {
             motions: self.motions.transaction_snapshot(),
             page_visibility: self.page_visibility.clone(),
             effects: self.effects.clone(),
+            effect_cascades: self.effect_cascades.clone(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
             geometry: self.geometry.clone(),
@@ -1521,7 +1586,10 @@ impl UiContext {
             .component_state
             .set(&self.component, field, value.clone())?;
         if changed {
-            runtime.dirty.insert(self.component.clone());
+            if runtime.origin != crate::InvocationOrigin::Effect {
+                runtime.effect_cascades.restart_containing(&self.component);
+            }
+            runtime.mark_dirty([self.component.clone()]);
         }
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
@@ -1562,7 +1630,10 @@ impl UiContext {
         root.set_path(path, value.clone())?;
         let sensitive = runtime.component_state.is_sensitive(&self.component, field);
         if runtime.component_state.set(&self.component, field, root)? {
-            runtime.dirty.insert(self.component.clone());
+            if runtime.origin != crate::InvocationOrigin::Effect {
+                runtime.effect_cascades.restart_containing(&self.component);
+            }
+            runtime.mark_dirty([self.component.clone()]);
         }
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
@@ -2076,7 +2147,7 @@ impl UiContext {
         let id = StoreId::app(store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write(&id, field, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("app:{store}"),
@@ -2108,7 +2179,7 @@ impl UiContext {
         let id = StoreId::app(store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write_path(&id, field, path, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("app:{store}"),
@@ -2183,7 +2254,7 @@ impl UiContext {
         let id = StoreId::window(window, store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write(&id, field, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("window:{window}:{store}"),
@@ -2217,7 +2288,7 @@ impl UiContext {
         let id = StoreId::window(window, store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write_path(&id, field, path, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("window:{window}:{store}"),
@@ -2257,6 +2328,7 @@ impl UiContext {
             },
             origin,
         });
+        runtime.publish_committed_work();
         runtime.traces.push(
             crate::RuntimeTraceKind::Event,
             self.component.to_string(),
@@ -2283,6 +2355,7 @@ impl UiContext {
         let mut invocation = runtime.actions.dispatch(&id, payload)?;
         invocation.origin = runtime.origin.clone();
         runtime.pending_actions.push(invocation);
+        runtime.publish_committed_work();
         runtime.traces.push(
             crate::RuntimeTraceKind::Action,
             self.component.to_string(),
@@ -2610,7 +2683,7 @@ impl UiContext {
         };
         if changed {
             let invalidated = runtime.environment_dependencies.invalidate_locale_app();
-            runtime.dirty.extend(invalidated);
+            runtime.mark_dirty(invalidated);
             runtime.mark_all_windows_repaint();
         }
         runtime.traces.push(
@@ -2821,7 +2894,7 @@ impl UiContext {
             let invalidated = runtime
                 .environment_dependencies
                 .invalidate_locale_window(&window);
-            runtime.dirty.extend(invalidated);
+            runtime.mark_dirty(invalidated);
             runtime.mark_window_repaint(window.clone());
         }
         runtime.traces.push(
@@ -2858,7 +2931,7 @@ impl UiContext {
             let invalidated = runtime
                 .environment_dependencies
                 .invalidate_locale_scope(&self.component);
-            runtime.dirty.extend(invalidated);
+            runtime.mark_dirty(invalidated);
             if let Some(window) = &self.window {
                 runtime.mark_window_repaint(window.clone());
             }
@@ -2967,9 +3040,9 @@ impl UiContext {
         if app_target {
             runtime.mark_all_windows_dirty();
         } else {
-            runtime.dirty.insert(self.component.clone());
+            runtime.mark_dirty([self.component.clone()]);
         }
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Theme,
             self.component.to_string(),
@@ -2999,7 +3072,7 @@ impl UiContext {
         });
         let now = runtime.clock.now();
         runtime.motion_values = runtime.motions.snapshot(now);
-        runtime.dirty.insert(self.component.clone());
+        runtime.mark_dirty([self.component.clone()]);
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
             self.component.to_string(),
@@ -4912,6 +4985,117 @@ pub enum UiContextError {
 mod tests {
     use super::*;
     use crate::{ComponentStateSchema, RuntimeEngine, StateField, SubscriptionWork, ValueSchema};
+
+    #[test]
+    fn dirty_delivery_wakes_only_after_a_successful_outermost_commit() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let mut runtime = UiRuntimeState::new();
+        let root = ComponentInstancePath::root("View", "main");
+        let wake = runtime.tasks.wake();
+        let mut listener = std::pin::pin!(wake.listen());
+        let mut context = Context::from_waker(Waker::noop());
+        let _outer = runtime.begin_transaction().unwrap();
+        let _inner = runtime.begin_transaction().unwrap();
+        runtime.dirty.insert(root.clone());
+        runtime.commit_transaction().unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+        runtime.commit_transaction().unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Ready(()));
+
+        runtime.dirty.clear();
+        let mut listener = std::pin::pin!(wake.listen());
+        let failed = runtime.begin_transaction().unwrap();
+        runtime.dirty.insert(root.clone());
+        runtime.rollback_transaction(failed).unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+        let _quiescent = runtime.begin_transaction().unwrap();
+        runtime.commit_transaction().unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+
+        // A stale queued wake can drain the pump, but neither a rejected root
+        // nor an unrelated successful transaction may restart that cascade.
+        runtime.effect_cascades.restart(&root);
+        runtime.effect_cascades.charge(&root, 64).unwrap();
+        assert!(runtime.effect_cascades.charge(&root, 1).is_err());
+        let _unrelated = runtime.begin_transaction().unwrap();
+        runtime.dirty.insert(root.clone());
+        runtime.commit_transaction().unwrap();
+        assert!(!runtime.has_window_dirty(&root));
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+    }
+
+    #[test]
+    fn host_document_and_state_writes_publish_without_a_transaction_but_failures_do_not() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let context = mounted_context(ExecutionPhase::Event);
+        let mut runtime = context.runtime.borrow_mut();
+        let root = context.component.clone();
+        runtime
+            .native_documents
+            .register(
+                "source",
+                crate::NativeTextDocument::new("source", 1, "first").unwrap(),
+            )
+            .unwrap();
+        runtime
+            .native_documents
+            .read_tracked(&root, "source")
+            .unwrap();
+        let wake = runtime.tasks.wake();
+        let mut listener = std::pin::pin!(wake.listen());
+        let mut poll_context = Context::from_waker(Waker::noop());
+        assert!(
+            runtime
+                .replace_native_text_document_from_host(
+                    "source",
+                    crate::NativeTextDocument::new("source", 1, "stale").unwrap()
+                )
+                .is_err()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Pending);
+        assert!(
+            runtime
+                .replace_native_text_document_from_host(
+                    "source",
+                    crate::NativeTextDocument::new("source", 2, "second").unwrap()
+                )
+                .unwrap()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Ready(()));
+
+        runtime.dirty.clear();
+        let mut listener = std::pin::pin!(wake.listen());
+        let rollback = runtime.begin_transaction().unwrap();
+        assert!(
+            runtime
+                .replace_native_text_document_from_host(
+                    "source",
+                    crate::NativeTextDocument::new("source", 3, "rolled back").unwrap()
+                )
+                .unwrap()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Pending);
+        runtime.rollback_transaction(rollback).unwrap();
+        assert_eq!(
+            runtime
+                .native_documents
+                .read_tracked(&root, "source")
+                .unwrap()
+                .revision(),
+            2
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Pending);
+        assert!(
+            runtime
+                .set_component_state_from_host(&root, "count", UiValue::Integer(7))
+                .unwrap()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Ready(()));
+    }
 
     fn mounted_context(phase: ExecutionPhase) -> UiContext {
         let path = ComponentInstancePath::root("Counter", "counter");
