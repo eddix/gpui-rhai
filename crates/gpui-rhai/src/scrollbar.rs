@@ -374,9 +374,10 @@ impl ScrollbarContext {
         spec: ScrollbarSpec,
         wheel_body: bool,
     ) -> gpui::AnyElement {
+        let owner = self.owner.child(format!("{id:?}"));
         let mut scrollbar = ThemedScrollbar::new(
-            id.clone(),
-            self.owner.child(format!("{id:?}")),
+            id,
+            owner,
             self.interactions.clone(),
             source,
             spec,
@@ -949,25 +950,23 @@ fn register_wheel_listener(
                         hitbox,
                     },
                     DispatchPhase::Capture,
-                ) => {
-                    if hitbox.should_handle_scroll(window) {
-                        coordinator.register_wheel_region(
-                            owner.clone(),
-                            *source,
-                            ancestors.clone(),
-                            hitbox.clone(),
-                            Rc::clone(&apply),
-                            window,
-                            cx,
-                        );
-                    }
+                ) if hitbox.should_handle_scroll(window) => {
+                    coordinator.register_wheel_region(
+                        owner.clone(),
+                        *source,
+                        ancestors.clone(),
+                        hitbox.clone(),
+                        Rc::clone(&apply),
+                        window,
+                        cx,
+                    );
                 }
                 (WheelHitRegion::Tracks(tracks), DispatchPhase::Bubble)
                     if tracks
                         .iter()
                         .any(|track| track.should_handle_scroll(window)) =>
                 {
-                    apply(event, window, cx)
+                    apply(event, window, cx);
                 }
                 _ => {}
             }
