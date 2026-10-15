@@ -957,6 +957,8 @@ fn register_wheel_listener(
                             ancestors.clone(),
                             hitbox.clone(),
                             Rc::clone(&apply),
+                            window,
+                            cx,
                         );
                     }
                 }

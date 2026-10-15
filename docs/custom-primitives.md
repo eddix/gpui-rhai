@@ -198,7 +198,10 @@ The selected viewport applies the existing per-axis/residual algorithm once;
 fully unconsumed input still propagates. A normal hitbox leaves click,
 selection, focus and keyboard ownership unchanged. Registration lasts only for
 the current input event: replayed capture listeners register its regions, then
-the Host's capture boundary chooses and drains them before native bubbling.
+the first Host bubble boundary chooses and drains all participating Hosts'
+regions before native automatic bubbling. A short-lived App-owned per-window
+input collection joins multiple overlapping Hosts; deferred epoch-checked
+cleanup also discards events stopped early during capture.
 This also works inside `Entity::cached(style)` without replaying prepaint side
 effects or retaining historical hitboxes. Hidden/unmounted/replaced regions
 cannot register unless their listener and clipped hitbox are still presented.
