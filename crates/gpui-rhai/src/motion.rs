@@ -1644,34 +1644,61 @@ impl MotionRuntime {
             .any(|scope| handle.in_node_scope(scope))
     }
 
+    /// Add an idempotent scope reason. Overlapping reasons do not resample
+    /// already frozen active time; page hiding and view suspension compose.
     pub fn suspend_node_scope(&mut self, path: &str, now: Instant) {
-        if !self.suspended_scopes.insert(path.to_owned()) {
+        if self.suspended_scopes.contains(path) {
             return;
         }
         for (key, motion) in &mut self.active {
-            if !key.in_node_scope(path) {
+            if !key.in_node_scope(path)
+                || self
+                    .suspended_scopes
+                    .iter()
+                    .any(|scope| key.in_node_scope(scope))
+            {
                 continue;
             }
             motion.elapsed_before_play = motion_elapsed(motion, now);
         }
         for (handle, timeline) in &mut self.timelines {
-            if handle.in_node_scope(path) && timeline.state == MotionPlaybackState::Playing {
+            if handle.in_node_scope(path)
+                && timeline.state == MotionPlaybackState::Playing
+                && !self
+                    .suspended_scopes
+                    .iter()
+                    .any(|scope| handle.in_node_scope(scope))
+            {
                 timeline.elapsed_before_play = timeline_position(timeline, now);
             }
         }
+        self.suspended_scopes.insert(path.to_owned());
     }
 
+    /// Remove one scope reason. Re-anchor only when the last applicable reason
+    /// disappears, keeping one authoritative elapsed-time owner.
     pub fn resume_node_scope(&mut self, path: &str, now: Instant) {
         if !self.suspended_scopes.remove(path) {
             return;
         }
         for (key, motion) in &mut self.active {
-            if key.in_node_scope(path) {
+            if key.in_node_scope(path)
+                && !self
+                    .suspended_scopes
+                    .iter()
+                    .any(|scope| key.in_node_scope(scope))
+            {
                 motion.started = now;
             }
         }
         for (handle, timeline) in &mut self.timelines {
-            if handle.in_node_scope(path) && timeline.state == MotionPlaybackState::Playing {
+            if handle.in_node_scope(path)
+                && timeline.state == MotionPlaybackState::Playing
+                && !self
+                    .suspended_scopes
+                    .iter()
+                    .any(|scope| handle.in_node_scope(scope))
+            {
                 timeline.started = now;
             }
         }
@@ -4298,6 +4325,58 @@ mod tests {
 
     fn key_path() -> ComponentInstancePath {
         ComponentInstancePath::root("Accordion", "settings")
+    }
+
+    #[test]
+    fn overlapping_suspension_reasons_preserve_transition_and_timeline_active_time() {
+        for timeline in [false, true] {
+            for remove_parent_first in [false, true] {
+                let start = Instant::now();
+                let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+                let path = "window:w/root/card";
+                let scope = ComponentInstancePath::root("UiNode", path);
+                let source = transition(MotionProperty::Opacity, 0.0, 1.0, 1_000);
+                if timeline {
+                    runtime
+                        .start_timeline(
+                            scope,
+                            MotionTimeline::new(
+                                "probe",
+                                MotionTimelineStep::Track(MotionTrack {
+                                    target: ".".to_owned(),
+                                    source,
+                                }),
+                            ),
+                            start,
+                        )
+                        .unwrap();
+                } else {
+                    runtime.start(scope, source, start).unwrap();
+                }
+                let key = MotionKey::for_node(path, MotionProperty::Opacity);
+                runtime.suspend_node_scope(path, start + Duration::from_millis(250));
+                runtime.suspend_node_scope("window:w/root", start + Duration::from_millis(500));
+                let (first, last) = if remove_parent_first {
+                    ("window:w/root", path)
+                } else {
+                    (path, "window:w/root")
+                };
+                runtime.resume_node_scope(first, start + Duration::from_secs(1));
+                let frame = runtime.tick(start + Duration::from_secs(2));
+                assert!(!frame.needs_frame);
+                assert!(
+                    (frame.values[&key] - 0.25).abs() < 0.001,
+                    "timeline={timeline}, parent-first={remove_parent_first}: first removal must remain frozen"
+                );
+                runtime.resume_node_scope(last, start + Duration::from_secs(3));
+                let frame = runtime.tick(start + Duration::from_millis(3_100));
+                assert!(frame.needs_frame);
+                assert!(
+                    (frame.values[&key] - 0.35).abs() < 0.001,
+                    "timeline={timeline}, parent-first={remove_parent_first}: resume excludes every hidden interval"
+                );
+            }
+        }
     }
 
     fn transition(property: MotionProperty, from: f64, to: f64, duration_ms: u64) -> MotionSource {

@@ -457,6 +457,10 @@ pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
         "patterns/composer",
         include_str!("../patterns/composer.rhai"),
     ),
+    (
+        "patterns/navigation_stack",
+        include_str!("../patterns/navigation_stack.rhai"),
+    ),
     ("patterns/section", include_str!("../patterns/section.rhai")),
     (
         "patterns/description_list",
@@ -491,8 +495,16 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
     ("gallery/main", include_str!("../gallery/main.rhai")),
     ("gallery/kit", include_str!("../gallery/kit.rhai")),
     (
+        "gallery/pages/navigation",
+        include_str!("../gallery/pages/navigation.rhai"),
+    ),
+    (
         "gallery/pages/inputs_and_choices",
         include_str!("../gallery/pages/inputs_and_choices.rhai"),
+    ),
+    (
+        "gallery/retained_page_panel",
+        include_str!("../gallery/retained_page_panel.rhai"),
     ),
     (
         "gallery/pages/foundations",

@@ -445,6 +445,29 @@ in Rust. No row renderer or complete diff payload crosses into Rhai. See the
 [document viewer overview](../document-viewers.md) for Host registration,
 resource limits and extension points.
 
+## Retained pages and drill-down navigation
+
+`Tabs(#{ keep_mounted: true, ... })` retains every supplied panel, including
+native scroll position, caret/selection and undo. Hidden panels take no layout,
+input traversal or presented accessibility space. The default remains selected
+presentation only; eagerly constructed components still retain caller-owned
+Rhai state/effects even when not presented (ADR 0019).
+
+`patterns/navigation_stack.NavigationStack` takes `stack: [{key,title,content}]`
+in root-to-top order and `on_pop({depth,source})`. Keys identify visits, so two
+visits to the same record use distinct keys and distinct component keys. The
+caller accepts a proposal by truncating its controlled stack. `max_depth`
+rejects excess entries; it never silently evicts drafts. Back, breadcrumb and
+none headers do not change page identity. Breadcrumb overflow uses Menu, and
+the Host's motion and RTL policies apply.
+
+Hiding is not view suspension and never automatically cancels business tasks
+or subscriptions. `ctx.is_visible()` reads committed placement (false before
+initial placement), invalidates render readers on changes, and lets the
+application explicitly gate polling/effect dependencies. Gallery pages
+`retained_tabs` and `navigation_stack` demonstrate local state and real native
+editing/scrolling.
+
 ## Overlay family
 
 - `Popover` and `Tooltip` are anchored non-modal surfaces.

@@ -482,6 +482,7 @@ pub(crate) fn native_role(role: &str) -> Result<Option<gpui::Role>, Accessibilit
         "tab" => Some(Role::Tab),
         "table" => Some(Role::Table),
         "tablist" => Some(Role::TabList),
+        "tabpanel" => Some(Role::TabPanel),
         "text_field" => Some(Role::TextInput),
         "toolbar" => Some(Role::Toolbar),
         "tooltip" => Some(Role::Tooltip),

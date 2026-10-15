@@ -2343,6 +2343,13 @@ impl GpuiNodeRenderer {
         path: &str,
         retained_id: Option<NodeId>,
     ) -> AnyElement {
+        // Do not build hidden descendants: display:none still lets GPUI's
+        // scroll prepaint clamp a tracked offset to its zero-size content.
+        // The accepted retained tree and primitive registry keep ownership.
+        if node.attributes().get(crate::retained_page::PAGE_VISIBLE) == Some(&UiValue::Bool(false))
+        {
+            return div().hidden().into_any_element();
+        }
         let node_environment = environment
             .with_node_scope(node)
             .with_focus_scope(node, retained_id);
@@ -2877,6 +2884,16 @@ fn apply_node_focus_tracking(
     let Some(handle) = handle else {
         return element;
     };
+    if node
+        .attributes()
+        .contains_key(crate::retained_page::PAGE_VISIBLE)
+        || node
+            .attributes()
+            .contains_key(crate::retained_page::NAVIGATION_DEPTH)
+        || node.attributes().get("role") == Some(&UiValue::String("heading".to_owned()))
+    {
+        return element.track_focus(&handle.clone().tab_stop(false));
+    }
     if matches!(node.kind(), UiNodeKind::Custom { primitive }
         if primitives.uses_primary_focus(&primitive.primitive))
     {
@@ -4241,6 +4258,9 @@ fn children_take_focus(node: &UiNode, disabled: bool) -> bool {
 /// policy as `apply_tab_behavior`: an explicit declaration wins, otherwise a click
 /// or key handler makes a node a stop, and native primitives own their focus.
 fn subtree_takes_focus(node: &UiNode, disabled: bool) -> bool {
+    if node.attributes().get(crate::retained_page::PAGE_VISIBLE) == Some(&UiValue::Bool(false)) {
+        return false;
+    }
     let disabled = disabled || is_disabled(node);
     if disabled {
         return false;
@@ -4797,9 +4817,17 @@ impl TextSelectionRegistry {
         selection.range
     }
 
-    pub(crate) fn selected_text(&self) -> Option<String> {
+    pub(crate) fn selected_text(&self, tree: &RetainedUiTree) -> Option<String> {
         let active = self.active.borrow();
         let selection = active.as_ref()?;
+        // Retain the range for reveal, but invisible content cannot take a
+        // keyboard Copy action from the tab list or another visible owner.
+        if selection
+            .node
+            .is_some_and(|node| !tree.is_page_visible(node))
+        {
+            return None;
+        }
         let (start, end) = selection.range?;
         selection.text.get(start..end).map(ToOwned::to_owned)
     }

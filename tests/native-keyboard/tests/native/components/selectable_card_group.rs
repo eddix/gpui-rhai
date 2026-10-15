@@ -4,8 +4,8 @@ use gpui_rhai::UiValue;
 use gpui_rhai_registry::{AR_LOCALE, DEFAULT_LIGHT_THEME, DEFAULT_THEME, EN_LOCALE};
 
 use crate::support::{
-    Mount, ReplaceOnce, bounds, by_test_id, click_center, dispatch, last_error, nodes,
-    text_of,
+    Mount, ReplaceOnce, Step, bounds, by_test_id, click_center, dispatch, last_error, nodes,
+    settle, text_of,
 };
 
 const SOURCE: &str = r#"
@@ -142,6 +142,68 @@ fn cards_accept_unicode_and_whitespace_group_keys_without_automatic_test_ids(
         .find(|node| node.role == "radio")
         .unwrap();
     assert_eq!(radio.description, "Unicode description");
+    assert_eq!(last_error(&mut visual, &view), None);
+}
+
+#[gpui::test]
+fn cards_same_local_keys_in_retained_pages_keep_description_and_state_ownership(
+    cx: &mut TestAppContext,
+) {
+    let source = SCOPED_PANES.replace_once(
+        "SCOPED_CONTENT",
+        r#"column([
+            choice_pane("left pane","Left").with_key("page:left").retained_page(ctx.get_state("show")),
+            choice_pane("left%20;pane","Right").with_key("page:right").retained_page(!ctx.get_state("show")),
+        ])"#,
+    );
+    let (mut visual, view) = Mount::components(source).mount(cx);
+    settle(&mut visual, Step::Frame, 3);
+    let before = nodes(&mut visual, &view);
+    let left = before
+        .iter()
+        .find(|node| node.role == "radio" && node.name == "Left choice")
+        .unwrap();
+    let left_id = left.id;
+    assert_eq!(left.description, "Left description");
+    assert!(before.iter().all(|node| node.name != "Right choice"));
+    let left_description_id = before
+        .iter()
+        .find_map(|node| node.semantic_id.clone())
+        .unwrap();
+    let target = bounds(&mut visual, &view, "radio", "Left choice");
+    click_center(&mut visual, target);
+    dispatch(&mut visual, &view, by_test_id("toggle"), "click").unwrap();
+    settle(&mut visual, Step::Frame, 3);
+
+    let covered = nodes(&mut visual, &view);
+    let right = covered
+        .iter()
+        .find(|node| node.role == "radio" && node.name == "Right choice")
+        .unwrap();
+    assert_eq!(right.description, "Right description");
+    assert_eq!(right.checked, Some(UiValue::Bool(false)));
+    assert!(covered.iter().all(|node| node.name != "Left choice"));
+    let right_description_id = covered
+        .iter()
+        .find_map(|node| node.semantic_id.clone())
+        .unwrap();
+    assert_ne!(right_description_id, left_description_id);
+    dispatch(&mut visual, &view, by_test_id("toggle"), "click").unwrap();
+    settle(&mut visual, Step::Frame, 3);
+
+    let revealed = nodes(&mut visual, &view);
+    let left = revealed
+        .iter()
+        .find(|node| node.role == "radio" && node.name == "Left choice")
+        .unwrap();
+    assert_eq!(left.id, left_id, "revealing must reuse the retained choice");
+    assert_eq!(left.description, "Left description");
+    assert_eq!(left.checked, Some(UiValue::Bool(true)));
+    assert_eq!(
+        revealed.iter().find_map(|node| node.semantic_id.clone()),
+        Some(left_description_id),
+        "description identity survives hide/reveal"
+    );
     assert_eq!(last_error(&mut visual, &view), None);
 }
 

@@ -38,7 +38,7 @@ use crate::{
 
 #[cfg(feature = "dev-reload")]
 actions!(gpui_rhai_devtools, [ToggleInspector]);
-actions!(gpui_rhai_host, [CopySelectedText]);
+actions!(gpui_rhai_host, [CopySelectedText, NavigateBack]);
 
 const HOST_KEY_CONTEXT: &str = "GPUIRhaiHost";
 
@@ -171,6 +171,7 @@ struct NativeWindowCommandOwner {
 struct HostViewRegistration {
     focus: FocusHandle,
     lease: Rc<()>,
+    entity: Option<gpui::WeakEntity<ScriptHostView>>,
 }
 
 #[derive(Clone)]
@@ -330,6 +331,43 @@ impl ScriptViewHost {
         self.overlays().dismiss_escape(window, cx)
     }
 
+    /// Visible controlled scopes. Only the focused scope is eligible for Back.
+    #[must_use]
+    pub fn navigation_stacks(&self, window: &Window, cx: &App) -> Vec<crate::NavigationStackInfo> {
+        let entities = self
+            .inner
+            .borrow()
+            .views
+            .values()
+            .filter_map(|view| view.entity.clone())
+            .collect::<Vec<_>>();
+        entities
+            .into_iter()
+            .filter_map(|entity| entity.upgrade())
+            .flat_map(|entity| entity.read(cx).navigation_stacks(window, cx))
+            .collect()
+    }
+
+    /// Propose a pop to the deepest focused inner stack. False lets the Host
+    /// perform its outer Back. Ignored/rejected proposals still own Back.
+    pub fn navigate_back(&self, window: &mut Window, cx: &mut App) -> bool {
+        let entities = self
+            .inner
+            .borrow()
+            .views
+            .values()
+            .filter_map(|view| view.entity.clone())
+            .collect::<Vec<_>>();
+        for entity in entities.into_iter().filter_map(|entity| entity.upgrade()) {
+            if entity.update(cx, |view, cx| {
+                view.propose_navigation_back("host", window, cx)
+            }) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Bind host-approved script actions once at App scope.
     ///
     /// # Errors
@@ -417,6 +455,7 @@ impl ScriptViewHost {
             HostViewRegistration {
                 focus: fallback,
                 lease,
+                entity: None,
             },
         );
         Ok(weak)
@@ -1324,7 +1363,10 @@ impl ScriptViewHandle {
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
     pub fn focus(&self, window: &mut Window, cx: &mut App) -> Result<(), ScriptViewError> {
         self.require_active()?;
-        let focus = self.0.entity.read(cx).host_focus.clone();
+        let focus = self.0.entity.update(cx, |view, _| {
+            view.navigation_focus_epoch = view.navigation_focus_epoch.wrapping_add(1);
+            view.host_focus.clone()
+        });
         focus.focus(window, cx);
         Ok(())
     }
@@ -1538,9 +1580,18 @@ impl ScriptViewHandle {
                 .borrow()
                 .element_refs
                 .resolve(reference)?;
-            view.focus_handles.get(&node).cloned().ok_or_else(|| {
-                ScriptViewError::ElementRef(crate::ElementRefError::Stale(reference.id().clone()))
-            })
+            let handle = view
+                .focus_handles
+                .get(&node)
+                .filter(|_| view.lifecycle.retained().is_page_visible(node))
+                .cloned()
+                .ok_or_else(|| {
+                    ScriptViewError::ElementRef(crate::ElementRefError::Stale(
+                        reference.id().clone(),
+                    ))
+                })?;
+            view.navigation_focus_epoch = view.navigation_focus_epoch.wrapping_add(1);
+            Ok::<_, ScriptViewError>(handle)
         })?;
         handle.focus(window, cx);
         Ok(())
@@ -3189,6 +3240,10 @@ impl PreparedScriptView {
                 native_windows: Rc::clone(native_windows),
                 host_focus,
                 focus_handles: BTreeMap::new(),
+                page_focus: BTreeMap::new(),
+                page_scopes: BTreeMap::new(),
+                navigation_focus_epoch: 0,
+                visible_pages: BTreeSet::new(),
                 focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
@@ -3575,6 +3630,10 @@ fn open_secondary_window(
                 native_windows: Rc::clone(&view_native_windows),
                 host_focus,
                 focus_handles: BTreeMap::new(),
+                page_focus: BTreeMap::new(),
+                page_scopes: BTreeMap::new(),
+                navigation_focus_epoch: 0,
+                visible_pages: BTreeSet::new(),
                 focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
@@ -3888,6 +3947,10 @@ struct ScriptHostView {
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
     host_focus: FocusHandle,
     focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
+    page_focus: BTreeMap<crate::NodeId, (crate::NodeId, FocusHandle)>,
+    page_scopes: BTreeMap<crate::NodeId, crate::NodeId>,
+    navigation_focus_epoch: u64,
+    visible_pages: BTreeSet<crate::NodeId>,
     /// Focus-in and focus-out listeners of each node with a `focus_within_change` handler.
     focus_within_listeners: BTreeMap<crate::NodeId, [Subscription; 2]>,
     scroll_handles: BTreeMap<crate::NodeId, ScrollHandle>,
@@ -4036,6 +4099,31 @@ struct ScriptViewTransaction {
     lifecycle: crate::lifecycle::ScriptLifecycleCheckpoint,
 }
 
+fn retained_within(
+    tree: &crate::RetainedUiTree,
+    node: crate::NodeId,
+    ancestor: crate::NodeId,
+) -> bool {
+    let mut cursor = Some(node);
+    while let Some(node) = cursor {
+        if node == ancestor {
+            return true;
+        }
+        cursor = tree.node(node).and_then(crate::RetainedNode::parent);
+    }
+    false
+}
+
+fn retained_depth(tree: &crate::RetainedUiTree, node: crate::NodeId) -> usize {
+    let mut depth = 0;
+    let mut cursor = Some(node);
+    while let Some(node) = cursor {
+        depth += 1;
+        cursor = tree.node(node).and_then(crate::RetainedNode::parent);
+    }
+    depth
+}
+
 fn handle_tab_navigation(event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App) {
     if event.keystroke.key.as_str() == "tab" {
         if event.keystroke.modifiers.shift {
@@ -4064,6 +4152,7 @@ fn apply_root_text_direction(
 struct ViewKeyScope {
     dispatch_key_binding: ActionListener<DispatchScriptAction>,
     copy_selected_text: ActionListener<CopySelectedText>,
+    navigate_back: ActionListener<NavigateBack>,
     #[cfg(feature = "dev-reload")]
     toggle_inspector: ActionListener<ToggleInspector>,
 }
@@ -4075,6 +4164,11 @@ impl ViewKeyScope {
         Self {
             dispatch_key_binding: Rc::new(cx.listener(ScriptHostView::dispatch_key_binding)),
             copy_selected_text: Rc::new(cx.listener(ScriptHostView::copy_selected_text)),
+            navigate_back: Rc::new(cx.listener(|view, _: &NavigateBack, window, cx| {
+                if !view.propose_navigation_back("keyboard", window, cx) {
+                    cx.propagate();
+                }
+            })),
             #[cfg(feature = "dev-reload")]
             toggle_inspector: Rc::new(cx.listener(ScriptHostView::toggle_inspector)),
         }
@@ -4083,6 +4177,7 @@ impl ViewKeyScope {
     fn apply<E: InteractiveElement>(&self, element: E) -> E {
         let dispatch_key_binding = Rc::clone(&self.dispatch_key_binding);
         let copy_selected_text = Rc::clone(&self.copy_selected_text);
+        let navigate_back = Rc::clone(&self.navigate_back);
         let element = element
             .key_context(HOST_KEY_CONTEXT)
             .on_key_down(handle_tab_navigation)
@@ -4091,6 +4186,9 @@ impl ViewKeyScope {
             })
             .on_action(move |action: &CopySelectedText, window, cx| {
                 copy_selected_text(action, window, cx);
+            })
+            .on_action(move |action: &NavigateBack, window, cx| {
+                navigate_back(action, window, cx);
             });
         #[cfg(feature = "dev-reload")]
         let element = {
@@ -4372,6 +4470,9 @@ fn attach_script_view_focus(
     cx: &App,
 ) {
     host.attach_view_focus(view_id, entity.read(cx).host_focus.clone());
+    if let Some(view) = host.inner.borrow_mut().views.get_mut(view_id) {
+        view.entity = Some(entity.downgrade());
+    }
 }
 
 fn mounted_script_view_handle(
@@ -5179,7 +5280,268 @@ impl ScriptHostView {
         path
     }
 
+    fn navigation_stacks(&self, window: &Window, cx: &App) -> Vec<crate::NavigationStackInfo> {
+        if self.state.get() != ScriptViewState::Active {
+            return Vec::new();
+        }
+        self.lifecycle
+            .retained()
+            .nodes()
+            .filter_map(|node| {
+                let UiValue::Integer(depth) = node
+                    .attributes()
+                    .get(crate::retained_page::NAVIGATION_DEPTH)?
+                else {
+                    return None;
+                };
+                if !self.lifecycle.retained().is_page_visible(node.id()) {
+                    return None;
+                }
+                Some(crate::NavigationStackInfo {
+                    view_id: self.view_id.clone(),
+                    node: node.id(),
+                    label: match node.attributes().get("label") {
+                        Some(UiValue::String(label)) => label.clone(),
+                        _ => String::new(),
+                    },
+                    depth: usize::try_from(*depth).ok()?,
+                    can_pop: *depth > 1
+                        && !node
+                            .event_handlers(crate::retained_page::NAVIGATION_BACK)
+                            .is_empty(),
+                    focused: self
+                        .focus_handles
+                        .get(&node.id())
+                        .is_some_and(|handle| handle.contains_focused(window, cx)),
+                })
+            })
+            .collect()
+    }
+
+    fn propose_navigation_back(
+        &mut self,
+        source: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let target = self
+            .navigation_stacks(window, cx)
+            .into_iter()
+            .filter(|stack| stack.focused && stack.can_pop)
+            .max_by_key(|stack| retained_depth(self.lifecycle.retained(), stack.node));
+        let Some(target) = target else {
+            return false;
+        };
+        let handlers = self
+            .lifecycle
+            .retained()
+            .node(target.node)
+            .map(|node| {
+                node.event_handlers(crate::retained_page::NAVIGATION_BACK)
+                    .to_vec()
+            })
+            .unwrap_or_default();
+        let payload = UiValue::Map(BTreeMap::from([
+            (
+                "depth".to_owned(),
+                UiValue::Integer(i64::try_from(target.depth - 1).unwrap_or(1)),
+            ),
+            ("source".to_owned(), UiValue::String(source.to_owned())),
+        ]));
+        for binding in handlers {
+            let response = match binding.handler() {
+                crate::UiEventHandler::Script(callback) => self.handle_node_event(
+                    callback,
+                    payload.clone(),
+                    None,
+                    crate::InvocationOrigin::UserInput {
+                        event: crate::retained_page::NAVIGATION_BACK.to_owned(),
+                    },
+                    window,
+                    cx,
+                ),
+                crate::UiEventHandler::Host(callback) => {
+                    callback.invoke(payload.clone(), window, cx)
+                }
+                crate::UiEventHandler::Native(handler) => self.handle_native_event(
+                    handler,
+                    crate::retained_page::NAVIGATION_BACK.to_owned(),
+                    payload.clone(),
+                    None,
+                    window,
+                    cx,
+                ),
+            };
+            if response.propagation() == crate::PropagationControl::StopImmediate {
+                break;
+            }
+        }
+        true
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn sync_retained_page_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let tree = self.lifecycle.retained();
+        let pages = tree
+            .nodes()
+            .filter(|node| {
+                node.attributes()
+                    .contains_key(crate::retained_page::PAGE_VISIBLE)
+            })
+            .map(crate::RetainedNode::id)
+            .collect::<BTreeSet<_>>();
+        let visible = pages
+            .iter()
+            .copied()
+            .filter(|node| tree.is_page_visible(*node))
+            .collect::<BTreeSet<_>>();
+        if visible != self.visible_pages {
+            self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
+        }
+        let focused = self
+            .focus_handles
+            .iter()
+            .find(|(_, handle)| handle.is_focused(window))
+            .map(|(node, handle)| (*node, handle.clone()));
+        let mut hid_focus = false;
+        let mut hidden_page = None;
+        for page in self.visible_pages.difference(&visible) {
+            if self
+                .focus_handles
+                .get(page)
+                .is_some_and(|handle| handle.contains_focused(window, cx))
+            {
+                hid_focus = true;
+                if tree.node(*page).is_some() {
+                    hidden_page = Some(*page);
+                }
+                if pages.contains(page)
+                    && let Some(focused) = focused.clone()
+                {
+                    self.page_focus.insert(*page, focused);
+                }
+            }
+        }
+        self.page_focus.retain(|page, _| pages.contains(page));
+        let scopes = pages
+            .iter()
+            .filter_map(|page| {
+                let mut cursor = tree.node(*page).and_then(crate::RetainedNode::parent);
+                while let Some(node) = cursor {
+                    let retained = tree.node(node)?;
+                    if retained
+                        .attributes()
+                        .contains_key(crate::retained_page::NAVIGATION_DEPTH)
+                    {
+                        return Some((*page, node));
+                    }
+                    cursor = retained.parent();
+                }
+                None
+            })
+            .collect::<BTreeMap<_, _>>();
+        let unfocused = window.focused(cx).is_none();
+        let target = visible
+            .difference(&self.visible_pages)
+            .copied()
+            .filter(|page| {
+                let Some(scope) = scopes.get(page) else {
+                    return false;
+                };
+                // Revealing an unchanged inner stack by switching a retained
+                // tab must not steal the tab list's keyboard focus. Only a
+                // new visit or a change within a previously visible stack does.
+                !self.page_scopes.contains_key(page)
+                    || self
+                        .visible_pages
+                        .iter()
+                        .any(|previous| self.page_scopes.get(previous) == Some(scope))
+            })
+            .filter(|page| {
+                // Mounting/revealing a stack is not permission to take focus
+                // from a sidebar, another stack or another embedded view.
+                unfocused
+                    || scopes
+                        .get(page)
+                        .and_then(|scope| self.focus_handles.get(scope))
+                        .is_some_and(|handle| handle.contains_focused(window, cx))
+            })
+            .max_by_key(|page| retained_depth(tree, *page));
+        if hid_focus {
+            self.host_focus.focus(window, cx);
+        }
+        if let Some(page) = target {
+            let generation = self.lifecycle.generation();
+            let epoch = self.navigation_focus_epoch;
+            let focus_owner = window.focused(cx);
+            let window_id = window.window_handle().window_id();
+            // Wait until the new heading's handle has entered the real focus tree.
+            cx.on_next_frame(window, move |view, window, cx| {
+                let tree = view.lifecycle.retained();
+                if view.state.get() != ScriptViewState::Active
+                    || view.lifecycle.generation() != generation
+                    || !tree.is_page_visible(page)
+                    || view.navigation_focus_epoch != epoch
+                    || window.window_handle().window_id() != window_id
+                    || window.focused(cx) != focus_owner
+                {
+                    return;
+                }
+                let saved = view
+                    .page_focus
+                    .get(&page)
+                    .filter(|(node, _)| {
+                        tree.is_page_visible(*node) && retained_within(tree, *node, page)
+                    })
+                    .map(|(_, handle)| handle.clone());
+                let heading = tree
+                    .nodes()
+                    .find(|node| {
+                        retained_within(tree, node.id(), page)
+                            && node.attributes().get("role")
+                                == Some(&UiValue::String("heading".to_owned()))
+                            && tree.is_page_visible(node.id())
+                    })
+                    .and_then(|node| view.focus_handles.get(&node.id()))
+                    .cloned();
+                if let Some(handle) = saved
+                    .or(heading)
+                    .or_else(|| view.focus_handles.get(&page).cloned())
+                {
+                    handle.focus(window, cx);
+                }
+            });
+        } else if hid_focus {
+            // A tab switch retains focus on its tab list, not in an invisible panel.
+            if let Some(handle) = tree
+                .nodes()
+                .filter(|node| {
+                    node.attributes().get("role") == Some(&UiValue::String("tablist".to_owned()))
+                        && tree.is_page_visible(node.id())
+                })
+                .max_by_key(|node| {
+                    hidden_page.map_or(0, |page| {
+                        let mut ancestor = tree.node(page).and_then(crate::RetainedNode::parent);
+                        while let Some(scope) = ancestor {
+                            if retained_within(tree, node.id(), scope) {
+                                return retained_depth(tree, scope);
+                            }
+                            ancestor = tree.node(scope).and_then(crate::RetainedNode::parent);
+                        }
+                        0
+                    })
+                })
+                .and_then(|node| self.focus_handles.get(&node.id()))
+            {
+                handle.focus(window, cx);
+            }
+        }
+        self.visible_pages = visible;
+        self.page_scopes = scopes;
+    }
+
     fn sync_focus_handles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_retained_page_focus(window, cx);
         let active = self
             .lifecycle
             .retained()
@@ -5189,6 +5551,18 @@ impl ScriptHostView {
             .filter(|node| {
                 node.element_ref().is_some()
                     || node.focus_styled()
+                    || !node.event_handlers("click").is_empty()
+                    || node.attributes().get("tab_stop") == Some(&UiValue::Bool(true))
+                    || node
+                        .attributes()
+                        .contains_key(crate::retained_page::PAGE_VISIBLE)
+                    || node
+                        .attributes()
+                        .contains_key(crate::retained_page::NAVIGATION_DEPTH)
+                    || node.attributes().get("role") == Some(&UiValue::String("heading".to_owned()))
+                    || node
+                        .primitive()
+                        .is_some_and(|primitive| self.primitives.uses_primary_focus(primitive))
                     || node.kind() == crate::UiNodeKindTag::Overlay
                     || !node.event_handlers("focus_within_change").is_empty()
             })
@@ -5247,7 +5621,11 @@ impl ScriptHostView {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
                 }
                 crate::element_ref::ElementCommand::Focus { node, .. } => {
+                    if !self.lifecycle.retained().is_page_visible(node) {
+                        continue;
+                    }
                     if let Some(handle) = self.focus_handles.get(&node) {
+                        self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
                         handle.focus(window, cx);
                     } else {
                         self.set_plain_failure(format!(
@@ -5403,9 +5781,11 @@ impl ScriptHostView {
     }
 
     fn copy_selected_text(&mut self, _: &CopySelectedText, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = self.text_selection.selected_text() {
+        if let Some(text) = self.text_selection.selected_text(self.lifecycle.retained()) {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
             cx.stop_propagation();
+        } else {
+            cx.propagate();
         }
     }
 
@@ -5635,6 +6015,7 @@ impl ScriptHostView {
             return Ok(false);
         }
         self.quiesce_host_view(window, cx);
+        self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
         self.state.set(ScriptViewState::Suspended);
         Ok(true)
     }
