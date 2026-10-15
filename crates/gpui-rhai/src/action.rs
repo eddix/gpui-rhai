@@ -144,6 +144,7 @@ impl ActionRegistry {
             callback: entry.callback.clone(),
             payload,
             origin: crate::InvocationOrigin::default(),
+            owner: None,
         })
     }
 }
@@ -156,6 +157,8 @@ pub struct ActionInvocation {
     /// What the invocation that dispatched the action responds to; a queued
     /// action runs with it.
     pub origin: crate::InvocationOrigin,
+    /// Keep runtime-produced provenance unchanged; hand-built Host entries use `None`.
+    pub owner: Option<crate::SemanticDispatchOwner>,
 }
 
 #[derive(Clone, Debug, PartialEq, gpui::Action)]

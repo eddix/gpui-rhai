@@ -1,5 +1,6 @@
 //! Native foreground delivery must settle without a timer and stop rejected cascades.
 use std::collections::BTreeMap;
+use std::{cell::Cell, rc::Rc};
 
 use crate::support::{
     Mount, ReplaceOnce, Step, by_test_id, dispatch, last_error, node_by_test_id, settle,
@@ -11,7 +12,7 @@ use gpui_rhai::{
 
 const CASCADE: &str = r#"
     define_component(#{metadata:#{id:"test/native_cascade","export":"NativeCascade",version:"0.2.2",runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
-        schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},enabled:#{schema:#{type:"bool"},required:true,sensitive:false},parent_count:#{schema:#{type:"integer"},required:true,sensitive:false},semantic:#{schema:#{type:"bool"},required:true,sensitive:false}},
+        schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},enabled:#{schema:#{type:"bool"},required:true,sensitive:false},parent_count:#{schema:#{type:"integer"},required:true,sensitive:false},semantic:#{schema:#{type:"bool"},required:true,sensitive:false},on_tick:#{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false}},
             state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},events:#{tick:#{payload:#{type:"ui_value"}}},slots:#{},parts:[],effects:["step"]},render:Fn("render_native_cascade")});
     fn state_schema(){#{fields:#{enabled:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}},count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
     fn step(ctx,deps){if deps.enabled {if deps.semantic {ctx.emit("tick",());} else {ctx.set_state("count",ctx.get_state("count")+1);}}}
@@ -32,6 +33,65 @@ const CASCADE: &str = r#"
         text(`${ctx.get_state("enabled")}`).test_id("enabled")
     ])}
 "#;
+
+#[derive(Clone)]
+struct DispatchCalls(Rc<Cell<usize>>);
+
+impl ScriptViewExtension for DispatchCalls {
+    fn configure_rhai_engine(&self, engine: &mut gpui_rhai::rhai::Engine) -> Result<(), String> {
+        let calls = Rc::clone(&self.0);
+        engine.register_fn("record_dispatch", move || calls.set(calls.get() + 1));
+        Ok(())
+    }
+}
+
+#[gpui::test]
+fn pure_semantic_loop_is_quarantined_across_old_wakes_clock_polls_and_external_stop(
+    cx: &mut TestAppContext,
+) {
+    let calls = Rc::new(Cell::new(0));
+    let audit = DispatchCalls(Rc::clone(&calls));
+    let (mut visual, view) = Mount::new(r#"
+        define_component(#{metadata:#{id:"test/pure_dispatch","export":"PureDispatch",version:"0.2.2",runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
+            schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},enabled:#{schema:#{type:"bool"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:[],effects:["dispatch"]},render:Fn("render_pure_dispatch")});
+        fn state_schema(){#{fields:#{enabled:#{schema:#{type:"bool"},"default":#{type:"bool",value:true}}}}}
+        fn init(ctx){ctx.register_action("test.loop",Fn("loop_action"));}
+        fn loop_action(ctx,payload){record_dispatch();ctx.dispatch_action("test.loop",());}
+        fn start_dispatch(ctx,enabled){if enabled {ctx.dispatch_action("test.loop",());}}
+        fn cleanup_dispatch(ctx,enabled){}
+        fn disable(ctx,payload){ctx.set_state("enabled",false);}
+        fn render_pure_dispatch(ctx,props){effect("dispatch",props.enabled,Fn("start_dispatch"),Fn("cleanup_dispatch"));text("stable")}
+        fn view(ctx){column([render_component("test/pure_dispatch",#{key:"loop",enabled:ctx.get_state("enabled")}),
+            text("Stop").test_id("stop").on_click(Fn("disable")),text(`${ctx.get_state("enabled")}`).test_id("enabled")])}
+    "#).with(move |view| view.extension(audit)).mount(cx);
+    settle(&mut visual, Step::Frame, 4);
+    assert!(
+        last_error(&mut visual, &view)
+            .unwrap()
+            .contains("64-callback budget")
+    );
+    let stopped = calls.get();
+    assert!(
+        stopped > 0 && stopped <= 64,
+        "pure dispatch ran {stopped} callbacks"
+    );
+    settle(&mut visual, Step::Frame, 4);
+    settle(&mut visual, Step::Tick, 4);
+    assert_eq!(
+        calls.get(),
+        stopped,
+        "rollback or old wakes/polls restarted rejected pending work"
+    );
+    dispatch(&mut visual, &view, by_test_id("stop"), "click").unwrap();
+    settle(&mut visual, Step::Frame, 4);
+    settle(&mut visual, Step::Tick, 4);
+    assert_eq!(node_by_test_id(&mut visual, &view, "enabled").name, "false");
+    assert_eq!(
+        calls.get(),
+        stopped,
+        "external recovery revived an old effect derivation"
+    );
+}
 
 #[gpui::test]
 fn state_and_semantic_effect_cascades_stop_and_external_input_recovers_without_ticks(

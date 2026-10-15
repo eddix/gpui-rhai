@@ -5795,41 +5795,44 @@ impl ScriptHostView {
             let (actions, events) = {
                 let runtime = self.lifecycle.runtime();
                 let mut runtime = runtime.borrow_mut();
-                (
-                    runtime.drain_pending_actions(),
-                    runtime.drain_pending_events(),
-                )
+                runtime.drain_window_dispatch(self.lifecycle.root_path())
             };
             if actions.is_empty() && events.is_empty() {
                 return Ok(processed > 0);
             }
-            processed = processed.saturating_add(actions.len() + events.len());
-            if processed > 64 {
-                return Err(ScriptFailure::plain(
-                    "semantic event/action dispatch exceeded the 64-callback budget",
-                ));
-            }
             // Each runs with the origin it was queued under: the delivery,
             // timer or effect that queued it has returned by now.
             for action in actions {
+                processed = processed.saturating_add(1);
+                if processed > crate::effect::EFFECT_TRANSITION_CALLBACK_BUDGET {
+                    self.lifecycle
+                        .reject_semantic_dispatch_budget(&action.origin, action.owner.as_ref())
+                        .map_err(|error| self.lifecycle_failure(&error, None))?;
+                    return Err(ScriptFailure::plain(
+                        "semantic event/action dispatch exceeded the 64-callback budget",
+                    ));
+                }
                 let component = action.callback.component().cloned();
-                let result = self.lifecycle.with_origin(action.origin, || {
-                    self.lifecycle.invoke_callback_transactional(
-                        &self.engine,
-                        &action.callback,
-                        action.payload,
-                    )
-                });
+                let result = self
+                    .lifecycle
+                    .invoke_action_transactional(&self.engine, action);
                 let _ =
                     result.map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
             }
             for event in events {
-                let component = event.target.clone();
-                let origin = event.origin.clone();
-                let result = self.lifecycle.with_origin(origin, || {
+                processed = processed.saturating_add(1);
+                if processed > crate::effect::EFFECT_TRANSITION_CALLBACK_BUDGET {
                     self.lifecycle
-                        .invoke_component_event_transactional(&self.engine, event)
-                });
+                        .reject_semantic_dispatch_budget(&event.origin, event.owner.as_ref())
+                        .map_err(|error| self.lifecycle_failure(&error, None))?;
+                    return Err(ScriptFailure::plain(
+                        "semantic event/action dispatch exceeded the 64-callback budget",
+                    ));
+                }
+                let component = event.target.clone();
+                let result = self
+                    .lifecycle
+                    .invoke_component_event_transactional(&self.engine, event);
                 let _ = result.map_err(|error| self.lifecycle_failure(&error, Some(&component)))?;
             }
         }
@@ -6584,7 +6587,7 @@ impl ScriptHostView {
             (
                 deliveries,
                 runtime.has_window_dirty(&root),
-                runtime.has_pending_dispatch(),
+                runtime.has_window_pending_dispatch(&root),
                 runtime.has_virtual_requests(),
                 runtime.take_window_repaint(&self.window_id),
             )
@@ -8165,7 +8168,7 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         let _ = lifecycle
             .invoke_callback(&engine, &fire, UiValue::Null)
             .unwrap();
-        let actions = runtime.borrow_mut().drain_pending_actions();
+        let actions = runtime.borrow_mut().drain_batch().actions;
         for action in actions {
             let _ = lifecycle
                 .invoke_callback(&engine, &action.callback, action.payload)

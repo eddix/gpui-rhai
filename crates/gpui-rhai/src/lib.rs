@@ -146,8 +146,8 @@ pub use composition_audit::{
     AuditFinding, AuditRule, AuditRules, Profile, STATIC_RULES, load_profile_source,
 };
 pub use context::{
-    ComponentIncarnation, ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch,
-    UiRuntimeState, UiStateSnapshot, UiTransactionError,
+    ComponentIncarnation, ExecutionPhase, PendingEvent, SemanticDispatchOwner, UiContext,
+    UiContextError, UiMutationBatch, UiRuntimeState, UiStateSnapshot, UiTransactionError,
 };
 pub use date::{CalendarClock, CalendarClockSource, DateError, GregorianDate, Weekday};
 pub use dependency::{
