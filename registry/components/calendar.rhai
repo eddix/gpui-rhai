@@ -81,6 +81,7 @@ fn calendar_month(ctx,props,month,focus,start,finish,min_date,max_date){
 fn render_Calendar(ctx,props){
     let start=option(props,"value");let finish=option(props,"end");let min_date=option(props,"min_date");let max_date=option(props,"max_date");
     if start!=(){date_info(start);}if finish!=(){date_info(finish);}if min_date!=(){date_info(min_date);}if max_date!=(){date_info(max_date);}
+    if option(props,"today")!=(){date_info(props.today);}
     if min_date!=()&&max_date!=()&&min_date>max_date{throw "Calendar min_date cannot be after max_date";}
     let anchor=date_clamp(if start==(){ctx.today()}else{start},min_date,max_date);
     effect("anchor",anchor,Fn("anchor_changed"),Fn("anchor_cleanup"));

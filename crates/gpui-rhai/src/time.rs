@@ -1,4 +1,5 @@
 //! Wall-clock instants and timezone conversion, independent of charts and motion.
+use std::fmt::Write as _;
 use std::{fmt, rc::Rc};
 
 use jiff::{Timestamp, tz::AmbiguousOffset};
@@ -190,6 +191,16 @@ fn timestamp(ms: i64) -> Result<Timestamp, TimeError> {
     Timestamp::from_millisecond(ms).map_err(|_| TimeError::Instant)
 }
 
+fn offset_text(seconds: i32) -> String {
+    let sign = if seconds < 0 { '-' } else { '+' };
+    let value = seconds.unsigned_abs();
+    let mut text = format!("{sign}{:02}:{:02}", value / 3600, value % 3600 / 60);
+    if !value.is_multiple_of(60) {
+        let _ = write!(text, ":{:02}", value % 60);
+    }
+    text
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct TimeParts {
     pub date: String,
@@ -207,7 +218,7 @@ pub fn time_parts(ms: i64, zone: &str) -> Result<TimeParts, TimeError> {
         date: zoned.date().to_string(),
         time: zoned.strftime("%H:%M:%S").to_string(),
         offset_minutes: zoned.offset().seconds() / 60,
-        zone: format!("{}", zoned.offset()),
+        zone: offset_text(zoned.offset().seconds()),
     })
 }
 
@@ -223,13 +234,13 @@ pub fn local_time_candidates(date: &str, time: &str, zone: &str) -> Result<Vec<i
     let ambiguous = TimeZone::parse(zone)?.resolve()?.to_ambiguous_timestamp(dt);
     let values = match ambiguous.offset() {
         AmbiguousOffset::Gap { .. } => return Ok(vec![]),
-        AmbiguousOffset::Fold { .. } => vec![ambiguous.clone().earlier(), ambiguous.later()],
+        AmbiguousOffset::Fold { .. } => vec![ambiguous.earlier(), ambiguous.later()],
         AmbiguousOffset::Unambiguous { .. } => vec![ambiguous.unambiguous()],
     };
     values
         .into_iter()
         .map(|v| {
-            v.map(|v| v.as_millisecond())
+            v.map(Timestamp::as_millisecond)
                 .map_err(|_| TimeError::Instant)
         })
         .collect()
@@ -256,11 +267,11 @@ pub(crate) fn parse_time(
         text = text.replace(digit, &n.to_string());
     }
     let period = if time.hour_cycle == "h12" {
-        if text.ends_with(&time.am) {
-            text.truncate(text.len() - time.am.len());
+        if text.contains(&time.am) {
+            text = text.replacen(&time.am, "", 1);
             Some(false)
-        } else if text.ends_with(&time.pm) {
-            text.truncate(text.len() - time.pm.len());
+        } else if text.contains(&time.pm) {
+            text = text.replacen(&time.pm, "", 1);
             Some(true)
         } else {
             return None;
@@ -268,29 +279,66 @@ pub(crate) fn parse_time(
     } else {
         None
     };
-    let pieces = text.trim().split(':').collect::<Vec<_>>();
-    if pieces.len() != if precision == "second" { 3 } else { 2 } {
+    let pattern = match precision {
+        "minute" => &time.short,
+        "second" => &time.medium,
+        _ => return None,
+    }
+    .replace('a', "");
+    let mut pattern = pattern.trim();
+    let mut input = text.trim();
+    let (mut hour, mut minute, mut second) = (None, None, None);
+    while !pattern.is_empty() {
+        let token = if pattern.starts_with("HH") || pattern.starts_with("hh") {
+            Some(0)
+        } else if pattern.starts_with("mm") {
+            Some(1)
+        } else if pattern.starts_with("ss") {
+            Some(2)
+        } else {
+            None
+        };
+        if let Some(token) = token {
+            let digits = input.get(..2)?;
+            if !digits.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            let value = digits.parse::<u8>().ok()?;
+            let field = match token {
+                0 => &mut hour,
+                1 => &mut minute,
+                _ => &mut second,
+            };
+            if field.replace(value).is_some() {
+                return None;
+            }
+            input = input.get(2..)?;
+            pattern = &pattern[2..];
+        } else {
+            let literal = pattern.chars().next()?;
+            input = input.strip_prefix(literal)?;
+            pattern = &pattern[literal.len_utf8()..];
+        }
+    }
+    if !input.is_empty() {
         return None;
     }
-    if pieces
-        .iter()
-        .any(|p| p.len() != 2 || !p.bytes().all(|b| b.is_ascii_digit()))
-    {
-        return None;
-    }
-    let mut hour = pieces[0].parse::<u8>().ok()?;
+    let mut hour = hour?;
+    let minute = minute?;
+    let second = if precision == "second" {
+        second?
+    } else {
+        if second.is_some() {
+            return None;
+        }
+        0
+    };
     if let Some(pm) = period {
         if !(1..=12).contains(&hour) {
             return None;
         }
         hour = hour % 12 + if pm { 12 } else { 0 };
     }
-    let minute = pieces[1].parse::<u8>().ok()?;
-    let second = if pieces.len() == 3 {
-        pieces[2].parse::<u8>().ok()?
-    } else {
-        0
-    };
     if hour > 23 || minute > 59 || second > 59 {
         return None;
     }
@@ -333,7 +381,7 @@ pub(crate) fn format_time(
             number,
         )
         .map_err(|e| TimeError::Local(e.to_string()))?;
-        text = format!("{date}, {text} {}", zoned.offset());
+        text = format!("{date}, {text} {}", offset_text(zoned.offset().seconds()));
     }
     Ok(text)
 }
@@ -440,6 +488,10 @@ impl TimeRange {
         Ok(())
     }
 }
+#[allow(
+    clippy::unnecessary_box_returns,
+    reason = "Rhai native fallible function ABI uses boxed EvalAltResult"
+)]
 fn script_error(error: impl fmt::Display) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(
         error.to_string().into(),
@@ -448,7 +500,7 @@ fn script_error(error: impl fmt::Display) -> Box<EvalAltResult> {
 }
 fn map_dynamic(value: impl Serialize) -> Result<Map, Box<EvalAltResult>> {
     rhai::serde::to_dynamic(value)
-        .map(|v| v.cast::<Map>())
+        .map(Dynamic::cast::<Map>)
         .map_err(script_error)
 }
 pub(crate) fn register_time_api(engine: &mut Engine) {
@@ -530,6 +582,10 @@ mod tests {
             -240
         );
         assert_eq!(
+            time_parts(fold[0], "America/New_York").unwrap().zone,
+            "-04:00"
+        );
+        assert_eq!(
             time_parts(fold[1], "America/New_York")
                 .unwrap()
                 .offset_minutes,
@@ -540,10 +596,10 @@ mod tests {
             local_time_candidates("2026-10-14", "00:00:00", "UTC").unwrap()
         );
         let range = TimeRange::Relative {
-            duration_ms: 900000,
+            duration_ms: 900_000,
         };
-        assert_eq!(range.resolve(1_000_000).unwrap(), (100000, 1000000));
-        assert_eq!(range.resolve(2_000_000).unwrap(), (1100000, 2000000));
+        assert_eq!(range.resolve(1_000_000).unwrap(), (100_000, 1_000_000));
+        assert_eq!(range.resolve(2_000_000).unwrap(), (1_100_000, 2_000_000));
         assert!(range.validate(None, None, Some(1000)).is_err());
         assert!(
             TimeRange::Absolute {
@@ -588,5 +644,33 @@ mod tests {
             fixed.presentation_today(&clock).unwrap().to_iso(),
             "2026-10-14"
         );
+    }
+
+    #[test]
+    fn clock_parser_obeys_locale_pattern_literals_and_day_period_position() {
+        let number = NumberMetadata {
+            digits: (0..10).map(|n| n.to_string()).collect(),
+            decimal_separator: ".".into(),
+            grouping_separator: ",".into(),
+            primary_group_size: 3,
+            secondary_group_size: 3,
+            minus_sign: "-".into(),
+        };
+        let time = TimeMetadata {
+            hour_cycle: "h12".into(),
+            short: "a hh.mm".into(),
+            medium: "a hh.mm.ss".into(),
+            ..TimeMetadata::default()
+        };
+        time.validate().unwrap();
+        assert_eq!(
+            parse_time("PM 11.59", "minute", &time, &number).as_deref(),
+            Some("23:59:00")
+        );
+        assert_eq!(
+            parse_time("AM 12.00.01", "second", &time, &number).as_deref(),
+            Some("00:00:01")
+        );
+        assert!(parse_time("AM 12.00.99", "second", &time, &number).is_none());
     }
 }

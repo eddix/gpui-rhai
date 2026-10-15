@@ -1,10 +1,10 @@
 /* gpui-rhai
-{"id":"components/timeline","export":"Timeline","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],"environment":["size","density"]}
+{"id":"components/timeline","export":"Timeline","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],"environment":["size","density"]}
 */
 // A source-owned, controlled timeline. Application work and data loading stay outside it.
 define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.2.2",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
-    tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],environment:["size","density"]},
+    tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],environment:["size","density"]},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Stable timeline identity."},
         label:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Accessible timeline name."},
@@ -74,6 +74,7 @@ fn timeline_color(status){if status=="running"{theme_color("accent")}else if sta
     else if status=="warning"{theme_color("warning")}else if status=="failed"{theme_color("danger")}else{theme_color("text_muted")}}
 fn timeline_time(ctx,item,mode,zone,now){
     let start=field(item,"start",());let finish=field(item,"end",());if start==(){return "—";}
+    if start>now||(finish!=()&&(finish<start||finish>now)){return ctx.format_time(start,"short",zone);}
     if mode=="relative"&&start<=now{return ctx.format_relative(start);}
     if mode=="duration"{
         if finish==()&&item.status=="running"&&now>=start{return ctx.format_duration(now-start);}
@@ -92,8 +93,10 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,ctx
     if item.status=="running"{lamp=lamp.motion(motion_transition("opacity",0.45,1.0,
         #{duration_ms:ctx.motion_duration("ambient"),easing:"ease_in_out",iterations:"infinite",autoreverse:true,intent:"essential"}));}
     // 6px lamp, 1px rail and 2px cursor are structural signatures, not sizing tokens.
-    let rail=column([lamp]).with_style(ctx.component_style("rail",style().width(theme_length("metrics.control"))
-        .items_center().padding_top(theme_spacing("sm")).border_start(px(1)).border_color(theme_color("border"))));
+    let rail_top=row([]).with_style(style().width(px(1)).height(theme_spacing("sm")).background(theme_color("border")));
+    let rail_bottom=row([]).with_style(style().width(px(1)).flex_grow().background(theme_color("border")));
+    let rail=column([rail_top,lamp,rail_bottom]).with_style(ctx.component_style("rail",style().width(theme_length("metrics.control"))
+        .self_stretch().items_center()));
     let title=text(item.title).with_style(ctx.component_style("title",style().typography("body")
         .text_color(if current{theme_color("text.accent")}else{theme_color("text_primary")})));
     let title_nodes=[title];
@@ -106,19 +109,20 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,ctx
     if field(item,"description","")!=""{body.push(text(item.description).with_style(ctx.component_style("description",style()
         .typography("caption").text_color(theme_color("text_muted")))));}
     if item.key in details{body.push(details[item.key].with_style(ctx.component_style("detail",style())));}
-    let time=text(timeline_time(ctx,item,display,zone,now)).with_style(ctx.component_style("time",style().typography("caption")
-        .text_color(theme_color("text_muted"))));
+    let time=text(timeline_time(ctx,item,display,zone,now)).with_style(ctx.component_style("time",style().typography("body").font_feature("tnum",1)
+        .width(theme_length("metrics.label_column")).flex_shrink(false)
+        .padding_top(theme_spacing("xs")).text_color(theme_color("text_muted"))));
     let indent=row([]).with_style(style().width(theme_spacing("lg")*item.depth));
-    content.push(row([indent,rail,time,column(body).with_style(style().flex_grow().min_width(px(0)).gap(theme_spacing("xs"))),
-        text(field(item,"meta","")).with_style(ctx.component_style("meta",style().typography("caption").text_color(theme_color("text_muted"))))])
-        .with_style(style().gap(theme_spacing("sm")).items_start()));
+    content.push(row([indent,rail,time,column(body).with_style(style().flex_grow().min_width(px(0)).gap(theme_spacing("xs")).padding_y(theme_spacing("xs"))),
+        text(field(item,"meta","")).with_style(ctx.component_style("meta",style().typography("body").font_feature("tnum",1).padding_top(theme_spacing("xs")).text_color(theme_color("text_muted"))))])
+        .with_style(style().gap(theme_spacing("sm")).min_height(theme_length("metrics.row")).items_start()));
     if chosen||current{content.push(row([]).with_style(ctx.component_style("indicator_bar",style().absolute().inset_start(px(0))
         .top(px(0)).bottom(px(0)).width(px(2)).background(theme_color("accent")))));}
     if item.key==cursor{content.push(row([]).with_style(ctx.component_style("cursor",style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
         .border(px(2)).border_color(rgba(0x00000000)).group_focus(style().border_color(theme_color("focus_ring"))))));}
     let node=column(content).with_key(payload.key).with_style(ctx.component_style("row",style().relative().min_height(theme_length("metrics.row"))
         .padding_start(theme_length("metrics.inset")).padding_end(theme_length("metrics.inset"))
-        .padding_y(theme_spacing("xs")).background(if chosen{theme_color("selection")}else{rgba(0x00000000)})
+        .background(if chosen{theme_color("selection")}else{rgba(0x00000000)})
         .hover(style().background(theme_color("surface_hover")))))
         .accessibility_role("listitem").accessibility_label(`${item.title}, ${status}, ${absolute}, ${timeline_time(ctx,item,display,zone,now)}`)
         .accessibility_selected(chosen).accessibility_level(item.depth+1).accessibility_position_in_set(payload.index+1).accessibility_size_of_set(total);
@@ -128,14 +132,15 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,ctx
 fn render_Timeline(ctx,props){
     timeline_keys(props.items,#{});let records=timeline_records(props.items,props.expanded,props.order,0,());
     let now=ctx.now();time_parts(now,props.time_zone);
-    let cursor=ctx.get_state("cursor");let index=0;let first_current=();let previous_day="";
-    for i in 0..records.len{let item=records[i];if item.key==cursor{index=i;}if field(item,"current",false)&&first_current==(){first_current=item.key;}
+    let cursor=ctx.get_state("cursor");let index=0;let first_current=();let previous_day="";let visible_keys=#{};
+    for i in 0..records.len{let item=records[i];visible_keys[item.key]=true;if item.key==cursor{index=i;}if field(item,"current",false)&&first_current==(){first_current=item.key;}
         if props.day_headers&&field(item,"start",())!=(){let day=time_parts(item.start,props.time_zone).date;
             if day!=previous_day{let today=time_parts(now,props.time_zone).date;item.day_header=if day==today{ctx.t("time.today")}
                 else if day==date_checked_add_days(today,-1){ctx.t("time.yesterday")}else{ctx.format_date(day,"medium")};previous_day=day;records[i]=item;}}
     }
-    if cursor==""&&records.len>0{cursor=if props.selected_keys.len>0{props.selected_keys[0]}else if first_current!=(){first_current}else{records[0].key};
+    if !(cursor in visible_keys)&&records.len>0{cursor=if props.selected_keys.len>0&&props.selected_keys[0] in visible_keys{props.selected_keys[0]}else if first_current!=(){first_current}else{records[0].key};
         for i in 0..records.len{if records[i].key==cursor{index=i;}}}
+    if records.len==0{cursor="";}
     let tick=ctx.get_state("tick");
     if props.time_display!="absolute"{timeout("relative-labels",60000,!props.visible,Fn("timeline_tick"),tick);}
     let config=#{key:`${props.key}-rows`,label:props.label,data:records,height:props.height,estimated_height:48.0};
