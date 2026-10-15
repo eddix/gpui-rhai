@@ -116,6 +116,13 @@ fn split_pane_page(h, v) {
             size: kit::val(v, "split.grip_size", 0.5), start: text("Source"), end: text("Preview"),
             handle: grip_dots(), on_resize: kit::store(h, "split.grip_size") })])
             .with_style(style().height(px(160)).width(px(520)))),
+        kit::sec("Thin separator", column([split_pane::SplitPane(#{ key: "split-thin", label: "Resize panes on a thin separator",
+            size: kit::val(v, "split.thin_size", 0.5), start: text("Files"), end: text("Preview"),
+            handle: grip_dots(), line: false,
+            part_styles: #{ handle: style().width(px(1)),
+                grip: style().padding(theme_spacing("xxs")) },
+            on_resize: kit::store(h, "split.thin_size") })])
+            .with_style(style().height(px(160)).width(px(520)))),
     ])
 }
 

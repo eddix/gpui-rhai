@@ -26,6 +26,9 @@
 // them the `handle` background to keep the lane still. `line: false` drops the native line
 // for a grip that draws its own. Each pane is a flex column, so content with `flex_grow`
 // fills it, and absolute content is placed from the pane's corner.
+// A styled thin separator keeps its grip centred on the measured lane. For an invisible
+// wider hit area, give `grip` a transparent background and `border(px(0))`; clear its state
+// borders too if those should remain invisible on hover, focus and drag.
 // Example: SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
@@ -101,10 +104,10 @@ fn SplitPane(props) { render_component("components/split_pane", props) }
 fn split_prop(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn split_commit(ctx, value) { ctx.emit("resize", value); }
 
-// The decorative grip: a box the size of the separator on the end pane's start edge, the
+// The decorative grip: a box the measured size of the separator on the end pane's start edge, the
 // caller's node centred in it; the end pane paints after the start pane and the separator,
 // so the grip is above both.
-fn split_grip(ctx, props, horizontal, grip_ref, state) {
+fn split_grip(ctx, props, horizontal, grip_ref, state, separator_ref) {
     let shape = style().flex_row().items_center().justify_center()
         .occlude_except_scroll().background(theme_color("surface_raised"))
         .border(px(1)).border_color(theme_color("border"));
@@ -117,9 +120,14 @@ fn split_grip(ctx, props, horizontal, grip_ref, state) {
             focus: ctx.component_style("grip_focus", style().border_color(theme_color("focus_ring"))),
             disabled: ctx.component_style("grip_disabled", style().opacity(0.5)),
         });
+    // The separator part can change its thickness. Follow its committed geometry rather
+    // than centering decoration on the default 8px lane; a ref read also follows resize.
+    let separator = ctx.element_bounds(separator_ref);
+    let thickness = if separator == () { 8.0 }
+        else if horizontal { separator.layout.width } else { separator.layout.height };
     let lane = style().absolute().flex_row().items_center().justify_center();
-    lane = if horizontal { lane.top(px(0)).bottom(px(0)).inset_start(offset_px(-8)).width(px(8)) }
-        else { lane.left(px(0)).right(px(0)).top(offset_px(-8)).height(px(8)) };
+    lane = if horizontal { lane.top(px(0)).bottom(px(0)).inset_start(offset_px(-thickness)).width(px(thickness)) }
+        else { lane.left(px(0)).right(px(0)).top(offset_px(-thickness)).height(px(thickness)) };
     box([grip]).with_key(`${props.key}-grip-lane`).with_style(lane)
 }
 
@@ -209,7 +217,7 @@ fn render_SplitPane(ctx, props) {
     if has_grip {
         let grip_ref = element_ref(`${props.key}-grip`);
         resize_props.handle_ref = grip_ref;
-        grip = split_grip(ctx, props, horizontal, grip_ref, state);
+        grip = split_grip(ctx, props, horizontal, grip_ref, state, handle_ref);
     }
     if "on_resize" in props && props.on_resize != () { resize_props.on_resize = Fn("split_commit"); }
     let key_payload = #{ orientation: orientation, group_ref: root_ref_key,
