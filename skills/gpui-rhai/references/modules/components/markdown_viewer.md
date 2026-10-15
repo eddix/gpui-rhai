@@ -20,7 +20,7 @@ markdown_viewer::MarkdownViewer(#{key:"article",label:"Article",source:ctx.get_n
 | `image_assets` | map of string | `#{}` | Explicit Markdown destination to Host asset ID map. The viewer never fetches URLs; missing assets show alt text. |
 | `key` | string | required | Stable viewer identity; owns scroll, selection and background-job cancellation. |
 | `label` | string | `"Markdown"` | Accessible document name. |
-| `max_height` | integer ≥ 0 or length or `()` | — | Maximum content height in logical pixels or a Length; overflow scrolls natively. |
+| `max_height` | integer ≥ 0 or length or `()` | — | Maximum content height as a logical-pixel integer or absolute-resolvable Length (px/rem); relative lengths are not supported. Overflow scrolls natively. |
 | `on_link` | callback or `()` | — | Link activation callback with href and visible text. Host validates and decides what to open. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `source` | string or native document | required | Markdown string or Host-owned NativeTextDocument from ctx.get_native_text_document. |
