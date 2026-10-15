@@ -1935,9 +1935,8 @@ fn validate_name(name: &str, label: &'static str) -> Result<(), NativeCollection
     }
 }
 
-const MAX_MISSING_NAMES_PER_READER: usize = 64;
-const MAX_MISSING_READER_PAIRS: usize = 4_096;
-const MAX_MISSING_NAME_BYTES: usize = 64 * 1024;
+#[cfg(test)]
+use crate::read_dependency::MAX_MISSING_NAMES_PER_READER;
 
 #[derive(Clone, Debug, Default)]
 pub struct NativeCollectionRegistry {
@@ -2062,49 +2061,11 @@ impl NativeCollectionRegistry {
         reader: &crate::read_dependency::ReadDependency,
         name: &str,
     ) -> Result<(), NativeCollectionError> {
-        if self
-            .missing_readers
-            .get(name)
-            .is_some_and(|readers| readers.contains(reader))
-        {
-            return Ok(());
-        }
-        let reader_names = self
-            .missing_readers
-            .values()
-            .filter(|readers| readers.contains(reader))
-            .count();
-        if reader_names >= MAX_MISSING_NAMES_PER_READER {
-            return Err(NativeCollectionError::MissingDependencyBudget {
-                kind: "names per component",
-                limit: MAX_MISSING_NAMES_PER_READER,
-            });
-        }
-        let pairs = self
-            .missing_readers
-            .values()
-            .map(BTreeSet::len)
-            .sum::<usize>();
-        if pairs >= MAX_MISSING_READER_PAIRS {
-            return Err(NativeCollectionError::MissingDependencyBudget {
-                kind: "component/name pairs",
-                limit: MAX_MISSING_READER_PAIRS,
-            });
-        }
-        if !self.missing_readers.contains_key(name) {
-            let bytes = self.missing_readers.keys().map(String::len).sum::<usize>();
-            if bytes.saturating_add(name.len()) > MAX_MISSING_NAME_BYTES {
-                return Err(NativeCollectionError::MissingDependencyBudget {
-                    kind: "name bytes",
-                    limit: MAX_MISSING_NAME_BYTES,
-                });
-            }
-        }
-        self.missing_readers
-            .entry(name.to_owned())
-            .or_default()
-            .insert(reader.clone());
-        Ok(())
+        crate::read_dependency::track_missing_reader(&mut self.missing_readers, reader, name)
+            .map_err(|budget| NativeCollectionError::MissingDependencyBudget {
+                kind: budget.kind,
+                limit: budget.limit,
+            })
     }
 
     pub(crate) fn reset_reader(&mut self, reader: &ComponentInstancePath) {

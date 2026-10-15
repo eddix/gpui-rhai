@@ -799,6 +799,35 @@ Official components wrap them; application components may too.
 | `horizontal_padding` | length | — | Padding added on both sides of the text, in pixels or rems, such as the cell's inset; 0 when omitted. |
 | `text` | string | required | Text measured as one line in the text style inherited here; place it inside the cell it measures. |
 
+### MarkdownViewPrimitive
+
+`gpui_rhai::MarkdownViewPrimitive(props)` · `gpui_rhai.markdown_viewer`. Native read-only CommonMark/GFM presentation with measured virtualization, semantic links, selection and source/code copying; components/markdown_viewer wraps it. Never executes HTML or fetches images.
+
+| Prop | Type | Required or default | Description |
+|---|---|---|---|
+| `code_block_actions` | array of `"copy"` (at most 1) | — | Code block actions; copy writes code without Markdown fences. |
+| `code_block_style` | style | required | Style of the Markdown code_block part. |
+| `error_style` | style | required | Style of the Markdown error part. |
+| `heading_roles` | array of string (at most 6) | required | Typography roles for heading levels 1 through 6; an explicit heading part typography overrides these. |
+| `heading_style` | style | required | Style of the Markdown heading part. |
+| `height` | `"fill"` or `"content"` | — | Fill the box or grow to the measured content height. |
+| `image_assets` | map of string | — | Explicit destination-to-Host-asset-ID map. Missing images show alt text; URLs are never fetched. |
+| `inline_code_style` | style | required | Style of the Markdown inline_code part. |
+| `label` | string | required | Accessible document name. |
+| `link_style` | style | required | Style of the Markdown link part. |
+| `loading_style` | style | required | Style of the Markdown loading part. |
+| `max_height` | length or `()` | — | Maximum content height as an absolute-resolvable Length (px/rem); relative lengths are not supported. Longer content scrolls natively. |
+| `on_link` | callback or `()` | — | Emits href and visible text. Does not open a browser. |
+| `paragraph_style` | style | required | Style of the Markdown paragraph part. |
+| `quote_style` | style | required | Style of the Markdown quote part. |
+| `rule_style` | style | required | Style of the Markdown rule part. |
+| `source` | string or native document | required | Inline Markdown or an opaque Host-owned native text document. |
+| `table_style` | style | required | Style of the Markdown table part. |
+
+| Event | Payload | Description |
+|---|---|---|
+| `link` | object | An untrusted link activation proposal; Host decides whether to open it. |
+
 ### PanZoomPrimitive
 
 `gpui_rhai::PanZoomPrimitive(props)` · `gpui_rhai.pan_zoom`. Native pan and zoom over a Canvas that previews its transform and proposes `transform_change`; `components/pan_zoom` wraps it.

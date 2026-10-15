@@ -22,6 +22,8 @@ icon or raster image assets are currently included.
 - notify 8.2.0 — CC0-1.0 (development hot reload only).
 - Jiff 0.2.35 — Unlicense OR MIT.
 - similar 3.2.0 — Apache-2.0.
+- pulldown-cmark 0.13.4 — MIT. CommonMark/GFM parsing for the native
+  Markdown viewer; no WebView or HTML execution is included.
 - syntect 5.3.0 — MIT. Its bundled default syntax definitions originate from
   the open-source Sublime Text default package set; GPUI Rhai's Rhai,
   TypeScript/TSX, JSONC, TOML, and Dockerfile definitions are original project

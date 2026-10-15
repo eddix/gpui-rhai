@@ -39,6 +39,7 @@ event-listener.workspace = true
 similar.workspace = true
 syntect.workspace = true
 regex.workspace = true
+pulldown-cmark.workspace = true
 
 [dev-dependencies]
 # Path-only on purpose: `cargo publish` drops a versionless dev-dependency, so the

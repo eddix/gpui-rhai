@@ -1563,6 +1563,48 @@ mod tests {
     }
 
     #[test]
+    fn cached_image_resolution_never_calls_the_provider() {
+        struct CountingProvider(Rc<std::cell::Cell<usize>>);
+        impl AssetProvider for CountingProvider {
+            fn load(&self, _: &str) -> Result<AssetData, String> {
+                self.0.set(self.0.get() + 1);
+                Ok(AssetData {
+                    mime_type: "image/svg+xml".to_owned(),
+                    bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#
+                        .to_vec(),
+                })
+            }
+        }
+        let calls = Rc::new(std::cell::Cell::new(0));
+        let registry = AssetRegistry::new();
+        registry
+            .register("app", CountingProvider(calls.clone()))
+            .unwrap();
+        let prepared = AssetId::parse("app/prepared").unwrap();
+        let pending = AssetId::parse("app/pending").unwrap();
+        assert!(matches!(
+            registry.cached_image(&pending),
+            Err(AssetError::NotPreloaded(_))
+        ));
+        assert_eq!(calls.get(), 0, "cache misses must not load a provider");
+
+        assert_eq!(registry.preload_images([prepared.clone()]).unwrap(), 1);
+        assert_eq!(calls.get(), 1, "only explicit Host preparation may load");
+        for _ in 0..3 {
+            let image = registry.cached_image(&prepared).unwrap();
+            assert!(matches!(
+                registry.image_source(image.opaque()).unwrap(),
+                ImageSource::Image(_)
+            ));
+            assert!(matches!(
+                registry.cached_image(&pending),
+                Err(AssetError::NotPreloaded(_))
+            ));
+        }
+        assert_eq!(calls.get(), 1, "resolving render sources stays cache-only");
+    }
+
+    #[test]
     fn rejected_duplicate_provider_keeps_uncached_assets_from_the_original() {
         let registry = AssetRegistry::new();
         let data = AssetData {

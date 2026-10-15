@@ -2846,6 +2846,7 @@ impl GpuiNodeRenderer {
                             environment.view_id,
                         )
                         .with_wheel_parents(environment.wheel_parents.to_vec())
+                        .with_assets(environment.assets.cloned())
                         .with_intrinsic_size(environment.intrinsic_size.cloned()),
                         crate::PrimitiveTheme::capture_with_environment(
                             &environment.resolver(),
