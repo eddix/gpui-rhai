@@ -18,7 +18,7 @@ fn view(ctx, h, v, id) {
             kit::sec("Service workspace", render_component("gallery/navigation-demo", #{ key: "retained-tabs", mode: id })),
         ])
     } else if id == "navigation_stack" {
-        kit::page(h, v, id, "NavigationStack", "Follow a service → ticket → pipeline → instance, then Back to the actual opener. Each visit owns a separate draft.", [
+        kit::page(h, v, id, "NavigationStack", "Follow a service → ticket → pipeline → instance, then Back to the actual opener. Command+[ backs the focused stack; each visit owns a separate draft.", [
             kit::sec("Deployment drill-down", render_component("gallery/navigation-demo", #{ key: "navigation", mode: id })),
         ])
     } else {
@@ -59,17 +59,15 @@ fn render_NavigationDemo(ctx, props) {
     let entries = [];
     for index in 0..ctx.get_state("depth") {
         let title = visit_title(index);
-        let content = column([
-            panel::PagePanel(#{ key: `panel:${index}`, label: title }),
-            button::Button(#{ key: `open:${index}`, text: if index < 3 { `Open ${visit_title(index + 1)}` } else { "Visit ticket 4821 again" }, disabled: index >= 7, on_click: Fn("demo_push") }),
-        ]).with_style(style().gap(theme_length("space.related")));
+        let content = panel::PagePanel(#{ key: `panel:${index}`, label: title,
+            actions: button::Button(#{ key: `open:${index}`, text: if index < 3 { `Open ${visit_title(index + 1)}` } else { "Visit ticket 4821 again" }, disabled: index >= 7, on_click: Fn("demo_push") }) });
         entries.push(#{ key: `visit:${index}`, title: title, content: content });
     }
     column([
         tabs::Tabs(#{ key: "header-style", label: "Navigation header", panel: false, value: ctx.get_state("header"),
             tabs: [#{ value: "back", label: "Back" }, #{ value: "breadcrumb", label: "Breadcrumb" }, #{ value: "none", label: "None" }], on_change: Fn("demo_header") }),
         navigation::NavigationStack(#{ key: "deployments", label: "Deployment visits", stack: entries,
-            header: ctx.get_state("header"), max_depth: 8, motion_key: "deployments", on_pop: Fn("demo_pop"),
+            header: ctx.get_state("header"), max_depth: 8, motion_key: "deployments", back_key: "cmd+[", on_pop: Fn("demo_pop"),
             actions: [button::Button(#{ key: "refresh", text: `Refresh ${ctx.get_state("refresh")}`, variant: "ghost", on_click: Fn("demo_refresh") })] }),
     ]).with_style(ctx.component_style("root", style().width(relative(1.0)).gap(theme_length("space.group"))))
 }
