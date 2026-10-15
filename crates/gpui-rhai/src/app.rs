@@ -1795,6 +1795,7 @@ pub struct FileScriptView {
     key_bindings: Vec<KeyBindingSpec>,
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
+    wall_clock: crate::WallClock,
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
     token_base: Option<String>,
@@ -1814,6 +1815,7 @@ impl FileScriptView {
             key_bindings: Vec::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
+            wall_clock: crate::WallClock::default(),
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
             token_base: None,
@@ -1868,6 +1870,13 @@ impl FileScriptView {
     #[must_use]
     pub fn calendar_clock(mut self, clock: crate::CalendarClock) -> Self {
         self.calendar_clock = clock;
+        self
+    }
+
+    /// Inject a presentation wall clock, independent from animation and calendar clocks.
+    #[must_use]
+    pub fn wall_clock(mut self, clock: crate::WallClock) -> Self {
+        self.wall_clock = clock;
         self
     }
 
@@ -1967,6 +1976,7 @@ impl FileScriptView {
         runtime_state.motions.set_quality(self.motion_quality);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
+        runtime_state.wall_clock = self.wall_clock;
         runtime_state.clock = self.runtime_clock;
         runtime_state.key_bindings.clone_from(&self.key_bindings);
         runtime_state.locale = load_locale_directory(engine.engine(), &ui_root.join("locales"))?;
@@ -2040,6 +2050,7 @@ pub struct EmbeddedScriptView {
     assets: BTreeMap<String, AssetData>,
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
+    wall_clock: crate::WallClock,
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
     token_base: Option<String>,
@@ -2072,6 +2083,7 @@ impl EmbeddedScriptView {
             assets: BTreeMap::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
+            wall_clock: crate::WallClock::default(),
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
             token_base: None,
@@ -2166,6 +2178,13 @@ impl EmbeddedScriptView {
     #[must_use]
     pub fn calendar_clock(mut self, clock: crate::CalendarClock) -> Self {
         self.calendar_clock = clock;
+        self
+    }
+
+    /// Inject a presentation wall clock, independent from animation and calendar clocks.
+    #[must_use]
+    pub fn wall_clock(mut self, clock: crate::WallClock) -> Self {
+        self.wall_clock = clock;
         self
     }
 
@@ -2267,6 +2286,7 @@ impl EmbeddedScriptView {
         runtime_state.motions.set_quality(self.motion_quality);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
+        runtime_state.wall_clock = self.wall_clock;
         runtime_state.clock = self.runtime_clock;
         runtime_state.key_bindings.clone_from(&self.key_bindings);
         runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;

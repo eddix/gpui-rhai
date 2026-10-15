@@ -5,6 +5,16 @@ bundle declares an ID, logical direction, required internal phrases, Gregorian
 calendar metadata, and decimal-number metadata. English, Simplified Chinese,
 and the Arabic RTL validation bundle ship in the registry.
 
+Temporal formatting additionally accepts a `time` map with `hour_cycle`
+(`h12` or `h23`), `short`/`medium` patterns (`HH`, `hh`, `mm`, `ss`, `a`),
+`am`/`pm`, four compact `units` (day/hour/minute/second), `past`/`future`
+patterns containing `{value}`, and `now`. Existing copied bundles without
+`time` load with explicit h23/English fallback metadata; add the map and the
+`time.*`/`timeline.*` messages from the updated bundled locale when adopting
+temporal components. The bundled English, Simplified Chinese and Arabic files
+include their localized metadata and labels. No locale-ID branching is used
+by the controls. See [temporal controls](temporal.md) for the full contract.
+
 ```rhai
 fn locale() {
     #{

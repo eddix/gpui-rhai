@@ -64,6 +64,7 @@ mod text_edit;
 pub mod text_input;
 pub mod theme;
 mod theme_source;
+pub mod time;
 pub mod timer;
 pub mod token;
 pub mod value;
@@ -296,6 +297,9 @@ pub use theme::{
     load_token_base,
 };
 pub use theme_source::EnvTableSource;
+pub use time::{
+    TimeError, TimeMetadata, TimeParts, TimeRange, TimeZone, WallClock, WallClockSource,
+};
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use token::{
     EnvTable, Environment, EnvironmentDeclaration, EnvironmentDeclarations, LengthToken, Symbol,

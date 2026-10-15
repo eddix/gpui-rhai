@@ -678,6 +678,7 @@ impl RuntimeEngine {
         engine.build_type::<crate::Span>();
         register_ui_context_api(&mut engine);
         register_date_api(&mut engine);
+        crate::time::register_time_api(&mut engine);
         register_style_api(&mut engine);
         register_motion_api(&mut engine);
         register_text_area_api(&mut engine);
@@ -957,7 +958,10 @@ impl RuntimeEngine {
                         .locale
                         .as_ref()
                         .map(crate::LocaleManager::generation),
-                    calendar_day: runtime.calendar_clock.today(),
+                    calendar_day: runtime
+                        .calendar_clock
+                        .presentation_today(&runtime.wall_clock)
+                        .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?,
                 },
                 reuse_plan
                     .as_ref()
