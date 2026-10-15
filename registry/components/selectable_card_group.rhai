@@ -60,21 +60,6 @@ fn card_ref_key(props, value) {
     }
     "choice-none"
 }
-fn card_description_id(reference) {
-    // ElementRef.scope is the current formal component's deterministic full
-    // identity, not the caller's sibling-local key. Escape whitespace because
-    // described_by is a whitespace-separated ID list; escape '%' as well so
-    // a literal escape-looking key cannot alias an escaped one.
-    let id = "";
-    for character in reference.scope {
-        let trimmed = character.to_string();
-        trimmed.trim();
-        if trimmed == "" || character == '%' {
-            id += `%${character.to_int().to_hex()};`;
-        } else { id += character; }
-    }
-    `${id}-description`
-}
 fn choice_activate(spec, ctx, payload) {
     ctx.set_state("active", spec.value);
     if spec.next != spec.values { ctx.emit("change", spec.next); }
@@ -122,8 +107,7 @@ fn render_choice_card(ctx, props, item, active) {
     let unavailable = props.disabled || ("disabled" in item && item.disabled) || !("on_change" in props) || props.on_change == ();
     let reference = card_ref_key(props, item.value);
     let choice_ref = element_ref(reference);
-    let key = `${props.key}-${reference}`;
-    let description = card_description_id(choice_ref);
+    let description = choice_ref.semantic_id;
     let indicator = if "indicator" in props && props.indicator != () { props.indicator }
         else if props.mode == "multiple" { "check" } else { "radio" };
     let heading = row([
@@ -176,7 +160,7 @@ fn render_choice_card(ctx, props, item, active) {
     if selected { frame = ctx.component_style("card_selected", frame.border_color(theme_color("accent"))); }
     // Identity follows value even when items reorder. Refs use the current
     // numeric index only as a component-local lookup (values may be Unicode).
-    column(children).with_key(item.value).test_id(key)
+    column(children).with_key(item.value)
         .with_style(ctx.component_style("item", frame))
         .accessibility_role("group").accessibility_label(item.label)
 }

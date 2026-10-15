@@ -87,7 +87,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "get$scope(_: &mut ElementRef) -> string",
         params: &[],
-        doc: "The ref's full identity, `<component path>:<key>`, which tells apart refs with the same key in different components.",
+        doc: "A readable `<component path>:<key>` scope label for diagnostics. Displayed paths are not a lossless identity encoding; use semantic_id for accessibility relationships.",
+    },
+    ScriptFnDoc {
+        signature: "get$semantic_id(_: &mut ElementRef) -> string",
+        params: &[],
+        doc: "An opaque, deterministic, whitespace-free accessibility ID encoded losslessly from the typed component path and ref key. Use it for accessibility_id and labelled_by/described_by relationships; unlike diagnostic scope, embedded path delimiters cannot alias another path.",
     },
     ScriptFnDoc {
         signature: "italic(_: &mut Span) -> Span",
