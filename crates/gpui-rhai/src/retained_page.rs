@@ -19,6 +19,8 @@ pub struct NavigationStackInfo {
     pub label: String,
     /// Controlled visit count, including the root.
     pub depth: usize,
+    /// Whether a non-root pop can be proposed to a mounted handler.
+    pub can_pop: bool,
     /// Whether this scope contains current keyboard focus.
     pub focused: bool,
 }

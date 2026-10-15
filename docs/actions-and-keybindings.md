@@ -57,7 +57,7 @@ dispatch `gpui_rhai::RevealDocumentLine { side, line }`; CodeViewer requires
 NavigationStack and propagates when none can go back. No key is installed for
 this action. A Host may bind its platform Back chord to it, or call
 `host.navigate_back(window, cx)` before its outer navigation. Inspect
-`host.navigation_stacks(window, cx)` to enable a Back control; inactive tabs
+`host.navigation_stacks(window, cx)` and check `focused && can_pop` to enable a Back control; inactive tabs
 and other views do not intercept it. An optional NavigationStack `back_key`
 uses a local node handler instead. Pop proposals remain controlled even when
 the caller rejects them.

@@ -250,6 +250,12 @@ fn view(ctx) {{ page::view(ctx, #{{}}, #{{}}, "{page}") }}"#
         assert_eq!(last_error(&mut visual, &view), None, "gallery {page}");
         assert!(
             snapshot(&mut visual, &view)
+                .nodes()
+                .any(|node| node.name.starts_with("Presentation visible: true.")),
+            "eager formal panel must invalidate after its first visible commit"
+        );
+        assert!(
+            snapshot(&mut visual, &view)
                 .find_by_role_and_name("text_field", "Checkout service draft")
                 .next()
                 .is_some()
@@ -404,6 +410,71 @@ fn view(ctx) {
         "tab arrows must remain usable when each tab owns a stack"
     );
     assert_eq!(last_error(&mut visual, &view), None);
+}
+
+fn contains_asset(node: &gpui_rhai::UiNode, suffix: &str) -> bool {
+    match node.kind() {
+        gpui_rhai::UiNodeKind::Image {
+            source: gpui_rhai::ImageSourceSpec::Asset(asset),
+        } => asset.as_str().ends_with(suffix),
+        gpui_rhai::UiNodeKind::Box { children } | gpui_rhai::UiNodeKind::Fragment { children } => {
+            children.iter().any(|child| contains_asset(child, suffix))
+        }
+        _ => false,
+    }
+}
+
+#[gpui::test]
+fn navigation_back_is_logical_in_rtl_and_reduced_motion_matches_none_geometry(
+    cx: &mut TestAppContext,
+) {
+    let source = NAVIGATION
+        .replace_once("value: 1 }", "value: 2 }")
+        .replace_once(
+            "header: \"breadcrumb\"",
+            "header: \"back\", back_key: \"alt+left\", motion_key: \"visits\"",
+        );
+    let mut positions = Vec::new();
+    for preference in [MotionPreference::None, MotionPreference::Reduced] {
+        let (mut visual, view) = Mount::components(source.clone())
+            .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
+            .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
+            .module(
+                "patterns/navigation_stack",
+                source_file("patterns/navigation_stack.rhai"),
+            )
+            .locale("ar.rhai", gpui_rhai_registry::AR_LOCALE)
+            .motion(preference)
+            .mount(cx);
+        settle(&mut visual, Step::Frame, 4);
+        let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+        assert!(
+            contains_asset(&root, "chevron_right"),
+            "RTL back affordance must mirror"
+        );
+        positions.push(
+            node_by_test_id(&mut visual, &view, "open:1")
+                .geometry
+                .unwrap()
+                .visual
+                .x,
+        );
+        // Raw node arrows are logical: physical Right is logical Back in RTL.
+        visual.simulate_keystrokes("alt-right");
+        settle(&mut visual, Step::Frame, 4);
+        assert_eq!(text_of(&mut visual, &view, "source"), "keyboard");
+        assert!(
+            snapshot(&mut visual, &view)
+                .find_by_test_id("open:0")
+                .next()
+                .is_some()
+        );
+        assert_eq!(last_error(&mut visual, &view), None);
+    }
+    assert!(
+        (positions[0] - positions[1]).abs() < 0.01,
+        "reduced motion must settle the slide like none"
+    );
 }
 
 const SCOPES: &str = r#"

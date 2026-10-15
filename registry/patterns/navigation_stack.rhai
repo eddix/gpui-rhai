@@ -4,7 +4,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/menu"], "capabilities": {},
   "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"],
-  "tokens": ["text_primary", "text_muted", "spacing.xs", "space.related", "space.group", "typography.title"],
+  "tokens": ["text_primary", "text_muted", "metrics.icon", "spacing.xs", "space.related", "space.group", "typography.title"],
   "environment": ["size", "density", "corners"]
 }
 */
@@ -18,7 +18,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/menu"], capabilities: #{},
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"],
-        tokens: ["text_primary", "text_muted", "spacing.xs", "space.related", "space.group", "typography.title"],
+        tokens: ["text_primary", "text_muted", "metrics.icon", "spacing.xs", "space.related", "space.group", "typography.title"],
         environment: ["size", "density", "corners"] },
     schema: #{
         props: #{
@@ -97,9 +97,10 @@ fn nav_header(ctx, props, header, enabled, rtl) {
     let header_ref = element_ref("header");
     let trail = [];
     if header == "back" && depth > 1 {
-        let chevron = image(asset(if rtl { "icons/chevron_right" } else { "icons/chevron_left" }));
+        let chevron = image(asset(if rtl { "icons/chevron_right" } else { "icons/chevron_left" }))
+            .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")).flex_shrink(false));
         trail.push(button::Button(#{ key: "back", text: props.stack[depth - 2].title,
-            icon: chevron, variant: "ghost", disabled: !enabled,
+            prefix: chevron, variant: "ghost", disabled: !enabled,
             on_click: if enabled { Fn("nav_button_pop").curry(#{ depth: depth - 1, source: "button" }) } else { () } })
             .accessibility_label(`Back to ${props.stack[depth - 2].title}`)
             .with_style(ctx.component_style("back", style().min_width(px(0)))));
