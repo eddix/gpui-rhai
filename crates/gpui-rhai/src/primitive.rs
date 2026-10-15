@@ -191,6 +191,24 @@ impl Default for PrimitiveTheme {
 }
 
 impl PrimitiveTheme {
+    /// Capture a Host's read-only color/token resolver for native components.
+    /// Capture a fresh snapshot after the Host theme or direction changes.
+    #[must_use]
+    pub fn from_colors(
+        colors: &(impl ColorResolver + ?Sized),
+        direction: crate::TextDirection,
+    ) -> Self {
+        Self::capture_with_environment(
+            colors,
+            direction,
+            "en",
+            None,
+            crate::RuntimeClock::default(),
+            crate::MotionPreference::Normal,
+            crate::MotionQuality::High,
+        )
+    }
+
     #[cfg(test)]
     pub(crate) fn capture(colors: &impl ColorResolver) -> Self {
         Self::capture_with_direction(colors, crate::TextDirection::LeftToRight)
@@ -819,6 +837,18 @@ pub struct PrimitiveSemanticProposal {
 }
 
 impl PrimitiveContext {
+    /// Create a themed scrollbar factory owned by this retained primitive.
+    /// Dragging is cancelled on unmount, suspension, disposal, Escape and window
+    /// deactivation by the same private coordinator as built-in controls.
+    #[must_use]
+    pub fn scrollbars(&self, theme: &PrimitiveTheme) -> crate::ScrollbarContext {
+        crate::ScrollbarContext::new(
+            self.interaction_owner("scrollbars"),
+            self.interactions.clone(),
+            theme,
+        )
+    }
+
     pub(crate) fn observes(&self, event: &str) -> bool {
         self.callbacks.contains_key(event)
     }
