@@ -27,6 +27,9 @@ pub struct VirtualCollectionNodeSpec {
     pub overdraw_pixels: f64,
     pub bottom_align: bool,
     pub follow_tail: bool,
+    /// Low-frequency, scoped notification of the native follow state and new
+    /// keys received while reading away from the tail.
+    pub on_follow_change: Option<Box<crate::ScriptCallback>>,
     /// Stable data key to reveal when this controlled target changes.
     pub reveal_key: Option<String>,
     /// Item indices whose realized nodes act as top-pinned section headers.
@@ -43,7 +46,115 @@ pub struct VirtualRequestRegistry {
     requests: Rc<RefCell<BTreeMap<VirtualCollectionId, BTreeSet<usize>>>>,
     metrics: Rc<RefCell<BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>>>,
     item_bounds: Rc<RefCell<BTreeMap<VirtualCollectionId, ItemBoundsReader>>>,
+    scrolls: Rc<RefCell<BTreeMap<VirtualCollectionId, VirtualCollectionScrollHandle>>>,
+    active: Rc<RefCell<BTreeSet<VirtualCollectionId>>>,
+    scroll_commands: Rc<RefCell<BTreeMap<VirtualCollectionId, Vec<CollectionScrollCommand>>>>,
     wake: crate::async_runtime::AsyncWake,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CollectionScrollCommand {
+    Start,
+    End,
+    By(f64),
+}
+
+/// The native follow state, not a second SDK follow state machine.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct VirtualCollectionFollowStatus {
+    pub following: bool,
+    pub unseen: usize,
+}
+
+impl VirtualCollectionFollowStatus {
+    #[must_use]
+    pub fn to_ui_value(self) -> crate::UiValue {
+        crate::UiValue::Map(BTreeMap::from([
+            ("following".to_owned(), crate::UiValue::Bool(self.following)),
+            (
+                "unseen".to_owned(),
+                crate::UiValue::Integer(i64::try_from(self.unseen).unwrap_or(i64::MAX)),
+            ),
+        ]))
+    }
+}
+
+/// A mounted collection's native scrolling capability. Commands notify its
+/// owning view; the handle is resolved by scoped ID immediately before use.
+#[derive(Clone)]
+pub struct VirtualCollectionScrollHandle {
+    pub(crate) state: gpui::ListState,
+    pub(crate) unseen: Rc<RefCell<BTreeSet<String>>>,
+    pub(crate) follow_tail: bool,
+    pub(crate) notify: gpui::EntityId,
+}
+
+impl std::fmt::Debug for VirtualCollectionScrollHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("VirtualCollectionScrollHandle")
+            .field("status", &self.status())
+            .finish_non_exhaustive()
+    }
+}
+
+impl VirtualCollectionScrollHandle {
+    /// Whether this native source currently owns a thumb-drag height freeze.
+    #[must_use]
+    pub fn is_scrollbar_dragging(&self) -> bool {
+        self.state.is_scrollbar_dragging()
+    }
+    #[must_use]
+    pub fn status(&self) -> VirtualCollectionFollowStatus {
+        let following = self.state.is_following_tail();
+        VirtualCollectionFollowStatus {
+            following,
+            unseen: if following {
+                0
+            } else {
+                self.unseen.borrow().len()
+            },
+        }
+    }
+
+    pub fn scroll_to_end(&self, cx: &mut gpui::App) {
+        if self.follow_tail {
+            self.state.set_follow_mode(gpui::FollowMode::Tail);
+        }
+        self.state.scroll_to_end();
+        self.unseen.borrow_mut().clear();
+        cx.notify(self.notify);
+    }
+
+    pub fn scroll_to_start(&self, cx: &mut gpui::App) {
+        self.state.pause_following_tail();
+        self.state.scroll_to(gpui::ListOffset {
+            item_ix: 0,
+            offset_in_item: gpui::px(0.0),
+        });
+        cx.notify(self.notify);
+    }
+
+    pub fn pause_following(&self, cx: &mut gpui::App) {
+        self.state.pause_following_tail();
+        cx.notify(self.notify);
+    }
+
+    /// Scroll in logical pixels (positive toward the end). Native upward
+    /// scrolling pauses tail following, just like wheel input.
+    pub fn scroll_by(&self, distance: gpui::Pixels, cx: &mut gpui::App) {
+        // A bottom-aligned ListState represents its natural tail as an end
+        // anchor, not the visible viewport top. Its direct scroll_by starts
+        // from that end anchor. Use the native scrollbar-compatible offset so
+        // Page Up moves a full distance from what the reader actually sees.
+        let offset = self.state.scroll_px_offset_for_scrollbar();
+        let max = self.state.max_offset_for_scrollbar();
+        self.state.set_offset_from_scrollbar(gpui::point(
+            offset.x,
+            (offset.y - distance).clamp(-max.y, gpui::px(0.0)),
+        ));
+        cx.notify(self.notify);
+    }
 }
 
 /// Reads a mounted list's item bounds, in window coordinates, at call time.
@@ -57,6 +168,7 @@ impl std::fmt::Debug for ItemBoundsReader {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[allow(clippy::struct_excessive_bools)] // Independent inspected policies and native state, not a state machine.
 pub struct VirtualCollectionMetrics {
     pub id: VirtualCollectionId,
     pub item_count: usize,
@@ -72,6 +184,8 @@ pub struct VirtualCollectionMetrics {
     pub sticky_header: Option<usize>,
     pub bottom_align: bool,
     pub follow_tail: bool,
+    pub is_following_tail: bool,
+    pub unseen_count: usize,
 }
 
 impl VirtualCollectionMetrics {
@@ -91,6 +205,8 @@ impl VirtualCollectionMetrics {
             sticky_header: None,
             bottom_align: false,
             follow_tail: false,
+            is_following_tail: false,
+            unseen_count: 0,
         }
     }
 }
@@ -99,6 +215,7 @@ impl VirtualCollectionMetrics {
 pub(crate) struct VirtualRequestSnapshot {
     requests: BTreeMap<VirtualCollectionId, BTreeSet<usize>>,
     metrics: BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>,
+    scroll_commands: BTreeMap<VirtualCollectionId, Vec<CollectionScrollCommand>>,
 }
 
 impl VirtualRequestRegistry {
@@ -194,15 +311,21 @@ impl VirtualRequestRegistry {
         VirtualRequestSnapshot {
             requests: self.requests.borrow().clone(),
             metrics: self.metrics.borrow().clone(),
+            scroll_commands: self.scroll_commands.borrow().clone(),
         }
     }
 
     pub(crate) fn restore(&self, snapshot: VirtualRequestSnapshot) {
         *self.requests.borrow_mut() = snapshot.requests;
         *self.metrics.borrow_mut() = snapshot.metrics;
+        *self.scroll_commands.borrow_mut() = snapshot.scroll_commands;
     }
 
     pub(crate) fn retain(&self, active: &BTreeSet<VirtualCollectionId>) {
+        *self.active.borrow_mut() = active.clone();
+        self.scroll_commands
+            .borrow_mut()
+            .retain(|id, _| active.contains(id));
         self.requests
             .borrow_mut()
             .retain(|id, _| active.contains(id));
@@ -212,6 +335,71 @@ impl VirtualRequestRegistry {
         self.item_bounds
             .borrow_mut()
             .retain(|id, _| active.contains(id));
+        self.scrolls
+            .borrow_mut()
+            .retain(|id, _| active.contains(id));
+    }
+
+    pub(crate) fn queue_scroll(&self, id: VirtualCollectionId, command: CollectionScrollCommand) {
+        if self.active.borrow().contains(&id) {
+            self.scroll_commands
+                .borrow_mut()
+                .entry(id)
+                .or_default()
+                .push(command);
+        }
+    }
+
+    pub(crate) fn take_scroll_commands(
+        &self,
+        id: &VirtualCollectionId,
+    ) -> Vec<CollectionScrollCommand> {
+        self.scroll_commands
+            .borrow_mut()
+            .remove(id)
+            .unwrap_or_default()
+    }
+
+    /// Resolve a currently mounted collection by its full component-local ID.
+    /// A missing or unmounted collection has no scroll capability.
+    #[must_use]
+    pub fn scroll_handle(&self, id: &VirtualCollectionId) -> Option<VirtualCollectionScrollHandle> {
+        self.scrolls.borrow().get(id).cloned()
+    }
+
+    pub(crate) fn set_scroll_handle(
+        &self,
+        id: VirtualCollectionId,
+        handle: VirtualCollectionScrollHandle,
+    ) {
+        self.scrolls.borrow_mut().insert(id, handle);
+    }
+
+    pub(crate) fn remove_scroll_handle(
+        &self,
+        id: &VirtualCollectionId,
+        unseen: &Rc<RefCell<BTreeSet<String>>>,
+    ) {
+        let mut scrolls = self.scrolls.borrow_mut();
+        if scrolls
+            .get(id)
+            .is_some_and(|handle| Rc::ptr_eq(&handle.unseen, unseen))
+        {
+            scrolls.remove(id);
+        }
+    }
+
+    pub(crate) fn report_follow(
+        &self,
+        id: &VirtualCollectionId,
+        status: VirtualCollectionFollowStatus,
+    ) {
+        let mut metrics = self.metrics.borrow_mut();
+        let metrics = metrics
+            .entry(id.clone())
+            .or_insert_with(|| VirtualCollectionMetrics::new(id.clone()));
+        metrics.is_following_tail = status.following;
+        metrics.unseen_count = status.unseen;
     }
 
     /// Install the reader of a mounted list; the list removes it when it is
@@ -619,6 +807,7 @@ mod tests {
             overdraw_pixels: 48.0,
             bottom_align: true,
             follow_tail: true,
+            on_follow_change: None,
             reveal_key: None,
             sticky_headers: Arc::new(BTreeSet::new()),
             inherited_motion_group: None,

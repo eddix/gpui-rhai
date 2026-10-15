@@ -68,6 +68,16 @@ The tracked reader is the formal component whose `ctx` executes
 the root dirty; for narrower invalidation, put the read and Viewer invocation in
 the smallest source component that owns that document surface.
 
+## Shared scrollbars
+
+CodeViewer and DiffViewer share the runtime's themed native scrollbar with
+ScrollArea and virtual collections. `scrollbar: "auto"` is the default;
+`"always"` and `"hidden"` are available. Their `scrollbar_track`,
+`scrollbar_thumb` and `scrollbar_thumb_hover` parts override the same theme
+backgrounds. Split DiffViewer has one vertical position and independent
+horizontal pane bars. The bars do not take focus or change native document
+keyboard ownership.
+
 ## Language registry
 
 The built-in pack includes Plain Text, Rhai, Rust, Go, JavaScript,

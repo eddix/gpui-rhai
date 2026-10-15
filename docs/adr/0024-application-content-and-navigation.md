@@ -106,12 +106,30 @@ lets a Host reserve row space. Host surfaces render under the Host container;
 primitive scopes inherit retained-node teardown. The scrollbar is not a focus
 or keyboard owner.
 
+Raw Host ancestry can be declared nearest-first with
+`with_scroll_parent(source, axis)`; retained/primitive factories inherit the SDK
+chain. Track wheel routing applies only actual per-axis movement and chains
+the residual; fully unhandled input is not swallowed. This scoped policy does
+not replace GPUI's whole-window wheel dispatch. `ScrollbarSourceHandle` is a
+retained lease for sources replaced under a stable element id, so a captured
+gesture cannot continue against a retired source. Raw adapters require an id
+change on replacement when the Host does not retain such a lease.
+
 Virtual collection following is a state machine, not an unconditional scroll
 on render. Reader input pauses following; reaching the tail or an explicit
 jump resumes it. Updating realized rows must not change reading position.
 Keyed data edits preserve the reader's item and intra-item offset where that
 key survives. There is one authoritative native scroll state; SDK key caches
 must not introduce another competing position or follow state.
+
+`follow_tail` uses GPUI `FollowMode::Tail`. Component-local start/end/by commands
+are transactional; `on_follow_change` reports only changed presented native
+following and unseen-key counts. The adapter preserves native height facts as
+hints when the pinned splice/width-invalidation API requires re-seeding, and a
+one-pixel native measurement sentinel prevents an unknown suffix from looking
+like the true tail. Stable frames and realization-only updates never re-seed
+the native tree. The source component, not virtualization, owns keyboard
+selection and viewport shortcuts.
 
 ### Documents and composition
 

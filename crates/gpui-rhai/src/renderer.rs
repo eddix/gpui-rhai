@@ -1571,6 +1571,7 @@ struct RenderEnvironment<'a, C> {
     focus_owners: &'a BTreeMap<NodeId, FocusHandle>,
     scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
+    wheel_parents: &'a [crate::scrollbar::ScrollWheelSource],
     virtual_requests: &'a crate::VirtualRequestRegistry,
     text_selection: &'a TextSelectionRegistry,
     host_focus: Option<&'a FocusHandle>,
@@ -1719,6 +1720,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub focus_owners: &'a BTreeMap<NodeId, FocusHandle>,
     pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     pub scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
+    pub wheel_parents: &'a [crate::scrollbar::ScrollWheelSource],
     pub virtual_requests: &'a crate::VirtualRequestRegistry,
     pub text_selection: &'a TextSelectionRegistry,
     pub host_focus: Option<&'a FocusHandle>,
@@ -1803,6 +1805,7 @@ impl GpuiNodeRenderer {
             focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
+            wheel_parents: &[],
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
             host_focus: None,
@@ -1891,6 +1894,7 @@ impl GpuiNodeRenderer {
             focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
+            wheel_parents: &[],
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
             host_focus: None,
@@ -1972,6 +1976,7 @@ impl GpuiNodeRenderer {
             focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
+            wheel_parents: &[],
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
             host_focus: None,
@@ -2045,6 +2050,7 @@ impl GpuiNodeRenderer {
             focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
+            wheel_parents: &[],
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
             host_focus: None,
@@ -2109,6 +2115,7 @@ impl GpuiNodeRenderer {
             focus_owners: &focus_handles,
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
+            wheel_parents: &[],
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
             host_focus: None,
@@ -2173,6 +2180,7 @@ impl GpuiNodeRenderer {
             focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
+            wheel_parents: resources.wheel_parents,
             virtual_requests: resources.virtual_requests,
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
@@ -2246,6 +2254,7 @@ impl GpuiNodeRenderer {
             focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
+            wheel_parents: resources.wheel_parents,
             virtual_requests: resources.virtual_requests,
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
@@ -2305,6 +2314,7 @@ impl GpuiNodeRenderer {
             focus_owners: resources.focus_owners,
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
+            wheel_parents: resources.wheel_parents,
             virtual_requests: resources.virtual_requests,
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
@@ -2353,6 +2363,26 @@ impl GpuiNodeRenderer {
         let node_environment = environment
             .with_node_scope(node)
             .with_focus_scope(node, retained_id);
+        let mut wheel_parents = node_environment.wheel_parents.to_vec();
+        if node_scrollable(node)
+            && let Some(handle) = retained_id.and_then(|id| environment.scroll_handles.get(&id))
+        {
+            wheel_parents.insert(
+                0,
+                crate::scrollbar::ScrollWheelSource::new(
+                    handle.clone(),
+                    (
+                        matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll)),
+                        matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll)),
+                    ),
+                    node.attributes().get("translate_wheel") == Some(&UiValue::Bool(true)),
+                ),
+            );
+        }
+        let node_environment = RenderEnvironment {
+            wheel_parents: &wheel_parents,
+            ..node_environment
+        };
         let environment = &node_environment;
         if let Some(table) = render_table_layout(node, environment, path, retained_id) {
             return table;
@@ -2804,7 +2834,8 @@ impl GpuiNodeRenderer {
                                 environment.scroll_handles,
                             ),
                             environment.view_id,
-                        ),
+                        )
+                        .with_wheel_parents(environment.wheel_parents.to_vec()),
                         crate::PrimitiveTheme::capture_with_environment(
                             &environment.resolver(),
                             environment.direction,
@@ -2854,7 +2885,7 @@ impl GpuiNodeRenderer {
                 retained_id,
             ),
             UiNodeKind::VirtualCollection { spec } => {
-                render_virtual_collection(element, spec, environment, path, retained_id)
+                render_virtual_collection(element, node, spec, environment, path, retained_id)
             }
             UiNodeKind::ErrorBoundary { child, fallback } => element
                 .child(Self::render_internal(
@@ -3015,30 +3046,58 @@ where
     ) else {
         return element;
     };
-    let part_color = |part, token, fallback| {
-        node.part_style(part)
-            .and_then(|style| {
-                style
-                    .resolve(&InteractionState::default())
-                    .background
-                    .as_ref()
-                    .and_then(|color| environment.resolver().resolve(color))
-            })
-            .unwrap_or_else(|| semantic_color(&environment.resolver(), token, fallback))
-    };
-    element.child(crate::scrollbar::ThemedScrollbar::new(
-        format!("{path}/scrollbars"),
-        crate::interaction::InteractionOwner::new(environment.view_id, format!("scrollbar:{path}")),
-        environment.interactions.clone(),
-        handle.clone(),
-        spec,
-        environment.direction,
-        (
-            part_color("scrollbar_track", "surface_raised", 0x0027_272aff),
-            part_color("scrollbar_thumb", "text_muted", 0x0071_717aff),
-            part_color("scrollbar_thumb_hover", "accent", 0x003b_82f6ff),
+    element.child(
+        scrollbar_context(node, environment, path, retained_id).element(
+            "scrollbars",
+            handle.clone(),
+            spec,
         ),
-    ))
+    )
+}
+
+fn scrollbar_context<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> crate::ScrollbarContext {
+    let theme = crate::PrimitiveTheme::from_colors(&environment.resolver(), environment.direction)
+        .with_inherited_disabled(environment.inherited_disabled);
+    let mut owner =
+        crate::interaction::InteractionOwner::new(environment.view_id, format!("scrollbar:{path}"));
+    if let Some(node) = retained_id {
+        owner = owner.with_retained(node);
+    }
+    let empty = crate::Style::default();
+    let owns_scroll = matches!(
+        node.kind(),
+        UiNodeKind::Box { .. } | UiNodeKind::Fragment { .. }
+    ) && node_scrollable(node);
+    let context = crate::ScrollbarContext::new(owner, environment.interactions.clone(), &theme)
+        .with_wheel_parents(
+            environment
+                .wheel_parents
+                .iter()
+                .skip(usize::from(owns_scroll))
+                .cloned()
+                .collect(),
+        );
+    let context = if owns_scroll {
+        context.with_wheel_policy(
+            (
+                matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll)),
+                matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll)),
+            ),
+            node.attributes().get("translate_wheel") == Some(&UiValue::Bool(true)),
+        )
+    } else {
+        context
+    };
+    context.with_part_styles(
+        node.part_style("scrollbar_track").unwrap_or(&empty),
+        node.part_style("scrollbar_thumb").unwrap_or(&empty),
+        node.part_style("scrollbar_thumb_hover").unwrap_or(&empty),
+    )
 }
 
 fn normalize_text_content_layout(node: &UiNode, style: &mut StyleProperties) {
@@ -3085,6 +3144,7 @@ fn render_text_node<C: ColorResolver>(
 
 fn render_virtual_collection<C: ColorResolver>(
     element: impl ParentElement + IntoElement,
+    node: &UiNode,
     spec: &crate::VirtualCollectionNodeSpec,
     environment: &RenderEnvironment<'_, C>,
     path: &str,
@@ -3093,6 +3153,7 @@ fn render_virtual_collection<C: ColorResolver>(
     element
         .child(native_virtual_collection_element(
             spec,
+            node,
             environment,
             path,
             retained_id,
@@ -4325,6 +4386,7 @@ fn overlay_panel_key(
 
 fn native_virtual_collection_element<C: ColorResolver>(
     spec: &crate::VirtualCollectionNodeSpec,
+    node: &UiNode,
     environment: &RenderEnvironment<'_, C>,
     path: &str,
     retained_id: Option<NodeId>,
@@ -4343,7 +4405,16 @@ fn native_virtual_collection_element<C: ColorResolver>(
         })
         .unwrap_or_default();
     let runtime = owned_slot_runtime(environment, path, retained_roots);
-    VirtualListEntityElement::new_collection(path, spec.clone(), runtime, retained_id)
+    VirtualListEntityElement::new_collection(
+        path,
+        spec.clone(),
+        runtime,
+        retained_id,
+        scrollbar_context(node, environment, path, retained_id),
+        crate::ScrollbarSpec::from_node(node).unwrap_or_else(|| {
+            crate::ScrollbarSpec::new("auto", "auto").expect("valid default policy")
+        }),
+    )
 }
 
 fn owned_slot_runtime<C: ColorResolver>(
@@ -4398,6 +4469,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         focus_owners,
         scroll_handles: environment.scroll_handles.clone(),
         scroll_anchors: environment.scroll_anchors.clone(),
+        wheel_parents: environment.wheel_parents.to_vec(),
         virtual_requests: environment.virtual_requests.clone(),
         text_selection: environment.text_selection.clone(),
         host_focus: environment.host_focus.cloned(),

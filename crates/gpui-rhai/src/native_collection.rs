@@ -2210,14 +2210,20 @@ impl VirtualCollectionData {
         }
     }
 
-    pub(crate) fn item(&self, index: usize) -> Result<Option<UiValue>, NativeCollectionError> {
+    /// Read one projected row without converting the full native source.
+    ///
+    /// # Errors
+    /// Returns a native projection error for an invalid source/view configuration.
+    pub fn item(&self, index: usize) -> Result<Option<UiValue>, NativeCollectionError> {
         match self {
             Self::Values(values) => Ok(values.get(index).cloned()),
             Self::Native(collection) => collection.item(index),
         }
     }
 
-    pub(crate) fn key(&self, index: usize) -> Option<&str> {
+    /// Stable key at an ordered collection index, without materializing its row.
+    #[must_use]
+    pub fn key(&self, index: usize) -> Option<&str> {
         match self {
             Self::Values(values) => values.get(index).and_then(|item| match item {
                 UiValue::Map(item) => match item.get("key") {

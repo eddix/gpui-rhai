@@ -2076,6 +2076,93 @@ impl UiContext {
         self.focus_element(&reference)
     }
 
+    /// Queue a jump to this component's collection tail after the invocation
+    /// commits. Tail-enabled collections resume native following.
+    ///
+    /// # Errors
+    /// Returns during render, outside a window, or while the runtime is borrowed.
+    pub fn scroll_collection_to_end(&self, key: &str) -> Result<(), UiContextError> {
+        self.scroll_collection_to_edge(key, true)
+    }
+
+    /// Queue a jump to this component's collection start, pausing following.
+    ///
+    /// # Errors
+    /// Returns the same errors as [`Self::scroll_collection_to_end`].
+    pub fn scroll_collection_to_start(&self, key: &str) -> Result<(), UiContextError> {
+        self.scroll_collection_to_edge(key, false)
+    }
+
+    /// Queue native pixel scrolling (positive toward the end). This lets the
+    /// semantic viewport own Page Up/Down without a second position engine.
+    ///
+    /// # Errors
+    /// Returns during render, outside a window, for nonfinite distance, or while borrowed.
+    pub fn scroll_collection_by(&self, key: &str, distance: f64) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        if !distance.is_finite() {
+            return Err(UiContextError::InvalidScrollOffset {
+                x: 0.0,
+                y: distance,
+            });
+        }
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?
+            .pending_element_commands
+            .push(crate::element_ref::ElementCommand::ScrollCollectionBy {
+                window,
+                id: crate::VirtualCollectionId {
+                    component: self.component.clone(),
+                    key: key.to_owned(),
+                },
+                distance,
+            });
+        Ok(())
+    }
+
+    fn scroll_collection_to_edge(&self, key: &str, end: bool) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?
+            .pending_element_commands
+            .push(crate::element_ref::ElementCommand::ScrollCollection {
+                window,
+                id: crate::VirtualCollectionId {
+                    component: self.component.clone(),
+                    key: key.to_owned(),
+                },
+                end,
+            });
+        Ok(())
+    }
+
+    /// Read this component's last presented native follow status. Missing or
+    /// not-yet-mounted collections return `None`; this is an event-time query,
+    /// not a render dependency (use `on_follow_change` for reactive UI).
+    ///
+    /// # Errors
+    /// Returns while the runtime is borrowed.
+    pub fn collection_follow_status(
+        &self,
+        key: &str,
+    ) -> Result<Option<crate::VirtualCollectionFollowStatus>, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime
+            .virtual_requests
+            .scroll_handle(&crate::VirtualCollectionId {
+                component: self.component.clone(),
+                key: key.to_owned(),
+            })
+            .map(|handle| handle.status()))
+    }
+
     /// Queue a positive visible scroll offset for a retained scroll container.
     ///
     /// # Errors
@@ -4407,6 +4494,41 @@ fn geometry_bounds_value(bounds: crate::GeometryBounds) -> UiValue {
 #[allow(clippy::too_many_lines)]
 fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
+        .with_fn(
+            "scroll_collection_by",
+            |context: &mut UiContext, key: ImmutableString, distance: Dynamic| {
+                context
+                    .scroll_collection_by(key.as_str(), scroll_number(&distance)?)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "scroll_collection_to_end",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .scroll_collection_to_end(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "scroll_collection_to_start",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .scroll_collection_to_start(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "collection_follow_status",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .collection_follow_status(key.as_str())
+                    .map(|status| {
+                        status.map_or(Dynamic::UNIT, |status| status.to_ui_value().into_dynamic())
+                    })
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
         .with_fn(
             "dispatch_action",
             |context: &mut UiContext, action: ImmutableString, payload: Dynamic| {

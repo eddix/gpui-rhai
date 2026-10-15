@@ -12,7 +12,7 @@
     "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
     "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
     "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
-    "typography.body", "typography.label"
+    "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
   "environment": ["size", "density", "corners"]
 }
@@ -32,12 +32,14 @@ define_component(#{
             "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
             "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
             "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
-            "typography.body", "typography.label"
+            "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
         environment: ["size", "density", "corners"],
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
     schema: #{
         props: #{
+            scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "auto" }, doc: "Shared option-list scrollbar visibility; the combobox keeps keyboard ownership." },
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Identity of the combobox; also its overlay id and the prefix of its inner keys (`<key>-trigger`, `<key>-panel`)." },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -138,7 +140,7 @@ define_component(#{
         parts: ["root", "trigger", "value", "placeholder", "indicator", "clear",
             "panel", "search", "list", "group", "option", "option_selected",
             "option_active", "option_disabled", "empty", "check", "indicator_bar",
-            "focus_frame"],
+            "focus_frame", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Combobox")
 });
@@ -160,6 +162,12 @@ fn panel_focus_frame(ctx) {
         .group_focus(style().border_color(theme_color("focus_ring")))))
 }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+fn collection_scrollbars(ctx, props, node) {
+    node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
+        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))))
+        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover", style().background(theme_color("scrollbar.thumb_hover"))))
+        .scrollbars("hidden", prop_or(props, "scrollbar", "auto"))
+}
 fn option_disabled(option) { prop_or(option, "disabled", false) }
 fn option_group(option) {
     if "group" in option && option.group != () { option.group } else { () }
@@ -536,12 +544,12 @@ fn render_Combobox(ctx, props) {
         // either density. The estimate only seeds the first frame.
         let visible = prop_or(props, "max_visible", 8);
         if data.len < visible { visible = data.len; }
-        content.push(column([virtual_collection(#{
+        content.push(column([collection_scrollbars(ctx, props, virtual_collection(#{
             key: `${props.key}-options`, label: props.label,
             data: data, estimated_height: 32, fill_height: true,
             overdraw_pixels: 64, alignment: "top", follow_tail: false
         }, Fn("render_combobox_row").curry(data.len).curry(mode).curry(selected)
-            .curry(reset_query))])
+            .curry(reset_query)))])
             .with_style(ctx.component_style("list", style()
                 .height(theme_length("metrics.row") * visible))));
     }

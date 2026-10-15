@@ -151,6 +151,7 @@ struct ScriptViewHostState {
     window_id: String,
     overlays: WindowOverlayCoordinator,
     interactions: crate::interaction::WindowInteractionCoordinator,
+    interaction_lifecycle: Entity<HostInteractionLifecycle>,
     fallback_focus: FocusHandle,
     views: BTreeMap<String, HostViewRegistration>,
     pending_focus_recovery: Vec<FocusHandle>,
@@ -161,6 +162,11 @@ struct ScriptViewHostState {
     container_bounds: Option<Bounds<Pixels>>,
     #[allow(dead_code)]
     escape_interceptor: Option<Subscription>,
+}
+
+struct HostInteractionLifecycle {
+    interactions: crate::interaction::WindowInteractionCoordinator,
+    activation: Option<Subscription>,
 }
 
 struct NativeWindowCommandOwner {
@@ -226,10 +232,16 @@ impl ScriptViewHost {
         install(cx);
         let window_id = window_id.into();
         validate_view_id(&window_id)?;
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
+        let interaction_lifecycle = cx.new(|_| HostInteractionLifecycle {
+            interactions: interactions.clone(),
+            activation: None,
+        });
         let inner = Rc::new(RefCell::new(ScriptViewHostState {
             window_id,
             overlays: WindowOverlayCoordinator::default(),
-            interactions: crate::interaction::WindowInteractionCoordinator::default(),
+            interactions,
+            interaction_lifecycle,
             fallback_focus: cx.focus_handle(),
             views: BTreeMap::new(),
             pending_focus_recovery: Vec::new(),
@@ -630,6 +642,19 @@ impl Element for ScriptViewHostFrame {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        let lifecycle = self.host.inner.borrow().interaction_lifecycle.clone();
+        lifecycle.update(cx, |lifecycle, cx| {
+            if lifecycle.activation.is_none() {
+                lifecycle.activation = Some(cx.observe_window_activation(
+                    window,
+                    |lifecycle, window, cx| {
+                        if !window.is_window_active() {
+                            lifecycle.interactions.cancel_window(window, cx);
+                        }
+                    },
+                ));
+            }
+        });
         let (overlays, viewport, fallback, pending) = {
             let mut state = self.host.inner.borrow_mut();
             state.frame_active = true;
@@ -931,6 +956,31 @@ impl ScriptViewHandle {
     #[must_use]
     pub fn state(&self) -> ScriptViewState {
         self.0.state.get()
+    }
+
+    /// Resolve a mounted collection's native scrolling capability. The ID must
+    /// belong to this view's component scope; equal keys in other views cannot
+    /// resolve here. Resolve again after replacement instead of retaining a
+    /// handle to a removed collection.
+    ///
+    /// # Errors
+    /// Returns after suspension or disposal.
+    pub fn collection_scroll_handle(
+        &self,
+        id: &crate::VirtualCollectionId,
+        cx: &App,
+    ) -> Result<Option<crate::VirtualCollectionScrollHandle>, ScriptViewError> {
+        self.require_active()?;
+        let view = self.0.entity.read(cx);
+        if !id.component.is_within(view.lifecycle.root_path()) {
+            return Ok(None);
+        }
+        Ok(view
+            .lifecycle
+            .runtime()
+            .borrow()
+            .virtual_requests
+            .scroll_handle(id))
     }
 
     /// Return a read-only, observable handle to this view's effective theme.
@@ -4622,6 +4672,7 @@ impl Render for ScriptHostView {
             focus_owners: &BTreeMap::new(),
             scroll_handles: &self.scroll_handles,
             scroll_anchors: &self.scroll_anchors,
+            wheel_parents: &[],
             virtual_requests: &snapshot.virtual_requests,
             text_selection: &self.text_selection,
             host_focus: Some(&self.host_focus),
@@ -5660,6 +5711,32 @@ impl ScriptHostView {
             match command {
                 crate::element_ref::ElementCommand::CopyText { text, .. } => {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                }
+                crate::element_ref::ElementCommand::ScrollCollectionBy { id, distance, .. } => {
+                    self.lifecycle
+                        .runtime()
+                        .borrow()
+                        .virtual_requests
+                        .queue_scroll(
+                            id,
+                            crate::virtual_list::CollectionScrollCommand::By(distance),
+                        );
+                    cx.notify();
+                }
+                crate::element_ref::ElementCommand::ScrollCollection { id, end, .. } => {
+                    self.lifecycle
+                        .runtime()
+                        .borrow()
+                        .virtual_requests
+                        .queue_scroll(
+                            id,
+                            if end {
+                                crate::virtual_list::CollectionScrollCommand::End
+                            } else {
+                                crate::virtual_list::CollectionScrollCommand::Start
+                            },
+                        );
+                    cx.notify();
                 }
                 crate::element_ref::ElementCommand::Focus { node, .. } => {
                     if !self.lifecycle.retained().is_page_visible(node) {

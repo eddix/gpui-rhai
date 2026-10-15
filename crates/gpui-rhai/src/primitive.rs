@@ -819,6 +819,7 @@ pub struct PrimitiveContext {
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
+    wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
     retained_node: Option<crate::NodeId>,
@@ -847,6 +848,7 @@ impl PrimitiveContext {
             self.interactions.clone(),
             theme,
         )
+        .with_wheel_parents(self.wheel_parents.clone())
     }
 
     pub(crate) fn observes(&self, event: &str) -> bool {
@@ -1927,6 +1929,7 @@ pub(crate) struct PrimitiveWindowContext {
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
+    wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
     view_id: String,
 }
 
@@ -1941,8 +1944,17 @@ impl PrimitiveWindowContext {
             dispatcher,
             interactions,
             scroll_handles,
+            wheel_parents: Vec::new(),
             view_id: view_id.into(),
         }
+    }
+
+    pub(crate) fn with_wheel_parents(
+        mut self,
+        parents: Vec<crate::scrollbar::ScrollWheelSource>,
+    ) -> Self {
+        self.wheel_parents = parents;
+        self
     }
 }
 
@@ -1982,6 +1994,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             dispatcher: self.runtime.dispatcher,
             interactions: self.runtime.interactions,
             scroll_handles: self.runtime.scroll_handles,
+            wheel_parents: self.runtime.wheel_parents,
             view_id: self.runtime.view_id,
             instance: None,
             retained_node: self.retained.as_ref().map(|(node, _)| *node),
@@ -2629,6 +2642,7 @@ mod tests {
             dispatcher: None,
             interactions: crate::interaction::WindowInteractionCoordinator::default(),
             scroll_handles: Vec::new(),
+            wheel_parents: Vec::new(),
             view_id: "test".to_owned(),
             instance: None,
             retained_node: None,

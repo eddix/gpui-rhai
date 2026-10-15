@@ -113,3 +113,52 @@ add geometry to the emitted event contract.
 
 See `extension_host.rs` for rendering and `tests/custom_primitive.rs` for the
 downstream registration contract.
+
+## Shared native scrollbars
+
+Native surfaces do not need to copy scrollbar geometry or the private gesture
+coordinator. `PrimitiveContext::scrollbars(theme)` returns a scoped
+`ScrollbarContext`; `element(id, source, spec)` accepts a `ScrollHandle`,
+`ListState`, `UniformListScrollHandle`, or a Host-defined `ScrollbarSource`.
+Render the viewport first and the returned overlay last in a relative, clipped
+container. IDs must be stable and unique within that primitive's scope.
+
+```rust
+let bars = context.scrollbars(theme).with_part_styles(
+    &track_style, &thumb_style, &thumb_hover_style,
+);
+let overlay = bars.element("transcript-scrollbar", list_state.clone(),
+    ScrollbarSpec::new("hidden", "auto")?);
+```
+
+The three part backgrounds override transparent track / `scrollbar.thumb` /
+`scrollbar.thumb_hover` defaults. `SCROLLBAR_TRACK_WIDTH` exposes the logical
+12px pointer-track width for optional row insets. Direction comes from the
+theme snapshot; vertical bars occupy the logical end edge. Short/zero
+viewports and non-scrollable axes never produce oversized thumbs.
+
+For a non-primitive Host view use `host.scrollbars("unique-surface", &theme)`
+and render under `host.container(...)`. A Host can capture its own read-only
+resolver with `PrimitiveTheme::from_colors(&resolver, direction)`.
+The same window coordinator arbitrates drag, Escape, disappearance, suspension,
+disposal and window deactivation. `ListState`'s native measured-height freeze
+starts on thumb down and ends exactly once on release/cancellation; a drop
+backstop also releases it when a window goes away. The scrollbar never takes
+focus or claims Home/End: keyboard behavior belongs to the viewport/component.
+Wheel input over its track drives that viewport, not an enclosing scroller.
+
+Track wheel routing consumes the actual clamped movement per axis, then sends
+only residual delta through the SDK ancestor chain. Unsupported axes and fully
+unconsumed boundary input bubble normally. For a raw Host-native hierarchy,
+append measured parents nearest-first with
+`with_scroll_parent(parent_source, Some(gpui::Axis::Vertical))` (`None` permits
+both axes). `with_scroll_axis(...)` restricts the viewport's own wheel axes
+independently of bar visibility. This is scoped track routing, not a replacement
+for GPUI's whole-window wheel infrastructure.
+
+GPUI's raw handles do not expose comparable native identity. If a source can
+be replaced under a stable scrollbar id, retain a
+`ScrollbarSourceHandle::new(source)` alongside it and pass clones to `element`.
+Replacing that adapter retires an old captured gesture and ends its freeze.
+Alternatively change the scrollbar id when replacing a raw source. Built-in
+virtual collections retire their source epoch automatically.
