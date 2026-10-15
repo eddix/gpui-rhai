@@ -1116,7 +1116,11 @@ impl UiRuntimeState {
         self.environment_dependencies = snapshot.environment_dependencies;
         self.repaint_windows = snapshot.repaint_windows;
         self.transaction_depth = snapshot.transaction_depth;
-        decode_result.map_err(UiTransactionError::from)
+        decode_result.map_err(UiTransactionError::from)?;
+        if self.transaction_depth == 0 {
+            self.effect_cascades.collect_retired_rejections();
+        }
+        Ok(())
     }
 
     /// Begin an explicit rollback-capable runtime transaction.
@@ -1155,6 +1159,7 @@ impl UiRuntimeState {
         self.transaction_depth -= 1;
         if self.transaction_depth == 0 {
             self.dispatch_leases.clear();
+            self.effect_cascades.collect_retired_rejections();
         }
         self.publish_committed_work();
         Ok(())
