@@ -60,6 +60,21 @@ fn card_ref_key(props, value) {
     }
     "choice-none"
 }
+fn card_description_id(reference) {
+    // ElementRef.scope is the current formal component's deterministic full
+    // identity, not the caller's sibling-local key. Escape whitespace because
+    // described_by is a whitespace-separated ID list; escape '%' as well so
+    // a literal escape-looking key cannot alias an escaped one.
+    let id = "";
+    for character in reference.scope {
+        let trimmed = character.to_string();
+        trimmed.trim();
+        if trimmed == "" || character == '%' {
+            id += `%${character.to_int().to_hex()};`;
+        } else { id += character; }
+    }
+    `${id}-description`
+}
 fn choice_activate(spec, ctx, payload) {
     ctx.set_state("active", spec.value);
     if spec.next != spec.values { ctx.emit("change", spec.next); }
@@ -106,8 +121,9 @@ fn render_choice_card(ctx, props, item, active) {
     let selected = choices::choice_includes(props.values, item.value);
     let unavailable = props.disabled || ("disabled" in item && item.disabled) || !("on_change" in props) || props.on_change == ();
     let reference = card_ref_key(props, item.value);
+    let choice_ref = element_ref(reference);
     let key = `${props.key}-${reference}`;
-    let description = `${key}-description`;
+    let description = card_description_id(choice_ref);
     let indicator = if "indicator" in props && props.indicator != () { props.indicator }
         else if props.mode == "multiple" { "check" } else { "radio" };
     let heading = row([
@@ -121,7 +137,7 @@ fn render_choice_card(ctx, props, item, active) {
         .disabled(style().text_color(theme_color("disabled")).opacity(0.65));
     let node = column([heading, item.content.accessibility_id(description)
         .with_style(ctx.component_style("content", style()))])
-        .with_key("choice").with_ref(element_ref(reference)).with_style(surface)
+        .with_key("choice").with_ref(choice_ref).with_style(surface)
         .accessibility_role(if props.mode == "single" { "radio" } else { "checkbox" })
         .accessibility_label(item.label).accessibility_described_by(description)
         .accessibility_checked(selected).disabled(unavailable).tab_stop(!unavailable && active == item.value);
