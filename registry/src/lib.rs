@@ -78,6 +78,26 @@ bundled_components!(
         "components/date_picker",
         "../components/date_picker.rhai"
     ),
+    (
+        CALENDAR_SOURCE,
+        "components/calendar",
+        "../components/calendar.rhai"
+    ),
+    (
+        TIME_INPUT_SOURCE,
+        "components/time_input",
+        "../components/time_input.rhai"
+    ),
+    (
+        TIMELINE_SOURCE,
+        "components/timeline",
+        "../components/timeline.rhai"
+    ),
+    (
+        TIME_RANGE_PICKER_SOURCE,
+        "components/time_range_picker",
+        "../components/time_range_picker.rhai"
+    ),
     (TABLE_SOURCE, "components/table", "../components/table.rhai"),
     (
         SPLIT_PANE_SOURCE,
