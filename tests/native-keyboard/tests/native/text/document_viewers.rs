@@ -18,8 +18,9 @@ import "components/diff_viewer" as diff;
 fn lines(prefix) {
     let value = "";
     for index in 0..80 {
-        value += `${prefix} ${index}: a deliberately wide native document line that extends beyond a narrow viewport, with unchanged native keyboard and selection ownership.\n`;
+        value += `${prefix} ${index}: a deliberately wide native document line that extends beyond a narrow viewport, with unchanged native keyboard and selection ownership.` + "\n";
     }
+    if value.split("\n").len != 81 || value.contains("\\n") { throw "expected eighty real line breaks"; }
     value
 }
 fn view(ctx) {

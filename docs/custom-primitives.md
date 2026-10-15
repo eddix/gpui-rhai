@@ -64,6 +64,15 @@ different components therefore retain independent native Entities, while keyed
 reorder preserves them. Direct ephemeral rendering rejects lifecycle
 primitives instead of falling back to a view-global key.
 
+An asynchronous native commit can change a primitive's intrinsic size without
+changing any script data. After committing that size, call
+`context.invalidate_intrinsic_size(cx)` as well as notifying your native Entity.
+The context defers and coalesces measurement invalidation for its current virtual
+row and any enclosing rows; it does not run Rhai or scan the collection. Keep the
+current context, not one captured by an obsolete job. Old primitive/row leases
+and script generations are ignored. Hidden retained rows keep the dirty
+measurement until presentation resumes, without starting a repaint timer.
+
 Every retained `PrimitiveInstance` also exposes `instance.resources()`. Register
 each durable native task, subscription, watcher, capture helper, or other
 resource with a safe label and cancellation closure:

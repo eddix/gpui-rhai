@@ -52,10 +52,6 @@ pub(crate) struct NodeSlotRuntime {
 }
 
 impl NodeSlotRuntime {
-    pub(crate) fn render(&self, node: &UiNode, slot: &str) -> AnyElement {
-        self.render_with_intrinsic_size(node, slot, self.intrinsic_size.as_ref())
-    }
-
     pub(crate) fn render_with_intrinsic_size(
         &self,
         node: &UiNode,
