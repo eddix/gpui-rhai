@@ -117,6 +117,14 @@ retained lease for sources replaced under a stable element id, so a captured
 gesture cannot continue against a retired source. Raw adapters require an id
 change on replacement when the Host does not retain such a lease.
 
+Native viewports may opt into `element_with_wheel_routing` with a retained
+`ScrollbarSourceHandle`. The same window coordinator arbitrates clipped,
+unoccluded regions in capture phase, before GPUI's automatic list/div wheel
+listeners. Explicit nearest-parent source leases select the innermost native
+region even when its parent's overlay paints later. The existing per-axis
+residual algorithm applies movement once, with no second position cache or
+global wheel router; completely unconsumed input propagates unchanged.
+
 Virtual collection following is a state machine, not an unconditional scroll
 on render. Reader input pauses following; reaching the tail or an explicit
 jump resumes it. Updating realized rows must not change reading position.

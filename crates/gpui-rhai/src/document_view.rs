@@ -475,6 +475,7 @@ struct CodeViewerEntity {
     document_runtime: DocumentRuntimeConfig,
     focus: FocusHandle,
     scroll: gpui::UniformListScrollHandle,
+    scroll_source: crate::ScrollbarSourceHandle,
     prepared: Option<Arc<PreparedDocument>>,
     display: Arc<[DisplaySegment]>,
     display_columns: Option<usize>,
@@ -541,6 +542,8 @@ impl CodeViewerEntity {
                 cx,
             )
         });
+        let scroll = gpui::UniformListScrollHandle::new();
+        let scroll_source = crate::ScrollbarSourceHandle::new(scroll.clone());
         Self {
             config,
             events,
@@ -548,7 +551,8 @@ impl CodeViewerEntity {
             syntaxes,
             document_runtime,
             focus: cx.focus_handle(),
-            scroll: gpui::UniformListScrollHandle::new(),
+            scroll,
+            scroll_source,
             prepared: None,
             display: Arc::from([]),
             display_columns: None,
@@ -1057,9 +1061,9 @@ impl CodeViewerEntity {
                 self.config
                     .scrollbar
                     .context(&self.events, &self.theme)
-                    .element(
+                    .element_with_wheel_routing(
                         "code-scrollbar",
-                        self.scroll.clone(),
+                        self.scroll_source.clone(),
                         self.config.scrollbar.spec,
                     ),
             )
@@ -2452,6 +2456,8 @@ struct DiffViewerEntity {
     scroll: gpui::UniformListScrollHandle,
     left_horizontal: ScrollHandle,
     right_horizontal: ScrollHandle,
+    scroll_source: crate::ScrollbarSourceHandle,
+    pane_sources: [crate::ScrollbarSourceHandle; 2],
     prepared: Option<Arc<PreparedDiff>>,
     display: Arc<[DiffRenderRow]>,
     display_columns: Option<usize>,
@@ -2516,6 +2522,18 @@ impl DiffViewerEntity {
                 cx,
             )
         });
+        let scroll = gpui::UniformListScrollHandle::new();
+        let left_horizontal = ScrollHandle::new();
+        let right_horizontal = ScrollHandle::new();
+        let scroll_source = crate::ScrollbarSourceHandle::new(scroll.clone());
+        let pane_sources =
+            [(&left_horizontal, false), (&right_horizontal, true)].map(|(horizontal, right)| {
+                crate::ScrollbarSourceHandle::new(DocumentPaneScrollSource {
+                    viewport: scroll.clone(),
+                    horizontal: horizontal.clone(),
+                    right,
+                })
+            });
         Self {
             config,
             events,
@@ -2523,9 +2541,11 @@ impl DiffViewerEntity {
             syntaxes,
             document_runtime,
             focus: cx.focus_handle(),
-            scroll: gpui::UniformListScrollHandle::new(),
-            left_horizontal: ScrollHandle::new(),
-            right_horizontal: ScrollHandle::new(),
+            scroll,
+            left_horizontal,
+            right_horizontal,
+            scroll_source,
+            pane_sources,
             prepared: None,
             display: Arc::from([]),
             display_columns: None,
@@ -3358,7 +3378,12 @@ impl DiffViewerEntity {
             .min_h(px(0.0))
             .overflow_hidden()
             .child(list)
-            .child(scrollbars.element("diff-scrollbar", self.scroll.clone(), spec))
+            .child(
+                scrollbars
+                    .clone()
+                    .with_scroll_axis(split.then_some(gpui::Axis::Vertical))
+                    .element_with_wheel_routing("diff-scrollbar", self.scroll_source.clone(), spec),
+            )
             .when(
                 split && matches!(self.config.wrap, DocumentWrap::None),
                 |root| {
@@ -3367,22 +3392,17 @@ impl DiffViewerEntity {
                         "hidden",
                     )
                     .expect("validated visibility");
-                    root.child(scrollbars.element(
+                    let panes = scrollbars
+                        .with_scroll_axis(Some(gpui::Axis::Horizontal))
+                        .with_scroll_parent(self.scroll_source.clone(), Some(gpui::Axis::Vertical));
+                    root.child(panes.element_with_wheel_routing(
                         "left-scrollbar",
-                        DocumentPaneScrollSource {
-                            viewport: self.scroll.clone(),
-                            horizontal: self.left_horizontal.clone(),
-                            right: false,
-                        },
+                        self.pane_sources[0].clone(),
                         spec,
                     ))
-                    .child(scrollbars.element(
+                    .child(panes.element_with_wheel_routing(
                         "right-scrollbar",
-                        DocumentPaneScrollSource {
-                            viewport: self.scroll.clone(),
-                            horizontal: self.right_horizontal.clone(),
-                            right: true,
-                        },
+                        self.pane_sources[1].clone(),
                         spec,
                     ))
                 },

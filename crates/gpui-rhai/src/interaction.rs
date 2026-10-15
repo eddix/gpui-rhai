@@ -459,6 +459,15 @@ struct InteractionState {
     virtual_scrolls: BTreeMap<String, VirtualScrollTarget>,
     parents: BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
     scroll_tick_queued: bool,
+    wheel_regions: BTreeMap<InteractionOwner, NativeWheelRegion>,
+    next_wheel_order: u64,
+}
+
+struct NativeWheelRegion {
+    source: usize,
+    ancestors: Vec<usize>,
+    hitbox: Hitbox,
+    order: u64,
 }
 
 #[derive(Clone)]
@@ -488,6 +497,54 @@ impl WindowInteractionCoordinator {
         state.drop_targets.clear();
         state.next_drop_order = 0;
         state.virtual_scrolls.clear();
+        state.wheel_regions.clear();
+        state.next_wheel_order = 0;
+    }
+
+    pub(crate) fn register_wheel_region(
+        &self,
+        owner: InteractionOwner,
+        source: usize,
+        ancestors: Vec<usize>,
+        hitbox: Hitbox,
+    ) {
+        let mut state = self.0.borrow_mut();
+        let order = state.next_wheel_order;
+        state.next_wheel_order = order.wrapping_add(1);
+        state.wheel_regions.insert(
+            owner,
+            NativeWheelRegion {
+                source,
+                ancestors,
+                hitbox,
+                order,
+            },
+        );
+    }
+
+    pub(crate) fn is_wheel_region_target(
+        &self,
+        owner: &InteractionOwner,
+        source: usize,
+        window: &Window,
+    ) -> bool {
+        let state = self.0.borrow();
+        let candidates = state
+            .wheel_regions
+            .iter()
+            .filter(|(_, region)| region.hitbox.should_handle_scroll(window))
+            .collect::<Vec<_>>();
+        // Explicit native ancestry wins over overlay paint order. An outer
+        // document overlay painted last must not preempt its table/cell.
+        candidates
+            .iter()
+            .filter(|(_, candidate)| {
+                !candidates.iter().any(|(_, other)| {
+                    other.source != candidate.source && other.ancestors.contains(&candidate.source)
+                })
+            })
+            .max_by_key(|(_, region)| region.order)
+            .is_some_and(|(target, region)| *target == owner && region.source == source)
     }
 
     pub(crate) fn set_pointer_routes(
@@ -892,6 +949,10 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn cancel_view(&self, view: &str, window: &mut Window, cx: &mut App) -> bool {
+        self.0
+            .borrow_mut()
+            .wheel_regions
+            .retain(|owner, _| !owner.belongs_to(view));
         let active = {
             let mut state = self.0.borrow_mut();
             if state

@@ -4,6 +4,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};
 
+use gpui::prelude::FluentBuilder as _;
+
 use gpui::{
     AnyElement, App, Bounds, Context, InteractiveElement, IntoElement, ListAlignment, ListState,
     Modifiers, MouseButton, ParentElement, Pixels, Point, Render, ScrollDelta, ScrollHandle,
@@ -29,6 +31,7 @@ struct Probe {
     viewport_override: Cell<Option<Bounds<Pixels>>>,
     source_slot: RefCell<Weak<RefCell<ScrollbarSourceHandle>>>,
     bubbled_wheels: Cell<usize>,
+    route_body: Cell<bool>,
 }
 
 #[derive(Clone)]
@@ -73,14 +76,15 @@ impl PrimitiveHandler for Handler {
     ) -> Result<AnyElement, String> {
         let state = Rc::clone(&self.0);
         let thumb = Style::new().background(ColorValue::Literal(Rgba8::from_rgba_hex(THUMB)));
-        let scrollbar = context
+        let bars = context
             .scrollbars(theme)
-            .with_part_styles(&Style::default(), &thumb, &thumb)
-            .element(
-                "scrollbar",
-                self.1.borrow().clone(),
-                ScrollbarSpec::new("hidden", "always")?,
-            );
+            .with_part_styles(&Style::default(), &thumb, &thumb);
+        let spec = ScrollbarSpec::new("hidden", "always")?;
+        let scrollbar = if state.route_body.get() {
+            bars.element_with_wheel_routing("scrollbar", self.1.borrow().clone(), spec)
+        } else {
+            bars.element("scrollbar", self.1.borrow().clone(), spec)
+        };
         let observer = Rc::clone(&state);
         Ok(div()
             .relative()
@@ -138,6 +142,7 @@ fn mount(cx: &mut TestAppContext, id: &str) -> (VisualTestContext, ScriptViewHan
         viewport_override: Cell::new(None),
         source_slot: RefCell::new(Weak::new()),
         bubbled_wheels: Cell::new(0),
+        route_body: Cell::new(false),
     });
     let source = Rc::clone(&probe);
     let prepared = Mount::new(
@@ -316,6 +321,167 @@ fn entirely_unconsumed_track_wheel_events_are_not_swallowed(cx: &mut TestAppCont
         probe.bubbled_wheels.get(),
         2,
         "an exhausted vertical source leaves its entire delta unconsumed"
+    );
+}
+
+#[gpui::test]
+fn opt_in_body_wheel_consumes_once_before_native_list_and_leaves_unsupported_input(
+    cx: &mut TestAppContext,
+) {
+    for route_body in [false, true] {
+        let (mut visual, view, probe) = mount(cx, "body-wheel-opt-in");
+        probe.route_body.set(route_body);
+        crate::support::dispatch_script_button(&mut visual, &view, "Refresh");
+        settle(&mut visual, Step::Tick, 4);
+        let viewport = probe.scroll.viewport_bounds();
+        let event = |delta| ScrollWheelEvent {
+            position: viewport.center(),
+            delta: ScrollDelta::Pixels(delta),
+            ..Default::default()
+        };
+        let before = probe.scroll.scroll_px_offset_for_scrollbar();
+        visual.simulate_event(event(point(px(0.0), px(-24.0))));
+        assert_eq!(
+            probe.scroll.scroll_px_offset_for_scrollbar().y,
+            before.y - px(24.0),
+            "body policy must not apply both shared and automatic native movement"
+        );
+        assert_eq!(
+            probe.bubbled_wheels.get(),
+            usize::from(!route_body),
+            "ordinary GPUI List bubbles its already-applied delta; opt-in shared body consumes it once"
+        );
+        settle(&mut visual, Step::Tick, 3);
+        let bubbled = probe.bubbled_wheels.get();
+        visual.simulate_event(event(point(px(-24.0), px(0.0))));
+        assert_eq!(
+            probe.bubbled_wheels.get(),
+            bubbled + 1,
+            "an entirely unsupported body axis propagates unchanged"
+        );
+    }
+}
+
+struct NestedBodyHost {
+    host: ScriptViewHost,
+    outer: ScrollHandle,
+    inner: ScrollHandle,
+    outer_source: ScrollbarSourceHandle,
+    inner_source: ScrollbarSourceHandle,
+    occluded: Rc<Cell<bool>>,
+}
+
+impl Render for NestedBodyHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let theme = PrimitiveTheme::default();
+        let bars = self.host.scrollbars("nested-body", &theme).unwrap();
+        let spec = ScrollbarSpec::new("hidden", "hidden").unwrap();
+        let inner = bars
+            .clone()
+            .with_scroll_axis(Some(gpui::Axis::Vertical))
+            .with_scroll_parent(self.outer_source.clone(), Some(gpui::Axis::Vertical))
+            .element_with_wheel_routing("inner", self.inner_source.clone(), spec);
+        self.host.container(
+            div()
+                .relative()
+                .w(px(300.0))
+                .h(px(300.0))
+                .overflow_hidden()
+                .child(
+                    div()
+                        .id("body-outer")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(&self.outer)
+                        .child(
+                            div()
+                                .relative()
+                                .w(px(240.0))
+                                .h(px(160.0))
+                                .flex_none()
+                                .child(
+                                    div()
+                                        .id("body-inner")
+                                        .size_full()
+                                        .overflow_y_scroll()
+                                        .track_scroll(&self.inner)
+                                        .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
+                                )
+                                .child(inner),
+                        )
+                        .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
+                )
+                // Deliberately later-painted than the nested body router.
+                .child(
+                    bars.with_scroll_axis(Some(gpui::Axis::Vertical))
+                        .element_with_wheel_routing("outer", self.outer_source.clone(), spec),
+                )
+                .when(self.occluded.get(), |root| {
+                    root.child(div().absolute().inset_0().occlude())
+                }),
+        )
+    }
+}
+
+#[gpui::test]
+fn nested_body_region_wins_over_parent_overlay_and_chains_only_boundary_residual(
+    cx: &mut TestAppContext,
+) {
+    let outer = ScrollHandle::new();
+    let inner = ScrollHandle::new();
+    let outer_state = outer.clone();
+    let inner_state = inner.clone();
+    let occluded = Rc::new(Cell::new(false));
+    let occlusion = Rc::clone(&occluded);
+    let window = cx.add_window(move |_, cx| NestedBodyHost {
+        host: ScriptViewHost::new("nested-body", cx).unwrap(),
+        outer_source: ScrollbarSourceHandle::new(outer_state.clone()),
+        inner_source: ScrollbarSourceHandle::new(inner_state.clone()),
+        outer: outer_state,
+        inner: inner_state,
+        occluded: occlusion,
+    });
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    settle(&mut visual, Step::Tick, 4);
+    assert!(inner.max_offset().y > px(24.0));
+    assert!(outer.max_offset().y > px(24.0));
+    let wheel = |position| ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-24.0))),
+        ..Default::default()
+    };
+    visual.simulate_event(wheel(inner.bounds().center()));
+    assert_eq!(
+        inner.offset().y,
+        px(-24.0),
+        "nearest body source owns its full available delta"
+    );
+    assert_eq!(
+        outer.offset().y,
+        px(0.0),
+        "later-painted parent overlay must not steal or duplicate body input"
+    );
+    inner.set_offset(point(px(0.0), -inner.max_offset().y + px(8.0)));
+    visual.update(|window, _| window.refresh());
+    settle(&mut visual, Step::Tick, 3);
+    visual.simulate_event(wheel(inner.bounds().center()));
+    assert_eq!(inner.offset().y, -inner.max_offset().y);
+    assert_eq!(
+        outer.offset().y,
+        px(-16.0),
+        "only the remaining 16px reaches the native ancestor"
+    );
+    occluded.set(true);
+    visual.update(|window, _| window.refresh());
+    settle(&mut visual, Step::Tick, 3);
+    let before = (inner.offset(), outer.offset());
+    visual.simulate_event(wheel(inner.bounds().center()));
+    assert_eq!(
+        (inner.offset(), outer.offset()),
+        before,
+        "an occluding overlay blocks both shared body routing and native scrolling"
     );
 }
 

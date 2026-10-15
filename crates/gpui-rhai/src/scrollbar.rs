@@ -344,7 +344,36 @@ impl ScrollbarContext {
         source: impl ScrollbarSource,
         spec: ScrollbarSpec,
     ) -> gpui::AnyElement {
-        let id = id.into();
+        self.build_element(id.into(), source, spec, false)
+    }
+
+    /// Opt this native viewport's body into the shared residual wheel policy.
+    /// Capture-phase routing consumes actual movement once, before GPUI's
+    /// automatic list/div scrolling. Completely unconsumed input propagates.
+    ///
+    /// Retain `source` with the native viewport. Declare every enclosing native
+    /// viewport with `with_scroll_parent` using that parent's same retained
+    /// handle. The innermost hit, clipped, unoccluded region owns the event even
+    /// when a parent scrollbar overlay paints later. Unrelated overlapping
+    /// regions retain front-to-back paint priority. This does not claim clicks,
+    /// selection, focus or keys; ordinary `element` remains track-only.
+    #[must_use]
+    pub fn element_with_wheel_routing(
+        &self,
+        id: impl Into<ElementId>,
+        source: ScrollbarSourceHandle,
+        spec: ScrollbarSpec,
+    ) -> gpui::AnyElement {
+        self.build_element(id.into(), source, spec, true)
+    }
+
+    fn build_element(
+        &self,
+        id: ElementId,
+        source: impl ScrollbarSource,
+        spec: ScrollbarSpec,
+        wheel_body: bool,
+    ) -> gpui::AnyElement {
         let mut scrollbar = ThemedScrollbar::new(
             id.clone(),
             self.owner.child(format!("{id:?}")),
@@ -358,6 +387,7 @@ impl ScrollbarContext {
         scrollbar.wheel_parents.clone_from(&self.wheel_parents);
         scrollbar.wheel_axes = self.wheel_axes;
         scrollbar.translate_wheel = self.translate_wheel;
+        scrollbar.wheel_body = wheel_body;
         scrollbar.into_any_element()
     }
 }
@@ -502,9 +532,31 @@ pub(crate) struct ThemedScrollbar {
     wheel_parents: Vec<ScrollWheelSource>,
     wheel_axes: (bool, bool),
     translate_wheel: bool,
+    wheel_body: bool,
 }
 
 impl ThemedScrollbar {
+    fn body_hitbox(&self, viewport: Bounds<Pixels>, window: &mut Window) -> Option<Hitbox> {
+        (self.wheel_body && !self.disabled).then(|| {
+            let hitbox = window
+                .with_content_mask(Some(ContentMask { bounds: viewport }), |window| {
+                    window.insert_hitbox(viewport, HitboxBehavior::Normal)
+                });
+            self.interactions.register_wheel_region(
+                self.interaction_owner.clone(),
+                self.handle
+                    .identity()
+                    .expect("body routing requires a retained source handle"),
+                self.wheel_parents
+                    .iter()
+                    .filter_map(|parent| parent.source.identity())
+                    .collect(),
+                hitbox.clone(),
+            );
+            hitbox
+        })
+    }
+
     pub(crate) fn new(
         id: impl Into<ElementId>,
         interaction_owner: crate::interaction::InteractionOwner,
@@ -529,6 +581,7 @@ impl ThemedScrollbar {
             wheel_parents: Vec::new(),
             wheel_axes: (true, true),
             translate_wheel: false,
+            wheel_body: false,
         }
     }
 }
@@ -545,6 +598,7 @@ pub(crate) struct ScrollbarPrepaint {
     viewport: Bounds<Pixels>,
     state: ScrollbarState,
     axes: Vec<AxisPrepaint>,
+    body: Option<Hitbox>,
 }
 
 impl Element for ThemedScrollbar {
@@ -610,6 +664,7 @@ impl Element for ThemedScrollbar {
         schedule_idle_refresh(&state, now, window, cx);
 
         let max = self.handle.max_offset();
+        let body = self.body_hitbox(viewport, window);
         let mut axes = Vec::new();
         for axis in [Axis::Horizontal, Axis::Vertical] {
             let visibility = self.spec.visibility(axis);
@@ -669,6 +724,7 @@ impl Element for ThemedScrollbar {
             viewport,
             state,
             axes,
+            body,
         }
     }
 
@@ -697,11 +753,25 @@ impl Element for ThemedScrollbar {
             wheel_chain,
             state.clone(),
             view,
-            prepaint
-                .axes
-                .iter()
-                .map(|axis| axis.bar_hitbox.clone())
-                .collect(),
+            prepaint.body.as_ref().map_or_else(
+                || {
+                    WheelHitRegion::Tracks(
+                        prepaint
+                            .axes
+                            .iter()
+                            .map(|axis| axis.bar_hitbox.clone())
+                            .collect(),
+                    )
+                },
+                |_| WheelHitRegion::Body {
+                    coordinator: self.interactions.clone(),
+                    owner: self.interaction_owner.clone(),
+                    source: self
+                        .handle
+                        .identity()
+                        .expect("body routing requires a retained source handle"),
+                },
+            ),
             self.disabled,
             window,
         );
@@ -837,22 +907,46 @@ fn register_hover_listener(
     });
 }
 
+enum WheelHitRegion {
+    Tracks(Vec<Hitbox>),
+    Body {
+        coordinator: crate::interaction::WindowInteractionCoordinator,
+        owner: crate::interaction::InteractionOwner,
+        source: usize,
+    },
+}
+
 fn register_wheel_listener(
     viewport: Bounds<Pixels>,
     chain: Vec<ScrollWheelSource>,
     state: ScrollbarState,
     view: gpui::EntityId,
-    tracks: Vec<Hitbox>,
+    region: WheelHitRegion,
     disabled: bool,
     window: &mut Window,
 ) {
     window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
-        if phase == DispatchPhase::Bubble && viewport.contains(&event.position) {
-            if !disabled
-                && tracks
+        if viewport.contains(&event.position) {
+            let handles = match (&region, phase) {
+                (
+                    WheelHitRegion::Body {
+                        coordinator,
+                        owner,
+                        source,
+                    },
+                    DispatchPhase::Capture,
+                ) => {
+                    if !coordinator.is_wheel_region_target(owner, *source, window) {
+                        return;
+                    }
+                    true
+                }
+                (WheelHitRegion::Tracks(tracks), DispatchPhase::Bubble) => tracks
                     .iter()
-                    .any(|track| track.should_handle_scroll(window))
-            {
+                    .any(|track| track.should_handle_scroll(window)),
+                _ => return,
+            };
+            if !disabled && handles {
                 let delta = event.delta.pixel_delta(window.line_height());
                 let remaining = chain.iter().fold(delta, |remaining, source| {
                     source.apply(event.position, remaining)
