@@ -138,8 +138,12 @@ Components, references, collections, timers, motion and canvas commands.
 | `native_fuzzy_edge(collection: NativeCollection, last: bool) -> String` | Returns the key of the first (or, when `last`, the last) enabled row of a fuzzy view, or `""` when it has none. |
 | `native_fuzzy_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a fuzzy-filtered, ranked and grouped view of a native collection for Command; `config` sets `query` and the row field names. |
 | `native_handler(id: String) -> NativeHandlerRef` | Resolves the Host-registered native handler `"namespace.name"` for use as a callback; fails when no handler has that ID. |
+| `native_list_neighbors(items: NativeCollection, selected_keys: Array) -> Map` | Returns enabled List navigation targets first/last/previous/next/current/current_index and the current row's has_children flag; disabled and missing selections are skipped. |
+| `native_list_view(items: NativeCollection, selected_keys: Array) -> NativeCollection` | Normalizes a List row collection natively, projecting selected flags without enumerating rows in Rhai. |
+| `native_list_view(items: Array, selected_keys: Array) -> NativeCollection` | Normalizes an array of keyed List rows using the same projection as native data. |
 | `native_table_neighbors(collection: NativeCollection, selected_keys: Array) -> Map` | Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row. Non-string keys match no row. |
 | `native_table_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a sorted, filtered, paged and grouped view of a native collection, as the Table's normalized `config` describes. |
+| `native_table_view(rows: Array, config: Map) -> NativeCollection` | Applies Table's native projection to array rows. Controlled sort names a declared column key; sort_key resolves its rank field. Null/missing values are last in both directions; ties preserve source order. |
 | `optional_float_signal(key: String) -> NativeSignal` | Declares a component-local optional-float signal that starts as `()` during formal render, for example to bind as `width_override`. |
 | `outline_projection(items: Array, expanded_keys: Array) -> Array` | Flattens `#{ key, parent, label }` tree items into visible rows with `depth` and `has_children`, opening only `expanded_keys`. |
 | `path_close() -> CanvasPathSegment` | Creates a path segment that closes the current subpath back to its start. |
@@ -176,6 +180,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.clear_close_handler()` | Removes the current window's close handler, so a native close request closes the window again; not allowed during render. |
 | `ctx.close_window(id: String)` | Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render. |
 | `ctx.component_style(part: String, base: Style) -> Style` | Returns `base` merged with the stylesheet rule, the caller's `style` (root only) and `part_styles` for the declared part `part`. |
+| `ctx.copy_text(text: String)` | Queues a bounded text clipboard write after commit. Requires an attached view/window and direct user input or explicit automation; rejects render, timers, effects and asynchronous callbacks, and rolls back with failed callbacks. |
 | `ctx.dispatch_action(action: String, payload: ?)` | Queues the action `action` with `payload` to run after the current callback; raises an error when it is unknown or disabled. |
 | `ctx.element_bounds(reference: ElementRef) -> ?` | Returns a ref's last committed `#{ layout, visual, clip }` window bounds, or `()` before first layout; records a dependency in render. |
 | `ctx.element_bounds(key: String) -> ?` | Returns the `#{ layout, visual, clip }` window bounds of a component-local ref key, or `()`; the form event callbacks use. |
