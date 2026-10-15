@@ -53,7 +53,7 @@ define_component(#{
                 schema: #{ type: "node" },
                 required: true,
                 sensitive: false,
-                doc: "Node that anchors the panel; clicking it, or Enter and Space on it, toggles the popover.",
+                doc: "Node that anchors the panel; clicking it, or Enter and Space on it, toggles the popover. A trigger that handles its own click, such as a Button with `on_click`, keeps the click: open the popover from that handler, or pass the trigger without one.",
             },
             content: #{
                 schema: #{ type: "node" },
