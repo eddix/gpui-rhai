@@ -96,15 +96,28 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,foc
     let absolute=if start==(){"—"}else{ctx.format_time(start,"long",zone)};
     if "day_header" in item{content.push(text(item.day_header).with_style(ctx.component_style("day_header",style()
         .typography("label").text_color(theme_color("text_muted")))));}
-    let lamp=row([]).with_key("lamp").with_style(ctx.component_style("lamp",style().width(px(6)).height(px(6))
-        .border(px(1)).border_color(timeline_color(item.status)).background(if item.status=="pending"{rgba(0x00000000)}else{timeline_color(item.status)})));
+    let lamp_style=style().absolute()
+        .left(relative(0.5)).translate_x(-3).top(theme_length("metrics.control")*0.5)
+        .margin_top(theme_spacing("xs")).translate_y(-3).width(px(6)).height(px(6))
+        .border(px(1)).border_color(timeline_color(item.status)).background(if item.status=="pending"{rgba(0x00000000)}else{timeline_color(item.status)});
+    let lamp=row([]).with_key("lamp").with_style(ctx.component_style("lamp",lamp_style));
     if item.status=="running"{lamp=lamp.motion(motion_transition("opacity",0.45,1.0,
         #{duration_ms:ctx.motion_duration("ambient"),easing:"ease_in_out",iterations:"infinite",autoreverse:true,intent:"essential"}));}
-    // 6px lamp, 1px rail and 2px cursor are structural signatures, not sizing tokens.
-    let rail_top=row([]).with_style(style().width(px(1)).height(theme_length("metrics.control")*0.5).background(theme_color("border")));
-    let rail_bottom=row([]).with_style(style().width(px(1)).flex_grow().background(theme_color("border")));
-    let rail=column([rail_top,lamp,rail_bottom]).with_key("rail").with_style(ctx.component_style("rail",style().width(theme_length("metrics.control"))
-        .flex_shrink(false).self_stretch().items_center()));
+    // Decorative geometry is absolute, never flow content. The 6px lamp is
+    // centered at the title's control-line center plus its xs top padding.
+    // The half-lamp offsets split the 1px rail around even a hollow lamp.
+    let rail_top=row([]).with_key("rail-top").with_style(style().absolute()
+        .left(relative(0.5)).translate_x(-0.5).top(px(0)).width(px(1))
+        .height(theme_length("metrics.control")*0.5).background(theme_color("border")));
+    let rail_top_padding=row([]).with_key("rail-top-padding").with_style(style().absolute()
+        .left(relative(0.5)).translate_x(-0.5).top(theme_length("metrics.control")*0.5)
+        .translate_y(-3).width(px(1)).height(theme_spacing("xs")).background(theme_color("border")));
+    let rail_bottom=row([]).with_key("rail-bottom").with_style(style().absolute()
+        .left(relative(0.5)).translate_x(-0.5).top(theme_length("metrics.control")*0.5)
+        .margin_top(theme_spacing("xs")).bottom(px(3)).translate_y(3).width(px(1)).background(theme_color("border")));
+    let rail=box([rail_top,rail_top_padding,lamp,rail_bottom]).with_key("rail")
+        .with_style(ctx.component_style("rail",style().relative().width(theme_length("metrics.control"))
+            .flex_shrink(false).self_stretch()));
     let title=text(item.title).with_style(ctx.component_style("title",style().typography("body")
         .text_color(if current{theme_color("text.accent")}else{theme_color("text_primary")})));
     let disclosure=row([]).with_style(style().width(theme_length("metrics.control")).flex_shrink(false));
