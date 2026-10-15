@@ -41,6 +41,7 @@ actions!(
         Home,
         End,
         Newline,
+        Submit,
         ShowCharacterPalette,
         Paste,
         Cut,
@@ -71,6 +72,17 @@ pub fn init_text_area(cx: &mut App) {
         KeyBinding::new("home", Home, Some("GPUIRhaiTextarea")),
         KeyBinding::new("end", End, Some("GPUIRhaiTextarea")),
         KeyBinding::new("enter", Newline, Some("GPUIRhaiTextarea")),
+        KeyBinding::new("shift-enter", Newline, Some("GPUIRhaiTextarea")),
+        KeyBinding::new("enter", Submit, Some("GPUIRhaiTextarea && submit_enter")),
+        KeyBinding::new(
+            if cfg!(target_os = "macos") {
+                "cmd-enter"
+            } else {
+                "ctrl-enter"
+            },
+            Submit,
+            Some("GPUIRhaiTextarea && submit_mod_enter"),
+        ),
         KeyBinding::new(
             "ctrl-cmd-space",
             ShowCharacterPalette,
@@ -95,6 +107,7 @@ struct TextAreaConfig {
     placeholder: SharedString,
     disabled: bool,
     read_only: bool,
+    submit_key: Option<String>,
     min_rows: usize,
     max_rows: usize,
     rows: Option<usize>,
@@ -346,6 +359,21 @@ impl TextAreaEntity {
         self.ensure_cursor_visible();
         self.emit_change(window, cx);
         cx.notify();
+    }
+
+    fn submit(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
+        // Platform IME normally consumes confirmation before key dispatch. Keep
+        // this guard as well for hosts which deliver a key while text is marked.
+        if !self
+            .buffer
+            .permits_submit(self.config.disabled, self.config.read_only)
+        {
+            return;
+        }
+        if let Some(submit) = self.callbacks.submit.clone() {
+            let value = self.buffer.content.clone();
+            window.defer(cx, move |window, cx| submit(value, window, cx));
+        }
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
@@ -899,6 +927,14 @@ impl Render for TextAreaEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport_rows = self.config.viewport_rows(self.measured_rows);
         let viewport_height = self.config.typography.line_height * viewport_rows;
+        let key_context = match (
+            self.callbacks.submit.is_some(),
+            self.config.submit_key.as_deref(),
+        ) {
+            (true, Some("enter")) => "GPUIRhaiTextarea submit_enter",
+            (true, Some("mod_enter")) => "GPUIRhaiTextarea submit_mod_enter",
+            _ => "GPUIRhaiTextarea",
+        };
         let mut root = div().flex();
         if let Some(family) = &self.config.typography.family {
             root = root.font_family(family.clone());
@@ -909,7 +945,7 @@ impl Render for TextAreaEntity {
             ));
         }
         root.font_weight(FontWeight(f32::from(self.config.typography.weight)))
-            .key_context("GPUIRhaiTextarea")
+            .key_context(key_context)
             .track_focus(&self.focus)
             .on_key_down(|event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key.as_str() == "tab" {
@@ -936,6 +972,7 @@ impl Render for TextAreaEntity {
             .on_action(cx.listener(Self::home))
             .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::newline))
+            .on_action(cx.listener(Self::submit))
             .on_action(cx.listener(Self::show_character_palette))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
@@ -1132,6 +1169,7 @@ fn config_from_props(
         placeholder: props.string("placeholder").unwrap_or_default().into(),
         disabled: props.boolean("disabled").unwrap_or(false),
         read_only: props.boolean("read_only").unwrap_or(false),
+        submit_key: props.string("submit_key").map(str::to_owned),
         min_rows: usize_prop(props, "min_rows")?.unwrap_or(3),
         max_rows: usize_prop(props, "max_rows")?.unwrap_or(8),
         rows: usize_prop(props, "rows")?,
@@ -1180,11 +1218,16 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
     let change_events = events.clone();
     let focus_events = events.clone();
     let blur_events = events.clone();
+    let submit_events = events.clone();
     TextInputCallbacks {
         change: Some(Rc::new(move |value, window, cx| {
             let _ = change_events.emit("change", UiValue::String(value), window, cx);
         })),
-        submit: None,
+        submit: events.observes("submit").then(|| {
+            Rc::new(move |value, window: &mut Window, cx: &mut App| {
+                let _ = submit_events.emit("submit", UiValue::String(value), window, cx);
+            }) as crate::text_input::TextValueHandler
+        }),
         focus: Some(Rc::new(move |window, cx| {
             let _ = focus_events.emit("focus", UiValue::Null, window, cx);
         })),
@@ -1330,6 +1373,16 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
                 ),
             ),
             (
+                "submit_key".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::String {
+                    allowed: vec!["enter".to_owned(), "mod_enter".to_owned()],
+                })).with_doc("With a submit handler: `enter` sends and Shift+Enter inserts a newline; `mod_enter` sends with Cmd+Enter on macOS or Ctrl+Enter elsewhere. Unset preserves native Enter newlines."),
+            ),
+            (
+                "on_submit".to_owned(),
+                optional_callback().with_doc("Called with the full text on the configured submit key; disabled, read-only and composing fields never submit."),
+            ),
+            (
                 "on_focus".to_owned(),
                 optional_callback().with_doc("Called when the field gains keyboard focus."),
             ),
@@ -1347,6 +1400,13 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
 
 fn text_area_events() -> BTreeMap<String, EventSchema> {
     BTreeMap::from([
+        (
+            "submit".to_owned(),
+            EventSchema {
+                doc: Some("Emitted with the full text on the configured submit key, without editing or clearing the buffer.".to_owned()),
+                payload: ValueSchema::string(),
+            },
+        ),
         (
             "change".to_owned(),
             EventSchema {
@@ -1399,6 +1459,7 @@ mod tests {
             placeholder: "".into(),
             disabled: false,
             read_only: false,
+            submit_key: None,
             min_rows: 3,
             max_rows: 8,
             rows: None,
