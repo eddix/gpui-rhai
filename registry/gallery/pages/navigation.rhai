@@ -17,10 +17,12 @@ fn view(ctx, h, v, id) {
         kit::page(h, v, id, "Retained tabs", "Drafts, native selection/undo and scrolling survive a tab round trip; hidden pages have no input or accessibility presentation.", [
             kit::sec("Service workspace", render_component("gallery/navigation-demo", #{ key: "retained-tabs", mode: id })),
         ])
-    } else {
+    } else if id == "navigation_stack" {
         kit::page(h, v, id, "NavigationStack", "Follow a service → ticket → pipeline → instance, then Back to the actual opener. Each visit owns a separate draft.", [
             kit::sec("Deployment drill-down", render_component("gallery/navigation-demo", #{ key: "navigation", mode: id })),
         ])
+    } else {
+        ()
     }
 }
 

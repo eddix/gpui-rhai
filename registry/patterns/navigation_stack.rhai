@@ -10,6 +10,10 @@
 */
 // Controlled visit stack. Construction ownership stays with the caller (ADR 0019).
 // Back proposes a retained depth; it neither loads data nor changes routes.
+//
+// Example: NavigationStack(#{ key: "visits", label: "Service visits", stack: [
+//     #{ key: "visit-1", title: "Service", content: text("Overview") }
+// ], on_pop: Fn("accept_depth") })
 import "components/button" as button;
 import "components/menu" as menu;
 

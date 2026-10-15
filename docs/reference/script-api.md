@@ -206,6 +206,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.get_state_path(field: String, path: Array) -> ?` | Reads one existing nested path of a state field; segments are keys, indexes or `#{ by, key }`. The component stays the dependency. |
 | `ctx.get_window_store(store: String, field: String) -> ?` | Reads `field` of the current window's store `store`, in render subscribing to the whole field; raises an error outside a window. |
 | `ctx.get_window_store_path(store: String, field: String, path: Array) -> ?` | Reads one nested path of a field of the current window's store, in render subscribing to that path only. |
+| `ctx.is_visible() -> bool` | Reads this component's last committed retained-page placement; false before first placement. Tracked in render. Visibility does not cancel tasks/subscriptions: use it in application-owned effect dependencies or pause policy. |
 | `ctx.load_image(asset: AssetId) -> OpaqueHandle` | Loads and caches the logical image `asset` and returns its opaque handle; not allowed during render. |
 | `ctx.motion_distance(role: String) -> float` | Returns the theme motion distance in pixels for `role`, such as `subtle`; raises an error for an unknown role. |
 | `ctx.motion_duration(role: String) -> int` | Returns the theme motion duration in milliseconds for `role`, such as `fast`; tracked in render, an error for an unknown role. |
@@ -254,7 +255,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.start_subscription(capability: String, method: String, input: ?, on_value: FnPtr, on_error: FnPtr, options: Map) -> SubscriptionHandle` | Starts a capability stream calling `on_value` per item, only from an effect start; `options` takes `delivery`, `capacity`, `throttle_ms`. |
 | `ctx.start_task(capability: String, method: String, input: ?, on_success: FnPtr, on_error: FnPtr) -> TaskHandle` | Runs a capability `method` in the background, then calls `on_success` or `on_error`; from `init`, callbacks, effects or `resume`. |
 | `ctx.t(key: String) -> String` | Returns the message `key` in the current locale, falling back to the default locale; records a locale dependency in render. |
-| `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope; records a locale dependency in render. |
+| `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render. |
 | `ctx.theme_variant() -> ?` | Returns the resolved theme variant as `#{ family, name, mode }`, or `()` without a theme; records a theme dependency in render. |
 | `ctx.theme_variants() -> Array` | Lists every loaded theme variant as `#{ family, name, mode }`, ordered by family and name, for a theme picker. |
 | `ctx.today() -> String` | Returns today's date as an ISO `YYYY-MM-DD` string from the Host calendar clock; available during render. |
@@ -311,6 +312,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.motion(source: MotionSource) -> UiNode` | Declares a motion source for one property of the keyed node, replacing an earlier source for it; rerenders keep its progress. |
 | `node.motion_particle_count(count: int) -> UiNode` | Declares how many particles the node draws itself, such as Canvas circles, against the `motion_particles` budget; it draws nothing. At least 0. |
 | `node.motion_replay_key(key: String) -> UiNode` | Replays the node's unchanged motion declarations whenever `key` changes, such as when a semantically new value arrives. |
+| `node.navigation_scope(depth: int) -> UiNode` | Declares a controlled navigation scope of depth 1–128. Its navigation_back handler receives #{ depth, source }; the focus-scoped NavigateBack action and Host.navigate_back propose to the innermost focused scope, without installing key bindings. |
 | `node.on(event: String, handler: FnPtr) -> UiNode` | Appends a target-phase handler for `event` (`click`, `pointer_down`, `wheel`, `key:escape`, ...), called with `ctx` and the payload. |
 | `node.on(event: String, handler: NativeHandlerRef) -> UiNode` | Appends a Rust native handler for `event` in the target phase; the handler's descriptor must declare `event`. |
 | `node.on_bubble(event: String, handler: FnPtr) -> UiNode` | Appends a bubble-phase handler for a pointer, wheel or `key:` event, run after target handlers, from inner to outer nodes. |
@@ -329,6 +331,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.on_key_value(key: String, handler: FnPtr, value: ?) -> UiNode` | Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with its own `value` as payload. |
 | `node.on_open_change(handler: FnPtr) -> UiNode` | Appends a handler for an overlay's `open_change` event, called with the requested open state, such as `false` on dismissal. |
 | `node.progress_motion(binding: MotionProgressBinding) -> UiNode` | Attaches a natively driven motion such as `motion_hover(...)` or `motion_scroll(...)`, replacing one for the same property. |
+| `node.retained_page(visible: bool) -> UiNode` | Retains the complete native page subtree while excluding hidden content from layout, input and presented accessibility. Invisible motion freezes; hiding alone never cancels business work. |
 | `node.scrollbars(horizontal: String, vertical: String) -> UiNode` | Overlays themed scrollbars on a scrollable node; each axis is `auto`, `always` or `hidden`, which changes presentation only. |
 | `node.selectable(selectable: bool) -> UiNode` | Lets the user drag-select a `text()` node and copy it with the platform copy action; `true` on other nodes raises an error. |
 | `node.shared_layout(id: String) -> UiNode` | Gives the node the shared-layout identity `id` in the group of the enclosing `motion_group`, linking its layout motion. |

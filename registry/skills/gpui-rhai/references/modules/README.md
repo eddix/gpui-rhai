@@ -98,6 +98,7 @@ The functions, methods and native primitives a script calls are in the
 | [`patterns/form_layout`](patterns/form_layout.md) | `FormLayout` | FormLayout aligns labels on one column, groups fields, and lines the submit row up with the fields. |
 | [`patterns/inline_state`](patterns/inline_state.md) | `InlineState` | InlineState shows loading, empty, error, stale and refreshing feedback where the content would appear. |
 | [`patterns/list_detail`](patterns/list_detail.md) | `ListDetail` | ListDetail shows a list and the selected item's detail, side by side or stacked. |
+| [`patterns/navigation_stack`](patterns/navigation_stack.md) | `NavigationStack` | Controlled visit stack. |
 | [`patterns/section`](patterns/section.md) | `Section` | Section is a titled part of a region: a subtitle, an optional description and actions on the end side, then the content. |
 | [`patterns/stat`](patterns/stat.md) | `Stat` | Stat shows one figure: a label-voice label, the value with its unit, and an optional change against a reference. |
 

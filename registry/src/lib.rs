@@ -495,6 +495,10 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
     ("gallery/main", include_str!("../gallery/main.rhai")),
     ("gallery/kit", include_str!("../gallery/kit.rhai")),
     (
+        "gallery/pages/navigation",
+        include_str!("../gallery/pages/navigation.rhai"),
+    ),
+    (
         "gallery/pages/inputs_and_choices",
         include_str!("../gallery/pages/inputs_and_choices.rhai"),
     ),
