@@ -43,6 +43,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `resizable_columns` | bool | `false` | Makes columns resizable: drag a header edge, double-click it to fit the content, or press Left/Right on its handle. |
 | `row_key` | string | required | Row field whose value, as a string, identifies the row in `selected_keys` and events. |
 | `rows` | array of map of any value (at most 100000) or native collection | required | Row maps keyed by field, or a NativeCollection that sorts, groups and filters in Rust; cells show values as strings. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared native body scrollbar visibility; selection keeps its keyboard ownership. |
 | `search_fields` | array of string (at most 256) | `[]` | Row fields `query` searches; each is `row_key` or a declared column key. |
 | `selected_keys` | array of string (at most 100000) | `[]` | Selected row keys; the caller stores the `selection_change` payload and passes it back. |
 | `selection_mode` | `"none"` or `"single"` or `"multiple"` | `"none"` | `single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none`, or `on_context_request`, makes the table one tab stop. |
@@ -111,11 +112,11 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `body`, `cursor`, `empty`, `focus_frame`, `group_count`, `group_header`, `group_indicator`, `group_label`, `header`, `header_cell`, `indicator_bar`, `loading`, `resize_handle`, `root`, `row`, `row_selected`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `body`, `cursor`, `empty`, `focus_frame`, `group_count`, `group_header`, `group_indicator`, `group_label`, `header`, `header_cell`, `indicator_bar`, `loading`, `resize_handle`, `root`, `row`, `row_selected`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `selection`, `spacing.md`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
+- Tokens: `accent`, `border`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.md`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
 - Environment: `density`
 
 ## Dependencies

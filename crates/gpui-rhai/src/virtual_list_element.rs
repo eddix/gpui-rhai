@@ -448,7 +448,7 @@ impl VirtualListView {
                 crate::virtual_list::CollectionScrollCommand::Start => handle.scroll_to_start(cx),
                 crate::virtual_list::CollectionScrollCommand::End => handle.scroll_to_end(cx),
                 crate::virtual_list::CollectionScrollCommand::By(distance) => {
-                    handle.scroll_by(px(crate::renderer::f64_to_f32(distance)), cx)
+                    handle.scroll_by(px(crate::renderer::f64_to_f32(distance)), cx);
                 }
             }
         }

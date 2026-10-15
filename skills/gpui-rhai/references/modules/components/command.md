@@ -31,6 +31,7 @@ command::Command(#{ key: "palette", label: "Commands", query: query, active_valu
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `placeholder` | string | `"Type a command"` | Hint shown in the empty search field. |
 | `query` | string | required | Search text; the caller stores the `query_change` payload and passes it back. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared command-list scrollbar visibility; the search field keeps keyboard focus. |
 | `style` | style | — | Style merged over the root part. |
 
 ### `items[]` fields
@@ -56,11 +57,11 @@ command::Command(#{ key: "palette", label: "Commands", query: query, active_valu
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `empty`, `group`, `indicator_bar`, `item`, `item_active`, `label`, `list`, `root`, `search`, `shortcut`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `empty`, `group`, `indicator_bar`, `item`, `item_active`, `label`, `list`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `shortcut`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `metrics.inset`, `metrics.row`, `radius.lg`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
+- Tokens: `accent`, `border`, `disabled`, `metrics.inset`, `metrics.row`, `radius.lg`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
 - Environment: `corners`, `density`
 
 ## Dependencies
