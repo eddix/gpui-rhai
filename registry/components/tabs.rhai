@@ -58,7 +58,7 @@ define_component(#{
                         "default": #{ type: "bool", value: true },
                         doc: "Whether the label text shows; a tab that hides it needs an `icon` and keeps the label as its name." },
                     content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
-                        doc: "Panel shown while this tab is selected." },
+                        doc: "Caller-owned panel. Eagerly constructed components keep Rhai state/effects even when omitted (ADR 0019); keep_mounted also preserves native scroll/editing state." },
                     disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                         "default": #{ type: "bool", value: false },
                         doc: "Whether the tab ignores clicks; arrow keys skip it." },
@@ -67,6 +67,9 @@ define_component(#{
             panel: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
                 doc: "Whether the selected tab's `content` renders; `false` renders only the tab list, for view switchers." },
+            keep_mounted: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false },
+                doc: "Retains all supplied panels, including native scrolling, caret/selection/undo and focus identity. Hidden panels have no layout, input or presented accessibility. Business effects keep running; use ctx.is_visible() for an explicit application pause policy." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false, doc: "Overrides the `size` environment for the tabs." },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
@@ -102,12 +105,16 @@ fn render_Tabs(ctx, props) {
     let corner = theme_radius(if orientation == "vertical" { "lg" } else { "md" });
     let layout = if "layout" in props { props.layout } else { "content" };
     let show_panel = if "panel" in props { props.panel } else { true };
+    let keep_mounted = "keep_mounted" in props && props.keep_mounted;
     let motion_key = if "motion_key" in props { props.motion_key } else { "" };
     if motion_key.len > 128 { throw "Tabs motion_key must be at most 128 characters"; }
     let callback = if "on_change" in props { props.on_change } else { () };
     let headers = [];
-    let panel = ();
+    let panels = [];
+    let values = [];
     for tab in props.tabs {
+        if tab.value == "" || values.contains(tab.value) { throw "Tabs values must be non-empty and unique"; }
+        values.push(tab.value);
         let selected = tab.value == props.value;
         let label_visible = if "label_visible" in tab { tab.label_visible } else { true };
         let has_icon = "icon" in tab && tab.icon != ();
@@ -177,8 +184,11 @@ fn render_Tabs(ctx, props) {
             header = header.on_click_value(callback, tab.value);
         }
         headers.push(header);
-        if selected && show_panel && "content" in tab && tab.content != () {
-            panel = tab.content.with_style(ctx.component_style("panel", style().typography("body")));
+        if show_panel && (selected || keep_mounted) && "content" in tab && tab.content != () {
+            panels.push(column([tab.content]).with_key(`panel:${tab.value}`)
+                .retained_page(selected).tab_stop(false)
+                .accessibility_role("tabpanel").accessibility_label(tab.label)
+                .with_style(ctx.component_style("panel", style().typography("body").min_width(px(0)).min_height(px(0)))));
         }
     }
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
@@ -209,11 +219,12 @@ fn render_Tabs(ctx, props) {
         }
     }
     let size_env = "size" in props && props.size != ();
-    if panel == () {
+    if panels.len == 0 {
         if size_env { list = list.env(#{ size: props.size }); }
         return list;
     }
-    let root = if orientation == "vertical" { row([list, panel]) } else { column([list, panel]) };
+    let content = column(panels).with_key("panels").with_style(style().min_width(px(0)).min_height(px(0)));
+    let root = if orientation == "vertical" { row([list, content]) } else { column([list, content]) };
     root = root.with_style(ctx.component_style("root", style().gap(theme_length("space.group"))))
         .accessibility_role("group").accessibility_label(props.label);
     if size_env { root.env(#{ size: props.size }) } else { root }

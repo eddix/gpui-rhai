@@ -3235,6 +3235,7 @@ impl PreparedScriptView {
                 host_focus,
                 focus_handles: BTreeMap::new(),
                 page_focus: BTreeMap::new(),
+                page_scopes: BTreeMap::new(),
                 visible_pages: BTreeSet::new(),
                 focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
@@ -3623,6 +3624,7 @@ fn open_secondary_window(
                 host_focus,
                 focus_handles: BTreeMap::new(),
                 page_focus: BTreeMap::new(),
+                page_scopes: BTreeMap::new(),
                 visible_pages: BTreeSet::new(),
                 focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
@@ -3938,6 +3940,7 @@ struct ScriptHostView {
     host_focus: FocusHandle,
     focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
     page_focus: BTreeMap<crate::NodeId, (crate::NodeId, FocusHandle)>,
+    page_scopes: BTreeMap<crate::NodeId, crate::NodeId>,
     visible_pages: BTreeSet<crate::NodeId>,
     /// Focus-in and focus-out listeners of each node with a `focus_within_change` handler.
     focus_within_listeners: BTreeMap<crate::NodeId, [Subscription; 2]>,
@@ -5414,15 +5417,38 @@ impl ScriptHostView {
             }
         }
         self.page_focus.retain(|page, _| pages.contains(page));
+        let scopes = pages
+            .iter()
+            .filter_map(|page| {
+                let mut cursor = tree.node(*page).and_then(crate::RetainedNode::parent);
+                while let Some(node) = cursor {
+                    let retained = tree.node(node)?;
+                    if retained
+                        .attributes()
+                        .contains_key(crate::retained_page::NAVIGATION_DEPTH)
+                    {
+                        return Some((*page, node));
+                    }
+                    cursor = retained.parent();
+                }
+                None
+            })
+            .collect::<BTreeMap<_, _>>();
         let target = visible
             .difference(&self.visible_pages)
             .copied()
             .filter(|page| {
-                tree.nodes().any(|node| {
-                    node.attributes()
-                        .contains_key(crate::retained_page::NAVIGATION_DEPTH)
-                        && retained_within(tree, *page, node.id())
-                })
+                let Some(scope) = scopes.get(page) else {
+                    return false;
+                };
+                // Revealing an unchanged inner stack by switching a retained
+                // tab must not steal the tab list's keyboard focus. Only a
+                // new visit or a change within a previously visible stack does.
+                !self.page_scopes.contains_key(page)
+                    || self
+                        .visible_pages
+                        .iter()
+                        .any(|previous| self.page_scopes.get(previous) == Some(scope))
             })
             .max_by_key(|page| retained_depth(tree, *page));
         if hid_focus {
@@ -5489,6 +5515,7 @@ impl ScriptHostView {
             }
         }
         self.visible_pages = visible;
+        self.page_scopes = scopes;
     }
 
     fn sync_focus_handles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
