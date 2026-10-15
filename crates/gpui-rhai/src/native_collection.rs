@@ -1749,15 +1749,41 @@ fn compare_values(left: &UiValue, right: &UiValue) -> Option<Ordering> {
         (UiValue::Float(left), UiValue::Float(right)) if left.is_finite() && right.is_finite() => {
             left.partial_cmp(right)
         }
-        (UiValue::Integer(left), UiValue::Float(right)) if right.is_finite() => {
-            integer_float(*left).partial_cmp(right)
-        }
-        (UiValue::Float(left), UiValue::Integer(right)) if left.is_finite() => {
-            left.partial_cmp(&integer_float(*right))
+        (UiValue::Integer(left), UiValue::Float(right)) => compare_integer_float(*left, *right),
+        (UiValue::Float(left), UiValue::Integer(right)) => {
+            compare_integer_float(*right, *left).map(Ordering::reverse)
         }
         (UiValue::String(left), UiValue::String(right)) => Some(left.cmp(right)),
         _ => None,
     }
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn compare_integer_float(integer: i64, float: f64) -> Option<Ordering> {
+    const I64_END: f64 = 9_223_372_036_854_775_808.0;
+    if !float.is_finite() {
+        return None;
+    }
+    // The upper endpoint is exclusive: i64::MAX rounds up to 2^63 as f64.
+    // Converting the integer instead would collapse distinct ranks above 2^53
+    // and make the stable source-order tie break violate transitivity.
+    if float >= I64_END {
+        return Some(Ordering::Less);
+    }
+    if float < -I64_END {
+        return Some(Ordering::Greater);
+    }
+    // The range checks make the truncated integral part representable as i64.
+    let truncated = float as i64;
+    Some(integer.cmp(&truncated).then_with(|| {
+        if float.fract() > 0.0 {
+            Ordering::Less
+        } else if float.fract() < 0.0 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    }))
 }
 
 fn scalar_text(value: &UiValue) -> Option<String> {
@@ -2478,6 +2504,243 @@ mod tests {
             ])),
         );
         config
+    }
+
+    #[test]
+    fn mixed_numeric_comparison_is_exact_at_integer_and_float_boundaries() {
+        const TWO_TO_53: i64 = 9_007_199_254_740_992;
+        let float_53 = 9_007_199_254_740_992.0_f64;
+        let float_63 = 9_223_372_036_854_775_808.0_f64;
+        let tiny = f64::from_bits(1);
+        for (integer, float, expected) in [
+            (TWO_TO_53 - 1, float_53, Ordering::Less),
+            (TWO_TO_53, float_53, Ordering::Equal),
+            (TWO_TO_53 + 1, float_53, Ordering::Greater),
+            (TWO_TO_53 + 1, float_53.next_up(), Ordering::Less),
+            (-TWO_TO_53 - 1, -float_53, Ordering::Less),
+            (-TWO_TO_53, -float_53, Ordering::Equal),
+            (-TWO_TO_53 + 1, -float_53, Ordering::Greater),
+            (i64::MAX, float_63, Ordering::Less),
+            (i64::MAX, float_63.next_down(), Ordering::Greater),
+            (i64::MAX, float_63.next_up(), Ordering::Less),
+            (i64::MIN, -float_63, Ordering::Equal),
+            (i64::MIN + 1, -float_63, Ordering::Greater),
+            (i64::MIN, (-float_63).next_up(), Ordering::Less),
+            (i64::MIN, (-float_63).next_down(), Ordering::Greater),
+            (i64::MAX, f64::MAX, Ordering::Less),
+            (i64::MIN, -f64::MAX, Ordering::Greater),
+            (1, 1.5, Ordering::Less),
+            (2, 1.5, Ordering::Greater),
+            (-1, -1.5, Ordering::Greater),
+            (-2, -1.5, Ordering::Less),
+            (0, 0.5, Ordering::Less),
+            (0, -0.5, Ordering::Greater),
+            (0, tiny, Ordering::Less),
+            (0, -tiny, Ordering::Greater),
+            (0, 0.0, Ordering::Equal),
+            (0, -0.0, Ordering::Equal),
+        ] {
+            let integer = UiValue::Integer(integer);
+            let float = UiValue::Float(float);
+            assert_eq!(
+                compare_values(&integer, &float),
+                Some(expected),
+                "{integer:?} versus {float:?}"
+            );
+            assert_eq!(compare_values(&float, &integer), Some(expected.reverse()));
+        }
+        for float in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(
+                compare_values(&UiValue::Integer(0), &UiValue::Float(float)),
+                None
+            );
+            assert_eq!(
+                compare_values(&UiValue::Float(float), &UiValue::Integer(0)),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_numeric_comparison_is_a_total_order_with_stable_ties() {
+        let values = [
+            UiValue::Integer(9_007_199_254_740_993),
+            UiValue::Float(9_007_199_254_740_992.0),
+            UiValue::Integer(9_007_199_254_740_992),
+            UiValue::Integer(9_007_199_254_740_991),
+            UiValue::Float(9_007_199_254_740_994.0),
+            UiValue::Integer(-9_007_199_254_740_993),
+            UiValue::Float(-9_007_199_254_740_992.0),
+            UiValue::Integer(-9_007_199_254_740_992),
+            UiValue::Integer(i64::MIN),
+            UiValue::Integer(i64::MIN + 1),
+            UiValue::Float(-9_223_372_036_854_775_808.0),
+            UiValue::Integer(i64::MAX),
+            UiValue::Float(9_223_372_036_854_775_808.0),
+            UiValue::Float(f64::MAX),
+            UiValue::Float(-f64::MAX),
+            UiValue::Integer(-2),
+            UiValue::Float(-1.5),
+            UiValue::Integer(-1),
+            UiValue::Float(-f64::from_bits(1)),
+            UiValue::Integer(0),
+            UiValue::Float(-0.0),
+            UiValue::Float(0.0),
+            UiValue::Float(f64::from_bits(1)),
+            UiValue::Float(0.5),
+            UiValue::Integer(1),
+            UiValue::Float(1.5),
+            UiValue::Integer(2),
+        ];
+        // Include the source-position tie break used by sorted_order: rounding
+        // 2^53 + 1 down to 2^53 previously produced a cycle in the first triple.
+        for (left_index, left) in values.iter().enumerate() {
+            assert_eq!(compare_values(left, left), Some(Ordering::Equal));
+            for (right_index, right) in values.iter().enumerate() {
+                let forward = compare_values(left, right).unwrap();
+                assert_eq!(compare_values(right, left), Some(forward.reverse()));
+                for (last_index, last) in values.iter().enumerate() {
+                    let middle = compare_values(right, last).unwrap();
+                    let end = compare_values(left, last).unwrap();
+                    assert!(
+                        forward == Ordering::Greater
+                            || middle == Ordering::Greater
+                            || end != Ordering::Greater,
+                        "non-transitive numeric order: {left:?}, {right:?}, {last:?}"
+                    );
+                    let forward = forward.then_with(|| left_index.cmp(&right_index));
+                    let middle = middle.then_with(|| right_index.cmp(&last_index));
+                    let end = end.then_with(|| left_index.cmp(&last_index));
+                    assert!(
+                        forward == Ordering::Greater
+                            || middle == Ordering::Greater
+                            || end != Ordering::Greater,
+                        "non-transitive stable order: {left:?}, {right:?}, {last:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn mixed_numeric_source() -> NativeCollection {
+        let float_63 = 9_223_372_036_854_775_808.0_f64;
+        let ranks = [
+            ("large-int", Some(UiValue::Integer(9_007_199_254_740_993))),
+            ("large-float", Some(UiValue::Float(9_007_199_254_740_992.0))),
+            ("same-int", Some(UiValue::Integer(9_007_199_254_740_992))),
+            ("max-int", Some(UiValue::Integer(i64::MAX))),
+            ("upper-float", Some(UiValue::Float(float_63))),
+            ("min-int", Some(UiValue::Integer(i64::MIN))),
+            ("lower-float", Some(UiValue::Float(-float_63))),
+            ("below-min", Some(UiValue::Float((-float_63).next_down()))),
+            ("negative-frac", Some(UiValue::Float(-1.5))),
+            ("negative-int", Some(UiValue::Integer(-1))),
+            ("negative-tiny", Some(UiValue::Float(-f64::from_bits(1)))),
+            ("zero-int", Some(UiValue::Integer(0))),
+            ("zero-negative", Some(UiValue::Float(-0.0))),
+            ("zero-positive", Some(UiValue::Float(0.0))),
+            ("positive-tiny", Some(UiValue::Float(f64::from_bits(1)))),
+            ("positive-frac", Some(UiValue::Float(0.5))),
+            ("null", Some(UiValue::Null)),
+            ("missing", None),
+        ];
+        NativeCollection::new(
+            "id",
+            ranks.into_iter().map(|(key, rank)| {
+                let mut row = BTreeMap::from([
+                    ("id".into(), UiValue::String(key.into())),
+                    ("score".into(), UiValue::String(format!("formatted {key}"))),
+                ]);
+                if let Some(rank) = rank {
+                    row.insert("rank".into(), rank);
+                }
+                row
+            }),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn array_and_native_sort_key_share_exact_mixed_numeric_order() {
+        let source = mixed_numeric_source();
+        let array = source
+            .source
+            .rows
+            .iter()
+            .cloned()
+            .map(UiValue::into_dynamic)
+            .collect::<rhai::Array>();
+        let mut engine = rhai::Engine::new_raw();
+        register_native_collection_api(&mut engine);
+        for (direction, expected) in [
+            (
+                "ascending",
+                [
+                    "below-min",
+                    "min-int",
+                    "lower-float",
+                    "negative-frac",
+                    "negative-int",
+                    "negative-tiny",
+                    "zero-int",
+                    "zero-negative",
+                    "zero-positive",
+                    "positive-tiny",
+                    "positive-frac",
+                    "large-float",
+                    "same-int",
+                    "large-int",
+                    "max-int",
+                    "upper-float",
+                    "null",
+                    "missing",
+                ],
+            ),
+            (
+                "descending",
+                [
+                    "upper-float",
+                    "max-int",
+                    "large-int",
+                    "large-float",
+                    "same-int",
+                    "positive-frac",
+                    "positive-tiny",
+                    "zero-int",
+                    "zero-negative",
+                    "zero-positive",
+                    "negative-tiny",
+                    "negative-int",
+                    "negative-frac",
+                    "min-int",
+                    "lower-float",
+                    "below-min",
+                    "null",
+                    "missing",
+                ],
+            ),
+        ] {
+            for input in [
+                Dynamic::from(source.clone()),
+                Dynamic::from_array(array.clone()),
+            ] {
+                let mut scope = rhai::Scope::new();
+                scope.push_dynamic("rows", input);
+                scope.push("config", ranked_config(direction));
+                let view = engine
+                    .eval_with_scope::<NativeCollection>(
+                        &mut scope,
+                        "native_table_view(rows, config)",
+                    )
+                    .unwrap();
+                assert_eq!(
+                    (0..view.len())
+                        .map(|index| view.key(index).unwrap())
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
     }
 
     #[test]
