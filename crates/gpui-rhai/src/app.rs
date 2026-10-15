@@ -5296,6 +5296,10 @@ impl ScriptHostView {
                         _ => String::new(),
                     },
                     depth: usize::try_from(*depth).ok()?,
+                    can_pop: *depth > 1
+                        && !node
+                            .event_handlers(crate::retained_page::NAVIGATION_BACK)
+                            .is_empty(),
                     focused: self
                         .focus_handles
                         .get(&node.id())
@@ -5314,17 +5318,7 @@ impl ScriptHostView {
         let target = self
             .navigation_stacks(window, cx)
             .into_iter()
-            .filter(|stack| stack.focused && stack.depth > 1)
-            .filter(|stack| {
-                self.lifecycle
-                    .retained()
-                    .node(stack.node)
-                    .is_some_and(|node| {
-                        !node
-                            .event_handlers(crate::retained_page::NAVIGATION_BACK)
-                            .is_empty()
-                    })
-            })
+            .filter(|stack| stack.focused && stack.can_pop)
             .max_by_key(|stack| retained_depth(self.lifecycle.retained(), stack.node));
         let Some(target) = target else {
             return false;
