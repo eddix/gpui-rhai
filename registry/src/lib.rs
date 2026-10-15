@@ -127,6 +127,11 @@ bundled_components!(
     (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
     (LIST_SOURCE, "components/list", "../components/list.rhai"),
     (
+        COLUMN_BROWSER_SOURCE,
+        "components/column_browser",
+        "../components/column_browser.rhai"
+    ),
+    (
         TAB_BAR_SOURCE,
         "components/tab_bar",
         "../components/tab_bar.rhai"

@@ -112,10 +112,23 @@ frame pumps.
 
 ## Behavioral boundary
 
-- With Array rows, Table preserves the existing source-component behavior: the
-  caller owns row ordering and Table normalizes the complete Array in Rhai.
-- With `NativeCollection`, Table applies its controlled scalar-field sort in
-  Rust, optionally groups/collapses in the same cached data plane, and performs
+- Array and `NativeCollection` Table rows use the same native sort, filter,
+  paging and grouping grammar. With no `sort`, source order is preserved.
+  A controlled `sort.key` always names a declared column, while that column's
+  optional `sort_key` names the actual scalar rank field (default: `key`).
+  Display, search, grouping, resizing and header events keep using column keys.
+- Missing and null rank values sort last in both directions; reversing direction
+  never brings them to the front. Equal values retain source order, including
+  null/missing ties. Non-null values must be consistently comparable strings,
+  bools or numbers; invalid values reject the candidate atomically, even with
+  only one row. String comparison remains byte order; a lowercase rank field
+  provides case-insensitive sorting without changing the display text.
+- Reordering preserves a surviving reader key and its intra-item offset through
+  the shared virtual-list scroll state. A sort does not imply jumping to the
+  first row; the controlled header indicator still reports the accepted order.
+  Table does not maintain a second reset-to-top or reader-position cache.
+- With `NativeCollection`, Table caches sort order, optionally groups/collapses
+  in the same data plane, and performs
   selection/striping/cell projection only for visible rows. Group headers are
   synthetic projected items; they never become source rows or selectable keys.
 - Domain formatting should still happen before the Table boundary. Compound
@@ -127,6 +140,26 @@ frame pumps.
 Use the Array path for small or highly custom script-owned data. Use
 `NativeCollection` when a repeated O(n) Rhai pass would dominate interaction
 latency.
+
+### Migration: controlled Array sorting
+
+Previously an Array-backed Table kept caller order even when `sort` was set.
+It now applies the controlled sort in Rust, just like a NativeCollection. Remove
+caller-side sorts, and supply `sort_key` for formatted display fields. To retain
+an explicitly ordered Array, omit `sort` (or pass `()`). This does not raise Rhai
+collection/string/operation limits; move large datasets to a NativeCollection.
+
+```rhai
+#{ key: "duration", title: "Duration", sortable: true, sort_key: "duration_seconds",
+   width: #{ kind: "fixed", value: 120 } }
+// controlled sort: #{ key: "duration", direction: "descending" }
+// row: #{ id: "job-1", duration: "1 h 5 m", duration_seconds: 3900 }
+```
+
+List and ColumnBrowser accept Rust-owned collections too. Their rows use `title`,
+optional `secondary`, `meta`, `badge`, `disabled` and `has_children`, with the
+collection's key field supplying row identity. Native normalization and keyboard
+neighbor lookup do not materialize the entire collection in Rhai.
 
 ## Command fuzzy views
 

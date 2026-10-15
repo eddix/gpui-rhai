@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rhai::{
     CustomType, Dynamic, EvalAltResult, FuncRegistration, ImmutableString, Map, Position,
@@ -31,6 +31,7 @@ enum NativeCollectionEntry {
 #[derive(Clone, Debug, PartialEq)]
 enum CollectionProjection {
     Table(TableProjection),
+    List(BTreeSet<String>),
     Fuzzy(FuzzyProjection),
 }
 
@@ -55,6 +56,7 @@ struct NativeCollectionSource {
     sorted_orders: Mutex<BTreeMap<SortSpec, Arc<Vec<usize>>>>,
     table_orders: Mutex<BTreeMap<TableOrderSpec, TableOrder>>,
     fuzzy_orders: Mutex<BTreeMap<FuzzyOrderSpec, Arc<Vec<NativeCollectionEntry>>>>,
+    list_validation: OnceLock<Result<(), NativeCollectionError>>,
 }
 
 impl fmt::Debug for NativeCollectionSource {
@@ -152,6 +154,7 @@ impl NativeCollection {
                 sorted_orders: Mutex::new(BTreeMap::new()),
                 table_orders: Mutex::new(BTreeMap::new()),
                 fuzzy_orders: Mutex::new(BTreeMap::new()),
+                list_validation: OnceLock::new(),
             }),
             order,
             sticky_headers: Arc::new(BTreeSet::new()),
@@ -223,6 +226,24 @@ impl NativeCollection {
             order: order.entries,
             sticky_headers: order.sticky_headers,
             projection: Some(Arc::new(CollectionProjection::Table(projection))),
+        })
+    }
+
+    fn list_view(&self, selected: BTreeSet<String>) -> Result<Self, NativeCollectionError> {
+        self.source
+            .list_validation
+            .get_or_init(|| {
+                for row in &self.source.rows {
+                    list_row(row, "", &BTreeSet::new())?;
+                }
+                Ok(())
+            })
+            .clone()?;
+        Ok(Self {
+            source: Arc::clone(&self.source),
+            order: Arc::clone(&self.order),
+            sticky_headers: Arc::new(BTreeSet::new()),
+            projection: Some(Arc::new(CollectionProjection::List(selected))),
         })
     }
 
@@ -338,6 +359,14 @@ impl NativeCollection {
             .enumerate()
             .filter_map(|(display, entry)| match entry {
                 NativeCollectionEntry::Row(index) => {
+                    if matches!(
+                        self.projection.as_deref(),
+                        Some(CollectionProjection::List(_))
+                    ) && row_field(&self.source.rows[*index], "disabled")
+                        == Some(&UiValue::Bool(true))
+                    {
+                        return None;
+                    }
                     self.source.keys.get(*index).map(|key| (display, key))
                 }
                 NativeCollectionEntry::Group(_) => None,
@@ -436,32 +465,38 @@ impl NativeCollection {
         {
             return Ok(cached);
         }
+        // Validate even one-row views, before the comparator can short-circuit.
+        let mut sample = None;
+        for row in &self.source.rows {
+            if let Some(value) = row_field(row, &sort.key).filter(|value| **value != UiValue::Null)
+            {
+                let reference = sample.get_or_insert(value);
+                if compare_values(reference, value).is_none() {
+                    return Err(NativeCollectionError::UnsortableField(sort.key.clone()));
+                }
+            }
+        }
         let mut order = (0..self.source.rows.len()).collect::<Vec<_>>();
-        let mut failure = None;
         order.sort_by(|left, right| {
-            let result = compare_rows(
-                &self.source.rows[*left],
-                &self.source.rows[*right],
-                &sort.key,
-            );
-            match result {
-                Ok(ordering) => {
-                    let ordering = if sort.descending {
+            let field = |index: usize| {
+                row_field(&self.source.rows[index], &sort.key)
+                    .filter(|value| **value != UiValue::Null)
+            };
+            let ordering = match (field(*left), field(*right)) {
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+                (Some(left), Some(right)) => {
+                    let ordering = compare_values(left, right).expect("validated scalar sort type");
+                    if sort.descending {
                         ordering.reverse()
                     } else {
                         ordering
-                    };
-                    ordering.then_with(|| left.cmp(right))
+                    }
                 }
-                Err(error) => {
-                    failure.get_or_insert(error);
-                    left.cmp(right)
-                }
-            }
+            };
+            ordering.then_with(|| left.cmp(right))
         });
-        if let Some(error) = failure {
-            return Err(error);
-        }
         let order = Arc::new(order);
         self.source
             .sorted_orders
@@ -488,11 +523,69 @@ impl CustomType for NativeCollection {
     }
 }
 
+fn register_list_collection_api(engine: &mut rhai::Engine) {
+    register_list_navigation_api(engine);
+    FuncRegistration::new("native_list_view")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |collection: NativeCollection,
+             selected: rhai::Array|
+             -> Result<NativeCollection, Box<EvalAltResult>> {
+                collection
+                    .list_view(
+                        selected
+                            .into_iter()
+                            .filter_map(|value| value.into_string().ok())
+                            .collect(),
+                    )
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+            },
+        );
+    FuncRegistration::new("native_list_view")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |rows: rhai::Array,
+             selected: rhai::Array|
+             -> Result<NativeCollection, Box<EvalAltResult>> {
+                let rows = rows
+                    .into_iter()
+                    .map(|value| {
+                        UiValue::from_dynamic(value).map_err(|error| {
+                            Box::new(EvalAltResult::ErrorRuntime(
+                                error.to_string().into(),
+                                Position::NONE,
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                NativeCollection::from_values("key", rows)
+                    .and_then(|collection| {
+                        collection.list_view(
+                            selected
+                                .into_iter()
+                                .filter_map(|value| value.into_string().ok())
+                                .collect(),
+                        )
+                    })
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+            },
+        );
+}
+
 pub(crate) fn register_native_collection_api(engine: &mut rhai::Engine) {
     engine.build_type::<NativeCollection>();
+    register_list_collection_api(engine);
+    register_table_collection_api(engine);
+    register_fuzzy_collection_api(engine);
     FuncRegistration::new("is_native_collection")
         .in_global_namespace()
         .register_into_engine(engine, |value: Dynamic| value.is::<NativeCollection>());
+}
+
+fn register_table_collection_api(engine: &mut rhai::Engine) {
+    register_array_table_api(engine);
     FuncRegistration::new("native_table_view")
         .in_global_namespace()
         .register_into_engine(
@@ -520,6 +613,72 @@ pub(crate) fn register_native_collection_api(engine: &mut rhai::Engine) {
                 collection.table_neighbors(&selected).into_map()
             },
         );
+}
+
+fn register_list_navigation_api(engine: &mut rhai::Engine) {
+    FuncRegistration::new("native_list_neighbors")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |collection: NativeCollection,
+             selected: rhai::Array|
+             -> Result<Map, Box<EvalAltResult>> {
+                let selected: BTreeSet<_> = selected
+                    .into_iter()
+                    .filter_map(|value| value.into_string().ok())
+                    .collect();
+                let collection = collection
+                    .list_view(selected.clone())
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))?;
+                let neighbors = collection.table_neighbors(&selected);
+                let children = neighbors
+                    .current_index
+                    .and_then(|index| collection.item(index).ok().flatten())
+                    .is_some_and(|item| {
+                        row_field(&item, "has_children") == Some(&UiValue::Bool(true))
+                    });
+                let mut result = neighbors.into_map();
+                result.insert("has_children".into(), Dynamic::from(children));
+                Ok(result)
+            },
+        );
+}
+
+fn register_array_table_api(engine: &mut rhai::Engine) {
+    FuncRegistration::new("native_table_view")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |rows: rhai::Array, config: Map| -> Result<NativeCollection, Box<EvalAltResult>> {
+                let key = config
+                    .get("row_key")
+                    .and_then(|value| value.clone().try_cast::<ImmutableString>())
+                    .ok_or_else(|| {
+                        Box::new(native_collection_runtime_error(
+                            &NativeCollectionError::InvalidTableConfig(
+                                "row_key must be a string".into(),
+                            ),
+                        ))
+                    })?;
+                let values = rows
+                    .into_iter()
+                    .map(|value| {
+                        UiValue::from_dynamic(value).map_err(|error| {
+                            Box::new(EvalAltResult::ErrorRuntime(
+                                error.to_string().into(),
+                                Position::NONE,
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                NativeCollection::from_values(key.as_str(), values)
+                    .and_then(|rows| rows.table_view(config))
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+            },
+        );
+}
+
+fn register_fuzzy_collection_api(engine: &mut rhai::Engine) {
     FuncRegistration::new("native_fuzzy_view")
         .in_global_namespace()
         .register_into_engine(
@@ -597,6 +756,71 @@ fn native_collection_runtime_error(error: &NativeCollectionError) -> EvalAltResu
     EvalAltResult::ErrorRuntime(error.to_string().into(), Position::NONE)
 }
 
+// Shared List/ColumnBrowser row normalization. Work remains native for large
+// Host collections; Rhai sees only the realized virtual rows and key targets.
+fn list_row(
+    row: &UiValue,
+    key: &str,
+    selected: &BTreeSet<String>,
+) -> Result<UiValue, NativeCollectionError> {
+    let UiValue::Map(row) = row else {
+        return Err(NativeCollectionError::RowNotMap(0));
+    };
+    if !matches!(row.get("title"), Some(UiValue::String(_))) {
+        return Err(NativeCollectionError::InvalidTableConfig(
+            "List title must be a string".into(),
+        ));
+    }
+    let mut item = row.clone();
+    item.insert("key".into(), UiValue::String(key.into()));
+    for name in ["secondary", "meta", "badge"] {
+        item.entry(name.into()).or_insert(UiValue::Null);
+    }
+    for name in ["disabled", "has_children"] {
+        let value = item.entry(name.into()).or_insert(UiValue::Bool(false));
+        if !matches!(value, UiValue::Bool(_)) {
+            return Err(NativeCollectionError::InvalidTableConfig(format!(
+                "List {name} must be a bool"
+            )));
+        }
+    }
+    for name in ["secondary", "meta"] {
+        if !matches!(item[name], UiValue::Null | UiValue::String(_)) {
+            return Err(NativeCollectionError::InvalidTableConfig(format!(
+                "List {name} must be a string or null"
+            )));
+        }
+    }
+    if let Some(UiValue::Map(badge)) = item.get_mut("badge") {
+        if !matches!(badge.get("text"), Some(UiValue::String(_))) {
+            return Err(NativeCollectionError::InvalidTableConfig(
+                "List badge.text must be a string".into(),
+            ));
+        }
+        badge
+            .entry("variant".into())
+            .or_insert(UiValue::String("neutral".into()));
+        badge.entry("dot".into()).or_insert(UiValue::Bool(true));
+        let Some(UiValue::String(variant)) = badge.get("variant") else {
+            return Err(NativeCollectionError::InvalidTableConfig(
+                "List badge.variant must be a string".into(),
+            ));
+        };
+        validate_badge_variant(variant)?;
+        if !matches!(badge.get("dot"), Some(UiValue::Bool(_))) {
+            return Err(NativeCollectionError::InvalidTableConfig(
+                "List badge.dot must be a bool".into(),
+            ));
+        }
+    } else if item["badge"] != UiValue::Null {
+        return Err(NativeCollectionError::InvalidTableConfig(
+            "List badge must be a map or null".into(),
+        ));
+    }
+    item.insert("selected".into(), UiValue::Bool(selected.contains(key)));
+    Ok(UiValue::Map(item))
+}
+
 impl CollectionProjection {
     fn project_row(
         &self,
@@ -606,6 +830,7 @@ impl CollectionProjection {
     ) -> Result<UiValue, NativeCollectionError> {
         match self {
             Self::Table(projection) => projection.project_row(row, index),
+            Self::List(selected) => list_row(row, key.unwrap_or_default(), selected),
             Self::Fuzzy(projection) => projection.project_row(row, index, key),
         }
     }
@@ -613,6 +838,7 @@ impl CollectionProjection {
     fn project_group(&self, group: &GroupEntry) -> UiValue {
         match self {
             Self::Table(projection) => projection.project_group(group),
+            Self::List(_) => UiValue::Null,
             Self::Fuzzy(projection) => projection.project_group(group),
         }
     }
@@ -961,6 +1187,7 @@ struct TableProjection {
 #[derive(Clone, Debug, PartialEq)]
 struct TableColumn {
     key: String,
+    sort_key: String,
     width: UiValue,
     align: String,
     resize_signal_key: Option<String>,
@@ -1019,7 +1246,21 @@ impl TableProjection {
                 "row_height must be finite and positive".to_owned(),
             ));
         }
-        let sort = decode_sort(config.remove("sort"))?;
+        let sort = decode_sort(config.remove("sort"))?
+            .map(|mut sort| {
+                let column = columns
+                    .iter()
+                    .find(|column| column.key == sort.key)
+                    .ok_or_else(|| {
+                        NativeCollectionError::InvalidTableConfig(format!(
+                            "sort key `{}` is not a declared column",
+                            sort.key
+                        ))
+                    })?;
+                sort.key.clone_from(&column.sort_key);
+                Ok(sort)
+            })
+            .transpose()?;
         let (group_by, collapsed_groups, group_toggle) = decode_grouping(&mut config, &columns)?;
         let (query, search_fields, page, page_size) =
             decode_table_window(&mut config, &row_key, &columns)?;
@@ -1336,11 +1577,14 @@ impl TableColumn {
             ));
         };
         let key = take_string(&mut column, "key")?;
+        let sort_key =
+            take_optional_string(&mut column, "sort_key")?.unwrap_or_else(|| key.clone());
+        validate_name(&sort_key, "sort field")?;
         let width = column.remove("width").ok_or_else(|| {
             NativeCollectionError::InvalidTableConfig("column.width is required".to_owned())
         })?;
         let align = match column.remove("align") {
-            None => "start".to_owned(),
+            None | Some(UiValue::Null) => "start".to_owned(),
             Some(UiValue::String(value)) => value,
             Some(_) => {
                 return Err(NativeCollectionError::InvalidTableConfig(
@@ -1374,6 +1618,7 @@ impl TableColumn {
             "numeric",
             "typography",
             "sortable",
+            "resizable",
             "resize_enabled",
             "resize_ref_key",
             "min_width",
@@ -1389,6 +1634,7 @@ impl TableColumn {
         }
         Ok(Self {
             key,
+            sort_key,
             width,
             align,
             resize_signal_key,
@@ -1488,19 +1734,6 @@ fn validate_badge_variant(value: &str) -> Result<(), NativeCollectionError> {
     }
 }
 
-fn compare_rows(
-    left: &UiValue,
-    right: &UiValue,
-    key: &str,
-) -> Result<Ordering, NativeCollectionError> {
-    let left = row_field(left, key)
-        .ok_or_else(|| NativeCollectionError::MissingSortField(key.to_owned()))?;
-    let right = row_field(right, key)
-        .ok_or_else(|| NativeCollectionError::MissingSortField(key.to_owned()))?;
-    compare_values(left, right)
-        .ok_or_else(|| NativeCollectionError::UnsortableField(key.to_owned()))
-}
-
 fn row_field<'a>(row: &'a UiValue, key: &str) -> Option<&'a UiValue> {
     match row {
         UiValue::Map(row) => row.get(key),
@@ -1513,9 +1746,15 @@ fn compare_values(left: &UiValue, right: &UiValue) -> Option<Ordering> {
         (UiValue::Null, UiValue::Null) => Some(Ordering::Equal),
         (UiValue::Bool(left), UiValue::Bool(right)) => Some(left.cmp(right)),
         (UiValue::Integer(left), UiValue::Integer(right)) => Some(left.cmp(right)),
-        (UiValue::Float(left), UiValue::Float(right)) => left.partial_cmp(right),
-        (UiValue::Integer(left), UiValue::Float(right)) => integer_float(*left).partial_cmp(right),
-        (UiValue::Float(left), UiValue::Integer(right)) => left.partial_cmp(&integer_float(*right)),
+        (UiValue::Float(left), UiValue::Float(right)) if left.is_finite() && right.is_finite() => {
+            left.partial_cmp(right)
+        }
+        (UiValue::Integer(left), UiValue::Float(right)) if right.is_finite() => {
+            integer_float(*left).partial_cmp(right)
+        }
+        (UiValue::Float(left), UiValue::Integer(right)) if left.is_finite() => {
+            left.partial_cmp(&integer_float(*right))
+        }
         (UiValue::String(left), UiValue::String(right)) => Some(left.cmp(right)),
         _ => None,
     }
@@ -2218,6 +2457,168 @@ mod tests {
         let second = collection.sorted_order(&sort).unwrap();
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(collection.source.keys[first[0]], "a");
+    }
+
+    fn ranked_config(direction: &str) -> Map {
+        let mut config = table_config(&[]);
+        config.insert("group_by".into(), Dynamic::UNIT);
+        config.insert(
+            "columns".into(),
+            Dynamic::from_array(vec![Dynamic::from_map(Map::from([
+                ("key".into(), Dynamic::from("score")),
+                ("sort_key".into(), Dynamic::from("rank")),
+                ("width".into(), Dynamic::from(80_i64)),
+            ]))]),
+        );
+        config.insert(
+            "sort".into(),
+            Dynamic::from_map(Map::from([
+                ("key".into(), Dynamic::from("score")),
+                ("direction".into(), Dynamic::from(direction.to_owned())),
+            ])),
+        );
+        config
+    }
+
+    #[test]
+    fn sort_key_resolves_column_identity_and_nulls_stay_last_with_stable_ties() {
+        let rows = [
+            Some(UiValue::Integer(2)),
+            None,
+            Some(UiValue::Null),
+            Some(UiValue::Integer(1)),
+            Some(UiValue::Integer(2)),
+        ];
+        let source = NativeCollection::new(
+            "id",
+            rows.into_iter().enumerate().map(|(index, rank)| {
+                let mut row = BTreeMap::from([
+                    ("id".into(), UiValue::String(index.to_string())),
+                    (
+                        "score".into(),
+                        UiValue::String(format!("formatted {index}")),
+                    ),
+                ]);
+                if let Some(rank) = rank {
+                    row.insert("rank".into(), rank);
+                }
+                row
+            }),
+        )
+        .unwrap();
+        for (direction, expected) in [
+            ("ascending", ["3", "0", "4", "1", "2"]),
+            ("descending", ["0", "4", "3", "1", "2"]),
+        ] {
+            let view = source.table_view(ranked_config(direction)).unwrap();
+            assert_eq!(
+                (0..view.len())
+                    .map(|index| view.key(index).unwrap())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            let UiValue::Map(item) = view.item(0).unwrap().unwrap() else {
+                panic!()
+            };
+            assert!(format!("{item:?}").contains("formatted"));
+        }
+        let mut invalid = ranked_config("ascending");
+        invalid.insert(
+            "sort".into(),
+            Dynamic::from_map(Map::from([
+                ("key".into(), Dynamic::from("rank")),
+                ("direction".into(), Dynamic::from("ascending")),
+            ])),
+        );
+        assert!(
+            source.table_view(invalid).is_err(),
+            "sort must name the declared display column"
+        );
+    }
+
+    #[test]
+    fn sort_validates_every_non_null_value_before_mutating_or_caching() {
+        for rank in [
+            UiValue::Array(vec![]),
+            UiValue::Float(f64::NAN),
+            UiValue::Float(f64::INFINITY),
+        ] {
+            let source = NativeCollection::new(
+                "id",
+                [BTreeMap::from([
+                    ("id".into(), UiValue::String("only".into())),
+                    ("rank".into(), rank),
+                ])],
+            )
+            .unwrap();
+            assert!(matches!(
+                source.table_view(ranked_config("ascending")),
+                Err(NativeCollectionError::UnsortableField(_))
+            ));
+            assert!(source.source.sorted_orders.lock().unwrap().is_empty());
+            assert_eq!(source.key(0), Some("only"));
+        }
+        let source = NativeCollection::new(
+            "id",
+            [UiValue::Integer(1), UiValue::String("bad".into())]
+                .into_iter()
+                .enumerate()
+                .map(|(index, rank)| {
+                    BTreeMap::from([
+                        ("id".into(), UiValue::String(index.to_string())),
+                        ("rank".into(), rank),
+                    ])
+                }),
+        )
+        .unwrap();
+        assert!(source.table_view(ranked_config("ascending")).is_err());
+    }
+
+    #[test]
+    fn thirty_thousand_formatted_native_rows_sort_without_rhai_enumeration() {
+        let source = NativeCollection::new(
+            "id",
+            (0..30_000).map(|index| {
+                BTreeMap::from([
+                    ("id".into(), UiValue::String(index.to_string())),
+                    (
+                        "score".into(),
+                        UiValue::String(format!("{} min", 30_000 - index)),
+                    ),
+                    ("rank".into(), UiValue::Integer(30_000 - index)),
+                ])
+            }),
+        )
+        .unwrap();
+        let view = source.table_view(ranked_config("ascending")).unwrap();
+        assert_eq!(view.len(), 30_000);
+        assert_eq!(view.key(0), Some("29999"));
+        assert_eq!(view.key(29_999), Some("0"));
+        let cached = source.table_view(ranked_config("ascending")).unwrap();
+        assert!(Arc::ptr_eq(&view.order, &cached.order));
+    }
+
+    #[test]
+    fn native_list_neighbors_skip_disabled_and_missing_selections() {
+        let source = NativeCollection::new(
+            "id",
+            ["a", "b", "c"].into_iter().map(|key| {
+                BTreeMap::from([
+                    ("id".into(), UiValue::String(key.into())),
+                    ("title".into(), UiValue::String(key.into())),
+                    ("disabled".into(), UiValue::Bool(key == "b")),
+                    ("has_children".into(), UiValue::Bool(key == "a")),
+                ])
+            }),
+        )
+        .unwrap();
+        let selected = BTreeSet::from(["a".into()]);
+        let view = source.list_view(selected.clone()).unwrap();
+        let neighbors = view.table_neighbors(&selected);
+        assert_eq!(neighbors.next.as_deref(), Some("c"));
+        let missing = view.table_neighbors(&BTreeSet::from(["gone".into()]));
+        assert_eq!(missing.current, None);
+        assert_eq!(missing.next.as_deref(), Some("a"));
     }
 
     #[test]

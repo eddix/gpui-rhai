@@ -5,6 +5,11 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "copy_text(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["text"],
+        doc: "Queues a bounded text clipboard write after commit. Requires an attached view/window and direct user input or explicit automation; rejects render, timers, effects and asynchronous callbacks, and rolls back with failed callbacks.",
+    },
+    ScriptFnDoc {
         signature: "action_enabled(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["action"],
         doc: "Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered.",

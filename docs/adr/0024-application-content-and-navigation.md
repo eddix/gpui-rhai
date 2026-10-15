@@ -66,6 +66,31 @@ Selectable cards have a presentational choice surface and a separate actions
 area. An action does not change selection. Keyboard, checked state and focus
 remain distinct and reuse the existing group-control rules.
 
+### Controlled collections and column browsing
+
+Table display identity and rank data are distinct: controlled sort and emitted
+sort changes name the declared column key, and Rust resolves its optional
+`sort_key` before sorting. Arrays and NativeCollection share this grammar. An
+absent sort preserves source order; explicit Array sorting now runs in Rust
+instead of preserving an already sorted caller Array. Missing/null ranks stay
+last independently of direction, ties preserve source order, and incompatible
+non-null types reject the candidate before any order is cached or committed.
+
+ColumnBrowser composes the ordinary List row grammar and native projection;
+there is no browser-specific virtualizer or second selection engine. It owns
+only a column-key keyboard cursor and its single focus target. Columns and the
+selected path are controlled. Fetching, retrying, truncating descendants and
+rejecting late results by request/path revision remain application duties.
+The managed List keyboard mode does not replace a List's internal ElementRef.
+Horizontal reveal uses the ordinary retained scroll command and respects RTL.
+
+Explicit path/code copy uses a shared `ctx.copy_text` command, queued only from
+an attached view/window responding to direct user input or an explicit automation
+command. Render, effect, timer and asynchronous delivery origins cannot write
+the clipboard, including work originally started by user input. Clipboard text
+uses the ordinary bounded UiValue string domain, the command is window-scoped,
+and a failed callback/render transaction discards it before native application.
+
 ### Time
 
 A Host-injectable wall clock, time zone model and locale formatting are shared

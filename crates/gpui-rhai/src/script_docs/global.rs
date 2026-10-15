@@ -410,6 +410,26 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row. Non-string keys match no row.",
     },
     ScriptFnDoc {
+        signature: "native_list_view(_: NativeCollection, _: array) -> core::result::Result<gpui_rhai::native_collection::NativeCollection,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["items", "selected_keys"],
+        doc: "Normalizes a List row collection natively, projecting selected flags without enumerating rows in Rhai.",
+    },
+    ScriptFnDoc {
+        signature: "native_list_view(_: array, _: array) -> core::result::Result<gpui_rhai::native_collection::NativeCollection,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["items", "selected_keys"],
+        doc: "Normalizes an array of keyed List rows using the same projection as native data.",
+    },
+    ScriptFnDoc {
+        signature: "native_list_neighbors(_: NativeCollection, _: array) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["items", "selected_keys"],
+        doc: "Returns enabled List navigation targets first/last/previous/next/current/current_index and the current row's has_children flag; disabled and missing selections are skipped.",
+    },
+    ScriptFnDoc {
+        signature: "native_table_view(_: array, _: map) -> core::result::Result<gpui_rhai::native_collection::NativeCollection,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["rows", "config"],
+        doc: "Applies Table's native projection to array rows. Controlled sort names a declared column key; sort_key resolves its rank field. Null/missing values are last in both directions; ties preserve source order.",
+    },
+    ScriptFnDoc {
         signature: "native_table_view(_: NativeCollection, _: map) -> core::result::Result<gpui_rhai::native_collection::NativeCollection,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["collection", "config"],
         doc: "Returns a sorted, filtered, paged and grouped view of a native collection, as the Table's normalized `config` describes.",
