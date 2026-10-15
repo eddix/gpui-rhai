@@ -391,6 +391,8 @@ pub struct UiNodeData {
     part_styles: BTreeMap<String, Style>,
     source: Option<SourceLocation>,
     component_root: Option<ComponentInstancePath>,
+    // Co-located construction owners, not another replacement/snapshot owner.
+    forwarded_components: Option<Rc<Vec<ComponentInstancePath>>>,
     attributes: BTreeMap<String, UiValue>,
     handlers: BTreeMap<String, Vec<UiEventBinding>>,
     handler_payloads: BTreeMap<String, UiValue>,
@@ -770,6 +772,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -798,6 +801,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -846,6 +850,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -891,6 +896,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -921,6 +927,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -957,6 +964,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -1005,6 +1013,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -1036,6 +1045,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -1067,6 +1077,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -1095,6 +1106,7 @@ impl UiNode {
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
+            forwarded_components: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -1242,7 +1254,7 @@ impl UiNode {
 
     #[cfg(test)]
     pub(crate) fn with_component_root(mut self, component: ComponentInstancePath) -> Self {
-        self.component_root = Some(component);
+        self.seal_component_root(component);
         self.presentation.clear();
         self.component_snapshot = None;
         self
@@ -1253,7 +1265,7 @@ impl UiNode {
         component: ComponentInstancePath,
         snapshot: ComponentOwnedSnapshotRef,
     ) -> Self {
-        self.component_root = Some(component);
+        self.seal_component_root(component);
         self.presentation.clear();
         self.component_snapshot = Some(snapshot);
         self
@@ -1262,6 +1274,25 @@ impl UiNode {
     #[must_use]
     pub fn component_root(&self) -> Option<&ComponentInstancePath> {
         self.component_root.as_ref()
+    }
+
+    fn seal_component_root(&mut self, component: ComponentInstancePath) {
+        if let Some(previous) = self.component_root.take()
+            && previous != component
+        {
+            let forwarded = self
+                .forwarded_components
+                .get_or_insert_with(|| Rc::new(Vec::new()));
+            let forwarded = Rc::make_mut(forwarded);
+            if !forwarded.contains(&previous) {
+                forwarded.push(previous);
+            }
+        }
+        self.component_root = Some(component);
+    }
+
+    pub(crate) fn forwarded_components(&self) -> Option<&Rc<Vec<ComponentInstancePath>>> {
+        self.forwarded_components.as_ref()
     }
 
     pub(crate) fn replace_component_subtree(
@@ -1786,6 +1817,7 @@ impl UiNode {
         ghost.signal_bindings.clear();
         ghost.element_ref = None;
         ghost.component_root = None;
+        ghost.forwarded_components = None;
         ghost.component_snapshot = None;
         ghost.presentation.clear();
         ghost.motions.clear();

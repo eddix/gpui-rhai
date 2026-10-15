@@ -1363,7 +1363,10 @@ impl ScriptViewHandle {
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
     pub fn focus(&self, window: &mut Window, cx: &mut App) -> Result<(), ScriptViewError> {
         self.require_active()?;
-        let focus = self.0.entity.read(cx).host_focus.clone();
+        let focus = self.0.entity.update(cx, |view, _| {
+            view.navigation_focus_epoch = view.navigation_focus_epoch.wrapping_add(1);
+            view.host_focus.clone()
+        });
         focus.focus(window, cx);
         Ok(())
     }
@@ -1577,7 +1580,8 @@ impl ScriptViewHandle {
                 .borrow()
                 .element_refs
                 .resolve(reference)?;
-            view.focus_handles
+            let handle = view
+                .focus_handles
                 .get(&node)
                 .filter(|_| view.lifecycle.retained().is_page_visible(node))
                 .cloned()
@@ -1585,7 +1589,9 @@ impl ScriptViewHandle {
                     ScriptViewError::ElementRef(crate::ElementRefError::Stale(
                         reference.id().clone(),
                     ))
-                })
+                })?;
+            view.navigation_focus_epoch = view.navigation_focus_epoch.wrapping_add(1);
+            Ok::<_, ScriptViewError>(handle)
         })?;
         handle.focus(window, cx);
         Ok(())
@@ -3236,6 +3242,7 @@ impl PreparedScriptView {
                 focus_handles: BTreeMap::new(),
                 page_focus: BTreeMap::new(),
                 page_scopes: BTreeMap::new(),
+                navigation_focus_epoch: 0,
                 visible_pages: BTreeSet::new(),
                 focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
@@ -3625,6 +3632,7 @@ fn open_secondary_window(
                 focus_handles: BTreeMap::new(),
                 page_focus: BTreeMap::new(),
                 page_scopes: BTreeMap::new(),
+                navigation_focus_epoch: 0,
                 visible_pages: BTreeSet::new(),
                 focus_within_listeners: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
@@ -3941,6 +3949,7 @@ struct ScriptHostView {
     focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
     page_focus: BTreeMap<crate::NodeId, (crate::NodeId, FocusHandle)>,
     page_scopes: BTreeMap<crate::NodeId, crate::NodeId>,
+    navigation_focus_epoch: u64,
     visible_pages: BTreeSet<crate::NodeId>,
     /// Focus-in and focus-out listeners of each node with a `focus_within_change` handler.
     focus_within_listeners: BTreeMap<crate::NodeId, [Subscription; 2]>,
@@ -5386,6 +5395,9 @@ impl ScriptHostView {
             .copied()
             .filter(|node| tree.is_page_visible(*node))
             .collect::<BTreeSet<_>>();
+        if visible != self.visible_pages {
+            self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
+        }
         let focused = self
             .focus_handles
             .iter()
@@ -5428,6 +5440,7 @@ impl ScriptHostView {
                 None
             })
             .collect::<BTreeMap<_, _>>();
+        let unfocused = window.focused(cx).is_none();
         let target = visible
             .difference(&self.visible_pages)
             .copied()
@@ -5444,18 +5457,33 @@ impl ScriptHostView {
                         .iter()
                         .any(|previous| self.page_scopes.get(previous) == Some(scope))
             })
+            .filter(|page| {
+                // Mounting/revealing a stack is not permission to take focus
+                // from a sidebar, another stack or another embedded view.
+                unfocused
+                    || scopes
+                        .get(page)
+                        .and_then(|scope| self.focus_handles.get(scope))
+                        .is_some_and(|handle| handle.contains_focused(window, cx))
+            })
             .max_by_key(|page| retained_depth(tree, *page));
         if hid_focus {
             self.host_focus.focus(window, cx);
         }
         if let Some(page) = target {
             let generation = self.lifecycle.generation();
+            let epoch = self.navigation_focus_epoch;
+            let focus_owner = window.focused(cx);
+            let window_id = window.window_handle().window_id();
             // Wait until the new heading's handle has entered the real focus tree.
             cx.on_next_frame(window, move |view, window, cx| {
                 let tree = view.lifecycle.retained();
                 if view.state.get() != ScriptViewState::Active
                     || view.lifecycle.generation() != generation
                     || !tree.is_page_visible(page)
+                    || view.navigation_focus_epoch != epoch
+                    || window.window_handle().window_id() != window_id
+                    || window.focused(cx) != focus_owner
                 {
                     return;
                 }
@@ -5597,6 +5625,7 @@ impl ScriptHostView {
                         continue;
                     }
                     if let Some(handle) = self.focus_handles.get(&node) {
+                        self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
                         handle.focus(window, cx);
                     } else {
                         self.set_plain_failure(format!(
@@ -5752,9 +5781,11 @@ impl ScriptHostView {
     }
 
     fn copy_selected_text(&mut self, _: &CopySelectedText, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(text) = self.text_selection.selected_text() {
+        if let Some(text) = self.text_selection.selected_text(self.lifecycle.retained()) {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
             cx.stop_propagation();
+        } else {
+            cx.propagate();
         }
     }
 
@@ -5984,6 +6015,7 @@ impl ScriptHostView {
             return Ok(false);
         }
         self.quiesce_host_view(window, cx);
+        self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
         self.state.set(ScriptViewState::Suspended);
         Ok(true)
     }

@@ -51,6 +51,7 @@ pub struct RetainedNode {
     kind: UiNodeKindTag,
     primitive: Option<crate::PrimitiveId>,
     component_root: Option<crate::ComponentInstancePath>,
+    forwarded_components: Option<std::rc::Rc<Vec<crate::ComponentInstancePath>>>,
     element_ref: Option<crate::ElementRef>,
     attributes: BTreeMap<String, crate::UiValue>,
     text: Option<String>,
@@ -94,6 +95,16 @@ impl RetainedNode {
     #[must_use]
     pub fn component_root(&self) -> Option<&crate::ComponentInstancePath> {
         self.component_root.as_ref()
+    }
+
+    pub(crate) fn presented_components(
+        &self,
+    ) -> impl Iterator<Item = &crate::ComponentInstancePath> {
+        self.component_root.iter().chain(
+            self.forwarded_components
+                .iter()
+                .flat_map(|owners| owners.iter()),
+        )
     }
 
     #[must_use]
@@ -478,6 +489,7 @@ impl ReconcileTransaction<'_> {
                     _ => None,
                 },
                 component_root: candidate.component_root().cloned(),
+                forwarded_components: candidate.forwarded_components().cloned(),
                 element_ref: candidate.element_ref().cloned(),
                 attributes: candidate.attributes().clone(),
                 text: match candidate.kind() {
