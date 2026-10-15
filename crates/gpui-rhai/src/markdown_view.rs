@@ -91,6 +91,7 @@ struct MarkdownViewerEntity {
     prepared: Option<Arc<PreparedMarkdown>>,
     selection: DocumentSelection,
     scroll: ListState,
+    scroll_source: crate::ScrollbarSourceHandle,
     tables: Rc<RefCell<BTreeMap<usize, TableState>>>,
     width: Option<gpui::Pixels>,
     task: Option<Task<()>>,
@@ -350,6 +351,7 @@ impl Render for MarkdownViewerEntity {
             disabled: self.loading,
             tables: self.tables.clone(),
             document_scroll: self.scroll.clone(),
+            document_source: self.scroll_source.clone(),
         };
         // Infer measures with MaxContent width before prepaint. Constrain its
         // rows to the actual native list viewport once known, or a wrapped tall
@@ -383,11 +385,16 @@ impl Render for MarkdownViewerEntity {
         } else {
             root = root.child(content.h_full());
         }
-        root = root.child(self.context.scrollbars(&self.theme).element(
-            "markdown-scrollbar",
-            self.scroll.clone(),
-            crate::ScrollbarSpec::new("hidden", "auto").expect("static scrollbar mode"),
-        ));
+        root = root.child(
+            self.context
+                .scrollbars(&self.theme)
+                .with_scroll_axis(Some(gpui::Axis::Vertical))
+                .element_with_wheel_routing(
+                    "markdown-scrollbar",
+                    self.scroll_source.clone(),
+                    crate::ScrollbarSpec::new("hidden", "auto").expect("static scrollbar mode"),
+                ),
+        );
         if self.loading {
             root = root.child(crate::renderer::apply_style_override(
                 div()
@@ -447,6 +454,7 @@ struct Paint {
     disabled: bool,
     tables: Rc<RefCell<BTreeMap<usize, TableState>>>,
     document_scroll: ListState,
+    document_source: crate::ScrollbarSourceHandle,
 }
 
 #[derive(Clone)]
@@ -935,8 +943,12 @@ impl Paint {
             .context
             .scrollbars(&self.theme)
             .with_scroll_axis(Some(gpui::Axis::Vertical))
-            .with_scroll_parent(self.document_scroll.clone(), Some(gpui::Axis::Vertical))
-            .with_scroll_parent(state.rows_source.clone(), Some(gpui::Axis::Vertical));
+            .with_scroll_parent(self.document_source.clone(), Some(gpui::Axis::Vertical))
+            .with_scroll_parent(state.rows_source.clone(), Some(gpui::Axis::Vertical))
+            .with_scroll_parent(
+                state.horizontal_source.clone(),
+                Some(gpui::Axis::Horizontal),
+            );
         let table = list(state.rows.clone(), move |row_index, _, _| {
             let mut row = div()
                 .id(SharedString::from(format!(
@@ -1011,7 +1023,7 @@ impl Paint {
                                 })
                                 .clone()
                         };
-                        let scrollbar = cell_scrollbars.element(
+                        let scrollbar = cell_scrollbars.element_with_wheel_routing(
                             SharedString::from(format!(
                                 "markdown-cell-scroll-{index}-{row_index}-{column}"
                             )),
@@ -1072,7 +1084,7 @@ impl Paint {
         let scrollbars = self
             .context
             .scrollbars(&self.theme)
-            .with_scroll_parent(self.document_scroll.clone(), Some(gpui::Axis::Vertical));
+            .with_scroll_parent(self.document_source.clone(), Some(gpui::Axis::Vertical));
         crate::renderer::apply_style_override(
             div()
                 .w_full()
@@ -1084,7 +1096,7 @@ impl Paint {
                         .clone()
                         .with_scroll_axis(Some(gpui::Axis::Horizontal))
                         .with_scroll_parent(state.rows_source.clone(), Some(gpui::Axis::Vertical))
-                        .element(
+                        .element_with_wheel_routing(
                             SharedString::from(format!("markdown-table-x-{index}")),
                             state.horizontal_source,
                             crate::ScrollbarSpec::new("auto", "hidden")
@@ -1094,7 +1106,7 @@ impl Paint {
                 .child(
                     scrollbars
                         .with_scroll_axis(Some(gpui::Axis::Vertical))
-                        .element(
+                        .element_with_wheel_routing(
                             SharedString::from(format!("markdown-table-y-{index}")),
                             state.rows_source,
                             crate::ScrollbarSpec::new("hidden", "auto")
@@ -1299,6 +1311,8 @@ impl PrimitiveHandler for MarkdownViewerPrimitiveHandler {
             .entry(id)
             .or_insert_with(|| {
                 let alive = Arc::new(AtomicBool::new(true));
+                let scroll = ListState::new(0, ListAlignment::Top, px(200.0))
+                    .with_uniform_item_height(px(36.0));
                 let entity = cx.new(|cx| MarkdownViewerEntity {
                     config: config.clone(),
                     context: context.clone(),
@@ -1309,8 +1323,8 @@ impl PrimitiveHandler for MarkdownViewerPrimitiveHandler {
                     mono: resolve_document_monospace_family(cx),
                     prepared: None,
                     selection: DocumentSelection::default(),
-                    scroll: ListState::new(0, ListAlignment::Top, px(200.0))
-                        .with_uniform_item_height(px(36.0)),
+                    scroll_source: crate::ScrollbarSourceHandle::new(scroll.clone()),
+                    scroll,
                     tables: Rc::new(RefCell::new(BTreeMap::new())),
                     width: None,
                     task: None,
