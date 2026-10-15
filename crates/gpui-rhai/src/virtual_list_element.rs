@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -231,6 +231,13 @@ struct VirtualListView {
     scrollbar_spec: crate::ScrollbarSpec,
     hinted_width: Option<Pixels>,
     scroll_source_epoch: u64,
+    intrinsic_rows: BTreeMap<String, IntrinsicRow>,
+}
+
+struct IntrinsicRow {
+    root: crate::NodeId,
+    index: usize,
+    lease: Rc<Cell<bool>>,
 }
 
 impl Drop for VirtualListView {
@@ -276,7 +283,9 @@ impl VirtualListView {
             scrollbar_spec,
             hinted_width: None,
             scroll_source_epoch: 0,
+            intrinsic_rows: BTreeMap::new(),
         };
+        this.synchronize_intrinsic_rows();
         this.reveal_controlled_target();
         this.install_metrics_handler();
         this
@@ -333,6 +342,7 @@ impl VirtualListView {
         let reveal_changed = self.content.reveal_key != content.reveal_key;
         self.content = content;
         self.runtime = runtime;
+        self.synchronize_intrinsic_rows();
         if recreate {
             self.scroll = list_state(&self.content);
             self.hinted_width = None;
@@ -518,6 +528,13 @@ impl VirtualListView {
     }
 
     fn seed_viewport_hints(&mut self, cx: &mut Context<Self>) {
+        // Only a native measurement clears a dirty lease. Hidden retained
+        // rows stay dirty and coalesce further commits until presented.
+        for row in self.intrinsic_rows.values() {
+            if self.scroll.bounds_for_item(row.index).is_some() {
+                row.lease.set(false);
+            }
+        }
         // Finish the initial controlled reveal while this native prepaint's
         // measured item bounds still exist. Rehinting below converts measured
         // entries to hinted entries; doing the reveal next render would then
@@ -575,6 +592,72 @@ impl VirtualListView {
             });
         }
     }
+
+    fn synchronize_intrinsic_rows(&mut self) {
+        let mut previous = std::mem::take(&mut self.intrinsic_rows);
+        // Realized rows only: asynchronous invalidation never scans all data.
+        for index in self.content.realized.keys().copied() {
+            let Some(key) = self.content.data.key(index) else {
+                continue;
+            };
+            let Some(root) = self.runtime.retained_roots.get(&format!("item:{key}")) else {
+                continue;
+            };
+            let lease = previous
+                .remove(key)
+                .filter(|row| row.root == *root)
+                .map_or_else(|| Rc::new(Cell::new(false)), |row| row.lease);
+            self.intrinsic_rows.insert(
+                key.to_owned(),
+                IntrinsicRow {
+                    root: *root,
+                    index,
+                    lease,
+                },
+            );
+        }
+    }
+
+    fn intrinsic_invalidators(
+        &self,
+        cx: &Context<Self>,
+    ) -> BTreeMap<String, crate::intrinsic::IntrinsicSizeInvalidator> {
+        self.intrinsic_rows
+            .iter()
+            .map(|(key, row)| {
+                let view = cx.entity().downgrade();
+                let lease = Rc::downgrade(&row.lease);
+                let key = key.clone();
+                let row_key = key.clone();
+                let parent = self.runtime.intrinsic_size.clone();
+                let generation = self.runtime.primitives.generation();
+                let invalidator = crate::intrinsic::IntrinsicSizeInvalidator::new(move |cx| {
+                    let Some(lease) = lease.upgrade() else { return };
+                    let changed = view
+                        .update(cx, |view, cx| {
+                            if view.runtime.primitives.generation() != generation {
+                                return false;
+                            }
+                            let Some(row) = view.intrinsic_rows.get(&row_key) else {
+                                return false;
+                            };
+                            if !Rc::ptr_eq(&row.lease, &lease) || row.lease.replace(true) {
+                                return false;
+                            }
+                            view.scroll
+                                .remeasure_items(row.index..row.index.saturating_add(1));
+                            cx.notify();
+                            true
+                        })
+                        .unwrap_or(false);
+                    if changed && let Some(parent) = &parent {
+                        parent.invalidate(cx);
+                    }
+                });
+                (key, invalidator)
+            })
+            .collect()
+    }
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -588,7 +671,7 @@ fn estimated_target_is_initially_visible(
 }
 
 impl Render for VirtualListView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
         let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);
@@ -615,9 +698,13 @@ impl Render for VirtualListView {
         let list_content = content.clone();
         let list_runtime = runtime.clone();
         let list_frame_indices = Rc::clone(&frame_indices);
+        let invalidators = self.intrinsic_invalidators(cx);
+        let list_invalidators = invalidators.clone();
         let list = list(self.scroll.clone(), move |index, _window, _cx| {
             list_frame_indices.borrow_mut().insert(index);
-            render_virtual_item(&list_content, &list_runtime, sticky, index)
+            let invalidator = collection_item_key(&list_content, index)
+                .and_then(|key| list_invalidators.get(key));
+            render_virtual_item(&list_content, &list_runtime, sticky, index, invalidator)
         })
         .w_full()
         .when_some(fixed_height, |list, height| list.h(px(height)))
@@ -625,7 +712,14 @@ impl Render for VirtualListView {
         let sticky = sticky.and_then(|sticky| {
             let key = collection_item_key(&content, sticky.index)?;
             let node = content.realized.get(&sticky.index)?;
-            Some((sticky, runtime.render(node, &format!("item:{key}"))))
+            Some((
+                sticky,
+                runtime.render_with_intrinsic_size(
+                    node,
+                    &format!("item:{key}"),
+                    invalidators.get(key),
+                ),
+            ))
         });
         let root_selector = format!("virtual-list:{}", self.content.id.key);
         let sticky_selector = format!("virtual-list-sticky:{}", self.content.id.key);
@@ -670,6 +764,7 @@ fn render_virtual_item(
     runtime: &NodeSlotRuntime,
     sticky: Option<StickyHeaderFrame>,
     index: usize,
+    invalidator: Option<&crate::intrinsic::IntrinsicSizeInvalidator>,
 ) -> AnyElement {
     if sticky.is_some_and(|sticky| sticky.index == index) {
         return div()
@@ -685,7 +780,7 @@ fn render_virtual_item(
                 .h(px(finite_to_f32(content.estimated_height)))
                 .into_any_element()
         },
-        |node| runtime.render(node, &format!("item:{key}")),
+        |node| runtime.render_with_intrinsic_size(node, &format!("item:{key}"), invalidator),
     );
     div()
         .id(("virtual-list-row", index))
