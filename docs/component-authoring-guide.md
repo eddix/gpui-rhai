@@ -207,6 +207,48 @@ rejected. Failed start/cleanup restores runtime state and keeps the last-good
 tree; external Rust side effects remain outside rollback and therefore need
 idempotent Host design.
 
+State written by a successful effect schedules another foreground render after
+the outermost transaction commits; it does not wait for a clock tick or another
+input event. Host document, collection, theme, locale, style, and state setters
+use the same delivery boundary: a successful mutation outside a transaction is
+already committed, while failed or rolled-back mutations publish no wake.
+Delivery uses the existing coalesced foreground pump, never synchronous script
+reentry during rendering or painting.
+
+One effect cascade shares the existing 64-callback transition budget across
+start/cleanup and effect-origin semantic callbacks, including a pure action or
+event chain that never writes state or restarts an effect. A non-settling
+cascade reports a budget error, retains its last-good
+tree, and is quarantined so old notifications cannot restart it. A new external
+callback, valid async delivery, lifecycle replacement/resume, or changed Host
+input can start a fresh budget; failed recovery rolls back and leaves the old
+cascade quarantined. Independent mounted roots have independent budgets.
+Rejection belongs to the attempted generation: a budget-failing reload
+candidate cannot quarantine the healthy committed generation it rolls back to,
+and a failed candidate cannot clear that old generation's existing quarantine.
+Retired generation rejection records are collected only after the outermost
+transaction commits or finishes rollback, never inside a tentative replacement.
+
+Rust Hosts forward runtime-produced `PendingEvent` and `ActionInvocation` values
+through `ScriptLifecycle::invoke_component_event_transactional` and
+`invoke_action_transactional`, keeping both `origin` and the opaque optional
+`owner` unchanged. These entry points restore the original invocation scope;
+cloned or rollback-restored messages are ignored after their source generation,
+mount, effect activation or rejected cascade is no longer current. Effect
+replacement cancels only that activation's pending derivations; rejection
+quarantines the root effect graph, preserving other roots and non-effect work.
+Hand-built Host messages set `owner: None`; `origin: Effect` still shares the
+current budget and cannot start a new external turn or bypass quarantine.
+An outer transaction also owns a revocable publication lease for each message
+created within it. Nested success does not publish past that boundary: rollback
+invalidates even clones already taken from the queue, without invalidating
+previously committed messages from the same still-active source.
+The budget retains only weak references to these same opaque owners. A valid
+message held by a Host remains in flight even when the runtime queue is empty,
+so repeated no-op delivery still consumes its original cascade allowance.
+Dropping or invalidating the last owner permits a quiescent graph to settle;
+ordinary non-effect Host callbacks continue to start independent external turns.
+
 Tasks, subscriptions, and background image decodes started by an effect callback
 belong to that exact effect activation. Subscriptions are accepted only from
 this scope; root initialization and ordinary event callbacks must not create

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -113,6 +113,7 @@ pub struct UiRuntimeState {
     pub motions: MotionRuntime,
     pub(crate) page_visibility: crate::retained_page::PageVisibility,
     pub effects: crate::EffectRegistry,
+    pub(crate) effect_cascades: crate::effect::EffectCascadeBudget,
     pub signals: crate::SignalRegistry,
     pub element_refs: crate::ElementRefRegistry,
     pub(crate) geometry: crate::GeometryRegistry,
@@ -140,6 +141,10 @@ pub struct UiRuntimeState {
     component_style_generation: u64,
     /// What the running script invocation responds to.
     origin: crate::InvocationOrigin,
+    /// Current semantic derivation, restored with invocation origin, not UI state.
+    pub(crate) dispatch_owner: Option<SemanticDispatchOwner>,
+    /// Tentative semantic publications, retained across nested commits.
+    dispatch_leases: Vec<Rc<SemanticDispatchSource>>,
 }
 
 impl UiRuntimeState {
@@ -271,7 +276,7 @@ impl UiRuntimeState {
     ) -> Result<bool, crate::StateError> {
         let changed = self.component_state.set(component, field, value)?;
         if changed {
-            self.dirty.insert(component.clone());
+            self.mark_dirty_from_host([component.clone()]);
         }
         Ok(changed)
     }
@@ -288,7 +293,7 @@ impl UiRuntimeState {
     ) -> Result<bool, crate::NativeCollectionError> {
         let invalidated = self.native_collections.replace(name, collection)?;
         let changed = !invalidated.is_empty();
-        self.dirty.extend(invalidated);
+        self.mark_dirty_from_host(invalidated);
         Ok(changed)
     }
 
@@ -307,7 +312,7 @@ impl UiRuntimeState {
         let invalidated = self
             .native_collections
             .register_with_invalidated(name.to_owned(), collection)?;
-        self.dirty.extend(invalidated);
+        self.mark_dirty_from_host(invalidated);
         Ok(())
     }
 
@@ -323,7 +328,7 @@ impl UiRuntimeState {
     ) -> Result<bool, crate::DocumentError> {
         let invalidated = self.native_documents.replace(name, document)?;
         let changed = !invalidated.is_empty();
-        self.dirty.extend(invalidated);
+        self.mark_dirty_from_host(invalidated);
         Ok(changed)
     }
 
@@ -369,7 +374,7 @@ impl UiRuntimeState {
             .as_mut()
             .ok_or(crate::ThemeError::NoVariants)?
             .replace_variant(variant)?;
-        self.dirty.extend(self.component_state.paths());
+        self.mark_dirty_from_host(self.component_state.paths());
         Ok(())
     }
 
@@ -391,7 +396,7 @@ impl UiRuntimeState {
         let changed = theme.generation() != previous;
         if changed {
             let invalidated = self.environment_dependencies.invalidate_theme_app();
-            self.dirty.extend(invalidated);
+            self.mark_dirty_from_host(invalidated);
             self.mark_all_windows_dirty();
         }
         Ok(changed)
@@ -412,7 +417,7 @@ impl UiRuntimeState {
         let changed = locales.generation() != previous;
         if changed {
             let invalidated = self.environment_dependencies.invalidate_locale_app();
-            self.dirty.extend(invalidated);
+            self.mark_dirty_from_host(invalidated);
             self.mark_all_windows_repaint();
         }
         Ok(changed)
@@ -430,6 +435,7 @@ impl UiRuntimeState {
         if changed {
             let now = self.clock.now();
             self.motion_values = self.motions.snapshot(now);
+            self.mark_dirty_from_host(self.component_state.paths());
             self.mark_all_windows_dirty();
         }
         changed
@@ -448,7 +454,7 @@ impl UiRuntimeState {
         }
         self.component_styles = styles;
         self.component_style_generation = self.component_style_generation.saturating_add(1);
-        self.dirty.extend(self.component_state.paths());
+        self.mark_dirty_from_host(self.component_state.paths());
         true
     }
 
@@ -504,6 +510,7 @@ impl UiRuntimeState {
         self.native_collections.remove_reader_scope(root);
         self.native_documents.remove_reader_scope(root);
         self.component_state.remove_scope(root);
+        self.effect_cascades.remove_scope(root);
         self.component_event_handlers
             .retain(|(path, _), _| !path.is_within(root));
         self.component_incarnations
@@ -600,6 +607,18 @@ impl UiRuntimeState {
         self.subscriptions.cancel_scope(scope);
         self.pending_async
             .retain(|delivery| &delivery.scope != scope);
+        self.pending_actions.retain(|pending| {
+            pending
+                .owner
+                .as_ref()
+                .is_none_or(|owner| owner.source.effect.as_ref() != Some(scope))
+        });
+        self.pending_events.retain(|pending| {
+            pending
+                .owner
+                .as_ref()
+                .is_none_or(|owner| owner.source.effect.as_ref() != Some(scope))
+        });
         self.trace_subscription_closures();
         Ok(())
     }
@@ -657,7 +676,9 @@ impl UiRuntimeState {
     }
 
     pub(crate) fn has_window_dirty(&self, root: &ComponentInstancePath) -> bool {
-        self.dirty.iter().any(|path| path.is_within(root))
+        self.dirty
+            .iter()
+            .any(|path| path.is_within(root) && !self.effect_cascades.blocked_component(path))
     }
 
     pub(crate) fn flush_geometry_dependencies(&mut self) {
@@ -678,16 +699,74 @@ impl UiRuntimeState {
         selected
     }
 
-    pub(crate) fn drain_pending_actions(&mut self) -> Vec<ActionInvocation> {
-        std::mem::take(&mut self.pending_actions)
-    }
-
-    pub(crate) fn drain_pending_events(&mut self) -> Vec<PendingEvent> {
-        std::mem::take(&mut self.pending_events)
-    }
-
     pub(crate) fn has_pending_dispatch(&self) -> bool {
-        !self.pending_actions.is_empty() || !self.pending_events.is_empty()
+        self.pending_actions
+            .iter()
+            .any(|pending| self.dispatch_owner_active(pending.owner.as_ref()))
+            || self
+                .pending_events
+                .iter()
+                .any(|pending| self.dispatch_owner_active(pending.owner.as_ref()))
+    }
+
+    pub(crate) fn has_window_pending_dispatch(&self, root: &ComponentInstancePath) -> bool {
+        self.pending_actions.iter().any(|pending| {
+            pending
+                .callback
+                .component()
+                .is_none_or(|path| path.is_within(root))
+                && self.dispatch_owner_active(pending.owner.as_ref())
+        }) || self.pending_events.iter().any(|pending| {
+            pending.target.is_within(root) && self.dispatch_owner_active(pending.owner.as_ref())
+        })
+    }
+
+    pub(crate) fn drain_window_dispatch(
+        &mut self,
+        root: &ComponentInstancePath,
+    ) -> (Vec<ActionInvocation>, Vec<PendingEvent>) {
+        self.prune_pending_dispatch();
+        let (actions, retained) = std::mem::take(&mut self.pending_actions)
+            .into_iter()
+            .partition(|pending| {
+                pending
+                    .callback
+                    .component()
+                    .is_none_or(|path| path.is_within(root))
+            });
+        self.pending_actions = retained;
+        let (events, retained) = std::mem::take(&mut self.pending_events)
+            .into_iter()
+            .partition(|pending| pending.target.is_within(root));
+        self.pending_events = retained;
+        (actions, events)
+    }
+
+    pub(crate) fn dispatch_owner_active(&self, owner: Option<&SemanticDispatchOwner>) -> bool {
+        owner.is_none_or(|owner| {
+            owner.source.runtime_id == self.runtime_id
+                && owner.source.active(
+                    &self.component_incarnations,
+                    &self.effects,
+                    &self.effect_cascades,
+                )
+        })
+    }
+
+    pub(crate) fn prune_pending_dispatch(&mut self) {
+        let incarnations = &self.component_incarnations;
+        let effects = &self.effects;
+        let cascades = &self.effect_cascades;
+        let runtime_id = self.runtime_id;
+        let active = |owner: &SemanticDispatchOwner| {
+            owner.source.runtime_id == runtime_id
+                && owner.source.active(incarnations, effects, cascades)
+        };
+        self.pending_actions
+            .retain(|pending| pending.owner.as_ref().is_none_or(&active));
+        self.pending_events
+            .retain(|pending| pending.owner.as_ref().is_none_or(&active));
+        self.effect_cascades.prune_dispatches(incarnations, effects);
     }
 
     pub(crate) fn has_virtual_requests(&self) -> bool {
@@ -765,7 +844,7 @@ impl UiRuntimeState {
     }
 
     pub(crate) fn mark_all_windows_dirty(&mut self) {
-        self.dirty.extend(
+        self.mark_dirty(
             self.windows
                 .open_ids()
                 .into_iter()
@@ -777,15 +856,82 @@ impl UiRuntimeState {
         &mut self,
         components: impl IntoIterator<Item = ComponentInstancePath>,
     ) {
-        self.dirty.extend(components);
+        let mut invalidated = false;
+        for component in components {
+            self.dirty.insert(component);
+            invalidated = true;
+        }
+        if invalidated {
+            self.publish_committed_work();
+        }
+    }
+
+    fn mark_dirty_from_host(
+        &mut self,
+        components: impl IntoIterator<Item = ComponentInstancePath>,
+    ) {
+        let components = components.into_iter().collect::<Vec<_>>();
+        if self.origin != crate::InvocationOrigin::Effect {
+            for component in &components {
+                self.effect_cascades.restart_containing(component);
+            }
+        }
+        self.mark_dirty(components);
+    }
+
+    /// A successful mutation outside an explicit transaction is already
+    /// committed. Inside one, only the outermost successful commit may publish.
+    fn publish_committed_work(&mut self) {
+        if self.transaction_depth != 0 {
+            return;
+        }
+        self.prune_pending_dispatch();
+        let pending_effect_scopes = self
+            .pending_events
+            .iter()
+            .filter(|pending| pending.origin == crate::InvocationOrigin::Effect)
+            .map(|pending| {
+                pending
+                    .owner
+                    .as_ref()
+                    .map_or(&pending.target, |owner| &owner.source.component)
+            })
+            .chain(
+                self.pending_actions
+                    .iter()
+                    .filter(|pending| pending.origin == crate::InvocationOrigin::Effect)
+                    .filter_map(|pending| {
+                        pending
+                            .owner
+                            .as_ref()
+                            .map(|owner| &owner.source.component)
+                            .or_else(|| pending.callback.component())
+                    }),
+            );
+        self.effect_cascades
+            .settle(&self.dirty, pending_effect_scopes);
+        if self
+            .dirty
+            .iter()
+            .any(|path| !self.effect_cascades.blocked_component(path))
+            || self.has_pending_dispatch()
+            || !self.repaint_windows.is_empty()
+        {
+            // The existing foreground delivery pump drains all runtime work,
+            // not only task deliveries. It coalesces these post-commit edges;
+            // never evaluate script synchronously from a mutation or draw.
+            self.tasks.wake().notify();
+        }
     }
 
     pub(crate) fn mark_all_windows_repaint(&mut self) {
         self.repaint_windows.extend(self.windows.open_ids());
+        self.publish_committed_work();
     }
 
     pub(crate) fn mark_window_repaint(&mut self, window: impl Into<String>) {
         self.repaint_windows.insert(window.into());
+        self.publish_committed_work();
     }
 
     pub(crate) fn take_window_repaint(&mut self, window: &str) -> bool {
@@ -844,6 +990,7 @@ impl UiRuntimeState {
 
     #[must_use]
     pub fn drain_batch(&mut self) -> UiMutationBatch {
+        self.prune_pending_dispatch();
         UiMutationBatch {
             dirty: std::mem::take(&mut self.dirty),
             events: std::mem::take(&mut self.pending_events),
@@ -860,6 +1007,7 @@ impl UiRuntimeState {
         Ok(UiStateSnapshot {
             runtime_id: self.runtime_id,
             transaction_depth: self.transaction_depth,
+            dispatch_lease_checkpoint: self.dispatch_leases.len(),
             component_state: self.component_state.clone(),
             stores: self.stores.clone(),
             native_collections: self.native_collections.clone(),
@@ -880,6 +1028,7 @@ impl UiRuntimeState {
             motions: self.motions.transaction_snapshot(),
             page_visibility: self.page_visibility.clone(),
             effects: self.effects.clone(),
+            effect_cascades: self.effect_cascades.checkpoint(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
             geometry: self.geometry.snapshot(),
@@ -915,6 +1064,12 @@ impl UiRuntimeState {
                 actual: self.transaction_depth,
             });
         }
+        for lease in self
+            .dispatch_leases
+            .drain(snapshot.dispatch_lease_checkpoint..)
+        {
+            lease.publication_valid.set(false);
+        }
         self.tasks.restore(snapshot.tasks);
         self.subscriptions.restore(snapshot.subscriptions);
         self.timers = snapshot.timers;
@@ -939,6 +1094,8 @@ impl UiRuntimeState {
         self.motions = snapshot.motions;
         self.page_visibility = snapshot.page_visibility;
         self.effects = snapshot.effects;
+        self.effect_cascades.restore(snapshot.effect_cascades);
+        self.prune_pending_dispatch();
         self.signals = snapshot.signals;
         self.element_refs = snapshot.element_refs;
         self.geometry.restore(snapshot.geometry);
@@ -959,7 +1116,11 @@ impl UiRuntimeState {
         self.environment_dependencies = snapshot.environment_dependencies;
         self.repaint_windows = snapshot.repaint_windows;
         self.transaction_depth = snapshot.transaction_depth;
-        decode_result.map_err(UiTransactionError::from)
+        decode_result.map_err(UiTransactionError::from)?;
+        if self.transaction_depth == 0 {
+            self.effect_cascades.collect_retired_rejections();
+        }
+        Ok(())
     }
 
     /// Begin an explicit rollback-capable runtime transaction.
@@ -996,6 +1157,11 @@ impl UiRuntimeState {
         self.tasks.commit_transaction();
         self.subscriptions.commit_transaction();
         self.transaction_depth -= 1;
+        if self.transaction_depth == 0 {
+            self.dispatch_leases.clear();
+            self.effect_cascades.collect_retired_rejections();
+        }
+        self.publish_committed_work();
         Ok(())
     }
 
@@ -1047,6 +1213,7 @@ pub enum UiTransactionError {
 pub struct UiStateSnapshot {
     runtime_id: RuntimeStateId,
     transaction_depth: usize,
+    dispatch_lease_checkpoint: usize,
     component_state: StateStore,
     stores: StoreRegistry,
     native_collections: crate::NativeCollectionRegistry,
@@ -1067,6 +1234,7 @@ pub struct UiStateSnapshot {
     motions: MotionRuntime,
     page_visibility: crate::retained_page::PageVisibility,
     effects: crate::EffectRegistry,
+    effect_cascades: crate::effect::EffectCascadeCheckpoint,
     signals: crate::SignalRegistry,
     element_refs: crate::ElementRefRegistry,
     geometry: crate::geometry::GeometrySnapshot,
@@ -1091,6 +1259,7 @@ impl Clone for UiStateSnapshot {
         Self {
             runtime_id: self.runtime_id,
             transaction_depth: self.transaction_depth,
+            dispatch_lease_checkpoint: self.dispatch_lease_checkpoint,
             component_state: self.component_state.clone(),
             stores: self.stores.clone(),
             native_collections: self.native_collections.clone(),
@@ -1111,6 +1280,7 @@ impl Clone for UiStateSnapshot {
             motions: self.motions.transaction_snapshot(),
             page_visibility: self.page_visibility.clone(),
             effects: self.effects.clone(),
+            effect_cascades: self.effect_cascades.clone(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
             geometry: self.geometry.clone(),
@@ -1145,6 +1315,61 @@ pub struct PendingEvent {
     /// What the invocation that emitted the event responds to; its handler
     /// runs with it.
     pub origin: crate::InvocationOrigin,
+    /// Opaque generation/mount/effect derivation supplied by the runtime.
+    /// Hand-built Host events use `None`; Effect origin still consumes budget.
+    pub owner: Option<SemanticDispatchOwner>,
+}
+
+/// Cloneable provenance of a queued semantic callback. Hosts retain this
+/// unchanged when forwarding a runtime-produced event/action. Its fields are
+/// deliberately opaque: `None` is an explicit Host entry, not a new Effect turn.
+#[derive(Clone, Debug)]
+pub struct SemanticDispatchOwner {
+    source: Rc<SemanticDispatchSource>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SemanticDispatchSource {
+    runtime_id: RuntimeStateId,
+    pub(crate) generation: ScriptGeneration,
+    pub(crate) component: ComponentInstancePath,
+    incarnation: ComponentIncarnation,
+    pub(crate) effect: Option<AsyncScope>,
+    cascade: Option<(ComponentInstancePath, u64)>,
+    publication_valid: Cell<bool>,
+}
+
+impl SemanticDispatchSource {
+    pub(crate) fn publication_valid(&self) -> bool {
+        self.publication_valid.get()
+    }
+
+    pub(crate) fn active(
+        &self,
+        incarnations: &BTreeMap<ComponentInstancePath, ComponentIncarnation>,
+        effects: &crate::EffectRegistry,
+        cascades: &crate::effect::EffectCascadeBudget,
+    ) -> bool {
+        self.publication_valid.get()
+            && incarnations.get(&self.component) == Some(&self.incarnation)
+            && cascades
+                .generation_for(&self.component)
+                .is_none_or(|generation| generation == self.generation)
+            && self
+                .effect
+                .as_ref()
+                .is_none_or(|scope| effects.contains_scope(scope))
+            && self
+                .cascade
+                .as_ref()
+                .is_none_or(|(root, epoch)| cascades.accepts_dispatch(root, *epoch))
+    }
+}
+
+impl SemanticDispatchOwner {
+    pub(crate) fn cascade_root(&self) -> Option<&ComponentInstancePath> {
+        self.source.cascade.as_ref().map(|(root, _)| root)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1521,7 +1746,10 @@ impl UiContext {
             .component_state
             .set(&self.component, field, value.clone())?;
         if changed {
-            runtime.dirty.insert(self.component.clone());
+            if runtime.origin != crate::InvocationOrigin::Effect {
+                runtime.effect_cascades.restart_containing(&self.component);
+            }
+            runtime.mark_dirty([self.component.clone()]);
         }
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
@@ -1562,7 +1790,10 @@ impl UiContext {
         root.set_path(path, value.clone())?;
         let sensitive = runtime.component_state.is_sensitive(&self.component, field);
         if runtime.component_state.set(&self.component, field, root)? {
-            runtime.dirty.insert(self.component.clone());
+            if runtime.origin != crate::InvocationOrigin::Effect {
+                runtime.effect_cascades.restart_containing(&self.component);
+            }
+            runtime.mark_dirty([self.component.clone()]);
         }
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
@@ -2076,7 +2307,7 @@ impl UiContext {
         let id = StoreId::app(store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write(&id, field, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("app:{store}"),
@@ -2108,7 +2339,7 @@ impl UiContext {
         let id = StoreId::app(store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write_path(&id, field, path, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("app:{store}"),
@@ -2183,7 +2414,7 @@ impl UiContext {
         let id = StoreId::window(window, store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write(&id, field, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("window:{window}:{store}"),
@@ -2217,7 +2448,7 @@ impl UiContext {
         let id = StoreId::window(window, store);
         let sensitive = runtime.stores.is_sensitive(&id, field);
         let invalidated = runtime.stores.write_path(&id, field, path, value.clone())?;
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Store,
             format!("window:{window}:{store}"),
@@ -2249,6 +2480,7 @@ impl UiContext {
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
         let origin = runtime.origin.clone();
+        let owner = Some(self.semantic_dispatch_owner(&mut runtime));
         runtime.pending_events.push(PendingEvent {
             target: self.component.clone(),
             event: UiEvent {
@@ -2256,7 +2488,9 @@ impl UiContext {
                 payload,
             },
             origin,
+            owner,
         });
+        runtime.publish_committed_work();
         runtime.traces.push(
             crate::RuntimeTraceKind::Event,
             self.component.to_string(),
@@ -2282,7 +2516,9 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         let mut invocation = runtime.actions.dispatch(&id, payload)?;
         invocation.origin = runtime.origin.clone();
+        invocation.owner = Some(self.semantic_dispatch_owner(&mut runtime));
         runtime.pending_actions.push(invocation);
+        runtime.publish_committed_work();
         runtime.traces.push(
             crate::RuntimeTraceKind::Action,
             self.component.to_string(),
@@ -2291,6 +2527,35 @@ impl UiContext {
             true,
         );
         Ok(())
+    }
+
+    fn semantic_dispatch_owner(&self, runtime: &mut UiRuntimeState) -> SemanticDispatchOwner {
+        let source = runtime.dispatch_owner.as_ref().map_or_else(
+            || SemanticDispatchSource {
+                runtime_id: runtime.runtime_id,
+                generation: self.generation,
+                component: self.component.clone(),
+                incarnation: self.incarnation,
+                effect: self
+                    .async_scope
+                    .clone()
+                    .filter(|scope| matches!(scope, AsyncScope::Effect { .. })),
+                cascade: (runtime.origin == crate::InvocationOrigin::Effect)
+                    .then(|| runtime.effect_cascades.dispatch_token(&self.component))
+                    .flatten(),
+                publication_valid: Cell::new(true),
+            },
+            |owner| owner.source.as_ref().clone(),
+        );
+        source.publication_valid.set(true);
+        let source = Rc::new(source);
+        if runtime.transaction_depth > 0 {
+            runtime.dispatch_leases.push(Rc::clone(&source));
+        }
+        if let Some((root, _)) = &source.cascade {
+            runtime.effect_cascades.track_dispatch(root, &source);
+        }
+        SemanticDispatchOwner { source }
     }
 
     /// Register or refresh an app-scoped semantic action callback.
@@ -2610,7 +2875,7 @@ impl UiContext {
         };
         if changed {
             let invalidated = runtime.environment_dependencies.invalidate_locale_app();
-            runtime.dirty.extend(invalidated);
+            runtime.mark_dirty(invalidated);
             runtime.mark_all_windows_repaint();
         }
         runtime.traces.push(
@@ -2821,7 +3086,7 @@ impl UiContext {
             let invalidated = runtime
                 .environment_dependencies
                 .invalidate_locale_window(&window);
-            runtime.dirty.extend(invalidated);
+            runtime.mark_dirty(invalidated);
             runtime.mark_window_repaint(window.clone());
         }
         runtime.traces.push(
@@ -2858,7 +3123,7 @@ impl UiContext {
             let invalidated = runtime
                 .environment_dependencies
                 .invalidate_locale_scope(&self.component);
-            runtime.dirty.extend(invalidated);
+            runtime.mark_dirty(invalidated);
             if let Some(window) = &self.window {
                 runtime.mark_window_repaint(window.clone());
             }
@@ -2967,9 +3232,9 @@ impl UiContext {
         if app_target {
             runtime.mark_all_windows_dirty();
         } else {
-            runtime.dirty.insert(self.component.clone());
+            runtime.mark_dirty([self.component.clone()]);
         }
-        runtime.dirty.extend(invalidated);
+        runtime.mark_dirty(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Theme,
             self.component.to_string(),
@@ -2999,7 +3264,7 @@ impl UiContext {
         });
         let now = runtime.clock.now();
         runtime.motion_values = runtime.motions.snapshot(now);
-        runtime.dirty.insert(self.component.clone());
+        runtime.mark_dirty([self.component.clone()]);
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
             self.component.to_string(),
@@ -4912,6 +5177,203 @@ pub enum UiContextError {
 mod tests {
     use super::*;
     use crate::{ComponentStateSchema, RuntimeEngine, StateField, SubscriptionWork, ValueSchema};
+
+    #[test]
+    fn dirty_delivery_wakes_only_after_a_successful_outermost_commit() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let mut runtime = UiRuntimeState::new();
+        let root = ComponentInstancePath::root("View", "main");
+        let wake = runtime.tasks.wake();
+        let mut listener = std::pin::pin!(wake.listen());
+        let mut context = Context::from_waker(Waker::noop());
+        let _outer = runtime.begin_transaction().unwrap();
+        let _inner = runtime.begin_transaction().unwrap();
+        runtime.dirty.insert(root.clone());
+        runtime.commit_transaction().unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+        runtime.commit_transaction().unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Ready(()));
+
+        runtime.dirty.clear();
+        let mut listener = std::pin::pin!(wake.listen());
+        let failed = runtime.begin_transaction().unwrap();
+        runtime.dirty.insert(root.clone());
+        runtime.rollback_transaction(failed).unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+        let _quiescent = runtime.begin_transaction().unwrap();
+        runtime.commit_transaction().unwrap();
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+
+        // A stale queued wake can drain the pump, but neither a rejected root
+        // nor an unrelated successful transaction may restart that cascade.
+        runtime.effect_cascades.restart(&root);
+        runtime.effect_cascades.charge(&root, 64).unwrap();
+        assert!(runtime.effect_cascades.charge(&root, 1).is_err());
+        let _unrelated = runtime.begin_transaction().unwrap();
+        runtime.dirty.insert(root.clone());
+        runtime.commit_transaction().unwrap();
+        assert!(!runtime.has_window_dirty(&root));
+        assert_eq!(listener.as_mut().poll(&mut context), Poll::Pending);
+    }
+
+    #[test]
+    fn host_document_and_state_writes_publish_without_a_transaction_but_failures_do_not() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Waker};
+
+        let context = mounted_context(ExecutionPhase::Event);
+        let mut runtime = context.runtime.borrow_mut();
+        let root = context.component.clone();
+        runtime
+            .native_documents
+            .register(
+                "source",
+                crate::NativeTextDocument::new("source", 1, "first").unwrap(),
+            )
+            .unwrap();
+        runtime
+            .native_documents
+            .read_tracked(&root, "source")
+            .unwrap();
+        let wake = runtime.tasks.wake();
+        let mut listener = std::pin::pin!(wake.listen());
+        let mut poll_context = Context::from_waker(Waker::noop());
+        assert!(
+            runtime
+                .replace_native_text_document_from_host(
+                    "source",
+                    crate::NativeTextDocument::new("source", 1, "stale").unwrap()
+                )
+                .is_err()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Pending);
+        assert!(
+            runtime
+                .replace_native_text_document_from_host(
+                    "source",
+                    crate::NativeTextDocument::new("source", 2, "second").unwrap()
+                )
+                .unwrap()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Ready(()));
+
+        runtime.dirty.clear();
+        let mut listener = std::pin::pin!(wake.listen());
+        let rollback = runtime.begin_transaction().unwrap();
+        assert!(
+            runtime
+                .replace_native_text_document_from_host(
+                    "source",
+                    crate::NativeTextDocument::new("source", 3, "rolled back").unwrap()
+                )
+                .unwrap()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Pending);
+        runtime.rollback_transaction(rollback).unwrap();
+        assert_eq!(
+            runtime
+                .native_documents
+                .read_tracked(&root, "source")
+                .unwrap()
+                .revision(),
+            2
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Pending);
+        assert!(
+            runtime
+                .set_component_state_from_host(&root, "count", UiValue::Integer(7))
+                .unwrap()
+        );
+        assert_eq!(listener.as_mut().poll(&mut poll_context), Poll::Ready(()));
+    }
+
+    #[test]
+    fn rollback_quarantine_removes_only_the_rejected_root_effect_derivations() {
+        let mut runtime = UiRuntimeState::new();
+        let first = ComponentInstancePath::root("App", "first");
+        let second = ComponentInstancePath::root("App", "second");
+        for root in [&first, &second] {
+            runtime.ensure_component_incarnation(root);
+            runtime.effect_cascades.restart(root);
+            runtime
+                .effect_cascades
+                .register_generation(root, ScriptGeneration::default());
+        }
+        let owner = |runtime: &UiRuntimeState, root: &ComponentInstancePath, effect: bool| {
+            SemanticDispatchOwner {
+                source: Rc::new(SemanticDispatchSource {
+                    runtime_id: runtime.runtime_id,
+                    generation: ScriptGeneration::default(),
+                    component: root.clone(),
+                    incarnation: runtime.component_incarnation(root).unwrap(),
+                    effect: None,
+                    cascade: effect
+                        .then(|| runtime.effect_cascades.dispatch_token(root))
+                        .flatten(),
+                    publication_valid: Cell::new(true),
+                }),
+            }
+        };
+        let stale = owner(&runtime, &first, true);
+        runtime.pending_events = vec![
+            PendingEvent {
+                target: first.clone(),
+                event: UiEvent {
+                    name: "rejected".into(),
+                    payload: UiValue::Null,
+                },
+                origin: crate::InvocationOrigin::Effect,
+                owner: Some(stale.clone()),
+            },
+            PendingEvent {
+                target: first.clone(),
+                event: UiEvent {
+                    name: "external".into(),
+                    payload: UiValue::Null,
+                },
+                origin: crate::InvocationOrigin::Automation,
+                owner: Some(owner(&runtime, &first, false)),
+            },
+            PendingEvent {
+                target: second.clone(),
+                event: UiEvent {
+                    name: "other_root".into(),
+                    payload: UiValue::Null,
+                },
+                origin: crate::InvocationOrigin::Effect,
+                owner: Some(owner(&runtime, &second, true)),
+            },
+        ];
+        let checkpoint = runtime.begin_transaction().unwrap();
+        runtime.effect_cascades.charge(&first, 64).unwrap();
+        assert!(runtime.effect_cascades.charge(&first, 1).is_err());
+        runtime.rollback_transaction(checkpoint).unwrap();
+        assert!(!runtime.dispatch_owner_active(Some(&stale)));
+        let (_, first_events) = runtime.drain_window_dispatch(&first);
+        assert_eq!(
+            first_events
+                .iter()
+                .map(|event| event.event.name.as_str())
+                .collect::<Vec<_>>(),
+            ["external"]
+        );
+        assert!(runtime.has_window_pending_dispatch(&second));
+        let (_, second_events) = runtime.drain_window_dispatch(&second);
+        assert_eq!(
+            second_events
+                .iter()
+                .map(|event| event.event.name.as_str())
+                .collect::<Vec<_>>(),
+            ["other_root"]
+        );
+        runtime.effect_cascades.restart(&first);
+        assert!(
+            !runtime.dispatch_owner_active(Some(&stale)),
+            "a fresh external operation cannot revive an old epoch"
+        );
+    }
 
     fn mounted_context(phase: ExecutionPhase) -> UiContext {
         let path = ComponentInstancePath::root("Counter", "counter");

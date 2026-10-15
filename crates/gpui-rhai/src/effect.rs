@@ -4,6 +4,275 @@ use thiserror::Error;
 
 use crate::{ComponentInstancePath, ScriptCallback, ScriptGeneration, UiValue};
 
+/// The existing semantic effect-transition budget also bounds a post-commit
+/// cascade; yielding to the foreground pump must not reset its allowance.
+pub(crate) const EFFECT_TRANSITION_CALLBACK_BUDGET: usize = 64;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct EffectCascadeCheckpoint {
+    callbacks: BTreeMap<ComponentInstancePath, usize>,
+    accepted_rejections: BTreeMap<ComponentInstancePath, u64>,
+    generations: BTreeMap<ComponentInstancePath, ScriptGeneration>,
+    quiescent: std::collections::BTreeSet<ComponentInstancePath>,
+    unowned_dispatch: std::collections::BTreeSet<ComponentInstancePath>,
+}
+
+/// Foreground delivery bookkeeping, not a second scheduler. Rejection epochs
+/// deliberately survive rollback: an already queued wake cannot restart a
+/// rejected graph. Accepting a new external turn is itself transactional.
+#[derive(Debug, Default)]
+pub(crate) struct EffectCascadeBudget {
+    checkpoint: EffectCascadeCheckpoint,
+    rejections: BTreeMap<ComponentInstancePath, BTreeMap<ScriptGeneration, u64>>,
+    dispatches:
+        BTreeMap<ComponentInstancePath, Vec<std::rc::Weak<crate::context::SemanticDispatchSource>>>,
+    live_dispatches: std::collections::BTreeSet<ComponentInstancePath>,
+}
+
+impl EffectCascadeBudget {
+    pub(crate) fn checkpoint(&self) -> EffectCascadeCheckpoint {
+        self.checkpoint.clone()
+    }
+
+    pub(crate) fn restore(&mut self, checkpoint: EffectCascadeCheckpoint) {
+        self.checkpoint = checkpoint;
+    }
+
+    /// Only after the outermost transaction completes: a nested candidate may
+    /// still roll back to a different generation and need its rejection epoch.
+    pub(crate) fn collect_retired_rejections(&mut self) {
+        let generations = &self.checkpoint.generations;
+        self.rejections.retain(|root, epochs| {
+            let current = generations.get(root).copied().unwrap_or_default();
+            epochs.retain(|generation, _| *generation == current);
+            !epochs.is_empty()
+        });
+    }
+
+    pub(crate) fn restart(&mut self, root: &ComponentInstancePath) {
+        self.checkpoint.callbacks.remove(root);
+        self.checkpoint.quiescent.remove(root);
+        self.checkpoint.unowned_dispatch.remove(root);
+        let epoch = self.rejection_epoch(root);
+        self.checkpoint
+            .accepted_rejections
+            .insert(root.clone(), epoch);
+    }
+
+    pub(crate) fn restart_containing(&mut self, component: &ComponentInstancePath) {
+        let roots = self
+            .checkpoint
+            .accepted_rejections
+            .keys()
+            .filter(|root| component.is_within(root) || root.is_within(component))
+            .cloned()
+            .collect::<Vec<_>>();
+        for root in roots {
+            self.restart(&root);
+        }
+    }
+
+    pub(crate) fn blocked(&self, root: &ComponentInstancePath) -> bool {
+        self.rejection_epoch(root)
+            > self
+                .checkpoint
+                .accepted_rejections
+                .get(root)
+                .copied()
+                .unwrap_or_default()
+    }
+
+    pub(crate) fn blocked_component(&self, component: &ComponentInstancePath) -> bool {
+        self.rejections
+            .keys()
+            .any(|root| component.is_within(root) && self.blocked(root))
+    }
+
+    pub(crate) fn dispatch_token(
+        &self,
+        component: &ComponentInstancePath,
+    ) -> Option<(ComponentInstancePath, u64)> {
+        self.checkpoint
+            .accepted_rejections
+            .keys()
+            .filter(|root| component.is_within(root))
+            .max()
+            .map(|root| (root.clone(), self.rejection_epoch(root)))
+    }
+
+    pub(crate) fn accepts_dispatch(&self, root: &ComponentInstancePath, epoch: u64) -> bool {
+        !self.blocked(root) && self.rejection_epoch(root) == epoch
+    }
+
+    pub(crate) fn register_generation(
+        &mut self,
+        root: &ComponentInstancePath,
+        generation: ScriptGeneration,
+    ) {
+        if self.checkpoint.generations.insert(root.clone(), generation) != Some(generation) {
+            self.restart(root);
+        }
+    }
+
+    fn rejection_epoch(&self, root: &ComponentInstancePath) -> u64 {
+        let generation = self
+            .checkpoint
+            .generations
+            .get(root)
+            .copied()
+            .unwrap_or_default();
+        self.rejections
+            .get(root)
+            .and_then(|epochs| epochs.get(&generation))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn track_dispatch(
+        &mut self,
+        root: &ComponentInstancePath,
+        owner: &std::rc::Rc<crate::context::SemanticDispatchSource>,
+    ) {
+        self.dispatches
+            .entry(root.clone())
+            .or_default()
+            .push(std::rc::Rc::downgrade(owner));
+    }
+
+    pub(crate) fn prune_dispatches(
+        &mut self,
+        incarnations: &BTreeMap<ComponentInstancePath, crate::ComponentIncarnation>,
+        effects: &EffectRegistry,
+    ) {
+        let mut live = std::collections::BTreeSet::new();
+        self.dispatches = std::mem::take(&mut self.dispatches)
+            .into_iter()
+            .filter_map(|(root, mut owners)| {
+                owners.retain(|owner| {
+                    owner.upgrade().is_some_and(|owner| {
+                        if !owner.publication_valid() {
+                            return false;
+                        }
+                        if owner.active(incarnations, effects, self) {
+                            live.insert(root.clone());
+                        }
+                        // Candidate generation/activation changes are transactional;
+                        // keep weak identity until rollback can restore its source.
+                        true
+                    })
+                });
+                (!owners.is_empty()).then_some((root, owners))
+            })
+            .collect();
+        self.live_dispatches = live;
+    }
+
+    pub(crate) fn retain_unowned_dispatch(&mut self, root: &ComponentInstancePath) {
+        self.checkpoint.unowned_dispatch.insert(root.clone());
+    }
+
+    pub(crate) fn generation_for(
+        &self,
+        component: &ComponentInstancePath,
+    ) -> Option<ScriptGeneration> {
+        self.checkpoint
+            .generations
+            .iter()
+            .filter(|(root, _)| component.is_within(root))
+            .max_by_key(|(root, _)| *root)
+            .map(|(_, generation)| *generation)
+    }
+
+    pub(crate) fn charge(
+        &mut self,
+        root: &ComponentInstancePath,
+        count: usize,
+    ) -> Result<(), usize> {
+        if self.checkpoint.quiescent.contains(root)
+            && !self.live_dispatches.contains(root)
+            && !self.checkpoint.unowned_dispatch.contains(root)
+        {
+            self.checkpoint.callbacks.remove(root);
+            self.checkpoint.quiescent.remove(root);
+        }
+        self.checkpoint
+            .accepted_rejections
+            .entry(root.clone())
+            .or_default();
+        let total = self
+            .checkpoint
+            .callbacks
+            .get(root)
+            .copied()
+            .unwrap_or_default()
+            .saturating_add(count);
+        if total > EFFECT_TRANSITION_CALLBACK_BUDGET {
+            self.reject(root);
+            return Err(total);
+        }
+        self.checkpoint.callbacks.insert(root.clone(), total);
+        Ok(())
+    }
+
+    pub(crate) fn reject(&mut self, root: &ComponentInstancePath) {
+        let generation = self
+            .checkpoint
+            .generations
+            .get(root)
+            .copied()
+            .unwrap_or_default();
+        let epoch = self
+            .rejections
+            .entry(root.clone())
+            .or_default()
+            .entry(generation)
+            .or_default();
+        *epoch = epoch.saturating_add(1);
+    }
+
+    pub(crate) fn settle<'a>(
+        &mut self,
+        dirty: &std::collections::BTreeSet<ComponentInstancePath>,
+        pending_effect_scopes: impl IntoIterator<Item = &'a ComponentInstancePath>,
+    ) {
+        let pending = pending_effect_scopes.into_iter().collect::<Vec<_>>();
+        let quiescent = &mut self.checkpoint.quiescent;
+        let unowned = &self.checkpoint.unowned_dispatch;
+        let live = &self.live_dispatches;
+        self.checkpoint.callbacks.retain(|root, _| {
+            let unsettled = dirty.iter().any(|path| path.is_within(root))
+                || pending.iter().any(|path| path.is_within(root));
+            if unsettled {
+                quiescent.remove(root);
+            } else {
+                quiescent.insert(root.clone());
+            }
+            unsettled || live.contains(root) || unowned.contains(root)
+        });
+    }
+
+    pub(crate) fn remove_scope(&mut self, root: &ComponentInstancePath) {
+        self.checkpoint
+            .callbacks
+            .retain(|path, _| !path.is_within(root));
+        self.checkpoint
+            .accepted_rejections
+            .retain(|path, _| !path.is_within(root));
+        self.checkpoint
+            .generations
+            .retain(|path, _| !path.is_within(root));
+        self.checkpoint
+            .quiescent
+            .retain(|path| !path.is_within(root));
+        self.checkpoint
+            .unowned_dispatch
+            .retain(|path| !path.is_within(root));
+        self.dispatches.retain(|path, _| !path.is_within(root));
+        self.live_dispatches.retain(|path| !path.is_within(root));
+        self.rejections.retain(|path, _| !path.is_within(root));
+    }
+}
+
 /// Stable identity of one declarative component effect.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectId {
@@ -275,6 +544,134 @@ pub enum EffectError {
 mod tests {
     use super::*;
     use crate::RuntimeEngine;
+
+    #[test]
+    fn retired_rejections_wait_for_outer_rollback_and_do_not_accumulate_failed_candidates() {
+        for quarantined in [false, true] {
+            let mut engine = RuntimeEngine::new();
+            let active = engine
+                .compile("fn view(ctx) { text(\"active\") }")
+                .unwrap()
+                .generation();
+            let root = ComponentInstancePath::root("App", "active");
+            let unregistered = ComponentInstancePath::root("App", "default_generation");
+            let mut runtime = crate::UiRuntimeState::new();
+            runtime.effect_cascades.register_generation(&root, active);
+            if quarantined {
+                runtime.effect_cascades.reject(&root);
+            }
+            runtime.effect_cascades.reject(&unregistered);
+            for _ in 0..12 {
+                let outer = runtime.begin_transaction().unwrap();
+                let inner = runtime.begin_transaction().unwrap();
+                let candidate = engine
+                    .compile("fn view(ctx) { text(\"candidate\") }")
+                    .unwrap()
+                    .generation();
+                runtime
+                    .effect_cascades
+                    .register_generation(&root, candidate);
+                assert_eq!(runtime.effect_cascades.charge(&root, 65), Err(65));
+                runtime.rollback_transaction(inner).unwrap();
+                assert_eq!(runtime.effect_cascades.generation_for(&root), Some(active));
+                assert_eq!(runtime.effect_cascades.blocked(&root), quarantined);
+                assert_eq!(
+                    runtime.effect_cascades.rejections[&root].len(),
+                    usize::from(quarantined) + 1,
+                    "nested rollback cannot retire candidate/old graph records yet"
+                );
+                runtime.rollback_transaction(outer).unwrap();
+                assert_eq!(
+                    runtime
+                        .effect_cascades
+                        .rejections
+                        .get(&root)
+                        .map_or(0, BTreeMap::len),
+                    usize::from(quarantined)
+                );
+                assert_eq!(runtime.effect_cascades.blocked(&root), quarantined);
+                assert!(runtime.effect_cascades.blocked(&unregistered));
+                assert_eq!(
+                    runtime.effect_cascades.rejections[&unregistered].len(),
+                    1,
+                    "unregistered roots keep their default-generation semantics"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn outer_commit_collects_old_generations_without_changing_current_quarantine() {
+        let mut engine = RuntimeEngine::new();
+        let first = engine
+            .compile("fn view(ctx) { text(\"first\") }")
+            .unwrap()
+            .generation();
+        let second = engine
+            .compile("fn view(ctx) { text(\"second\") }")
+            .unwrap()
+            .generation();
+        let root = ComponentInstancePath::root("App", "main");
+        let mut runtime = crate::UiRuntimeState::new();
+        runtime.effect_cascades.register_generation(&root, first);
+        runtime.effect_cascades.reject(&root);
+        let _outer = runtime.begin_transaction().unwrap();
+        let _inner = runtime.begin_transaction().unwrap();
+        runtime.effect_cascades.register_generation(&root, second);
+        runtime.effect_cascades.reject(&root);
+        runtime.commit_transaction().unwrap();
+        assert_eq!(
+            runtime.effect_cascades.rejections[&root].len(),
+            2,
+            "nested commit must preserve first's rollback history"
+        );
+        runtime.commit_transaction().unwrap();
+        assert_eq!(runtime.effect_cascades.rejections[&root].len(), 1);
+        assert!(runtime.effect_cascades.rejections[&root].contains_key(&second));
+        assert!(runtime.effect_cascades.blocked(&root));
+    }
+
+    #[test]
+    fn cascade_budget_survives_yields_and_rejection_survives_rollback() {
+        let root = ComponentInstancePath::root("View", "main");
+        let sibling = ComponentInstancePath::root("View", "other");
+        let mut budget = EffectCascadeBudget::default();
+        budget.restart(&root);
+        budget
+            .charge(&root, EFFECT_TRANSITION_CALLBACK_BUDGET)
+            .unwrap();
+        let last_good = budget.checkpoint();
+        budget.settle(
+            &std::collections::BTreeSet::from([root.child("Child", "a")]),
+            [],
+        );
+        assert_eq!(budget.charge(&root, 1), Err(65));
+        budget.restore(last_good.clone());
+        assert!(
+            budget.blocked(&root),
+            "rollback must not retry a rejected cascade"
+        );
+        assert!(budget.blocked_component(&root.child("Child", "a")));
+        assert!(!budget.blocked_component(&sibling));
+        budget.charge(&sibling, 1).unwrap();
+
+        budget.restart(&root);
+        assert!(!budget.blocked(&root));
+        budget.charge(&root, 1).unwrap();
+        budget.restore(last_good);
+        assert!(
+            budget.blocked(&root),
+            "failed recovery must stay quarantined"
+        );
+        budget.restart(&root);
+        budget.charge(&root, 1).unwrap();
+        budget.settle(&std::collections::BTreeSet::new(), []);
+        budget
+            .charge(&root, EFFECT_TRANSITION_CALLBACK_BUDGET)
+            .unwrap();
+        budget.remove_scope(&root);
+        assert!(!budget.blocked(&root));
+    }
 
     fn callback(name: &str) -> ScriptCallback {
         let mut engine = RuntimeEngine::new();
