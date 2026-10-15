@@ -34,6 +34,7 @@ import "components/selection_area" as selection_area;
 import "components/tree" as tree;
 import "components/list" as list;
 import "components/column_browser" as column_browser;
+import "components/selectable_card_group" as selectable_card_group;
 import "components/tab_bar" as tab_bar;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
@@ -83,6 +84,7 @@ fn color_field(name, value) {
 fn state_schema() {
     #{ fields: #{
         specimen_column_path: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[]}},
+        specimen_card_values: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[#{type:"string",value:"east"}]}},
         path: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __PATH__ } },
         family: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __FAMILY__ } },
         variant: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __VARIANT__ } },
@@ -780,6 +782,7 @@ fn specimen_data(ctx) {
 }
 
 fn set_specimen_column_path(ctx, value) { ctx.set_state("specimen_column_path", value.path); }
+fn set_specimen_card_values(ctx, value) { ctx.set_state("specimen_card_values", value); }
 fn specimen_columns(ctx) {
     let path = ctx.get_state("specimen_column_path");
     let columns = [#{key:"theme-family",title:"Family",items:[
@@ -969,6 +972,10 @@ fn specimen(ctx) {
         columns,
         specimen_data(ctx),
         specimen_columns(ctx),
+        selectable_card_group::SelectableCardGroup(#{key:"specimen-cards",label:"Deployment region",
+            values:ctx.get_state("specimen_card_values"),on_change:Fn("set_specimen_card_values"),
+            items:[#{value:"east",label:"East",content:text("Healthy")},
+                #{value:"west",label:"West",content:text("Standby")}]}),
         specimen_documents(),
         specimen_p0(ctx)
     ]).with_style(style().padding(px(16)).gap(px(14)).typography("body"))

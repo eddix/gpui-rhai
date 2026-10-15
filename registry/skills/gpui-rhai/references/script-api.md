@@ -999,7 +999,7 @@ Official components wrap them; application components may too.
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, paste, cut, undo, redo or committed IME composition. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
-| `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in an enabled field; without it, Enter reaches the field's ancestors. |
+| `on_submit` | callback or `()` | — | Called with the current text on Enter unless disabled, read-only or composing; without it, Enter reaches the field's ancestors. |
 | `placeholder` | string or `()` | — | Hint text shown dimmed while `value` is empty. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
 | `typography` | string | required | Theme typography role, such as `control`, that sets the font family, size, weight and line height. |
@@ -1027,12 +1027,14 @@ Official components wrap them; application components may too.
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, newline, paste, cut, undo, redo or committed IME composition. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
+| `on_submit` | callback or `()` | — | Called with the full text on the configured submit key; disabled, read-only and composing fields never submit. |
 | `placeholder` | string or `()` | — | Hint text shown in the `placeholder_style` color while `value` is empty. |
 | `placeholder_style` | style | required | Its text color, or else its background, colors the placeholder; theme `text_muted` when it sets neither. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
 | `rows` | integer 1–1000 or `()` | — | Fixed number of visible rows that overrides `min_rows` and `max_rows`; `()` lets the height follow the text. |
 | `scroll_style` | style | required | Its background, or else its text color, fills the scrolling text viewport; transparent when it sets neither. |
 | `selection_style` | style | required | Its background, or else its text color, fills selected text; a translucent theme `accent` when it sets neither. |
+| `submit_key` | `"enter"` or `"mod_enter"` or `()` | — | With a submit handler: `enter` sends and Shift+Enter inserts a newline; `mod_enter` sends with Cmd+Enter on macOS or Ctrl+Enter elsewhere. Unset preserves native Enter newlines. |
 | `typography` | string | required | Theme typography role, such as `body`, that sets the font family, size, weight and row height. |
 | `value` | string | required | The field's text; controlled, so store each `change` payload here; more than `max_length` graphemes is an error. |
 
@@ -1041,3 +1043,4 @@ Official components wrap them; application components may too.
 | `blur` | none | Emitted when the field loses keyboard focus; the payload is `()`. |
 | `change` | string | Emitted after each edit and when IME composition commits, not during it; the payload is the full new text. |
 | `focus` | none | Emitted when the field gains keyboard focus; the payload is `()`. |
+| `submit` | string | Emitted with the full text on the configured submit key, without editing or clearing the buffer. |

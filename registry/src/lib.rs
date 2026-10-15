@@ -491,6 +491,10 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
     ("gallery/main", include_str!("../gallery/main.rhai")),
     ("gallery/kit", include_str!("../gallery/kit.rhai")),
     (
+        "gallery/pages/inputs_and_choices",
+        include_str!("../gallery/pages/inputs_and_choices.rhai"),
+    ),
+    (
         "gallery/pages/foundations",
         include_str!("../gallery/pages/foundations.rhai"),
     ),
@@ -1508,8 +1512,8 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 65);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 65);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 66);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 66);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);

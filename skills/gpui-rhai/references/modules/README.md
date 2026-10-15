@@ -56,6 +56,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/rotatable`](components/rotatable.md) | `Rotatable` | Controlled Canvas rotation around an explicit local pivot. |
 | [`components/scroll_area`](components/scroll_area.md) | `ScrollArea` | Sized retained scroll viewport with themeable overlay scrollbars. |
 | [`components/select`](components/select.md) | `Select` | Scalar controlled Select composed from the public Rhai Combobox component. |
+| [`components/selectable_card_group`](components/selectable_card_group.md) | `SelectableCardGroup` | Small controlled rich choices with one roving selection tab stop. |
 | [`components/selection_area`](components/selection_area.md) | `SelectionArea` | Controlled Canvas click/range/marquee object selection. |
 | [`components/sheet`](components/sheet.md) | `Sheet` | Controlled temporary modal panel attached to a viewport edge. |
 | [`components/skeleton`](components/skeleton.md) | `Skeleton` | Content placeholder with optional Rust-side pulse animation. |
@@ -91,6 +92,7 @@ The functions, methods and native primitives a script calls are in the
 | Module | Export | Purpose |
 |---|---|---|
 | [`patterns/app_shell`](patterns/app_shell.md) | `AppShell` | AppShell is the window frame of a productivity tool: title bar, sidebar, main area, optional inspector, status bar, and keyboard regions. |
+| [`patterns/composer`](patterns/composer.md) | `Composer` | Controlled drafting surface. |
 | [`patterns/data_view`](patterns/data_view.md) | `DataView` | DataView is a browsable collection in one region: toolbar, table or list, and a footer with status, selection, count and data time. |
 | [`patterns/description_list`](patterns/description_list.md) | `DescriptionList` | DescriptionList shows facts as label and value pairs on one label column. |
 | [`patterns/form_layout`](patterns/form_layout.md) | `FormLayout` | FormLayout aligns labels on one column, groups fields, and lines the submit row up with the fields. |
