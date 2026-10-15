@@ -207,6 +207,22 @@ rejected. Failed start/cleanup restores runtime state and keeps the last-good
 tree; external Rust side effects remain outside rollback and therefore need
 idempotent Host design.
 
+State written by a successful effect schedules another foreground render after
+the outermost transaction commits; it does not wait for a clock tick or another
+input event. Host document, collection, theme, locale, style, and state setters
+use the same delivery boundary: a successful mutation outside a transaction is
+already committed, while failed or rolled-back mutations publish no wake.
+Delivery uses the existing coalesced foreground pump, never synchronous script
+reentry during rendering or painting.
+
+One effect cascade shares the existing 64 start/cleanup-callback transition
+budget across those foreground turns, including effect-origin semantic
+follow-ups. A non-settling cascade reports a budget error, retains its last-good
+tree, and is quarantined so old notifications cannot restart it. A new external
+callback, valid async delivery, lifecycle replacement/resume, or changed Host
+input can start a fresh budget; failed recovery rolls back and leaves the old
+cascade quarantined. Independent mounted roots have independent budgets.
+
 Tasks, subscriptions, and background image decodes started by an effect callback
 belong to that exact effect activation. Subscriptions are accepted only from
 this scope; root initialization and ordinary event callbacks must not create
