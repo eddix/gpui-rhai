@@ -226,6 +226,8 @@ cascade quarantined. Independent mounted roots have independent budgets.
 Rejection belongs to the attempted generation: a budget-failing reload
 candidate cannot quarantine the healthy committed generation it rolls back to,
 and a failed candidate cannot clear that old generation's existing quarantine.
+Retired generation rejection records are collected only after the outermost
+transaction commits or finishes rollback, never inside a tentative replacement.
 
 Rust Hosts forward runtime-produced `PendingEvent` and `ActionInvocation` values
 through `ScriptLifecycle::invoke_component_event_transactional` and

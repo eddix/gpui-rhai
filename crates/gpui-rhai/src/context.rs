@@ -2530,11 +2530,8 @@ impl UiContext {
     }
 
     fn semantic_dispatch_owner(&self, runtime: &mut UiRuntimeState) -> SemanticDispatchOwner {
-        let source = runtime
-            .dispatch_owner
-            .as_ref()
-            .map(|owner| owner.source.as_ref().clone())
-            .unwrap_or_else(|| SemanticDispatchSource {
+        let source = runtime.dispatch_owner.as_ref().map_or_else(
+            || SemanticDispatchSource {
                 runtime_id: runtime.runtime_id,
                 generation: self.generation,
                 component: self.component.clone(),
@@ -2547,7 +2544,9 @@ impl UiContext {
                     .then(|| runtime.effect_cascades.dispatch_token(&self.component))
                     .flatten(),
                 publication_valid: Cell::new(true),
-            });
+            },
+            |owner| owner.source.as_ref().clone(),
+        );
         source.publication_valid.set(true);
         let source = Rc::new(source);
         if runtime.transaction_depth > 0 {
