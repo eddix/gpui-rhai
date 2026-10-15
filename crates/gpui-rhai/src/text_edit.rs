@@ -73,6 +73,12 @@ impl TextBuffer {
         self.marked.as_ref()
     }
 
+    /// Submission is not an edit, but has the same availability policy. IME
+    /// confirmation must finish through the platform text-input path first.
+    pub(crate) fn permits_submit(&self, disabled: bool, read_only: bool) -> bool {
+        !disabled && !read_only && self.marked.is_none()
+    }
+
     #[must_use]
     pub fn grapheme_count(&self) -> usize {
         self.content.graphemes(true).count()
@@ -428,6 +434,25 @@ fn utf16_range_in(value: &str, range: &Range<usize>) -> Range<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn submit_policy_rejects_marked_confirmation_and_preserves_native_state() {
+        let mut buffer = TextBuffer::new("draft:");
+        buffer.replace_and_mark(None, "日本", Some(2..2));
+        let before = buffer.clone();
+        assert!(!buffer.permits_submit(false, false));
+        assert_eq!(
+            buffer, before,
+            "checking submit must not change composition or history"
+        );
+        buffer.unmark();
+        assert!(buffer.permits_submit(false, false));
+        assert!(!buffer.permits_submit(true, false));
+        assert!(!buffer.permits_submit(false, true));
+        assert_eq!(buffer.content(), "draft:日本");
+        assert!(buffer.undo());
+        assert_eq!(buffer.content(), "draft:");
+    }
 
     #[test]
     fn max_length_counts_extended_graphemes_and_credits_selection() {

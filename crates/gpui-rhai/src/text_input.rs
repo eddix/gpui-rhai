@@ -344,7 +344,7 @@ impl TextInputEntity {
     }
 
     fn submit(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.disabled
+        if self.buffer.permits_submit(self.disabled, self.read_only)
             && let Some(submit) = self.callbacks.submit.clone()
         {
             let value = self.buffer.content.clone();
@@ -1054,7 +1054,7 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "on_submit".to_owned(),
                 optional_callback().with_doc(
-                    "Called with the current text when Enter is pressed in an enabled field; without it, Enter reaches the field's ancestors.",
+                    "Called with the current text on Enter unless disabled, read-only or composing; without it, Enter reaches the field's ancestors.",
                 ),
             ),
             (

@@ -60,6 +60,36 @@ impl ElementRef {
     pub const fn id(&self) -> &ElementRefId {
         &self.id
     }
+
+    /// An opaque, deterministic, whitespace-free accessibility ID for this ref.
+    ///
+    /// Encodes the typed component path and local key losslessly. Unlike the
+    /// diagnostic `scope` string, embedded path delimiters cannot alias another
+    /// path. No mounted node, generation, random value or process counter enters
+    /// the ID, so it stays stable across reconciliation and retained hiding.
+    #[must_use]
+    pub fn semantic_id(&self) -> String {
+        fn append_hex(output: &mut String, value: &str) {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            for byte in value.bytes() {
+                output.push(char::from(HEX[usize::from(byte >> 4)]));
+                output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        }
+
+        let mut output = String::from("element-ref");
+        // Hex alphabet excludes every structural separator. Segment boundaries,
+        // component names, keys and the final ref key are therefore unambiguous.
+        for (component, key) in self.id.component.segments() {
+            output.push('/');
+            append_hex(&mut output, component);
+            output.push('.');
+            append_hex(&mut output, key);
+        }
+        output.push(':');
+        append_hex(&mut output, &self.id.key);
+        output
+    }
 }
 
 impl CustomType for ElementRef {
@@ -75,6 +105,9 @@ impl CustomType for ElementRef {
                     reference.id.component(),
                     reference.id.key()
                 ))
+            })
+            .with_get("semantic_id", |reference: &mut Self| {
+                ImmutableString::from(reference.semantic_id())
             });
     }
 }
@@ -319,6 +352,32 @@ impl ElementCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semantic_ids_encode_typed_paths_instead_of_ambiguous_display_strings() {
+        let flat = ComponentInstancePath::root("View", "one").child("Pane", "left]/Pane[right");
+        let nested = ComponentInstancePath::root("View", "one")
+            .child("Pane", "left")
+            .child("Pane", "right");
+        assert_ne!(flat, nested);
+        assert_eq!(flat.to_string(), nested.to_string());
+        let flat = ElementRef::new(ElementRefId::new(flat, "choice-0").unwrap());
+        let nested = ElementRef::new(ElementRefId::new(nested, "choice-0").unwrap());
+        assert_ne!(flat.semantic_id(), nested.semantic_id());
+        assert_eq!(flat.semantic_id(), flat.clone().semantic_id());
+        let different_key =
+            ElementRef::new(ElementRefId::new(flat.id.component.clone(), "choice-1").unwrap());
+        assert_ne!(flat.semantic_id(), different_key.semantic_id());
+        let unicode = ElementRef::new(
+            ElementRefId::new(
+                ComponentInstancePath::root("View", "one").child("Pane", "北 美\t\n%20"),
+                "choice-0",
+            )
+            .unwrap(),
+        );
+        assert!(unicode.semantic_id().is_ascii());
+        assert!(!unicode.semantic_id().chars().any(char::is_whitespace));
+    }
 
     fn nodes() -> (NodeId, NodeId) {
         let mut tree = crate::RetainedUiTree::new();

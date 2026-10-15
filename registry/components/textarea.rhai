@@ -41,6 +41,8 @@ define_component(#{
                 doc: "Accessible name of the field; it is not drawn, so pair the textarea with a `Label` or a `FormField`." },
             value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Current text, newlines included; the caller stores the `change` payload and passes it back." },
+            editor_ref: #{ schema: #{ type: "optional", value: #{ type: "ref" } }, required: false, sensitive: false,
+                doc: "Optional caller-owned ref bound to the native editor, for restoring focus after an external action." },
             placeholder: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                 doc: "Muted hint shown while `value` is empty." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -73,6 +75,10 @@ define_component(#{
                 doc: "Focuses the field once, when its editor first mounts; ignored while `disabled`." },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with the full new text after each edit." },
+            submit_key: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["enter", "mod_enter"] } }, required: false, sensitive: false,
+                doc: "With on_submit: `enter` submits and Shift+Enter inserts a native newline; `mod_enter` submits with Cmd+Enter on macOS or Ctrl+Enter elsewhere. Unset keeps Enter as a newline." },
+            on_submit: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called with the full text without clearing it. Disabled, read-only and IME-composing fields never submit." },
             on_focus: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called when the field gains keyboard focus." },
             on_blur: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
@@ -81,6 +87,7 @@ define_component(#{
         state: #{ fields: #{} },
         events: #{
             change: #{ payload: #{ type: "string" }, doc: "Emitted after each edit; the payload is the full new text." },
+            submit: #{ payload: #{ type: "string" }, doc: "Emitted by the configured submit key with the full text; the caller owns clearing value." },
             focus: #{ payload: #{ type: "null" }, doc: "Emitted when the field gains keyboard focus." },
             blur: #{ payload: #{ type: "null" }, doc: "Emitted when the field loses keyboard focus." },
         },
@@ -116,6 +123,8 @@ fn render_Textarea(ctx, props) {
         typography: textarea_typography(size),
         autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
+        on_submit: optional_prop(props, "on_submit"),
+        submit_key: optional_prop(props, "submit_key"),
         on_focus: optional_prop(props, "on_focus"),
         on_blur: optional_prop(props, "on_blur"),
         placeholder_style: ctx.component_style("placeholder",
@@ -153,6 +162,7 @@ fn render_Textarea(ctx, props) {
     let editor = if config.placeholder != () {
         editor.accessibility_placeholder(config.placeholder)
     } else { editor };
+    if "editor_ref" in props && props.editor_ref != () { editor = editor.with_ref(props.editor_ref); }
 
     let children = [editor];
     if "show_count" in props && props.show_count {

@@ -49,6 +49,22 @@ breaks a rule, the audit reports it.
 | `patterns/data_view` | `DataView` | Region + Toolbar + body + footer, with states |
 | `patterns/list_detail` | `ListDetail` | a fixed list beside or above a filling detail |
 | `patterns/app_shell` | `AppShell` | title bar, sidebar, main, inspector, status bar, F6 regions |
+| `patterns/composer` | `Composer` | native controlled multiline draft, caller-owned leading controls, count, Send/Stop |
+
+Use `Composer` for message and prompt drafting. The application owns the draft,
+accepted send, Stop cancellation, and clearing `value`. `busy` blocks sending,
+not editing the next draft. The default native shortcut is Enter to send and
+Shift+Enter for a newline; `submit_key: "mod_enter"` leaves Enter as a newline.
+Standalone Textarea opts into the same submission behavior only when both a
+submit key and `on_submit` are supplied. Read-only fields never submit.
+
+Use `SelectableCardGroup` for a small set of rich choices. `values` is controlled;
+the group owns only its roving focus cursor. Single mode uses radio semantics,
+multiple mode uses checkboxes. `select_on_focus: false` delays expensive selection
+until Enter or Space. Keep `content` presentational: interactive controls go in
+the independent `actions` area, outside the radio/checkbox, and never select the
+card. Disabled choices skip navigation; independent actions retain their own
+availability policy. Prefer List or Select for more than a dozen choices.
 
 Rhai limits expression depth (64 per script, 32 inside a function). Build deep
 screens from small functions, one per region or section, as in the examples;

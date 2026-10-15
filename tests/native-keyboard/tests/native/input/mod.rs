@@ -1,6 +1,7 @@
 //! Keyboard and text input: key phases, node keys, tab stops and order, text fields and the
 //! embedded input.
 
+mod composer;
 mod embedded_input;
 mod focus_order;
 mod focus_within;

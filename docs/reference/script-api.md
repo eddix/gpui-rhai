@@ -540,7 +540,8 @@ Properties and methods of handles, signals, documents, collections and canvas va
 | `canvas_command.translate(x: float, y: float) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. |
 | `canvas_command.translate(x: ?, y: ?) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. Numbers may be integers or floats. |
 | `element_ref.key -> String` | The component-local key the ref was declared with in `element_ref(key)`. |
-| `element_ref.scope -> String` | The ref's full identity, `<component path>:<key>`, which tells apart refs with the same key in different components. |
+| `element_ref.scope -> String` | A readable `<component path>:<key>` scope label for diagnostics. Displayed paths are not a lossless identity encoding; use semantic_id for accessibility relationships. |
+| `element_ref.semantic_id -> String` | An opaque, deterministic, whitespace-free accessibility ID encoded losslessly from the typed component path and ref key. Use it for accessibility_id and labelled_by/described_by relationships; unlike diagnostic scope, embedded path delimiters cannot alias another path. |
 | `event_response.capture_pointer() -> EventResponse` | Captures the pointer for the handler's node, so its later move and up events go to that node until released. |
 | `event_response.prevent_default() -> EventResponse` | Prevents the event's native default, such as an ancestor taking focus on press or an enclosing window drag area moving the window. |
 | `event_response.release_pointer() -> EventResponse` | Releases this pointer's capture, so its later events hit-test normally again. |
@@ -999,7 +1000,7 @@ Official components wrap them; application components may too.
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, paste, cut, undo, redo or committed IME composition. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
-| `on_submit` | callback or `()` | — | Called with the current text when Enter is pressed in an enabled field; without it, Enter reaches the field's ancestors. |
+| `on_submit` | callback or `()` | — | Called with the current text on Enter unless disabled, read-only or composing; without it, Enter reaches the field's ancestors. |
 | `placeholder` | string or `()` | — | Hint text shown dimmed while `value` is empty. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
 | `typography` | string | required | Theme typography role, such as `control`, that sets the font family, size, weight and line height. |
@@ -1027,12 +1028,14 @@ Official components wrap them; application components may too.
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, newline, paste, cut, undo, redo or committed IME composition. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
+| `on_submit` | callback or `()` | — | Called with the full text on the configured submit key; disabled, read-only and composing fields never submit. |
 | `placeholder` | string or `()` | — | Hint text shown in the `placeholder_style` color while `value` is empty. |
 | `placeholder_style` | style | required | Its text color, or else its background, colors the placeholder; theme `text_muted` when it sets neither. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
 | `rows` | integer 1–1000 or `()` | — | Fixed number of visible rows that overrides `min_rows` and `max_rows`; `()` lets the height follow the text. |
 | `scroll_style` | style | required | Its background, or else its text color, fills the scrolling text viewport; transparent when it sets neither. |
 | `selection_style` | style | required | Its background, or else its text color, fills selected text; a translucent theme `accent` when it sets neither. |
+| `submit_key` | `"enter"` or `"mod_enter"` or `()` | — | With a submit handler: `enter` sends and Shift+Enter inserts a newline; `mod_enter` sends with Cmd+Enter on macOS or Ctrl+Enter elsewhere. Unset preserves native Enter newlines. |
 | `typography` | string | required | Theme typography role, such as `body`, that sets the font family, size, weight and row height. |
 | `value` | string | required | The field's text; controlled, so store each `change` payload here; more than `max_length` graphemes is an error. |
 
@@ -1041,3 +1044,4 @@ Official components wrap them; application components may too.
 | `blur` | none | Emitted when the field loses keyboard focus; the payload is `()`. |
 | `change` | string | Emitted after each edit and when IME composition commits, not during it; the payload is the full new text. |
 | `focus` | none | Emitted when the field gains keyboard focus; the payload is `()`. |
+| `submit` | string | Emitted with the full text on the configured submit key, without editing or clearing the buffer. |

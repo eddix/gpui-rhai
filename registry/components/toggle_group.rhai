@@ -83,6 +83,55 @@ fn includes(values, value) {
     for current in values { if current == value { found = true; } }
     found
 }
+// Shared choice-control rules, also consumed by SelectableCardGroup. These are
+// pure proposals; components own one active cursor and applications own values.
+// Keep these names specific: global Rhai helpers can shadow standard methods.
+fn choice_includes(values, value) { includes(values, value) }
+fn choice_next_values(values, value, mode, allow_empty) {
+    let next = selected_next(values, value, mode, allow_empty);
+    if !allow_empty && next.len == 0 { values } else { next }
+}
+fn choice_cursor(items, stored, values) {
+    let enabled = enabled_values(items);
+    if includes(enabled, stored) { stored }
+    else if values.len > 0 && includes(enabled, values[0]) { values[0] }
+    else if enabled.len > 0 { enabled[0] } else { "" }
+}
+// Steps use display indices, not the compressed enabled list: vertical grid
+// movement preserves the column, skipping disabled/missing cells in that column
+// and wrapping by row. Home/End use edge -1/+1.
+fn choice_target(items, active, step, edge) {
+    if items.len == 0 { return ""; }
+    let index = 0;
+    for i in 0..items.len { if items[i].value == active { index = i; } }
+    if edge != 0 {
+        for offset in 0..items.len {
+            let i = if edge < 0 { offset } else { items.len - 1 - offset };
+            if !item_disabled(items[i]) { return items[i].value; }
+        }
+        return active;
+    }
+    let stride = if step < 0 { -step } else { step };
+    if stride > 1 {
+        let column = index % stride;
+        let row = index / stride;
+        let rows = (items.len + stride - 1) / stride;
+        for offset in 1..=rows {
+            let next_row = if step > 0 { (row + offset) % rows }
+                else { (row + rows - (offset % rows)) % rows };
+            let candidate = next_row * stride + column;
+            if candidate < items.len && !item_disabled(items[candidate]) { return items[candidate].value; }
+        }
+        return active;
+    }
+    let target = ((index + step) % items.len + items.len) % items.len;
+    for offset in 0..items.len {
+        let i = if step > 0 { (target + offset) % items.len }
+            else { (target + items.len - offset) % items.len };
+        if !item_disabled(items[i]) { return items[i].value; }
+    }
+    active
+}
 fn enabled_values(items) {
     let values = [];
     for item in items { if !item_disabled(item) { values.push(item.value); } }
@@ -97,13 +146,6 @@ fn selected_next(values, value, mode, allow_empty) {
         if next.len == values.len { next.push(value); }
         next
     }
-}
-fn adjacent(values, active, step) {
-    if values.len == 0 { return ""; }
-    let index = 0;
-    for i in 0..values.len { if values[i] == active { index = i; } }
-    if step > 0 { values[(index + 1) % values.len] }
-    else { values[(index + values.len - 1) % values.len] }
 }
 fn segment_key(group, value) { `${group}-${value}` }
 fn move_action(ctx, target) {
@@ -122,9 +164,7 @@ fn render_ToggleGroup(ctx, props) {
     let allow_empty = if "allow_empty" in props { props.allow_empty } else { true };
     let enabled = enabled_values(props.items);
     let stored_active = ctx.get_state("active");
-    let active = if includes(enabled, stored_active) { stored_active }
-        else if props.values.len > 0 && includes(enabled, props.values[0]) { props.values[0] }
-        else if enabled.len > 0 { enabled[0] } else { "" };
+    let active = choice_cursor(props.items, stored_active, props.values);
     let disabled = "disabled" in props && props.disabled;
     let vertical = "orientation" in props && props.orientation == "vertical";
     let can_change = "on_change" in props && props.on_change != ();
@@ -202,8 +242,8 @@ fn render_ToggleGroup(ctx, props) {
         .accessibility_orientation(if vertical { "vertical" } else { "horizontal" });
     if "size" in props && props.size != () { root = root.env(#{ size: props.size }); }
     if disabled || enabled.len == 0 { return root; }
-    let previous = adjacent(enabled, active, -1);
-    let next = adjacent(enabled, active, 1);
+    let previous = choice_target(props.items, active, -1, 0);
+    let next = choice_target(props.items, active, 1, 0);
     let to_previous = #{ value: previous, key: segment_key(props.key, previous) };
     let to_next = #{ value: next, key: segment_key(props.key, next) };
     if vertical {
