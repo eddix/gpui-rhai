@@ -39,6 +39,28 @@ pub trait ScrollbarSource: 'static {
     fn drag_ended(&self) {}
 }
 
+/// End the native drag even if its window/coordinator is dropped before it can
+/// deliver a cancellation callback. Both normal paths and this finalizer are
+/// idempotent and run on the foreground thread.
+struct ScrollbarDrag {
+    source: Rc<dyn ScrollbarSource>,
+    active: Cell<bool>,
+}
+
+impl ScrollbarDrag {
+    fn end(&self) {
+        if self.active.replace(false) {
+            self.source.drag_ended();
+        }
+    }
+}
+
+impl Drop for ScrollbarDrag {
+    fn drop(&mut self) {
+        self.end();
+    }
+}
+
 impl ScrollbarSource for ScrollHandle {
     fn viewport(&self) -> Bounds<Pixels> {
         self.bounds()
@@ -279,6 +301,33 @@ struct AxisPrepaint {
     dragged: bool,
 }
 
+impl AxisPrepaint {
+    fn coordinate(&self, point: Point<Pixels>) -> Pixels {
+        match self.axis {
+            Axis::Horizontal => point.x,
+            Axis::Vertical => point.y,
+        }
+    }
+
+    fn percentage(&self, position: Point<Pixels>, grab: Pixels) -> f32 {
+        let container = match self.axis {
+            Axis::Horizontal => self.track.size.width,
+            Axis::Vertical => self.track.size.height,
+        };
+        ((self.coordinate(position) - self.coordinate(self.track.origin) - grab)
+            / (container - self.thumb_length).max(px(1.0)))
+        .clamp(0.0, 1.0)
+    }
+
+    fn set_percentage(&self, source: &dyn ScrollbarSource, percentage: f32) {
+        let offset = source.offset();
+        source.set_offset(match self.axis {
+            Axis::Horizontal => point(-self.max_offset * percentage, offset.y),
+            Axis::Vertical => point(offset.x, -self.max_offset * percentage),
+        });
+    }
+}
+
 pub(crate) struct ThemedScrollbar {
     id: ElementId,
     interaction_owner: crate::interaction::InteractionOwner,
@@ -363,18 +412,12 @@ impl Element for ThemedScrollbar {
         &mut self,
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        _bounds: Bounds<Pixels>,
         (): &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let handle_bounds = self.handle.viewport();
-        let viewport = if handle_bounds.size.width > px(0.0) && handle_bounds.size.height > px(0.0)
-        {
-            handle_bounds
-        } else {
-            bounds
-        };
+        let viewport = self.handle.viewport();
         let state = window
             .use_state(cx, |_, _| ScrollbarState::default())
             .read(cx)
@@ -412,7 +455,9 @@ impl Element for ThemedScrollbar {
             let track = axis_track(viewport, axis, self.direction);
             let thumb_hitbox = axis_thumb(track, axis, thumb_start, thumb_length, TRACK_WIDTH);
             let owner = axis_interaction_owner(&self.interaction_owner, axis);
-            self.interactions.present(owner.clone());
+            if !self.disabled {
+                self.interactions.present(owner.clone());
+            }
             let dragged = self.interactions.is_active(&owner);
             let active_width = if dragged {
                 THUMB_ACTIVE_WIDTH
@@ -488,7 +533,9 @@ impl Element for ThemedScrollbar {
             } else {
                 self.thumb
             };
-            window.set_cursor_style(CursorStyle::PointingHand, &axis.bar_hitbox);
+            if !self.disabled {
+                window.set_cursor_style(CursorStyle::PointingHand, &axis.bar_hitbox);
+            }
             window.with_content_mask(Some(ContentMask { bounds: viewport }), |window| {
                 window.paint_quad(fill(axis.track, rgba(self.track.as_rgba_hex())));
                 window.paint_quad(PaintQuad {
@@ -664,50 +711,39 @@ fn register_axis_listeners(
         let mut inner = down_state.0.get();
         inner.last_activity = Some(Instant::now());
         if axis.thumb_hitbox.contains(&event.position) {
+            let drag = Rc::new(ScrollbarDrag {
+                source: down_handle.clone(),
+                active: Cell::new(false),
+            });
             let drag_position = event.position - axis.thumb_hitbox.origin;
             let update_axis = axis.clone();
             let update_handle = down_handle.clone();
             let update_state = down_state.clone();
             let update =
                 move |gesture: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
-                    let position = match update_axis.axis {
-                        Axis::Horizontal => {
-                            gesture.current().x - drag_position.x - update_axis.track.origin.x
-                        }
-                        Axis::Vertical => {
-                            gesture.current().y - drag_position.y - update_axis.track.origin.y
-                        }
-                    };
-                    let travel = match update_axis.axis {
-                        Axis::Horizontal => update_axis.track.size.width - update_axis.thumb_length,
-                        Axis::Vertical => update_axis.track.size.height - update_axis.thumb_length,
-                    };
-                    let percentage = (position / travel.max(px(1.0))).clamp(0.0, 1.0);
-                    let offset = update_handle.offset();
-                    match update_axis.axis {
-                        Axis::Horizontal => update_handle
-                            .set_offset(point(-update_axis.max_offset * percentage, offset.y)),
-                        Axis::Vertical => update_handle
-                            .set_offset(point(offset.x, -update_axis.max_offset * percentage)),
-                    }
+                    let percentage = update_axis.percentage(
+                        gesture.current(),
+                        update_axis.coordinate(drag_position) + THUMB_INSET,
+                    );
+                    update_axis.set_percentage(update_handle.as_ref(), percentage);
                     let mut inner = update_state.0.get();
                     inner.last_activity = Some(Instant::now());
                     update_state.0.set(inner);
                     crate::interaction::InteractionFlow::Continue
                 };
             let finish_state = down_state.clone();
-            let finish_handle = down_handle.clone();
+            let finish_drag = Rc::clone(&drag);
             let finish =
                 move |_: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
-                    finish_handle.drag_ended();
+                    finish_drag.end();
                     let mut inner = finish_state.0.get();
                     inner.last_activity = Some(Instant::now());
                     finish_state.0.set(inner);
                 };
             let cancel_state = down_state.clone();
-            let cancel_handle = down_handle.clone();
+            let cancel_drag = Rc::clone(&drag);
             let cancel = move |_: &mut Window, _: &mut App| {
-                cancel_handle.drag_ended();
+                cancel_drag.end();
                 let mut inner = cancel_state.0.get();
                 inner.last_activity = Some(Instant::now());
                 cancel_state.0.set(inner);
@@ -726,26 +762,12 @@ fn register_axis_listeners(
             );
             // Begin first: replacing an older gesture invokes its end hook.
             down_handle.drag_started();
+            drag.active.set(true);
         } else {
-            let position = match axis.axis {
-                Axis::Horizontal => event.position.x - axis.track.origin.x,
-                Axis::Vertical => event.position.y - axis.track.origin.y,
-            };
-            let travel = match axis.axis {
-                Axis::Horizontal => axis.track.size.width - axis.thumb_length,
-                Axis::Vertical => axis.track.size.height - axis.thumb_length,
-            };
-            let percentage =
-                ((position - axis.thumb_length / 2.0) / travel.max(px(1.0))).clamp(0.0, 1.0);
-            let offset = down_handle.offset();
-            match axis.axis {
-                Axis::Horizontal => {
-                    down_handle.set_offset(point(-axis.max_offset * percentage, offset.y));
-                }
-                Axis::Vertical => {
-                    down_handle.set_offset(point(offset.x, -axis.max_offset * percentage));
-                }
-            }
+            axis.set_percentage(
+                down_handle.as_ref(),
+                axis.percentage(event.position, axis.thumb_length / 2.0),
+            );
         }
         down_state.0.set(inner);
         cx.notify(view);
