@@ -322,7 +322,7 @@ impl VirtualRequestRegistry {
     }
 
     pub(crate) fn retain(&self, active: &BTreeSet<VirtualCollectionId>) {
-        *self.active.borrow_mut() = active.clone();
+        self.active.borrow_mut().clone_from(active);
         self.scroll_commands
             .borrow_mut()
             .retain(|id, _| active.contains(id));

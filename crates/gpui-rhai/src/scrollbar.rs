@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     App, Axis, Background, Bounds, ContentMask, CursorStyle, DispatchPhase, Edges, Element,
-    ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
-    MouseButton, MouseDownEvent, MouseMoveEvent, PaintQuad, Pixels, Point, Position, Rgba,
-    ScrollHandle, ScrollWheelEvent, Style, Window, fill, point, px, relative, rgba, size,
+    ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, IsZero,
+    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, PaintQuad, Pixels, Point, Position,
+    Rgba, ScrollHandle, ScrollWheelEvent, Style, Window, fill, point, px, relative, rgba, size,
 };
 
 use crate::{Rgba8, TextDirection, UiNode, UiValue};
@@ -350,7 +350,7 @@ impl ScrollbarContext {
             self.colors,
         );
         scrollbar.disabled = self.disabled;
-        scrollbar.wheel_parents = self.wheel_parents.clone();
+        scrollbar.wheel_parents.clone_from(&self.wheel_parents);
         scrollbar.wheel_axes = self.wheel_axes;
         scrollbar.translate_wheel = self.translate_wheel;
         scrollbar.into_any_element()

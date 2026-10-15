@@ -38,6 +38,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `placement` | `"top"` or `"bottom"` or `"left"` or `"right"` | `"bottom"` | Side of the trigger the panel opens on. |
 | `query` | string | required | Filters options by label or keyword, case-insensitively; the caller stores the `query_change` payload and passes it back. |
 | `reset_query_on_close` | bool | `false` | Emits `query_change` with `""` whenever the panel closes or the selection is cleared. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared option-list scrollbar visibility; the combobox keeps keyboard ownership. |
 | `search_placeholder` | string | `"Search"` | Placeholder of the search field. |
 | `searchable` | bool | `false` | Shows a search field bound to `query` in the panel; without it, letter keys jump to matching options. |
 | `selected` | array of string (at most 100000) | required | Selected option values, at most one in `single` mode, kept when no option has them (the trigger then shows the value itself); the caller stores the `change` payload and passes it back. |
@@ -76,11 +77,11 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `clear`, `empty`, `focus_frame`, `group`, `indicator`, `indicator_bar`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `search`, `trigger`, `value`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `clear`, `empty`, `focus_frame`, `group`, `indicator`, `indicator_bar`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `trigger`, `value`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `radius.sm`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
+- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `radius.sm`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
 - Environment: `corners`, `density`, `size`
 
 ## Dependencies

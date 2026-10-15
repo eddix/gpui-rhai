@@ -23,6 +23,7 @@ code_viewer::CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai sour
 | `max_height` | integer ≥ 0 or length or `()` | — | Most a `content` viewer grows: logical pixels, or a Length in pixels, rems or a token; longer documents scroll inside. Ignored with `fill`. |
 | `on_location_activate` | callback or `()` | — | Called with `#{ line, column }` when the text is double-clicked or Enter is pressed in it. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared themed scrollbar visibility; the viewport keeps keyboard focus. |
 | `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter; with `false` the gutter stays, empty. |
 | `source` | string or native document | required | Text to show: a string, or a Host-owned `NativeTextDocument` from `ctx.get_native_text_document`. |
 | `style` | style | — | Style merged over the root part. |
@@ -38,8 +39,8 @@ code_viewer::CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai sour
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `error`, `gutter`, `line`, `loading`, `root`, `search`, `text`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `error`, `gutter`, `line`, `loading`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `text`.
 
 ## Theme
 
-- Tokens: `surface`, `surface_raised`
+- Tokens: `scrollbar.thumb`, `scrollbar.thumb_hover`, `surface`, `surface_raised`

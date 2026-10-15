@@ -36,6 +36,7 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 | `on_row_click` | callback or `()` | — | Called with the row key when an enabled row is clicked, or Enter is pressed on the selected row. |
 | `on_selection_change` | callback or `()` | — | Called with the next selected keys when a row is clicked, Up, Down, Home or End is pressed, or a context request selects a row. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared native viewport scrollbar visibility. |
 | `secondary_layout` | `"inline"` or `"below"` | `"inline"` | `inline` sets `secondary` beside the title at body size; `below` sets it on a caption line under it. |
 | `selected_keys` | array of string (at most 10000) | `[]` | Selected row keys; the caller stores the `selection_change` payload and passes it back. |
 | `selection_mode` | `"none"` or `"single"` or `"multiple"` | `"none"` | `single` selects the clicked row and a second click clears it, `multiple` toggles it; any mode but `none`, or `on_context_request`, makes the list one tab stop. |
@@ -79,11 +80,11 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empty`, `focus_frame`, `indicator_bar`, `loading`, `meta`, `root`, `row`, `row_selected`, `secondary`, `title`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empty`, `focus_frame`, `indicator_bar`, `loading`, `meta`, `root`, `row`, `row_selected`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `secondary`, `title`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.row`, `spacing.sm`, `spacing.xs`, `surface_hover`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`
+- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.row`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `spacing.sm`, `spacing.xs`, `surface_hover`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`
 - Environment: `density`
 
 ## Dependencies

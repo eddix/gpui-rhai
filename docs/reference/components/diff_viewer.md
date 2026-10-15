@@ -22,6 +22,7 @@ diff_viewer::DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A"
 | `on_location_activate` | callback or `()` | — | Called with `#{ side, line, column }` when a side's text is double-clicked or Enter is pressed in it. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `right` | object | required | Document on the right in split mode. |
+| `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared themed scrollbar visibility, including independent horizontal split panes. |
 | `show_line_numbers` | bool | `true` | Shows the line-number gutters. |
 | `style` | style | — | Style merged over the root part. |
 | `tab_size` | integer 1–16 | `4` | Columns between tab stops when tabs are expanded for display. |
@@ -55,8 +56,8 @@ diff_viewer::DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A"
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `error`, `fold`, `gutter`, `header`, `line`, `loading`, `root`, `search`, `status`, `text`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `error`, `fold`, `gutter`, `header`, `line`, `loading`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `status`, `text`.
 
 ## Theme
 
-- Tokens: `surface`
+- Tokens: `scrollbar.thumb`, `scrollbar.thumb_hover`, `surface`
