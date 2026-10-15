@@ -75,6 +75,10 @@ const MACOS_TRAFFIC_LIGHTS_ABOVE_MIDDLE: f32 = 7.0;
 
 /// Every Gallery page ID, in navigation order, read from the page modules'
 /// `pages()` lists.
+///
+/// # Panics
+/// Panics if the build's bundled page metadata is malformed. No external
+/// application source is evaluated; catalog tests validate every bundled list.
 #[must_use]
 pub fn page_ids() -> Vec<String> {
     let mut ids = Vec::new();
