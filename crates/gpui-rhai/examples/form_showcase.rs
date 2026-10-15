@@ -15,6 +15,7 @@ const TEXTAREA: &str = include_str!("../../../registry/components/textarea.rhai"
 const SELECT: &str = include_str!("../../../registry/components/select.rhai");
 const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const DATE_PICKER: &str = include_str!("../../../registry/components/date_picker.rhai");
+const CALENDAR: &str = include_str!("../../../registry/components/calendar.rhai");
 const CHECKBOX: &str = include_str!("../../../registry/components/checkbox.rhai");
 const RADIO: &str = include_str!("../../../registry/components/radio.rhai");
 const RADIO_GROUP: &str = include_str!("../../../registry/components/radio_group.rhai");
@@ -283,6 +284,7 @@ pub fn view(theme: &str, locale: &str, state: &str) -> EmbeddedScriptView {
         module("components/select", SELECT),
         module("components/combobox", COMBOBOX),
         module("components/date_picker", &date_picker_source),
+        module("components/calendar", CALENDAR),
         module("components/checkbox", CHECKBOX),
         module("components/radio", RADIO),
         module("components/radio_group", RADIO_GROUP),
@@ -410,5 +412,8 @@ mod tests {
             source.matches("value: true } },").count(),
             DATE_PICKER.matches("value: true } },").count() + 1
         );
+        view("default-dark", "en", "date-picker")
+            .prepare()
+            .expect("the public form example includes DatePicker's transitive Calendar source");
     }
 }

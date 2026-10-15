@@ -47,7 +47,7 @@ define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRa
 fn TimeRangePicker(props){render_component("components/time_range_picker",props)}
 fn option(props,name){if name in props&&props[name]!=(){props[name]}else{()}}
 fn clock_style(precision){if precision=="second"{"medium"}else{"short"}}
-// Compare the controlled contract explicitly, not nested Dynamic map equality.
+// Only controlled range and presentation fields define an open draft's identity.
 // Locale metadata is detached plain data; its stable array/map display is only an
 // equality token, never a value decoder or a serialized business range.
 fn same_identity(left,right){
