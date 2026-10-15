@@ -771,6 +771,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn gallery_scroll_source_contains_real_lines_not_template_escape_text() {
+        let source = GALLERY_SOURCES_BY_ID
+            .iter()
+            .find(|(id, _)| *id == "gallery/pages/scrolling")
+            .unwrap()
+            .1;
+        let start = source.find("fn source_sample()").unwrap();
+        let mut engine = gpui_rhai::rhai::Engine::new();
+        engine.set_max_operations(10_000);
+        let ast = engine.compile(&source[start..]).unwrap();
+        let sample: String = engine
+            .call_fn(
+                &mut gpui_rhai::rhai::Scope::new(),
+                &ast,
+                "source_sample",
+                (),
+            )
+            .unwrap();
+        assert_eq!(sample.lines().count(), 61);
+        assert!(!sample.contains("\\n"));
+    }
+
     fn gallery_entry_source() -> String {
         GALLERY_SOURCES_BY_ID
             .iter()

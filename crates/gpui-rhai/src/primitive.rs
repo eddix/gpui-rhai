@@ -812,6 +812,7 @@ pub enum PrimitiveResourceError {
 
 #[derive(Clone)]
 pub struct PrimitiveContext {
+    assets: Option<crate::AssetRegistry>,
     registry: Weak<RefCell<PrimitiveRegistryInner>>,
     primitive: PrimitiveId,
     event_schemas: BTreeMap<String, EventSchema>,
@@ -896,6 +897,18 @@ impl PrimitiveContext {
         .with_wheel_parents(self.wheel_parents.clone())
     }
 
+    /// Resolve an explicitly provided, preloaded Host asset without provider
+    /// I/O or decoding on the render path. This never treats a URL as a resource
+    /// locator and grants no network authority to the primitive.
+    ///
+    /// # Errors
+    /// Returns an asset resolution error when unavailable, unknown or not yet
+    /// prepared. Hosts preload during setup or use the existing async decoder.
+    pub fn image_asset(&self, id: &crate::AssetId) -> Result<gpui::ImageSource, crate::AssetError> {
+        let assets = self.assets.clone().unwrap_or_default();
+        let image = assets.cached_image(id)?;
+        assets.image_source(image.opaque())
+    }
     pub(crate) fn observes(&self, event: &str) -> bool {
         self.callbacks.contains_key(event)
     }
@@ -1985,6 +1998,7 @@ struct RegisteredPrimitiveElement {
 
 #[derive(Clone)]
 pub(crate) struct PrimitiveWindowContext {
+    assets: Option<crate::AssetRegistry>,
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
@@ -1994,6 +2008,10 @@ pub(crate) struct PrimitiveWindowContext {
 }
 
 impl PrimitiveWindowContext {
+    pub(crate) fn with_assets(mut self, assets: Option<crate::AssetRegistry>) -> Self {
+        self.assets = assets;
+        self
+    }
     pub(crate) fn new(
         dispatcher: Option<NodeEventDispatcher>,
         interactions: crate::interaction::WindowInteractionCoordinator,
@@ -2001,6 +2019,7 @@ impl PrimitiveWindowContext {
         view_id: impl Into<String>,
     ) -> Self {
         Self {
+            assets: None,
             dispatcher,
             interactions,
             scroll_handles,
@@ -2050,6 +2069,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             })
             .collect();
         let events = PrimitiveContext {
+            assets: self.runtime.assets,
             registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
             event_schemas: registry
@@ -2707,6 +2727,7 @@ mod tests {
         let registry = PrimitiveRegistry::new();
         let weak = Rc::downgrade(&registry.inner);
         let emitter = PrimitiveContext {
+            assets: None,
             registry: Rc::downgrade(&registry.inner),
             primitive: PrimitiveId::parse("my_app.editor").unwrap(),
             event_schemas: BTreeMap::new(),

@@ -15,6 +15,70 @@ semantic versioning from this release.
   `ActionInvocation` literals, preserve the opaque owner on runtime-produced
   messages, and deliver them through the lifecycle's transactional event/action
   entry points so origin, generation, mount and activation checks are retained.
+- Tabs gains `keep_mounted` for native scroll, editing, selection, undo and
+  focus retention across panel switches. The source-owned
+  `patterns/navigation_stack` adds controlled keyed visits, Back/breadcrumb
+  proposals and focus restoration. Hidden pages leave layout, input and
+  presented accessibility, but hiding does not cancel business tasks or
+  subscriptions; `ctx.is_visible()` supports explicit application pause policy.
+  Hosts can offer `NavigateBack` / `ScriptViewHost::navigate_back` to the
+  focused inner stack before their own outer navigation.
+- Public `ScrollbarSource`, `ScrollbarContext` and source adapters let Host
+  `ScrollHandle`, uniform-list and measured `ListState` surfaces share the
+  SDK's theme, RTL, wheel routing and gesture cleanup without exposing its
+  interaction coordinator. `ScrollbarSourceHandle` gives replaceable sources a
+  retained drag lease. Official lists and document surfaces use the same
+  scrollbar policy; measured-list thumb dragging preserves the native height
+  freeze contract.
+- Virtual collections preserve a surviving reader key and intra-item offset
+  through keyed data edits and remeasurement. `follow_tail` is a native state
+  machine: reader input pauses following, reaching the end or an explicit tail
+  jump resumes it, and realization never pulls a paused reader to the bottom.
+  `on_follow_change` reports following state and distinct unseen keys; Rhai
+  scroll commands and `VirtualCollectionScrollHandle` use that same state.
+- Adds controlled `ColumnBrowser` over virtual List columns, with independent
+  loading/error/retry states, path copying, logical-depth keyboard navigation
+  and optional detail content. The application owns descendant loading and
+  stale-request checks; Array and NativeCollection inputs share its row grammar.
+  Generic `ctx.copy_text` queues bounded clipboard text after a successful user
+  input/explicit automation transaction, never from rendering or background work.
+- **Behavior change:** explicitly sorted Array-backed Tables now sort in Rust,
+  just like NativeCollection Tables, rather than retaining caller order.
+  `sort.key` names the declared display column; optional column `sort_key`
+  names its scalar rank field. Missing/null ranks remain last in either
+  direction and ties preserve source order. Remove duplicate caller-side sorts,
+  or omit `sort` to preserve an explicitly ordered Array. No Rhai limits change.
+- Native Textarea gains IME-safe `submit_key` / `on_submit`; ordinary Enter
+  newline behavior remains when no submission mode is configured.
+  `patterns/composer` composes controlled drafting, Send/Stop, grapheme counts
+  and caller-owned leading controls. Busy blocks sending, not drafting; the
+  application owns requests, cancellation and clearing the accepted value.
+  `SelectableCardGroup` adds single/multiple rich choices with distinct focus,
+  checked state and independent action areas that do not select the card.
+- Adds a Host-injectable `WallClock`, shared timezone and locale time helpers,
+  and relative/absolute `TimeRange` values without requiring the charts feature.
+  `Calendar`, `TimeInput`, `TimeRangePicker` and virtualized `Timeline` cover
+  controlled dates, incomplete clock drafts, Apply/cancel range editing and
+  nested event histories. Relative ranges resolve at query time; nonexistent
+  local times are invalid, repeated times require an explicit occurrence, and
+  future instants remain valid unless explicit bounds forbid them. Presentation
+  ticks are not business-data refresh or network polling.
+- Adds native `MarkdownViewer` for CommonMark/GFM over strings or Host-owned
+  `NativeTextDocument` snapshots. Parsing, syntax highlighting, measured block
+  virtualization and selection remain in Rust; streaming uses complete semantic
+  invalidation with revision/owner cancellation. Copy spans blocks within one
+  viewer: ordinary copy yields plain text, explicit source copy yields Markdown,
+  and code actions copy code without fences. HTML stays literal, links only emit
+  proposals and images require explicit Host assets or use alt text.
+- Mounted views can `register_native_text_document`, replace increasing
+  revisions and `release_native_text_document` without a preallocated message
+  pool. Exact current/pending readers, bounded missing-name dependencies,
+  rollback, disposal and reload follow the existing Host ownership boundary.
+- The unified CLI Gallery gains retained navigation, scrolling, browser/rank,
+  composer/choice, Markdown and temporal pages plus the offline
+  `scene.messages` conversation. Use `gpui-rhai gallery --list` and
+  `gpui-rhai gallery --page <id>`; these are application-owned source examples
+  within the Gallery, not new standalone demos or external service integrations.
 - The Gallery's Menu page opens its menu. Its trigger was a Button whose
   `on_click` did nothing; a script click handler stops the click, so the menu
   never saw it. The Button now opens the menu, and Menu's and Popover's

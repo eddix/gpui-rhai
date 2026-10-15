@@ -31,6 +31,8 @@ pub struct DocumentLimits {
     pub max_diff_total_bytes: usize,
     pub max_diff_hunks: usize,
     pub diff_timeout: Duration,
+    /// Maximum GFM table columns, bounding native per-row layout work.
+    pub max_markdown_table_columns: usize,
 }
 
 impl Default for DocumentLimits {
@@ -41,6 +43,7 @@ impl Default for DocumentLimits {
             max_diff_total_bytes: DEFAULT_DOCUMENT_MAX_BYTES * 2,
             max_diff_hunks: DEFAULT_DIFF_MAX_HUNKS,
             diff_timeout: DEFAULT_DIFF_TIMEOUT,
+            max_markdown_table_columns: 128,
         }
     }
 }
@@ -57,6 +60,7 @@ impl DocumentLimits {
             || self.max_diff_total_bytes == 0
             || self.max_diff_hunks == 0
             || self.diff_timeout.is_zero()
+            || self.max_markdown_table_columns == 0
         {
             Err(DocumentError::InvalidLimits)
         } else {
@@ -434,6 +438,7 @@ pub(crate) fn register_document_api(engine: &mut Engine) {
 pub struct NativeTextDocumentRegistry {
     documents: BTreeMap<String, NativeTextDocument>,
     readers: BTreeMap<String, BTreeSet<crate::read_dependency::ReadDependency>>,
+    missing_readers: BTreeMap<String, BTreeSet<crate::read_dependency::ReadDependency>>,
 }
 
 impl NativeTextDocumentRegistry {
@@ -442,7 +447,8 @@ impl NativeTextDocumentRegistry {
         Self::default()
     }
 
-    /// Register one Host-owned document before the first render.
+    /// Register one Host-owned document. Mounted views use the handle API to
+    /// invalidate readers of a previously absent name.
     ///
     /// # Errors
     ///
@@ -452,13 +458,52 @@ impl NativeTextDocumentRegistry {
         name: impl Into<String>,
         document: NativeTextDocument,
     ) -> Result<(), DocumentError> {
-        let name = name.into();
+        self.register_with_invalidated(name.into(), document)?;
+        Ok(())
+    }
+
+    pub(crate) fn register_with_invalidated(
+        &mut self,
+        name: String,
+        document: NativeTextDocument,
+    ) -> Result<BTreeSet<ComponentInstancePath>, DocumentError> {
         validate_identity(&name)?;
         if self.documents.contains_key(&name) {
             return Err(DocumentError::DuplicateDocument(name));
         }
-        self.documents.insert(name, document);
-        Ok(())
+        self.documents.insert(name.clone(), document);
+        Ok(crate::read_dependency::owners(
+            self.missing_readers.remove(&name).unwrap_or_default(),
+        ))
+    }
+
+    /// Release the registry's ownership of a document. Existing immutable
+    /// snapshots remain valid until their readers and jobs release them.
+    ///
+    /// # Errors
+    /// Returns an unknown-name or pending-dependency-budget error. Failure
+    /// preserves the registered document and its readers unchanged.
+    pub fn release(
+        &mut self,
+        name: &str,
+    ) -> Result<BTreeSet<ComponentInstancePath>, DocumentError> {
+        self.documents
+            .get(name)
+            .ok_or_else(|| DocumentError::UnknownDocument(name.to_owned()))?;
+        let readers = self.readers.get(name).cloned().unwrap_or_default();
+        let mut missing = self.missing_readers.clone();
+        for reader in &readers {
+            crate::read_dependency::track_missing_reader(&mut missing, reader, name).map_err(
+                |budget| DocumentError::MissingDependencyBudget {
+                    kind: budget.kind,
+                    limit: budget.limit,
+                },
+            )?;
+        }
+        self.documents.remove(name);
+        self.readers.remove(name);
+        self.missing_readers = missing;
+        Ok(crate::read_dependency::owners(readers))
     }
 
     /// Read one current Host-owned snapshot without subscribing a component.
@@ -524,11 +569,21 @@ impl NativeTextDocumentRegistry {
         reader: Option<&crate::read_dependency::ReadDependency>,
         name: &str,
     ) -> Result<NativeTextDocument, DocumentError> {
-        let document = self
-            .documents
-            .get(name)
-            .cloned()
-            .ok_or_else(|| DocumentError::UnknownDocument(name.to_owned()))?;
+        validate_identity(name)?;
+        let Some(document) = self.documents.get(name).cloned() else {
+            if let Some(reader) = reader {
+                crate::read_dependency::track_missing_reader(
+                    &mut self.missing_readers,
+                    reader,
+                    name,
+                )
+                .map_err(|budget| DocumentError::MissingDependencyBudget {
+                    kind: budget.kind,
+                    limit: budget.limit,
+                })?;
+            }
+            return Err(DocumentError::UnknownDocument(name.to_owned()));
+        };
         if let Some(reader) = reader {
             self.readers
                 .entry(name.to_owned())
@@ -546,6 +601,9 @@ impl NativeTextDocumentRegistry {
             readers.remove(reader);
         }
         self.readers.retain(|_, readers| !readers.is_empty());
+        crate::read_dependency::retain_readers(&mut self.missing_readers, |candidate| {
+            candidate != reader
+        });
     }
 
     pub(crate) fn retain_reader_scope(
@@ -557,6 +615,9 @@ impl NativeTextDocumentRegistry {
             readers.retain(|reader| reader.retained_in_owner_scope(root, active));
         }
         self.readers.retain(|_, readers| !readers.is_empty());
+        crate::read_dependency::retain_readers(&mut self.missing_readers, |reader| {
+            reader.retained_in_owner_scope(root, active)
+        });
     }
 
     pub(crate) fn remove_reader_scope(&mut self, root: &ComponentInstancePath) {
@@ -564,6 +625,9 @@ impl NativeTextDocumentRegistry {
             readers.retain(|reader| !reader.owner.is_within(root));
         }
         self.readers.retain(|_, readers| !readers.is_empty());
+        crate::read_dependency::retain_readers(&mut self.missing_readers, |reader| {
+            !reader.owner.is_within(root)
+        });
     }
 
     pub(crate) fn retain_contributions(
@@ -572,6 +636,9 @@ impl NativeTextDocumentRegistry {
         active: &BTreeSet<crate::read_dependency::ReadContribution>,
     ) {
         crate::read_dependency::retain_readers(&mut self.readers, |reader| {
+            reader.retained_in_contribution_scope(scope, active)
+        });
+        crate::read_dependency::retain_readers(&mut self.missing_readers, |reader| {
             reader.retained_in_contribution_scope(scope, active)
         });
     }
@@ -1428,6 +1495,8 @@ fn validate_identity(value: &str) -> Result<(), DocumentError> {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum DocumentError {
+    #[error("native document missing-dependency {kind} exceeds limit {limit}")]
+    MissingDependencyBudget { kind: &'static str, limit: usize },
     #[error("document identity `{0}` must contain 1-256 safe ASCII characters")]
     InvalidIdentity(String),
     #[error("native text document `{0}` is already registered")]
@@ -1494,6 +1563,145 @@ mod tests {
             registry.replace("config", stale),
             Err(DocumentError::NonMonotonicRevision { .. })
         ));
+    }
+
+    #[test]
+    fn mounted_document_registration_release_and_pending_reads_are_exact() {
+        let root = ComponentInstancePath::root("View", "documents");
+        let reader = root.child("Reader", "a");
+        let sibling = root.child("Reader", "b");
+        let mut registry = NativeTextDocumentRegistry::new();
+        assert!(registry.read_tracked(&reader, "late").is_err());
+        assert!(registry.read_tracked(&sibling, "other").is_err());
+        let document = NativeTextDocument::new("reply/42", 1, "first").unwrap();
+        assert_eq!(
+            registry
+                .register_with_invalidated("late".to_owned(), document.clone())
+                .unwrap(),
+            BTreeSet::from([reader.clone()])
+        );
+        assert!(registry.register("late", document.clone()).is_err());
+        let held = registry.read_tracked(&reader, "late").unwrap();
+        assert_eq!(
+            registry.release("late").unwrap(),
+            BTreeSet::from([reader.clone()])
+        );
+        assert_eq!(
+            held.text(),
+            "first",
+            "release must not invalidate immutable reader snapshots"
+        );
+        assert!(registry.get("late").is_err());
+        assert!(registry.replace("late", document.clone()).is_err());
+        assert_eq!(
+            registry
+                .register_with_invalidated("late".to_owned(), document.clone())
+                .unwrap(),
+            BTreeSet::from([reader.clone()])
+        );
+        assert!(
+            registry
+                .replace(
+                    "late",
+                    NativeTextDocument::new("reply/42", 0, "stale").unwrap()
+                )
+                .is_err()
+        );
+        assert_eq!(registry.get("late").unwrap(), document);
+        registry.remove_reader_scope(&root);
+        assert!(
+            registry
+                .register_with_invalidated("other".to_owned(), document)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn failed_document_candidate_restores_registry_and_pending_lookups() {
+        let root = ComponentInstancePath::root("View", "rollback");
+        let mut runtime = crate::UiRuntimeState::default();
+        assert!(
+            runtime
+                .native_documents
+                .read_tracked(&root, "late")
+                .is_err()
+        );
+        let snapshot = runtime.begin_transaction().unwrap();
+        runtime
+            .register_native_text_document_from_host(
+                "late",
+                NativeTextDocument::new("late", 1, "candidate").unwrap(),
+            )
+            .unwrap();
+        runtime.rollback_transaction(snapshot).unwrap();
+        assert!(runtime.native_documents.get("late").is_err());
+        assert_eq!(
+            runtime
+                .native_documents
+                .register_with_invalidated(
+                    "late".to_owned(),
+                    NativeTextDocument::new("late", 2, "accepted").unwrap()
+                )
+                .unwrap(),
+            BTreeSet::from([root])
+        );
+    }
+
+    #[test]
+    fn caught_missing_document_lookups_are_bounded_and_reset_with_the_owner() {
+        use std::{cell::RefCell, rc::Rc};
+        let reader = ComponentInstancePath::root("View", "missing-documents");
+        let registry = Rc::new(RefCell::new(NativeTextDocumentRegistry::new()));
+        let captured = registry.clone();
+        let owner = reader.clone();
+        let mut engine = Engine::new();
+        register_document_api(&mut engine);
+        engine.register_fn(
+            "missing_document",
+            move |name: ImmutableString| -> Result<NativeTextDocument, Box<rhai::EvalAltResult>> {
+                captured
+                    .borrow_mut()
+                    .read_tracked(&owner, &name)
+                    .map_err(|error| {
+                        Box::new(rhai::EvalAltResult::ErrorRuntime(
+                            error.to_string().into(),
+                            rhai::Position::NONE,
+                        ))
+                    })
+            },
+        );
+        engine
+            .eval::<()>(
+                "for i in 0..1000 { try { missing_document(`late-${i}`); } catch (error) { () } }",
+            )
+            .unwrap();
+        let mut registry = registry.borrow_mut();
+        assert_eq!(
+            registry.missing_readers.len(),
+            crate::read_dependency::MAX_MISSING_NAMES_PER_READER
+        );
+        assert!(matches!(
+            registry.read_tracked(&reader, "overflow"),
+            Err(DocumentError::MissingDependencyBudget { .. })
+        ));
+        registry.reset_reader(&reader);
+        assert!(registry.missing_readers.is_empty());
+        assert!(matches!(
+            registry.read_tracked(&reader, "after-rerender"),
+            Err(DocumentError::UnknownDocument(_))
+        ));
+        registry.remove_reader_scope(&reader);
+        assert!(registry.missing_readers.is_empty());
+        assert!(
+            registry
+                .register_with_invalidated(
+                    "after-rerender".to_owned(),
+                    NativeTextDocument::new("fresh", 1, "fresh").unwrap()
+                )
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

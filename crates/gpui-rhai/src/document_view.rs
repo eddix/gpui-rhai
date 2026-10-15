@@ -171,7 +171,7 @@ pub fn init_document_view(cx: &mut App) {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum DocumentSide {
+pub(crate) enum DocumentSide {
     Single,
     Left,
     Right,
@@ -196,12 +196,12 @@ struct ActiveDocumentSelection {
 }
 
 #[derive(Clone, Default)]
-struct DocumentSelection {
+pub(crate) struct DocumentSelection {
     active: Rc<RefCell<Option<ActiveDocumentSelection>>>,
 }
 
 impl DocumentSelection {
-    fn begin(&self, side: DocumentSide, source: Arc<str>, offset: usize) {
+    pub(crate) fn begin(&self, side: DocumentSide, source: Arc<str>, offset: usize) {
         self.active.borrow_mut().replace(ActiveDocumentSelection {
             side,
             source,
@@ -210,7 +210,7 @@ impl DocumentSelection {
         });
     }
 
-    fn update(&self, side: DocumentSide, offset: usize) {
+    pub(crate) fn update(&self, side: DocumentSide, offset: usize) {
         if let Some(selection) = self
             .active
             .borrow_mut()
@@ -221,7 +221,7 @@ impl DocumentSelection {
         }
     }
 
-    fn range_for(
+    pub(crate) fn range_for(
         &self,
         side: DocumentSide,
         source: &Arc<str>,
@@ -240,7 +240,7 @@ impl DocumentSelection {
         )
     }
 
-    fn selected_text(&self) -> Option<String> {
+    pub(crate) fn selected_text(&self) -> Option<String> {
         let selection = self.active.borrow();
         let selection = selection.as_ref()?;
         let start = selection.anchor.min(selection.head);
@@ -260,11 +260,11 @@ impl DocumentSelection {
         ))
     }
 
-    fn clear(&self) {
+    pub(crate) fn clear(&self) {
         self.active.borrow_mut().take();
     }
 
-    fn rebase(&self, side: DocumentSide, previous: &Arc<str>, next: Arc<str>) {
+    pub(crate) fn rebase(&self, side: DocumentSide, previous: &Arc<str>, next: Arc<str>) {
         let mut active = self.active.borrow_mut();
         let Some(selection) = active
             .as_mut()
@@ -275,6 +275,31 @@ impl DocumentSelection {
         selection.anchor = clamp_char_boundary(&next, selection.anchor);
         selection.head = clamp_char_boundary(&next, selection.head);
         selection.source = next;
+    }
+
+    /// Streaming presentation may change earlier visible text (for example a
+    /// Markdown reference becomes a link). Preserve only selections whose full
+    /// prefix still maps identically, rather than copying different text at old
+    /// byte offsets.
+    pub(crate) fn rebase_unchanged_prefix(
+        &self,
+        side: DocumentSide,
+        previous: &Arc<str>,
+        next: Arc<str>,
+    ) {
+        let end = self
+            .active
+            .borrow()
+            .as_ref()
+            .filter(|selection| selection.side == side && Arc::ptr_eq(&selection.source, previous))
+            .map(|selection| selection.anchor.max(selection.head));
+        if let Some(end) = end
+            && previous.get(..end) != next.get(..end)
+        {
+            self.clear();
+            return;
+        }
+        self.rebase(side, previous, next);
     }
 }
 
@@ -372,7 +397,7 @@ fn select_document_monospace_family(
         .into()
 }
 
-fn resolve_document_monospace_family(cx: &App) -> SharedString {
+pub(crate) fn resolve_document_monospace_family(cx: &App) -> SharedString {
     select_document_monospace_family(
         &cx.text_system().all_font_names(),
         DOCUMENT_MONOSPACE_CANDIDATES,
@@ -1535,6 +1560,7 @@ fn code_line_element(
         selection: selection.clone(),
         focus: focus.clone(),
         events: events.clone(),
+        links: Arc::from([]),
         disabled,
     };
     let (text_size, line_height) = document_text_metrics(&config.text_style, theme);
@@ -1624,19 +1650,21 @@ fn viewport_wrap_columns(viewport_width: f64, line_digits: usize, text_size: f64
         .max(1)
 }
 
-struct InteractiveDocumentText {
-    id: ElementId,
-    text: StyledText,
-    source: Arc<str>,
-    global_range: Range<usize>,
-    offset_map: Arc<[(usize, usize)]>,
-    line: usize,
-    line_start: usize,
-    side: DocumentSide,
-    selection: DocumentSelection,
-    focus: FocusHandle,
-    events: PrimitiveContext,
-    disabled: bool,
+pub(crate) struct InteractiveDocumentText {
+    pub(crate) id: ElementId,
+    pub(crate) text: StyledText,
+    pub(crate) source: Arc<str>,
+    pub(crate) global_range: Range<usize>,
+    pub(crate) offset_map: Arc<[(usize, usize)]>,
+    pub(crate) line: usize,
+    pub(crate) line_start: usize,
+    pub(crate) side: DocumentSide,
+    pub(crate) selection: DocumentSelection,
+    pub(crate) focus: FocusHandle,
+    pub(crate) events: PrimitiveContext,
+    /// Display-local link ranges. Links only emit; they never open a URL.
+    pub(crate) links: Arc<[(Range<usize>, String, String)]>,
+    pub(crate) disabled: bool,
 }
 
 impl Element for InteractiveDocumentText {
@@ -1645,6 +1673,19 @@ impl Element for InteractiveDocumentText {
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
+    }
+
+    fn a11y_role(&self) -> Option<gpui::Role> {
+        Some(gpui::Role::Label)
+    }
+
+    fn write_a11y_info(&self, node: &mut gpui::accesskit::Node) {
+        node.set_value(
+            self.source
+                .get(self.global_range.clone())
+                .unwrap_or_default()
+                .to_owned(),
+        );
     }
 
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
@@ -1675,6 +1716,7 @@ impl Element for InteractiveDocumentText {
         window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal)
     }
 
+    #[allow(clippy::too_many_lines)] // One shared native selection/link event registration pass.
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -1692,6 +1734,14 @@ impl Element for InteractiveDocumentText {
         }
         window.set_cursor_style(CursorStyle::IBeam, hitbox);
         let layout = self.text.layout().clone();
+        if let Ok(index) = layout.index_for_position(window.mouse_position())
+            && self
+                .links
+                .iter()
+                .any(|(range, _, _)| range.contains(&index))
+        {
+            window.set_cursor_style(CursorStyle::PointingHand, hitbox);
+        }
         let clamp = |index: Result<usize, usize>| match index {
             Ok(index) | Err(index) => index,
         };
@@ -1719,7 +1769,7 @@ impl Element for InteractiveDocumentText {
                 let local = display_source_offset(&offset_map, display).min(range.len());
                 let global = range.start + local;
                 selection.begin(side, Arc::clone(&source), global);
-                if event.click_count >= 2 {
+                if event.click_count >= 2 && events.observes("location_activate") {
                     let mut payload = BTreeMap::from([
                         (
                             "line".to_owned(),
@@ -1768,9 +1818,27 @@ impl Element for InteractiveDocumentText {
         }
         {
             let hitbox = hitbox.clone();
+            let links = Arc::clone(&self.links);
+            let selection = self.selection.clone();
+            let events = self.events.clone();
             window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                 if phase.bubble() && event.button == MouseButton::Left && hitbox.is_hovered(window)
                 {
+                    // A selection drag over a link must not activate it.
+                    let display = clamp(layout.index_for_position(event.position));
+                    if selection.selected_text().is_none()
+                        && let Some((_, href, text)) =
+                            links.iter().find(|(range, _, _)| range.contains(&display))
+                    {
+                        let payload = UiValue::Map(BTreeMap::from([
+                            ("href".to_owned(), UiValue::String(href.clone())),
+                            ("text".to_owned(), UiValue::String(text.clone())),
+                        ]));
+                        let events = events.clone();
+                        window.defer(cx, move |window, cx| {
+                            let _ = events.emit("link", payload, window, cx);
+                        });
+                    }
                     cx.stop_propagation();
                 }
             });
@@ -1918,7 +1986,10 @@ fn code_max_height(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<Opt
     }
 }
 
-fn document_source_prop(props: &PrimitiveProps, name: &str) -> Result<DocumentSource, String> {
+pub(crate) fn document_source_prop(
+    props: &PrimitiveProps,
+    name: &str,
+) -> Result<DocumentSource, String> {
     match props.get(name) {
         Some(PrimitiveValue::Data(UiValue::String(value))) => Ok(value.clone().into()),
         Some(PrimitiveValue::Document(document)) => Ok(document.clone().into()),
@@ -1935,13 +2006,13 @@ fn optional_string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn theme_color(theme: &PrimitiveTheme, token: &str, fallback: u32) -> crate::Rgba8 {
+pub(crate) fn theme_color(theme: &PrimitiveTheme, token: &str, fallback: u32) -> crate::Rgba8 {
     theme
         .color(token)
         .unwrap_or_else(|| crate::Rgba8::from_rgba_hex(fallback))
 }
 
-fn resolved_pixels(length: crate::Length) -> Option<f32> {
+pub(crate) fn resolved_pixels(length: crate::Length) -> Option<f32> {
     match length {
         crate::Length::Pixels(value) => value.to_string().parse().ok(),
         crate::Length::Rems(value) => (value * 16.0).to_string().parse().ok(),
@@ -1949,7 +2020,7 @@ fn resolved_pixels(length: crate::Length) -> Option<f32> {
     }
 }
 
-fn document_text_metrics(style: &Style, theme: &PrimitiveTheme) -> (f32, f32) {
+pub(crate) fn document_text_metrics(style: &Style, theme: &PrimitiveTheme) -> (f32, f32) {
     let role = style.base.typography.as_deref().unwrap_or("body");
     let typography = theme.typography(role).or_else(|| theme.typography("body"));
     let default_size = typography
@@ -2064,7 +2135,7 @@ fn remap_highlights(
         .collect()
 }
 
-fn compose_highlights(
+pub(crate) fn compose_highlights(
     text_len: usize,
     layers: &[(Range<usize>, HighlightStyle)],
 ) -> Vec<(Range<usize>, HighlightStyle)> {
@@ -4070,6 +4141,7 @@ fn diff_cell(
         selection: selection.clone(),
         focus: focus.clone(),
         events: events.clone(),
+        links: Arc::from([]),
         disabled,
     };
     let (text_size, line_height) = document_text_metrics(&config.text_style, theme);

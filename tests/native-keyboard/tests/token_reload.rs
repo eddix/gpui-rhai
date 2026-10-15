@@ -287,3 +287,86 @@ fn a_reload_candidate_gets_the_host_engine_configuration(cx: &mut TestAppContext
     assert_eq!(counter.0.get(), 2);
     app.dispose();
 }
+
+#[gpui::test]
+fn mounted_native_documents_keep_ownership_across_reload_and_failed_candidates(
+    cx: &mut TestAppContext,
+) {
+    let mut app = App::new(cx, "live-documents");
+    let view = app.view.clone();
+    app.visual
+        .update(|_, cx| {
+            view.register_native_text_document(
+                "late",
+                NativeTextDocument::new("reply/late", 1, "first").unwrap(),
+                cx,
+            )
+        })
+        .unwrap();
+    let source = r#"fn view(ctx){let doc=ctx.get_native_text_document("late");
+        box([text("Native document")]).accessibility_role("group").test_id("cell")
+        .with_style(style().width(px(100)).height(px(40 + doc.revision * 10)))}"#;
+    app.write("main.rhai", source);
+    app.settle_until("live document after reload", |app| app.height() == 50.0);
+    app.visual
+        .update(|_, cx| {
+            view.replace_native_text_document(
+                "late",
+                NativeTextDocument::new("reply/late", 2, "second").unwrap(),
+                cx,
+            )
+        })
+        .unwrap();
+    app.settle_until("exact document replacement", |app| app.height() == 60.0);
+    app.write("main.rhai", "fn view(ctx) { invalid syntax");
+    app.settle_until("failed document owner candidate", |app| {
+        app.error().is_some()
+    });
+    assert_eq!(
+        app.height(),
+        60.0,
+        "failed reload must retain the live document owner"
+    );
+    app.visual
+        .update(|_, cx| {
+            view.replace_native_text_document(
+                "late",
+                NativeTextDocument::new("reply/late", 3, "third").unwrap(),
+                cx,
+            )
+        })
+        .unwrap();
+    app.settle_until("old owner still receives documents", |app| {
+        app.height() == 70.0
+    });
+    app.write(
+        "main.rhai",
+        &format!("{source}\n// accepted document generation"),
+    );
+    app.settle_until("accepted replacement owner", |app| {
+        app.error().is_none() && app.height() == 70.0
+    });
+    let fallback = r#"fn view(ctx){let height=20; try {let doc=ctx.get_native_text_document("late"); height=80+doc.revision;} catch (error) {()}
+        box([text("Native document")]).accessibility_role("group").test_id("cell")
+        .with_style(style().width(px(100)).height(px(height)))}"#;
+    app.write("main.rhai", fallback);
+    app.settle_until("fallback document reader", |app| app.height() == 83.0);
+    app.visual
+        .update(|_, cx| view.release_native_text_document("late", cx))
+        .unwrap();
+    app.settle_until("released document after reload", |app| app.height() == 20.0);
+    app.visual
+        .update(|_, cx| {
+            view.register_native_text_document(
+                "late",
+                NativeTextDocument::new("reply/new-owner", 1, "new owner").unwrap(),
+                cx,
+            )
+        })
+        .unwrap();
+    app.settle_until("new ownership without a slot pool", |app| {
+        app.height() == 81.0
+    });
+    assert_eq!(app.error(), None);
+    app.dispose();
+}

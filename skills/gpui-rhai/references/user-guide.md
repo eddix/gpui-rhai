@@ -287,6 +287,47 @@ Best practices:
 Compatible state survives keyed rerenders and successful hot reloads.
 Incompatible schema changes reset only the affected field to its default.
 
+### 4.1 Drafting and rich choices
+
+`patterns/composer::Composer` is a controlled composition over native Textarea:
+
+```rhai
+import "patterns/composer" as composer;
+
+composer::Composer(#{
+    key: "prompt", label: "Message", value: ctx.get_state("draft"),
+    busy: ctx.get_state("sending"), can_submit: true,
+    on_change: Fn("draft_changed"), on_submit: Fn("submit_draft"),
+    on_stop: Fn("stop_request"),
+})
+```
+
+Import `patterns/composer`, then declare the draft/sending fields and named
+handlers in the owning component. `on_submit` receives the full draft; the
+application decides whether to send, clear or retain it. `on_stop` is a
+cancellation request, not an SDK task or network operation. Busy disables Send
+while native drafting, selection, IME and undo remain available. `can_submit`,
+`disabled` and `read_only` are separate policies; attachment/model controls in
+`leading` remain application-owned.
+
+Composer defaults to `submit_key: "enter"`: Enter submits and Shift+Enter
+inserts a native newline. `"mod_enter"` uses Cmd+Enter on macOS or Ctrl+Enter
+elsewhere, leaving Enter as a newline. Textarea exposes the same optional
+`submit_key` / `on_submit` contract; unset preserves ordinary multiline Enter.
+IME confirmation never submits. Counts and `max_length` use graphemes, not
+UTF-8 bytes; `min_rows`/`max_rows` control growth before internal scrolling.
+
+`components/selectable_card_group::SelectableCardGroup` takes controlled
+`values` (an array even for `mode: "single"`) and keyed `items` with a textual
+`label` and presentational `content`. Use `mode: "multiple"` for checkboxes,
+and `layout: "row" | "column" | "grid"` for presentation. Put buttons, links
+and other independent controls in each item's `actions`, not in its choice
+content: acting there never changes the selection. Checked state is distinct
+from focus. Single-mode arrows select by default; `select_on_focus: false`
+requires Enter/Space to commit. Multiple-mode arrows only move focus. Choice
+disabling does not silently disable independent actions. Use List/Select rather
+than card groups for large collections.
+
 ## 5. Components are source
 
 Formal components use the pattern:
@@ -345,34 +386,126 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](https://github.com/eddix/gpui-rhai/blob/main/docs/component-styles.md).
 
-The bundled catalog contains 64 official source components. Each keeps one
-contract for its ID and export, controlled-state boundary, semantic events,
-size vocabulary and style parts:
+The bundled catalog contains official source components and patterns. Each
+keeps one contract for its ID and export, controlled-state boundary, semantic
+events, size vocabulary and style parts:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
   StatusBar;
 - actions and choices: Button, IconButton, ButtonGroup, Checkbox, Radio,
-  RadioGroup, Switch, Toggle, ToggleGroup, and Slider;
+  RadioGroup, Switch, Toggle, ToggleGroup, Slider, and SelectableCardGroup;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, DatePicker,
-  and RangeSlider;
+  RangeSlider, Calendar, TimeInput, and TimeRangePicker;
 - navigation, layout, and data: Tabs, TabBar, Accordion, Collapsible, Menu,
   Pagination, Table, List, ScrollArea, SplitPane, Resizable, Draggable,
-  DragSource, DropZone, Sortable, PanZoom, Rotatable, SelectionArea, and Tree;
+  DragSource, DropZone, Sortable, PanZoom, Rotatable, SelectionArea, Tree,
+  ColumnBrowser, and Timeline;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
-- read-only documents: CodeViewer and DiffViewer;
+- read-only documents: CodeViewer, DiffViewer, and MarkdownViewer;
+- application patterns: Composer, NavigationStack, AppShell, DataView, and the
+  other source-owned compositions under `patterns/`;
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
 
-Run `gpui-rhai gallery` for every component in both densities with its running
-Rhai source, and `gpui-rhai gallery --story workbench/interaction-lab` for the
-integrated direct-manipulation acceptance application.
+Use the unified CLI Gallery for running components, application scenes and
+their Rhai source, rather than collecting separate demo executables:
+
+```text
+gpui-rhai gallery --list
+gpui-rhai gallery --page scene.messages
+gpui-rhai gallery --page navigation_stack --density compact
+gpui-rhai gallery --page time_range_picker --theme default-light --locale zh-CN
+```
+
+From this checkout, the matching command is
+`cargo run -p gpui-rhai-cli -- gallery --page markdown_viewer`.
+The new page IDs below describe this checkout's unreleased source; use its
+matching CLI/runtime/registry:
+
+| Workflow | Page IDs |
+|---|---|
+| Retained navigation | `retained_tabs`, `navigation_stack` |
+| Reader position and tail following | `scrolling` |
+| Hierarchical browsing and formatted ranking | `column_browser`, `formatted_table` |
+| Drafting and rich choices | `composer`, `selectable_card_group` |
+| Native Markdown | `markdown_viewer` |
+| Dates, clock text and ranges | `calendar`, `time_input`, `time_range_picker` |
+| Event history | `timeline` |
+| Integrated conversation | `scene.messages` |
+
+The Gallery uses bundled, offline fixtures, including Host-owned large documents
+and simulated streaming; it does not contact an AI service or load application
+files. `--motion reduced` / `none`, density, themes and locales use the same
+shared Gallery controls. Development stories, such as
+`gpui-rhai gallery --story workbench/interaction-lab`, remain available through
+the same CLI.
 See [the component catalog](https://github.com/eddix/gpui-rhai/blob/main/docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
 See [Gallery and acceptance application](https://github.com/eddix/gpui-rhai/blob/main/docs/gallery.md) for story metadata,
 Host/Rhai ownership, deterministic fixtures, lifecycle behavior, and the
 verification matrix.
+
+### 5.1 Retained pages, navigation and hierarchical browsing
+
+`Tabs` defaults to presenting only the selected panel. Set
+`keep_mounted: true` when switching away must preserve native scrolling,
+editing, selection, undo and focus identity. Hidden retained panels take no
+layout space and leave input traversal and presented accessibility; hidden
+motion does not keep requesting frames. Returning shows the retained state,
+not a second mount.
+
+Mounting, visibility and business activity are separate. Hiding never
+automatically cancels a capability task, subscription or application effect.
+`ctx.is_visible()` is a tracked read of last-committed page visibility, false
+before first placement. Use it in an explicit application pause/effect policy
+where needed. Eager node construction still follows caller ownership: omitting
+a passed node from presentation does not dispose its formal component. Stop
+constructing the owner, or cancel its work deliberately, to end its lifetime.
+
+`patterns/navigation_stack::NavigationStack` uses the same retained-page policy
+for a caller-owned root-to-top `stack`:
+
+```rhai
+import "patterns/navigation_stack" as navigation;
+
+navigation::NavigationStack(#{
+    key: "details", label: "Service details", header: "breadcrumb",
+    stack: [
+        #{ key: "visit-services", title: "Services", content: services_page },
+        #{ key: "visit-ticket-4821", title: "Ticket 4821", content: ticket_page },
+    ],
+    on_pop: Fn("pop_requested"),
+})
+```
+
+Import `patterns/navigation_stack` and construct the page nodes in their
+application owner. Keys identify visits, not business record IDs: opening the
+same record twice requires distinct visit keys. Back, breadcrumb and keyboard
+interaction emit `#{ depth, source }`; the application accepts by truncating
+its visit data and rebuilding the stack. The component never loads a route,
+fetches data or changes the stack itself. `max_depth` bounds retention without
+silently evicting visits, and `motion_key` enables optional push/pop continuity
+that respects RTL and reduced motion. A Rust Host can dispatch `NavigateBack`
+or call `ScriptViewHost::navigate_back(window, cx)` before its outer Back; a
+true result means the focused inner stack owns the proposal, even if its caller
+declines it. Surviving pages restore focus where possible.
+
+`components/column_browser::ColumnBrowser` is a controlled chain of virtualized
+List columns, not a filesystem or loading service. Each keyed column supplies
+`items` (Array or NativeCollection), a `selected` key or shared controlled
+`path`, and its own loading/error/empty state. `on_select` proposes
+`#{ column, key, path }`; `on_activate` is a separate leaf Enter/double-click
+proposal, and `on_retry` names the failed column. The caller replaces
+descendants and rejects late loading results using its path/request revision.
+Columns do not shrink to fit: the strip scrolls horizontally and can include
+caller-owned trailing `detail`. Supply exactly one of `height` or
+`fill_height: true`. Logical depth arrows respect RTL, while path breadcrumbs
+and Copy path preserve the controlled hierarchy. There is no automatic
+selection when a controlled key disappears.
+
+### 5.2 Other layout and command compositions
 
 `SplitPane` is a controlled two-panel composition. Its `size` is the start
 panel ratio; pointer movement writes only a native optional-float signal and
@@ -734,6 +867,12 @@ queued-operation boundary and cleanup rules.
 
 ### The Rhai standard library in view scripts
 
+Two string details matter when adapting JavaScript-like examples: `trim()`
+mutates its string and returns `()`, so trim a local copy before comparing it.
+Backtick templates preserve escape text: append `"\n"` outside the template
+(or put an actual newline inside it) when building multiline source. Do not
+expect a template's literal backslash-n to become a line break.
+
 View scripts get Rhai's standard library as `rhai::Engine::new()` sets it up,
 including `sleep`, `exit`, `eval`, `timestamp`, `parse_json`, `print` and
 `debug`; gpui-rhai restricts none of it. A Host decides what its views keep in
@@ -855,15 +994,16 @@ See [Style](https://github.com/eddix/gpui-rhai/blob/main/docs/style.md), [Assets
 [mutable-image Host bridging](https://github.com/eddix/gpui-rhai/blob/main/docs/asset-refresh-host.md), [Canvas](https://github.com/eddix/gpui-rhai/blob/main/docs/canvas.md),
 and [Locale and RTL](https://github.com/eddix/gpui-rhai/blob/main/docs/locale-and-rtl.md).
 
-### 8.1 CodeViewer, DiffViewer, and NativeTextDocument
+### 8.1 Read-only documents and Host-owned text
 
 Use `CodeViewer` for a read-only source document and `DiffViewer` for a neutral
 left/right comparison. They are native document surfaces, not arrays of Rhai
 Text rows: syntax parsing, diff calculation, virtual scrolling, selection,
 search and hunk navigation stay in Rust.
 
-Both accept direct strings. A Rust Host with large or frequently changing text
-registers a revisioned `NativeTextDocument`, reads it from Rhai with
+CodeViewer, DiffViewer and MarkdownViewer accept direct strings. A Rust Host
+with large or frequently changing text registers a revisioned
+`NativeTextDocument`, reads it from Rhai with
 `ctx.get_native_text_document(name)`, and publishes later revisions through
 `ScriptViewHandle::replace_native_text_document`. Only exact subscribed
 components rerender; native parsing then completes in a cancellable background
@@ -882,6 +1022,115 @@ expandable equal context. It does not edit, merge, stage, or apply patches.
 See [Native document viewers](https://github.com/eddix/gpui-rhai/blob/main/docs/document-viewers.md),
 [CodeViewer](https://github.com/eddix/gpui-rhai/blob/main/docs/components/code-viewer.md), and
 [DiffViewer](https://github.com/eddix/gpui-rhai/blob/main/docs/components/diff-viewer.md).
+
+`components/markdown_viewer::MarkdownViewer` renders CommonMark/GFM natively:
+
+```rhai
+import "components/markdown_viewer" as markdown;
+
+markdown::MarkdownViewer(#{
+    key: "reply-42", label: "Assistant reply",
+    source: ctx.get_native_text_document("reply-42"),
+    height: "content", max_height: 480,
+    code_block_actions: ["copy"], on_link: Fn("link_requested"),
+})
+```
+
+Import `components/markdown_viewer`. Rust owns source, parse models, highlighted
+code, measured-height virtualization and selection; Rhai never receives a
+block/span array. Long paragraphs, code and cells have bounded native text
+segments. GFM tables keep alignment and horizontal scrolling, and task lists,
+strikethrough, autolinks, nesting and typography parts follow the same theme.
+Streaming jobs coalesce and reject stale revisions/owners. Parsing preserves
+complete semantics: a later reference definition may invalidate an earlier
+block, not just the last block.
+
+Select and copy across blocks within one viewer, not across separate messages.
+Cmd/Ctrl+C copies rendered plain text; Alt+Cmd+C / Ctrl+Alt+C explicitly copies
+the Markdown source. Code actions copy code without fences. HTML is literal,
+never executed. Links emit `#{ href, text }` and never open a browser; the Host
+must validate destinations. `image_assets` explicitly maps Markdown destinations
+to Host asset IDs; absent assets leave alt text. The viewer never fetches URLs.
+It is not an editor or a WebView. Document byte/line limits and the configurable
+Markdown table-column budget bound preparation.
+
+Register documents as messages arrive on an already mounted view:
+
+```rust
+view.register_native_text_document(
+    "reply-42", NativeTextDocument::new("reply/42", 1, initial_text)?, cx,
+)?;
+view.replace_native_text_document(
+    "reply-42", NativeTextDocument::new("reply/42", 2, next_text)?, cx,
+)?;
+// After the application removes the message/readers:
+view.release_native_text_document("reply-42", cx)?;
+```
+
+Registration rejects duplicate names; replacement of one identity requires an
+increasing revision. Caught lookups of a missing name establish bounded pending
+reader dependencies, so later registration invalidates exactly those readers.
+Release removes registry ownership without invalidating immutable snapshots
+already held by a viewer/job. Its boolean reports reader invalidation: successful
+`false` still released the snapshot. Disposal, reload and failed candidates use
+the existing ownership/rollback rules. No fixed document pool or raised Rhai
+string, collection or operation limits is needed; prefer native documents beyond
+the direct-string budget.
+
+### 8.2 Wall time, date/time ranges and histories
+
+Wall time is independent of the monotonic Motion/test clock and is available
+without the optional charts feature. `WallClock::system()`, `fixed(epoch_ms)`
+and `from_source(...)` provide the Rust presentation clock; both
+`FileScriptView` and `EmbeddedScriptView` accept `.wall_clock(clock)`. A fixed
+or custom source makes application tests deterministic without changing time
+arithmetic or animation speed.
+
+Use signed epoch milliseconds for instants. Rhai exposes `ctx.now()`,
+`ctx.format_time(ms, "short" | "medium" | "long", zone)`,
+`ctx.format_relative(ms)` and `ctx.format_duration(duration_ms)` with selected
+locale digits, hour cycle, units and relative messages. Zones use `"local"`,
+`"UTC"`, `"offset:<minutes>"` or an available IANA name such as
+`"Asia/Shanghai"`. `time_parts(ms, zone)` converts an instant to civil fields;
+`time_local_candidates(date, time, zone)` returns zero, one or two instants,
+making DST gaps and repeated local times explicit.
+
+`Calendar` controls ISO date strings, with locale week starts, keyboard day/week
+and month movement, single/range presentation, one/two months and explicit
+`min_date`/`max_date`. `TimeInput` controls localized clock *text*: incomplete
+typing is retained rather than clamped or replaced. Parse it with
+`ctx.parse_time(value, "minute" | "second")`, which returns `()` while invalid
+or incomplete. Up/Down steps parseable values by the configured precision.
+
+`TimeRangePicker` takes one of these controlled values:
+
+```rhai
+let relative_range = #{ kind: "relative", duration_ms: 900000 };
+let absolute_range = #{ kind: "absolute", start: 1791947400000, end: 1791952200000 };
+// Resolve only when issuing the application query:
+let interval = time_range_resolve(relative_range, ctx.now());
+```
+
+Relative presets remain relative; do not persist the temporary resolved pair as
+their definition. Custom absolute edits remain a draft until Apply emits a
+complete validated range; Escape/cancel does not change the controlled value.
+Changing `revision` also replaces an open draft when the value itself is equal.
+Optional `zone_switch` changes draft presentation and `shift_buttons` proposes
+adjacent absolute windows. `min`/`max` bound absolute instants and
+`max_span_ms` bounds duration. Nonexistent local times are errors; ambiguous
+ones require an explicit occurrence/offset choice. Future times are valid by
+default, not silently clamped to now.
+
+`Timeline` presents bounded keyed stage/event records with nested `children`,
+optional caller-owned `details`, controlled `expanded` and `selected_keys`,
+status/current-step semantics and virtualized rows. `order` preserves or reverses
+sibling source order; it is not a timestamp sorting service. `time_display`
+chooses absolute, relative or duration labels, and `day_headers` supports
+caller-ordered feeds. Current step, keyboard cursor and accepted selection are
+different states. Pass `visible: ctx.is_visible()` when a retained page should
+pause relative/duration presentation ticks while hidden. These ticks only
+refresh labels: none of the time controls fetches business data or starts
+automatic query refresh.
 
 ## 9. Design tokens, themes and Theme Studio
 
@@ -1094,6 +1343,18 @@ Guidelines:
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.
+- Array and NativeCollection Tables both execute an explicit controlled `sort`
+  in Rust. `sort.key` names a declared display column; that column's optional
+  `sort_key` names the actual scalar rank field, defaulting to the column key.
+  For example, display `duration: "1 h 5 m"` while comparing
+  `sort_key: "duration_seconds"`. Missing/null ranks stay last in ascending and
+  descending order, equal ranks preserve source order, and invalid non-null
+  rank types reject the candidate. String comparison is byte order; supply a
+  lowercase rank field for case-insensitive order. Sorting precedes controlled
+  filtering, paging and grouping, without changing display fields or header
+  event keys. Previously Array rows ignored `sort`: remove duplicate caller
+  sorts now, or omit `sort` / pass `()` to preserve caller order. Large Arrays
+  still have ordinary Rhai limits; native sorting is not permission to raise them.
 - Register names known at mount through the extension. For names discovered
   later, call `ScriptViewHandle::register_native_collection`; a component that
   previously handled the missing-name error is tracked and invalidated exactly
@@ -1112,9 +1373,9 @@ Guidelines:
 - Use Table `query`/`search_fields` and `page`/`page_size` for controlled
   Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct
-  strings remain the simple path. CodeViewer and DiffViewer compute from
-  immutable typed snapshots on background workers and commit complete matching
-  revisions.
+  strings remain the simple path. CodeViewer, DiffViewer and MarkdownViewer
+  compute from immutable typed snapshots on background workers and commit
+  complete matching revisions.
 - Use Table's `group_by`, `collapsed_groups`, and `on_group_toggle` contract for
   row grouping. Group values are non-empty strings from a declared column;
   headers count as virtual items, skip selection, and stick by default through
@@ -1135,6 +1396,50 @@ See [Performance](https://github.com/eddix/gpui-rhai/blob/main/docs/performance.
 [Rust-owned collections](https://github.com/eddix/gpui-rhai/blob/main/docs/native-collections.md), and
 [Native document viewers](https://github.com/eddix/gpui-rhai/blob/main/docs/document-viewers.md), and [Custom
 primitives](https://github.com/eddix/gpui-rhai/blob/main/docs/custom-primitives.md).
+
+### 11.1 Shared scrollbars and growing virtual content
+
+`ScrollbarSource` is the public Rust adapter for authoritative native scroll
+state. Built-in adapters cover `ScrollHandle`, `UniformListScrollHandle` and
+measured `ListState`. A custom primitive obtains a themed factory from
+`PrimitiveContext::scrollbars(theme)`; a Host surface uses
+`ScriptViewHost::scrollbars(scope, theme)` under that Host's `container`.
+Render the viewport first and its `ScrollbarContext::element(id, source, spec)`
+as a sibling overlay in a relative clipped wrapper. `ScrollbarSpec::new` accepts
+`"auto"`, `"always"` or `"hidden"` for each axis. `with_part_styles` uses the
+same track/thumb/hover parts as official surfaces; keyboard focus and semantic
+navigation remain with the viewport, not the thumb.
+
+Keep scope/element IDs stable and unique. Retain and clone a
+`ScrollbarSourceHandle` alongside a replaceable native source; constructing a
+new wrapper gives a replacement source a new drag lease. Raw GPUI adapters
+remain supported, but their scrollbar ID must change on source replacement.
+Measured-list dragging calls the native height-freeze hooks and cleans up on
+release/cancel, disappearance, suspension, disposal or window deactivation.
+The factory never owns a second offset or follow state. `with_scroll_axis`
+sets wheel ownership independently of bar visibility; `with_scroll_parent`
+adds Host-native ancestors nearest-first for residual wheel routing. SDK
+primitives receive their retained ancestor chain automatically. The private
+interaction coordinator stays private.
+
+For a growing transcript, set `virtual_collection`'s `alignment: "bottom"`
+and `follow_tail: true`, with stable data keys and an estimated row height.
+Reader input away from the tail pauses native following; reaching the bottom
+or `ctx.scroll_collection_to_end(key)` resumes it. The growing last row may be
+taller than the viewport. Payload-only changes and row realization do not
+reapply a scroll-to-end or steal the reading position. Keyed insert/delete/
+reorder and remeasurement preserve a surviving reader key and intra-item offset.
+
+`on_follow_change: Fn("follow_changed")` receives `#{ following, unseen }`.
+Unseen counts distinct newly added keys while paused, not streamed chunks or
+rerenders; deletion removes unseen keys and resuming clears them.
+`ctx.collection_follow_status(key)` is an event-time query, not a render
+dependency. `ctx.scroll_collection_to_start(key)` pauses following; both scroll
+commands are component-local and execute after a successful transaction.
+`follow_tail` and controlled `reveal_key` are mutually exclusive. A Rust Host
+can resolve `ScriptViewHandle::collection_scroll_handle(id, cx)` for status,
+start/end, pixel scrolling or `pause_following`; resolve again after replacement
+or unmount. Do not mirror that position/follow policy in another Rhai cache.
 
 ### Motion is a native runtime path
 
@@ -1262,6 +1567,16 @@ authorization and opaque-handle ownership again at the service boundary. A
 custom primitive is trusted Rust and belongs to the Host boundary, not the
 script sandbox.
 
+New application components do not expand that authority. Navigation and
+ColumnBrowser emit proposals rather than route/load data; Composer does not
+send requests or cancel Host tasks itself; temporal controls do not refresh
+queries. Markdown never executes HTML, follows links or fetches images. Native
+text registration publishes immutable Host data, not filesystem access. The
+Gallery's streaming and loading examples use offline fixtures, not production
+services. Generic `ctx.copy_text` is a bounded post-commit clipboard command for
+user input or explicit automation, not a render, timer, effect or background
+clipboard channel.
+
 See [Security boundary](https://github.com/eddix/gpui-rhai/blob/main/docs/security-boundary.md) and
 [Capabilities](https://github.com/eddix/gpui-rhai/blob/main/docs/capabilities.md).
 
@@ -1299,6 +1614,15 @@ Also exercise:
 - RTL logical layout and navigation;
 - light/dark theme contrast and every component state;
 - reduced motion;
+- retained-page round trips for native scroll, selection/undo and focus, plus
+  application-visible versus active/task policy;
+- paused tail following under append/prepend/reorder/remeasure, scrollbar
+  cancellation and residual wheel chaining;
+- distinct formatted Table ranks and display values on Array and native data;
+- composer IME confirmation versus submit, independent card actions, Markdown
+  cross-block/plain/source/code copy, and stale native document deliveries;
+- wall-clock/timezone determinism, DST gaps/folds, absolute Apply/cancel and
+  relative-range resolution at query time;
 - release binaries, not only debug builds.
 
 Visual baselines supplement interaction tests; they do not replace them.

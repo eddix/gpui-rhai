@@ -45,6 +45,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/kbd`](components/kbd.md) | `Kbd` | Kbd presents a key legend: a framed keycap, or an inline legend inside menus and buttons. |
 | [`components/label`](components/label.md) | `Label` | Label presents a control label with optional required and description text. |
 | [`components/list`](components/list.md) | `List` | Controlled virtualized list of keyed rows: the rows Table draws, without columns. |
+| [`components/markdown_viewer`](components/markdown_viewer.md) | `MarkdownViewer` | Native CommonMark/GFM, not an editor or a WebView. |
 | [`components/menu`](components/menu.md) | `Menu` | Controlled in-window menu with roving selection and nested submenu nodes. |
 | [`components/pagination`](components/pagination.md) | `Pagination` | Pagination is a stateless Rhai composition for one-based controlled page state. |
 | [`components/pan_zoom`](components/pan_zoom.md) | `PanZoom` | Controlled Canvas viewport transform with native pan and pointer-anchored zoom. |

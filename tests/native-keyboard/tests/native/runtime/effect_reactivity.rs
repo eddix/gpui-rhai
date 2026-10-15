@@ -202,5 +202,23 @@ fn direct_host_document_and_collection_mutations_render_without_a_clock_tick(
     settle(&mut visual, Step::Frame, 3);
     assert_eq!(node_by_test_id(&mut visual, &view, "revision").name, "2");
     assert_eq!(node_by_test_id(&mut visual, &view, "rows").name, "2");
+    assert!(
+        visual
+            .update(|_, cx| view.release_native_text_document("source", cx))
+            .unwrap()
+    );
+    settle(&mut visual, Step::Frame, 3);
+    assert_eq!(node_by_test_id(&mut visual, &view, "revision").name, "missing");
+    visual
+        .update(|_, cx| {
+            view.register_native_text_document(
+                "source",
+                NativeTextDocument::new("source", 1, "registered again").unwrap(),
+                cx,
+            )
+        })
+        .unwrap();
+    settle(&mut visual, Step::Frame, 3);
+    assert_eq!(node_by_test_id(&mut visual, &view, "revision").name, "1");
     assert!(last_error(&mut visual, &view).is_none());
 }
