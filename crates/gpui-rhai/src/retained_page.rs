@@ -113,6 +113,25 @@ impl PageVisibility {
     }
 }
 
+impl RetainedUiTree {
+    /// Whether every retained-page ancestor permits presentation. This is not
+    /// a layout/paint query: ordinary clipping and display styles are separate.
+    #[must_use]
+    pub fn is_page_visible(&self, node: NodeId) -> bool {
+        let mut cursor = Some(node);
+        while let Some(id) = cursor {
+            let Some(retained) = self.node(id) else {
+                return false;
+            };
+            if retained.attributes().get(PAGE_VISIBLE) == Some(&UiValue::Bool(false)) {
+                return false;
+            }
+            cursor = retained.parent();
+        }
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -471,24 +490,5 @@ fn view(ctx) { column([text("moving").with_key("moving").motion(motion_transitio
         assert!(
             matches!(lifecycle.root().unwrap().kind(), crate::UiNodeKind::Text {text} if text == "true")
         );
-    }
-}
-
-impl RetainedUiTree {
-    /// Whether every retained-page ancestor permits presentation. This is not
-    /// a layout/paint query: ordinary clipping and display styles are separate.
-    #[must_use]
-    pub fn is_page_visible(&self, node: NodeId) -> bool {
-        let mut cursor = Some(node);
-        while let Some(id) = cursor {
-            let Some(retained) = self.node(id) else {
-                return false;
-            };
-            if retained.attributes().get(PAGE_VISIBLE) == Some(&UiValue::Bool(false)) {
-                return false;
-            }
-            cursor = retained.parent();
-        }
-        true
     }
 }
