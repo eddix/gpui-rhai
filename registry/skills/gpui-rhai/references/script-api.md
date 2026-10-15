@@ -159,6 +159,10 @@ Components, references, collections, timers, motion and canvas commands.
 | `shadow(spec: Map) -> ShadowSpec` | Creates a box shadow from `#{ x, y, blur, spread, color }` in pixels; only `color` is required, and `blur` and `spread` are non-negative. |
 | `signal(key: String, initial: ?) -> NativeSignal` | Declares a component-local native signal holding a bool, int, float, string or color during formal render; `initial` applies on first mount. |
 | `span(text: String) -> Span` | Creates an inline run for `text([...])`, refined with `color`, `background`, `typography`, `bold` and `italic`. |
+| `time_local_candidates(date: String, time: String, zone: String) -> Array` | Returns ordered epoch-ms instants for a local date/time: zero in a DST gap, two in a fold, one otherwise; never guesses. |
+| `time_parts(ms: int, zone: String) -> Map` | Returns date, time, offset_minutes and zone for an epoch instant; date/time are ISO and HH:MM:SS. |
+| `time_range_error(value: Map, min: ?, max: ?, max_span_ms: ?) -> String` | Returns an empty string for a valid relative/absolute range, otherwise a validation explanation; optional epoch bounds and span use (). |
+| `time_range_resolve(value: Map, now_ms: int) -> Map` | Resolves a relative duration at query time or preserves an absolute range, returning start/end epoch milliseconds. |
 | `timeout(key: String, delay_ms: int, paused: bool, callback: FnPtr, payload: ?)` | Declares one-shot timer `key` during formal render that calls `callback(ctx, payload)` `delay_ms` (1 ms to 24 h) later, unless `paused`. |
 
 ## Context methods (`ctx`)
@@ -190,11 +194,14 @@ Methods of the context a view, callback or effect receives.
 | `ctx.focus(key: String)` | Queues keyboard focus for the node of a component-local ref key, applied after the transaction commits; not allowed during render. |
 | `ctx.focus_window(id: String)` | Queues activation of window `id`; needs window-command authority and is not allowed during render. |
 | `ctx.format_date(date: String, style: String) -> String` | Formats an ISO `YYYY-MM-DD` date in the selected locale; `style` is `short`, `medium` or `long`. Records a locale dependency in render. |
+| `ctx.format_duration(ms: int) -> String` | Formats a signed elapsed duration using localized compact units and digits. |
 | `ctx.format_month_year(date: String) -> String` | Formats the month and year of an ISO `YYYY-MM-DD` date with the selected locale's pattern. Records a locale dependency in render. |
 | `ctx.format_number(value: float) -> String` | Formats a finite number with the selected locale's digits and separators. Records a locale dependency in render. |
 | `ctx.format_number(value: float, options: Map) -> String` | Formats a finite number in the selected locale; `options` takes `min_fraction_digits`, `max_fraction_digits` (0 to 12) and `grouping`. |
 | `ctx.format_number(value: int) -> String` | Formats an integer with the selected locale's digits and separators. Records a locale dependency in render. |
 | `ctx.format_number(value: int, options: Map) -> String` | Formats an integer in the selected locale; `options` takes `min_fraction_digits`, `max_fraction_digits` (0 to 12) and `grouping`. |
+| `ctx.format_relative(ms: int) -> String` | Formats an epoch instant relative to the injected wall clock using selected locale phrases and digits. |
+| `ctx.format_time(ms: int, style: String, zone: String) -> String` | Formats an epoch instant in the selected locale and explicit local/UTC/offset/IANA zone; style is short, medium or long. |
 | `ctx.get_app_store(store: String, field: String) -> ?` | Reads `field` of the app store `store`; in render it subscribes the component to the whole field. |
 | `ctx.get_app_store_path(store: String, field: String, path: Array) -> ?` | Reads one nested path of an app store field, in render subscribing to that path only; segments are keys, indexes or `#{ by, key }`. |
 | `ctx.get_native_chart_data(name: String) -> NativeChartData` | Returns the Host-registered chart data `name`; the handle notifies its own updates, so the read adds no rerender dependency. |
@@ -215,8 +222,10 @@ Methods of the context a view, callback or effect receives.
 | `ctx.motion_quality() -> String` | Returns the Host's motion quality tier: `low`, `medium` or `high`. |
 | `ctx.motion_spring(role: String) -> Map` | Returns the theme spring preset for `role` as `#{ stiffness, damping, mass }`; raises an error for an unknown role. |
 | `ctx.motion_stagger(role: String) -> int` | Returns the theme stagger interval in milliseconds for `role`, such as `tight`; raises an error for an unknown role. |
+| `ctx.now() -> int` | Returns epoch milliseconds from the Host wall clock, independent of animation time. |
 | `ctx.number() -> Map` | Returns the selected locale's number metadata: `digits`, separators, group sizes and `minus_sign`. Records a locale dependency in render. |
 | `ctx.open_window(id: String, title: String, width: int, height: int, focus: bool)` | Queues a new window `id` that runs the same entry, sides 200 to 4096 pixels; needs window-command authority, not during render. |
+| `ctx.parse_time(value: String, precision: String) -> ?` | Parses localized minute/second clock text to HH:MM:SS, or returns () for incomplete or invalid text. |
 | `ctx.pause_motion(handle: MotionHandle)` | Pauses the timeline behind `handle` at its current position; raises an error for a stale handle and is not allowed during render. |
 | `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` `key`; returns `false` when no such timer is active. Not allowed during render. |
 | `ctx.play_motion(handle: MotionHandle)` | Plays the timeline behind `handle`, resuming a paused position; idempotent while playing and not allowed during render. |
@@ -258,6 +267,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render. |
 | `ctx.theme_variant() -> ?` | Returns the resolved theme variant as `#{ family, name, mode }`, or `()` without a theme; records a theme dependency in render. |
 | `ctx.theme_variants() -> Array` | Lists every loaded theme variant as `#{ family, name, mode }`, ordered by family and name, for a theme picker. |
+| `ctx.time() -> Map` | Returns detached selected-locale time patterns, hour cycle, periods, compact units and relative phrases. |
 | `ctx.today() -> String` | Returns today's date as an ISO `YYYY-MM-DD` string from the Host calendar clock; available during render. |
 | `ctx.view_id() -> String` | Returns the identity of the mounted script view; raises an error when the context has no view. |
 | `ctx.viewport_class() -> String` | Returns `compact`, `regular` or `wide` for the current window's width; records a viewport dependency in render. |

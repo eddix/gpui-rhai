@@ -2,6 +2,7 @@
 {"id":"components/timeline","export":"Timeline","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],"environment":["size","density"]}
 */
 // A source-owned, controlled timeline. Application work and data loading stay outside it.
+// Example: Timeline(#{key:"runs",label:"Deployment",items:[#{key:"build",title:"Build",status:"success"}]})
 define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.2.2",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
     tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],environment:["size","density"]},
@@ -17,7 +18,7 @@ define_component(#{metadata:#{id:"components/timeline","export":"Timeline",versi
         selected_keys:#{schema:#{type:"array",items:#{type:"string"},max_items:1},required:false,sensitive:false,"default":#{type:"array",value:[]},doc:"Controlled single selection."},
         selection_mode:#{schema:#{type:"string",allowed:["none","single"]},required:false,sensitive:false,"default":#{type:"string",value:"none"},doc:"Single selection makes the timeline one tab stop; none still permits group folding."},
         day_headers:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false},doc:"Adds localized day headings to time-ordered feeds."},
-        visible:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:true},doc:"Pause relative presentation ticks while a retained timeline is not visible."},
+        visible:#{schema:#{type:"optional",value:#{type:"bool"}},required:false,sensitive:false,doc:"Optional application visibility override. By default ctx.is_visible() pauses presentation ticks on hidden retained pages."},
         height:#{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,"default":#{type:"integer",value:320},doc:"Virtualized viewport height in logical pixels."},
         size:#{schema:#{type:"optional",value:#{type:"string",allowed:["xs","sm","md","lg"]}},required:false,sensitive:false,doc:"Explicit size or inherited size."},
         on_expanded_change:#{schema:#{type:"optional",value:#{type:"callback"}},required:false,sensitive:false,doc:"Called with proposed expanded keys on disclosure or Left/Right."},
@@ -154,7 +155,8 @@ fn render_Timeline(ctx,props){
     effect("selection_cursor",#{selected:props.selected_keys,cursor:if !initialized||external_selection{cursor}else{()},
         reveal:if !initialized||external_selection{reveal}else{()}},Fn("synchronize_selection"),Fn("cleanup_selection"));
     let tick=ctx.get_state("tick");
-    if props.time_display!="absolute"{timeout("relative-labels",60000,!props.visible,Fn("timeline_tick"),tick);}
+    let visible=if "visible" in props&&props.visible!=(){props.visible}else{ctx.is_visible()};
+    if props.time_display!="absolute"{timeout("relative-labels",60000,!visible,Fn("timeline_tick"),tick);}
     let config=#{key:`${props.key}-rows`,label:props.label,data:records,height:props.height,estimated_height:48.0};
     if reveal!=""{config.reveal_key=reveal;}
     let focus=if props.selection_mode=="single"{`${props.key}-focus`}else{()};

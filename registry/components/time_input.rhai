@@ -1,6 +1,8 @@
 /* gpui-rhai
 {"id":"components/time_input","export":"TimeInput","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/input"],"capabilities":{},"tokens":[],"environment":["size"]}
 */
+// Controlled locale-aware clock editing; partial text remains an editable draft.
+// Example: TimeInput(#{key:"clock",label:"Time",value:clock,on_change:Fn("clock_changed")})
 import "components/input" as input;
 // Controlled native text editing: incomplete text is retained, not replaced during typing.
 define_component(#{metadata:#{id:"components/time_input","export":"TimeInput",version:"0.2.2",
