@@ -5,6 +5,14 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## Unreleased
+
+- The Gallery's Menu page opens its menu. Its trigger was a Button whose
+  `on_click` did nothing; a script click handler stops the click, so the menu
+  never saw it. The Button now opens the menu, and Menu's and Popover's
+  `trigger` docs say that a trigger handling its own click must open the
+  overlay itself or go without the handler.
+
 ## 0.2.2 - 2026-10-13
 
 A compatible patch release of 0.2: Toast's stacked layout, a Host hook for the

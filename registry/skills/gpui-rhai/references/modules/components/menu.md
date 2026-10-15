@@ -33,7 +33,7 @@ menu::Menu(#{ key: "file", label: "File menu", trigger: text("File"), open: true
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `placement` | `"top"` or `"bottom"` or `"left"` or `"right"` | `"bottom"` | Preferred side of the trigger, or of `anchor`, that the menu opens on. |
 | `style` | style | — | Style merged over the root part. |
-| `trigger` | node | required | Node that anchors the menu; clicking it, or Enter and Space on it, toggles the menu. |
+| `trigger` | node | required | Node that anchors the menu; clicking it, or Enter and Space on it, toggles the menu. A trigger that handles its own click, such as a Button with `on_click`, keeps the click: open the menu from that handler, or pass the trigger without one. |
 
 ### `anchor` fields
 

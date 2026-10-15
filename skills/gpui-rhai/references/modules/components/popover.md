@@ -30,7 +30,7 @@ popover::Popover(#{ key: "profile", label: "Profile", trigger: text("Open"), con
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `placement` | `"top"` or `"bottom"` or `"left"` or `"right"` | `"bottom"` | Preferred side of the trigger the panel opens on. |
 | `style` | style | — | Style merged over the root part. |
-| `trigger` | node | required | Node that anchors the panel; clicking it, or Enter and Space on it, toggles the popover. |
+| `trigger` | node | required | Node that anchors the panel; clicking it, or Enter and Space on it, toggles the popover. A trigger that handles its own click, such as a Button with `on_click`, keeps the click: open the popover from that handler, or pass the trigger without one. |
 
 ## Events
 

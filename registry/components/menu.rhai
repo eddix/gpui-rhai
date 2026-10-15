@@ -46,7 +46,7 @@ define_component(#{
             parent_overlay: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                 doc: "`key` of the open menu this one is a submenu of; closing that menu closes this one too." },
             trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false,
-                doc: "Node that anchors the menu; clicking it, or Enter and Space on it, toggles the menu." },
+                doc: "Node that anchors the menu; clicking it, or Enter and Space on it, toggles the menu. A trigger that handles its own click, such as a Button with `on_click`, keeps the click: open the menu from that handler, or pass the trigger without one." },
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
                 doc: "Whether the menu is shown; the caller stores the `open_change` payload and passes it back." },
             active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
