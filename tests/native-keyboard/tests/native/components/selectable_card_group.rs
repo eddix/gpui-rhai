@@ -4,8 +4,8 @@ use gpui_rhai::UiValue;
 use gpui_rhai_registry::{AR_LOCALE, DEFAULT_LIGHT_THEME, DEFAULT_THEME, EN_LOCALE};
 
 use crate::support::{
-    Mount, ReplaceOnce, bounds, by_test_id, click_center, dispatch, last_error, node_by_test_id,
-    nodes, text_of,
+    Mount, ReplaceOnce, bounds, by_test_id, click_center, dispatch, last_error, nodes,
+    text_of,
 };
 
 const SOURCE: &str = r#"
@@ -36,12 +36,14 @@ import "components/selectable_card_group" as cards;
 define_component(#{
     metadata: #{id:"test/scoped_choice_pane", "export":"ScopedChoicePane", version:"0.2.2",
         runtime_api:#{min_inclusive:3,max_exclusive:4}, dependencies:["components/selectable_card_group"], capabilities:#{}},
-    schema:#{props:#{label:#{schema:#{type:"string"},required:true,sensitive:false}},
+    schema:#{props:#{label:#{schema:#{type:"string"},required:true,sensitive:false},
+        nested:#{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false}}},
         state:#{fields:#{values:#{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[]}}}},
         events:#{},slots:#{},parts:[]},render:Fn("render_scoped_choice_pane")
 });
 fn scoped_choice_changed(ctx,values){ctx.set_state("values",values);}
 fn render_scoped_choice_pane(ctx,props){
+    if props.nested {return render_component("test/scoped_choice_pane",#{key:"right",label:props.label});}
     cards::SelectableCardGroup(#{key:"choices",label:`${props.label} choices`,values:ctx.get_state("values"),
         items:[#{value:"a",label:`${props.label} choice`,content:text(`${props.label} description`)}],
         on_change:Fn("scoped_choice_changed")}).with_style(style().width(px(260)))
@@ -59,7 +61,7 @@ fn view(ctx){column([
 fn cards_same_local_keys_in_sibling_component_scopes_keep_distinct_descriptions(
     cx: &mut TestAppContext,
 ) {
-    // The space and literal escape-looking key also exercise ID-list escaping.
+    // Neither parent nor group keys are restricted to safe ASCII test-ID tokens.
     let source = SCOPED_PANES.replace_once(
         "SCOPED_CONTENT",
         r#"row([choice_pane("left pane","Left"),choice_pane("left%20;pane","Right")])"#,
@@ -91,6 +93,55 @@ fn cards_same_local_keys_in_sibling_component_scopes_keep_distinct_descriptions(
         .filter_map(|node| node.semantic_id)
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(rerendered_ids, ids, "scoped IDs must be deterministic");
+    assert_eq!(last_error(&mut visual, &view), None);
+}
+
+#[gpui::test]
+fn cards_distinct_typed_paths_with_equal_display_scopes_do_not_alias(cx: &mut TestAppContext) {
+    // These paths stringify identically:
+    // ScopedChoicePane[left]/ScopedChoicePane[right]/SelectableCardGroup[choices]
+    // One has a delimiter-containing parent key, the other two typed segments.
+    let source = SCOPED_PANES.replace_once(
+        "SCOPED_CONTENT",
+        r#"row([
+            choice_pane("left]/ScopedChoicePane[right","Flat"),
+            render_component("test/scoped_choice_pane",#{key:"left",label:"Nested",nested:true}),
+        ])"#,
+    );
+    let (mut visual, view) = Mount::components(source).mount(cx);
+    let snapshot = nodes(&mut visual, &view);
+    for name in ["Flat", "Nested"] {
+        let radio = snapshot
+            .iter()
+            .find(|node| node.role == "radio" && node.name == format!("{name} choice"))
+            .unwrap();
+        assert_eq!(radio.description, format!("{name} description"));
+    }
+    let ids = snapshot
+        .iter()
+        .filter_map(|node| node.semantic_id.as_ref())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids.len(),
+        2,
+        "Display cannot identify a typed component path"
+    );
+    assert_eq!(last_error(&mut visual, &view), None);
+}
+
+#[gpui::test]
+fn cards_accept_unicode_and_whitespace_group_keys_without_automatic_test_ids(
+    cx: &mut TestAppContext,
+) {
+    let source = SCOPED_PANES
+        .replace_once("key:\"choices\",label:", "key:\"本 地 choices / %\",label:")
+        .replace_once("SCOPED_CONTENT", r#"choice_pane("pane","Unicode")"#);
+    let (mut visual, view) = Mount::components(source).mount(cx);
+    let radio = nodes(&mut visual, &view)
+        .into_iter()
+        .find(|node| node.role == "radio")
+        .unwrap();
+    assert_eq!(radio.description, "Unicode description");
     assert_eq!(last_error(&mut visual, &view), None);
 }
 
@@ -195,14 +246,8 @@ fn cards_select_on_focus_rtl_and_token_geometry_across_modes_and_densities(
                     .locale("en.rhai", EN_LOCALE)
                     .locale("ar.rhai", AR_LOCALE)
                     .mount(cx);
-                let alpha = node_by_test_id(&mut visual, &view, "regions-choice-0")
-                    .geometry
-                    .unwrap()
-                    .visual;
-                let beta = node_by_test_id(&mut visual, &view, "regions-choice-1")
-                    .geometry
-                    .unwrap()
-                    .visual;
+                let alpha = bounds(&mut visual, &view, "group", "Alpha");
+                let beta = bounds(&mut visual, &view, "group", "Beta");
                 assert!(alpha.width > 150.0 && alpha.height > 30.0);
                 assert!(
                     (alpha.height - beta.height).abs() < 1.0,

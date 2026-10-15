@@ -55,6 +55,12 @@ impl ComponentInstancePath {
         self.0.starts_with(&ancestor.0)
     }
 
+    pub(crate) fn segments(&self) -> impl ExactSizeIterator<Item = (&str, &str)> {
+        self.0
+            .iter()
+            .map(|segment| (segment.component.as_str(), segment.key.as_str()))
+    }
+
     pub(crate) fn single_root_key(&self, component: &str) -> Option<&str> {
         (self.0.len() == 1 && self.0[0].component == component).then_some(self.0[0].key.as_str())
     }
