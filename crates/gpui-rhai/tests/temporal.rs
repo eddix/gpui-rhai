@@ -3,6 +3,131 @@ mod common;
 use common::{compile_official, mount, new_runtime};
 use gpui_rhai::{LocaleManager, UiValue, WallClock, load_locale_source};
 use gpui_rhai_registry as registry;
+
+fn settle_lifecycle(
+    lifecycle: &mut gpui_rhai::ScriptLifecycle,
+    engine: &mut gpui_rhai::RuntimeEngine,
+) {
+    for _ in 0..16 {
+        if !lifecycle.render_dirty(engine).unwrap() {
+            return;
+        }
+    }
+    panic!("effect state did not settle after 16 formal renders");
+}
+
+fn handler_node<'a>(node: &'a gpui_rhai::UiNode, event: &str) -> Option<&'a gpui_rhai::UiNode> {
+    if node.handler(event).is_some() {
+        return Some(node);
+    }
+    match node.kind() {
+        gpui_rhai::UiNodeKind::Box { children } | gpui_rhai::UiNodeKind::Fragment { children } => {
+            children.iter().find_map(|child| handler_node(child, event))
+        }
+        gpui_rhai::UiNodeKind::Overlay {
+            trigger, content, ..
+        } => handler_node(trigger, event).or_else(|| handler_node(content, event)),
+        _ => None,
+    }
+}
+
+#[test]
+fn formal_effect_replacement_commits_owned_state_and_reaches_a_fixed_point() {
+    let (mut engine, compiled) = compile_official(
+        "effect_replace.rhai",
+        r#"
+        define_component(#{metadata:#{id:"test/effect_copy","export":"EffectCopy",version:"0.2.2",runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
+            schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},value:#{schema:#{type:"integer"},required:true,sensitive:false}},
+                state:#{fields:#{copied:#{schema:#{type:"integer"},"default":#{type:"integer",value:-1}}}},events:#{},slots:#{},parts:[],effects:["copy"]},render:Fn("render_copy")});
+        fn state_schema(){#{fields:#{value:#{schema:#{type:"integer"},"default":#{type:"integer",value:1}}}}}
+        fn copy_value(ctx,value){ctx.set_state("copied",value);}
+        fn copy_cleanup(ctx,value){ctx.get_state("copied");}
+        fn render_copy(ctx,props){effect("copy",props.value,Fn("copy_value"),Fn("copy_cleanup"));text(`${ctx.get_state("copied")}`)}
+        fn external_replacement(ctx,payload){ctx.set_state("value",2);}
+        fn view(ctx){render_component("test/effect_copy",#{key:"copy",value:ctx.get_state("value")})}
+    "#,
+    );
+    let replace = engine.callback(&compiled, "external_replacement").unwrap();
+    let runtime = new_runtime();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
+    settle_lifecycle(&mut lifecycle, &mut engine);
+    let owner = lifecycle.root().unwrap().component_root().unwrap().clone();
+    assert_eq!(
+        runtime.borrow().component_state.get(&owner, "copied"),
+        Some(&UiValue::Integer(1))
+    );
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &replace, UiValue::Null)
+        .unwrap();
+    settle_lifecycle(&mut lifecycle, &mut engine);
+    assert_eq!(
+        runtime.borrow().component_state.get(&owner, "copied"),
+        Some(&UiValue::Integer(2)),
+        "state={:?}, effects={:?}",
+        runtime.borrow().component_state.inspect(),
+        runtime.borrow().effects.iter().collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn open_range_rebase_effect_commits_the_new_identity_before_apply() {
+    let (mut engine, compiled) = compile_official(
+        "range_effect_rebase.rhai",
+        r#"
+        import "components/time_range_picker" as picker;
+        fn state_schema(){#{fields:#{value:#{schema:#{type:"ui_value"},"default":#{type:"map",value:#{kind:#{type:"string",value:"absolute"},start:#{type:"integer",value:1791947400000},end:#{type:"integer",value:1791952200000}}}},
+            zone:#{schema:#{type:"string"},"default":#{type:"string",value:"UTC"}},precision:#{schema:#{type:"string"},"default":#{type:"string",value:"minute"}},revision:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+        fn external_replacement(ctx,payload){ctx.set_state("value",#{kind:"absolute",start:1792033800000,end:1792038600000});ctx.set_state("zone","offset:60");ctx.set_state("precision","second");ctx.set_state("revision",1);}
+        fn view(ctx){picker::TimeRangePicker(#{key:"range",label:"Range",value:ctx.get_state("value"),time_zone:ctx.get_state("zone"),precision:ctx.get_state("precision"),revision:ctx.get_state("revision")})}
+    "#,
+    );
+    let replace = engine.callback(&compiled, "external_replacement").unwrap();
+    let runtime = new_runtime();
+    let locale = load_locale_source(engine.engine(), "en.rhai", registry::EN_LOCALE).unwrap();
+    runtime.borrow_mut().locale = Some(LocaleManager::new([locale], "en", "en").unwrap());
+    runtime.borrow_mut().wall_clock = WallClock::fixed(1_791_952_200_000);
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
+    let owner = lifecycle.root().unwrap().component_root().unwrap().clone();
+    let open = handler_node(lifecycle.root().unwrap(), "open_change")
+        .unwrap()
+        .handler("open_change")
+        .unwrap()
+        .as_script()
+        .unwrap()
+        .clone();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &open, UiValue::Bool(true))
+        .unwrap();
+    settle_lifecycle(&mut lifecycle, &mut engine);
+    assert_eq!(
+        runtime.borrow().component_state.get(&owner, "open"),
+        Some(&UiValue::Bool(true))
+    );
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &replace, UiValue::Null)
+        .unwrap();
+    settle_lifecycle(&mut lifecycle, &mut engine);
+    let base = runtime
+        .borrow()
+        .component_state
+        .get(&owner, "draft_base")
+        .cloned();
+    let Some(UiValue::Map(base)) = base else {
+        panic!("missing typed draft identity");
+    };
+    assert_eq!(
+        base.get("revision"),
+        Some(&UiValue::Integer(1)),
+        "state={:?}, effects={:?}",
+        runtime.borrow().component_state.inspect(),
+        runtime.borrow().effects.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(base.get("zone"), Some(&UiValue::String("offset:60".into())));
+    assert_eq!(
+        runtime.borrow().component_state.get(&owner, "end_time"),
+        Some(&UiValue::String("05:30:00 AM".into()))
+    );
+}
 #[test]
 fn temporal_components_evaluate_with_pinned_clock_and_each_locale() {
     let source = r#"
