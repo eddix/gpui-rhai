@@ -28,6 +28,11 @@ mod intrinsic;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
+mod markdown;
+pub mod markdown_view;
+pub use markdown_view::{
+    MarkdownViewerPrimitiveHandler, init_markdown_view, markdown_viewer_primitive_descriptor,
+};
 pub mod native_collection;
 pub mod native_handler;
 pub mod node;

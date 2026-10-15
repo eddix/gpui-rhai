@@ -100,6 +100,11 @@ bundled_components!(
     ),
     (TABLE_SOURCE, "components/table", "../components/table.rhai"),
     (
+        MARKDOWN_VIEWER_SOURCE,
+        "components/markdown_viewer",
+        "../components/markdown_viewer.rhai"
+    ),
+    (
         SPLIT_PANE_SOURCE,
         "components/split_pane",
         "../components/split_pane.rhai"
@@ -514,6 +519,14 @@ pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
 pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
     ("gallery/main", include_str!("../gallery/main.rhai")),
     ("gallery/kit", include_str!("../gallery/kit.rhai")),
+    (
+        "gallery/pages/markdown",
+        include_str!("../gallery/pages/markdown.rhai"),
+    ),
+    (
+        "gallery/pages/messaging",
+        include_str!("../gallery/pages/messaging.rhai"),
+    ),
     (
         "gallery/pages/navigation",
         include_str!("../gallery/pages/navigation.rhai"),
@@ -1552,8 +1565,8 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 70);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 70);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 71);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 71);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);

@@ -40,6 +40,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Zero-size native element that measures one line of text for column auto-fit; `components/table` pairs it with `ColumnResizePrimitive`.",
     },
     ScriptFnDoc {
+        signature: "MarkdownViewPrimitive(_)",
+        params: &["props"],
+        doc: "Native read-only CommonMark/GFM presentation with measured virtualization, semantic links, selection and source/code copying; components/markdown_viewer wraps it. Never executes HTML or fetches images.",
+    },
+    ScriptFnDoc {
         signature: "PanZoomPrimitive(_)",
         params: &["props"],
         doc: "Native pan and zoom over a Canvas that previews its transform and proposes `transform_change`; `components/pan_zoom` wraps it.",

@@ -1,6 +1,64 @@
 use crate::{ComponentInstancePath, VirtualCollectionId};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) const MAX_MISSING_NAMES_PER_READER: usize = 64;
+pub(crate) const MAX_MISSING_READER_PAIRS: usize = 4_096;
+pub(crate) const MAX_MISSING_NAME_BYTES: usize = 64 * 1024;
+
+pub(crate) struct MissingReadBudget {
+    pub kind: &'static str,
+    pub limit: usize,
+}
+
+/// Shared bounded policy for caught lookups of not-yet-registered Host data.
+pub(crate) fn track_missing_reader(
+    index: &mut BTreeMap<String, BTreeSet<ReadDependency>>,
+    reader: &ReadDependency,
+    name: &str,
+) -> Result<(), MissingReadBudget> {
+    if index
+        .get(name)
+        .is_some_and(|readers| readers.contains(reader))
+    {
+        return Ok(());
+    }
+    if index
+        .values()
+        .filter(|readers| readers.contains(reader))
+        .count()
+        >= MAX_MISSING_NAMES_PER_READER
+    {
+        return Err(MissingReadBudget {
+            kind: "names per component",
+            limit: MAX_MISSING_NAMES_PER_READER,
+        });
+    }
+    if index.values().map(BTreeSet::len).sum::<usize>() >= MAX_MISSING_READER_PAIRS {
+        return Err(MissingReadBudget {
+            kind: "component/name pairs",
+            limit: MAX_MISSING_READER_PAIRS,
+        });
+    }
+    if !index.contains_key(name)
+        && index
+            .keys()
+            .map(String::len)
+            .sum::<usize>()
+            .saturating_add(name.len())
+            > MAX_MISSING_NAME_BYTES
+    {
+        return Err(MissingReadBudget {
+            kind: "name bytes",
+            limit: MAX_MISSING_NAME_BYTES,
+        });
+    }
+    index
+        .entry(name.to_owned())
+        .or_default()
+        .insert(reader.clone());
+    Ok(())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum ReadContribution {
     Component,
@@ -100,6 +158,54 @@ mod tests {
         ComponentStateSchema, ElementGeometry, GeometryBounds, GeometryRegistry, RetainedUiTree,
         StateField, StoreId, StoreRegistry, UiNode, UiValue, ValueSchema,
     };
+
+    #[test]
+    fn shared_missing_read_index_bounds_global_pairs_and_name_bytes() {
+        let mut index = BTreeMap::new();
+        for reader in 0..64 {
+            let owner = ReadDependency::component(&ComponentInstancePath::root(
+                "View",
+                format!("reader-{reader}"),
+            ));
+            for name in 0..64 {
+                track_missing_reader(&mut index, &owner, &format!("name-{name}"))
+                    .unwrap_or_else(|_| panic!("within budget"));
+            }
+        }
+        let overflow = ReadDependency::component(&ComponentInstancePath::root("View", "overflow"));
+        assert!(matches!(
+            track_missing_reader(&mut index, &overflow, "name-0"),
+            Err(MissingReadBudget {
+                kind: "component/name pairs",
+                ..
+            })
+        ));
+        assert_eq!(
+            index.values().map(BTreeSet::len).sum::<usize>(),
+            MAX_MISSING_READER_PAIRS
+        );
+        let mut index = BTreeMap::new();
+        for number in 0..256 {
+            let owner = ReadDependency::component(&ComponentInstancePath::root(
+                "View",
+                format!("byte-reader-{number}"),
+            ));
+            let name = format!("{number:04}-{}", "x".repeat(251));
+            track_missing_reader(&mut index, &owner, &name)
+                .unwrap_or_else(|_| panic!("within name budget"));
+        }
+        assert_eq!(
+            index.keys().map(String::len).sum::<usize>(),
+            MAX_MISSING_NAME_BYTES
+        );
+        assert!(matches!(
+            track_missing_reader(&mut index, &overflow, "more-bytes"),
+            Err(MissingReadBudget {
+                kind: "name bytes",
+                ..
+            })
+        ));
+    }
 
     #[test]
     fn contribution_retention_is_shared_by_store_environment_and_geometry() {

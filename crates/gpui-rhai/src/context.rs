@@ -317,6 +317,36 @@ impl UiRuntimeState {
         Ok(())
     }
 
+    /// Register a mounted Host document and invalidate exact pending readers.
+    ///
+    /// # Errors
+    /// Returns for invalid or duplicate names without changing the registry.
+    pub fn register_native_text_document_from_host(
+        &mut self,
+        name: &str,
+        document: crate::NativeTextDocument,
+    ) -> Result<(), crate::DocumentError> {
+        let invalidated = self
+            .native_documents
+            .register_with_invalidated(name.to_owned(), document)?;
+        self.mark_dirty_from_host(invalidated);
+        Ok(())
+    }
+
+    /// Release registry ownership and invalidate the document's exact readers.
+    ///
+    /// # Errors
+    /// Returns when the name is not registered.
+    pub fn release_native_text_document_from_host(
+        &mut self,
+        name: &str,
+    ) -> Result<bool, crate::DocumentError> {
+        let invalidated = self.native_documents.release(name)?;
+        let changed = !invalidated.is_empty();
+        self.mark_dirty_from_host(invalidated);
+        Ok(changed)
+    }
+
     /// Replace one Host-owned text revision and invalidate exact readers.
     ///
     /// # Errors

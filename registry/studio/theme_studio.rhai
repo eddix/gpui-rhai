@@ -7,6 +7,7 @@ import "components/collapsible" as collapsible;
 import "components/date_picker" as date_picker;
 import "components/calendar" as calendar;
 import "components/time_input" as time_input;
+import "components/markdown_viewer" as markdown_viewer;
 import "components/time_range_picker" as time_range_picker;
 import "components/timeline" as timeline;
 import "components/dialog" as dialog;
@@ -991,6 +992,8 @@ fn specimen(ctx) {
         specimen_data(ctx),
         specimen_columns(ctx),
         specimen_time(ctx),
+        markdown_viewer::MarkdownViewer(#{key:"specimen-markdown",label:"Markdown",source:"## Native content\n\n**Readable** text and `inline code`.\n\n- A semantic list\n- Theme typography"})
+            .with_style(style().height(px(200))),
         selectable_card_group::SelectableCardGroup(#{key:"specimen-cards",label:"Deployment region",
             values:ctx.get_state("specimen_card_values"),on_change:Fn("set_specimen_card_values"),
             items:[#{value:"east",label:"East",content:text("Healthy")},

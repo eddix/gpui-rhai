@@ -55,6 +55,7 @@ pub const BUNDLED_SKILL_FILES: &[(&str, &str)] = &[
     ("gpui-rhai/references/modules/components/kbd.md", include_str!("../skills/gpui-rhai/references/modules/components/kbd.md")),
     ("gpui-rhai/references/modules/components/label.md", include_str!("../skills/gpui-rhai/references/modules/components/label.md")),
     ("gpui-rhai/references/modules/components/list.md", include_str!("../skills/gpui-rhai/references/modules/components/list.md")),
+    ("gpui-rhai/references/modules/components/markdown_viewer.md", include_str!("../skills/gpui-rhai/references/modules/components/markdown_viewer.md")),
     ("gpui-rhai/references/modules/components/menu.md", include_str!("../skills/gpui-rhai/references/modules/components/menu.md")),
     ("gpui-rhai/references/modules/components/pagination.md", include_str!("../skills/gpui-rhai/references/modules/components/pagination.md")),
     ("gpui-rhai/references/modules/components/pan_zoom.md", include_str!("../skills/gpui-rhai/references/modules/components/pan_zoom.md")),

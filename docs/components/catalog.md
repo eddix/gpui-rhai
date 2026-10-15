@@ -178,10 +178,9 @@ selection navigation state.
 Source: [tree.rhai](../../registry/components/tree.rhai).
 Runnable story: `gpui-rhai gallery --story components/tree`.
 
-The same [specification](interaction-behaviors.md) records the planned
-SelectionArea, Rotatable, and DockLayout
-capabilities, their composition rules, and acceptance requirements. These
-planned entries are not additional implemented components or callable exports.
+The same [specification](interaction-behaviors.md) records composition rules
+and acceptance requirements for these interaction components, as well as the
+planned DockLayout. DockLayout is not an implemented component or callable export.
 In particular, the existing Motion ReorderList animates an externally supplied
 order; it does not yet implement interactive sorting.
 

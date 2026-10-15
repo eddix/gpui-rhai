@@ -83,6 +83,7 @@ pub fn install(cx: &mut App) {
     init_text_input(cx);
     init_text_area(cx);
     crate::init_document_view(cx);
+    crate::markdown_view::init_markdown_view(cx);
     cx.bind_keys([KeyBinding::new(
         "cmd-c",
         CopySelectedText,
@@ -1304,6 +1305,56 @@ impl ScriptViewHandle {
                 cx.notify();
             }
             Ok::<_, ScriptViewError>(())
+        })
+    }
+
+    /// Register a Host-owned document after mount, invalidating only components
+    /// that previously attempted to read this name. No preallocated pool is needed.
+    ///
+    /// # Errors
+    /// Returns after disposal or for an invalid/duplicate name.
+    pub fn register_native_text_document(
+        &self,
+        name: &str,
+        document: crate::NativeTextDocument,
+        cx: &mut App,
+    ) -> Result<(), ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            view.lifecycle
+                .runtime()
+                .borrow_mut()
+                .register_native_text_document_from_host(name, document)?;
+            if view.state.get() == ScriptViewState::Active {
+                cx.notify();
+            }
+            Ok::<_, ScriptViewError>(())
+        })
+    }
+
+    /// Release this name's registry ownership. In-flight viewers retain their
+    /// immutable snapshot safely; stop referring to the name before releasing it.
+    /// The boolean reports whether readers were invalidated; a successful
+    /// `false` result still released the registry's snapshot.
+    ///
+    /// # Errors
+    /// Returns after disposal or for an unknown name.
+    pub fn release_native_text_document(
+        &self,
+        name: &str,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .release_native_text_document_from_host(name)?;
+            if changed {
+                cx.notify();
+            }
+            Ok::<_, ScriptViewError>(changed)
         })
     }
 

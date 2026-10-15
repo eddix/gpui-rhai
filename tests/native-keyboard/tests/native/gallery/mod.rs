@@ -7,6 +7,7 @@ use gpui::{Render, TestAppContext, WindowHandle};
 use gpui_rhai::{PreparedScriptView, ScriptViewConfig, ScriptViewHandle, ScriptViewHost};
 
 mod acceptance;
+mod application_content;
 mod catalog_story;
 mod inputs_and_choices;
 mod navigation_workflow;

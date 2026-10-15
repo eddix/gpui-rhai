@@ -207,7 +207,7 @@ fn measured_stage(ctx, props) {
                 script(
                     locale,
                     &format!(
-                    "orientation: \"{orientation}\", \
+                        "orientation: \"{orientation}\", \
                      start: render_component(\"tests/measured_stage\", #{{key:\"start-stage\",color:{START}}}), \
                      end: render_component(\"tests/measured_stage\", #{{key:\"end-stage\",color:{END}}})"
                     )

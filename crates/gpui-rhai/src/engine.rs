@@ -748,6 +748,7 @@ impl RuntimeEngine {
         runtime
     }
 
+    #[allow(clippy::too_many_lines)] // Declarative registration of the built-in primitive set.
     fn register_builtin_primitives(&mut self) {
         let column_measurements = ColumnMeasurementRegistry::default();
         self.register_primitive(
@@ -824,6 +825,14 @@ impl RuntimeEngine {
             ),
         )
         .expect("built-in CodeViewer primitive descriptor is valid");
+        self.register_primitive(
+            crate::markdown_view::markdown_viewer_primitive_descriptor(),
+            crate::markdown_view::MarkdownViewerPrimitiveHandler::new(
+                self.syntax_registry.clone(),
+                self.document_runtime.clone(),
+            ),
+        )
+        .expect("built-in MarkdownViewer primitive descriptor is valid");
         self.register_primitive(
             crate::diff_viewer_primitive_descriptor(),
             crate::DiffViewerPrimitiveHandler::new(
