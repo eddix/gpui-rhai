@@ -8,6 +8,7 @@ use gpui_rhai::{PreparedScriptView, ScriptViewConfig, ScriptViewHandle, ScriptVi
 
 mod acceptance;
 mod catalog_story;
+mod inputs_and_choices;
 mod overlay_triggers;
 mod stories;
 mod title_bar;
