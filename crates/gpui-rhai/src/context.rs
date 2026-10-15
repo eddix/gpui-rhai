@@ -144,7 +144,7 @@ pub struct UiRuntimeState {
     /// Current semantic derivation, restored with invocation origin, not UI state.
     pub(crate) dispatch_owner: Option<SemanticDispatchOwner>,
     /// Tentative semantic publications, retained across nested commits.
-    dispatch_leases: Vec<Rc<Cell<bool>>>,
+    dispatch_leases: Vec<Rc<SemanticDispatchSource>>,
 }
 
 impl UiRuntimeState {
@@ -611,13 +611,13 @@ impl UiRuntimeState {
             pending
                 .owner
                 .as_ref()
-                .is_none_or(|owner| owner.effect.as_ref() != Some(scope))
+                .is_none_or(|owner| owner.source.effect.as_ref() != Some(scope))
         });
         self.pending_events.retain(|pending| {
             pending
                 .owner
                 .as_ref()
-                .is_none_or(|owner| owner.effect.as_ref() != Some(scope))
+                .is_none_or(|owner| owner.source.effect.as_ref() != Some(scope))
         });
         self.trace_subscription_closures();
         Ok(())
@@ -744,8 +744,8 @@ impl UiRuntimeState {
 
     pub(crate) fn dispatch_owner_active(&self, owner: Option<&SemanticDispatchOwner>) -> bool {
         owner.is_none_or(|owner| {
-            owner.runtime_id == self.runtime_id
-                && owner.active(
+            owner.source.runtime_id == self.runtime_id
+                && owner.source.active(
                     &self.component_incarnations,
                     &self.effects,
                     &self.effect_cascades,
@@ -759,12 +759,14 @@ impl UiRuntimeState {
         let cascades = &self.effect_cascades;
         let runtime_id = self.runtime_id;
         let active = |owner: &SemanticDispatchOwner| {
-            owner.runtime_id == runtime_id && owner.active(incarnations, effects, cascades)
+            owner.source.runtime_id == runtime_id
+                && owner.source.active(incarnations, effects, cascades)
         };
         self.pending_actions
             .retain(|pending| pending.owner.as_ref().is_none_or(&active));
         self.pending_events
             .retain(|pending| pending.owner.as_ref().is_none_or(&active));
+        self.effect_cascades.prune_dispatches(incarnations, effects);
     }
 
     pub(crate) fn has_virtual_requests(&self) -> bool {
@@ -892,7 +894,7 @@ impl UiRuntimeState {
                 pending
                     .owner
                     .as_ref()
-                    .map_or(&pending.target, |owner| &owner.component)
+                    .map_or(&pending.target, |owner| &owner.source.component)
             })
             .chain(
                 self.pending_actions
@@ -902,7 +904,7 @@ impl UiRuntimeState {
                         pending
                             .owner
                             .as_ref()
-                            .map(|owner| &owner.component)
+                            .map(|owner| &owner.source.component)
                             .or_else(|| pending.callback.component())
                     }),
             );
@@ -1066,7 +1068,7 @@ impl UiRuntimeState {
             .dispatch_leases
             .drain(snapshot.dispatch_lease_checkpoint..)
         {
-            lease.set(false);
+            lease.publication_valid.set(false);
         }
         self.tasks.restore(snapshot.tasks);
         self.subscriptions.restore(snapshot.subscriptions);
@@ -1318,17 +1320,26 @@ pub struct PendingEvent {
 /// deliberately opaque: `None` is an explicit Host entry, not a new Effect turn.
 #[derive(Clone, Debug)]
 pub struct SemanticDispatchOwner {
+    source: Rc<SemanticDispatchSource>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SemanticDispatchSource {
     runtime_id: RuntimeStateId,
     pub(crate) generation: ScriptGeneration,
     pub(crate) component: ComponentInstancePath,
     incarnation: ComponentIncarnation,
     pub(crate) effect: Option<AsyncScope>,
     cascade: Option<(ComponentInstancePath, u64)>,
-    publication_valid: Rc<Cell<bool>>,
+    publication_valid: Cell<bool>,
 }
 
-impl SemanticDispatchOwner {
-    fn active(
+impl SemanticDispatchSource {
+    pub(crate) fn publication_valid(&self) -> bool {
+        self.publication_valid.get()
+    }
+
+    pub(crate) fn active(
         &self,
         incarnations: &BTreeMap<ComponentInstancePath, ComponentIncarnation>,
         effects: &crate::EffectRegistry,
@@ -1348,9 +1359,11 @@ impl SemanticDispatchOwner {
                 .as_ref()
                 .is_none_or(|(root, epoch)| cascades.accepts_dispatch(root, *epoch))
     }
+}
 
+impl SemanticDispatchOwner {
     pub(crate) fn cascade_root(&self) -> Option<&ComponentInstancePath> {
-        self.cascade.as_ref().map(|(root, _)| root)
+        self.source.cascade.as_ref().map(|(root, _)| root)
     }
 }
 
@@ -2512,14 +2525,11 @@ impl UiContext {
     }
 
     fn semantic_dispatch_owner(&self, runtime: &mut UiRuntimeState) -> SemanticDispatchOwner {
-        let publication_valid = Rc::new(Cell::new(true));
-        if runtime.transaction_depth > 0 {
-            runtime.dispatch_leases.push(Rc::clone(&publication_valid));
-        }
-        let mut owner = runtime
+        let source = runtime
             .dispatch_owner
-            .clone()
-            .unwrap_or_else(|| SemanticDispatchOwner {
+            .as_ref()
+            .map(|owner| owner.source.as_ref().clone())
+            .unwrap_or_else(|| SemanticDispatchSource {
                 runtime_id: runtime.runtime_id,
                 generation: self.generation,
                 component: self.component.clone(),
@@ -2531,10 +2541,17 @@ impl UiContext {
                 cascade: (runtime.origin == crate::InvocationOrigin::Effect)
                     .then(|| runtime.effect_cascades.dispatch_token(&self.component))
                     .flatten(),
-                publication_valid: Rc::clone(&publication_valid),
+                publication_valid: Cell::new(true),
             });
-        owner.publication_valid = publication_valid;
-        owner
+        source.publication_valid.set(true);
+        let source = Rc::new(source);
+        if runtime.transaction_depth > 0 {
+            runtime.dispatch_leases.push(Rc::clone(&source));
+        }
+        if let Some((root, _)) = &source.cascade {
+            runtime.effect_cascades.track_dispatch(root, &source);
+        }
+        SemanticDispatchOwner { source }
     }
 
     /// Register or refresh an app-scoped semantic action callback.
@@ -5282,15 +5299,17 @@ mod tests {
         }
         let owner = |runtime: &UiRuntimeState, root: &ComponentInstancePath, effect: bool| {
             SemanticDispatchOwner {
-                runtime_id: runtime.runtime_id,
-                generation: ScriptGeneration::default(),
-                component: root.clone(),
-                incarnation: runtime.component_incarnation(root).unwrap(),
-                effect: None,
-                cascade: effect
-                    .then(|| runtime.effect_cascades.dispatch_token(root))
-                    .flatten(),
-                publication_valid: Rc::new(Cell::new(true)),
+                source: Rc::new(SemanticDispatchSource {
+                    runtime_id: runtime.runtime_id,
+                    generation: ScriptGeneration::default(),
+                    component: root.clone(),
+                    incarnation: runtime.component_incarnation(root).unwrap(),
+                    effect: None,
+                    cascade: effect
+                        .then(|| runtime.effect_cascades.dispatch_token(root))
+                        .flatten(),
+                    publication_valid: Cell::new(true),
+                }),
             }
         };
         let stale = owner(&runtime, &first, true);

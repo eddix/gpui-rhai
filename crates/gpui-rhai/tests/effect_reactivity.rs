@@ -230,6 +230,16 @@ const PURE_ACTION: &str = r#"
     fn view(ctx){render_component("test/pure_action",#{key:"loop",enabled:ctx.get_state("enabled")})}
 "#;
 
+const OVER_BUDGET_RELOAD: &str = r#"
+    fn effect_keys(){let keys=[];for index in 0..65 {keys.push(`probe_${index}`);}keys}
+    define_component(#{metadata:#{id:"test/oversized","export":"Oversized",version:"0.2.2",runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
+        schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:[],effects:effect_keys()},render:Fn("render_oversized")});
+    fn start_probe(ctx,deps){}
+    fn cleanup_probe(ctx,deps){}
+    fn render_oversized(ctx,props){for index in 0..65 {effect(`probe_${index}`,(),Fn("start_probe"),Fn("cleanup_probe"));}text("oversized")}
+    fn view(ctx){render_component("test/oversized",#{key:"oversized"})}
+"#;
+
 #[test]
 fn pure_action_rejection_prunes_rollback_queue_and_held_derivations_and_reload_recovers() {
     let (mut engine, compiled) = compile_official("pure_action.rhai", PURE_ACTION);
@@ -269,12 +279,27 @@ fn pure_action_rejection_prunes_rollback_queue_and_held_derivations_and_reload_r
         .unwrap();
     assert!(runtime.borrow_mut().drain_batch().actions.is_empty());
     let retained = retained.unwrap();
-    let failed = compile(
-        &mut engine,
-        "failed_reload.rhai",
-        "fn view(ctx){throw \"candidate failed\";}",
+    let failed = compile(&mut engine, "failed_reload.rhai", OVER_BUDGET_RELOAD);
+    assert!(matches!(
+        lifecycle.reload(&mut engine, failed, &schema),
+        Err(LifecycleError::EffectBudget(66))
+    ));
+    let mut explicit_host_effect = runtime
+        .borrow()
+        .actions
+        .dispatch(
+            &gpui_rhai::ActionId::parse("test.loop").unwrap(),
+            UiValue::Null,
+        )
+        .unwrap();
+    explicit_host_effect.origin = InvocationOrigin::Effect;
+    let _ = lifecycle
+        .invoke_action_transactional(&engine, explicit_host_effect)
+        .unwrap();
+    assert!(
+        runtime.borrow_mut().drain_batch().actions.is_empty(),
+        "failed B must not clear A's existing quarantine"
     );
-    assert!(lifecycle.reload(&mut engine, failed, &schema).is_err());
     let _ = lifecycle
         .invoke_action_transactional(&engine, retained.clone())
         .unwrap();
@@ -304,6 +329,106 @@ fn pure_action_rejection_prunes_rollback_queue_and_held_derivations_and_reload_r
     assert!(!lifecycle.render_dirty(&mut engine).unwrap());
     assert!(
         matches!(lifecycle.root().unwrap().kind(), UiNodeKind::Text { text } if text == "normal")
+    );
+}
+
+#[test]
+fn over_budget_reload_cannot_quarantine_the_healthy_committed_generation() {
+    let (mut engine, compiled) = compile_official("healthy_graph.rhai", PURE_ACTION);
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = new_runtime();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
+    let generation = lifecycle.generation();
+    let held = runtime.borrow_mut().drain_batch().actions.pop().unwrap();
+    let _ = lifecycle
+        .invoke_action_transactional(&engine, held.clone())
+        .unwrap();
+    let candidate = compile(&mut engine, "over_budget.rhai", OVER_BUDGET_RELOAD);
+    assert!(matches!(
+        lifecycle.reload(&mut engine, candidate, &schema),
+        Err(LifecycleError::EffectBudget(66))
+    ));
+    assert_eq!(lifecycle.generation(), generation);
+    assert_eq!(
+        runtime.borrow_mut().drain_batch().actions.len(),
+        1,
+        "failed candidate must preserve A's pending message"
+    );
+    let _ = lifecycle
+        .invoke_action_transactional(&engine, held)
+        .unwrap();
+    assert_eq!(
+        runtime.borrow_mut().drain_batch().actions.len(),
+        1,
+        "failed candidate must not invalidate A's external clone"
+    );
+}
+
+#[test]
+fn held_noop_effect_event_and_action_clones_keep_their_cascade_budget() {
+    let (mut engine, compiled) = compile_official(
+        "noop_event.rhai",
+        &SEMANTIC.replace(
+            "fn tick(ctx,payload){ctx.set_state(\"count\",ctx.get_state(\"count\")+1);}",
+            "fn tick(ctx,payload){}",
+        ),
+    );
+    let enable = engine.callback(&compiled, "enable").unwrap();
+    let runtime = new_runtime();
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &enable, UiValue::Null)
+        .unwrap();
+    lifecycle.render_dirty(&mut engine).unwrap();
+    let held = runtime.borrow_mut().drain_batch().events.pop().unwrap();
+    let mut rejected = false;
+    for _ in 0..65 {
+        match lifecycle.invoke_component_event_transactional(&engine, held.clone()) {
+            Ok(Some(_)) => (),
+            Err(LifecycleError::EffectBudget(_)) => {
+                rejected = true;
+                break;
+            }
+            result => panic!("unexpected no-op event result {result:?}"),
+        }
+        assert!(
+            !lifecycle.render_dirty(&mut engine).unwrap(),
+            "fixture must not write state"
+        );
+    }
+    assert!(
+        rejected,
+        "external held no-op event must not reset on quiescence"
+    );
+
+    let (mut engine, compiled) = compile_official(
+        "noop_action.rhai",
+        &PURE_ACTION.replace(
+            "fn loop_action(ctx,payload){ctx.dispatch_action(\"test.loop\",());}",
+            "fn loop_action(ctx,payload){}",
+        ),
+    );
+    let runtime = new_runtime();
+    let lifecycle = mount(&mut engine, compiled, &runtime);
+    let held = runtime.borrow_mut().drain_batch().actions.pop().unwrap();
+    let mut rejected = false;
+    for _ in 0..65 {
+        match lifecycle.invoke_action_transactional(&engine, held.clone()) {
+            Ok(_) => (),
+            Err(LifecycleError::EffectBudget(_)) => {
+                rejected = true;
+                break;
+            }
+            result => panic!("unexpected no-op action result {result:?}"),
+        }
+        assert!(
+            runtime.borrow_mut().drain_batch().actions.is_empty(),
+            "fixture must not requeue"
+        );
+    }
+    assert!(
+        rejected,
+        "external held no-op action must not reset on quiescence"
     );
 }
 

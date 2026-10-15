@@ -223,6 +223,9 @@ tree, and is quarantined so old notifications cannot restart it. A new external
 callback, valid async delivery, lifecycle replacement/resume, or changed Host
 input can start a fresh budget; failed recovery rolls back and leaves the old
 cascade quarantined. Independent mounted roots have independent budgets.
+Rejection belongs to the attempted generation: a budget-failing reload
+candidate cannot quarantine the healthy committed generation it rolls back to,
+and a failed candidate cannot clear that old generation's existing quarantine.
 
 Rust Hosts forward runtime-produced `PendingEvent` and `ActionInvocation` values
 through `ScriptLifecycle::invoke_component_event_transactional` and
@@ -238,6 +241,11 @@ An outer transaction also owns a revocable publication lease for each message
 created within it. Nested success does not publish past that boundary: rollback
 invalidates even clones already taken from the queue, without invalidating
 previously committed messages from the same still-active source.
+The budget retains only weak references to these same opaque owners. A valid
+message held by a Host remains in flight even when the runtime queue is empty,
+so repeated no-op delivery still consumes its original cascade allowance.
+Dropping or invalidating the last owner permits a quiescent graph to settle;
+ordinary non-effect Host callbacks continue to start independent external turns.
 
 Tasks, subscriptions, and background image decodes started by an effect callback
 belong to that exact effect activation. Subscriptions are accepted only from

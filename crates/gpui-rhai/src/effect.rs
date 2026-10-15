@@ -13,6 +13,8 @@ pub(crate) struct EffectCascadeCheckpoint {
     callbacks: BTreeMap<ComponentInstancePath, usize>,
     accepted_rejections: BTreeMap<ComponentInstancePath, u64>,
     generations: BTreeMap<ComponentInstancePath, ScriptGeneration>,
+    quiescent: std::collections::BTreeSet<ComponentInstancePath>,
+    unowned_dispatch: std::collections::BTreeSet<ComponentInstancePath>,
 }
 
 /// Foreground delivery bookkeeping, not a second scheduler. Rejection epochs
@@ -21,7 +23,10 @@ pub(crate) struct EffectCascadeCheckpoint {
 #[derive(Debug, Default)]
 pub(crate) struct EffectCascadeBudget {
     checkpoint: EffectCascadeCheckpoint,
-    rejections: BTreeMap<ComponentInstancePath, u64>,
+    rejections: BTreeMap<ComponentInstancePath, BTreeMap<ScriptGeneration, u64>>,
+    dispatches:
+        BTreeMap<ComponentInstancePath, Vec<std::rc::Weak<crate::context::SemanticDispatchSource>>>,
+    live_dispatches: std::collections::BTreeSet<ComponentInstancePath>,
 }
 
 impl EffectCascadeBudget {
@@ -35,10 +40,12 @@ impl EffectCascadeBudget {
 
     pub(crate) fn restart(&mut self, root: &ComponentInstancePath) {
         self.checkpoint.callbacks.remove(root);
-        self.checkpoint.accepted_rejections.insert(
-            root.clone(),
-            self.rejections.get(root).copied().unwrap_or_default(),
-        );
+        self.checkpoint.quiescent.remove(root);
+        self.checkpoint.unowned_dispatch.remove(root);
+        let epoch = self.rejection_epoch(root);
+        self.checkpoint
+            .accepted_rejections
+            .insert(root.clone(), epoch);
     }
 
     pub(crate) fn restart_containing(&mut self, component: &ComponentInstancePath) {
@@ -55,7 +62,7 @@ impl EffectCascadeBudget {
     }
 
     pub(crate) fn blocked(&self, root: &ComponentInstancePath) -> bool {
-        self.rejections.get(root).copied().unwrap_or_default()
+        self.rejection_epoch(root)
             > self
                 .checkpoint
                 .accepted_rejections
@@ -79,16 +86,11 @@ impl EffectCascadeBudget {
             .keys()
             .filter(|root| component.is_within(root))
             .max()
-            .map(|root| {
-                (
-                    root.clone(),
-                    self.rejections.get(root).copied().unwrap_or_default(),
-                )
-            })
+            .map(|root| (root.clone(), self.rejection_epoch(root)))
     }
 
     pub(crate) fn accepts_dispatch(&self, root: &ComponentInstancePath, epoch: u64) -> bool {
-        !self.blocked(root) && self.rejections.get(root).copied().unwrap_or_default() == epoch
+        !self.blocked(root) && self.rejection_epoch(root) == epoch
     }
 
     pub(crate) fn register_generation(
@@ -96,7 +98,66 @@ impl EffectCascadeBudget {
         root: &ComponentInstancePath,
         generation: ScriptGeneration,
     ) {
-        self.checkpoint.generations.insert(root.clone(), generation);
+        if self.checkpoint.generations.insert(root.clone(), generation) != Some(generation) {
+            self.restart(root);
+        }
+    }
+
+    fn rejection_epoch(&self, root: &ComponentInstancePath) -> u64 {
+        let generation = self
+            .checkpoint
+            .generations
+            .get(root)
+            .copied()
+            .unwrap_or_default();
+        self.rejections
+            .get(root)
+            .and_then(|epochs| epochs.get(&generation))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn track_dispatch(
+        &mut self,
+        root: &ComponentInstancePath,
+        owner: &std::rc::Rc<crate::context::SemanticDispatchSource>,
+    ) {
+        self.dispatches
+            .entry(root.clone())
+            .or_default()
+            .push(std::rc::Rc::downgrade(owner));
+    }
+
+    pub(crate) fn prune_dispatches(
+        &mut self,
+        incarnations: &BTreeMap<ComponentInstancePath, crate::ComponentIncarnation>,
+        effects: &EffectRegistry,
+    ) {
+        let mut live = std::collections::BTreeSet::new();
+        self.dispatches = std::mem::take(&mut self.dispatches)
+            .into_iter()
+            .filter_map(|(root, mut owners)| {
+                owners.retain(|owner| {
+                    owner.upgrade().is_some_and(|owner| {
+                        if !owner.publication_valid() {
+                            return false;
+                        }
+                        if owner.active(incarnations, effects, self) {
+                            live.insert(root.clone());
+                        }
+                        // Candidate generation/activation changes are transactional;
+                        // keep weak identity until rollback can restore its source.
+                        true
+                    })
+                });
+                (!owners.is_empty()).then_some((root, owners))
+            })
+            .collect();
+        self.live_dispatches = live;
+    }
+
+    pub(crate) fn retain_unowned_dispatch(&mut self, root: &ComponentInstancePath) {
+        self.checkpoint.unowned_dispatch.insert(root.clone());
     }
 
     pub(crate) fn generation_for(
@@ -116,6 +177,13 @@ impl EffectCascadeBudget {
         root: &ComponentInstancePath,
         count: usize,
     ) -> Result<(), usize> {
+        if self.checkpoint.quiescent.contains(root)
+            && !self.live_dispatches.contains(root)
+            && !self.checkpoint.unowned_dispatch.contains(root)
+        {
+            self.checkpoint.callbacks.remove(root);
+            self.checkpoint.quiescent.remove(root);
+        }
         self.checkpoint
             .accepted_rejections
             .entry(root.clone())
@@ -136,7 +204,18 @@ impl EffectCascadeBudget {
     }
 
     pub(crate) fn reject(&mut self, root: &ComponentInstancePath) {
-        let epoch = self.rejections.entry(root.clone()).or_default();
+        let generation = self
+            .checkpoint
+            .generations
+            .get(root)
+            .copied()
+            .unwrap_or_default();
+        let epoch = self
+            .rejections
+            .entry(root.clone())
+            .or_default()
+            .entry(generation)
+            .or_default();
         *epoch = epoch.saturating_add(1);
     }
 
@@ -146,9 +225,18 @@ impl EffectCascadeBudget {
         pending_effect_scopes: impl IntoIterator<Item = &'a ComponentInstancePath>,
     ) {
         let pending = pending_effect_scopes.into_iter().collect::<Vec<_>>();
+        let quiescent = &mut self.checkpoint.quiescent;
+        let unowned = &self.checkpoint.unowned_dispatch;
+        let live = &self.live_dispatches;
         self.checkpoint.callbacks.retain(|root, _| {
-            dirty.iter().any(|path| path.is_within(root))
-                || pending.iter().any(|path| path.is_within(root))
+            let unsettled = dirty.iter().any(|path| path.is_within(root))
+                || pending.iter().any(|path| path.is_within(root));
+            if unsettled {
+                quiescent.remove(root);
+            } else {
+                quiescent.insert(root.clone());
+            }
+            unsettled || live.contains(root) || unowned.contains(root)
         });
     }
 
@@ -162,6 +250,14 @@ impl EffectCascadeBudget {
         self.checkpoint
             .generations
             .retain(|path, _| !path.is_within(root));
+        self.checkpoint
+            .quiescent
+            .retain(|path| !path.is_within(root));
+        self.checkpoint
+            .unowned_dispatch
+            .retain(|path| !path.is_within(root));
+        self.dispatches.retain(|path, _| !path.is_within(root));
+        self.live_dispatches.retain(|path| !path.is_within(root));
         self.rejections.retain(|path, _| !path.is_within(root));
     }
 }

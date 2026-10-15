@@ -767,6 +767,7 @@ impl ScriptLifecycle {
                 .runtime
                 .try_borrow_mut()
                 .map_err(|_| LifecycleError::Borrowed)?;
+            runtime.prune_pending_dispatch();
             if runtime.invocation_origin() == &crate::InvocationOrigin::Effect {
                 let root = runtime
                     .dispatch_owner
@@ -776,6 +777,9 @@ impl ScriptLifecycle {
                     .unwrap_or_else(|| self.root_path.clone());
                 if runtime.effect_cascades.blocked(&root) {
                     return Ok(Dynamic::UNIT);
+                }
+                if runtime.dispatch_owner.is_none() {
+                    runtime.effect_cascades.retain_unowned_dispatch(&root);
                 }
                 // Pure semantic recursion may never restart an effect. Every
                 // effect-origin callback shares the graph's transition budget.
@@ -1530,11 +1534,16 @@ impl ScriptLifecycle {
         declarations: RetainedDeclarations,
         previous_state: Option<crate::StateStore>,
     ) -> Result<(), LifecycleError> {
-        self.runtime
-            .try_borrow_mut()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .effect_cascades
-            .register_generation(&self.root_path, candidate.generation());
+        {
+            let mut runtime = self
+                .runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?;
+            runtime
+                .effect_cascades
+                .register_generation(&self.root_path, candidate.generation());
+            runtime.prune_pending_dispatch();
+        }
         let plan = self
             .runtime
             .try_borrow()
