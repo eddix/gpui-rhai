@@ -384,18 +384,14 @@ fn format_time_tick(value: f64, step: f64, timezone: &ChartTimeZone) -> String {
 }
 
 fn resolve_timezone(timezone: &ChartTimeZone) -> Result<jiff::tz::TimeZone, ChartScaleError> {
-    match timezone {
-        ChartTimeZone::Utc => Ok(jiff::tz::TimeZone::UTC),
-        ChartTimeZone::FixedOffsetMinutes(minutes) => {
-            let seconds = minutes.saturating_mul(60);
-            jiff::tz::Offset::from_seconds(seconds)
-                .map(jiff::tz::TimeZone::fixed)
-                .map_err(|_| ChartScaleError::TimeZone(format!("offset:{minutes}")))
-        }
-        ChartTimeZone::Iana(name) => {
-            jiff::tz::TimeZone::get(name).map_err(|_| ChartScaleError::TimeZone(name.clone()))
-        }
-    }
+    let common = match timezone {
+        ChartTimeZone::Utc => crate::TimeZone::Utc,
+        ChartTimeZone::FixedOffsetMinutes(minutes) => crate::TimeZone::FixedOffsetMinutes(*minutes),
+        ChartTimeZone::Iana(name) => crate::TimeZone::Iana(name.clone()),
+    };
+    common
+        .resolve()
+        .map_err(|error| ChartScaleError::TimeZone(error.to_string()))
 }
 
 fn validate_range(start: f64, end: f64) -> Result<(), ChartScaleError> {

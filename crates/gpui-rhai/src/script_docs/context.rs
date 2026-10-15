@@ -15,6 +15,36 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Reads this component's last committed retained-page placement; false before first placement. Tracked in render. Visibility does not cancel tasks/subscriptions: use it in application-owned effect dependencies or pause policy.",
     },
     ScriptFnDoc {
+        signature: "now(_: &mut UiContext) -> core::result::Result<i64,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &[],
+        doc: "Returns epoch milliseconds from the Host wall clock, independent of animation time.",
+    },
+    ScriptFnDoc {
+        signature: "time(_: &mut UiContext) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &[],
+        doc: "Returns detached selected-locale time patterns, hour cycle, periods, compact units and relative phrases.",
+    },
+    ScriptFnDoc {
+        signature: "format_time(_: &mut UiContext, _: i64, _: string, _: string) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["ms", "style", "zone"],
+        doc: "Formats an epoch instant in the selected locale and explicit local/UTC/offset/IANA zone; style is short, medium or long.",
+    },
+    ScriptFnDoc {
+        signature: "format_duration(_: &mut UiContext, _: i64) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["ms"],
+        doc: "Formats a signed elapsed duration using localized compact units and digits.",
+    },
+    ScriptFnDoc {
+        signature: "format_relative(_: &mut UiContext, _: i64) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["ms"],
+        doc: "Formats an epoch instant relative to the injected wall clock using selected locale phrases and digits.",
+    },
+    ScriptFnDoc {
+        signature: "parse_time(_: &mut UiContext, _: string, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["value", "precision"],
+        doc: "Parses localized minute/second clock text to HH:MM:SS, or returns () for incomplete or invalid text.",
+    },
+    ScriptFnDoc {
         signature: "action_enabled(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["action"],
         doc: "Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered.",

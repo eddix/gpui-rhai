@@ -141,6 +141,8 @@ pub struct LocaleBundle {
     pub messages: BTreeMap<String, String>,
     pub calendar: CalendarMetadata,
     pub number: NumberMetadata,
+    #[serde(default)]
+    pub time: crate::TimeMetadata,
 }
 
 impl LocaleBundle {
@@ -173,7 +175,13 @@ impl LocaleBundle {
             return Err(LocaleError::InvalidMessage(key.clone()));
         }
         self.calendar.validate()?;
-        self.number.validate()
+        self.number.validate()?;
+        self.time
+            .validate()
+            .map_err(|message| LocaleError::InvalidCalendar {
+                field: "time".into(),
+                message,
+            })
     }
 }
 
@@ -498,7 +506,7 @@ impl LocaleManager {
         format_number_with_metadata(value, options, &bundle.number)
     }
 
-    fn selected_bundle(
+    pub(crate) fn selected_bundle(
         &self,
         window: Option<&str>,
         component: Option<&ComponentInstancePath>,
@@ -931,6 +939,7 @@ mod tests {
             ]),
             calendar: calendar(),
             number: number(),
+            time: crate::TimeMetadata::default(),
         }
     }
 
