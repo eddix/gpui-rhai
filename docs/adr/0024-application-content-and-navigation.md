@@ -95,6 +95,17 @@ Official virtual lists and document surfaces use the same rendering, theme,
 RTL and cancellation policy as Host extensions. Scrollbar dragging preserves
 ListState's measured-height freeze contract.
 
+Trusted Rust obtains a `ScrollbarContext` from
+`PrimitiveContext::scrollbars(&PrimitiveTheme)` or
+`ScriptViewHost::scrollbars(scope, &PrimitiveTheme)`. Its `element(id, source,
+spec)` accepts the public `ScrollbarSource` contract, implemented for all three
+GPUI handles. The factory owns only interaction/theme scope, never a second
+position engine. `with_part_styles(track, thumb, thumb_hover)` resolves the
+same background overrides as retained nodes, and `SCROLLBAR_TRACK_WIDTH`
+lets a Host reserve row space. Host surfaces render under the Host container;
+primitive scopes inherit retained-node teardown. The scrollbar is not a focus
+or keyboard owner.
+
 Virtual collection following is a state machine, not an unconditional scroll
 on render. Reader input pauses following; reaching the tail or an explicit
 jump resumes it. Updating realized rows must not change reading position.

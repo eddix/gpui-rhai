@@ -196,6 +196,27 @@ impl NativeWindowAuthority {
 }
 
 impl ScriptViewHost {
+    /// Create a themed scrollbar factory for a Host-native surface. `scope`
+    /// identifies that surface within this Host and must be stable and unique.
+    /// Render it under [`Self::container`] so disappearance and window input
+    /// cancel gestures through the Host's shared interaction lifecycle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::InvalidId`] for an unsafe scope identifier.
+    pub fn scrollbars(
+        &self,
+        scope: &str,
+        theme: &crate::PrimitiveTheme,
+    ) -> Result<crate::ScrollbarContext, ScriptViewError> {
+        validate_view_id(scope)?;
+        Ok(crate::ScrollbarContext::new(
+            crate::interaction::InteractionOwner::new(format!("host:{scope}"), "scrollbars"),
+            self.interactions(),
+            theme,
+        ))
+    }
+
     /// Create one interaction/overlay domain, normally one per GPUI window.
     ///
     /// # Errors

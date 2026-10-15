@@ -263,7 +263,9 @@ pub use script_lint::{
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
-pub use scrollbar::{ScrollbarSpec, ScrollbarVisibility};
+pub use scrollbar::{
+    SCROLLBAR_TRACK_WIDTH, ScrollbarContext, ScrollbarSource, ScrollbarSpec, ScrollbarVisibility,
+};
 pub use selection_area::{SelectionAreaPrimitiveHandler, selection_area_primitive_descriptor};
 pub use signal::{
     NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry,

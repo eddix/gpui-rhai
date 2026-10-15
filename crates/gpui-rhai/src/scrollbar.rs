@@ -1,4 +1,4 @@
-//! Generic themed overlay scrollbars for retained scrollable nodes.
+//! Shared themed overlay scrollbars for native and retained scrolling surfaces.
 //!
 //! The geometry and drag policy follow the public `ScrollHandle` contract. The
 //! implementation is independent, with behavior informed by Longbridge's
@@ -17,12 +17,169 @@ use gpui::{
 
 use crate::{Rgba8, TextDirection, UiNode, UiValue};
 
-const TRACK_WIDTH: Pixels = px(12.0);
+/// Width of the pointer track. Hosts can reserve this much logical-end space
+/// when row content must not appear beneath the overlay scrollbar.
+pub const SCROLLBAR_TRACK_WIDTH: Pixels = px(12.0);
+const TRACK_WIDTH: Pixels = SCROLLBAR_TRACK_WIDTH;
 const THUMB_WIDTH: Pixels = px(6.0);
 const THUMB_ACTIVE_WIDTH: Pixels = px(8.0);
 const THUMB_INSET: Pixels = px(3.0);
 const MIN_THUMB_LENGTH: Pixels = px(32.0);
 const AUTO_IDLE: Duration = Duration::from_millis(1400);
+
+/// A foreground-owned native scroll state, using GPUI's negative-offset
+/// convention. The source remains authoritative: the scrollbar retains no
+/// independent scroll position or follow policy.
+pub trait ScrollbarSource: 'static {
+    fn viewport(&self) -> Bounds<Pixels>;
+    fn offset(&self) -> Point<Pixels>;
+    fn max_offset(&self) -> Point<Pixels>;
+    fn set_offset(&self, offset: Point<Pixels>);
+    fn drag_started(&self) {}
+    fn drag_ended(&self) {}
+}
+
+impl ScrollbarSource for ScrollHandle {
+    fn viewport(&self) -> Bounds<Pixels> {
+        self.bounds()
+    }
+    fn offset(&self) -> Point<Pixels> {
+        self.offset()
+    }
+    fn max_offset(&self) -> Point<Pixels> {
+        self.max_offset()
+    }
+    fn set_offset(&self, offset: Point<Pixels>) {
+        self.set_offset(offset);
+    }
+}
+
+impl ScrollbarSource for gpui::ListState {
+    fn viewport(&self) -> Bounds<Pixels> {
+        self.viewport_bounds()
+    }
+    fn offset(&self) -> Point<Pixels> {
+        self.scroll_px_offset_for_scrollbar()
+    }
+    fn max_offset(&self) -> Point<Pixels> {
+        self.max_offset_for_scrollbar()
+    }
+    fn set_offset(&self, offset: Point<Pixels>) {
+        self.set_offset_from_scrollbar(offset);
+    }
+    fn drag_started(&self) {
+        self.scrollbar_drag_started();
+    }
+    fn drag_ended(&self) {
+        self.scrollbar_drag_ended();
+    }
+}
+
+impl ScrollbarSource for gpui::UniformListScrollHandle {
+    fn viewport(&self) -> Bounds<Pixels> {
+        self.0.borrow().base_handle.bounds()
+    }
+    fn offset(&self) -> Point<Pixels> {
+        self.0.borrow().base_handle.offset()
+    }
+    fn max_offset(&self) -> Point<Pixels> {
+        self.0.borrow().base_handle.max_offset()
+    }
+    fn set_offset(&self, offset: Point<Pixels>) {
+        let mut state = self.0.borrow_mut();
+        state.deferred_scroll_to_item = None;
+        state.base_handle.set_offset(offset);
+    }
+}
+
+/// A themed scrollbar factory scoped to a Host surface or retained primitive.
+/// Obtain it from [`crate::PrimitiveContext::scrollbars`] or
+/// [`crate::ScriptViewHost::scrollbars`]. Render the viewport first and the
+/// scrollbar last as siblings in a relative, clipped container.
+#[derive(Clone)]
+pub struct ScrollbarContext {
+    owner: crate::interaction::InteractionOwner,
+    interactions: crate::interaction::WindowInteractionCoordinator,
+    direction: TextDirection,
+    colors: (Rgba8, Rgba8, Rgba8),
+    theme: crate::PrimitiveTheme,
+    disabled: bool,
+}
+
+impl ScrollbarContext {
+    pub(crate) fn new(
+        owner: crate::interaction::InteractionOwner,
+        interactions: crate::interaction::WindowInteractionCoordinator,
+        theme: &crate::PrimitiveTheme,
+    ) -> Self {
+        let fallback = |name, legacy, rgba| {
+            theme
+                .color(name)
+                .or_else(|| theme.color(legacy))
+                .unwrap_or_else(|| Rgba8::from_rgba_hex(rgba))
+        };
+        Self {
+            owner,
+            interactions,
+            direction: theme.direction(),
+            colors: (
+                Rgba8::from_rgba_hex(0),
+                fallback("scrollbar.thumb", "text_muted", 0x7171_7a73),
+                fallback("scrollbar.thumb_hover", "accent", 0x3b82_f6ff),
+            ),
+            theme: theme.clone(),
+            disabled: theme.inherited_disabled(),
+        }
+    }
+
+    /// Override the backgrounds of the three standard scrollbar parts. Empty
+    /// styles retain the theme defaults; no new focus or keyboard owner is made.
+    #[must_use]
+    pub fn with_part_styles(
+        mut self,
+        track: &crate::Style,
+        thumb: &crate::Style,
+        thumb_hover: &crate::Style,
+    ) -> Self {
+        let resolve = |style: &crate::Style, fallback| {
+            style
+                .resolve(&crate::InteractionState::default())
+                .background
+                .as_ref()
+                .and_then(|color| self.theme.resolve_color(color))
+                .unwrap_or(fallback)
+        };
+        self.colors = (
+            resolve(track, self.colors.0),
+            resolve(thumb, self.colors.1),
+            resolve(thumb_hover, self.colors.2),
+        );
+        self
+    }
+
+    /// Build a pointer-only overlay. `id` must be stable and unique within this
+    /// scope. Wheel/keyboard input remains owned by the underlying viewport.
+    #[must_use]
+    pub fn element(
+        &self,
+        id: impl Into<ElementId>,
+        source: impl ScrollbarSource,
+        spec: ScrollbarSpec,
+    ) -> gpui::AnyElement {
+        let id = id.into();
+        let mut scrollbar = ThemedScrollbar::new(
+            id.clone(),
+            self.owner.child(format!("{id:?}")),
+            self.interactions.clone(),
+            source,
+            spec,
+            self.direction,
+            self.colors,
+        );
+        scrollbar.disabled = self.disabled;
+        scrollbar.into_any_element()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScrollbarVisibility {
@@ -126,35 +283,37 @@ pub(crate) struct ThemedScrollbar {
     id: ElementId,
     interaction_owner: crate::interaction::InteractionOwner,
     interactions: crate::interaction::WindowInteractionCoordinator,
-    handle: ScrollHandle,
+    handle: Rc<dyn ScrollbarSource>,
     spec: ScrollbarSpec,
     direction: TextDirection,
     track: Rgba8,
     thumb: Rgba8,
     thumb_hover: Rgba8,
+    disabled: bool,
 }
 
 impl ThemedScrollbar {
     pub(crate) fn new(
-        id: String,
+        id: impl Into<ElementId>,
         interaction_owner: crate::interaction::InteractionOwner,
         interactions: crate::interaction::WindowInteractionCoordinator,
-        handle: ScrollHandle,
+        handle: impl ScrollbarSource,
         spec: ScrollbarSpec,
         direction: TextDirection,
         colors: (Rgba8, Rgba8, Rgba8),
     ) -> Self {
         let (track, thumb, thumb_hover) = colors;
         Self {
-            id: ElementId::Name(id.into()),
+            id: id.into(),
             interaction_owner,
             interactions,
-            handle,
+            handle: Rc::new(handle),
             spec,
             direction,
             track,
             thumb,
             thumb_hover,
+            disabled: false,
         }
     }
 }
@@ -209,7 +368,7 @@ impl Element for ThemedScrollbar {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        let handle_bounds = self.handle.bounds();
+        let handle_bounds = self.handle.viewport();
         let viewport = if handle_bounds.size.width > px(0.0) && handle_bounds.size.height > px(0.0)
         {
             handle_bounds
@@ -245,7 +404,9 @@ impl Element for ThemedScrollbar {
                 continue;
             }
             let content = container + max_offset;
-            let thumb_length = (container / content * container).max(MIN_THUMB_LENGTH);
+            let thumb_length = (container / content * container)
+                .max(MIN_THUMB_LENGTH)
+                .min(container);
             let travel = (container - thumb_length).max(px(0.0));
             let thumb_start = (scroll_position / max_offset * travel).clamp(px(0.0), travel);
             let track = axis_track(viewport, axis, self.direction);
@@ -303,7 +464,20 @@ impl Element for ThemedScrollbar {
         let viewport = prepaint.viewport;
         let state = prepaint.state.clone();
         register_hover_listener(viewport, state.clone(), view, window);
-        register_wheel_listener(viewport, self.handle.clone(), state.clone(), view, window);
+        register_wheel_listener(
+            viewport,
+            self.handle.clone(),
+            state.clone(),
+            view,
+            prepaint
+                .axes
+                .iter()
+                .filter(|axis| axis.visible)
+                .map(|axis| axis.bar_hitbox.clone())
+                .collect(),
+            self.disabled,
+            window,
+        );
         for axis in &prepaint.axes {
             if !axis.visible {
                 continue;
@@ -326,6 +500,9 @@ impl Element for ThemedScrollbar {
                     border_style: gpui::BorderStyle::default(),
                 });
             });
+            if self.disabled {
+                continue;
+            }
             register_axis_listeners(
                 axis,
                 &self.handle,
@@ -433,13 +610,25 @@ fn register_hover_listener(
 
 fn register_wheel_listener(
     viewport: Bounds<Pixels>,
-    handle: ScrollHandle,
+    handle: Rc<dyn ScrollbarSource>,
     state: ScrollbarState,
     view: gpui::EntityId,
+    tracks: Vec<Hitbox>,
+    disabled: bool,
     window: &mut Window,
 ) {
-    window.on_mouse_event(move |event: &ScrollWheelEvent, phase, _, cx| {
+    window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
         if phase == DispatchPhase::Bubble && viewport.contains(&event.position) {
+            if !disabled && tracks.iter().any(|track| track.is_hovered(window)) {
+                let delta = event.delta.pixel_delta(px(16.0));
+                let max = handle.max_offset();
+                let offset = handle.offset() + delta;
+                handle.set_offset(point(
+                    offset.x.clamp(-max.x, px(0.0)),
+                    offset.y.clamp(-max.y, px(0.0)),
+                ));
+                cx.stop_propagation();
+            }
             let mut inner = state.0.get();
             inner.last_offset = handle.offset();
             inner.last_activity = Some(Instant::now());
@@ -451,7 +640,7 @@ fn register_wheel_listener(
 
 fn register_axis_listeners(
     axis: &AxisPrepaint,
-    handle: &ScrollHandle,
+    handle: &Rc<dyn ScrollbarSource>,
     state: &ScrollbarState,
     view: gpui::EntityId,
     interaction_owner: &crate::interaction::InteractionOwner,
@@ -467,7 +656,7 @@ fn register_axis_listeners(
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
         if phase != DispatchPhase::Bubble
             || event.button != MouseButton::Left
-            || !axis.track.contains(&event.position)
+            || !axis.bar_hitbox.is_hovered(window)
         {
             return;
         }
@@ -507,14 +696,18 @@ fn register_axis_listeners(
                     crate::interaction::InteractionFlow::Continue
                 };
             let finish_state = down_state.clone();
+            let finish_handle = down_handle.clone();
             let finish =
                 move |_: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
+                    finish_handle.drag_ended();
                     let mut inner = finish_state.0.get();
                     inner.last_activity = Some(Instant::now());
                     finish_state.0.set(inner);
                 };
             let cancel_state = down_state.clone();
+            let cancel_handle = down_handle.clone();
             let cancel = move |_: &mut Window, _: &mut App| {
+                cancel_handle.drag_ended();
                 let mut inner = cancel_state.0.get();
                 inner.last_activity = Some(Instant::now());
                 cancel_state.0.set(inner);
@@ -531,6 +724,8 @@ fn register_axis_listeners(
                 window,
                 cx,
             );
+            // Begin first: replacing an older gesture invokes its end hook.
+            down_handle.drag_started();
         } else {
             let position = match axis.axis {
                 Axis::Horizontal => event.position.x - axis.track.origin.x,
