@@ -186,6 +186,21 @@ residual input through table → document → inherited Rhai/SDK ancestors.
 independently of bar visibility. This is scoped track routing, not a replacement
 for GPUI's whole-window wheel infrastructure.
 
+For a native viewport whose automatic GPUI wheel listener would otherwise
+reapply the same delta to an ancestor, opt in with
+`element_with_wheel_routing(id, source_handle, spec)` in place of `element`.
+Keep that `ScrollbarSourceHandle` alongside the native viewport and pass the
+same retained handle to each child's `with_scroll_parent`. The coordinator
+selects the innermost clipped, unoccluded registered viewport before GPUI's
+automatic scrolling. Explicit native parent links take precedence over overlay
+paint order; unrelated overlapping regions use front-to-back paint priority.
+The selected viewport applies the existing per-axis/residual algorithm once;
+fully unconsumed input still propagates. A normal hitbox leaves click,
+selection, focus and keyboard ownership unchanged. Registration lasts only for
+the presented frame and is removed on hiding/unmount or source replacement.
+This is opt-in native viewport routing, not a global window wheel handler.
+CodeViewer and DiffViewer use it for their uniform list and split pane sources.
+
 GPUI's raw handles do not expose comparable native identity. If a source can
 be replaced under a stable scrollbar id, retain a
 `ScrollbarSourceHandle::new(source)` alongside it and pass clones to `element`.
