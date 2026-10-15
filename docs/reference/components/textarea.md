@@ -19,6 +19,7 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 |---|---|---|---|
 | `autofocus` | bool | `false` | Focuses the field once, when its editor first mounts; ignored while `disabled`. |
 | `disabled` | bool | `false` | Takes the field out of the tab order, blocks editing, and dims it. |
+| `editor_ref` | element ref or `()` | — | Optional caller-owned ref bound to the native editor, for restoring focus after an external action. |
 | `error` | bool | `false` | Marks the value invalid: a `danger` frame while unfocused and the invalid state for assistive tech. |
 | `key` | string | required | Names the native editor, which keeps caret, selection, scroll and undo history across renders; a new key starts a fresh editor. |
 | `label` | string | required | Accessible name of the field; it is not drawn, so pair the textarea with a `Label` or a `FormField`. |
@@ -28,6 +29,7 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
+| `on_submit` | callback or `()` | — | Called with the full text without clearing it. Disabled, read-only and IME-composing fields never submit. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `placeholder` | string or `()` | — | Muted hint shown while `value` is empty. |
 | `read_only` | bool | `false` | Keeps the text focusable and selectable but blocks edits; the text turns `text_muted`. |
@@ -35,6 +37,7 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 | `show_count` | bool | `false` | Shows the character count under the field, as `count / max_length` with a limit; it turns `text.danger` at the limit. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; `xs` sets the text in `body_small`. Unset, it inherits the `size` environment. |
 | `style` | style | — | Style merged over the root part. |
+| `submit_key` | `"enter"` or `"mod_enter"` or `()` | — | With on_submit: `enter` submits and Shift+Enter inserts a native newline; `mod_enter` submits with Cmd+Enter on macOS or Ctrl+Enter elsewhere. Unset keeps Enter as a newline. |
 | `value` | string | required | Current text, newlines included; the caller stores the `change` payload and passes it back. |
 
 ## Events
@@ -44,6 +47,7 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 | `blur` | `on_blur` | none | Emitted when the field loses keyboard focus. |
 | `change` | `on_change` | string | Emitted after each edit; the payload is the full new text. |
 | `focus` | `on_focus` | none | Emitted when the field gains keyboard focus. |
+| `submit` | `on_submit` | string | Emitted by the configured submit key with the full text; the caller owns clearing value. |
 
 ## Parts
 
