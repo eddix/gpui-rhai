@@ -32,6 +32,13 @@ The shared mechanism is `.retained_page(visible)` on an ordinary keyed node.
 The accepted subtree remains in `RetainedUiTree`, the primitive registry and
 handle maps. The renderer stops before building a hidden page's descendant
 GPUI elements; it does not lay native scroll/editing surfaces out at zero size.
+Virtual lists have explicit lifecycle-owned Entity retention keyed by view,
+collection, retained NodeId and generation, not only GPUI's per-frame element
+cache. Native slot runtimes hold weak registry access to avoid self-ownership
+cycles. The same ListState, measurements, paused-follow mode, unseen keys and
+source leases survive hidden frames. Real unmount/replacement, generation
+change and disposal release them; failed candidates restore the Entity and its
+scroll/bounds capabilities with the normal runtime snapshot.
 Ordinary `style().hidden()` is not this lifecycle contract. Nested visibility
 is the conjunction of retained-page ancestors. Hidden pages lose pointer
 capture and leave native focus traversal and presented accessibility while

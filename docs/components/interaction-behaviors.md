@@ -164,6 +164,25 @@ updating `size`; rejection restores the controlled value. Directional keyboard
 steps use the proposal path. Horizontal interaction follows logical start/end
 in RTL. Separator accessibility orientation is perpendicular to panel layout.
 
+The default grip is a square-ended 24px bar extending to 40px on hover, focus
+or drag through the theme's `fast` feedback motion. Only its decoration changes:
+the separator and grip hit areas stay stable. Reduced/None motion policy snaps
+to the current state's endpoint. `grip: false` hides the decoration, not the
+native separator. `grip_content` and its hover/drag/focus/disabled parts are
+separate from the outer `grip` hit area and its parts.
+
+Supply `handle: node` for a static replacement, or a named
+`handle_renderer: ctx.node_factory(Fn("my_grip"))` for custom native state and motion. The factory
+is called as `my_grip(ctx, detail)` during component rendering; it returns a Node
+and receives `detail.orientation`, `detail.state` (a native string signal),
+`detail.duration_ms` and `detail.easing`. Use `signal_style(detail.state, ...)`
+and `progress_motion(motion_signal(detail.state, ["drag"], source))` on that
+Node. The factory is not called for animation frames or pointer moves. Its
+own state styles are preserved inside the component's content-part wrapper.
+Use one replacement form, not both; normal named-function/curry callback rules
+apply. Capture, keyboard, focus, controlled proposals and cancellation stay
+owned by SplitPane, regardless of decoration.
+
 The divider occupies real layout space. Constraints and the remaining space
 affect the effective panel size; callers must not treat `size` as an absolute
 pixel width. Nested splits compose additional panels. Free-floating bounds,

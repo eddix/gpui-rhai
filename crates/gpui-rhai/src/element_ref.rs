@@ -116,12 +116,43 @@ impl CustomType for ElementRef {
 pub struct ElementRefRegistry {
     active: BTreeMap<ElementRefId, NodeId>,
     // The logical subscription survives absence and replacement of its node.
-    geometry_readers: BTreeMap<ElementRefId, BTreeSet<crate::read_dependency::ReadDependency>>,
+    geometry_readers: BTreeMap<ElementRefId, ElementRefGeometryReaders>,
     dirty: BTreeSet<ComponentInstancePath>,
 }
 
+/// The geometry projection observed by one executable contribution. Bounds is
+/// stronger than size, so reading both coalesces to a full observation.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum ElementRefGeometryRead {
+    LayoutSize,
+    Bounds,
+}
+
+pub(crate) type ElementRefGeometryReaders =
+    BTreeMap<crate::read_dependency::ReadDependency, ElementRefGeometryRead>;
 pub(crate) type ElementRefGeometryBindings =
-    BTreeMap<NodeId, BTreeMap<ElementRefId, BTreeSet<crate::read_dependency::ReadDependency>>>;
+    BTreeMap<NodeId, BTreeMap<ElementRefId, ElementRefGeometryReaders>>;
+
+pub(crate) fn retain_geometry_ref_readers<K: Ord>(
+    index: &mut BTreeMap<K, ElementRefGeometryReaders>,
+    predicate: impl Fn(&crate::read_dependency::ReadDependency) -> bool,
+) {
+    index.retain(|_, readers| {
+        readers.retain(|reader, _| predicate(reader));
+        !readers.is_empty()
+    });
+}
+
+pub(crate) fn track_geometry_ref_reader(
+    readers: &mut ElementRefGeometryReaders,
+    reader: crate::read_dependency::ReadDependency,
+    observation: ElementRefGeometryRead,
+) {
+    readers
+        .entry(reader)
+        .and_modify(|previous| *previous = (*previous).max(observation))
+        .or_insert(observation);
+}
 
 impl ElementRefRegistry {
     #[must_use]
@@ -181,10 +212,22 @@ impl ElementRefRegistry {
         reference: &ElementRef,
         reader: impl Into<crate::read_dependency::ReadDependency>,
     ) -> Option<NodeId> {
-        self.geometry_readers
-            .entry(reference.id().clone())
-            .or_default()
-            .insert(reader.into());
+        self.resolve_and_track_geometry_read(reference, reader, ElementRefGeometryRead::Bounds)
+    }
+
+    pub(crate) fn resolve_and_track_geometry_read(
+        &mut self,
+        reference: &ElementRef,
+        reader: impl Into<crate::read_dependency::ReadDependency>,
+        observation: ElementRefGeometryRead,
+    ) -> Option<NodeId> {
+        track_geometry_ref_reader(
+            self.geometry_readers
+                .entry(reference.id().clone())
+                .or_default(),
+            reader.into(),
+            observation,
+        );
         self.active.get(reference.id()).copied()
     }
 
@@ -199,7 +242,7 @@ impl ElementRefRegistry {
         for (id, readers) in &self.geometry_readers {
             if id.component.is_within(root) && previous.get(id) != self.active.get(id) {
                 self.dirty
-                    .extend(readers.iter().map(|reader| reader.owner.clone()));
+                    .extend(readers.keys().map(|reader| reader.owner.clone()));
             }
         }
     }
@@ -234,29 +277,27 @@ impl ElementRefRegistry {
             if id.component.is_within(root) {
                 self.dirty.extend(
                     readers
-                        .iter()
+                        .keys()
                         .filter(|reader| !reader.owner.is_within(root))
                         .map(|reader| reader.owner.clone()),
                 );
                 return false;
             }
-            readers.retain(|reader| !reader.owner.is_within(root));
+            readers.retain(|reader, _| !reader.owner.is_within(root));
             !readers.is_empty()
         });
         self.dirty.retain(|owner| !owner.is_within(root));
     }
 
     pub(crate) fn reset_contribution(&mut self, reader: &crate::read_dependency::ReadDependency) {
-        crate::read_dependency::retain_readers(&mut self.geometry_readers, |existing| {
-            existing != reader
-        });
+        retain_geometry_ref_readers(&mut self.geometry_readers, |existing| existing != reader);
     }
     pub(crate) fn retain_contributions(
         &mut self,
         scope: &ComponentInstancePath,
         active: &BTreeSet<crate::read_dependency::ReadContribution>,
     ) {
-        crate::read_dependency::retain_readers(&mut self.geometry_readers, |reader| {
+        retain_geometry_ref_readers(&mut self.geometry_readers, |reader| {
             reader.retained_in_contribution_scope(scope, active)
         });
     }
@@ -266,7 +307,7 @@ impl ElementRefRegistry {
         scope: &ComponentInstancePath,
         active: &BTreeSet<ComponentInstancePath>,
     ) {
-        crate::read_dependency::retain_readers(&mut self.geometry_readers, |reader| {
+        retain_geometry_ref_readers(&mut self.geometry_readers, |reader| {
             reader.retained_in_owner_scope(scope, active)
         });
         self.dirty
@@ -290,7 +331,7 @@ impl ElementRefRegistry {
                 true
             } else {
                 self.dirty
-                    .extend(readers.iter().map(|reader| reader.owner.clone()));
+                    .extend(readers.keys().map(|reader| reader.owner.clone()));
                 false
             }
         });
@@ -406,6 +447,156 @@ mod tests {
             visual: bounds,
             clip: None,
         }
+    }
+
+    #[test]
+    fn size_readers_ignore_position_visual_and_clip_but_full_reads_still_notify() {
+        let provider = ComponentInstancePath::root("Provider", "main");
+        let size_owner = provider.child("Reader", "size");
+        let full_owner = provider.child("Reader", "full");
+        let direct_owner = provider.child("Reader", "direct");
+        let both_owner = provider.child("Reader", "both");
+        let reference = ElementRef::new(ElementRefId::new(provider.clone(), "field").unwrap());
+        let (node, _) = nodes();
+        let geometry = crate::GeometryRegistry::new();
+        let mut refs = ElementRefRegistry::new();
+        for owner in [&size_owner, &both_owner] {
+            refs.resolve_and_track_geometry_read(
+                &reference,
+                owner,
+                ElementRefGeometryRead::LayoutSize,
+            );
+        }
+        for owner in [&full_owner, &both_owner] {
+            refs.resolve_and_track_geometry(&reference, owner);
+        }
+        refs.reconcile(&provider, BTreeMap::from([(reference.id().clone(), node)]));
+        geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+        geometry.read_tracked(node, &direct_owner);
+        refs.take_dirty();
+        let mut current = measured(120.0);
+        geometry.update(node, current);
+        assert_eq!(
+            geometry.take_dirty(),
+            BTreeSet::from([
+                size_owner.clone(),
+                full_owner.clone(),
+                direct_owner.clone(),
+                both_owner.clone(),
+            ])
+        );
+
+        let full_owners = BTreeSet::from([full_owner, direct_owner, both_owner]);
+        current.layout.x = 70.0;
+        current.layout.y = 30.0;
+        geometry.update(node, current);
+        assert_eq!(geometry.take_dirty(), full_owners);
+        current.visual.width = 240.0;
+        geometry.update(node, current);
+        assert_eq!(geometry.take_dirty(), full_owners);
+        current.clip = Some(crate::GeometryBounds::new(0.0, 0.0, 10.0, 10.0).unwrap());
+        geometry.update(node, current);
+        assert_eq!(geometry.take_dirty(), full_owners);
+        current.layout.height = 32.0;
+        geometry.update(node, current);
+        assert_eq!(
+            geometry.take_dirty(),
+            full_owners.into_iter().chain([size_owner]).collect()
+        );
+    }
+
+    #[test]
+    fn size_subscription_survives_pending_rebind_unmount_and_remount() {
+        let provider = ComponentInstancePath::root("Provider", "main");
+        let owner = provider.child("Reader", "size");
+        let reference = ElementRef::new(ElementRefId::new(provider.clone(), "field").unwrap());
+        let (first, second) = nodes();
+        let geometry = crate::GeometryRegistry::new();
+        let mut refs = ElementRefRegistry::new();
+        assert_eq!(
+            refs.resolve_and_track_geometry_read(
+                &reference,
+                &owner,
+                ElementRefGeometryRead::LayoutSize,
+            ),
+            None
+        );
+        for node in [first, second, first] {
+            refs.reconcile(&provider, BTreeMap::from([(reference.id().clone(), node)]));
+            geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+            assert_eq!(refs.take_dirty(), BTreeSet::from([owner.clone()]));
+            geometry.update(node, measured(120.0));
+            geometry.take_dirty();
+            let mut moved = measured(120.0);
+            moved.layout.x = 200.0;
+            geometry.update(node, moved);
+            assert!(geometry.take_dirty().is_empty());
+
+            refs.reconcile(&provider, BTreeMap::new());
+            geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+            assert_eq!(refs.take_dirty(), BTreeSet::from([owner.clone()]));
+            geometry.take_dirty();
+            geometry.update(node, measured(140.0));
+            assert!(
+                geometry.take_dirty().is_empty(),
+                "unbound target is detached"
+            );
+        }
+    }
+
+    #[test]
+    fn size_subscriptions_share_contribution_cleanup_and_rollback_with_bounds() {
+        let provider = ComponentInstancePath::root("Provider", "main");
+        let owner = provider.child("Reader", "shared");
+        let reference = ElementRef::new(ElementRefId::new(provider.clone(), "field").unwrap());
+        let collection = crate::VirtualCollectionId {
+            component: owner.clone(),
+            key: "rows".into(),
+        };
+        let scope = owner.child("VirtualCollection", "rows");
+        let direct = crate::read_dependency::ReadDependency::component(&owner);
+        let row = crate::read_dependency::ReadDependency::virtual_item(&owner, &collection, "a");
+        let (node, _) = nodes();
+        let geometry = crate::GeometryRegistry::new();
+        let mut refs = ElementRefRegistry::new();
+        refs.resolve_and_track_geometry_read(
+            &reference,
+            &direct,
+            ElementRefGeometryRead::LayoutSize,
+        );
+        refs.resolve_and_track_geometry(&reference, &row);
+        refs.reconcile(&provider, BTreeMap::from([(reference.id().clone(), node)]));
+        geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+        refs.take_dirty();
+        geometry.update(node, measured(120.0));
+        geometry.take_dirty();
+        let saved_refs = refs.clone();
+        let saved_geometry = geometry.snapshot();
+        refs.retain_contributions(&scope, &BTreeSet::new());
+        geometry.retain_contributions(&scope, &BTreeSet::new());
+        let mut moved = measured(120.0);
+        moved.layout.x = 200.0;
+        geometry.update(node, moved);
+        assert!(
+            geometry.take_dirty().is_empty(),
+            "row bounds read was pruned, size read remains"
+        );
+        geometry.update(node, measured(140.0));
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner.clone()]));
+
+        refs = saved_refs;
+        geometry.restore(saved_geometry);
+        geometry.update(node, moved);
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner.clone()]));
+        refs.reset_contribution(&row);
+        geometry.reset_contribution(&row);
+        refs.reset_contribution(&direct);
+        geometry.reset_contribution(&direct);
+        geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+        geometry.update(node, measured(160.0));
+        assert!(geometry.take_dirty().is_empty());
+        refs.reconcile(&provider, BTreeMap::new());
+        assert!(refs.take_dirty().is_empty());
     }
 
     #[test]

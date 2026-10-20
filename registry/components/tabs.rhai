@@ -49,7 +49,7 @@ define_component(#{
             tabs: #{ schema: #{ type: "array", max_items: 128, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                        doc: "Identity of the tab, matched against `value` and passed to `on_change`." },
+                        doc: "Unique business identity of the tab, including the empty string; matched against `value` and passed unchanged to `on_change`." },
                     label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                         doc: "Tab text and accessible name." },
                     icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
@@ -113,7 +113,7 @@ fn render_Tabs(ctx, props) {
     let panels = [];
     let values = [];
     for tab in props.tabs {
-        if tab.value == "" || values.contains(tab.value) { throw "Tabs values must be non-empty and unique"; }
+        if values.contains(tab.value) { throw "Tabs values must be unique"; }
         values.push(tab.value);
         let selected = tab.value == props.value;
         let label_visible = if "label_visible" in tab { tab.label_visible } else { true };
@@ -173,7 +173,9 @@ fn render_Tabs(ctx, props) {
         children.push(row(content).with_style(style().relative().items_center().justify_center()
             .gap(theme_spacing("xs"))));
 
-        let header = row(children).with_key(tab.value)
+        // Business values may be empty. Prefixing is injective and supplies a non-empty
+        // node key without changing the controlled value or callback payload.
+        let header = row(children).with_key(`tab:${tab.value}`)
             .with_style(resolved_tab_style)
             .tab_stop(false)
             .disabled(tab_disabled(tab))

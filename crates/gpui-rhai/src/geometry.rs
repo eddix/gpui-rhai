@@ -342,7 +342,7 @@ struct GeometryState {
     shared_layout: BTreeMap<(String, String), (NodeId, GeometryBounds)>,
     motion_progress: BTreeMap<(NodeId, crate::MotionProperty), f64>,
     motion_trigger_targets: BTreeMap<(NodeId, crate::MotionProgressDriver), bool>,
-    motion_triggers: BTreeMap<(NodeId, crate::MotionProgressDriver), TriggerMotionState>,
+    motion_triggers: BTreeMap<(NodeId, crate::MotionProperty), TriggerMotionState>,
     canvas_transforms: BTreeMap<NodeId, CanvasMotionTransform>,
     canvas_drawables: BTreeMap<NodeId, ElementGeometry>,
     element_offsets: BTreeMap<NodeId, (f64, f64)>,
@@ -455,8 +455,13 @@ impl GeometryRegistry {
         if state.committed.get(&node) == Some(&geometry) {
             return false;
         }
+        let size_changed = state
+            .committed
+            .get(&node)
+            .map(|previous| (previous.layout.width, previous.layout.height))
+            != Some((geometry.layout.width, geometry.layout.height));
         state.committed.insert(node, geometry);
-        let owners = geometry_read_owners(state, node);
+        let owners = geometry_read_owners(state, node, size_changed);
         state.dirty.extend(owners);
         true
     }
@@ -652,7 +657,9 @@ impl GeometryRegistry {
         };
         if state.canvas_drawables.get(&node) != Some(&geometry) {
             state.canvas_drawables.insert(node, geometry);
-            let owners = geometry_read_owners(state, node);
+            // Drawable motion does not change the committed layout size read
+            // through element_size, even when its visual extent changes.
+            let owners = geometry_read_owners(state, node, false);
             state.dirty.extend(owners);
         }
     }
@@ -668,19 +675,30 @@ impl GeometryRegistry {
         preference: crate::MotionPreference,
         now: Instant,
     ) -> TriggerMotionSample {
+        let active = self
+            .inner
+            .borrow()
+            .motion_trigger_targets
+            .get(&(node, binding.driver))
+            .copied()
+            .unwrap_or(false);
+        self.sample_motion_trigger_target(node, binding, active, preference, now)
+    }
+
+    pub(crate) fn sample_motion_trigger_target(
+        &self,
+        node: NodeId,
+        binding: &crate::MotionProgressBinding,
+        active: bool,
+        preference: crate::MotionPreference,
+        now: Instant,
+    ) -> TriggerMotionSample {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
-        let key = (node, binding.driver);
-        let target = if state
-            .motion_trigger_targets
-            .get(&key)
-            .copied()
-            .unwrap_or(false)
-        {
-            1.0
-        } else {
-            0.0
-        };
+        // Each property owns its own clock, even when several properties share
+        // one trigger but intentionally use different durations.
+        let key = (node, binding.property());
+        let target = if active { 1.0 } else { 0.0 };
         if preference != crate::MotionPreference::Normal {
             state.motion_triggers.remove(&key);
             return TriggerMotionSample {
@@ -760,15 +778,33 @@ impl GeometryRegistry {
         node: NodeId,
         reader: impl Into<crate::read_dependency::ReadDependency>,
     ) -> Option<ElementGeometry> {
+        self.read_ref_observation(
+            reference,
+            node,
+            reader,
+            crate::element_ref::ElementRefGeometryRead::Bounds,
+        )
+    }
+
+    pub(crate) fn read_ref_observation(
+        &self,
+        reference: &crate::ElementRefId,
+        node: NodeId,
+        reader: impl Into<crate::read_dependency::ReadDependency>,
+        observation: crate::element_ref::ElementRefGeometryRead,
+    ) -> Option<ElementGeometry> {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
-        state
-            .ref_readers
-            .entry(node)
-            .or_default()
-            .entry(reference.clone())
-            .or_default()
-            .insert(reader.into());
+        crate::element_ref::track_geometry_ref_reader(
+            state
+                .ref_readers
+                .entry(node)
+                .or_default()
+                .entry(reference.clone())
+                .or_default(),
+            reader.into(),
+            observation,
+        );
         state.committed.get(&node).copied()
     }
 
@@ -793,9 +829,13 @@ impl GeometryRegistry {
                         previous.get(&node).and_then(|refs| refs.get(&reference));
                     state.dirty.extend(
                         readers
-                            .iter()
+                            .keys()
                             .filter(|reader| {
-                                previous_readers.is_none_or(|previous| !previous.contains(*reader))
+                                previous_readers.is_none_or(|previous| {
+                                    previous.get(*reader).is_none_or(|previous_observation| {
+                                        *previous_observation < readers[*reader]
+                                    })
+                                })
                             })
                             .map(|reader| reader.owner.clone()),
                     );
@@ -938,7 +978,11 @@ impl GeometryRegistry {
     }
 }
 
-fn geometry_read_owners(state: &GeometryState, node: NodeId) -> BTreeSet<ComponentInstancePath> {
+fn geometry_read_owners(
+    state: &GeometryState,
+    node: NodeId,
+    size_changed: bool,
+) -> BTreeSet<ComponentInstancePath> {
     state
         .readers
         .get(&node)
@@ -950,7 +994,12 @@ fn geometry_read_owners(state: &GeometryState, node: NodeId) -> BTreeSet<Compone
                 .get(&node)
                 .into_iter()
                 .flat_map(BTreeMap::values)
-                .flatten(),
+                .flat_map(BTreeMap::iter)
+                .filter(|(_, observation)| {
+                    size_changed
+                        || **observation == crate::element_ref::ElementRefGeometryRead::Bounds
+                })
+                .map(|(reader, _)| reader),
         )
         .map(|reader| reader.owner.clone())
         .collect()
@@ -962,7 +1011,7 @@ fn retain_geometry_readers(
 ) {
     crate::read_dependency::retain_readers(&mut state.readers, &predicate);
     for refs in state.ref_readers.values_mut() {
-        crate::read_dependency::retain_readers(refs, &predicate);
+        crate::element_ref::retain_geometry_ref_readers(refs, &predicate);
     }
     state.ref_readers.retain(|_, refs| !refs.is_empty());
 }
@@ -1182,6 +1231,73 @@ mod tests {
             start + Duration::from_millis(100),
         );
         assert!((sample.value - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn native_trigger_properties_keep_independent_clocks_and_policy_endpoints() {
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("target")).unwrap();
+        let node = tree.root_id().unwrap();
+        let registry = GeometryRegistry::new();
+        let start = Instant::now();
+        let binding = |property, duration| {
+            let mut source = crate::MotionTransition::new(property, 0.0, 1.0, duration);
+            source.easing = crate::MotionEasing::Linear;
+            crate::MotionProgressBinding::new(
+                crate::MotionProgressDriver::Hover,
+                crate::MotionSource::Transition(source),
+            )
+            .unwrap()
+        };
+        let fast = binding(crate::MotionProperty::Width, 80);
+        let slow = binding(crate::MotionProperty::Height, 160);
+        registry.set_motion_trigger(node, crate::MotionProgressDriver::Hover, true);
+        for source in [&fast, &slow] {
+            assert!(
+                registry
+                    .sample_motion_trigger(node, source, crate::MotionPreference::Normal, start)
+                    .active
+            );
+        }
+        let at = start + Duration::from_millis(40);
+        assert!(
+            (registry
+                .sample_motion_trigger(node, &fast, crate::MotionPreference::Normal, at)
+                .value
+                - 0.5)
+                .abs()
+                < 0.001
+        );
+        assert!(
+            (registry
+                .sample_motion_trigger(node, &slow, crate::MotionPreference::Normal, at)
+                .value
+                - 0.25)
+                .abs()
+                < 0.001
+        );
+        registry.set_motion_trigger(node, crate::MotionProgressDriver::Hover, false);
+        assert!(
+            (registry
+                .sample_motion_trigger(node, &fast, crate::MotionPreference::Normal, at)
+                .value
+                - 0.5)
+                .abs()
+                < 0.001
+        );
+        for preference in [
+            crate::MotionPreference::Reduced,
+            crate::MotionPreference::None,
+        ] {
+            let sample = registry.sample_motion_trigger(node, &slow, preference, at);
+            assert!(sample.value.abs() < f64::EPSILON);
+            assert!(!sample.active);
+            registry.set_motion_trigger(node, crate::MotionProgressDriver::Hover, true);
+            let sample = registry.sample_motion_trigger(node, &slow, preference, at);
+            assert!((sample.value - 1.0).abs() < f64::EPSILON);
+            assert!(!sample.active);
+            registry.set_motion_trigger(node, crate::MotionProgressDriver::Hover, false);
+        }
     }
 
     #[test]

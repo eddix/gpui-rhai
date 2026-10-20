@@ -217,9 +217,9 @@ pub use motion::{
     MotionEasing, MotionError, MotionFrame, MotionHandle, MotionInertia, MotionIntent, MotionKey,
     MotionKeyframe, MotionKeyframes, MotionPlaybackState, MotionPreference, MotionProgressBinding,
     MotionProgressDriver, MotionProperty, MotionQuality, MotionResourceUsage, MotionRuntime,
-    MotionSnapshot, MotionSource, MotionSpring, MotionTimeline, MotionTimelineEvent,
-    MotionTimelineEventKind, MotionTimelineSnapshot, MotionTimelineStep, MotionTrack,
-    MotionTransition,
+    MotionSignalTrigger, MotionSnapshot, MotionSource, MotionSpring, MotionTimeline,
+    MotionTimelineEvent, MotionTimelineEventKind, MotionTimelineSnapshot, MotionTimelineStep,
+    MotionTrack, MotionTransition,
 };
 pub use native_collection::{
     NativeCollection, NativeCollectionError, NativeCollectionRegistry, VirtualCollectionData,

@@ -373,6 +373,7 @@ The main read paths have deliberately different invalidation semantics:
 | `ctx.get_app_store(...)` / `get_window_store(...)` | Whole-field dependency |
 | `ctx.get_app_store_path(...)` / `get_window_store_path(...)` | Exact bounded path dependency, including keyed-array selectors |
 | `ctx.element_bounds(ref)` / `element_bounds("key")` | Tracked last-committed layout/visual/clip geometry; first render may return `()` |
+| `ctx.element_size(ref)` / `element_size("key")` | Tracked layout width/height only; position, transform and clip changes do not rerender its reader |
 | `ctx.event_target_bounds()` | Event-only, untracked current-target visual snapshot |
 | `ctx.get_signal(...)` during render | Untracked hot value, but makes that component ineligible for render bailout |
 | `node.bind_signal(...)` | Native property sampling without a Rhai rerender |
@@ -456,6 +457,12 @@ layout space and leave input traversal and presented accessibility; hidden
 motion does not keep requesting frames. Returning shows the retained state,
 not a second mount.
 
+This includes the actual native virtual-list state: measured rows, reading
+anchor, paused tail-follow mode and unseen-item accounting. New data received
+while hidden does not silently resume following. Real panel/collection removal
+releases its native resources; recreating the same public key is a new mount.
+Tab values must be unique strings; `""` is valid, for example for an All filter.
+
 Mounting, visibility and business activity are separate. Hiding never
 automatically cancels a capability task, subscription or application effect.
 `ctx.is_visible()` is a tracked read of last-committed page visibility, false
@@ -513,6 +520,22 @@ panel ratio; pointer movement writes only a native optional-float signal and
 the same ratio contract. `start_collapsed`/`end_collapsed` are controlled, and
 nested SplitPane instances cover multi-panel layouts without introducing a
 docking or persistence framework.
+
+Its default square-ended grip grows smoothly from 24px to 40px on hover, focus
+or drag, using the theme's `fast` motion (120ms by default). Reduced/None motion
+snaps to the current state. The stable hit area does not grow with the bar.
+`grip_length` and `grip_active_length` configure the motion range; `grip: false`
+removes only the decoration. Use `handle: node` for a static replacement, or
+`handle_renderer: ctx.node_factory(Fn("my_grip"))` for a custom stateful look.
+Bind the factory where it is declared, before forwarding it through a helper
+module. It receives the receiving component's `ctx` and a detail map with native
+`state`, `orientation`, `duration_ms` and `easing`. `signal_style` and
+`progress_motion(motion_signal(detail.state, ["drag"], source))` preserve native
+sampling and Host motion policy. It is not an event handler or a per-frame
+callback; SplitPane continues to own dragging, keyboard, focus and cancellation.
+Use `grip` state parts for the hit area and `grip_content` state parts for its
+decoration. The CLI Gallery's SplitPane page shows default, static and custom
+animated grips, including a 7px transparent hit area on a 1px separator.
 
 `Resizable` controls one positioned rectangle inside its own local boundary.
 Its `rect` contains `x`, `y`, `width`, and `height`; physical edge/corner
@@ -699,6 +722,10 @@ not add an unrelated redraw to make it self-heal. Event callbacks cannot retain
 the custom `ElementRef` value and instead call
 `ctx.element_bounds("component_local_ref_key")`. It cannot provide synchronous
 same-layout feedback.
+
+When only dimensions matter, use `ctx.element_size(ref | "key")` instead: it
+returns `#{ width, height }` and preserves the same pending/ref-rebinding
+subscription, without waking Rhai when a native drag merely moves the element.
 
 ### 6.3 Rust native handlers callable from Rhai
 

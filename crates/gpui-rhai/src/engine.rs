@@ -180,6 +180,7 @@ struct ComponentCallbackBinding {
     incarnation: crate::ComponentIncarnation,
     events: BTreeMap<String, EventSchema>,
     context: Option<crate::invocation::ScriptInvocationContext>,
+    is_node_factory: bool,
 }
 
 #[derive(Clone)]
@@ -198,6 +199,7 @@ pub struct ScriptCallback {
     events: BTreeMap<String, EventSchema>,
     #[allow(deprecated)]
     native_context: Option<crate::invocation::ScriptInvocationContext>,
+    is_node_factory: bool,
 }
 
 impl PartialEq for ScriptCallback {
@@ -207,6 +209,13 @@ impl PartialEq for ScriptCallback {
             && self.generation == other.generation
             && self.component == other.component
             && self.incarnation == other.incarnation
+            && self.is_node_factory == other.is_node_factory
+            && (!self.is_node_factory
+                || match (&self.native_context, &other.native_context) {
+                    (Some(left), Some(right)) => left.same_factory_environment(right),
+                    (None, None) => true,
+                    _ => false,
+                })
     }
 }
 
@@ -244,17 +253,19 @@ impl ScriptCallback {
             );
         }
         function.set_curry(curry.iter().cloned().map(UiValue::into_dynamic));
-        let (component, incarnation, events, native_context) = binding.map_or_else(
-            || (None, None, BTreeMap::new(), None),
-            |binding| {
-                (
-                    Some(binding.component),
-                    Some(binding.incarnation),
-                    binding.events,
-                    binding.context,
-                )
-            },
-        );
+        let (component, incarnation, events, native_context, is_node_factory) = binding
+            .map_or_else(
+                || (None, None, BTreeMap::new(), None, false),
+                |binding| {
+                    (
+                        Some(binding.component),
+                        Some(binding.incarnation),
+                        binding.events,
+                        binding.context,
+                        binding.is_node_factory,
+                    )
+                },
+            );
         Ok(Self {
             function,
             curry,
@@ -263,6 +274,7 @@ impl ScriptCallback {
             incarnation,
             events,
             native_context,
+            is_node_factory,
         })
     }
 
@@ -320,6 +332,50 @@ impl ScriptCallback {
 
     pub(crate) fn native_context(&self) -> Option<&crate::invocation::ScriptInvocationContext> {
         self.native_context.as_ref()
+    }
+
+    pub(crate) const fn is_node_factory(&self) -> bool {
+        self.is_node_factory
+    }
+
+    pub(crate) fn render_node(
+        &self,
+        call: &rhai::NativeCallContext<'_>,
+        context: UiContext,
+        detail: Dynamic,
+    ) -> Result<UiNode, Box<EvalAltResult>> {
+        let args = (context, detail);
+        if let Some(environment) = &self.native_context {
+            environment.call_synchronous(call, &self.function, args)
+        } else {
+            self.function.call_within_context(call, args)
+        }
+    }
+
+    pub(crate) fn bind_node_factory(
+        mut function: FnPtr,
+        context: &UiContext,
+        call: &rhai::NativeCallContext<'_>,
+    ) -> FnPtr {
+        let mut already_bound = false;
+        for value in function.iter_curry_mut() {
+            if value.is::<ComponentCallbackBinding>() {
+                let mut binding = value.clone_cast::<ComponentCallbackBinding>();
+                binding.is_node_factory = true;
+                *value = Dynamic::from(binding);
+                already_bound = true;
+            }
+        }
+        if !already_bound {
+            function.add_curry(Dynamic::from(ComponentCallbackBinding {
+                component: context.callback_component_path().clone(),
+                incarnation: context.callback_component_incarnation(),
+                events: context.callback_event_schemas().clone(),
+                context: Some(crate::invocation::ScriptInvocationContext::capture_retained(call)),
+                is_node_factory: true,
+            }));
+        }
+        function
     }
 }
 
@@ -2763,6 +2819,7 @@ fn caller_component_binding(
         context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
             crate::invocation::ScriptInvocationContext::capture_entry_retained(call)
         })),
+        is_node_factory: false,
     }
 }
 
@@ -4710,6 +4767,65 @@ mod tests {
             ScriptCallback::try_from_fn_ptr(callback, ScriptGeneration::initial()),
             Err(ScriptCallbackDefinitionError::InvalidCurry { index: 0, .. })
         ));
+    }
+
+    #[test]
+    fn node_factory_marker_preserves_curry_and_compares_lexical_environment_only_for_factories() {
+        let captures = Rc::new(RefCell::new(Vec::new()));
+        let sink = captures.clone();
+        let context = UiContext::new(
+            Rc::new(RefCell::new(crate::UiRuntimeState::new())),
+            ComponentInstancePath::root("Factory", "root"),
+            None,
+            crate::ExecutionPhase::Render,
+            BTreeMap::new(),
+        );
+        let mut engine = Engine::new();
+        engine.register_fn(
+            "capture_factory",
+            move |call: rhai::NativeCallContext<'_>, function: FnPtr| {
+                let bound = ScriptCallback::bind_node_factory(function, &context, &call);
+                // Forwarding through an ordinary callback prop cannot discard
+                // the explicit factory marker or its original environment.
+                let mut forwarded = Dynamic::from(bound);
+                bind_component_callback_value(
+                    &crate::ValueSchema::Callback,
+                    &mut forwarded,
+                    &caller_component_binding(&call, &context),
+                );
+                let callback = ScriptCallback::try_from_fn_ptr(
+                    forwarded.cast::<FnPtr>(),
+                    ScriptGeneration::initial(),
+                )
+                .unwrap();
+                sink.borrow_mut().push(callback);
+            },
+        );
+        let source = r#"
+            fn make(length, ctx, detail) { length }
+            capture_factory(Fn("make").curry("short"));
+            capture_factory(Fn("make").curry("short"));
+        "#;
+        engine.eval::<()>(source).unwrap();
+        // Recompiling gives the same function name, owner and curry a new
+        // script library, as switching between helper-module factories does.
+        engine.eval::<()>(source).unwrap();
+        let captures = captures.borrow();
+        let first = &captures[0];
+        assert!(first.is_node_factory);
+        assert_eq!(first.curry, vec![UiValue::String("short".to_owned())]);
+        assert_eq!(first.function.iter_curry().count(), 1);
+        assert_eq!(first, &captures[1]);
+        assert_ne!(first, &captures[2]);
+
+        let mut event_before = first.clone();
+        let mut event_after = captures[2].clone();
+        event_before.is_node_factory = false;
+        event_after.is_node_factory = false;
+        assert_eq!(
+            event_before, event_after,
+            "ordinary event equality is unchanged"
+        );
     }
 
     #[test]

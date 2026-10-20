@@ -64,13 +64,16 @@ The internal `GestureSession` owns the common pointer lifecycle:
 
 `idle -> armed -> active -> finished`, with cancellation from every
 non-terminal state. It records the start/current/previous pointer sample,
-threshold and structured owner. A successful script rerender invalidates an
-older active native gesture before another pointer sample can commit it; native
-controls additionally compare the source/constraint contract they captured.
-The invalidation mark is produced by the common successful render-commit path,
-including node, native, timer, task and subscription entry points. Internal
-virtual realization is presentation work and does not invalidate a business
-gesture by itself.
+threshold and structured owner. A successful script transaction compares each
+active owner's accepted behavior contract: identity/generation, direction,
+availability, native source/constraint inputs and semantic callback routes.
+Only a changed contract invalidates that owner's capture before another sample
+can commit it; a style, geometry, content or unrelated state rerender alone is
+not invalidation. Native controls additionally check captured geometry where
+their behavior requires it. This common commit boundary covers node, native,
+timer, task and subscription entry points. Failed candidates contribute no
+invalidation, while an earlier successful item in an async batch keeps its
+invalidation if a later independent item fails.
 
 Behaviors supply pure policy rather than another event loop:
 

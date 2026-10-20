@@ -1323,7 +1323,7 @@ fn separator_lines(cx: &mut TestAppContext, line: &str) -> (Vec<(f64, f64, f64)>
     };
     let script = split_grip_script(false).replace_once(
         "size:ctx.get_state(\"size\"),",
-        &format!("size:ctx.get_state(\"size\"),{line}"),
+        &format!("size:ctx.get_state(\"size\"),grip:false,{line}"),
     );
     let (window, view) = mount_with_overrides(cx, &script, "split-line", overrides);
     let mut visual = VisualTestContext::from_window(*window, cx);

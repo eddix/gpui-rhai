@@ -94,6 +94,16 @@ node.progress_motion(motion_hover(
 These paths never synthesize high-frequency Rhai events. Raw pointer payloads
 still expose `movement`, `velocity`, and timestamps for seeding inertia.
 
+`motion_signal(state, ["hover", "drag"], source)` uses the same native trigger
+sampler for a string signal supplied by a component. It animates toward the
+active endpoint while the signal matches one of the named states, and reverses
+from its current sample otherwise. Each property has its own clock and duration.
+Reduced/None policy selects the current state's static endpoint, not always the
+active endpoint. Signal lifetime is checked before committing a view transaction.
+For example, SplitPane's `handle_renderer` receives `detail.state`; a custom
+decoration can attach `progress_motion(motion_signal(...))` without taking over
+pointer capture, focus, cancellation, or the controlled panel ratio.
+
 ## Enter, exit, layout, and shared layout
 
 `.enter_motion(source)` is `.motion(source)` under a name that states the

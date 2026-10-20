@@ -288,6 +288,33 @@ impl RetainedUiTree {
         self.nodes.get(&id)
     }
 
+    /// Read one accepted declarative snapshot by retained identity. Walking
+    /// just its ancestor path avoids scanning unrelated subtrees when an
+    /// active native gesture validates its contract after a script commit.
+    pub(crate) fn snapshot_node(&self, id: NodeId) -> Option<&UiNode> {
+        let mut path = Vec::new();
+        let mut current = id;
+        while let Some(parent) = self.node(current)?.parent() {
+            path.push(current);
+            current = parent;
+        }
+        if Some(current) != self.root_id {
+            return None;
+        }
+        let mut snapshot = self.root.as_ref()?;
+        for child in path.into_iter().rev() {
+            let retained = self.node(current)?;
+            snapshot = snapshot
+                .retained_child_groups()
+                .into_iter()
+                .flat_map(|(_, children)| children)
+                .zip(retained.children())
+                .find_map(|(snapshot, link)| (link.node() == child).then_some(snapshot))?;
+            current = child;
+        }
+        Some(snapshot)
+    }
+
     #[must_use]
     pub fn component_node(&self, component: &crate::ComponentInstancePath) -> Option<NodeId> {
         self.nodes

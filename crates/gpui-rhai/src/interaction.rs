@@ -44,6 +44,128 @@ impl InteractionOwner {
             key: format!("{}:{}", self.key, key.as_ref()),
         }
     }
+
+    pub(crate) const fn retained_node(&self) -> Option<crate::NodeId> {
+        self.retained
+    }
+}
+
+/// The accepted behavioral inputs a native gesture captured. Paint, measured
+/// position and child content are intentionally not part of this contract:
+/// those are allowed to change while native preview moves the presentation.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct InteractionContract {
+    generation: crate::ScriptGeneration,
+    direction: crate::TextDirection,
+    primitive: Option<NativeInteractionInputs>,
+    handlers: BTreeMap<String, Vec<crate::UiEventBinding>>,
+    payloads: BTreeMap<String, UiValue>,
+    available: bool,
+    routes: BTreeMap<(crate::ComponentInstancePath, String), Option<crate::ScriptCallback>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct NativeInteractionInputs {
+    primitive: crate::PrimitiveId,
+    key: Option<String>,
+    props: BTreeMap<String, crate::PrimitiveValue>,
+}
+
+impl InteractionContract {
+    pub(crate) fn capture(
+        owner: &InteractionOwner,
+        tree: &crate::RetainedUiTree,
+        runtime: &crate::UiRuntimeState,
+        generation: crate::ScriptGeneration,
+        direction: crate::TextDirection,
+    ) -> Option<Self> {
+        let Some(id) = owner.retained_node() else {
+            // Host-owned scrollbars have no declarative source node. They
+            // still cannot carry a capture across a generation/direction swap.
+            return Some(Self {
+                generation,
+                direction,
+                primitive: None,
+                handlers: BTreeMap::new(),
+                payloads: BTreeMap::new(),
+                available: true,
+                routes: BTreeMap::new(),
+            });
+        };
+        let node = tree.snapshot_node(id)?;
+        let primitive = match node.kind() {
+            crate::UiNodeKind::Custom { primitive } => Some(NativeInteractionInputs {
+                primitive: primitive.primitive.clone(),
+                key: primitive.key.clone(),
+                props: primitive
+                    .props
+                    .iter()
+                    .filter(|(_, value)| {
+                        !matches!(
+                            value,
+                            crate::PrimitiveValue::Node(_)
+                                | crate::PrimitiveValue::Nodes(_)
+                                | crate::PrimitiveValue::Style(_)
+                        )
+                    })
+                    .map(|(name, value)| (name.to_owned(), value.clone()))
+                    .collect::<BTreeMap<_, _>>(),
+            }),
+            _ => None,
+        };
+        let mut available = true;
+        let mut ancestor = Some(id);
+        while let Some(id) = ancestor {
+            let node = tree.node(id)?;
+            available &= node.attributes().get("disabled") != Some(&UiValue::Bool(true))
+                && node.attributes().get(crate::retained_page::PAGE_VISIBLE)
+                    != Some(&UiValue::Bool(false));
+            ancestor = node.parent();
+        }
+        let mut callbacks = node
+            .handlers()
+            .values()
+            .flatten()
+            .filter_map(|binding| binding.handler().as_script().cloned())
+            .collect::<Vec<_>>();
+        if let Some(primitive) = &primitive {
+            callbacks.extend(primitive.props.values().filter_map(|value| match value {
+                crate::PrimitiveValue::Callback(crate::UiEventHandler::Script(callback)) => {
+                    Some(callback.clone())
+                }
+                _ => None,
+            }));
+        }
+        // A primitive's forwarding function may stay identical even when its
+        // caller replaces `on_resize`/`on_move`. Follow the semantic route to
+        // the real callback, including curry and component incarnation.
+        let mut routes = BTreeMap::new();
+        while let Some(callback) = callbacks.pop() {
+            let Some(component) = callback.component() else {
+                continue;
+            };
+            for event in callback.events().keys() {
+                let key = (component.clone(), event.clone());
+                if routes.contains_key(&key) {
+                    continue;
+                }
+                let handler = runtime.component_event_handler(component, event);
+                if let Some(handler) = &handler {
+                    callbacks.push(handler.clone());
+                }
+                routes.insert(key, handler);
+            }
+        }
+        Some(Self {
+            generation,
+            direction,
+            primitive,
+            handlers: node.handlers().clone(),
+            payloads: node.handler_payloads().clone(),
+            available,
+            routes,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -507,6 +629,22 @@ struct VirtualScrollTarget {
 }
 
 impl WindowInteractionCoordinator {
+    /// Native contracts are checked only for actual active owners, never for
+    /// every node in a view. An unrelated subtree rerender is not a gesture
+    /// invalidation.
+    pub(crate) fn active_owners(&self, view: &str) -> BTreeSet<InteractionOwner> {
+        let state = self.0.borrow();
+        state
+            .active
+            .iter()
+            .map(|gesture| &gesture.owner)
+            .chain(state.auxiliary.iter().map(|auxiliary| &auxiliary.owner))
+            .chain(state.drag.iter().map(|drag| &drag.spec.source))
+            .filter(|owner| owner.belongs_to(view))
+            .cloned()
+            .collect()
+    }
+
     pub(crate) fn set_retained_tree(&self, view: &str, tree: &crate::RetainedUiTree) {
         let mut state = self.0.borrow_mut();
         state.parents.retain(|(owner, _), _| owner != view);
@@ -1455,7 +1593,7 @@ fn f64_to_f32(value: f64) -> f32 {
 mod tests {
     use gpui::{point, px};
 
-    use super::GestureSession;
+    use super::{GestureSession, InteractionContract, InteractionOwner};
 
     #[test]
     fn gesture_session_owns_activation_and_total_delta() {
@@ -1472,5 +1610,116 @@ mod tests {
         let finished = session.finish(point(px(16.0), px(25.0)));
         assert!(finished.moved());
         assert_eq!(finished.delta(), (6.0, 5.0));
+    }
+
+    fn interaction_node(axes: &str, child: &str) -> crate::UiNode {
+        crate::UiNode::custom(crate::PrimitiveNode {
+            primitive: crate::PrimitiveId::parse("test.drag").unwrap(),
+            key: Some("drag".to_owned()),
+            props: crate::PrimitiveProps::new()
+                .with(
+                    "axes",
+                    crate::PrimitiveValue::Data(crate::UiValue::String(axes.to_owned())),
+                )
+                .with(
+                    "content",
+                    crate::PrimitiveValue::Node(Box::new(crate::UiNode::text(child))),
+                ),
+        })
+    }
+
+    #[test]
+    fn contract_ignores_paint_and_children_but_tracks_behavior_and_owner_removal() {
+        let runtime = crate::UiRuntimeState::new();
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(interaction_node("both", "before")).unwrap();
+        let owner = InteractionOwner::new("view", "drag").with_retained(tree.root_id().unwrap());
+        let capture = |tree: &crate::RetainedUiTree| {
+            InteractionContract::capture(
+                &owner,
+                tree,
+                &runtime,
+                crate::ScriptGeneration::initial(),
+                crate::TextDirection::LeftToRight,
+            )
+        };
+        let before = capture(&tree).unwrap();
+        tree.reconcile(
+            interaction_node("both", "different content")
+                .with_style(&crate::Style::new().width(crate::Length::Pixels(300.0))),
+        )
+        .unwrap();
+        assert_eq!(Some(before.clone()), capture(&tree));
+        tree.reconcile(interaction_node("horizontal", "different content"))
+            .unwrap();
+        assert_ne!(Some(before.clone()), capture(&tree));
+        tree.reconcile(crate::UiNode::text("replacement")).unwrap();
+        assert_eq!(None, capture(&tree));
+    }
+
+    #[test]
+    fn contract_tracks_forwarded_component_callback_replacement() {
+        use std::collections::BTreeMap;
+        let generation = crate::ScriptGeneration::initial();
+        let root = crate::ComponentInstancePath::root("App", "root");
+        let component = root.child("components/split_pane", "split");
+        let mut forward = crate::ScriptCallback::try_from_fn_ptr(
+            rhai::FnPtr::new("forward").unwrap(),
+            generation,
+        )
+        .unwrap();
+        forward.bind_component_scope_if_unset(
+            &component,
+            crate::ComponentIncarnation::unscoped(),
+            BTreeMap::from([(
+                "resize".to_owned(),
+                crate::EventSchema::new(crate::ValueSchema::UiValue),
+            )]),
+        );
+        let node = interaction_node("both", "child");
+        let crate::UiNodeKind::Custom { primitive } = node.kind() else {
+            unreachable!()
+        };
+        let mut primitive = primitive.clone();
+        primitive.props = primitive.props.with(
+            "on_resize",
+            crate::PrimitiveValue::Callback(crate::UiEventHandler::Script(forward)),
+        );
+        let node = crate::UiNode::custom(primitive);
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(node).unwrap();
+        let owner = InteractionOwner::new("view", "drag").with_retained(tree.root_id().unwrap());
+        let mut runtime = crate::UiRuntimeState::new();
+        let first =
+            crate::ScriptCallback::try_from_fn_ptr(rhai::FnPtr::new("first").unwrap(), generation)
+                .unwrap();
+        let second =
+            crate::ScriptCallback::try_from_fn_ptr(rhai::FnPtr::new("second").unwrap(), generation)
+                .unwrap();
+        runtime.replace_component_event_handlers(
+            &component,
+            BTreeMap::from([((component.clone(), "resize".to_owned()), first)]),
+        );
+        let before = InteractionContract::capture(
+            &owner,
+            &tree,
+            &runtime,
+            generation,
+            crate::TextDirection::LeftToRight,
+        );
+        runtime.replace_component_event_handlers(
+            &component,
+            BTreeMap::from([((component.clone(), "resize".to_owned()), second)]),
+        );
+        assert_ne!(
+            before,
+            InteractionContract::capture(
+                &owner,
+                &tree,
+                &runtime,
+                generation,
+                crate::TextDirection::LeftToRight,
+            )
+        );
     }
 }

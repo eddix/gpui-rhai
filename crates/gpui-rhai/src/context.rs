@@ -540,6 +540,7 @@ impl UiRuntimeState {
         self.stores.remove_window(window);
         self.native_collections.remove_reader_scope(root);
         self.native_documents.remove_reader_scope(root);
+        self.virtual_requests.release_scope(root);
         self.component_state.remove_scope(root);
         self.effect_cascades.remove_scope(root);
         self.component_event_handlers
@@ -1973,29 +1974,11 @@ impl UiContext {
     ///
     /// Returns for stale refs, unavailable geometry, or runtime borrow conflicts.
     pub fn element_bounds(&self, reference: &crate::ElementRef) -> Result<UiValue, UiContextError> {
-        let mut runtime = self
-            .runtime
-            .try_borrow_mut()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let node = if self.phase == ExecutionPhase::Render {
-            runtime
-                .element_refs
-                .resolve_and_track_geometry(reference, &self.read_dependency)
-        } else {
-            Some(runtime.element_refs.resolve(reference)?)
-        };
-        let Some(node) = node else {
-            return Ok(UiValue::Null);
-        };
-        let geometry_registry =
-            runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
-        drop(runtime);
-        let geometry = if self.phase == ExecutionPhase::Render {
-            geometry_registry.read_ref_tracked(reference.id(), node, &self.read_dependency)
-        } else {
-            geometry_registry.get(node)
-        };
-        let Some(geometry) = geometry else {
+        let Some(geometry) = self.element_geometry(
+            reference,
+            crate::element_ref::ElementRefGeometryRead::Bounds,
+        )?
+        else {
             return Ok(UiValue::Null);
         };
         Ok(UiValue::Map(BTreeMap::from([
@@ -2006,6 +1989,78 @@ impl UiContext {
                 geometry.clip.map_or(UiValue::Null, geometry_bounds_value),
             ),
         ])))
+    }
+
+    /// Read a ref's committed logical layout width and height.
+    ///
+    /// Returns null until measured or while unmounted. In render, observes size
+    /// and binding changes, but not position, visual transforms or clipping.
+    /// Reading bounds as well preserves the stronger full-geometry dependency.
+    ///
+    /// # Errors
+    ///
+    /// Returns for runtime borrow conflicts.
+    pub fn element_size(&self, reference: &crate::ElementRef) -> Result<UiValue, UiContextError> {
+        let Some(geometry) = self.element_geometry(
+            reference,
+            crate::element_ref::ElementRefGeometryRead::LayoutSize,
+        )?
+        else {
+            return Ok(UiValue::Null);
+        };
+        Ok(UiValue::Map(BTreeMap::from([
+            ("width".to_owned(), UiValue::Float(geometry.layout.width)),
+            ("height".to_owned(), UiValue::Float(geometry.layout.height)),
+        ])))
+    }
+
+    fn element_geometry(
+        &self,
+        reference: &crate::ElementRef,
+        observation: crate::element_ref::ElementRefGeometryRead,
+    ) -> Result<Option<crate::ElementGeometry>, UiContextError> {
+        use crate::element_ref::ElementRefGeometryRead;
+
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let node = if self.phase == ExecutionPhase::Render {
+            match observation {
+                ElementRefGeometryRead::Bounds => runtime
+                    .element_refs
+                    .resolve_and_track_geometry(reference, &self.read_dependency),
+                ElementRefGeometryRead::LayoutSize => runtime
+                    .element_refs
+                    .resolve_and_track_geometry_read(reference, &self.read_dependency, observation),
+            }
+        } else if observation == ElementRefGeometryRead::LayoutSize {
+            runtime.element_refs.resolve(reference).ok()
+        } else {
+            Some(runtime.element_refs.resolve(reference)?)
+        };
+        let Some(node) = node else {
+            return Ok(None);
+        };
+        let geometry_registry =
+            runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
+        drop(runtime);
+        let geometry = if self.phase == ExecutionPhase::Render {
+            match observation {
+                ElementRefGeometryRead::Bounds => {
+                    geometry_registry.read_ref_tracked(reference.id(), node, &self.read_dependency)
+                }
+                ElementRefGeometryRead::LayoutSize => geometry_registry.read_ref_observation(
+                    reference.id(),
+                    node,
+                    &self.read_dependency,
+                    observation,
+                ),
+            }
+        } else {
+            geometry_registry.get(node)
+        };
+        Ok(geometry)
     }
 
     /// Resolve and read a committed component-local ref by its stable key.
@@ -2024,6 +2079,20 @@ impl UiContext {
             .element_refs
             .resolve_key(&self.component, key)?;
         self.element_bounds(&reference)
+    }
+
+    /// Read logical layout size through a component-local ref key.
+    ///
+    /// A missing binding returns null and, during render, remains subscribed so
+    /// first mount or a later remount wakes the reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns for invalid keys or runtime borrow conflicts.
+    pub fn element_size_by_key(&self, key: &str) -> Result<UiValue, UiContextError> {
+        let reference =
+            crate::ElementRef::new(crate::ElementRefId::new(self.component.clone(), key)?);
+        self.element_size(&reference)
     }
 
     /// The window bounds of a laid-out item of one of this component's virtual
@@ -4133,6 +4202,28 @@ impl CustomType for UiContext {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
             .with_name("UiContext")
+            .with_fn("node_factory",|call:NativeCallContext<'_>,context:&mut Self,renderer:FnPtr| {
+                if context.phase != ExecutionPhase::Render {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "node_factory is only available during component rendering".into(),Position::NONE)));
+                }
+                context.scoped_callback(renderer.clone()).map_err(|error|Box::new(context_runtime_error(&error)))?;
+                Ok(ScriptCallback::bind_node_factory(renderer,context,&call))
+            })
+            .with_fn("render_node", |call:NativeCallContext<'_>,context:&mut Self,renderer:Dynamic,detail:Dynamic| {
+                if context.phase != ExecutionPhase::Render {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "render_node is only available during component rendering".into(),Position::NONE)));
+                }
+                let renderer=renderer.try_cast::<FnPtr>().ok_or_else(||Box::new(EvalAltResult::ErrorRuntime(
+                    "render_node requires a named Rhai Fn; native event handlers are not Node factories".into(),Position::NONE)))?;
+                let callback=context.scoped_callback(renderer).map_err(|error|Box::new(context_runtime_error(&error)))?;
+                if !callback.is_node_factory() {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "bind the Node factory with ctx.node_factory(Fn(...)) at its declaration site".into(),Position::NONE)));
+                }
+                callback.render_node(&call,context.clone(),detail)
+            })
             .with_fn(
                 "emit",
                 |context: &mut Self, event: ImmutableString, payload: Dynamic| {
@@ -4463,6 +4554,24 @@ fn register_signal_context_methods(builder: &mut TypeBuilder<UiContext>) {
 
 fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
+        .with_fn(
+            "element_size",
+            |context: &mut UiContext, reference: crate::ElementRef| {
+                context
+                    .element_size(&reference)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "element_size",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .element_size_by_key(key.as_str())
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
         .with_fn(
             "element_bounds",
             |context: &mut UiContext, reference: crate::ElementRef| {
@@ -6796,6 +6905,103 @@ mod tests {
             runtime.borrow().motions.timeline_state(&handle),
             Some(crate::MotionPlaybackState::Playing)
         );
+    }
+
+    #[test]
+    fn element_size_is_a_pending_size_only_read_for_both_script_overloads() {
+        let context = mounted_context(ExecutionPhase::Render);
+        let owner = context.component_path().clone();
+        let reference =
+            crate::ElementRef::new(crate::ElementRefId::new(owner.clone(), "field").unwrap());
+        let mut engine = Engine::new();
+        register_ui_context_api(&mut engine);
+        let mut scope = rhai::Scope::new();
+        scope.push("ctx", context.clone());
+        scope.push("reference", reference.clone());
+        let read_script = |scope: &mut rhai::Scope<'_>| {
+            engine
+                .eval_with_scope::<rhai::Array>(
+                    scope,
+                    r#"[ctx.element_size(reference), ctx.element_size("field")]"#,
+                )
+                .unwrap()
+        };
+        let pending = read_script(&mut scope);
+        assert!(pending.iter().all(Dynamic::is_unit));
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("field")).unwrap();
+        let node = tree.root_id().unwrap();
+        let geometry = context.runtime().borrow().geometry_for(Some("main"));
+        {
+            let mut runtime = context.runtime().borrow_mut();
+            runtime
+                .element_refs
+                .reconcile(&owner, BTreeMap::from([(reference.id().clone(), node)]));
+            geometry.sync_ref_readers(&owner, runtime.element_refs.geometry_bindings(&owner));
+            assert_eq!(
+                runtime.element_refs.take_dirty(),
+                BTreeSet::from([owner.clone()])
+            );
+        }
+        let mut measured = crate::ElementGeometry {
+            layout: crate::GeometryBounds::new(10.0, 20.0, 120.0, 24.0).unwrap(),
+            visual: crate::GeometryBounds::new(10.0, 20.0, 240.0, 48.0).unwrap(),
+            clip: None,
+        };
+        geometry.update(node, measured);
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner.clone()]));
+        let ready = read_script(&mut scope);
+        for value in ready {
+            let size = value.cast::<rhai::Map>();
+            assert_eq!(size.len(), 2);
+            assert!((size["width"].clone_cast::<rhai::FLOAT>() - 120.0).abs() < f64::EPSILON);
+            assert!((size["height"].clone_cast::<rhai::FLOAT>() - 24.0).abs() < f64::EPSILON);
+        }
+        measured.layout.x = 30.0;
+        measured.visual.height = 96.0;
+        geometry.update(node, measured);
+        assert!(geometry.take_dirty().is_empty());
+        measured.layout.width = 140.0;
+        geometry.update(node, measured);
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner]));
+    }
+
+    #[test]
+    fn element_size_event_reads_are_untracked_and_missing_refs_return_null() {
+        let context = mounted_context(ExecutionPhase::Event);
+        let reference = crate::ElementRef::new(
+            crate::ElementRefId::new(context.component_path().clone(), "field").unwrap(),
+        );
+        assert_eq!(context.element_size(&reference).unwrap(), UiValue::Null);
+        assert_eq!(context.element_size_by_key("field").unwrap(), UiValue::Null);
+        assert!(context.element_size_by_key("").is_err());
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("field")).unwrap();
+        let node = tree.root_id().unwrap();
+        context.runtime().borrow_mut().element_refs.reconcile(
+            context.component_path(),
+            BTreeMap::from([(reference.id().clone(), node)]),
+        );
+        assert!(
+            context
+                .runtime()
+                .borrow_mut()
+                .element_refs
+                .take_dirty()
+                .is_empty()
+        );
+        let geometry = context.runtime().borrow().geometry_for(Some("main"));
+        let mut measured = crate::ElementGeometry {
+            layout: crate::GeometryBounds::new(0.0, 0.0, 120.0, 24.0).unwrap(),
+            visual: crate::GeometryBounds::new(0.0, 0.0, 120.0, 24.0).unwrap(),
+            clip: None,
+        };
+        geometry.update(node, measured);
+        context.element_size(&reference).unwrap();
+        context.element_size_by_key("field").unwrap();
+        measured.layout.width = 140.0;
+        geometry.update(node, measured);
+        assert!(geometry.take_dirty().is_empty());
     }
 
     #[test]

@@ -42,6 +42,9 @@ actions!(gpui_rhai_host, [CopySelectedText, NavigateBack]);
 
 const HOST_KEY_CONTEXT: &str = "GPUIRhaiHost";
 
+type InteractionContractSnapshots =
+    BTreeMap<crate::interaction::InteractionOwner, Option<crate::interaction::InteractionContract>>;
+
 #[derive(Default)]
 struct ScriptRuntimeInstallation {
     bindings: BTreeMap<(String, Option<String>), ActionId>,
@@ -3396,7 +3399,7 @@ impl PreparedScriptView {
                 last_motion_sample: None,
                 state: entity_view_state,
                 direct_signal_access: Rc::new(Cell::new(false)),
-                pending_interaction_cancel: false,
+                pending_interaction_cancels: BTreeSet::new(),
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 window_activation: None,
@@ -3786,7 +3789,7 @@ fn open_secondary_window(
                 last_motion_sample: None,
                 state: entity_view_state,
                 direct_signal_access: Rc::new(Cell::new(false)),
-                pending_interaction_cancel: false,
+                pending_interaction_cancels: BTreeSet::new(),
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 window_activation: None,
@@ -4104,7 +4107,7 @@ struct ScriptHostView {
     last_motion_sample: Option<Instant>,
     state: Rc<Cell<ScriptViewState>>,
     direct_signal_access: Rc<Cell<bool>>,
-    pending_interaction_cancel: bool,
+    pending_interaction_cancels: BTreeSet<crate::interaction::InteractionOwner>,
     activity_wake: crate::async_runtime::AsyncWake,
     _runtime_tasks: HostRuntimeTasks,
     #[allow(dead_code)]
@@ -4686,6 +4689,7 @@ impl Render for ScriptHostView {
         }
         self.consume_pending_interaction_cancel(window, cx);
         self.prepare_host_render(window, cx);
+        self.consume_pending_interaction_cancel(window, cx);
         self.primitives.set_generation(self.lifecycle.generation());
         let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let (motion_active, committed_motion_events) = self.sample_motion_frame(&motion_root);
@@ -6211,13 +6215,72 @@ impl ScriptHostView {
             .cancel_view(&self.view_id, window, cx)
     }
 
-    fn mark_interaction_contract_changed(&mut self, changed: bool) {
-        self.pending_interaction_cancel |= changed;
+    fn active_interaction_contracts(&self) -> Result<InteractionContractSnapshots, ScriptFailure> {
+        let owners = self.host.interactions().active_owners(&self.view_id);
+        if owners.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let runtime = self.lifecycle.runtime();
+        let runtime = runtime
+            .try_borrow()
+            .map_err(|_| ScriptFailure::plain("UI runtime state is already borrowed"))?;
+        let direction = self.interaction_text_direction(&runtime);
+        Ok(owners
+            .into_iter()
+            .map(|owner| {
+                let contract = crate::interaction::InteractionContract::capture(
+                    &owner,
+                    self.lifecycle.retained(),
+                    &runtime,
+                    self.lifecycle.generation(),
+                    direction,
+                );
+                (owner, contract)
+            })
+            .collect())
+    }
+
+    fn invalidate_changed_interaction_contracts(&mut self, previous: InteractionContractSnapshots) {
+        if previous.is_empty() {
+            return;
+        }
+        let runtime = self.lifecycle.runtime();
+        let runtime = runtime.borrow();
+        let direction = self.interaction_text_direction(&runtime);
+        for (owner, previous) in previous {
+            let current = crate::interaction::InteractionContract::capture(
+                &owner,
+                self.lifecycle.retained(),
+                &runtime,
+                self.lifecycle.generation(),
+                direction,
+            );
+            if previous != current {
+                self.pending_interaction_cancels.insert(owner);
+            }
+        }
+    }
+
+    fn interaction_text_direction(&self, runtime: &UiRuntimeState) -> TextDirection {
+        runtime
+            .locale
+            .as_ref()
+            .and_then(|locale| {
+                locale
+                    .direction(Some(&self.window_id), Some(self.lifecycle.root_path()))
+                    .ok()
+            })
+            .unwrap_or(TextDirection::LeftToRight)
     }
 
     fn consume_pending_interaction_cancel(&mut self, window: &mut Window, cx: &mut App) {
-        if std::mem::take(&mut self.pending_interaction_cancel) {
-            self.cancel_view_interaction(window, cx);
+        let owners = std::mem::take(&mut self.pending_interaction_cancels);
+        if !owners.is_empty() {
+            let _signal_access = self.direct_signal_access_guard();
+            let interactions = self.host.interactions();
+            for owner in owners {
+                interactions.cancel_owner(&owner, window, cx);
+            }
         }
     }
 
@@ -6571,16 +6634,12 @@ impl ScriptHostView {
             |_| crate::EventResponse::new().stop(),
             |(value, _)| event_response_from_dynamic(value),
         );
-        let rendered = callback_result
-            .as_ref()
-            .is_ok_and(|(_, rendered)| *rendered);
         let succeeded = callback_result.is_ok();
         if let Err(error) = callback_result {
             self.set_failure(error);
         }
         self.process_window_commands(cx);
         self.process_element_commands(window, cx);
-        self.mark_interaction_contract_changed(rendered);
         self.consume_pending_interaction_cancel(window, cx);
         self.collect_timings();
         cx.notify();
@@ -6630,10 +6689,9 @@ impl ScriptHostView {
             Ok((response, rendered))
         });
         match result {
-            Ok((response, rendered)) => {
+            Ok((response, _)) => {
                 self.process_window_commands(cx);
                 self.process_element_commands(window, cx);
-                self.mark_interaction_contract_changed(rendered);
                 self.consume_pending_interaction_cancel(window, cx);
                 self.collect_timings();
                 cx.notify();
@@ -6683,6 +6741,7 @@ impl ScriptHostView {
         &mut self,
         operation: impl FnOnce(&mut Self) -> Result<T, ScriptFailure>,
     ) -> Result<T, ScriptFailure> {
+        let interaction_contracts = self.active_interaction_contracts()?;
         let transaction = self
             .begin_script_transaction()
             .map_err(ScriptFailure::from)?;
@@ -6696,7 +6755,13 @@ impl ScriptHostView {
                     Err(_) => Err("UI runtime state is already borrowed".to_owned()),
                 };
                 match commit {
-                    Ok(()) => Ok(value),
+                    Ok(()) => {
+                        // Only a successful commit can invalidate an active
+                        // owner. Keep earlier successful batch invalidations
+                        // even if a later delivery rolls back.
+                        self.invalidate_changed_interaction_contracts(interaction_contracts);
+                        Ok(value)
+                    }
                     Err(error) => {
                         let rollback = self.rollback_script_transaction(transaction);
                         Err(ScriptFailure::plain(rollback.map_or_else(
@@ -6773,33 +6838,25 @@ impl ScriptHostView {
             return;
         }
 
-        let (delivery_changed, delivery_contract_changed, delivery_error) =
-            self.deliver_async_batch(deliveries);
-        self.mark_interaction_contract_changed(delivery_contract_changed);
+        let (delivery_changed, delivery_error) = self.deliver_async_batch(deliveries);
         let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;
                 let result = view.lifecycle.realize_virtual_requests(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
-                let contract_changed =
-                    result.map_err(|error| view.lifecycle_failure(&error, None))?;
-                changed |= contract_changed;
-                Ok((
-                    changed || delivery_changed,
-                    contract_changed || delivery_contract_changed,
-                ))
+                changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
+                Ok(changed || delivery_changed)
             })
         } else {
-            Ok((delivery_changed, delivery_contract_changed))
+            Ok(delivery_changed)
         };
         let result = match (result, delivery_error) {
             (Ok(_), Some(error)) => Err(error),
             (result, _) => result,
         };
         let notify = match result {
-            Ok((changed, contract_changed)) => {
-                self.mark_interaction_contract_changed(contract_changed);
+            Ok(changed) => {
                 self.process_window_commands(cx);
                 changed || repaint
             }
@@ -6817,9 +6874,8 @@ impl ScriptHostView {
     fn deliver_async_batch(
         &mut self,
         deliveries: Vec<crate::AsyncDelivery>,
-    ) -> (bool, bool, Option<ScriptFailure>) {
+    ) -> (bool, Option<ScriptFailure>) {
         let mut changed = false;
-        let mut contract_changed = false;
         let mut first_error = None;
         for delivery in deliveries {
             let scope = format!("{:?}", delivery.scope);
@@ -6837,12 +6893,11 @@ impl ScriptHostView {
                 let result = view.lifecycle.render_dirty(&mut view.engine);
                 let rendered = result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 delivery_changed |= rendered;
-                Ok((delivery_changed, rendered))
+                Ok(delivery_changed)
             });
             match result {
-                Ok((delivery_changed, rendered)) => {
+                Ok(delivery_changed) => {
                     changed |= delivery_changed;
-                    contract_changed |= rendered;
                 }
                 Err(error) => {
                     self.lifecycle.runtime().borrow_mut().traces.push(
@@ -6856,7 +6911,7 @@ impl ScriptHostView {
                 }
             }
         }
-        (changed, contract_changed, first_error)
+        (changed, first_error)
     }
 
     fn sync_program(&mut self) {
@@ -6864,6 +6919,13 @@ impl ScriptHostView {
         if program.compiled.generation() == self.lifecycle.generation() {
             return;
         }
+        let interaction_contracts = match self.active_interaction_contracts() {
+            Ok(contracts) => contracts,
+            Err(error) => {
+                self.set_failure(error);
+                return;
+            }
+        };
         let previous_exports = match self.engine.component_exports() {
             Ok(exports) => exports,
             Err(error) => {
@@ -6904,6 +6966,8 @@ impl ScriptHostView {
                 failure = failure.append_context(format!("rollback failed: {rollback}"));
             }
             self.set_failure(failure);
+        } else {
+            self.invalidate_changed_interaction_contracts(interaction_contracts);
         }
     }
 

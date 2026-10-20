@@ -119,14 +119,17 @@ fn parts(hover: u32, drag: u32) -> String {
 fn instance(orientation: &str, hover: u32, drag: u32) -> String {
     script(
         orientation,
-        &format!("\n        part_styles: #{{ {} }},", parts(hover, drag)),
+        &format!(
+            "\n        part_styles: #{{ grip: style().border(px(1)), {} }},",
+            parts(hover, drag)
+        ),
     )
 }
 
 fn sheet(hover: u32, drag: u32) -> String {
     format!(
         r#"fn component_styles() {{
-    #{{ "components/split_pane": #{{ {} }} }}
+    #{{ "components/split_pane": #{{ grip: style().border(px(1)), {} }} }}
 }}"#,
         parts(hover, drag)
     )

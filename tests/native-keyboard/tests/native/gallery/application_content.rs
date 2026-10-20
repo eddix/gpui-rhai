@@ -45,6 +45,23 @@ fn field(visual: &mut VisualTestContext, view: &ScriptViewHandle, name: &str) ->
         .expect("native input value")
 }
 
+#[gpui::test]
+fn cli_gallery_split_pane_mounts_default_static_and_factory_grips(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, "split_pane");
+    for label in [
+        "Resize panes",
+        "Resize panes with grip",
+        "Resize panes on a thin separator",
+    ] {
+        let separator = bounds(&mut visual, &view, "separator", label);
+        assert!(separator.height > 100.0, "{label}: {separator:?}");
+        if label == "Resize panes on a thin separator" {
+            assert!((separator.width - 1.0).abs() < 0.5, "{separator:?}");
+        }
+    }
+    assert_eq!(last_error(&mut visual, &view), None);
+}
+
 fn reply_source(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
     visual.update(|_, cx| {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string("pending parse".to_owned()))

@@ -310,6 +310,13 @@ not durable callback data. Use this API only when a render truly depends on
 another element's previous committed geometry; it cannot create same-layout
 synchronous feedback.
 
+For dimension-only render dependencies, prefer `ctx.element_size(ref)` or
+`ctx.element_size("local_ref_key")`: it returns logical layout
+`#{ width, height }`, or `()` until measured. It follows the same ref lifecycle
+without invalidating on position, visual-transform or clip changes. Full bounds
+reads remain independent and continue receiving those changes; event-time size
+reads are untracked.
+
 ## Identity and window commands
 
 `ctx.window_id()` identifies the actual host window and is shared by sibling

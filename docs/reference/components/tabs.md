@@ -38,7 +38,7 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 | `icon` | node or `()` | — | Node drawn at icon size before the label. |
 | `label` | string | required | Tab text and accessible name. |
 | `label_visible` | bool | `true` | Whether the label text shows; a tab that hides it needs an `icon` and keeps the label as its name. |
-| `value` | string | required | Identity of the tab, matched against `value` and passed to `on_change`. |
+| `value` | string | required | Unique business identity of the tab, including the empty string; matched against `value` and passed unchanged to `on_change`. |
 
 ## Events
 

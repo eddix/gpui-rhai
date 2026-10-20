@@ -311,6 +311,25 @@ box([node]).signal_style(state, #{
 })
 ```
 
+For a continuous visual change rather than an instantaneous state switch, attach
+`progress_motion(motion_signal(state, ["hover", "drag"], source))`. It shares
+the native motion sampler, independent property clocks, Host accessibility
+policy and retained lifetime; it never calls Rhai per pointer move or frame.
+Keep the animated decoration inside a stable hit-area wrapper.
+
+Reusable components can accept a named Node factory as a callback prop. Bind it
+at its declaration site with `ctx.node_factory(Fn("my_grip"))` (user curry is
+allowed), including factories returned from ordinary imported helper modules.
+Forwarding an already bound factory preserves its original environment. Invoke
+it with `ctx.render_node(factory, detail)`, not `factory.call(...)`: callback
+props contain internal ownership metadata and a retained module environment.
+The adapter preserves user curry/private helpers/imports and the current
+render's depth and operation budget. It passes the **receiving component's**
+`ctx` and `detail` and creates no new state scope. Curry business values or
+return a formal child component when the factory needs its own state. Node
+factories run only during render; event handlers (including NativeHandlerRef)
+are not Node factories. SplitPane's `handle_renderer` is an executable example.
+
 ## Styling
 
 Use semantic theme tokens and the typed `Style` builder. Merge order is:
@@ -486,6 +505,13 @@ first value. Geometry dependencies follow a ref across retained `NodeId`
 replacement. Event handlers use `ctx.element_bounds("local_ref_key")`, because
 custom `ElementRef` values intentionally cannot cross the retained callback
 data boundary. Geometry changes dirty only components that read that exact ref.
+When only dimensions matter, use `ctx.element_size(ref)` or
+`ctx.element_size("local_ref_key")`. It returns `#{ width, height }` in logical
+layout units, or `()` while unbound or not yet measured. Render subscriptions
+follow pending mount, rebinding and removal just like bounds reads, but moving,
+clipping or visually transforming the element does not rerun a size-only reader.
+Reading both APIs in one contribution retains the stronger bounds dependency;
+event-time reads of either API establish no render dependency.
 For accessibility relationships, use the read-only `reference.semantic_id`
 getter with `accessibility_id`, `accessibility_labelled_by` and
 `accessibility_described_by`. It losslessly encodes the typed component path

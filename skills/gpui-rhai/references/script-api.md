@@ -125,6 +125,7 @@ Components, references, collections, timers, motion and canvas commands.
 | `motion_press(source: MotionSource) -> MotionProgressBinding` | Drives `source` by press: forward while the node is held down, back on release. Takes a transition or keyframes without delay or repeat. |
 | `motion_scroll(axis: String, source: MotionSource) -> MotionProgressBinding` | Maps `source` to the scroll position on `axis` (`"x"` or `"y"`) of the nearest scrollable node, 0 at the start to 1 at the end. |
 | `motion_sequence(steps: Array) -> MotionTimelineStep` | Creates a timeline step that runs `steps` one after another. |
+| `motion_signal(signal: NativeSignal, active_states: Array, source: MotionSource) -> MotionProgressBinding` | Drives `source` forward while a native string signal matches an active state, and back otherwise. Sampling and reversal stay native and follow Host motion policy; takes a transition or keyframes without delay or repeat. |
 | `motion_spring(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. |
 | `motion_spring(property: String, from: ?, to: ?, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. Numbers may be integers or floats. |
 | `motion_stagger(steps: Array, interval_ms: int) -> MotionTimelineStep` | Creates a timeline step that starts each of `steps` `interval_ms` milliseconds after the previous one. |
@@ -189,6 +190,8 @@ Methods of the context a view, callback or effect receives.
 | `ctx.dispatch_action(action: String, payload: ?)` | Queues the action `action` with `payload` to run after the current callback; raises an error when it is unknown or disabled. |
 | `ctx.element_bounds(reference: ElementRef) -> ?` | Returns a ref's last committed `#{ layout, visual, clip }` window bounds, or `()` before first layout; records a dependency in render. |
 | `ctx.element_bounds(key: String) -> ?` | Returns the `#{ layout, visual, clip }` window bounds of a component-local ref key, or `()`; the form event callbacks use. |
+| `ctx.element_size(reference: ElementRef) -> ?` | Returns committed logical layout `#{ width, height }`, or `()` while unavailable. Render observes size and ref binding changes only; position, visual transforms and clip changes do not rerender the reader. |
+| `ctx.element_size(key: String) -> ?` | Reads logical layout `#{ width, height }` by component-local ref key, or `()` while unavailable. Render subscriptions survive pending mount and rebinding; event reads create no dependency. |
 | `ctx.emit(event: String, payload: ?)` | Emits the declared event `event` with a schema-checked `payload`; the caller's handler runs after this callback. Not allowed during render. |
 | `ctx.event_target_bounds() -> ?` | Returns the `#{ x, y, width, height }` window bounds of the node running the current handler, or `()`; untracked, event callbacks only. |
 | `ctx.focus(reference: ElementRef)` | Queues keyboard focus for a ref's node, applied after the transaction commits; not allowed during render. |
@@ -223,6 +226,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.motion_quality() -> String` | Returns the Host's motion quality tier: `low`, `medium` or `high`. |
 | `ctx.motion_spring(role: String) -> Map` | Returns the theme spring preset for `role` as `#{ stiffness, damping, mass }`; raises an error for an unknown role. |
 | `ctx.motion_stagger(role: String) -> int` | Returns the theme stagger interval in milliseconds for `role`, such as `tight`; raises an error for an unknown role. |
+| `ctx.node_factory(renderer: FnPtr) -> FnPtr` | Captures a named Node factory's module/import environment at declaration, retaining user curry across helper-module forwarding. Render-only; forwarding an already bound factory preserves its original owner and environment. Invoke with ctx.render_node. |
 | `ctx.now() -> int` | Returns epoch milliseconds from the Host wall clock, independent of animation time. |
 | `ctx.number() -> Map` | Returns the selected locale's number metadata: `digits`, separators, group sizes and `minus_sign`. Records a locale dependency in render. |
 | `ctx.open_window(id: String, title: String, width: int, height: int, focus: bool)` | Queues a new window `id` that runs the same entry, sides 200 to 4096 pixels; needs window-command authority, not during render. |
@@ -231,6 +235,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` `key`; returns `false` when no such timer is active. Not allowed during render. |
 | `ctx.play_motion(handle: MotionHandle)` | Plays the timeline behind `handle`, resuming a paused position; idempotent while playing and not allowed during render. |
 | `ctx.register_action(action: String, callback: FnPtr)` | Registers the app-wide action `action` (`namespace.name`), enabled, running `callback`; again replaces the callback and keeps the enabled state. Removed on unmount. |
+| `ctx.render_node(renderer: ?, detail: ?) -> UiNode` | Calls a Node factory bound with ctx.node_factory during render, preserving its module environment and user curry. Passes this receiving component's ctx and detail; does not create a component scope or reset depth/operation limits. Rejects unbound functions, native event handlers and calls outside render. |
 | `ctx.restart_motion(handle: MotionHandle)` | Restarts the timeline behind `handle` from zero, the only way to rewind; not allowed during render. |
 | `ctx.resume_motion(handle: MotionHandle)` | Resumes the timeline behind `handle`, the same as `play_motion`; not allowed during render. |
 | `ctx.resume_timeout(key: String) -> bool` | Clears an explicit pause of this component's declared `timeout` `key`; returns `false` when no such timer is active. |

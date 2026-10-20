@@ -5,6 +5,16 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "node_factory(_: &mut UiContext, _: Fn) -> core::result::Result<rhai::types::fn_ptr::FnPtr,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["renderer"],
+        doc: "Captures a named Node factory's module/import environment at declaration, retaining user curry across helper-module forwarding. Render-only; forwarding an already bound factory preserves its original owner and environment. Invoke with ctx.render_node.",
+    },
+    ScriptFnDoc {
+        signature: "render_node(_: &mut UiContext, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["renderer", "detail"],
+        doc: "Calls a Node factory bound with ctx.node_factory during render, preserving its module environment and user curry. Passes this receiving component's ctx and detail; does not create a component scope or reset depth/operation limits. Rejects unbound functions, native event handlers and calls outside render.",
+    },
+    ScriptFnDoc {
         signature: "copy_text(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["text"],
         doc: "Queues a bounded text clipboard write after commit. Requires an attached view/window and direct user input or explicit automation; rejects render, timers, effects and asynchronous callbacks, and rolls back with failed callbacks.",
@@ -143,6 +153,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "element_bounds(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key"],
         doc: "Returns the `#{ layout, visual, clip }` window bounds of a component-local ref key, or `()`; the form event callbacks use.",
+    },
+    ScriptFnDoc {
+        signature: "element_size(_: &mut UiContext, _: ElementRef) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["reference"],
+        doc: "Returns committed logical layout `#{ width, height }`, or `()` while unavailable. Render observes size and ref binding changes only; position, visual transforms and clip changes do not rerender the reader.",
+    },
+    ScriptFnDoc {
+        signature: "element_size(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key"],
+        doc: "Reads logical layout `#{ width, height }` by component-local ref key, or `()` while unavailable. Render subscriptions survive pending mount and rebinding; event reads create no dependency.",
     },
     ScriptFnDoc {
         signature: "emit(_: &mut UiContext, _: string, _: types::dynamic::Dynamic) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

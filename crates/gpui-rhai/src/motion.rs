@@ -576,12 +576,21 @@ pub enum MotionProgressDriver {
     Hover,
     Press,
     Focus,
+    Signal,
+}
+
+/// A native string-state predicate. Sampling never calls a script callback.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MotionSignalTrigger {
+    pub signal: crate::NativeSignal,
+    pub active_states: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MotionProgressBinding {
     pub driver: MotionProgressDriver,
     pub source: MotionSource,
+    pub signal_trigger: Option<MotionSignalTrigger>,
 }
 
 impl MotionProgressBinding {
@@ -592,7 +601,63 @@ impl MotionProgressBinding {
     /// Only transition and keyframe mappings are valid progress sources.
     pub fn new(driver: MotionProgressDriver, source: MotionSource) -> Result<Self, MotionError> {
         validate_progress_source(&source)?;
-        Ok(Self { driver, source })
+        if driver == MotionProgressDriver::Signal {
+            return Err(MotionError::InvalidProgressSource(
+                "a signal driver requires a string signal and active states".to_owned(),
+            ));
+        }
+        Ok(Self {
+            driver,
+            source,
+            signal_trigger: None,
+        })
+    }
+
+    /// Animate forward while `signal` names an active state, and back otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Requires a string signal, 1–64 distinct nonempty state names and a valid
+    /// transition/keyframe source. Native lifetime is validated at view commit.
+    pub fn from_signal(
+        signal: crate::NativeSignal,
+        active_states: BTreeSet<String>,
+        source: MotionSource,
+    ) -> Result<Self, MotionError> {
+        let binding = Self {
+            driver: MotionProgressDriver::Signal,
+            source,
+            signal_trigger: Some(MotionSignalTrigger {
+                signal,
+                active_states,
+            }),
+        };
+        binding.validate()?;
+        Ok(binding)
+    }
+
+    fn validate(&self) -> Result<(), MotionError> {
+        validate_progress_source(&self.source)?;
+        match (self.driver, &self.signal_trigger) {
+            (MotionProgressDriver::Signal, Some(trigger))
+                if trigger.signal.id().kind() == crate::SignalKind::String
+                    && !trigger.active_states.is_empty()
+                    && trigger.active_states.len() <= 64
+                    && trigger
+                        .active_states
+                        .iter()
+                        .all(|state| !state.is_empty() && state.len() <= 128) =>
+            {
+                Ok(())
+            }
+            (MotionProgressDriver::Signal, _) | (_, Some(_)) => {
+                Err(MotionError::InvalidProgressSource(
+                    "motion_signal requires a string signal and 1–64 nonempty state names"
+                        .to_owned(),
+                ))
+            }
+            (_, None) => Ok(()),
+        }
     }
 
     #[must_use]
@@ -2990,7 +3055,7 @@ fn collect_node_motion(
         validate_node_property(node, source.property(), path)?;
     }
     for binding in node.progress_motions() {
-        validate_progress_source(&binding.source)?;
+        binding.validate()?;
         validate_node_property(node, binding.property(), path)?;
         if node
             .motions()
@@ -3721,6 +3786,28 @@ pub(crate) fn register_motion_api(engine: &mut Engine) {
     FuncRegistration::new("motion_scroll")
         .in_global_namespace()
         .register_into_engine(engine, motion_scroll_from_script);
+    FuncRegistration::new("motion_signal")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |signal: crate::NativeSignal, states: Array, source: MotionSource| {
+                let states = states
+                    .into_iter()
+                    .map(|value| {
+                        value
+                            .try_cast::<ImmutableString>()
+                            .map(|value| value.to_string())
+                            .ok_or_else(|| {
+                                script_boxed_error(MotionError::InvalidProgressSource(
+                                    "motion_signal states must be strings".to_owned(),
+                                ))
+                            })
+                    })
+                    .collect::<Result<BTreeSet<_>, _>>()?;
+                MotionProgressBinding::from_signal(signal, states, source)
+                    .map_err(script_boxed_error)
+            },
+        );
     for (name, driver) in [
         ("motion_hover", MotionProgressDriver::Hover),
         ("motion_press", MotionProgressDriver::Press),

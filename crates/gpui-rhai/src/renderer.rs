@@ -2497,6 +2497,12 @@ impl GpuiNodeRenderer {
                 translate_x: translate_x.unwrap_or(0.0),
                 translate_y: translate_y.unwrap_or(0.0),
                 layout_motion,
+                signal_motion_targets: progress_motions.iter().filter_map(|binding| {
+                    let trigger = binding.signal_trigger.as_ref()?;
+                    let active = matches!(environment.signals.read(&trigger.signal),
+                        Ok(crate::SignalValue::String(state)) if trigger.active_states.contains(&state));
+                    Some((binding.property(), active))
+                }).collect(),
                 progress_motions,
                 scroll_handles: scroll_handles_for_node(
                     environment.retained,
@@ -4483,7 +4489,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         scroll_anchors: environment.scroll_anchors.clone(),
         wheel_parents: environment.wheel_parents.to_vec(),
         intrinsic_size: environment.intrinsic_size.cloned(),
-        virtual_requests: environment.virtual_requests.clone(),
+        virtual_requests: environment.virtual_requests.native_access(),
         text_selection: environment.text_selection.clone(),
         host_focus: environment.host_focus.cloned(),
         direction: environment.direction,
@@ -5194,6 +5200,7 @@ struct GeometryTrackedElement {
     translate_y: f64,
     layout_motion: Option<LayoutMotionRenderSpec>,
     progress_motions: Vec<crate::MotionProgressBinding>,
+    signal_motion_targets: BTreeMap<crate::MotionProperty, bool>,
     scroll_handles: Vec<ScrollHandle>,
     focus_handle: Option<FocusHandle>,
     now: Instant,
@@ -5269,13 +5276,27 @@ impl Element for GeometryTrackedElement {
                     crate::MotionProgressDriver::Hover
                         | crate::MotionProgressDriver::Press
                         | crate::MotionProgressDriver::Focus
+                        | crate::MotionProgressDriver::Signal
                 ) {
-                    let sample = self.registry.sample_motion_trigger(
-                        self.node,
-                        binding,
-                        self.motion_preference,
-                        self.now,
-                    );
+                    let sample = if binding.driver == crate::MotionProgressDriver::Signal {
+                        self.registry.sample_motion_trigger_target(
+                            self.node,
+                            binding,
+                            self.signal_motion_targets
+                                .get(&binding.property())
+                                .copied()
+                                .unwrap_or(false),
+                            self.motion_preference,
+                            self.now,
+                        )
+                    } else {
+                        self.registry.sample_motion_trigger(
+                            self.node,
+                            binding,
+                            self.motion_preference,
+                            self.now,
+                        )
+                    };
                     let changed = self.registry.update_motion_progress(
                         self.node,
                         binding.property(),
@@ -5330,7 +5351,8 @@ impl Element for GeometryTrackedElement {
                     }
                     crate::MotionProgressDriver::Hover
                     | crate::MotionProgressDriver::Press
-                    | crate::MotionProgressDriver::Focus => unreachable!(),
+                    | crate::MotionProgressDriver::Focus
+                    | crate::MotionProgressDriver::Signal => unreachable!(),
                 };
                 let value = crate::motion::sample_progress_source(&binding.source, progress);
                 if self

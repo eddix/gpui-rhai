@@ -63,6 +63,33 @@ impl ScriptInvocationContext {
         self.operation_base
     }
 
+    /// Compare the lexical environment of an explicitly retained Node factory.
+    /// Shared module identities survive repeated captures of the same program;
+    /// evaluator counters and the stored-context allocation do not. This is
+    /// deliberately not event-callback equality.
+    #[allow(deprecated)]
+    pub(crate) fn same_factory_environment(&self, other: &Self) -> bool {
+        self.stored.source == other.stored.source
+            && self.stored.global.source == other.stored.global.source
+            && self.stored.global.lib.len() == other.stored.global.lib.len()
+            && self
+                .stored
+                .global
+                .lib
+                .iter()
+                .zip(other.stored.global.lib.iter())
+                .all(|(left, right)| std::ptr::eq(left.as_ref(), right.as_ref()))
+            && self.stored.global.num_imports() == other.stored.global.num_imports()
+            && self
+                .stored
+                .global
+                .iter_imports_raw()
+                .zip(other.stored.global.iter_imports_raw())
+                .all(|((left_name, left), (right_name, right))| {
+                    left_name == right_name && std::ptr::eq(left.as_ref(), right.as_ref())
+                })
+    }
+
     #[allow(deprecated)]
     pub(crate) fn call<T: rhai::Variant + Clone>(
         &self,
@@ -71,6 +98,26 @@ impl ScriptInvocationContext {
         args: impl FuncArgs,
     ) -> Result<T, Box<rhai::EvalAltResult>> {
         let context = self.stored.create_context(engine);
+        function.call_within_context(&context, args)
+    }
+
+    /// Re-enter a retained module environment synchronously, not as a new
+    /// event turn. Rhai 1.26 clones the evaluator: preserve the current depth
+    /// and operation counter so render factories cannot reset safety limits.
+    #[allow(deprecated)]
+    pub(crate) fn call_synchronous<T: rhai::Variant + Clone>(
+        &self,
+        caller: &NativeCallContext<'_>,
+        function: &FnPtr,
+        args: impl FuncArgs,
+    ) -> Result<T, Box<rhai::EvalAltResult>> {
+        let mut stored = (*self.stored).clone();
+        let current = caller.global_runtime_state();
+        stored.global.level = current.level;
+        stored.global.num_operations = current.num_operations;
+        stored.global.num_modules_loaded = current.num_modules_loaded;
+        stored.global.tag = current.tag.clone();
+        let context = stored.create_context(caller.engine());
         function.call_within_context(&context, args)
     }
 }
@@ -91,6 +138,49 @@ mod tests {
     use rhai::{Engine, FnPtr, NativeCallContext};
 
     use super::ScriptInvocationContext;
+
+    #[test]
+    #[allow(deprecated)]
+    fn factory_environment_uses_module_identity_not_capture_counters() {
+        let captures = Rc::new(RefCell::new(Vec::new()));
+        let sink = captures.clone();
+        let mut engine = Engine::new();
+        engine.register_fn("capture", move |call: NativeCallContext<'_>| {
+            sink.borrow_mut()
+                .push(ScriptInvocationContext::capture_retained(&call));
+        });
+        engine.eval::<()>("capture(); capture();").unwrap();
+        let captures = captures.borrow();
+        let first = &captures[0];
+        assert!(first.same_factory_environment(&captures[1]));
+
+        #[allow(deprecated)]
+        let different_capture = |change: fn(&mut rhai::NativeCallContextStore)| {
+            let mut stored = (*first.stored).clone();
+            change(&mut stored);
+            ScriptInvocationContext {
+                stored: Rc::new(stored),
+                operation_base: 999,
+            }
+        };
+        let counters = different_capture(|stored| {
+            stored.global.level = 60;
+            stored.global.num_operations = 999;
+            stored.global.num_modules_loaded = 42;
+            stored.global.tag = "another invocation".into();
+        });
+        assert!(first.same_factory_environment(&counters));
+        let source = different_capture(|stored| stored.source = Some("other/module".into()));
+        assert!(!first.same_factory_environment(&source));
+        let library = different_capture(|stored| {
+            stored.global.lib.push(rhai::Module::new().into());
+        });
+        assert!(!first.same_factory_environment(&library));
+        let import = different_capture(|stored| {
+            stored.global.push_import("palette", rhai::Module::new());
+        });
+        assert!(!first.same_factory_environment(&import));
+    }
 
     #[test]
     fn retained_callback_chains_start_with_a_fresh_call_depth() {
@@ -145,6 +235,37 @@ mod tests {
         assert!(
             matches!(*error, rhai::EvalAltResult::ErrorStackOverflow(_)),
             "unexpected recursion error: {error}"
+        );
+    }
+
+    #[test]
+    fn synchronous_retained_reentry_does_not_reset_call_depth() {
+        let retained = Rc::new(RefCell::new(None));
+        let sink = Rc::clone(&retained);
+        let mut engine = Engine::new();
+        engine.set_max_call_levels(8);
+        engine.register_fn(
+            "retain",
+            move |call: NativeCallContext<'_>, function: FnPtr| {
+                *sink.borrow_mut() =
+                    Some((ScriptInvocationContext::capture_retained(&call), function));
+            },
+        );
+        engine.register_fn(
+            "bridge",
+            move |call: NativeCallContext<'_>,
+                  value: i64|
+                  -> Result<i64, Box<rhai::EvalAltResult>> {
+                let (context, function) = retained.borrow().clone().unwrap();
+                context.call_synchronous(&call, &function, (value,))
+            },
+        );
+        let error = engine
+            .eval::<i64>(r#"fn recurse(value){bridge(value+1)} retain(Fn("recurse")); bridge(0)"#)
+            .unwrap_err();
+        assert!(
+            error.to_string().to_lowercase().contains("stack"),
+            "{error}"
         );
     }
 }

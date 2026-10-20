@@ -43,6 +43,7 @@ pub struct VirtualCollectionNodeSpec {
 
 #[derive(Clone, Debug, Default)]
 pub struct VirtualRequestRegistry {
+    pub(crate) native_views: crate::virtual_list_element::NativeVirtualListRegistry,
     requests: Rc<RefCell<BTreeMap<VirtualCollectionId, BTreeSet<usize>>>>,
     metrics: Rc<RefCell<BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>>>,
     item_bounds: Rc<RefCell<BTreeMap<VirtualCollectionId, ItemBoundsReader>>>,
@@ -213,12 +214,25 @@ impl VirtualCollectionMetrics {
 
 #[derive(Clone, Debug)]
 pub(crate) struct VirtualRequestSnapshot {
+    native_views: crate::virtual_list_element::NativeVirtualListSnapshot,
     requests: BTreeMap<VirtualCollectionId, BTreeSet<usize>>,
     metrics: BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>,
+    item_bounds: BTreeMap<VirtualCollectionId, ItemBoundsReader>,
+    scrolls: BTreeMap<VirtualCollectionId, VirtualCollectionScrollHandle>,
+    active: BTreeSet<VirtualCollectionId>,
     scroll_commands: BTreeMap<VirtualCollectionId, Vec<CollectionScrollCommand>>,
 }
 
 impl VirtualRequestRegistry {
+    /// Retained native render runtimes can access the lifecycle's collection
+    /// entities but must not extend their lifetime or own themselves indirectly.
+    pub(crate) fn native_access(&self) -> Self {
+        Self {
+            native_views: self.native_views.downgrade(),
+            ..self.clone()
+        }
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -309,15 +323,23 @@ impl VirtualRequestRegistry {
 
     pub(crate) fn snapshot(&self) -> VirtualRequestSnapshot {
         VirtualRequestSnapshot {
+            native_views: self.native_views.snapshot(),
             requests: self.requests.borrow().clone(),
             metrics: self.metrics.borrow().clone(),
+            item_bounds: self.item_bounds.borrow().clone(),
+            scrolls: self.scrolls.borrow().clone(),
+            active: self.active.borrow().clone(),
             scroll_commands: self.scroll_commands.borrow().clone(),
         }
     }
 
     pub(crate) fn restore(&self, snapshot: VirtualRequestSnapshot) {
+        self.native_views.restore(snapshot.native_views);
         *self.requests.borrow_mut() = snapshot.requests;
         *self.metrics.borrow_mut() = snapshot.metrics;
+        *self.item_bounds.borrow_mut() = snapshot.item_bounds;
+        *self.scrolls.borrow_mut() = snapshot.scrolls;
+        *self.active.borrow_mut() = snapshot.active;
         *self.scroll_commands.borrow_mut() = snapshot.scroll_commands;
     }
 
@@ -338,6 +360,28 @@ impl VirtualRequestRegistry {
         self.scrolls
             .borrow_mut()
             .retain(|id, _| active.contains(id));
+    }
+
+    pub(crate) fn release_scope(&self, root: &ComponentInstancePath) {
+        self.native_views.release_scope(root);
+        self.active
+            .borrow_mut()
+            .retain(|id| !id.component.is_within(root));
+        self.requests
+            .borrow_mut()
+            .retain(|id, _| !id.component.is_within(root));
+        self.metrics
+            .borrow_mut()
+            .retain(|id, _| !id.component.is_within(root));
+        self.item_bounds
+            .borrow_mut()
+            .retain(|id, _| !id.component.is_within(root));
+        self.scrolls
+            .borrow_mut()
+            .retain(|id, _| !id.component.is_within(root));
+        self.scroll_commands
+            .borrow_mut()
+            .retain(|id, _| !id.component.is_within(root));
     }
 
     pub(crate) fn queue_scroll(&self, id: VirtualCollectionId, command: CollectionScrollCommand) {
@@ -834,5 +878,39 @@ mod tests {
             registry.inspect(),
             [] as [crate::virtual_list::VirtualCollectionMetrics; 0]
         );
+    }
+
+    #[test]
+    fn rollback_restores_native_capabilities_pruned_by_a_failed_candidate() {
+        let id = VirtualCollectionId {
+            component: ComponentInstancePath::root("Reader", "main"),
+            key: "history".to_owned(),
+        };
+        let registry = VirtualRequestRegistry::new();
+        registry.retain(&BTreeSet::from([id.clone()]));
+        let unseen = Rc::new(RefCell::new(BTreeSet::from(["appended".to_owned()])));
+        let state = gpui::ListState::new(10, gpui::ListAlignment::Top, gpui::px(1.0));
+        registry.set_scroll_handle(
+            id.clone(),
+            VirtualCollectionScrollHandle {
+                state,
+                unseen: unseen.clone(),
+                follow_tail: true,
+                notify: gpui::EntityId::from(1),
+            },
+        );
+        let bounds = crate::GeometryBounds::new(0.0, 12.0, 100.0, 32.0).unwrap();
+        registry.set_item_bounds_reader(id.clone(), move |_| Some(bounds));
+        let snapshot = registry.snapshot();
+        registry.retain(&BTreeSet::new());
+        assert!(registry.scroll_handle(&id).is_none());
+        assert!(registry.item_bounds(&id, 0).is_none());
+
+        registry.restore(snapshot);
+        let restored = registry.scroll_handle(&id).unwrap();
+        assert!(Rc::ptr_eq(&restored.unseen, &unseen));
+        assert_eq!(registry.item_bounds(&id, 0), Some(bounds));
+        registry.queue_scroll(id.clone(), CollectionScrollCommand::Start);
+        assert_eq!(registry.take_scroll_commands(&id).len(), 1);
     }
 }

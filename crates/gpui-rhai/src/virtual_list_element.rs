@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
@@ -42,12 +42,152 @@ impl VirtualListEntityElement {
     }
 }
 
-struct VirtualListElementState {
-    view: Entity<VirtualListView>,
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct NativeCollectionIdentity {
+    view: String,
+    collection: crate::VirtualCollectionId,
+    node: Option<crate::NodeId>,
+    generation: crate::ScriptGeneration,
+}
+
+type NativeCollectionViews = BTreeMap<NativeCollectionIdentity, Entity<VirtualListView>>;
+
+/// The lifecycle owns native lists, including descendants omitted by hidden
+/// retained pages. A list's stored render runtime gets only a weak accessor:
+/// owning that same registry from the entity would form a reference cycle.
+#[derive(Clone)]
+pub(crate) struct NativeVirtualListRegistry {
+    owner: Option<Rc<RefCell<NativeCollectionViews>>>,
+    access: Weak<RefCell<NativeCollectionViews>>,
+}
+
+impl Default for NativeVirtualListRegistry {
+    fn default() -> Self {
+        let owner = Rc::new(RefCell::new(BTreeMap::new()));
+        Self {
+            access: Rc::downgrade(&owner),
+            owner: Some(owner),
+        }
+    }
+}
+
+impl std::fmt::Debug for NativeVirtualListRegistry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let retained_entities = self
+            .access
+            .upgrade()
+            .and_then(|views| views.try_borrow().ok().map(|views| views.len()));
+        formatter
+            .debug_struct("NativeVirtualListRegistry")
+            .field("owns_entities", &self.owner.is_some())
+            .field("retained_entities", &retained_entities)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeVirtualListSnapshot(Option<NativeCollectionViews>);
+
+impl NativeVirtualListRegistry {
+    fn get_or_create(
+        &self,
+        identity: NativeCollectionIdentity,
+        create: impl FnOnce() -> Entity<VirtualListView>,
+    ) -> Entity<VirtualListView> {
+        let Some(views) = self.access.upgrade() else {
+            return create();
+        };
+        let mut views = views.borrow_mut();
+        if let Some(view) = views.get(&identity) {
+            return view.clone();
+        }
+        // A remount at the same public key must not revive the old entity.
+        views.retain(|key, _| {
+            key.view != identity.view || key.collection != identity.collection || *key == identity
+        });
+        views.entry(identity).or_insert_with(create).clone()
+    }
+
+    pub(crate) fn downgrade(&self) -> Self {
+        Self {
+            owner: None,
+            access: self.access.clone(),
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> NativeVirtualListSnapshot {
+        NativeVirtualListSnapshot(self.access.upgrade().map(|views| views.borrow().clone()))
+    }
+
+    pub(crate) fn restore(&self, snapshot: NativeVirtualListSnapshot) {
+        if let (Some(views), Some(snapshot)) = (self.access.upgrade(), snapshot.0) {
+            *views.borrow_mut() = snapshot;
+        }
+    }
+
+    pub(crate) fn retain_scope(
+        &self,
+        root: &crate::ComponentInstancePath,
+        retained: &crate::RetainedUiTree,
+        generation: crate::ScriptGeneration,
+    ) {
+        if let Some(views) = self.access.upgrade() {
+            let collections = committed_collection_bindings(retained);
+            views.borrow_mut().retain(|identity, _| {
+                !identity.collection.component.is_within(root)
+                    || (identity.generation == generation
+                        && collections.get(&identity.collection).is_some_and(|nodes| {
+                            identity.node.is_some_and(|node| nodes.contains(&node))
+                        }))
+            });
+        }
+    }
+
+    pub(crate) fn release_scope(&self, root: &crate::ComponentInstancePath) {
+        if let Some(views) = self.access.upgrade() {
+            views
+                .borrow_mut()
+                .retain(|identity, _| !identity.collection.component.is_within(root));
+        }
+    }
+}
+
+/// Match native identities to accepted declarative nodes, including collections
+/// inside native slots and realized virtual rows. A retained `NodeId` alone is
+/// insufficient: changing a collection's local ID can preserve its outer key.
+fn committed_collection_bindings(
+    retained: &crate::RetainedUiTree,
+) -> BTreeMap<crate::VirtualCollectionId, BTreeSet<crate::NodeId>> {
+    let mut collections = BTreeMap::<_, BTreeSet<_>>::new();
+    let (Some(root), Some(root_id)) = (retained.root(), retained.root_id()) else {
+        return collections;
+    };
+    let mut pending = vec![(root, root_id)];
+    while let Some((snapshot, id)) = pending.pop() {
+        if let crate::UiNodeKind::VirtualCollection { spec } = snapshot.kind() {
+            collections.entry(spec.id.clone()).or_default().insert(id);
+        }
+        let Some(node) = retained.node(id) else {
+            continue;
+        };
+        pending.extend(
+            snapshot
+                .retained_child_groups()
+                .into_iter()
+                .flat_map(|(_, children)| children)
+                .zip(node.children().map(crate::RetainedChildLink::node)),
+        );
+    }
+    collections
 }
 
 pub(crate) struct VirtualListFrame {
     element: AnyElement,
+    view: Entity<VirtualListView>,
+}
+
+struct VirtualListElementState {
+    identity: NativeCollectionIdentity,
     view: Entity<VirtualListView>,
 }
 
@@ -70,21 +210,35 @@ impl Element for VirtualListEntityElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        let identity = NativeCollectionIdentity {
+            view: self.runtime.view_id.clone(),
+            collection: self.content.id.clone(),
+            node: self.retained_node,
+            generation: self.runtime.primitives.generation(),
+        };
         window.with_element_state(
             global_id.expect("virtual list element is keyed"),
-            |state, window| {
-                let state = state.unwrap_or_else(|| VirtualListElementState {
-                    view: cx.new(|cx| {
-                        VirtualListView::new(
-                            self.content.clone(),
-                            self.runtime.clone(),
-                            cx.entity_id(),
-                            self.scrollbars.clone(),
-                            self.scrollbar_spec,
-                        )
-                    }),
-                });
-                state.view.update(cx, |view, cx| {
+            |state: Option<VirtualListElementState>, window| {
+                let view = self.runtime.virtual_requests.native_views.get_or_create(
+                    identity.clone(),
+                    || {
+                        // Standalone renderers without a lifecycle-owned registry
+                        // retain the normal contiguous GPUI element-state policy.
+                        if let Some(state) = state.filter(|state| state.identity == identity) {
+                            return state.view;
+                        }
+                        cx.new(|cx| {
+                            VirtualListView::new(
+                                self.content.clone(),
+                                self.runtime.clone(),
+                                cx.entity_id(),
+                                self.scrollbars.clone(),
+                                self.scrollbar_spec,
+                            )
+                        })
+                    },
+                );
+                view.update(cx, |view, cx| {
                     view.synchronize(self.content.clone(), self.runtime.clone(), cx);
                     view.scrollbars = self.scrollbars.clone();
                     view.scrollbar_spec = self.scrollbar_spec;
@@ -93,7 +247,7 @@ impl Element for VirtualListEntityElement {
                     .flex()
                     .flex_col()
                     .size_full()
-                    .child(state.view.clone())
+                    .child(view.clone())
                     .into_any_element();
                 let layout = element.request_layout(window, cx);
                 (
@@ -101,10 +255,10 @@ impl Element for VirtualListEntityElement {
                         layout,
                         VirtualListFrame {
                             element,
-                            view: state.view.clone(),
+                            view: view.clone(),
                         },
                     ),
-                    state,
+                    VirtualListElementState { identity, view },
                 )
             },
         )
@@ -263,11 +417,12 @@ struct StickyHeaderFrame {
 impl VirtualListView {
     fn new(
         content: VirtualCollectionNodeSpec,
-        runtime: NodeSlotRuntime,
+        mut runtime: NodeSlotRuntime,
         notify: gpui::EntityId,
         scrollbars: crate::ScrollbarContext,
         scrollbar_spec: crate::ScrollbarSpec,
     ) -> Self {
+        runtime.virtual_requests.native_views = runtime.virtual_requests.native_views.downgrade();
         let scroll = list_state(&content);
         let mut this = Self {
             content,
@@ -294,7 +449,7 @@ impl VirtualListView {
     fn synchronize(
         &mut self,
         content: VirtualCollectionNodeSpec,
-        runtime: NodeSlotRuntime,
+        mut runtime: NodeSlotRuntime,
         cx: &mut Context<Self>,
     ) {
         // Row heights come from measuring rendered rows; a new environment or
@@ -341,6 +496,7 @@ impl VirtualListView {
         }
         let reveal_changed = self.content.reveal_key != content.reveal_key;
         self.content = content;
+        runtime.virtual_requests.native_views = runtime.virtual_requests.native_views.downgrade();
         self.runtime = runtime;
         self.synchronize_intrinsic_rows();
         if recreate {
@@ -988,6 +1144,77 @@ fn finite_to_f32(value: f64) -> f32 {
 mod tests {
     use super::*;
     use gpui::point;
+
+    fn collection_with_rows(key: &str, realized: BTreeMap<usize, crate::UiNode>) -> crate::UiNode {
+        crate::UiNode::virtual_collection(crate::VirtualCollectionNodeSpec {
+            id: crate::VirtualCollectionId {
+                component: crate::ComponentInstancePath::root("Test", "native"),
+                key: key.to_owned(),
+            },
+            label: key.to_owned(),
+            data: crate::VirtualCollectionData::Values(vec![crate::UiValue::Null]),
+            realized,
+            estimated_height: 32.0,
+            height: Some(160.0),
+            overdraw_pixels: 32.0,
+            bottom_align: false,
+            follow_tail: false,
+            on_follow_change: None,
+            reveal_key: None,
+            sticky_headers: std::sync::Arc::new(BTreeSet::new()),
+            inherited_motion_group: None,
+            inherited_motion_scope: None,
+        })
+    }
+
+    #[test]
+    fn committed_collection_binding_checks_source_identity_not_only_stable_node_id() {
+        let mut retained = crate::RetainedUiTree::new();
+        retained
+            .reconcile(collection_with_rows("first", BTreeMap::new()).with_key("viewport"))
+            .unwrap();
+        let original_node = retained.root_id().unwrap();
+        let first = committed_collection_bindings(&retained);
+        let first_id = first.keys().next().unwrap().clone();
+        retained
+            .reconcile(collection_with_rows("second", BTreeMap::new()).with_key("viewport"))
+            .unwrap();
+        assert_eq!(retained.root_id(), Some(original_node));
+        let next = committed_collection_bindings(&retained);
+        assert!(!next.contains_key(&first_id));
+        assert_eq!(next.values().next(), Some(&BTreeSet::from([original_node])));
+        assert_eq!(next.keys().next().unwrap().key, "second");
+        retained
+            .reconcile(crate::UiNode::text("replacement").with_key("viewport"))
+            .unwrap();
+        assert!(committed_collection_bindings(&retained).is_empty());
+    }
+
+    #[test]
+    fn committed_collection_bindings_include_native_slots_and_nested_virtual_rows() {
+        let inner = collection_with_rows("inner", BTreeMap::new());
+        let outer = collection_with_rows("outer", BTreeMap::from([(0, inner)]));
+        let slot = crate::UiNode::custom(crate::PrimitiveNode {
+            primitive: crate::PrimitiveId::parse("native.test").unwrap(),
+            key: None,
+            props: crate::PrimitiveProps::new()
+                .with("content", crate::PrimitiveValue::Node(Box::new(outer))),
+        });
+        let mut retained = crate::RetainedUiTree::new();
+        retained.reconcile(slot).unwrap();
+        let collections = committed_collection_bindings(&retained);
+        assert_eq!(collections.len(), 2);
+        for (collection, nodes) in collections {
+            assert_eq!(nodes.len(), 1);
+            let node = *nodes.first().unwrap();
+            let crate::UiNodeKind::VirtualCollection { spec } =
+                retained.snapshot_node(node).unwrap().kind()
+            else {
+                panic!("binding must name a committed virtual collection");
+            };
+            assert_eq!(spec.id, collection);
+        }
+    }
 
     fn indices(range: std::ops::Range<usize>) -> BTreeSet<usize> {
         range.collect()

@@ -315,6 +315,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Drives `source` by hover: forward while the pointer is over the node, back after. Takes a transition or keyframes without delay or repeat.",
     },
     ScriptFnDoc {
+        signature: "motion_signal(_: NativeSignal, _: array, _: MotionSource) -> core::result::Result<gpui_rhai::motion::MotionProgressBinding,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["signal", "active_states", "source"],
+        doc: "Drives `source` forward while a native string signal matches an active state, and back otherwise. Sampling and reversal stay native and follow Host motion policy; takes a transition or keyframes without delay or repeat.",
+    },
+    ScriptFnDoc {
         signature: "motion_in_view(_: MotionSource) -> core::result::Result<gpui_rhai::motion::MotionProgressBinding,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["source"],
         doc: "Maps `source` to the visible fraction of the node in the viewport, 0 to 1. Takes a transition or keyframes without delay or repeat.",

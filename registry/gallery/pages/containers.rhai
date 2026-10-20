@@ -39,7 +39,7 @@ fn view(ctx, h, v, id) {
     else if id == "collapsible" { collapsible_page(h, v) }
     else if id == "divider" { divider_page(h, v) }
     else if id == "scroll_area" { scroll_area_page(h, v) }
-    else if id == "split_pane" { split_pane_page(h, v) }
+    else if id == "split_pane" { split_pane_page(ctx, h, v) }
     else if id == "resizable" { resizable_page(h, v) }
     else if id == "title_bar" { title_bar_page(h, v) }
     else if id == "status_bar" { status_bar_page(h, v) }
@@ -107,8 +107,8 @@ fn scroll_area_page(h, v) {
     ])
 }
 
-fn split_pane_page(h, v) {
-    kit::page(h, v, "split_pane", "SplitPane", "An 8px grab zone with a hairline; keyboard focus turns it into an ink bar.", [
+fn split_pane_page(ctx, h, v) {
+    kit::page(h, v, "split_pane", "SplitPane", "A short grip grows smoothly on hover, focus and drag. Native capture and keyboard behavior stay the same for custom grips.", [
         kit::sec("Panes", column([split_pane::SplitPane(#{ key: "split-main", label: "Resize panes",
             size: kit::val(v, "split.size", 0.35), start: text("Navigation"), end: text("Content"),
             on_resize: kit::store(h, "split.size") })]).with_style(style().height(px(160)).width(px(520)))),
@@ -118,12 +118,24 @@ fn split_pane_page(h, v) {
             .with_style(style().height(px(160)).width(px(520)))),
         kit::sec("Thin separator", column([split_pane::SplitPane(#{ key: "split-thin", label: "Resize panes on a thin separator",
             size: kit::val(v, "split.thin_size", 0.5), start: text("Files"), end: text("Preview"),
-            handle: grip_dots(), line: false,
+            handle_renderer: ctx.node_factory(Fn("split_bar")), line: false,
             part_styles: #{ handle: style().width(px(1)),
-                grip: style().padding(theme_spacing("xxs")) },
+                handle_hover: style().background(rgba(0x00000000)),
+                handle_drag: style().background(rgba(0x00000000)),
+                grip: style().width(px(7)).height(relative(1.0)).border(px(0)).background(rgba(0x00000000)),
+                grip_hover: style().border(px(0)), grip_drag: style().border(px(0)),
+                grip_focus: style().border(px(0)) },
             on_resize: kit::store(h, "split.thin_size") })])
             .with_style(style().height(px(160)).width(px(520)))),
     ])
+}
+
+// A business-owned bar inside a 7px transparent, full-height native hit area.
+fn split_bar(ctx, detail) {
+    box([]).with_style(style().width(px(4)).height(px(24)).background(theme_color("accent")))
+        .progress_motion(motion_signal(detail.state, ["drag"],
+            motion_transition("height", 24.0, 40.0,
+                #{duration_ms:detail.duration_ms,easing:detail.easing,intent:"feedback"})))
 }
 
 // Two columns of three dots: a grip wider than the 8px lane, drawn above both panes.

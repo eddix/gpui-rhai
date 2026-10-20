@@ -6,8 +6,8 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["border", "surface_hover", "focus_ring", "accent", "surface_raised"],
-  "environment": []
+  "tokens": ["border", "surface_hover", "focus_ring", "accent", "surface_raised", "spacing.xs", "spacing.md", "metrics.control"],
+  "environment": ["density", "size"]
 }
 */
 // Controlled, nestable two-panel split layout with a native drag hot lane.
@@ -17,7 +17,15 @@
 // requested. If the Host rejects that value, the preview returns to `size`.
 // State: only native pointer preview; application ratio and collapse remain controlled.
 //
-// `handle` is decoration: it sits in a `grip` box centred on the separator and painted above
+// The default grip is a square-ended short bar. Hover, focus and drag extend it with the
+// theme's fast feedback motion, sampled natively; reduced/no-motion policy snaps it.
+// `grip: false` removes the decoration without removing the separator's drag/key surface.
+// `handle` replaces the bar with a static Node. Alternatively, `handle_renderer` is a
+// render-time Fn(ctx, detail) -> Node, bound with ctx.node_factory(Fn("my_grip")):
+// detail contains `state` (the native string signal),
+// `orientation`, `duration_ms` and `easing`. Use `signal_style` and `motion_signal` to
+// define custom states/motion without a Rhai callback on pointer moves or animation frames.
+// Both forms are decoration: they sit in a `grip` box centred on the separator and painted above
 // both panes, and pressing anywhere on that box, overhang included, starts the drag. The
 // keyboard steps, the separator role and the tab stop stay on the native handle. The grip
 // takes the `grip_<state>` part while the handle is hovered, dragged, focused or disabled,
@@ -28,15 +36,17 @@
 // fills it, and absolute content is placed from the pane's corner.
 // A styled thin separator keeps its grip centred on the measured lane. For an invisible
 // wider hit area, give `grip` a transparent background and `border(px(0))`; clear its state
-// borders too if those should remain invisible on hover, focus and drag.
+// borders too if those should remain invisible on hover, focus and drag. `grip_content`
+// and its state parts style the decoration independently of that hit area. A renderer
+// owns its animated dimensions; the default bar owns its 24px -> 40px length.
 // Example: SplitPane(#{ key:"main", label:"Resize panes", size:0.35,
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
 define_component(#{
     metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["border", "surface_hover", "focus_ring", "accent", "surface_raised"],
-        environment: [] },
+        tokens: ["border", "surface_hover", "focus_ring", "accent", "surface_raised", "spacing.xs", "spacing.md", "metrics.control"],
+        environment: ["density", "size"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -80,7 +90,18 @@ define_component(#{
                 "default": #{ type: "bool", value: false },
                 doc: "Ignores drags and key steps and removes the separator from the tab order." },
             handle: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
-                doc: "Decorative grip node centred on the separator above both panes; pressing it starts the drag." },
+                doc: "Replaces the default animated bar with a static decorative Node; not together with `handle_renderer`. Pressing it still uses the native separator." },
+            handle_renderer: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Node factory bound with ctx.node_factory(Fn(...)), called as Fn(ctx, detail). detail has native `state`, `orientation`, `duration_ms` and `easing`; use motion_signal for custom native animation. Not an input callback; not with `handle`." },
+            grip: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true },
+                doc: "Shows the default or supplied grip decoration; false keeps the native separator without a grip." },
+            grip_length: #{ schema: #{ type: "number", exclusive_min: 0.0, max: 512.0 }, required: false, sensitive: false,
+                "default": #{ type: "float", value: 24.0 },
+                doc: "Resting logical-pixel length of the default grip's motion range; custom renderers own their dimensions." },
+            grip_active_length: #{ schema: #{ type: "number", exclusive_min: 0.0, max: 512.0 }, required: false, sensitive: false,
+                "default": #{ type: "float", value: 40.0 },
+                doc: "Active logical-pixel length of the default grip's motion range. The stable hit area contains both endpoints." },
             line: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
                 doc: "Paints the native line down the separator; set `false` when `handle` draws its own." },
@@ -95,7 +116,8 @@ define_component(#{
         events: #{ resize: #{ payload: #{ type: "number", min: 0.0, max: 1.0 },
             doc: "Emitted once when a drag ends or a key step moves the separator; a drag or step that leaves it in place emits nothing. The payload is the next `size`." } },
         slots: #{}, parts: ["root", "start", "handle", "handle_hover", "handle_drag", "end", "grip",
-            "grip_hover", "grip_drag", "grip_focus", "grip_disabled"],
+            "grip_hover", "grip_drag", "grip_focus", "grip_disabled", "grip_content",
+            "grip_content_hover", "grip_content_drag", "grip_content_focus", "grip_content_disabled"],
     },
     render: Fn("render_SplitPane")
 });
@@ -104,15 +126,58 @@ fn SplitPane(props) { render_component("components/split_pane", props) }
 fn split_prop(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn split_commit(ctx, value) { ctx.emit("resize", value); }
 
+fn split_grip_content(ctx, props, horizontal, state) {
+    let duration = ctx.motion_duration("fast");
+    let easing = ctx.motion_easing("standard");
+    let has_node = "handle" in props && props.handle != ();
+    let has_renderer = "handle_renderer" in props && props.handle_renderer != ();
+    if has_node && has_renderer { throw "SplitPane accepts handle or handle_renderer, not both"; }
+    let content = if has_renderer {
+        ctx.render_node(props.handle_renderer, #{state:state, orientation:props.orientation,
+            duration_ms:duration, easing:easing})
+    } else if has_node { props.handle } else {
+        let shape = style().flex_shrink(false).background(theme_color("border"));
+        shape = if horizontal { shape.width(theme_spacing("xs")).height(px(props.grip_length)) }
+            else { shape.width(px(props.grip_length)).height(theme_spacing("xs")) };
+        box([]).with_style(shape).progress_motion(motion_signal(state, ["hover", "drag", "focus"],
+            motion_transition(if horizontal { "height" } else { "width" }, props.grip_length, props.grip_active_length,
+                #{duration_ms:duration, easing:easing, intent:"feedback"})))
+    };
+    // Keep the caller's own signal styles and motions on its Node. State-part
+    // decoration belongs to this separate wrapper, not a replacement mutation.
+    box([content.with_key(`${props.key}-grip-decoration`)])
+        .with_key(`${props.key}-grip-content`)
+        .with_style(ctx.component_style("grip_content",
+            style().flex_row().items_center().justify_center().flex_shrink(false)))
+        .signal_style(state, #{
+            hover: ctx.component_style("grip_content_hover", style()),
+            drag: ctx.component_style("grip_content_drag", style()),
+            focus: ctx.component_style("grip_content_focus", style()),
+            disabled: ctx.component_style("grip_content_disabled", style().opacity(0.5)),
+        })
+}
+
 // The decorative grip: a box the measured size of the separator on the end pane's start edge, the
 // caller's node centred in it; the end pane paints after the start pane and the separator,
 // so the grip is above both.
 fn split_grip(ctx, props, horizontal, grip_ref, state, separator_ref) {
     let shape = style().flex_row().items_center().justify_center()
-        .occlude_except_scroll().background(theme_color("surface_raised"))
-        .border(px(1)).border_color(theme_color("border"));
+        .occlude_except_scroll();
+    let custom = "handle" in props && props.handle != ();
+    let hit_length = if props.grip_length > props.grip_active_length { props.grip_length } else { props.grip_active_length };
+    // Custom decoration keeps its intrinsic hit extent, including overhang.
+    // Default/factory motion uses a stable box larger than the animated length.
+    shape = if custom {
+        shape.background(theme_color("surface_raised"))
+            .border(px(1)).border_color(theme_color("border"))
+    } else if horizontal {
+        shape.width(theme_spacing("md")).height(theme_length("metrics.control") * 1.5).min_height(px(hit_length))
+    } else {
+        shape.width(theme_length("metrics.control") * 1.5).min_width(px(hit_length)).height(theme_spacing("md"))
+    };
     shape = if horizontal { shape.cursor_resize_x() } else { shape.cursor_resize_y() };
-    let grip = box([props.handle]).with_key(`${props.key}-grip`).with_ref(grip_ref)
+    let grip = box([split_grip_content(ctx, props, horizontal, state)])
+        .with_key(`${props.key}-grip`).with_ref(grip_ref)
         .with_style(ctx.component_style("grip", shape))
         .signal_style(state, #{
             hover: ctx.component_style("grip_hover", style().border_color(theme_color("accent"))),
@@ -122,9 +187,9 @@ fn split_grip(ctx, props, horizontal, grip_ref, state, separator_ref) {
         });
     // The separator part can change its thickness. Follow its committed geometry rather
     // than centering decoration on the default 8px lane; a ref read also follows resize.
-    let separator = ctx.element_bounds(separator_ref);
+    let separator = ctx.element_size(separator_ref);
     let thickness = if separator == () { 8.0 }
-        else if horizontal { separator.layout.width } else { separator.layout.height };
+        else if horizontal { separator.width } else { separator.height };
     let lane = style().absolute().flex_row().items_center().justify_center();
     lane = if horizontal { lane.top(px(0)).bottom(px(0)).inset_start(offset_px(-thickness)).width(px(thickness)) }
         else { lane.left(px(0)).right(px(0)).top(offset_px(-thickness)).height(px(thickness)) };
@@ -156,6 +221,10 @@ fn split_key(ctx, payload) {
 }
 
 fn render_SplitPane(ctx, props) {
+    if "handle" in props && props.handle != ()
+        && "handle_renderer" in props && props.handle_renderer != () {
+        throw "SplitPane accepts handle or handle_renderer, not both";
+    }
     if props.start_collapsed && props.end_collapsed {
         throw "SplitPane cannot collapse both panels";
     }
@@ -201,7 +270,7 @@ fn render_SplitPane(ctx, props) {
         end_style = end_style.width(relative(1.0));
         handle_style = handle_style.height(px(8)).width(relative(1.0)).cursor_resize_y();
     }
-    let has_grip = "handle" in props && props.handle != ();
+    let has_grip = props.grip;
     let start = box([props.start]).with_key(start_ref_key)
         .with_style(ctx.component_style("start", start_style))
         .with_ref(start_ref)

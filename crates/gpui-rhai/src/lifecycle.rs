@@ -571,6 +571,11 @@ impl ScriptLifecycle {
         match result {
             Ok(()) => {
                 self.state = LifecycleState::Disposed;
+                self.runtime
+                    .try_borrow()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .virtual_requests
+                    .release_scope(&self.root_path);
                 self.commit_runtime_transaction()?;
                 Ok(())
             }
@@ -1524,7 +1529,14 @@ impl ScriptLifecycle {
             .try_borrow_mut()
             .map_err(|_| LifecycleError::Borrowed)?
             .retain_virtual_read_contributions(&self.root_path, &root.virtual_read_contributions());
-        self.reconcile_effect_candidate(engine, candidate, declarations, Some(previous_state))
+        self.reconcile_effect_candidate(engine, candidate, declarations, Some(previous_state))?;
+        self.runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .virtual_requests
+            .native_views
+            .retain_scope(&self.root_path, retained, candidate.generation());
+        Ok(())
     }
 
     fn reconcile_effect_candidate(
@@ -1690,6 +1702,11 @@ impl ScriptLifecycle {
             }
             if let Some(style) = node.signal_style() {
                 let _ = runtime.signals.read(&style.signal)?;
+            }
+            for binding in node.progress_motions() {
+                if let Some(trigger) = &binding.signal_trigger {
+                    let _ = runtime.signals.read(&trigger.signal)?;
+                }
             }
             for (_, children) in node.retained_child_groups() {
                 pending.extend(children);
