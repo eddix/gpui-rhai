@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::ops::Range;
 use std::str::FromStr as _;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{
+    Arc, OnceLock, RwLock,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::{Duration, Instant};
 
 use rhai::{CustomType, Dynamic, Engine, FuncRegistration, ImmutableString, TypeBuilder};
@@ -24,7 +27,7 @@ pub const DEFAULT_DIFF_MAX_HUNKS: usize = 100_000;
 pub const DEFAULT_DIFF_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_INLINE_DIFF_BYTES: usize = 256 * 1024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct DocumentLimits {
     pub max_document_bytes: usize,
     pub max_document_lines: usize,
@@ -69,9 +72,40 @@ impl DocumentLimits {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DocumentRuntimeConfig {
     limits: Arc<RwLock<DocumentLimits>>,
+    markdown_cache: Arc<RwLock<Option<Arc<dyn crate::MarkdownPreparationCache>>>>,
+    markdown_preparations: Arc<MarkdownPreparationCounters>,
+}
+
+/// Monotonic counters for official Markdown Viewers sharing a runtime config.
+/// Counts actual background preparations, not Entity creations or frame draws.
+/// Standalone Host preparations are not counted.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MarkdownPreparationStats {
+    pub jobs_started: u64,
+    pub jobs_succeeded: u64,
+    pub jobs_failed: u64,
+    pub cache_hits: u64,
+}
+
+#[derive(Default)]
+struct MarkdownPreparationCounters {
+    started: AtomicU64,
+    succeeded: AtomicU64,
+    failed: AtomicU64,
+    hits: AtomicU64,
+}
+
+impl fmt::Debug for DocumentRuntimeConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DocumentRuntimeConfig")
+            .field("limits", &self.limits())
+            .field("markdown_cache_enabled", &self.markdown_cache().is_some())
+            .finish()
+    }
 }
 
 impl Default for DocumentRuntimeConfig {
@@ -85,6 +119,8 @@ impl DocumentRuntimeConfig {
     pub fn new() -> Self {
         Self {
             limits: Arc::new(RwLock::new(DocumentLimits::default())),
+            markdown_cache: Arc::new(RwLock::new(None)),
+            markdown_preparations: Arc::default(),
         }
     }
 
@@ -107,6 +143,71 @@ impl DocumentRuntimeConfig {
             .write()
             .map_err(|_| DocumentError::DocumentConfigPoisoned)? = limits;
         Ok(())
+    }
+
+    /// Cache used by future Markdown preparations. No cache is installed by default.
+    #[must_use]
+    pub fn markdown_cache(&self) -> Option<Arc<dyn crate::MarkdownPreparationCache>> {
+        self.markdown_cache
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Install, replace or disable a Host-owned preparation cache.
+    ///
+    /// The Host owns admission, eviction, budget and sharing scope. Replacing a
+    /// cache does not clear the previous one; jobs already using it may finish
+    /// with that cache. Visible viewers keep their own immutable model handles.
+    ///
+    /// # Errors
+    /// Returns [`DocumentError::DocumentConfigPoisoned`] for a poisoned config.
+    pub fn set_markdown_cache(
+        &self,
+        cache: Option<Arc<dyn crate::MarkdownPreparationCache>>,
+    ) -> Result<(), DocumentError> {
+        *self
+            .markdown_cache
+            .write()
+            .map_err(|_| DocumentError::DocumentConfigPoisoned)? = cache;
+        Ok(())
+    }
+
+    /// Independently sampled diagnostic counters, not a transaction across
+    /// concurrently finishing background preparations.
+    #[must_use]
+    pub fn markdown_preparation_stats(&self) -> MarkdownPreparationStats {
+        let counters = &self.markdown_preparations;
+        MarkdownPreparationStats {
+            jobs_started: counters.started.load(Ordering::Relaxed),
+            jobs_succeeded: counters.succeeded.load(Ordering::Relaxed),
+            jobs_failed: counters.failed.load(Ordering::Relaxed),
+            cache_hits: counters.hits.load(Ordering::Relaxed),
+        }
+    }
+
+    pub(crate) fn markdown_cache_hit(&self) {
+        self.markdown_preparations
+            .hits
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn prepare_markdown(
+        &self,
+        request: &crate::MarkdownPreparation,
+        canceled: &std::sync::atomic::AtomicBool,
+        alive: &std::sync::atomic::AtomicBool,
+    ) -> Result<crate::PreparedMarkdown, String> {
+        let counters = &self.markdown_preparations;
+        counters.started.fetch_add(1, Ordering::Relaxed);
+        let result = request.prepare_with_liveness(canceled, alive);
+        if result.is_ok() {
+            &counters.succeeded
+        } else {
+            &counters.failed
+        }
+        .fetch_add(1, Ordering::Relaxed);
+        result
     }
 }
 
@@ -665,6 +766,12 @@ impl Default for SyntaxRegistry {
 }
 
 impl SyntaxRegistry {
+    pub(crate) fn from_snapshot(snapshot: Arc<SyntaxSet>) -> Self {
+        Self {
+            syntax_set: Arc::new(RwLock::new(snapshot)),
+        }
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self {

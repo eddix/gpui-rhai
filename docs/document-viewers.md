@@ -73,6 +73,71 @@ unbounded cells. Hosts can explicitly configure this limit alongside byte/line
 budgets. Inline images retain the heading, list, paragraph or cell that owns
 their alt run; Host-provided asset presentation stays inside that same parent.
 
+## Host-owned Markdown preparation caches
+
+Virtual rows still unmount when they leave the realized range. To reuse parsing
+and syntax work without keeping offscreen UI alive, install an application-owned
+`MarkdownPreparationCache` in `RuntimeEngine::document_runtime_config()` during
+`ScriptViewExtension::configure_engine`. No cache is installed by default.
+
+```rust
+use std::sync::Arc;
+use gpui_rhai::{MarkdownPreparationCache, RuntimeEngine, ScriptViewExtension};
+
+struct Documents {
+    cache: Arc<dyn MarkdownPreparationCache>,
+}
+impl ScriptViewExtension for Documents {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine.document_runtime_config()
+            .set_markdown_cache(Some(self.cache.clone()))
+            .map_err(|error| error.to_string())
+    }
+}
+```
+
+Implement `get(&MarkdownPreparationKey) -> Option<PreparedMarkdown>` and
+`insert(PreparedMarkdown)` over the application's pool. The opaque key implements
+`Eq + Hash`; the cloneable model handle exposes `key()`, `source_text()`,
+`plain_text()` and `estimated_bytes()`. A pool can use the estimate for a byte
+budget, decline oversized entries, implement LRU/segmented admission, clear on
+session close, or share across selected views. Capacity and policy are not SDK
+defaults. Cache callbacks run on the foreground and must be fast/nonblocking;
+do not parse, perform I/O, invoke Rhai or update GPUI from them.
+
+Keys match complete source kind/identity/revision/**exact text**, a frozen syntax
+snapshot and resource limits. Two applications reusing an identity/revision for
+different bytes cannot cross-hit. Inline sources do not all collide as `inline`.
+The Viewer checks the key of a returned model rather than trusting a provider to
+return the right value. Changing limits or registering a grammar makes a new key.
+Keys are process-local, not a serialized/disk-cache format.
+
+For explicit pre-preparation, construct
+`MarkdownPreparation::new(source, &engine.syntax_registry(), config.limits())`,
+then call `prepare(&AtomicBool)` on the application's background executor and
+insert the result in the same pool. This path needs no Viewer, Rhai or GPUI.
+The request freezes its syntax definitions; a concurrent grammar update cannot
+change what its key means. No automatic scroll prediction/prefetch is installed.
+
+Only immutable text/block/syntax results are cached. Selection, focus, callbacks,
+native layout, width-dependent measurements, images and scroll leases stay with
+the live Viewer. Hits use the same measurement/rebasing path as fresh models and
+can be displayed without a new parser job. Obsolete/canceled Viewer jobs do not
+insert results. Streaming revisions remain independent entries under Host policy.
+
+`config.markdown_preparation_stats()` reports actual official-Viewer background
+jobs started/succeeded/failed (including cancellation) and validated cache hits.
+It does not count standalone Host preparations or use Entity count as a proxy.
+Counters are diagnostic, independently sampled values, not an atomic transaction.
+
+`set_markdown_cache(None)` disables future lookups. Replacing/disabling a pool
+does not clear its contents or revoke models already held by visible Viewers;
+already-started jobs may finish with their captured pool. The application owns
+pool clearing and release. Estimated cached bytes are not a process-RSS limit:
+shared syntax definitions, allocator overhead and actively displayed models have
+separate ownership. Parsed source can be sensitive; keep sharing/clearing within
+the application's trust boundaries.
+
 ## String and Host-owned sources
 
 Direct strings are the simplest path and remain first-class:

@@ -1072,6 +1072,17 @@ Streaming jobs coalesce and reject stale revisions/owners. Parsing preserves
 complete semantics: a later reference definition may invalidate an earlier
 block, not just the last block.
 
+Virtual-row eviction releases the native Viewer, not the Host document. To also
+reuse its expensive preparation, implement `MarkdownPreparationCache` and install
+it with `engine.document_runtime_config().set_markdown_cache(Some(pool))` from
+`configure_engine`. The Host owns the pool's budget, eviction, sharing and release;
+there is no implicit/global SDK cache. `PreparedMarkdown` is an immutable model
+handle, not a UI element. `MarkdownPreparation::new(...).prepare(&canceled)` lets
+Rust pre-prepare the same model on a background executor without creating a
+Viewer. Complete source/config keys and stale-job checks stay in the SDK.
+See [the cache contract](docs/document-viewers.md#host-owned-markdown-preparation-caches)
+for lifecycle, accounting and actual preparation counters.
+
 Select and copy across blocks within one viewer, not across separate messages.
 Cmd/Ctrl+C copies rendered plain text; Alt+Cmd+C / Ctrl+Alt+C explicitly copies
 the Markdown source. Code actions copy code without fences. HTML is literal,

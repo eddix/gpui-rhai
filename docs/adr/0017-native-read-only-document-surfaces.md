@@ -51,6 +51,25 @@ mechanisms without receiving privileged private constructors.
 
 ## Consequences
 
+### Markdown preparation lifetime (2026-10-22)
+
+Markdown's immutable prepared model is independent of the Viewer Entity and of
+virtual-row realization. Public `MarkdownPreparation` freezes a complete source,
+syntax snapshot and limits; `PreparedMarkdown` is an opaque, cloneable model
+handle, not a GPUI element or mutable AST. Official Viewers consult an optional
+Host-injected `MarkdownPreparationCache` through `DocumentRuntimeConfig` and
+validate the complete preparation key before accepting a hit. The same request
+can be prepared by a Host background job before mounting a Viewer.
+
+The SDK owns source/configuration identity, cancellation and valid presentation;
+the application owns cache budget, admission/eviction, sharing scope and release.
+No implicit global cache, fixed SDK capacity, offscreen UI retention or
+Markdown-specific policy in virtual collections is introduced. Cache callbacks
+are foreground nonblocking operations; only typed immutable preparations cross
+threads. Cache storage never captures callbacks, Entities or layout/scroll state.
+Actual preparation counters and mounted revisit/streaming regressions guard the
+boundary rather than asserting that Entities are never recreated.
+
 CodeViewer remains useful without creating a hidden editor product. DiffViewer
 reuses the immutable document model but owns a separate aligned-row projection.
 A future CodeEditor can reuse syntax, line indexing, selection/search and theme

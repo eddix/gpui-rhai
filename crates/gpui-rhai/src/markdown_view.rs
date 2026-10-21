@@ -20,9 +20,7 @@ use crate::document_view::{
     document_source_prop, document_text_metrics, resolve_document_monospace_family,
     resolved_pixels, theme_color,
 };
-use crate::markdown::{
-    BlockKind, Mark, MarkdownText, PreparedMarkdown, TableCell, prepare_markdown,
-};
+use crate::markdown::{BlockKind, Mark, MarkdownText, PreparedMarkdown, TableCell};
 use crate::{
     DocumentRuntimeConfig, DocumentSource, EventSchema, ObjectField, PrimitiveContext,
     PrimitiveDescriptor, PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId,
@@ -138,7 +136,6 @@ impl MarkdownViewerEntity {
         }
         cx.stop_propagation();
     }
-    #[allow(clippy::too_many_lines)] // One cancel/prepare/atomic-commit pipeline with native scroll rebasing.
     fn start(&mut self, cx: &mut Context<Self>) {
         self.canceled.store(true, Ordering::Release);
         self.canceled = Arc::new(AtomicBool::new(false));
@@ -147,18 +144,43 @@ impl MarkdownViewerEntity {
         let job = self.job;
         let canceled = self.canceled.clone();
         let alive = self.alive.clone();
-        let source = self.config.source.clone();
-        let syntaxes = self.syntaxes.clone();
-        let limits = self.limits.limits();
+        let request = match crate::MarkdownPreparation::new(
+            self.config.source.clone(),
+            &self.syntaxes,
+            self.limits.limits(),
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                self.loading = false;
+                cx.notify();
+                return;
+            }
+        };
+        let cache = self.limits.markdown_cache();
+        if let Some(prepared) = cache.as_ref().and_then(|cache| cache.get(request.key()))
+            && prepared.key() == request.key()
+        {
+            self.limits.markdown_cache_hit();
+            self.install_prepared(prepared.model());
+            self.loading = false;
+            self.error = None;
+            if self.config.content {
+                self.context.invalidate_intrinsic_size(cx);
+            }
+            cx.notify();
+            return;
+        }
         self.loading = true;
         self.error = None;
+        let runtime = self.limits.clone();
         self.task = Some(cx.spawn(async move |owner, cx| {
             // A foreground boundary coalesces same-cycle streaming replacements;
             // dropping the owned task and cancellation flag stops obsolete work.
             let result = cx
-                .background_spawn(async move {
-                    prepare_markdown(&source, &syntaxes, limits, &canceled, &alive)
-                })
+                .background_spawn(
+                    async move { runtime.prepare_markdown(&request, &canceled, &alive) },
+                )
                 .await;
             let _ = owner.update(cx, |viewer, cx| {
                 if viewer.job != job || !viewer.alive.load(Ordering::Acquire) {
@@ -167,84 +189,10 @@ impl MarkdownViewerEntity {
                 viewer.loading = false;
                 match result {
                     Ok(prepared) => {
-                        let prepared = Arc::new(prepared);
-                        if let Some(previous) = &viewer.prepared {
-                            viewer.selection.rebase_unchanged_prefix(
-                                DocumentSide::Single,
-                                &previous.plain,
-                                prepared.plain.clone(),
-                            );
-                            // Compare complete blocks, not just their source spans:
-                            // appended reference definitions can affect the start.
-                            let prefix = previous
-                                .blocks
-                                .iter()
-                                .zip(&prepared.blocks)
-                                .take_while(|(old, new)| old == new)
-                                .count();
-                            resize_measured_list(
-                                &viewer.scroll,
-                                previous.blocks.len(),
-                                prepared.blocks.len(),
-                                prefix,
-                            );
-                            viewer.tables.borrow_mut().retain(|index, state| {
-                                match (previous.blocks.get(*index), prepared.blocks.get(*index)) {
-                                    (
-                                        Some(crate::markdown::MarkdownBlock {
-                                            kind: BlockKind::Table { rows: old, .. },
-                                            ..
-                                        }),
-                                        Some(crate::markdown::MarkdownBlock {
-                                            kind: BlockKind::Table { rows: next, .. },
-                                            ..
-                                        }),
-                                    ) => {
-                                        let prefix = old
-                                            .iter()
-                                            .zip(next.iter())
-                                            .take_while(|(old, next)| old == next)
-                                            .count();
-                                        resize_measured_list(
-                                            &state.rows,
-                                            old.len(),
-                                            next.len(),
-                                            prefix,
-                                        );
-                                        state.cells.borrow_mut().retain(|(row, column), state| {
-                                            match (
-                                                old.get(*row).and_then(|row| row.get(*column)),
-                                                next.get(*row).and_then(|row| row.get(*column)),
-                                            ) {
-                                                (Some(old), Some(next)) => {
-                                                    let prefix = old
-                                                        .fragments
-                                                        .iter()
-                                                        .zip(next.fragments.iter())
-                                                        .take_while(|(old, next)| old == next)
-                                                        .count();
-                                                    resize_measured_list(
-                                                        &state.fragments,
-                                                        old.fragments.len(),
-                                                        next.fragments.len(),
-                                                        prefix,
-                                                    );
-                                                    true
-                                                }
-                                                _ => false,
-                                            }
-                                        });
-                                        true
-                                    }
-                                    _ => false,
-                                }
-                            });
-                        } else {
-                            viewer
-                                .scroll
-                                .reset_with_uniform_height(prepared.blocks.len(), px(36.0));
+                        viewer.install_prepared(prepared.model());
+                        if let Some(cache) = &cache {
+                            cache.insert(prepared);
                         }
-                        viewer.prepared = Some(prepared);
                     }
                     Err(error) => viewer.error = Some(error),
                 }
@@ -257,6 +205,80 @@ impl MarkdownViewerEntity {
                 cx.notify();
             });
         }));
+    }
+
+    fn install_prepared(&mut self, prepared: Arc<PreparedMarkdown>) {
+        if let Some(previous) = &self.prepared {
+            self.selection.rebase_unchanged_prefix(
+                DocumentSide::Single,
+                &previous.plain,
+                prepared.plain.clone(),
+            );
+            // Appended reference definitions can change earlier blocks. Cached
+            // and freshly prepared models use exactly the same rebasing path.
+            let prefix = previous
+                .blocks
+                .iter()
+                .zip(&prepared.blocks)
+                .take_while(|(old, new)| old == new)
+                .count();
+            resize_measured_list(
+                &self.scroll,
+                previous.blocks.len(),
+                prepared.blocks.len(),
+                prefix,
+            );
+            self.tables.borrow_mut().retain(|index, state| {
+                match (previous.blocks.get(*index), prepared.blocks.get(*index)) {
+                    (
+                        Some(crate::markdown::MarkdownBlock {
+                            kind: BlockKind::Table { rows: old, .. },
+                            ..
+                        }),
+                        Some(crate::markdown::MarkdownBlock {
+                            kind: BlockKind::Table { rows: next, .. },
+                            ..
+                        }),
+                    ) => {
+                        let prefix = old
+                            .iter()
+                            .zip(next.iter())
+                            .take_while(|(old, next)| old == next)
+                            .count();
+                        resize_measured_list(&state.rows, old.len(), next.len(), prefix);
+                        state.cells.borrow_mut().retain(|(row, column), state| {
+                            match (
+                                old.get(*row).and_then(|row| row.get(*column)),
+                                next.get(*row).and_then(|row| row.get(*column)),
+                            ) {
+                                (Some(old), Some(next)) => {
+                                    let prefix = old
+                                        .fragments
+                                        .iter()
+                                        .zip(next.fragments.iter())
+                                        .take_while(|(old, next)| old == next)
+                                        .count();
+                                    resize_measured_list(
+                                        &state.fragments,
+                                        old.fragments.len(),
+                                        next.fragments.len(),
+                                        prefix,
+                                    );
+                                    true
+                                }
+                                _ => false,
+                            }
+                        });
+                        true
+                    }
+                    _ => false,
+                }
+            });
+        } else {
+            self.scroll
+                .reset_with_uniform_height(prepared.blocks.len(), px(36.0));
+        }
+        self.prepared = Some(prepared);
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {

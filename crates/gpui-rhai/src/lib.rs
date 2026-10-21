@@ -29,7 +29,11 @@ mod invocation;
 pub mod lifecycle;
 pub mod locale;
 mod markdown;
+mod markdown_preparation;
 pub mod markdown_view;
+pub use markdown_preparation::{
+    MarkdownPreparation, MarkdownPreparationCache, MarkdownPreparationKey, PreparedMarkdown,
+};
 pub use markdown_view::{
     MarkdownViewerPrimitiveHandler, init_markdown_view, markdown_viewer_primitive_descriptor,
 };
@@ -176,9 +180,9 @@ pub use diagnostic::{
 pub use document::{
     DiffAlignedRow, DiffDisplayRow, DiffRowKind, DiffViewMode, DiffWhitespace, DocumentDescriptor,
     DocumentError, DocumentLimits, DocumentLine, DocumentRuntimeConfig, DocumentSource,
-    DocumentWrap, NativeTextDocument, NativeTextDocumentRegistry, PreparedDiff, PreparedDocument,
-    SyntaxRegistry, SyntaxSpan, SyntaxTokenKind, prepare_diff, prepare_diff_with_limits,
-    prepare_document, prepare_document_with_limits,
+    DocumentWrap, MarkdownPreparationStats, NativeTextDocument, NativeTextDocumentRegistry,
+    PreparedDiff, PreparedDocument, SyntaxRegistry, SyntaxSpan, SyntaxTokenKind, prepare_diff,
+    prepare_diff_with_limits, prepare_document, prepare_document_with_limits,
 };
 pub use document_view::{
     CodeViewerPrimitiveHandler, DiffSide, DiffViewerPrimitiveHandler, RevealDocumentLine,
