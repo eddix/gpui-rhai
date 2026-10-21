@@ -7,7 +7,7 @@
   "dependencies": ["components/button"],
   "capabilities": {},
   "tokens": [
-    "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border",
+    "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border", "control.border",
     "metrics.control", "metrics.icon", "radius.md"
   ],
   "environment": ["size", "density", "corners"]
@@ -29,7 +29,7 @@ define_component(#{
         dependencies: ["components/button"],
         capabilities: #{},
         tokens: [
-            "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border",
+            "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border", "control.border",
             "metrics.control", "metrics.icon", "radius.md"
         ],
         environment: ["size", "density", "corners"],
@@ -107,7 +107,7 @@ fn render_IconButton(ctx, props) {
     let interactive = !disabled && !loading && (has_click || action != ());
     let foreground = button::button_foreground(variant);
     let fill = icon_button_fill(variant, selected);
-    let frame = if variant == "outline" { theme_color("border") } else { fill };
+    let frame = if variant == "outline" { theme_color("control.border") } else { fill };
     let base = style()
         .flex_row()
         .items_center()

@@ -556,6 +556,7 @@ impl CodeViewerEntity {
                 TextInputConfig {
                     value: String::new(),
                     placeholder: "Find in document".to_owned(),
+                    placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
                     autofocus: false,
@@ -621,6 +622,7 @@ impl CodeViewerEntity {
                 &TextInputConfig {
                     value: self.search.query.clone(),
                     placeholder: "Find in document".to_owned(),
+                    placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
                     autofocus: false,
@@ -2582,6 +2584,7 @@ impl DiffViewerEntity {
                 TextInputConfig {
                     value: String::new(),
                     placeholder: "Find on both sides".to_owned(),
+                    placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
                     autofocus: false,
@@ -2665,6 +2668,7 @@ impl DiffViewerEntity {
                 &TextInputConfig {
                     value: self.search.query.clone(),
                     placeholder: "Find on both sides".to_owned(),
+                    placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
                     autofocus: false,

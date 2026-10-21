@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
+    "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
     "disabled", "metrics.control", "metrics.field_pad", "metrics.inset", "radius.md",
     "typography.control"
   ],
@@ -33,7 +33,7 @@ define_component(#{
         dependencies: [],
         capabilities: #{},
         tokens: [
-            "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
+            "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
             "disabled", "metrics.control", "metrics.field_pad", "metrics.inset", "radius.md",
             "typography.control"
         ],
@@ -140,7 +140,7 @@ define_component(#{
             blur: #{ payload: #{ type: "null" }, doc: "Emitted when the field loses keyboard focus." },
         },
         slots: #{},
-        parts: ["root", "input"],
+        parts: ["root", "input", "placeholder"],
     },
     render: Fn("render_Input")
 });
@@ -161,6 +161,7 @@ fn render_Input(ctx, props) {
         disabled: disabled,
         read_only: read_only,
         typography: "control",
+        placeholder_style: ctx.component_style("placeholder", style().text_color(theme_color("text_muted"))),
         autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
         on_submit: optional_prop(props, "on_submit"),
@@ -188,7 +189,7 @@ fn render_Input(ctx, props) {
             .padding_x(theme_length("metrics.field_pad"))
             .radius(theme_radius("md"))
             .border(px(2))
-            .border_color(if error { theme_color("danger") } else { theme_color("border") })
+            .border_color(if error { theme_color("danger") } else { theme_color("control.border") })
             .background(theme_color("surface_raised"))
             .focus(style().border_color(theme_color("focus_ring")));
     }

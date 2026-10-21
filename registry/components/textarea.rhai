@@ -8,7 +8,7 @@
   "capabilities": {},
   "assets": [],
   "tokens": [
-    "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
+    "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
     "text.danger", "disabled", "selection", "accent", "metrics.field_pad", "metrics.multiline_pad", "spacing.xxs",
     "radius.lg", "typography.body", "typography.body_small", "typography.caption"
   ],
@@ -26,7 +26,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
-            "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
+            "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
             "text.danger", "disabled", "selection", "accent", "metrics.field_pad",
             "metrics.multiline_pad", "spacing.xxs", "radius.lg", "typography.body", "typography.body_small",
             "typography.caption"
@@ -138,7 +138,7 @@ fn render_Textarea(ctx, props) {
     if "rows" in props && props.rows != () { config.rows = props.rows; }
     if "max_length" in props && props.max_length != () { config.max_length = props.max_length; }
 
-    let border = if error { theme_color("danger") } else { theme_color("border") };
+    let border = if error { theme_color("danger") } else { theme_color("control.border") };
     let editor = gpui_rhai::TextareaPrimitive(config)
         .with_style(ctx.component_style("editor",
             // The text column matches Input: 2px frame plus the field padding.

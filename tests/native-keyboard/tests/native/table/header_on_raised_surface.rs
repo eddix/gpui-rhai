@@ -23,11 +23,15 @@ fn view(ctx){box([
 
 #[gpui::test]
 fn a_table_on_a_raised_layer_has_no_band_of_another_surface(cx: &mut TestAppContext) {
-    let (mut visual, _view) = mount(cx, SCRIPT.to_owned());
-    // default_dark: surface 0x151412, surface_raised 0x1d1c19.
-    let raised = filled(&mut visual, 0x1d1c_19ff);
+    let (mut visual, view) = mount(cx, SCRIPT.to_owned());
+    let [surface_color, raised_color] = visual.update(|_, cx| {
+        let theme = view.theme_snapshot(cx).unwrap();
+        ["surface", "surface_raised"]
+            .map(|name| theme.variant.tokens.color(name).unwrap().as_rgba_hex())
+    });
+    let raised = filled(&mut visual, raised_color);
     assert!(!raised.is_empty(), "the raised layer was painted");
-    let surface = filled(&mut visual, 0x1514_12ff);
+    let surface = filled(&mut visual, surface_color);
     assert!(
         surface.is_empty(),
         "nothing on the raised layer should be painted with `surface`, got {surface:?}"

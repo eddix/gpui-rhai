@@ -452,15 +452,23 @@ fn validation_status(theme: &ThemeVariant) -> String {
     if let Err(error) = theme.validate() {
         return format!("Invalid theme: {error}");
     }
+    let resolved = with_token_base(theme);
+    let theme = &resolved;
     let mut warnings = Vec::new();
-    for (foreground, background) in [
-        ("text_primary", "surface"),
-        ("text_muted", "surface"),
+    let mut pairs = Vec::new();
+    for foreground in ["text_primary", "text_muted"] {
+        for background in ["surface", "surface_raised", "surface_hover", "selection"] {
+            pairs.push((foreground, background));
+        }
+    }
+    pairs.extend([
         ("on_accent", "accent"),
+        ("on_accent", "accent_hover"),
         ("on_danger", "danger"),
         ("on_warning", "warning"),
         ("on_success", "success"),
-    ] {
+    ]);
+    for (foreground, background) in pairs {
         let ratio = contrast(
             theme
                 .tokens
@@ -475,18 +483,18 @@ fn validation_status(theme: &ThemeVariant) -> String {
             warnings.push(format!("{foreground}/{background} {ratio:.2}:1"));
         }
     }
-    let focus = contrast(
-        theme
-            .tokens
-            .color("focus_ring")
-            .unwrap_or(Rgba8::from_rgba_hex(0)),
-        theme
-            .tokens
-            .color("surface")
-            .unwrap_or(Rgba8::from_rgba_hex(0)),
-    );
-    if focus < 3.0 {
-        warnings.push(format!("focus_ring/surface {focus:.2}:1"));
+    for foreground in ["focus_ring", "control.border", "scrollbar.thumb"] {
+        for background in ["surface", "surface_raised"] {
+            if let (Some(fg), Some(bg)) = (
+                theme.tokens.color(foreground),
+                theme.tokens.color(background),
+            ) {
+                let ratio = contrast(fg, bg);
+                if ratio < 3.0 {
+                    warnings.push(format!("{foreground}/{background} {ratio:.2}:1"));
+                }
+            }
+        }
     }
     if warnings.is_empty() {
         "Valid · required contrast pairs pass".to_owned()
@@ -496,23 +504,7 @@ fn validation_status(theme: &ThemeVariant) -> String {
 }
 
 fn contrast(first: Rgba8, second: Rgba8) -> f64 {
-    let first = luminance(first);
-    let second = luminance(second);
-    (first.max(second) + 0.05) / (first.min(second) + 0.05)
-}
-
-fn luminance(color: Rgba8) -> f64 {
-    let [red, green, blue, _] = color.as_rgba_hex().to_be_bytes();
-    0.2126 * linear_channel(red) + 0.7152 * linear_channel(green) + 0.0722 * linear_channel(blue)
-}
-
-fn linear_channel(channel: u8) -> f64 {
-    let channel = f64::from(channel) / 255.0;
-    if channel <= 0.040_45 {
-        channel / 12.92
-    } else {
-        ((channel + 0.055) / 1.055).powf(2.4)
-    }
+    first.contrast_ratio(second)
 }
 
 fn mix(first: Rgba8, second: Rgba8, second_weight: u16) -> Rgba8 {
@@ -953,6 +945,30 @@ mod tests {
             canonical_source(&theme, &[]),
             "derived base colors are never written into the palette"
         );
+    }
+
+    #[test]
+    fn validation_checks_hover_foregrounds_and_every_reading_surface() {
+        let mut theme = default_draft().unwrap();
+        assert!(!validation_status(&theme).contains("warnings"));
+        let colors = &mut std::sync::Arc::make_mut(&mut theme.tokens).colors;
+        colors.insert("accent_hover".to_owned(), colors["on_accent"]);
+        let status = validation_status(&theme);
+        assert!(status.contains("on_accent/accent_hover"), "{status}");
+        let colors = &mut std::sync::Arc::make_mut(&mut theme.tokens).colors;
+        colors.insert("surface_raised".to_owned(), colors["text_muted"]);
+        let status = validation_status(&theme);
+        assert!(status.contains("text_muted/surface_raised"), "{status}");
+    }
+
+    #[test]
+    fn every_bundled_palette_passes_the_studio_readability_matrix() {
+        let engine = RuntimeEngine::new();
+        for &(name, source) in BUNDLED_THEME_SOURCES {
+            let theme = load_theme_source(engine.engine(), name, source).unwrap();
+            let status = validation_status(&theme);
+            assert!(!status.contains("warnings"), "{name}: {status}");
+        }
     }
 
     #[test]

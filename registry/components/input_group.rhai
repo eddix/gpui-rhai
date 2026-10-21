@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
+    "control.border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
     "metrics.field_pad", "radius.md", "typography.control"
   ],
   "environment": ["size", "density", "corners"]
@@ -20,7 +20,7 @@ define_component(#{
     metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
-            "border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
+            "control.border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
             "metrics.field_pad", "radius.md", "typography.control"
         ],
         environment: ["size", "density", "corners"] },
@@ -70,7 +70,7 @@ fn render_InputGroup(ctx, props) {
     }
     let root = row(children).with_style(ctx.component_style("root", style()
         .min_height(theme_length("metrics.control")).items_center().clip().radius(theme_radius("md"))
-        .border(px(2)).border_color(theme_color("border"))
+        .border(px(2)).border_color(theme_color("control.border"))
         .background(theme_color("surface_raised"))
         .typography("control")
         .focus_within(style().border_color(theme_color("focus_ring")))

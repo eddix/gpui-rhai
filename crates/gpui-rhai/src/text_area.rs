@@ -1176,38 +1176,18 @@ fn config_from_props(
         max_length: usize_prop(props, "max_length")?,
         typography: native_typography(theme, props.string("typography").unwrap_or("body"), window)?,
         autofocus: props.boolean("autofocus").unwrap_or(false),
-        placeholder_color: part_color(props, "placeholder_style", theme, false)
+        placeholder_color: theme
+            .part_color(props, "placeholder_style", false)
             .or_else(|| theme.color("text_muted"))
             .unwrap_or_else(|| Rgba8::from_rgba_hex(0xa1a1_aaff)),
-        selection_color: part_color(props, "selection_style", theme, true)
+        selection_color: theme
+            .part_color(props, "selection_style", true)
             .unwrap_or_else(|| with_alpha(accent, 0x55)),
-        caret_color: part_color(props, "caret_style", theme, true).unwrap_or(accent),
-        scroll_color: part_color(props, "scroll_style", theme, true),
+        caret_color: theme
+            .part_color(props, "caret_style", true)
+            .unwrap_or(accent),
+        scroll_color: theme.part_color(props, "scroll_style", true),
     })
-}
-
-fn part_color(
-    props: &PrimitiveProps,
-    name: &str,
-    theme: &crate::PrimitiveTheme,
-    prefer_background: bool,
-) -> Option<Rgba8> {
-    let Some(PrimitiveValue::Style(style)) = props.get(name) else {
-        return None;
-    };
-    let resolved = style.resolve(&crate::InteractionState::default());
-    let value = if prefer_background {
-        resolved
-            .background
-            .as_ref()
-            .or(resolved.text_color.as_ref())
-    } else {
-        resolved
-            .text_color
-            .as_ref()
-            .or(resolved.background.as_ref())
-    }?;
-    theme.resolve_color(value)
 }
 
 fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {

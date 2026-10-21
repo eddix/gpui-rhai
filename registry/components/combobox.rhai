@@ -8,7 +8,7 @@
   "capabilities": {},
   "assets": ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"],
   "tokens": [
-    "surface_raised", "border", "focus_ring", "surface_hover", "selection", "accent",
+    "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection", "accent",
     "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
     "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
     "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
@@ -28,7 +28,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input"], capabilities: #{},
         tokens: [
-            "surface_raised", "border", "focus_ring", "surface_hover", "selection", "accent",
+            "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection", "accent",
             "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
             "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
             "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
@@ -480,7 +480,7 @@ fn render_Combobox(ctx, props) {
             .min_height(theme_length("metrics.control"))
             .padding_x(theme_length("metrics.field_pad")).gap(theme_spacing("sm")).items_center();
         field
-            .border(px(2)).border_color(if open { theme_color("focus_ring") } else { theme_color("border") })
+            .border(px(2)).border_color(if open { theme_color("focus_ring") } else { theme_color("control.border") })
             .radius(theme_radius("md")).background(theme_color("surface_raised"))
             .typography("control")
             .focus(style().border_color(theme_color("focus_ring")))

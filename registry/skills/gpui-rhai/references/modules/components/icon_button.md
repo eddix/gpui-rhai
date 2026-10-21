@@ -49,7 +49,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `icon`, `root`.
 
 ## Theme
 
-- Tokens: `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.icon`, `radius.md`, `selection`, `surface_hover`, `text_primary`
+- Tokens: `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.icon`, `radius.md`, `selection`, `surface_hover`, `text_primary`
 - Environment: `corners`, `density`, `size`
 
 ## Dependencies

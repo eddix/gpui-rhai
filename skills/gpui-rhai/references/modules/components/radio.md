@@ -37,5 +37,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `indicator`, `label`, `r
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `spacing.sm`, `surface_hover`, `surface_raised`, `text_primary`, `typography.control`
+- Tokens: `accent`, `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `spacing.sm`, `surface_hover`, `surface_raised`, `text_primary`, `typography.control`
 - Environment: `density`, `size`

@@ -8,7 +8,7 @@
   "capabilities": {},
   "assets": ["icons/check.svg", "icons/minus.svg"],
   "tokens": [
-    "accent", "on_accent", "border", "surface_raised", "surface_hover", "focus_ring",
+    "accent", "on_accent", "border", "control.border", "surface_raised", "surface_hover", "focus_ring",
     "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.xs",
     "typography.control"
   ],
@@ -25,7 +25,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
-            "accent", "on_accent", "border", "surface_raised", "surface_hover", "focus_ring",
+            "accent", "on_accent", "border", "control.border", "surface_raised", "surface_hover", "focus_ring",
             "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm",
             "radius.xs", "typography.control"
         ],
@@ -93,7 +93,7 @@ fn render_Checkbox(ctx, props) {
     let box_node = row([mark_node]).with_style(ctx.component_style("box", style()
         .width(theme_length("metrics.mark")).height(theme_length("metrics.mark"))
         .items_center().justify_center().radius(theme_radius("xs"))
-        .border(px(2)).border_color(if active { theme_color("accent") } else { theme_color("border") })
+        .border(px(2)).border_color(if active { theme_color("accent") } else { theme_color("control.border") })
         .background(if active { theme_color("accent") } else { theme_color("surface_raised") })
         .group_focus(style().border_color(theme_color("focus_ring")))
         .disabled(style().border_color(theme_color("border")).background(theme_color("surface_hover")))));

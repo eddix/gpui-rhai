@@ -4,6 +4,7 @@
 //! usage: gallery_baselines <output-dir> [case-name]
 //!        gallery_baselines <output-dir> --pages [density] [theme] [locale]
 //!        gallery_baselines <output-dir> --page <id> [density] [theme] [locale]
+//!        gallery_baselines <output-dir> --themes [page] [density] [locale]
 //!
 //! `--pages` renders every Gallery page instead of the baseline cases, for a
 //! visual review sweep; those images are not baselines.
@@ -67,6 +68,28 @@ mod capture {
                     args.next().unwrap_or_else(|| "default-dark".to_owned()),
                     args.next().unwrap_or_else(|| "en".to_owned()),
                 )]
+            } else if only.as_deref() == Some("--themes") {
+                let page = args
+                    .next()
+                    .unwrap_or_else(|| "foundations.color".to_owned());
+                if !acceptance::page_ids().contains(&page) {
+                    return Err(format!("unknown Gallery page {page}"));
+                }
+                let density = args.next().unwrap_or_else(|| "comfortable".to_owned());
+                let locale = args.next().unwrap_or_else(|| "en".to_owned());
+                gpui_rhai_registry::BUNDLED_THEME_SOURCES
+                    .iter()
+                    .map(|(file, _)| {
+                        let slug = file.trim_end_matches(".rhai").replace('_', "-");
+                        (
+                            format!("{}-{slug}", page.replace('.', "-")),
+                            page.clone(),
+                            density.clone(),
+                            slug,
+                            locale.clone(),
+                        )
+                    })
+                    .collect()
             } else if only.as_deref() == Some("--pages") {
                 let density = args.next().unwrap_or_else(|| "comfortable".to_owned());
                 let theme = args.next().unwrap_or_else(|| "default-dark".to_owned());

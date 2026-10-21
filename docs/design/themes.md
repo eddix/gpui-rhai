@@ -116,24 +116,24 @@ Paper, ink and one cobalt spot color.
 | Role | Light | Dark |
 |---|---|---|
 | `surface` | `#f3f1ea` paper | `#151412` warm graphite |
-| `surface_raised` | `#fbfaf6` | `#1d1c19` |
-| `surface_hover` | `#e0ddd2` | `#2e2d28` |
+| `surface_raised` | `#fdfbf4` | `#21201e` |
+| `surface_hover` | `#dfddd7` | `#2e2d2b` |
 | `text_primary` | `#1c1b18` ink | `#e8e4da` |
-| `text_muted` | `#5d5950` | `#a19c90` |
+| `text_muted` | `#514d44` | `#bcb7aa` |
 | `accent` | `#1f45b8` cobalt | `#3d5fe0` cobalt |
-| `accent_hover` | `#183892` | `#5474ea` |
+| `accent_hover` | `#173aac` | `#3454d4` |
 | `on_accent` | `#ffffff` | `#ffffff` |
 | `danger` / `on_danger` | `#b3261e` / `#ffffff` | `#ef6b5e` / `#151412` |
 | `warning` / `on_warning` | `#855600` / `#ffffff` | `#e2a640` / `#151412` |
 | `success` / `on_success` | `#2e6b36` / `#ffffff` | `#7cbd78` / `#151412` |
-| `border` | `#d2cec3` | `#3a3833` |
+| `border` | `#adaca7` | `#50504e` |
 | `focus_ring` | `#1c1b18` ink | `#e8e4da` ink |
-| `selection` | `#d5d9e3` | `#212a50` |
-| `disabled` | `#9c978c` | `#6b675e` |
+| `selection` | `#bdcdee` | `#141e3b` |
+| `disabled` | `#817f7b` | `#737270` |
 
 In the dark palette cobalt is dark enough to carry white text but below 4.5:1
 as text on graphite; components therefore use the derived `text.accent`
-(about `#7c90de`) when accent is text.
+when accent is text; it follows the final merged palette rather than a fixed hex.
 
 ## 6. Bundled themes
 
@@ -158,3 +158,41 @@ and records why in a comment. Each adapted file repeats its short attribution
 at the top so it survives copying into an application; theme identity and
 runtime tokens carry no provenance metadata. Theme Studio renders the
 canonical component specimen under any variant.
+
+## 7. Palette calibration and display margin
+
+Bundled palettes keep their original page background, accent, status fills and
+paired fill foregrounds. They are semantic adaptations, not byte-identical
+upstream palettes. Their neutral/tonal ramp is calibrated in Oklab/OKLCH:
+change lightness while retaining hue/chroma, reducing chroma only when needed to
+stay in sRGB. HSL lightness and equal RGB increments do not give equal perceptual
+steps. [Calibration and the per-theme rationale](palette-calibration.md) record
+the maintained targets and verification commands.
+
+For bundled themes, the reading target is stronger than the general minimum:
+`text_primary` reaches 7:1 and `text_muted` at least 5.2:1 on all four reading
+surfaces. Main and secondary text keep at least 0.075 Oklab L separation. Dark
+page → raised → hover steps are about 0.05 L each; light themes use a small
+upward paper step and a downward hover step. Hover and selection also differ in
+lightness, not only hue. These are calibration guardrails, not a claim about
+every physical monitor or a new validation requirement on application palettes.
+
+`border` remains a decorative panel/divider role (at least 2:1 against page and
+raised surfaces in bundled themes). `control.border` is a derived functional
+outline at 3:1 on both surfaces. Input, Textarea, InputGroup, choice triggers,
+Checkbox/Radio and outline buttons consume it; an embedded search line and
+disabled controls keep their quiet `border` treatment. This avoids increasing
+every divider to the contrast needed to identify an editable field. D70 updates
+the earlier low-contrast-outline guidance.
+
+Primary hover preserves contrast with `on_accent`; status hovers use
+`control.{danger,warning,success}_hover`, which back off a tint before it can make
+the paired text unreadable. Syntax foregrounds use `readable` on the tonal code
+surface; a status fill is not automatically a suitable small-text color.
+Scrollbar thumbs are independently calibrated for 3:1 instead of an arbitrary
+low alpha. All derived roles remain ordinary overrideable color tokens.
+
+Theme Studio checks reading text on every surface, primary hover, and derived
+control/scrollbar roles using the runtime's own contrast implementation. A
+passing palette check is not a full accessibility certification: status still
+needs text/icons, focus must be visible, and actual control composition matters.

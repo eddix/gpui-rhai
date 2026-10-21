@@ -55,5 +55,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `caret`, `counter`, `edi
 
 ## Theme
 
-- Tokens: `accent`, `border`, `danger`, `disabled`, `focus_ring`, `metrics.field_pad`, `metrics.multiline_pad`, `radius.lg`, `selection`, `spacing.xxs`, `surface_raised`, `text.danger`, `text_muted`, `text_primary`, `typography.body`, `typography.body_small`, `typography.caption`
+- Tokens: `accent`, `border`, `control.border`, `danger`, `disabled`, `focus_ring`, `metrics.field_pad`, `metrics.multiline_pad`, `radius.lg`, `selection`, `spacing.xxs`, `surface_raised`, `text.danger`, `text_muted`, `text_primary`, `typography.body`, `typography.body_small`, `typography.caption`
 - Environment: `corners`, `density`, `size`

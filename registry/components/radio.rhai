@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "accent", "border", "surface_raised", "surface_hover", "focus_ring", "text_primary",
+    "accent", "border", "control.border", "surface_raised", "surface_hover", "focus_ring", "text_primary",
     "disabled", "metrics.mark", "metrics.control", "spacing.sm", "typography.control"
   ],
   "environment": ["size", "density"]
@@ -23,7 +23,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
-            "accent", "border", "surface_raised", "surface_hover", "focus_ring", "text_primary",
+            "accent", "border", "control.border", "surface_raised", "surface_hover", "focus_ring", "text_primary",
             "disabled", "metrics.mark", "metrics.control", "spacing.sm", "typography.control"
         ],
         environment: ["size", "density"],
@@ -79,7 +79,7 @@ fn render_Radio(ctx, props) {
         .width(theme_length("metrics.mark")).height(theme_length("metrics.mark"))
         .radius(theme_length("metrics.mark") * 0.5)
         .items_center().justify_center().border(px(2))
-        .border_color(if props.selected { theme_color("accent") } else { theme_color("border") })
+        .border_color(if props.selected { theme_color("accent") } else { theme_color("control.border") })
         .background(theme_color("surface_raised"))
         .group_focus(if focus_mark { style().border_color(theme_color("focus_ring")) } else { style() })
         .disabled(style().border_color(theme_color("border")).background(theme_color("surface_hover")))));

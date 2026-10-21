@@ -81,7 +81,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `clear`, `empty
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `radius.sm`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
+- Tokens: `accent`, `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `radius.sm`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
 - Environment: `corners`, `density`, `size`
 
 ## Dependencies

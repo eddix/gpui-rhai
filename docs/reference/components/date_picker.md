@@ -54,7 +54,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `clear`, `day`, `day_dis
 
 ## Theme
 
-- Tokens: `accent`, `accent_hover`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.marker`, `on_accent`, `radius.lg`, `radius.md`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
+- Tokens: `accent`, `accent_hover`, `border`, `control.border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.marker`, `on_accent`, `radius.lg`, `radius.md`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
 - Environment: `corners`, `density`, `size`
 
 ## Dependencies

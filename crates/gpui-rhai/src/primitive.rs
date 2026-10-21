@@ -293,6 +293,23 @@ impl PrimitiveTheme {
         value.resolve_with(&mut |token| self.color(token))
     }
 
+    pub(crate) fn part_color(
+        &self,
+        props: &PrimitiveProps,
+        name: &str,
+        background: bool,
+    ) -> Option<Rgba8> {
+        let style = props
+            .style(name)?
+            .resolve(&crate::InteractionState::default());
+        let value = if background {
+            style.background.as_ref().or(style.text_color.as_ref())
+        } else {
+            style.text_color.as_ref().or(style.background.as_ref())
+        }?;
+        self.resolve_color(value)
+    }
+
     #[must_use]
     pub fn resolve_length(&self, value: Length) -> Option<Length> {
         match &self.tokens {

@@ -8,7 +8,7 @@
   "capabilities": {},
   "assets": ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
   "tokens": [
-    "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
+    "surface_raised", "border", "control.border", "danger", "focus_ring", "surface_hover", "control.hover",
     "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
     "disabled", "metrics.control", "metrics.control_pad", "metrics.field_pad", "metrics.icon", "metrics.marker",
     "metrics.inset", "spacing.xs", "spacing.sm", "radius.md", "radius.lg",
@@ -29,7 +29,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/calendar"], capabilities: #{},
         tokens: [
-            "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
+            "surface_raised", "border", "control.border", "danger", "focus_ring", "surface_hover", "control.hover",
             "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
             "disabled", "metrics.control", "metrics.control_pad", "metrics.field_pad", "metrics.icon",
             "metrics.marker", "metrics.inset", "spacing.xs", "spacing.sm", "radius.md",
@@ -213,7 +213,7 @@ fn render_DatePicker(ctx, props) {
             .with_style(style().gap(theme_spacing("xs")).items_center())];
     // The trigger is a field; while focused or open the focus color owns the frame.
     let trigger_border = if open { theme_color("focus_ring") }
-        else if error { theme_color("danger") } else { theme_color("border") };
+        else if error { theme_color("danger") } else { theme_color("control.border") };
     let trigger_style = style().width(width).min_height(theme_length("metrics.control"))
         .padding_x(theme_length("metrics.field_pad")).gap(theme_spacing("sm")).items_center();
     trigger_style = trigger_style

@@ -93,6 +93,11 @@ fn audit(cx: &mut TestAppContext, theme_source: &str, body: &str) -> Vec<String>
         r#"import "components/tag" as tag;
 import "components/list" as list;
 import "components/table" as table;
+import "components/button" as button;
+import "components/input" as input;
+import "components/checkbox" as checkbox;
+import "components/radio" as radio;
+fn noop(ctx, value) {{}}
 fn view(ctx) {{ column([{body}]).with_style(style().width(px(360)).padding(px(8))) }}"#
     );
     let (mut visual, view) = Mount::components(main)
@@ -131,6 +136,22 @@ fn audit_every_theme(cx: &mut TestAppContext, body: &str) {
 #[gpui::test]
 fn a_neutral_faceted_tag_passes_the_contrast_audit_in_every_bundled_theme(cx: &mut TestAppContext) {
     audit_every_theme(cx, r#"tag::Tag(#{ facet: "region", text: "sg" })"#);
+}
+
+#[gpui::test]
+fn enabled_controls_and_status_fills_pass_in_every_bundled_theme(cx: &mut TestAppContext) {
+    audit_every_theme(
+        cx,
+        r#"
+        input::Input(#{key:"name",label:"Host",value:"edge-01",placeholder:"Enter a host"}),
+        checkbox::Checkbox(#{checked:false,label:"Include archived",on_change:Fn("noop")}),
+        radio::Radio(#{value:"current",selected:false,label:"Current revision",on_select:Fn("noop")}),
+        button::Button(#{text:"Deploy",variant:"primary",on_click:Fn("noop")}),
+        button::Button(#{text:"Delete",variant:"danger",on_click:Fn("noop")}),
+        button::Button(#{text:"Review",variant:"warning",on_click:Fn("noop")}),
+        button::Button(#{text:"Approve",variant:"success",on_click:Fn("noop")})
+    "#,
+    );
 }
 
 #[gpui::test]

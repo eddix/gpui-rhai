@@ -9,7 +9,7 @@
   "tokens": [
     "surface_hover", "text_primary", "accent", "accent_hover", "on_accent", "danger",
     "on_danger", "warning", "on_warning", "success", "on_success", "border",
-    "focus_ring", "disabled", "control.hover", "metrics.control", "metrics.control_pad",
+    "focus_ring", "disabled", "control.hover", "control.border", "control.danger_hover", "control.warning_hover", "control.success_hover", "metrics.control", "metrics.control_pad",
     "spacing.xs", "radius.md", "typography.control", "typography.label"
   ],
   "environment": ["size", "density", "corners"]
@@ -34,7 +34,7 @@ define_component(#{
         tokens: [
             "surface_hover", "text_primary", "accent", "accent_hover", "on_accent", "danger",
             "on_danger", "warning", "on_warning", "success", "on_success", "border",
-            "focus_ring", "disabled", "control.hover", "metrics.control", "metrics.control_pad",
+            "focus_ring", "disabled", "control.hover", "control.border", "control.danger_hover", "control.warning_hover", "control.success_hover", "metrics.control", "metrics.control_pad",
             "spacing.xs", "radius.md", "typography.control", "typography.label"
         ],
         environment: ["size", "density", "corners"],
@@ -149,9 +149,9 @@ fn button_fill(variant) {
 }
 
 // The reserved 2px border takes the fill (invisible) except for outline,
-// whose low-contrast 2px frame reads like a 1px line.
+// whose functional frame uses control.border, not a decorative divider.
 fn button_frame(variant) {
-    if variant == "outline" { theme_color("border") }
+    if variant == "outline" { theme_color("control.border") }
     else { button_fill(variant) }
 }
 
@@ -159,7 +159,7 @@ fn button_hover(variant) {
     if variant == "primary" { theme_color("accent_hover") }
     else if variant == "secondary" { theme_color("control.hover") }
     else if variant == "ghost" || variant == "outline" { theme_color("surface_hover") }
-    else { theme_color(variant).mix(theme_color("text_primary"), 0.12) }
+    else { theme_color(`control.${variant}_hover`) }
 }
 
 fn button_foreground(variant) {

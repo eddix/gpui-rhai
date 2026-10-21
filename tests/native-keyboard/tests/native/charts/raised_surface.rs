@@ -47,27 +47,36 @@ fn framed(visual: &mut VisualTestContext, color: u32) -> usize {
         .count()
 }
 
-// default_dark: surface 0x151412, surface_raised 0x1d1c19, border 0x3a3833.
-const SURFACE: u32 = 0x1514_12ff;
-const SURFACE_RAISED: u32 = 0x1d1c_19ff;
-const BORDER: u32 = 0x3a38_33ff;
+// Assert which semantic layer paints, not a particular palette revision.
+fn palette(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> [u32; 3] {
+    visual.update(|_, cx| {
+        let theme = view.theme_snapshot(cx).unwrap();
+        ["surface", "surface_raised", "border"]
+            .map(|name| theme.variant.tokens.color(name).unwrap().as_rgba_hex())
+    })
+}
 
 #[gpui::test]
 fn a_chart_on_a_raised_layer_has_no_block_of_another_surface(cx: &mut TestAppContext) {
-    let (mut visual, _view) = mount(cx, script(""));
-    let raised = filled(&mut visual, SURFACE_RAISED);
+    let (mut visual, view) = mount(cx, script(""));
+    let [surface_color, raised_color, border_color] = palette(&mut visual, &view);
+    let raised = filled(&mut visual, raised_color);
     assert!(!raised.is_empty(), "the raised layer was painted");
-    let surface = filled(&mut visual, SURFACE);
+    let surface = filled(&mut visual, surface_color);
     assert!(
         surface.is_empty(),
         "nothing on the raised layer should be painted with `surface`, got {surface:?}"
     );
-    assert_eq!(framed(&mut visual, BORDER), 0, "the chart draws no frame");
+    assert_eq!(
+        framed(&mut visual, border_color),
+        0,
+        "the chart draws no frame"
+    );
 }
 
 #[gpui::test]
 fn a_root_style_fills_and_frames_the_chart_once(cx: &mut TestAppContext) {
-    let (mut visual, _view) = mount(
+    let (mut visual, view) = mount(
         cx,
         script(
             r#".background(theme_color("surface")).border(px(1)).border_color(theme_color("border"))"#,
@@ -75,9 +84,10 @@ fn a_root_style_fills_and_frames_the_chart_once(cx: &mut TestAppContext) {
     );
     // The root paints the fill and the frame (GPUI paints a border as its own quads); the
     // native plot inside it adds no fill.
-    assert_eq!(filled(&mut visual, SURFACE), vec![(300.0, 160.0)]);
+    let [surface_color, _, border_color] = palette(&mut visual, &view);
+    assert_eq!(filled(&mut visual, surface_color), vec![(300.0, 160.0)]);
     assert!(
-        framed(&mut visual, BORDER) > 0,
+        framed(&mut visual, border_color) > 0,
         "the root frame was painted"
     );
 }

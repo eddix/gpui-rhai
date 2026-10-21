@@ -1060,7 +1060,8 @@ Official components wrap them; application components may too.
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, paste, cut, undo, redo or committed IME composition. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
 | `on_submit` | callback or `()` | — | Called with the current text on Enter unless disabled, read-only or composing; without it, Enter reaches the field's ancestors. |
-| `placeholder` | string or `()` | — | Hint text shown dimmed while `value` is empty. |
+| `placeholder` | string or `()` | — | Hint text shown in the placeholder part color while `value` is empty. |
+| `placeholder_style` | style | — | Text color (or background) of the placeholder; falls back to theme text_muted, then inherited text color, never a fixed alpha. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
 | `typography` | string | required | Theme typography role, such as `control`, that sets the font family, size, weight and line height. |
 | `value` | string | required | The field's text; controlled, so store each `change` payload here or the next render restores the old text; text still being composed with an IME stays until it commits. |

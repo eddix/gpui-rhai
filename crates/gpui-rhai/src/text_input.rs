@@ -85,6 +85,7 @@ pub(crate) struct TextInputEntity {
     focus: FocusHandle,
     buffer: TextBuffer,
     placeholder: SharedString,
+    placeholder_color: Option<Rgba8>,
     disabled: bool,
     read_only: bool,
     selection_color: Rgba8,
@@ -101,12 +102,17 @@ pub(crate) struct TextInputEntity {
 pub(crate) struct TextInputConfig {
     pub(crate) value: String,
     pub(crate) placeholder: String,
+    pub(crate) placeholder_color: Option<Rgba8>,
     pub(crate) disabled: bool,
     pub(crate) read_only: bool,
     pub(crate) autofocus: bool,
     pub(crate) selection_color: Rgba8,
     pub(crate) caret_color: Rgba8,
     pub(crate) typography: NativeTypography,
+}
+
+fn placeholder_ink(color: Option<Rgba8>, inherited: gpui::Hsla) -> gpui::Hsla {
+    color.map_or(inherited, |color| rgba(color.as_rgba_hex()).into())
 }
 
 #[derive(Clone, Debug)]
@@ -186,6 +192,7 @@ impl TextInputEntity {
             focus: cx.focus_handle().tab_stop(!config.disabled),
             buffer: TextBuffer::new(&config.value),
             placeholder: config.placeholder.into(),
+            placeholder_color: config.placeholder_color,
             disabled: config.disabled,
             read_only: config.read_only,
             selection_color: config.selection_color,
@@ -208,6 +215,7 @@ impl TextInputEntity {
         sync_controlled(&mut self.buffer, &config.value);
         self.focus = self.focus.clone().tab_stop(!config.disabled);
         self.placeholder = config.placeholder.clone().into();
+        self.placeholder_color = config.placeholder_color;
         self.disabled = config.disabled;
         self.read_only = config.read_only;
         self.selection_color = config.selection_color;
@@ -597,7 +605,10 @@ impl Element for TextElement {
         let cursor = input.buffer.cursor_offset();
         let text_style = window.text_style();
         let (display, color) = if content.is_empty() {
-            (input.placeholder.clone(), text_style.color.opacity(0.55))
+            (
+                input.placeholder.clone(),
+                placeholder_ink(input.placeholder_color, text_style.color),
+            )
         } else {
             (content, text_style.color)
         };
@@ -892,6 +903,9 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
         let config = TextInputConfig {
             value,
             placeholder,
+            placeholder_color: theme
+                .part_color(&instance.node.props, "placeholder_style", false)
+                .or_else(|| theme.color("text_muted")),
             disabled,
             read_only,
             autofocus,
@@ -1019,7 +1033,11 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "placeholder".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::string()))
-                    .with_doc("Hint text shown dimmed while `value` is empty."),
+                    .with_doc("Hint text shown in the placeholder part color while `value` is empty."),
+            ),
+            (
+                "placeholder_style".to_owned(),
+                ObjectField::optional(ValueSchema::Style).with_doc("Text color (or background) of the placeholder; falls back to theme text_muted, then inherited text color, never a fixed alpha."),
             ),
             (
                 "disabled".to_owned(),
@@ -1115,6 +1133,22 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn placeholder_preserves_the_supplied_ink_instead_of_applying_fixed_opacity() {
+        let inherited: gpui::Hsla = rgba(0xffff_ffff).into();
+        let supplied = Rgba8::from_rgba_hex(0x99aa_bbff);
+        assert_eq!(
+            placeholder_ink(Some(supplied), inherited),
+            rgba(0x99aa_bbff).into()
+        );
+        assert_eq!(placeholder_ink(None, inherited), inherited);
+        let translucent = Rgba8::from_rgba_hex(0x99aa_bb80);
+        assert_eq!(
+            placeholder_ink(Some(translucent), inherited),
+            rgba(0x99aa_bb80).into()
+        );
+    }
 
     #[test]
     fn a_single_line_field_keeps_line_breaks_out() {

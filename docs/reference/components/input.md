@@ -47,9 +47,9 @@ input::Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_cha
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `input`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `input`, `placeholder`, `root`.
 
 ## Theme
 
-- Tokens: `border`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.inset`, `radius.md`, `surface_raised`, `text_muted`, `text_primary`, `typography.control`
+- Tokens: `border`, `control.border`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.inset`, `radius.md`, `surface_raised`, `text_muted`, `text_primary`, `typography.control`
 - Environment: `corners`, `density`, `size`

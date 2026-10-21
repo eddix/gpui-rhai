@@ -6,14 +6,14 @@
 fn theme() {
     #{ family: "Aetheria", name: "Dark", mode: "dark", tokens: #{
         colors: #{
-            surface: 0x0e091dff, surface_raised: 0x1c1230ff, surface_hover: 0x2a1840ff,
-            text_primary: 0x4cd7d2ff, text_muted: 0x9aa3bbff,
-            accent: 0xbe3f50ff, accent_hover: 0xe05a6bff, on_accent: 0xfff2e8ff,
+            surface: 0x0e091dff, surface_raised: 0x191529ff, surface_hover: 0x262236ff,
+            text_primary: 0x4cd7d2ff, text_muted: 0x8e97aeff,
+            accent: 0xbe3f50ff, accent_hover: 0xb23346ff, on_accent: 0xfff2e8ff,
             danger: 0xdd0391ff, on_danger: 0xffffffff,
             warning: 0xffbe74ff, on_warning: 0x0e091dff,
             success: 0x7cd699ff, on_success: 0x0e091dff,
-            border: 0x4b275fff, focus_ring: 0xff7f41ff,
-            selection: 0x183f4aff, disabled: 0x6f6380ff,
+            border: 0x4b4857ff, focus_ring: 0xff7f41ff,
+            selection: 0x2b0b1eff, disabled: 0x696677ff,
         },
     } }
 }
