@@ -7,6 +7,11 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- `gpui-rhai update` applies a registry component whose source changed under
+  an unchanged version: at equal versions it compares the installed baseline
+  with the bundled source instead of skipping. A project that installed
+  SplitPane 0.2.0 before #140 kept the old block panes through every update
+  (#156). An older registry still never downgrades.
 - Committed effect state and direct Host document/collection/state/environment
   mutations wake the existing foreground pump without waiting for a clock tick.
   The existing 64-callback effect-graph budget also bounds pure semantic loops;

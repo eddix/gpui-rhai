@@ -687,8 +687,13 @@ impl Project {
             let source_path = self.root.join("ui").join(&relative);
             let baseline_path = self.root.join(".gpui-rhai/baselines").join(&relative);
             let installed = manifest.components.get(id.as_str()).cloned();
+            // An older registry never downgrades. At the same version the
+            // baseline decides: a registry fix that kept the version is still
+            // an update, or the installed copy stays stale for good (#156).
             if let Some(installed) = &installed
-                && upstream.metadata.version <= installed.version
+                && (upstream.metadata.version < installed.version
+                    || (upstream.metadata.version == installed.version
+                        && read(&baseline_path)? == upstream.source))
             {
                 continue;
             }
@@ -3310,6 +3315,93 @@ mod tests {
             )
             .unwrap(),
             registry.entries[&ModuleId::parse("components/button").unwrap()].source
+        );
+    }
+
+    #[test]
+    fn update_applies_registry_changes_that_keep_the_version() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+        let source_path = directory.path().join("ui/components/button.rhai");
+        let local = format!(
+            "{}\n// application-owned footer\n",
+            read(&source_path).unwrap()
+        );
+        fs::write(&source_path, &local).unwrap();
+
+        let mut registry = BundledRegistry::load().unwrap();
+        let button = ModuleId::parse("components/button").unwrap();
+        let entry = registry.entries.get_mut(&button).unwrap();
+        let installed_version = entry.metadata.version.clone();
+        let source = entry.source.replace(
+            "// Button presents a desktop action: a large block with a centered label.",
+            "// Button presents a fixed desktop action.",
+        );
+        assert_ne!(source, entry.source);
+        let source: &'static str = Box::leak(source.into_boxed_str());
+        entry.metadata = parse_component_header(source).unwrap();
+        entry.source = source;
+        assert_eq!(entry.metadata.version, installed_version);
+
+        let plan = project.plan_update(&registry).unwrap();
+        assert_eq!(plan.conflicts(), []);
+        plan.apply().unwrap();
+        let merged = read(&source_path).unwrap();
+        assert!(merged.contains("fixed desktop action"));
+        assert!(merged.contains("application-owned footer"));
+        assert_eq!(
+            read(
+                &directory
+                    .path()
+                    .join(".gpui-rhai/baselines/components/button.rhai")
+            )
+            .unwrap(),
+            source
+        );
+
+        // Once the baseline matches, the same registry has nothing left to do.
+        let again = project.plan_update(&registry).unwrap();
+        assert!(
+            again
+                .writes
+                .iter()
+                .all(|write| !write.path.ends_with("components/button.rhai")),
+            "{}",
+            again.summary()
+        );
+    }
+
+    #[test]
+    fn update_never_downgrades_to_an_older_registry_version() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+        let newer = bumped_button_registry("// Button presents a newer desktop action.");
+        project.plan_update(&newer).unwrap().apply().unwrap();
+        let source_path = directory.path().join("ui/components/button.rhai");
+        let installed = read(&source_path).unwrap();
+        assert!(installed.contains("0.9.0"));
+
+        let plan = project
+            .plan_update(&BundledRegistry::load().unwrap())
+            .unwrap();
+        assert!(
+            plan.writes
+                .iter()
+                .all(|write| !write.path.ends_with("components/button.rhai")),
+            "{}",
+            plan.summary()
         );
     }
 
