@@ -29,6 +29,19 @@ unknown fields, invalid physics, non-finite values, zero iterations, excessive
 keyframes, or duplicate property ownership reject the candidate transaction.
 `iterations` accepts a positive integer or `"infinite"`.
 
+An `easing` is `"linear"`, `"ease_in"`, `"ease_out"`, `"ease_in_out"`, or a
+CSS cubic Bézier from `cubic_bezier(x1, y1, x2, y2)`, which validates the
+control points (`x1` and `x2` in [0, 1]; `y` may overshoot) and returns the
+curve's spelling. Rust samples every curve; `ctx.motion_easing(role)` returns
+the same spelling, so a theme's easing token may be a Bézier too:
+
+```rhai
+motion_transition("scale_x", 3.0, 1.0, #{
+    duration_ms: ctx.motion_duration("normal"),
+    easing: cubic_bezier(0.33, 1.0, 0.68, 1.0), // an ease-out cubic
+})
+```
+
 Supported properties are `opacity`, `translate_x`, `translate_y`, `rotate`,
 `scale_x`, `scale_y`, `skew_x`, `skew_y`, `width`, `height`, `clip_height`, and
 `path_progress`. Ordinary GPUI nodes support opacity, translation, and

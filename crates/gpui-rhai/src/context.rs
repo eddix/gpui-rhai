@@ -5239,13 +5239,7 @@ fn register_motion_context_methods(builder: &mut TypeBuilder<UiContext>) {
             |context: &mut UiContext, role: ImmutableString| {
                 context
                     .motion_easing(role.as_str())
-                    .map(|value| match value {
-                        crate::MotionEasing::Linear => "linear",
-                        crate::MotionEasing::EaseIn => "ease_in",
-                        crate::MotionEasing::EaseOut => "ease_out",
-                        crate::MotionEasing::EaseInOut => "ease_in_out",
-                    })
-                    .map(ImmutableString::from)
+                    .map(|value| ImmutableString::from(value.to_string()))
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )

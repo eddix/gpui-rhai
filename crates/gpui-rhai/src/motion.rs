@@ -70,14 +70,36 @@ impl MotionProperty {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// An easing curve. Scripts and themes spell it as a string: a named curve, or
+/// `cubic_bezier(x1, y1, x2, y2)`, which `cubic_bezier(...)` in Rhai returns.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum MotionEasing {
     Linear,
     EaseIn,
     EaseOut,
     EaseInOut,
+    /// A CSS cubic Bézier from (0, 0) to (1, 1) through the control points
+    /// (`x1`, `y1`) and (`x2`, `y2`); `x1` and `x2` lie in [0, 1], and `y`
+    /// may leave it to overshoot.
+    CubicBezier {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+    },
 }
+
+impl PartialEq for MotionEasing {
+    fn eq(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+            && self.control_bits() == other.control_bits()
+    }
+}
+
+// The control points are finite (`cubic_bezier` rejects anything else), so
+// bitwise equality is an equivalence.
+impl Eq for MotionEasing {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -99,21 +121,64 @@ impl MotionIntent {
 }
 
 impl MotionEasing {
-    /// Parse the stable script spelling of an easing.
+    /// Parse the stable script spelling of an easing: a name, or
+    /// `cubic_bezier(x1, y1, x2, y2)`.
     ///
     /// # Errors
     ///
-    /// Returns [`MotionError::UnknownEasing`] for an unsupported name.
+    /// Returns [`MotionError::UnknownEasing`] for an unsupported name or a
+    /// malformed curve, and [`MotionError::InvalidSpec`] for control points
+    /// that are not finite or whose `x` leaves [0, 1].
     pub fn parse(value: &str) -> Result<Self, MotionError> {
         match value {
             "linear" => Ok(Self::Linear),
             "ease_in" => Ok(Self::EaseIn),
             "ease_out" => Ok(Self::EaseOut),
             "ease_in_out" => Ok(Self::EaseInOut),
-            _ => Err(MotionError::UnknownEasing(value.to_owned())),
+            _ => {
+                let unknown = || MotionError::UnknownEasing(value.to_owned());
+                let arguments = value
+                    .trim()
+                    .strip_prefix("cubic_bezier(")
+                    .and_then(|rest| rest.strip_suffix(')'))
+                    .ok_or_else(unknown)?;
+                let points = arguments
+                    .split(',')
+                    .map(|number| number.trim().parse::<f64>())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| unknown())?;
+                let [x1, y1, x2, y2] = points[..] else {
+                    return Err(unknown());
+                };
+                Self::cubic_bezier(x1, y1, x2, y2)
+            }
         }
     }
 
+    /// A cubic Bézier easing from its control points.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MotionError::InvalidSpec`] for a point that is not finite or
+    /// an `x` outside [0, 1], which would not be a function of time.
+    pub fn cubic_bezier(x1: f64, y1: f64, x2: f64, y2: f64) -> Result<Self, MotionError> {
+        let finite = [x1, y1, x2, y2].iter().all(|value| value.is_finite());
+        if !finite || !(0.0..=1.0).contains(&x1) || !(0.0..=1.0).contains(&x2) {
+            return Err(MotionError::InvalidSpec);
+        }
+        Ok(Self::CubicBezier { x1, y1, x2, y2 })
+    }
+
+    /// A Bézier's control points as bits, for equality.
+    fn control_bits(self) -> Option<[u64; 4]> {
+        match self {
+            Self::CubicBezier { x1, y1, x2, y2 } => Some([x1, y1, x2, y2].map(f64::to_bits)),
+            _ => None,
+        }
+    }
+
+    /// The curve's name; `cubic_bezier` for any Bézier, whose full spelling
+    /// is its `Display`.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -121,6 +186,7 @@ impl MotionEasing {
             Self::EaseIn => "ease_in",
             Self::EaseOut => "ease_out",
             Self::EaseInOut => "ease_in_out",
+            Self::CubicBezier { .. } => "cubic_bezier",
         }
     }
 
@@ -134,8 +200,79 @@ impl MotionEasing {
             Self::EaseOut => 1.0 - (1.0 - progress) * (1.0 - progress),
             Self::EaseInOut if progress < 0.5 => 2.0 * progress * progress,
             Self::EaseInOut => 1.0 - (-2.0 * progress + 2.0).powi(2) / 2.0,
+            Self::CubicBezier { x1, y1, x2, y2 } => {
+                let t = bezier_parameter_for_x(x1, x2, progress);
+                bezier_coordinate(y1, y2, t)
+            }
         }
     }
+}
+
+impl std::fmt::Display for MotionEasing {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CubicBezier { x1, y1, x2, y2 } => {
+                write!(formatter, "cubic_bezier({x1}, {y1}, {x2}, {y2})")
+            }
+            named => formatter.write_str(named.as_str()),
+        }
+    }
+}
+
+impl TryFrom<String> for MotionEasing {
+    type Error = MotionError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(&value)
+    }
+}
+
+impl From<MotionEasing> for String {
+    fn from(easing: MotionEasing) -> Self {
+        easing.to_string()
+    }
+}
+
+/// One coordinate of the Bézier from 0 to 1 through `first` and `second` at `t`.
+fn bezier_coordinate(first: f64, second: f64, t: f64) -> f64 {
+    let inverse = 1.0 - t;
+    3.0 * inverse * inverse * t * first + 3.0 * inverse * t * t * second + t * t * t
+}
+
+/// The parameter `t` at which the curve's `x` reaches `x`: Newton steps from
+/// `x`, then bisection, which always converges because `x(t)` is monotonic
+/// when both control `x` values lie in [0, 1].
+fn bezier_parameter_for_x(x1: f64, x2: f64, x: f64) -> f64 {
+    const EPSILON: f64 = 1e-7;
+    let mut t = x;
+    for _ in 0..8 {
+        let error = bezier_coordinate(x1, x2, t) - x;
+        if error.abs() < EPSILON {
+            return t;
+        }
+        let inverse = 1.0 - t;
+        let slope =
+            3.0 * inverse * inverse * x1 + 6.0 * inverse * t * (x2 - x1) + 3.0 * t * t * (1.0 - x2);
+        if slope.abs() < EPSILON {
+            break;
+        }
+        t -= error / slope;
+    }
+    let (mut low, mut high) = (0.0, 1.0);
+    t = x;
+    for _ in 0..64 {
+        let current = bezier_coordinate(x1, x2, t);
+        if (current - x).abs() < EPSILON {
+            break;
+        }
+        if current < x {
+            low = t;
+        } else {
+            high = t;
+        }
+        t = f64::midpoint(low, high);
+    }
+    t
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -3851,6 +3988,27 @@ pub(crate) fn register_motion_api(engine: &mut Engine) {
 /// so `motion_transition("opacity", 0, 1, #{})` works; an all-float call still
 /// resolves to the typed function.
 fn register_mixed_number_motion_api(engine: &mut Engine) {
+    // `easing: cubic_bezier(0.2, 0.0, 0.0, 1.0)`: the validated curve in the
+    // string spelling every `easing` field and theme token accepts.
+    FuncRegistration::new("cubic_bezier")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |x1: Dynamic,
+             y1: Dynamic,
+             x2: Dynamic,
+             y2: Dynamic|
+             -> Result<ImmutableString, Box<EvalAltResult>> {
+                MotionEasing::cubic_bezier(
+                    motion_number("x1", &x1)?,
+                    motion_number("y1", &y1)?,
+                    motion_number("x2", &x2)?,
+                    motion_number("y2", &y2)?,
+                )
+                .map(|easing| easing.to_string().into())
+                .map_err(script_boxed_error)
+            },
+        );
     FuncRegistration::new("motion_transition")
         .in_global_namespace()
         .register_into_engine(
@@ -4483,6 +4641,115 @@ mod tests {
         };
         spec.iterations = None;
         MotionSource::Transition(spec)
+    }
+
+    #[test]
+    fn cubic_bezier_easing_parses_displays_and_rejects_bad_curves() {
+        let easing = MotionEasing::parse(" cubic_bezier(0.2, 0, 0, 1.25) ").unwrap();
+        assert_eq!(
+            easing,
+            MotionEasing::CubicBezier {
+                x1: 0.2,
+                y1: 0.0,
+                x2: 0.0,
+                y2: 1.25,
+            }
+        );
+        assert_eq!(easing.to_string(), "cubic_bezier(0.2, 0, 0, 1.25)");
+        assert_eq!(MotionEasing::parse(&easing.to_string()), Ok(easing));
+        assert_eq!(easing.as_str(), "cubic_bezier");
+        assert_eq!(MotionEasing::EaseOut.to_string(), "ease_out");
+        for malformed in [
+            "cubic_bezier(0.2, 0, 0)",
+            "cubic_bezier(a, 0, 0, 1)",
+            "bezier(0, 0, 1, 1)",
+        ] {
+            assert!(
+                matches!(
+                    MotionEasing::parse(malformed),
+                    Err(MotionError::UnknownEasing(_))
+                ),
+                "{malformed}"
+            );
+        }
+        for invalid in [
+            "cubic_bezier(1.5, 0, 0, 1)",
+            "cubic_bezier(0, 0, -0.1, 1)",
+            "cubic_bezier(0, NaN, 0, 1)",
+        ] {
+            assert_eq!(
+                MotionEasing::parse(invalid),
+                Err(MotionError::InvalidSpec),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn cubic_bezier_easing_samples_the_css_curve() {
+        let linear = MotionEasing::cubic_bezier(0.0, 0.0, 1.0, 1.0).unwrap();
+        // CSS's approximation of an ease-out cubic, 1 - (1 - t)^3.
+        let ease_out_cubic = MotionEasing::cubic_bezier(0.33, 1.0, 0.68, 1.0).unwrap();
+        let overshoot = MotionEasing::cubic_bezier(0.34, 1.56, 0.64, 1.0).unwrap();
+        for easing in [linear, ease_out_cubic, overshoot] {
+            assert!(easing.sample(0.0).abs() < 1e-6);
+            assert!((easing.sample(1.0) - 1.0).abs() < 1e-6);
+        }
+        for step in 0..=20 {
+            let t = f64::from(step) / 20.0;
+            assert!((linear.sample(t) - t).abs() < 1e-5, "linear at {t}");
+            let expected = 1.0 - (1.0 - t).powi(3);
+            assert!(
+                (ease_out_cubic.sample(t) - expected).abs() < 0.02,
+                "ease-out cubic at {t}: {}",
+                ease_out_cubic.sample(t)
+            );
+        }
+        assert!(
+            (0..=20).any(|step| overshoot.sample(f64::from(step) / 20.0) > 1.0),
+            "y beyond 1 overshoots"
+        );
+    }
+
+    #[test]
+    fn cubic_bezier_is_one_easing_spelling_for_scripts_and_themes() {
+        let runtime = crate::RuntimeEngine::new();
+        let spelled = runtime
+            .engine()
+            .eval::<ImmutableString>("cubic_bezier(0.2, 0, 0, 1)")
+            .unwrap();
+        assert_eq!(spelled.as_str(), "cubic_bezier(0.2, 0, 0, 1)");
+        let source = runtime
+            .engine()
+            .eval::<MotionSource>(
+                r#"motion_transition("opacity", 0, 1, #{ easing: cubic_bezier(0.2, 0, 0, 1) })"#,
+            )
+            .unwrap();
+        let MotionSource::Transition(transition) = source else {
+            panic!("unexpected source: {source:?}");
+        };
+        assert_eq!(transition.easing, MotionEasing::parse(&spelled).unwrap());
+        let error = runtime
+            .engine()
+            .eval::<ImmutableString>("cubic_bezier(2, 0, 0, 1)")
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("finite and physically valid"),
+            "{error}"
+        );
+        // Themes decode easing tokens through serde: the same string.
+        let decoded: MotionEasing =
+            rhai::serde::from_dynamic(&Dynamic::from(spelled.clone())).unwrap();
+        assert_eq!(decoded, transition.easing);
+        let named: MotionEasing = rhai::serde::from_dynamic(&Dynamic::from("ease_out")).unwrap();
+        assert_eq!(named, MotionEasing::EaseOut);
+        assert_eq!(
+            rhai::serde::to_dynamic(MotionEasing::EaseInOut)
+                .unwrap()
+                .into_string()
+                .unwrap(),
+            "ease_in_out"
+        );
     }
 
     #[test]
