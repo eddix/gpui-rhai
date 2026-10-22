@@ -2624,7 +2624,7 @@ checksum = "829258540ea51bb9ea4a71686beffe5c99586901ba9f39944d06e4a180ab63fe"
 
 [[package]]
 name = "gpui-rhai"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "event-listener",
  "gpui-pre",
@@ -2650,7 +2650,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-rhai-registry"
-version = "0.2.2"
+version = "0.2.3"
 
 [[package]]
 name = "half"
