@@ -492,6 +492,23 @@ let config = ScriptViewConfig::new("user-view").show_error_banner(false);
 The opt-out changes presentation only; `last_error` continues to report the
 failure and the last-good tree remains mounted.
 
+A Host learns of failures without polling through an observer, called once for
+each new failure on the foreground after the frame that presents it:
+
+```rust
+let config = ScriptViewConfig::new("user-view")
+    .on_error(|report, cx| show_failure(&report.view_id, &report.message, cx))
+    .mirror_errors_to_stderr(true);
+```
+
+`report.diagnostic` is what `last_diagnostic` returns. Several failures before
+that frame report the latest, as `last_error` does, and script windows the view
+opens report through the same observer. `mirror_errors_to_stderr` also prints
+each new failure as ``gpui-rhai: view `id`: message``; it is off for embedded
+views and on for `ScriptApplication`, which turns it off with
+`ScriptApplication::mirror_errors_to_stderr(false)`. See
+[ADR 0025](adr/0025-host-error-reporting.md).
+
 See `cargo run -p gpui-rhai --example embedded_views` for three isolated views,
 automatic compact sizing, escaping Combobox placement, duplicate local IDs,
 cross-view dismissal, shared Layer placement, and explicit dispose/remount.

@@ -101,6 +101,37 @@ pub struct ScriptViewConfig {
     paint_background: bool,
     show_error_banner: bool,
     window_drag_areas: bool,
+    error_reporting: ErrorReporting,
+}
+
+/// A new failure of a mounted view, as [`ScriptViewConfig::on_error`] passes it.
+#[derive(Clone, Debug)]
+pub struct ScriptErrorReport {
+    /// The view, or the script window it opened, that failed.
+    pub view_id: String,
+    /// What [`ScriptViewHandle::last_error`] returns for it.
+    pub message: String,
+    /// What [`ScriptViewHandle::last_diagnostic`] returns for it; `None` for
+    /// a Host error.
+    pub diagnostic: Option<Diagnostic>,
+}
+
+type ErrorCallback = dyn Fn(&ScriptErrorReport, &mut App);
+
+#[derive(Clone)]
+struct ErrorObserver(Rc<ErrorCallback>);
+
+impl std::fmt::Debug for ErrorObserver {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ErrorObserver")
+    }
+}
+
+/// How a view reports a new failure beyond its banner and `last_error`.
+#[derive(Clone, Debug, Default)]
+struct ErrorReporting {
+    observer: Option<ErrorObserver>,
+    stderr: bool,
 }
 
 impl ScriptViewConfig {
@@ -111,6 +142,7 @@ impl ScriptViewConfig {
             paint_background: false,
             show_error_banner: true,
             window_drag_areas: false,
+            error_reporting: ErrorReporting::default(),
         }
     }
 
@@ -127,6 +159,27 @@ impl ScriptViewConfig {
     #[must_use]
     pub const fn show_error_banner(mut self, show: bool) -> Self {
         self.show_error_banner = show;
+        self
+    }
+
+    /// Call `observer` once for each new failure of this view: the render,
+    /// callback, delivery, effect or reload error that
+    /// [`ScriptViewHandle::last_error`] then reports. It runs on the
+    /// foreground after the frame that presents the failure, so it may read
+    /// the handle; several failures before that frame report the latest, as
+    /// `last_error` does. Script windows the view opens report through it too.
+    #[must_use]
+    pub fn on_error(mut self, observer: impl Fn(&ScriptErrorReport, &mut App) + 'static) -> Self {
+        self.error_reporting.observer = Some(ErrorObserver(Rc::new(observer)));
+        self
+    }
+
+    /// Also print each new failure to stderr, as
+    /// ``gpui-rhai: view `id`: message``, so an unattended run fails loudly.
+    /// Off for an embedded view; [`ScriptApplication`] turns it on.
+    #[must_use]
+    pub const fn mirror_errors_to_stderr(mut self, mirror: bool) -> Self {
+        self.error_reporting.stderr = mirror;
         self
     }
 
@@ -2141,6 +2194,7 @@ impl FileScriptView {
             #[cfg(feature = "dev-reload")]
             theme_layers: RefCell::new(theme_layers),
             show_error_banner: Cell::new(true),
+            error_reporting: RefCell::new(ErrorReporting::default()),
             execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -2456,6 +2510,7 @@ impl EmbeddedScriptView {
             #[cfg(feature = "dev-reload")]
             theme_layers: RefCell::new(theme_layers),
             show_error_banner: Cell::new(true),
+            error_reporting: RefCell::new(ErrorReporting::default()),
             execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -3078,6 +3133,8 @@ struct ScriptWindowFactory {
     #[cfg(feature = "dev-reload")]
     theme_layers: RefCell<ThemeLayers>,
     show_error_banner: Cell<bool>,
+    /// The mounting view's reporting, which the script windows it opens share.
+    error_reporting: RefCell<ErrorReporting>,
     execution_policy: ScriptExecutionPolicy,
     #[cfg(feature = "dev-reload")]
     development: bool,
@@ -3304,6 +3361,9 @@ impl PreparedScriptView {
         #[cfg(feature = "dev-reload")]
         let watcher = development_watcher(self.development, &self.ui_root)?;
         let mount_lease = host.reserve_view(&config.view_id)?;
+        self.factory
+            .error_reporting
+            .replace(config.error_reporting.clone());
         let window_authority = host
             .bind_window(&config.view_id, window.window_handle(), policy, cx)
             .inspect_err(|_| {
@@ -3371,6 +3431,7 @@ impl PreparedScriptView {
                 primitives,
                 last_failure: None,
                 failure_serial: 0,
+                reported_failure_serial: 0,
                 theme: self.theme,
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -3382,6 +3443,7 @@ impl PreparedScriptView {
                 host: view_host,
                 paint_background: config.paint_background,
                 show_error_banner: config.show_error_banner,
+                error_reporting: config.error_reporting.clone(),
                 window_drag_areas: config.window_drag_areas,
                 content_bounds: None,
                 factory,
@@ -3468,6 +3530,7 @@ pub struct ScriptApplication {
     window_size: (f32, f32),
     window_options: Option<WindowOptionsConfigurator>,
     show_error_banner: bool,
+    mirror_errors_to_stderr: bool,
     window_drag_areas: bool,
 }
 
@@ -3479,6 +3542,7 @@ impl ScriptApplication {
             window_size: (720.0, 480.0),
             window_options: None,
             show_error_banner: true,
+            mirror_errors_to_stderr: true,
             window_drag_areas: false,
         }
     }
@@ -3496,6 +3560,15 @@ impl ScriptApplication {
     #[must_use]
     pub const fn show_error_banner(mut self, show: bool) -> Self {
         self.show_error_banner = show;
+        self
+    }
+
+    /// Print each new failure of a script window to stderr, so an unattended
+    /// run fails loudly. On by default; see
+    /// [`ScriptViewConfig::mirror_errors_to_stderr`].
+    #[must_use]
+    pub const fn mirror_errors_to_stderr(mut self, mirror: bool) -> Self {
+        self.mirror_errors_to_stderr = mirror;
         self
     }
 
@@ -3533,6 +3606,7 @@ impl ScriptApplication {
         let window_options = self.window_options;
         let prepared = self.prepared;
         let show_error_banner = self.show_error_banner;
+        let mirror_errors_to_stderr = self.mirror_errors_to_stderr;
         let window_drag_areas = self.window_drag_areas;
         prepared.factory.show_error_banner.set(show_error_banner);
         gpui_platform::application().run(move |cx: &mut App| {
@@ -3576,6 +3650,7 @@ impl ScriptApplication {
                         ScriptViewConfig::new("main")
                             .paint_background(true)
                             .show_error_banner(show_error_banner)
+                            .mirror_errors_to_stderr(mirror_errors_to_stderr)
                             .window_drag_areas(window_drag_areas),
                         host,
                         &view_native_windows,
@@ -3761,6 +3836,7 @@ fn open_secondary_window(
                 primitives,
                 last_failure: None,
                 failure_serial: 0,
+                reported_failure_serial: 0,
                 theme: view_factory.theme.clone(),
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -3772,6 +3848,7 @@ fn open_secondary_window(
                 host: view_host.clone(),
                 paint_background: true,
                 show_error_banner: view_factory.show_error_banner.get(),
+                error_reporting: view_factory.error_reporting.borrow().clone(),
                 window_drag_areas: false,
                 content_bounds: None,
                 factory: Rc::clone(&view_factory),
@@ -4078,6 +4155,9 @@ struct ScriptHostView {
     /// Counts failures, so one command can tell whether it failed without
     /// clearing an earlier failure the developer has not seen yet.
     failure_serial: u64,
+    /// The `failure_serial` last reported to the Host.
+    reported_failure_serial: u64,
+    error_reporting: ErrorReporting,
     theme: ThemeVariant,
     theme_handle: ThemeHandle,
     #[cfg(feature = "dev-reload")]
@@ -4690,6 +4770,9 @@ impl Render for ScriptHostView {
         self.consume_pending_interaction_cancel(window, cx);
         self.prepare_host_render(window, cx);
         self.consume_pending_interaction_cancel(window, cx);
+        // Every failure since the last frame, from events, effects or this
+        // render's preparation, reaches the Host once.
+        self.report_new_failure(cx);
         self.primitives.set_generation(self.lifecycle.generation());
         let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let (motion_active, committed_motion_events) = self.sample_motion_frame(&motion_root);
@@ -5011,6 +5094,30 @@ impl ScriptHostView {
             None
         } else {
             self.failure_message()
+        }
+    }
+
+    /// Report a failure recorded since the last report: to stderr when
+    /// mirroring, and to the Host's observer after this frame, when the view
+    /// is no longer borrowed and the observer may read its handle.
+    fn report_new_failure(&mut self, cx: &mut Context<Self>) {
+        if self.failure_serial == self.reported_failure_serial {
+            return;
+        }
+        self.reported_failure_serial = self.failure_serial;
+        let Some(failure) = &self.last_failure else {
+            return;
+        };
+        if self.error_reporting.stderr {
+            eprintln!("gpui-rhai: view `{}`: {}", self.view_id, failure.message);
+        }
+        if let Some(ErrorObserver(observer)) = self.error_reporting.observer.clone() {
+            let report = ScriptErrorReport {
+                view_id: self.view_id.clone(),
+                message: failure.message.clone(),
+                diagnostic: failure.diagnostic.as_deref().cloned(),
+            };
+            cx.defer(move |cx| observer(&report, cx));
         }
     }
 

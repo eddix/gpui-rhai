@@ -5,6 +5,17 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## Unreleased
+
+- `ScriptViewConfig::on_error` calls the Host once for each new failure of a
+  mounted view (render, callback, delivery, effect or reload), after the frame
+  that presents it, with a `ScriptErrorReport` (view ID, message, diagnostic);
+  script windows the view opens report through it too.
+  `mirror_errors_to_stderr` prints each new failure: off for embedded views,
+  on by default for `ScriptApplication`. Before, a Host had to poll
+  `last_error`, and an unattended run showed nothing on stderr (#185,
+  ADR 0025).
+
 ## 0.2.3 - 2026-10-22
 
 A patch release of 0.2 that is **not fully compatible** with 0.2.2: a Rust
