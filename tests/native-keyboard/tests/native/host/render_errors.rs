@@ -1,5 +1,8 @@
-//! A failed render keeps the last good root, and a Host can suppress the built-in error
-//! banner without hiding the last error.
+//! A failed render keeps the last good root, a Host can suppress the built-in error
+//! banner without hiding the last error, and an `on_error` observer hears of each new
+//! failure once.
+
+use std::{cell::RefCell, rc::Rc};
 
 use crate::support::{Mount, by_role, dispatch, last_error, node_texts};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
@@ -201,4 +204,71 @@ fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut
     );
     visual.update(|_, cx| view.clear_error(cx)).unwrap();
     assert_eq!(last_error(&mut visual, &view), None);
+}
+
+/// What a Host's `on_error` observer saw: each report, and the handle's
+/// `last_error` read inside the observer.
+#[derive(Clone, Default)]
+struct Observed {
+    reports: Rc<RefCell<Vec<gpui_rhai::ScriptErrorReport>>>,
+    read_back: Rc<RefCell<Vec<Option<String>>>>,
+    handle: Rc<RefCell<Option<gpui_rhai::ScriptViewHandle>>>,
+}
+
+#[gpui::test]
+fn on_error_reports_each_new_failure_once_after_its_frame(cx: &mut TestAppContext) {
+    let observed = Observed::default();
+    let observer = observed.clone();
+    let (window, view) = failure_view()
+        .ids("observed-window", "observed-view")
+        .config(move |config| {
+            config.on_error(move |report, cx| {
+                observer.reports.borrow_mut().push(report.clone());
+                // Deferred past the frame, so the handle is free to read.
+                let handle = observer.handle.borrow().clone().unwrap();
+                observer
+                    .read_back
+                    .borrow_mut()
+                    .push(handle.last_error(cx).unwrap());
+            })
+        })
+        .mount_window(cx);
+    *observed.handle.borrow_mut() = Some(view.clone());
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    assert!(observed.reports.borrow().is_empty());
+
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let click = |visual: &mut VisualTestContext, name: &str| {
+        let _ = dispatch(visual, &view, by_role("button", name), "click");
+        visual.run_until_parked();
+    };
+    click(&mut visual, "Break render");
+    {
+        let reports = observed.reports.borrow();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].view_id, "observed-view");
+        assert!(reports[0].message.contains("dogfood render failure"));
+        assert_eq!(
+            reports[0]
+                .diagnostic
+                .as_ref()
+                .and_then(|diagnostic| diagnostic.component.as_deref()),
+            Some("/View[observed-view]/BrokenPanel[panel]")
+        );
+        assert_eq!(
+            observed.read_back.borrow().as_slice(),
+            [Some(reports[0].message.clone())]
+        );
+    }
+
+    // Frames and successes after it report nothing more; the error stays.
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    click(&mut visual, "Recover");
+    assert_eq!(observed.reports.borrow().len(), 1);
+
+    // The next failure is new.
+    click(&mut visual, "Break render");
+    assert_eq!(observed.reports.borrow().len(), 2);
 }

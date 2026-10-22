@@ -369,31 +369,18 @@ fn main() {
     }
 }
 
-/// The window root: the mounted script view inside the host container, with
-/// script errors mirrored to stderr so a failed skin is diagnosable outside
-/// the window.
+/// The window root: the mounted script view inside the host container.
 struct Shell {
     host: gpui_rhai::ScriptViewHost,
     view: Option<gpui_rhai::ScriptViewHandle>,
-    reported: std::cell::RefCell<Option<String>>,
 }
 
 impl gpui::Render for Shell {
     fn render(
         &mut self,
         _window: &mut gpui::Window,
-        cx: &mut gpui::Context<Self>,
+        _cx: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
-        if let Some(view) = &self.view
-            && let Ok(Some(error)) = view.last_error(cx)
-        {
-            let mut reported = self.reported.borrow_mut();
-            let text = error.clone();
-            if reported.as_deref() != Some(text.as_str()) {
-                eprintln!("disktree-rhai: script error: {error}");
-                *reported = Some(text);
-            }
-        }
         self.host.container(self.view.as_ref().map_or_else(
             || gpui::div().child("no skin mounted").into_any_element(),
             |view| {
@@ -429,7 +416,6 @@ fn run_window(prepared: gpui_rhai::PreparedScriptView) -> Result<(), gpui_rhai::
         let shell = cx.new(|_| Shell {
             host: host.clone(),
             view: None,
-            reported: std::cell::RefCell::new(None),
         });
         let options = gpui::WindowOptions {
             window_bounds: Some(gpui::WindowBounds::Windowed(gpui::Bounds {
@@ -461,6 +447,8 @@ fn run_window(prepared: gpui_rhai::PreparedScriptView) -> Result<(), gpui_rhai::
                 let mounted = prepared.mount(
                     gpui_rhai::ScriptViewConfig::new("main")
                         .paint_background(true)
+                        // A failed skin is diagnosable outside the window.
+                        .mirror_errors_to_stderr(true)
                         // The skin draws its own TitleBar; its background
                         // drags the window (and double-press zooms it).
                         .window_drag_areas(true),

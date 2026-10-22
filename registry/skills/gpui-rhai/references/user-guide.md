@@ -1564,7 +1564,9 @@ better error surface may mount with
 `ScriptViewConfig::new(id).show_error_banner(false)`; standalone applications
 use `ScriptApplication::show_error_banner(false)`. Disabling the banner never
 clears `last_error`, so the Host remains responsible for making the failure
-visible.
+visible. `ScriptViewConfig::on_error` calls the Host once for each new failure
+(no polling), and `mirror_errors_to_stderr(true)` prints it to stderr, which
+`ScriptApplication` does by default.
 
 Use the development inspector (`Command + Option + I` or `F12`) for source
 locations, state, semantics, traces, timings, and last errors. Event and action
