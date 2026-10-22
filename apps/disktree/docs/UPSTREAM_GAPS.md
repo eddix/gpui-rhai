@@ -209,6 +209,11 @@ a gpui-rhai issue, and an app-side workaround links to it.
   with the mosaic. Planned: a custom cubic-bezier easing (gpui-rhai#186), then
   a native canvas zoom with the labels faded in at the end. (b) Still open:
   SplitPane emits only `resize`; deferred, not filed.
+- **(a) done 2026-10-22**: the zoom is native Motion on both canvases
+  (`scale_x/y` and `translate_x/y` with `cubic_bezier(0.33, 1, 0.68, 1)`,
+  the ease-out cubic the Rhai steps used), replayed per layout with
+  `motion_replay_key`; the labels wait in one container and fade in by
+  keyframes. No Rhai runs per frame.
 
 ## G12 — SplitPane panels drop absolutely-positioned content (post-grips runtime)
 
