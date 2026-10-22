@@ -126,3 +126,11 @@ skins; key_harness and screenshot build on every platform and run on
 macOS. Verified on macOS: `cargo test` (unit tests + 3 skins),
 key_harness, and a screenshot of a scanned tree with the official
 SplitPane.
+
+2026-10-22 later: key_harness drags the side panel's separator where the
+frame draws it (found through the accessibility snapshot) and asserts it
+moved 150px; the old fixed point pressed the mosaic and tested nothing. The
+first real drag showed the sidebar kept its fixed 368px inside the wider
+pane, leaving an empty strip, and its left border doubled SplitPane's own
+line: the sidebar now fills the pane without a border, and the unused
+`panel_width` state is gone. `SHOT_DRAG` presses the separator the same way.

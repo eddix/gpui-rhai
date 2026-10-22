@@ -120,10 +120,6 @@ define_component(#{
                     schema: #{ type: "number", min: 0.1, max: 0.9 },
                     "default": #{ type: "float", value: 0.72 },
                 },
-                panel_width: #{
-                    schema: #{ type: "number", min: 272.0, max: 704.0 },
-                    "default": #{ type: "float", value: 368.0 },
-                },
                 theme_open: #{
                     schema: #{ type: "bool" },
                     "default": #{ type: "bool", value: false },
@@ -1995,8 +1991,7 @@ fn render_ScanRoot(ctx, props) {
                 layout,
                 cursor,
                 mode,
-                ctx.get_app_store("disktree", "git"),
-                ctx.get_state("panel_width")
+                ctx.get_app_store("disktree", "git")
             ),
             min_start: 360.0,
             min_end: 272.0,
@@ -3141,7 +3136,7 @@ fn ago_label(modified, now) {
 /// Selection / Worth a look / Disk — the right panel. Section headers, the
 /// big figures and the bars are 0.2 patterns (Section, Stat, Progress); the
 /// finding rows stay bespoke, they are the skin's own visualization.
-fn sidebar(scan, layout, cursor, mode, git, width) {
+fn sidebar(scan, layout, cursor, mode, git) {
     column([
         selection_panel(scan, layout, cursor, git),
         divider::Divider(#{ orientation: "horizontal" }),
@@ -3150,19 +3145,17 @@ fn sidebar(scan, layout, cursor, mode, git, width) {
         disk_panel(scan),
     ])
     .with_key("sidebar")
+    // It fills the SplitPane's end pane, whose separator draws the edge line.
     .with_style(
         style()
             .flex_col()
-            .width(px(width))
-            .flex_shrink(false)
+            .width(relative(1.0))
+            .flex_grow()
             .min_width(px(0.0))
             .overflow_hidden()
             .padding_x(theme_length("metrics.inset"))
             .padding_y(theme_length("space.related"))
             .gap(theme_length("space.group"))
-            .border_left(px(1.0))
-            .border_color(theme_color("border"))
-            .overflow_hidden()
     )
 }
 
