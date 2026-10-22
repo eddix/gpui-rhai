@@ -20,7 +20,7 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
 - Callbacks, tasks, subscriptions, declarative timers, and image decodes bind to an AST generation;
   stale work is discarded after hot reload.
 - Script operation, expression-depth, call-depth, array, and map limits are set
-  by the runtime.
+  by the runtime; a Host can change them ([limits](rhai.md#limits)).
 - Inline SVG is size/element bounded, syntax-checked with GPUI's `usvg`, and
   rejects active content plus every non-fragment resource reference.
 - Host-configurable `RuntimeBudgets` independently reject an otherwise valid
