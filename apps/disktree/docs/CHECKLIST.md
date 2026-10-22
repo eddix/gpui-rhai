@@ -134,3 +134,14 @@ first real drag showed the sidebar kept its fixed 368px inside the wider
 pane, leaving an empty strip, and its left border doubled SplitPane's own
 line: the sidebar now fills the pane without a border, and the unused
 `panel_width` state is gone. `SHOT_DRAG` presses the separator the same way.
+
+2026-10-22, native zoom: the navigation zoom had not run since
+`apply_navigation` started storing the new crumbs before the layout
+recompute — the recompute compared the crumbs with themselves, so neither
+the entering nor the ascending branch ever fired. The departing crumbs now
+travel as `layout.came_from`, `layout.gen` counts across recomputes, and the
+zoom is native Motion on the canvases (G11 (a)) instead of the 16 ms
+`anim_tick` timer, which is gone. Verified with `SHOT_FRAMES` (frames timed
+after the last key) and `+ms` waits in `SHOT_KEYS`: 20 ms after `enter` and
+after `u`, the frame is zoomed on the tile with the labels hidden; the
+settled frame is the identity layout with labels.

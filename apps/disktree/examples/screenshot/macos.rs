@@ -160,12 +160,47 @@ pub fn main() {
     for _ in 0..6 {
         draw(&mut cx, window).expect("draw");
     }
-    if !keys.is_empty() {
-        for keystroke in keys.split_whitespace() {
-            cx.simulate_keystrokes(window, keystroke);
-            for _ in 0..4 {
+    // Optional: SHOT_FRAMES="0,80,160" saves a frame that many ms after the
+    // last key (out-0ms.png, ...), to see motion mid-flight.
+    let frames: Vec<u64> = std::env::var("SHOT_FRAMES")
+        .ok()
+        .map(|spec| {
+            spec.split(',')
+                .filter_map(|at| at.trim().parse().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    // A `+500` token in SHOT_KEYS waits 500 ms (drawing) before the next key.
+    let strokes: Vec<&str> = keys.split_whitespace().collect();
+    for (index, keystroke) in strokes.iter().enumerate() {
+        if let Some(ms) = keystroke.strip_prefix('+').and_then(|ms| ms.parse().ok()) {
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            for _ in 0..2 {
                 draw(&mut cx, window).expect("draw");
             }
+            continue;
+        }
+        cx.simulate_keystrokes(window, keystroke);
+        if index + 1 == strokes.len() && !frames.is_empty() {
+            break;
+        }
+        for _ in 0..4 {
+            draw(&mut cx, window).expect("draw");
+        }
+    }
+    if !frames.is_empty() {
+        let start = std::time::Instant::now();
+        for at in &frames {
+            let target = start + std::time::Duration::from_millis(*at);
+            if let Some(wait) = target.checked_duration_since(std::time::Instant::now()) {
+                std::thread::sleep(wait);
+            }
+            draw(&mut cx, window).expect("draw");
+            let elapsed = start.elapsed().as_millis();
+            let image = cx.capture_screenshot(window).expect("capture frame");
+            let path = out.replace(".png", &format!("-{at}ms.png"));
+            image.save(&path).expect("save frame");
+            println!("saved {path} at {elapsed} ms");
         }
     }
     // Optional: drag the side panel wider before capturing.
