@@ -30,7 +30,8 @@ is a Gallery page; what is useful software in its own right is an app.
 - **Installed like a downstream project.** An app installs registry
   components with the CLI, as any application does, and keeps them, the token
   base and the bundled palettes current: `scripts/check-app-components.sh`
-  fails CI when one differs from the registry. After a registry change run
+  fails CI when one differs from the registry, and runs `gpui-rhai check` on
+  each app. After a registry change run
   `cargo run -p gpui-rhai-cli -- --root apps/<name> update`.
 - **Checks run under `cargo test`.** Whatever needs no window runs as a test
   (disktree prepares every skin in `tests/skins.rs`), so CI covers it on

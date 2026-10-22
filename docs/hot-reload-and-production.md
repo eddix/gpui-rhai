@@ -45,8 +45,10 @@ cargo build --release
 ```
 
 `embed` deterministically generates `src/gpui_rhai_embedded.rs` using
-`include_str!`/`include_bytes!` for the entry, installed components, component
-stylesheet, locales, themes, and assets, plus an `app_manifest()` constructor. Construct
+`include_str!`/`include_bytes!` for the entry, installed components, the
+application's own modules (every other `.rhai` file below `ui/` that file mode
+loads as a module), component stylesheet, locales, themes, and assets, plus an
+`app_manifest()` constructor. Construct
 `EmbeddedScriptView` from those generated sources and pass
 `.component_styles(generated::COMPONENT_STYLES_SOURCE)` and
 `.manifest(generated::app_manifest())`.

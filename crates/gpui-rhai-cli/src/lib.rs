@@ -618,9 +618,15 @@ impl Project {
         let components = validate_component_exports(&modules, &headers)?;
         app.validate_components(&components)?;
         let capabilities_declared = !app.capabilities.is_empty();
+        // The entry resolves the application's own modules as well as the
+        // installed components (#184).
+        let mut entry_modules = modules.clone();
+        for (id, path) in application_modules(&self.root, &manifest)? {
+            entry_modules.insert(id, read(&path)?);
+        }
         let (initial_view_validated, host_extensions) = validate_entry(
             &self.root,
-            &modules,
+            &entry_modules,
             &components,
             &declarations.host.functions(),
             !capabilities_declared,
@@ -965,6 +971,11 @@ impl Project {
             let id = ModuleId::parse(raw_id.clone())?;
             let relative = component_relative_path(&id)?;
             modules.push((id.to_string(), format!("../ui/{}", slash_path(&relative))));
+        }
+        // The application's own modules, which its entry imports (#184).
+        for (id, path) in application_modules(&self.root, &manifest)? {
+            let relative = path.strip_prefix(self.root.join("ui")).unwrap_or(&path);
+            modules.push((id.to_string(), format!("../ui/{}", slash_path(relative))));
         }
         modules.sort();
 
@@ -1394,25 +1405,14 @@ fn profile_warnings(root: &Path, manifest: &LocalManifest) -> Result<Vec<String>
     if !profile.static_rules.contains("literal-geometry") {
         return Ok(Vec::new());
     }
-    let installed = manifest
-        .components
-        .keys()
-        .filter_map(|id| ModuleId::parse(id).ok())
-        .filter_map(|id| component_relative_path(&id).ok())
-        .map(|relative| root.join("ui").join(relative))
-        .collect::<BTreeSet<_>>();
-    let excluded = ["theme.rhai", "tokens.rhai", "styles.rhai", "profile.rhai"]
-        .map(|name| root.join("ui").join(name));
+    let mut sources = vec![root.join("ui/main.rhai")];
+    sources.extend(
+        application_modules(root, manifest)?
+            .into_iter()
+            .map(|(_, path)| path),
+    );
     let mut warnings = Vec::new();
-    for path in collect_rhai_files(&root.join("ui"))? {
-        if installed.contains(&path)
-            || excluded.contains(&path)
-            || path
-                .components()
-                .any(|part| matches!(part.as_os_str().to_str(), Some("themes" | "locales")))
-        {
-            continue;
-        }
+    for path in sources {
         let relative = path
             .strip_prefix(root)
             .unwrap_or(&path)
@@ -1464,6 +1464,49 @@ fn literal_geometry(line: &str) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// The application's own modules, by the rule `FileScriptView` discovers them
+/// with: every `.rhai` file below `ui/` except the entry, the theme, styles,
+/// token base and profile and anything in a `themes` or `locales` directory,
+/// with the path minus `.rhai` as its ID. Installed registry components are
+/// left out; they come from the manifest.
+fn application_modules(
+    root: &Path,
+    manifest: &LocalManifest,
+) -> Result<Vec<(ModuleId, PathBuf)>, ProjectError> {
+    let ui = root.join("ui");
+    let installed = manifest
+        .components
+        .keys()
+        .filter_map(|id| ModuleId::parse(id).ok())
+        .filter_map(|id| component_relative_path(&id).ok())
+        .map(|relative| ui.join(relative))
+        .collect::<BTreeSet<_>>();
+    let excluded = [
+        "main.rhai",
+        "theme.rhai",
+        "tokens.rhai",
+        "styles.rhai",
+        "profile.rhai",
+    ]
+    .map(|name| ui.join(name));
+    let mut modules = Vec::new();
+    for path in collect_rhai_files(&ui)? {
+        let relative = path.strip_prefix(&ui).unwrap_or(&path);
+        if installed.contains(&path)
+            || excluded.contains(&path)
+            || relative
+                .components()
+                .any(|part| matches!(part.as_os_str().to_str(), Some("themes" | "locales")))
+        {
+            continue;
+        }
+        let id = ModuleId::parse(slash_path(&relative.with_extension("")))?;
+        modules.push((id, path));
+    }
+    modules.sort();
+    Ok(modules)
 }
 
 fn collect_rhai_files(directory: &Path) -> Result<Vec<PathBuf>, ProjectError> {
@@ -3135,6 +3178,69 @@ mod tests {
 
         let report = project.check().unwrap();
         assert_eq!(report.components, 1);
+    }
+
+    /// An entry that calls into two of the application's own modules.
+    fn project_with_application_modules(call: &str) -> tempfile::TempDir {
+        let directory = fixture();
+        Project::new(directory.path())
+            .plan_init()
+            .unwrap()
+            .apply()
+            .unwrap();
+        fs::write(
+            directory.path().join("ui/helpers.rhai"),
+            "fn greeting() { \"hello\" }\n",
+        )
+        .unwrap();
+        fs::create_dir_all(directory.path().join("ui/lib")).unwrap();
+        fs::write(
+            directory.path().join("ui/lib/format.rhai"),
+            "fn shout(text) { `${text}!` }\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            format!(
+                "import \"helpers\" as helpers;\nimport \"lib/format\" as format;\n\
+                 fn view(ctx) {{ text(format::shout({call})) }}\n"
+            ),
+        )
+        .unwrap();
+        directory
+    }
+
+    #[test]
+    fn check_resolves_the_applications_own_modules() {
+        let directory = project_with_application_modules("helpers::greeting()");
+        Project::new(directory.path()).check().unwrap();
+    }
+
+    #[test]
+    fn check_still_rejects_unknown_calls_into_an_application_module() {
+        let directory = project_with_application_modules("helpers::farewell()");
+        let error = Project::new(directory.path()).check().unwrap_err();
+        assert!(matches!(error, ProjectError::KnownCalls(_)), "{error}");
+        assert!(error.to_string().contains("helpers::farewell/0"), "{error}");
+    }
+
+    #[test]
+    fn embed_includes_the_applications_own_modules() {
+        let directory = project_with_application_modules("helpers::greeting()");
+        let plan = Project::new(directory.path()).plan_embed().unwrap();
+        let generated = &plan.writes[0].content;
+        for (id, path) in [
+            ("helpers", "../ui/helpers.rhai"),
+            ("lib/format", "../ui/lib/format.rhai"),
+        ] {
+            assert!(generated.contains(&format!("\"{id}\"")), "{generated}");
+            assert!(generated.contains(path), "{generated}");
+        }
+        // The token base is the TOKEN_BASE_SOURCE constant, not a module.
+        assert!(
+            !generated.contains("include_str!(\"../ui/tokens.rhai\").to_owned()"),
+            "{generated}"
+        );
     }
 
     #[test]
