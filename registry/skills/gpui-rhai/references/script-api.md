@@ -95,6 +95,7 @@ Components, references, collections, timers, motion and canvas commands.
 | `canvas_stroke_path(key: String, segments: Array, width: float, color: ColorValue) -> CanvasCommand` | Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments. |
 | `canvas_stroke_path(key: String, segments: Array, width: int, color: ColorValue) -> CanvasCommand` | Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments. |
 | `chart_validate(spec: Map, data: ?, key_dimension: ?)` | Checks that `spec` is a valid chart spec and `data` is `NativeChartData` or up to 10,000 row maps keyed by `key_dimension` or `()`. |
+| `cubic_bezier(x1: ?, y1: ?, x2: ?, y2: ?) -> String` | Returns the easing `cubic_bezier(x1, y1, x2, y2)` for a motion `easing` or a theme easing token: a CSS cubic Bézier from (0, 0) to (1, 1); `x1` and `x2` must lie in [0, 1], `y` may overshoot. Numbers may be integers or floats. |
 | `date_checked_add_days(date: String, days: int) -> ?` | Adds signed `days` to an ISO `YYYY-MM-DD` date and returns the new ISO date, or `()` when it leaves years 1 to 9999. |
 | `date_checked_add_months(date: String, months: int) -> ?` | Adds signed `months` to an ISO date, clamping the day into the target month; returns `()` when it leaves years 1 to 9999. |
 | `date_clamp(date: String, min: ?, max: ?) -> String` | Clamps an ISO date into `min` to `max`, each an ISO date or `()` for no bound, and returns the ISO date. |

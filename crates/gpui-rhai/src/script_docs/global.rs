@@ -145,6 +145,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates a box that lays its children out top to bottom (`flex_col`); every child must be a `UiNode`.",
     },
     ScriptFnDoc {
+        signature: "cubic_bezier(_: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<rhai::types::immutable_string::ImmutableString,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["x1", "y1", "x2", "y2"],
+        doc: "Returns the easing `cubic_bezier(x1, y1, x2, y2)` for a motion `easing` or a theme easing token: a CSS cubic Bézier from (0, 0) to (1, 1); `x1` and `x2` must lie in [0, 1], `y` may overshoot. Numbers may be integers or floats.",
+    },
+    ScriptFnDoc {
         signature: "date_checked_add_days(_: string, _: i64) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["date", "days"],
         doc: "Adds signed `days` to an ISO `YYYY-MM-DD` date and returns the new ISO date, or `()` when it leaves years 1 to 9999.",
