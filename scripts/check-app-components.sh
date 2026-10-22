@@ -7,7 +7,7 @@ set -eu
 # behind is how disktree kept a pre-#140 SplitPane after upgrading (#156).
 #
 # The check is the CLI's own update plan, so it also covers fixes that keep a
-# component's version.
+# component's version. Each app then has to pass `gpui-rhai check`.
 
 cd "$(dirname "$0")/.."
 
@@ -20,6 +20,12 @@ for manifest in apps/*/.gpui-rhai/manifest.toml; do
     echo "${app}: installed components differ from the registry:"
     echo "${plan}"
     echo "update them with: cargo run -p gpui-rhai-cli -- --root ${app} update"
+    status=1
+  fi
+  # The app also passes the checks any project gets from `gpui-rhai check`.
+  if ! report="$("${cli[@]}" --root "${app}" check 2>&1)"; then
+    echo "${app}: gpui-rhai check failed:"
+    echo "${report}"
     status=1
   fi
 done

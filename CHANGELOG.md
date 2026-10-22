@@ -7,6 +7,13 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- `gpui-rhai check` resolves the application's own modules: every `.rhai` file
+  below `ui/` that file mode loads as a module. It used to know only the
+  installed components and reported each call into the application's modules
+  as unknown (#184); disktree failed with 76 such reports. `gpui-rhai embed`
+  now includes these modules too; the generated source had left them out, so
+  an entry that imported one could not resolve it in the embedded build. CI runs
+  `gpui-rhai check` on the reference applications.
 - `gpui-rhai update` merges the token base (`ui/tokens.rhai`) and the bundled
   palettes (`ui/themes/`) like components; `init` records their baselines.
   Before, an existing copy was never updated, so a component that needed a new

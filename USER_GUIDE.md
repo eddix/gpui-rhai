@@ -147,9 +147,10 @@ gpui-rhai gallery
   base and the bundled palettes ([source updates](docs/source-updates.md)). The
   complete plan is staged before any target is replaced; it never silently
   overwrites application-owned source.
-- `check` validates scripts, schemas, themes and known calls, runs one complete
-  headless first frame, and with a profile reports design-rule warnings in
-  application source (not in installed official components).
+- `check` validates scripts, schemas, themes and known calls (including calls
+  into the application's own modules), runs one complete headless first frame,
+  and with a profile reports design-rule warnings in application source (not in
+  installed official components).
 - `metadata` emits component schemas, snippets, and Rhai language-server
   definitions from the actual installed APIs. The definitions,
   `.gpui-rhai/editor/definitions/gpui_rhai.d.rhai`, are in Rhai's definition
