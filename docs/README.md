@@ -21,6 +21,9 @@ is the shortest path to a running project.
   `ctx`, node and style method, operator and primitive
 - [Gallery](gallery.md), the acceptance application, and
   [Theme Studio](theme-studio.md)
+- [Reference applications](../apps/README.md): complete programs built on
+  gpui-rhai in this repository, checked in the same pull request as the
+  runtime and registry they use
 - [Component authoring](component-authoring-guide.md)
 
 Complex component contracts: [Table](components/table.md),

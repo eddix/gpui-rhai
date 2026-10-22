@@ -12,6 +12,11 @@ semantic versioning from this release.
   with the bundled source instead of skipping. A project that installed
   SplitPane 0.2.0 before #140 kept the old block panes through every update
   (#156). An older registry still never downgrades.
+- Reference applications live in `apps/`, a separate workspace built against
+  this checkout: the first is disktree, a disk usage treemap whose whole UI is
+  a Rhai skin. CI runs their tests and clippy, and
+  `scripts/check-app-components.sh` fails when an app's installed components
+  differ from the registry.
 - Committed effect state and direct Host document/collection/state/environment
   mutations wake the existing foreground pump without waiting for a clock tick.
   The existing 64-callback effect-graph budget also bounds pure semantic loops;

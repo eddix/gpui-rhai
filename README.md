@@ -75,7 +75,9 @@ From this repository, run the same commands through
 `cargo run --release -p gpui-rhai-cli -- gallery`. The
 [example index](examples/README.md) lists Rust host examples worth copying,
 such as `extension_host`, `multi_window` and `byod_treemap` (an application
-with its own design and no official components).
+with its own design and no official components). Complete programs built on
+gpui-rhai live under [reference applications](apps/README.md), such as
+`disktree`, a disk usage treemap whose whole UI is a Rhai skin.
 
 ## Embed in a GPUI application
 

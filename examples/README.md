@@ -11,6 +11,10 @@ Gallery stories are the authoritative interactive examples for all official
 components, Motion, Charts, themes, locales, and the Operations Workbench. The
 source pane displays the same bundled Rhai file that is running.
 
+Complete programs, such as the `disktree` treemap, are
+[reference applications](../apps/README.md) rather than examples: they are
+not meant to be copied whole.
+
 ## Copyable tutorials
 
 These Cargo examples demonstrate Host integration patterns worth copying:

@@ -32,7 +32,18 @@ bash scripts/audit-release-artifacts.sh
 cargo test --manifest-path tests/native-keyboard/Cargo.toml
 cargo test --manifest-path tests/native-keyboard/Cargo.toml --features dev-reload --test token_reload
 cargo clippy --manifest-path tests/native-keyboard/Cargo.toml --all-targets --features dev-reload -- -D warnings
+cargo fmt --manifest-path apps/Cargo.toml --all -- --check
+cargo clippy --manifest-path apps/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path apps/Cargo.toml --locked
+bash scripts/check-app-components.sh
 ```
+
+`apps/` holds the [reference applications](apps/README.md), another separate
+workspace. A runtime or registry change that breaks one fixes it in the same
+pull request, and says whether the app adapts to an intentional change or
+works around a bug (a workaround links its issue). A registry change updates
+the apps' installed copies with
+`cargo run -p gpui-rhai-cli -- --root apps/<name> update`.
 
 `tests/native-keyboard` is a separate Cargo workspace (GPUI `test-support` must
 stay out of the release dependency graph). Its tests build into one binary,
