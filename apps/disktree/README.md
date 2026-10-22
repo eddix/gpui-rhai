@@ -108,10 +108,9 @@ changes, update them from the repository root:
 cargo run -p gpui-rhai-cli -- --root apps/disktree update
 ```
 
-`ui/tokens.rhai` and the bundled palettes in `ui/themes/` are unmodified
-copies of `registry/tokens.rhai` and `registry/themes/`; the CLI does not
-update them, so copy them again when the registry changes them.
-`cargo test` fails when a component needs a token the copy lacks.
+The same command merges `ui/tokens.rhai` and the bundled palettes in
+`ui/themes/` from `registry/tokens.rhai` and `registry/themes/`; `cargo test`
+fails when a component needs a token the copy lacks.
 
 ## Status
 

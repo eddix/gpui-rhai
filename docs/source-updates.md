@@ -16,6 +16,17 @@ performs an offline three-way merge of baseline, application source, and bundled
 registry source. Clean updates replace source and baseline atomically;
 independent edits merge line-wise.
 
+The token base (`ui/tokens.rhai`) and the bundled palettes (`ui/themes/`) are
+registry copies too: `init` records their baselines and `update` merges them
+the same way, so a component that needs a new token gets it with the update.
+`ui/theme.rhai` is the application's own theme and is never updated.
+
+Projects created by 0.2.0 to 0.2.2 have no baselines for these files. `update`
+records one for a copy equal to the bundled source, replaces a copy that is
+still byte-for-byte what one of those releases installed, and leaves any other
+copy alone with a `note:` line; merge that one by hand, or replace it and let
+`update` record its baseline.
+
 The CLI stages every planned file before replacing any target. An ordinary I/O
 error during commit restores targets already replaced in that invocation.
 Process termination can still leave uniquely named staging/backup artifacts;

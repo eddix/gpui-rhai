@@ -1,10 +1,10 @@
 #!/bin/bash
 set -eu
 
-# Every reference application under apps/ keeps the registry components it
-# installed in step with the registry of this checkout: a pull request that
-# changes a component updates the apps in the same change. A copy left behind
-# is how disktree kept a pre-#140 SplitPane after upgrading (#156).
+# Every reference application under apps/ keeps the registry components, token
+# base and palettes it installed in step with the registry of this checkout: a
+# pull request that changes one updates the apps in the same change. A copy left
+# behind is how disktree kept a pre-#140 SplitPane after upgrading (#156).
 #
 # The check is the CLI's own update plan, so it also covers fixes that keep a
 # component's version.

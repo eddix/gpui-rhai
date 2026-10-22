@@ -143,9 +143,10 @@ gpui-rhai gallery
 
 - `add` installs requested components and their source dependencies.
 - `update` recomputes the target component dependency/asset graph, installs new
-  transitive requirements, and three-way merges component updates. The complete
-  plan is staged before any target is replaced; it never silently overwrites
-  application-owned source.
+  transitive requirements, and three-way merges component updates, the token
+  base and the bundled palettes ([source updates](docs/source-updates.md)). The
+  complete plan is staged before any target is replaced; it never silently
+  overwrites application-owned source.
 - `check` validates scripts, schemas, themes and known calls, runs one complete
   headless first frame, and with a profile reports design-rule warnings in
   application source (not in installed official components).

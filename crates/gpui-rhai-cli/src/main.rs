@@ -114,11 +114,15 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
             let plan = project.plan_update(&registry)?;
             println!("{}", plan.summary());
             let conflicts = plan.conflicts().to_vec();
+            let file_conflicts = plan.file_conflicts().to_vec();
             if !cli.dry_run {
                 plan.apply()?;
             }
             if !conflicts.is_empty() {
                 return Err(ProjectError::UpdateConflictsWritten(conflicts));
+            }
+            if !file_conflicts.is_empty() {
+                return Err(ProjectError::UpdateFileConflictsWritten(file_conflicts));
             }
         }
         Command::Embed => {

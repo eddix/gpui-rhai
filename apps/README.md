@@ -28,9 +28,9 @@ is a Gallery page; what is useful software in its own right is an app.
   `Cargo.lock`), so its dependencies stay out of the published crates'
   graph. Every app is `publish = false`.
 - **Installed like a downstream project.** An app installs registry
-  components with the CLI, as any application does, and keeps them current:
-  `scripts/check-app-components.sh` fails CI when one differs from the
-  registry. After a registry change run
+  components with the CLI, as any application does, and keeps them, the token
+  base and the bundled palettes current: `scripts/check-app-components.sh`
+  fails CI when one differs from the registry. After a registry change run
   `cargo run -p gpui-rhai-cli -- --root apps/<name> update`.
 - **Checks run under `cargo test`.** Whatever needs no window runs as a test
   (disktree prepares every skin in `tests/skins.rs`), so CI covers it on
