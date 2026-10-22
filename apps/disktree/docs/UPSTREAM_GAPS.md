@@ -73,6 +73,9 @@ a gpui-rhai issue, and an app-side workaround links to it.
   its root render. Upstream suggestion: `ScriptApplication` (or an env
   flag like `GPUI_RHAI_STDERR_DIAGNOSTICS=1`) should mirror mount/render
   errors to stderr so unattended runs can fail loudly.
+- **Re-checked 2026-10-22 (main)**: still open. Failures are sticky and
+  structured now (`last_error` / `last_diagnostic`), but reach no stderr and
+  no observer; only fatal startup errors print. Filed as gpui-rhai#185.
 
 ## G7 — Node key handlers rejected punctuation keys
 
@@ -179,6 +182,11 @@ a gpui-rhai issue, and an app-side workaround links to it.
 - **Suggested upstream**: (a) document the cumulative semantics in the
   store/capability docs; (b) like PR #96 did for the op budget, let hosts
   configure (or raise) `max_array_size` for trusted embedded skins.
+- **Re-checked 2026-10-22 (main)**: resolved upstream. `docs/rhai.md` (Limits)
+  documents the cumulative counting, and a Host raises the limit in
+  `ScriptViewExtension::configure_rhai_engine` (`engine.set_max_array_size`):
+  200 rows of 60 items fail by default and pass at 50,000, both built locally
+  and written to an app store. The skin-side measures above stay; they work.
 
 ## G11 — Timer-driven script animation and handle double-clicks
 
@@ -195,6 +203,12 @@ a gpui-rhai issue, and an app-side workaround links to it.
 - **Suggested upstream**: (a) an animation-frame or native-transition hook
   scripts can attach to; (b) a handle event or `on_double_click` part hook
   on SplitPane.
+- **Re-checked 2026-10-22 (main)**: (a) Motion samples in Rust by design and
+  never calls Rhai per frame; Canvas primitives take native scale and
+  translate, but gpui-pre transforms no subtree, so text labels cannot scale
+  with the mosaic. Planned: a custom cubic-bezier easing (gpui-rhai#186), then
+  a native canvas zoom with the labels faded in at the end. (b) Still open:
+  SplitPane emits only `resize`; deferred, not filed.
 
 ## G12 — SplitPane panels drop absolutely-positioned content (post-grips runtime)
 

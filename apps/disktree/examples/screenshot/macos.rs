@@ -170,8 +170,20 @@ pub fn main() {
     }
     // Optional: drag the side panel wider before capturing.
     if std::env::var_os("SHOT_DRAG").is_some() {
-        let handle = gpui::point(gpui::px(1200.0 - 368.0 - 4.0), gpui::px(400.0));
-        let wider = gpui::point(gpui::px(1200.0 - 520.0), gpui::px(400.0));
+        // Press the side panel's separator where the frame drew it.
+        let separator = cx
+            .update(|cx| view.accessibility_snapshot(cx))
+            .expect("accessibility snapshot")
+            .nodes()
+            .find(|node| node.role == "separator" && node.name == "Resize the side panel")
+            .and_then(|node| node.geometry.as_ref())
+            .map(|geometry| geometry.layout)
+            .expect("the side panel separator is presented");
+        let handle = gpui::point(
+            gpui::px((separator.x + separator.width / 2.0) as f32),
+            gpui::px((separator.y + separator.height / 2.0) as f32),
+        );
+        let wider = gpui::point(handle.x - gpui::px(150.0), handle.y);
         let none = gpui::Modifiers::default();
         cx.simulate_mouse_down(window, handle, gpui::MouseButton::Left, none);
         cx.simulate_mouse_move(window, wider, gpui::MouseButton::Left, none);

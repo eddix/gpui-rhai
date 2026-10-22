@@ -127,6 +127,20 @@ fn variant_name(cx: &mut VisualTestAppContext, view: &ScriptViewHandle) -> Strin
         .clone()
 }
 
+/// The side panel's separator, where the last frame put it.
+fn separator_bounds(
+    cx: &mut VisualTestAppContext,
+    view: &ScriptViewHandle,
+) -> gpui_rhai::GeometryBounds {
+    cx.update(|cx| view.accessibility_snapshot(cx))
+        .expect("accessibility snapshot")
+        .nodes()
+        .find(|node| node.role == "separator" && node.name == "Resize the side panel")
+        .and_then(|node| node.geometry.as_ref())
+        .map(|geometry| geometry.layout)
+        .expect("the side panel separator is presented")
+}
+
 /// A small deterministic tree the scan finishes on instantly.
 fn fixture_tree() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -220,30 +234,31 @@ pub fn main() {
     assert_ne!(before, after, "the e key changed the theme");
     assert_no_error(&mut cx, &view, "theme");
 
-    // The side panel's hand-rolled drag: press its edge, drag wider,
-    // release, then a double press resets it. No script errors throughout.
+    // The side panel's SplitPane: press the separator where it is drawn,
+    // drag it left, release. The separator must follow and stay (the
+    // release commits `panel_ratio` through on_resize).
     {
-        let handle = gpui::point(gpui::px(1200.0 - 368.0 - 4.0), gpui::px(400.0));
-        let wider = gpui::point(gpui::px(1200.0 - 500.0 - 4.0), gpui::px(400.0));
-        let none = gpui::Modifiers::default();
-        cx.simulate_mouse_down(window, handle, gpui::MouseButton::Left, none);
-        cx.simulate_mouse_move(
-            window,
-            wider,
-            gpui::MouseButton::Left,
-            gpui::Modifiers::default(),
+        let before = separator_bounds(&mut cx, &view);
+        let press = gpui::point(
+            gpui::px((before.x + before.width / 2.0) as f32),
+            gpui::px((before.y + before.height / 2.0) as f32),
         );
+        let wider = gpui::point(press.x - gpui::px(150.0), press.y);
+        let none = gpui::Modifiers::default();
+        cx.simulate_mouse_down(window, press, gpui::MouseButton::Left, none);
+        cx.simulate_mouse_move(window, wider, gpui::MouseButton::Left, none);
         settle(&mut cx, window).expect("settle drag");
         cx.simulate_mouse_up(window, wider, gpui::MouseButton::Left, none);
         settle(&mut cx, window).expect("settle release");
         assert_no_error(&mut cx, &view, "panel drag");
-        // Double press resets the width.
-        cx.simulate_mouse_down(window, wider, gpui::MouseButton::Left, none);
-        cx.simulate_mouse_up(window, wider, gpui::MouseButton::Left, none);
-        cx.simulate_mouse_down(window, wider, gpui::MouseButton::Left, none);
-        cx.simulate_mouse_up(window, wider, gpui::MouseButton::Left, none);
-        settle(&mut cx, window).expect("settle reset");
-        assert_no_error(&mut cx, &view, "panel reset");
+        let after = separator_bounds(&mut cx, &view);
+        let moved = before.x - after.x;
+        assert!(
+            (moved - 150.0).abs() <= 2.0,
+            "the separator followed the drag: x {} -> {}",
+            before.x,
+            after.x
+        );
     }
 
     // Rescan while mounted.
