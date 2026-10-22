@@ -370,6 +370,8 @@ fn empty_layout() {
     #{
         valid: false,
         crumbs: [],
+        // The crumbs the last navigation left, for the zoom direction.
+        came_from: [],
         nav_key: "",
         metric: "size",
         depth: 3,
@@ -406,9 +408,9 @@ fn reset_derived_layout(ctx) {
     ctx.set_app_store("disktree", "cache", []);
 }
 
-/// The idle animation state.
+/// No navigation zoom.
 fn anim_idle() {
-    #{ active: false, from: core::view_identity(), step: 0, steps: 0 }
+    #{ active: false, from: core::view_identity(), duration: 0 }
 }
 
 /// The view that makes `body` fill the viewport, centred on its middle:
@@ -425,48 +427,29 @@ fn zoom_start(body, width, height) {
     }
 }
 
-/// Ease-out cubic for the zoom steps.
-fn anim_ease(t) {
-    let inv = 1.0 - t;
-    1.0 - inv * inv * inv
-}
-
-/// One view on the way from `from` to identity at fraction `t`.
-fn view_lerp(from, t) {
-    #{
-        scale: from.scale + (1.0 - from.scale) * t,
-        ox: from.ox * (1.0 - t),
-        oy: from.oy * (1.0 - t),
-    }
-}
-
-/// One 16ms step of a navigation transition: the view eases from the
-/// zoomed start toward identity, and the last step lands exactly on it.
-fn anim_tick(ctx, step) {
-    let layout = ctx.get_app_store("disktree", "layout");
+/// The navigation zoom as native motion, which Rust samples every frame: from
+/// the view `layout.anim.from` over the identity layout back to identity. A
+/// canvas scales about its centre and translates after, so the start
+/// translation puts the scaled origin where `from` put it. The ease-out cubic
+/// is the curve the Rhai-stepped zoom used.
+fn zoom_motion(node, layout) {
     let anim = layout.anim;
     if !anim.active {
-        return ();
+        return node;
     }
-    let next = step + 1;
-    if next >= anim.steps {
-        layout.view = core::view_identity();
-        layout.anim = anim_idle();
-        ctx.set_app_store("disktree", "layout", layout);
-        return ();
-    }
-    layout.view = view_lerp(anim.from, anim_ease(next.to_float() / anim.steps.to_float()));
-    anim.step = next;
-    layout.anim = anim;
-    ctx.set_app_store("disktree", "layout", layout);
-}
-
-/// A gesture (wheel, zoom keys) takes the view back: stop any transition.
-fn cancel_anim(ctx, layout) {
-    if layout.anim.active {
-        layout.anim = anim_idle();
-        ctx.set_app_store("disktree", "layout", layout);
-    }
+    let from = anim.from;
+    let config = #{
+        duration_ms: anim.duration,
+        easing: cubic_bezier(0.33, 1.0, 0.68, 1.0),
+        intent: "decorative",
+    };
+    let dx = (from.scale - 1.0) * layout.width / 2.0 - from.scale * from.ox;
+    let dy = (from.scale - 1.0) * layout.height / 2.0 - from.scale * from.oy;
+    node.motion(motion_transition("scale_x", from.scale, 1.0, config))
+        .motion(motion_transition("scale_y", from.scale, 1.0, config))
+        .motion(motion_transition("translate_x", dx, 0.0, config))
+        .motion(motion_transition("translate_y", dy, 0.0, config))
+        .motion_replay_key(`${layout.gen}`)
 }
 
 
@@ -518,6 +501,7 @@ fn layout_recompute(ctx, deps) {
         return ();
     }
     let crumbs = [];
+    let came_from = [];
     let view = core::view_identity();
     let back = previous.back;
     let forward = previous.forward;
@@ -526,13 +510,15 @@ fn layout_recompute(ctx, deps) {
     let find_summary = previous.find_summary;
     if previous.valid {
         crumbs = previous.crumbs;
+        came_from = previous.came_from;
         view = previous.view;
     }
     // Entering a directory: the transition starts zoomed on its tile in
-    // the old mosaic, so the new contents grow into place.
+    // the old mosaic, so the new contents grow into place. apply_navigation
+    // has already stored the new crumbs; `came_from` holds the old ones.
     let anim_from = ();
-    if previous.valid && previous.crumbs.len() < crumbs.len()
-        && core::crumb_starts_with(crumbs, previous.crumbs)
+    if previous.valid && came_from.len() < crumbs.len()
+        && core::crumb_starts_with(crumbs, came_from)
     {
         let entered = tile_lookup(previous, crumb_key(crumbs));
         if entered != () {
@@ -564,6 +550,8 @@ fn layout_recompute(ctx, deps) {
     let layout = empty_layout();
     layout.valid = true;
     layout.crumbs = crumbs;
+    // A recompute that is not a navigation (a resize) does not zoom again.
+    layout.came_from = crumbs;
     layout.nav_key = deps[1];
     layout.metric = deps[2];
     layout.depth = deps[3];
@@ -582,22 +570,21 @@ fn layout_recompute(ctx, deps) {
     layout.by_key = tiles_by_key(tiles);
     // Ascending: start zoomed on the directory just left, in the new
     // mosaic, easing out to the whole view.
-    if anim_from == () && previous.valid && previous.crumbs.len() > crumbs.len()
-        && core::crumb_starts_with(previous.crumbs, crumbs)
+    if anim_from == () && previous.valid && came_from.len() > crumbs.len()
+        && core::crumb_starts_with(came_from, crumbs)
     {
-        let departed = tile_lookup(layout, crumb_key(previous.crumbs));
+        let departed = tile_lookup(layout, crumb_key(came_from));
         if departed != () {
             anim_from = zoom_start(core::tile_body(departed), width, height);
         }
     }
     if anim_from != () {
-        layout.view = anim_from;
-        let steps = ctx.motion_duration("normal") / 16;
-        if steps > 24 {
-            steps = 24;
-        }
-        if steps >= 2 {
-            layout.anim = #{ active: true, from: anim_from, step: 0, steps: steps };
+        // The mosaic lands at the identity view, and Rust plays the zoom from
+        // `anim_from` (zoom_motion): no Rhai runs per frame.
+        layout.view = core::view_identity();
+        let duration = ctx.motion_duration("normal");
+        if duration > 0 {
+            layout.anim = #{ active: true, from: anim_from, duration: duration };
         }
     }
     kept_cache.push([cache_key, tiles, layout.by_key]);
@@ -605,7 +592,9 @@ fn layout_recompute(ctx, deps) {
         kept_cache.remove(0);
     }
     ctx.set_app_store("disktree", "cache", kept_cache);
-    layout.gen += 1;
+    // Counts layouts across recomputes: the zoom's replay key, so returning
+    // along the same tile replays an identical declaration.
+    layout.gen = previous.gen + 1;
     // Build the paint for the mode on screen, not always mode 0: a metric
     // switch re-runs this effect right after set_mode filled the new
     // mode's slot, and rebuilding only mode 0 would blank the mosaic.
@@ -715,6 +704,7 @@ fn current_path(ctx, crumbs) {
 /// recomputes the layout.
 fn apply_navigation(ctx, crumbs) {
     let layout = ctx.get_app_store("disktree", "layout");
+    layout.came_from = layout.crumbs;
     layout.crumbs = crumbs;
     layout.nav_key = crumb_key(crumbs);
     layout.view = core::view_identity();
@@ -1958,12 +1948,6 @@ fn render_ScanRoot(ctx, props) {
         Fn("layout_stop")
     );
 
-    // A navigation transition steps itself: while one runs, redeclare the
-    // timer with the next step number (the changed payload re-arms it).
-    if layout.anim.active {
-        timeout("nav-anim", 16, false, Fn("anim_tick"), layout.anim.step);
-    }
-
     // The resolved variant drives the canvas palette; the read is a tracked
     // theme dependency, so a system appearance flip re-renders the mosaic.
     let light = is_light(ctx);
@@ -2690,7 +2674,7 @@ fn mosaic_nodes(layout, cursor, metric, scan, paint) {
     if paint == () {
         paint = #{ base: [], labels: [], out_keys: #{} };
     }
-    let base = canvas(canvas_scene(paint_commands(paint.base, layout.view)))
+    let base = zoom_motion(canvas(canvas_scene(paint_commands(paint.base, layout.view)))
         .with_key("mosaic_canvas")
         .with_style(
             style()
@@ -2701,8 +2685,8 @@ fn mosaic_nodes(layout, cursor, metric, scan, paint) {
                 .height(px(layout.height))
         )
         .on("pointer_move", Fn("on_pointer_move"))
-        .on("pointer_down", Fn("on_pointer_down"));
-    let rings = canvas(canvas_scene(ring_commands(layout, cursor)))
+        .on("pointer_down", Fn("on_pointer_down")), layout);
+    let rings = zoom_motion(canvas(canvas_scene(ring_commands(layout, cursor)))
         .with_key("mosaic_rings")
         .with_style(
             style()
@@ -2711,10 +2695,35 @@ fn mosaic_nodes(layout, cursor, metric, scan, paint) {
                 .top(px(0.0))
                 .width(px(layout.width))
                 .height(px(layout.height))
-        );
-    [base, rings]
-        + label_nodes(paint.labels, layout, metric, paint.out_keys)
-        + tooltip_nodes(layout, cursor, metric, scan)
+        ), layout);
+    let labels = label_nodes(paint.labels, layout, metric, paint.out_keys);
+    if layout.anim.active && labels.len() > 0 {
+        // Text cannot scale with the canvases: the labels wait out the zoom
+        // and fade in as it lands.
+        let fade = [
+            #{ offset: 0.0, value: 0.0 },
+            #{ offset: 0.8, value: 0.0 },
+            #{ offset: 1.0, value: 1.0 },
+        ];
+        labels = [
+            box(labels)
+                .with_key("mosaic_labels")
+                .with_style(
+                    style()
+                        .absolute()
+                        .left(px(0.0))
+                        .top(px(0.0))
+                        .width(px(layout.width))
+                        .height(px(layout.height))
+                )
+                .motion(motion_keyframes("opacity", fade, #{
+                    duration_ms: layout.anim.duration * 5 / 4,
+                    intent: "decorative",
+                }))
+                .motion_replay_key(`${layout.gen}`),
+        ];
+    }
+    [base, rings] + labels + tooltip_nodes(layout, cursor, metric, scan)
 }
 
 /// Cached base-coordinate rows back into canvas commands, projected
