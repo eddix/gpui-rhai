@@ -1024,13 +1024,7 @@ fn sample_layout_bounds(motion: &LayoutMotionState, now: Instant) -> GeometryBou
             / motion.duration.as_secs_f64())
         .clamp(0.0, 1.0)
     };
-    let progress = match motion.easing {
-        crate::MotionEasing::Linear => progress,
-        crate::MotionEasing::EaseIn => progress * progress,
-        crate::MotionEasing::EaseOut => 1.0 - (1.0 - progress).powi(2),
-        crate::MotionEasing::EaseInOut if progress < 0.5 => 2.0 * progress * progress,
-        crate::MotionEasing::EaseInOut => 1.0 - (-2.0 * progress + 2.0).powi(2) / 2.0,
-    };
+    let progress = motion.easing.sample(progress);
     let interpolate = |from: f64, to: f64| from + (to - from) * progress;
     GeometryBounds {
         x: interpolate(motion.from.x, motion.to.x),

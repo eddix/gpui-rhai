@@ -7,6 +7,12 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- Motion easings include a CSS cubic Bézier: `cubic_bezier(x1, y1, x2, y2)`
+  validates the control points and returns the curve's spelling, which every
+  `easing` field and theme easing token accepts; Rust samples it (#186).
+  **Rust API:** `MotionEasing` gains a `CubicBezier` variant (an exhaustive
+  `match` needs an arm), (de)serializes through its string spelling, and
+  `as_str` names the curve family; use `Display` for the full spelling.
 - `gpui-rhai update` merges the token base (`ui/tokens.rhai`) and the bundled
   palettes (`ui/themes/`) like components; `init` records their baselines.
   Before, an existing copy was never updated, so a component that needed a new

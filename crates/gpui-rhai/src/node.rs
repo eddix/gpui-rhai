@@ -1720,7 +1720,7 @@ impl UiNode {
         ));
         self.apply_presentation_mutation(NodePresentationMutation::Attribute(
             "layout_motion_easing".to_owned(),
-            UiValue::String(easing.as_str().to_owned()),
+            UiValue::String(easing.to_string()),
         ));
         self
     }

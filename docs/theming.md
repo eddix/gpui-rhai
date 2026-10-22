@@ -27,7 +27,8 @@ nearest `.env(#{ ... })` ancestor, so one subtree can be compact inside a
 comfortable window.
 
 Motion has semantic duration (`instant`, `fast`, `normal`, `slow`, `ambient`),
-easing (`standard`, `entrance`, `exit`, `emphasized`), spring (`responsive`,
+easing (`standard`, `entrance`, `exit`, `emphasized`; a value is a named curve
+or `"cubic_bezier(x1, y1, x2, y2)"`), spring (`responsive`,
 `gentle`, `bouncy`), distance (`subtle`, `moderate`, `large`), and stagger
 (`tight`, `normal`, `relaxed`) roles. Themes may override the validated default
 table with a `tokens.motion` block. Components read roles through
