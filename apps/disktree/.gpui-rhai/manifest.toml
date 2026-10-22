@@ -1,0 +1,101 @@
+runtime_api = 3
+
+[components."components/badge"]
+version = "0.2.0"
+content_hash = "b02152f557c7b567"
+dependencies = []
+
+[components."components/button"]
+version = "0.2.0"
+content_hash = "3e290100b1ed56bc"
+dependencies = []
+
+[components."components/checkbox"]
+version = "0.2.0"
+content_hash = "559ea724a31716e6"
+dependencies = []
+
+[components."components/combobox"]
+version = "0.2.1"
+content_hash = "776ecf400d0984ce"
+dependencies = ["components/input"]
+
+[components."components/divider"]
+version = "0.2.0"
+content_hash = "3254ba37d53c17b6"
+dependencies = []
+
+[components."components/input"]
+version = "0.2.0"
+content_hash = "8628f6a9e39617f1"
+dependencies = []
+
+[components."components/kbd"]
+version = "0.2.0"
+content_hash = "ff24e956ae4540fe"
+dependencies = []
+
+[components."components/popover"]
+version = "0.2.0"
+content_hash = "475b4e2818000fed"
+dependencies = []
+
+[components."components/progress"]
+version = "0.2.0"
+content_hash = "62cdcab95e9b4199"
+dependencies = []
+
+[components."components/select"]
+version = "0.2.0"
+content_hash = "75b389bdecff29db"
+dependencies = []
+
+[components."components/spinner"]
+version = "0.2.0"
+content_hash = "15e71a2986fabdfa"
+dependencies = []
+
+[components."components/split_pane"]
+version = "0.2.0"
+content_hash = "61d98606c6332b82"
+dependencies = []
+
+[components."components/status_bar"]
+version = "0.2.0"
+content_hash = "b0717e76f2131dc0"
+dependencies = []
+
+[components."components/title_bar"]
+version = "0.2.0"
+content_hash = "0cc58ee30acdaba0"
+dependencies = []
+
+[components."components/toggle_group"]
+version = "0.2.0"
+content_hash = "87147ec2acb5eb73"
+dependencies = []
+
+[components."layouts/inline"]
+version = "0.2.0"
+content_hash = "2d56da733646e51b"
+dependencies = []
+
+[components."layouts/toolbar"]
+version = "0.2.0"
+content_hash = "3993407c1889f951"
+dependencies = []
+
+[components."patterns/description_list"]
+version = "0.2.0"
+content_hash = "645693a3de13da4a"
+dependencies = []
+
+[components."patterns/section"]
+version = "0.2.0"
+content_hash = "af76a2e3c39a50ef"
+dependencies = []
+
+[components."patterns/stat"]
+version = "0.2.0"
+content_hash = "6d6ed80dd39a03c2"
+dependencies = []

@@ -84,6 +84,11 @@ through 0.1.8 are in the checklist listed under [History](history.md).
   `--source-sha`, and assert their structured pass and cleanup results: AppKit
   can report exit status 0 for a failing assertion. They use an app-only
   appearance override, restore it and close their own windows.
+- On macOS run the [reference applications](../apps/README.md)' renderer
+  harnesses. In `apps/disktree`: `cargo run --example key_harness` must print
+  `every key went through a real window, no script errors`, and
+  `cargo run --example screenshot -- <directory>` must show the treemap filling
+  the stage beside the SplitPane panel, in `SHOT_THEME=dark` and `light`.
 - Record the candidate: source SHA, commands, counts, platform, binary hashes
   and pass, fail or pending for every gate. Final-head Linux X11 and Wayland CI
   must finish, not merely start.

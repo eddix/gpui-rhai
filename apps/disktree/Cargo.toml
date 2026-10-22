@@ -1,0 +1,34 @@
+[package]
+name = "disktree-rhai"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+description = "A disk space treemap explorer built on gpui-rhai, a faithful port of tobi/disktree with user-reshapable skins"
+
+[[bin]]
+name = "disktree-rhai"
+path = "src/main.rs"
+
+[dependencies]
+gpui-rhai = { path = "../../crates/gpui-rhai" }
+gpui-rhai-registry = { path = "../../registry" }
+gpui = { package = "gpui-pre", version = "=0.3.7", default-features = false, features = ["font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+semver = "1"
+rayon = "1"
+rustix = { version = "1", features = ["fs"] }
+rustc-hash = "2"
+
+[dev-dependencies]
+rhai = { version = "=1.26.0", features = ["internals", "metadata", "serde"] }
+tempfile = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+gpui = { package = "gpui-pre", version = "=0.3.7", default-features = false, features = ["font-kit", "test-support"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11", "test-support"] }
+
+[features]
+default = []
+# Development mode: file-backed ui/ with hot reload instead of the embedded skin.
+dev = ["gpui-rhai/dev-reload"]

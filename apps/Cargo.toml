@@ -1,0 +1,16 @@
+# Reference applications: complete programs built on gpui-rhai, kept in this
+# repository so a change to the runtime or the registry is checked against them
+# in the same pull request. A separate workspace, like tests/native-keyboard, so
+# their dependencies stay out of the published crates' lockfile and lints.
+# See apps/README.md.
+[workspace]
+members = ["disktree"]
+resolver = "2"
+
+# Same reason as the root workspace: Rhai's unoptimized recursive frames are
+# large, and a full skin renders deep trees in debug builds.
+[profile.dev.package.rhai]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
