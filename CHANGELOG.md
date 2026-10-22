@@ -5,7 +5,14 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## Unreleased
+## 0.2.3 - 2026-10-22
+
+A patch release of 0.2 that is **not fully compatible** with 0.2.2: a Rust
+struct literal gains a field, explicitly sorted Array Tables sort in Rust, and
+the token base derives `control.*` roles that a hand-edited copy must add. See
+the [0.2.3 release notes](docs/releases/0.2.3.md) before upgrading; upgrade the
+three crates together and run the 0.2.3 CLI's `gpui-rhai update`, which also
+picks up the 19 official modules that changed under unchanged versions.
 
 - `gpui-rhai check` resolves the application's own modules: every `.rhai` file
   below `ui/` that file mode loads as a module. It used to know only the
@@ -103,6 +110,30 @@ semantic versioning from this release.
   `scene.messages` conversation. Use `gpui-rhai gallery --list` and
   `gpui-rhai gallery --page <id>`; these are application-owned source examples
   within the Gallery, not new standalone demos or external service integrations.
+- The 15 bundled palettes are recalibrated in perceptual lightness: reading
+  text reaches 7:1 (primary) and at least 5.2:1 (secondary) on page, raised,
+  hover and selection surfaces. The token base separates the functional
+  `control.border` from the decorative `border` and derives
+  `control.danger_hover`, `control.warning_hover` and `control.success_hover`
+  from the palette's `on_danger`, `on_warning` and `on_success`; editable
+  fields, choice marks and outline buttons use them. Input placeholders use
+  `text_muted` through an overridable `placeholder` part instead of a fixed
+  55% opacity. Theme Studio validates these roles (#181).
+- A Host can reuse prepared Markdown across viewers: implement
+  `MarkdownPreparationCache` and install it with
+  `document_runtime_config().set_markdown_cache(...)`;
+  `markdown_preparation_stats()` reports reuse. There is no default cache.
+- SplitPane's default grip is a bar that grows from 24px to 40px with the
+  theme's fast feedback motion. `handle: node`, `grip: false` and
+  `handle_renderer: ctx.node_factory(Fn(...))` customize it; the hit area stays
+  independent of the decoration. `ctx.element_size(ref | key)` subscribes to
+  size alone, and `ctx.node_factory` / `render_node` build nodes in the
+  receiving component's context. A drag is cancelled only when a committed
+  change alters its interaction contract, not by unrelated rerenders (#180).
+- Tabs accept a unique empty-string value. Retained pages keep the native
+  virtual-list entity, its measurements, paused following and unseen keys.
+- Element refs expose lossless, instance-scoped semantic IDs, and
+  SelectableCardGroup scopes its description IDs to its instance.
 - The Gallery's Menu page opens its menu. Its trigger was a Button whose
   `on_click` did nothing; a script click handler stops the click, so the menu
   never saw it. The Button now opens the menu, and Menu's and Popover's

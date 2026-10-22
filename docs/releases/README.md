@@ -2,6 +2,7 @@
 
 | Version | Focus | Integration impact |
 |---|---|---|
+| [0.2.3](0.2.3.md) | Retained pages and navigation stacks, shared scrollbars and tail-following, ColumnBrowser, Composer, selectable cards, calendars, time ranges, timelines, native Markdown, recalibrated palettes, and a CLI that keeps copied sources current | **Not fully compatible:** add `owner: None` to hand-built `PendingEvent`/`ActionInvocation`; sorted Array Tables sort in Rust; a hand-edited token base needs the `control.*` lines; update with the 0.2.3 CLI |
 | [0.2.2](0.2.2.md) | Toast stacked layout and activation, a Host hook for the Rhai engine, keyboard focus events for scripts, `one_of` error paths, `hidden()` on rows and columns | Compatible; `gpui-rhai update` brings Toast; check rows and columns that call `hidden()` |
 | [0.2.1](0.2.1.md) | Fixes after the 0.2.0 upgrade (modal focus, keys in layers, Table/List focus, footers, contrast) and small additive APIs (Host overlay queries, capability invocation context, `check` and Host extensions, CodeViewer content height, List loading) | Compatible; `gpui-rhai update` brings eleven changed modules; apply two token-base lines by hand |
 | [0.2.0](0.2.0.md) | Design system for productivity tools: neutral token runtime, token base, 64 components (62 rebuilt, List and TabBar new), layouts and patterns, composition audit and profiles, the Gallery as acceptance application | Runtime API 3; add the token base for official components; review removed props and changed defaults |
