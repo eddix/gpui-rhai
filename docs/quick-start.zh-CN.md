@@ -101,7 +101,8 @@ fn clicked(ctx, payload) {
 布局时，才使用 `element_ref(...)` 与 `ctx.element_bounds(ref)`。
 
 更新已复制的组件前先运行 `gpui-rhai diff`。`update` 使用三方合并，冲突会写入
-`.gpui-rhai/conflicts/`，不会覆盖你的源文件。
+`.gpui-rhai/conflicts/`，不会覆盖你的源文件。token base（`ui/tokens.rhai`）和自带主题
+（`ui/themes/`）也按同样的方式更新；`ui/theme.rhai` 属于应用自己，不会被更新。
 
 进一步阅读：[文档索引](README.md)、[组件编写](component-authoring-guide.md)、
 [嵌入](embedding.md)、[主题](theming.md)、[性能](performance.md)与

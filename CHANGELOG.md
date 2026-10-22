@@ -7,6 +7,13 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- `gpui-rhai update` merges the token base (`ui/tokens.rhai`) and the bundled
+  palettes (`ui/themes/`) like components; `init` records their baselines.
+  Before, an existing copy was never updated, so a component that needed a new
+  token failed to load the project's theme (#183). For projects from 0.2.0 to
+  0.2.2, which have no such baselines, `update` adopts a copy equal to the
+  registry, replaces one still exactly as a release installed it, and leaves
+  any other with a `note:`. `ui/theme.rhai` stays the application's.
 - `gpui-rhai update` applies a registry component whose source changed under
   an unchanged version: at equal versions it compares the installed baseline
   with the bundled source instead of skipping. A project that installed

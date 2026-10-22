@@ -63,9 +63,86 @@ fn component_styles() {
 }
 ";
 
+/// A source the registry ships whole rather than as a component: the token
+/// base and the bundled palettes. Its baseline lives at the same path below
+/// `.gpui-rhai/baselines/`, and `update` merges it like a component's. The
+/// application's own `theme.rhai` starts as a copy too, but is the
+/// application's to change, so it is not one.
+#[derive(Clone, Debug)]
+struct ShippedSource {
+    /// Path below `ui/`.
+    path: String,
+    source: &'static str,
+    /// Content hashes of the copies 0.2.0 to 0.2.2 installed, which recorded
+    /// no baseline: a copy that still has one of them is unmodified.
+    released: Vec<u64>,
+}
+
+/// Content hashes (`fnv1a`, as in the manifest) of the shipped sources that
+/// 0.2.0, 0.2.1 and 0.2.2 installed without a baseline. Later releases record
+/// baselines, so the list is closed.
+const RELEASED_WITHOUT_BASELINE: &[(&str, &[u64])] = &[
+    (
+        "tokens.rhai",
+        &[0x2fcb_8028_5dfc_282d, 0x49be_7273_5b03_b222],
+    ),
+    ("themes/aetheria.rhai", &[0xfe2a_9062_b3a0_2ae7]),
+    ("themes/catppuccin_latte.rhai", &[0x7404_d248_1fdd_f52e]),
+    ("themes/catppuccin_mocha.rhai", &[0xec41_45a5_e08c_7c9e]),
+    ("themes/default_light.rhai", &[0x67a5_ecf6_d632_9a62]),
+    ("themes/ethereal.rhai", &[0x2f72_e2f0_90d8_7c8d]),
+    ("themes/everforest.rhai", &[0x892e_bdf1_603c_ee85]),
+    ("themes/futurism.rhai", &[0x885c_5ccf_131d_cc99]),
+    ("themes/gruvbox.rhai", &[0xadae_087e_abd2_f609]),
+    ("themes/hackerman.rhai", &[0x7bfc_e990_11af_4662]),
+    ("themes/hermarchy.rhai", &[0xccaf_3980_bd38_cb5d]),
+    ("themes/nord.rhai", &[0x622f_e265_03b8_afcd]),
+    ("themes/retro_82.rhai", &[0xbceb_f305_83e5_216a]),
+    ("themes/tokyo_night.rhai", &[0x281f_2578_1cab_cb52]),
+    ("themes/tokyo_storm.rhai", &[0x1a61_6214_3d61_a945]),
+];
+
+/// The shipped sources of this registry snapshot, in the order `init` writes them.
+fn shipped_sources() -> Vec<ShippedSource> {
+    let shipped = |path: String, source: &'static str| {
+        let released = RELEASED_WITHOUT_BASELINE
+            .iter()
+            .find(|(released, _)| *released == path)
+            .map(|(_, hashes)| hashes.to_vec())
+            .unwrap_or_default();
+        ShippedSource {
+            path,
+            source,
+            released,
+        }
+    };
+    let mut sources = vec![shipped("tokens.rhai".to_owned(), TOKEN_BASE_SOURCE)];
+    // `default_dark` is the starter `theme.rhai`, not a bundled palette.
+    sources.extend(
+        BUNDLED_THEME_SOURCES
+            .iter()
+            .filter(|(name, _)| *name != "default_dark.rhai")
+            .map(|&(name, source)| shipped(format!("themes/{name}"), source)),
+    );
+    sources
+}
+
+/// The manifest's content hash: 64-bit FNV-1a, stable across Rust releases.
+const fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut index = 0;
+    while index < bytes.len() {
+        hash ^= bytes[index] as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        index += 1;
+    }
+    hash
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct BundledRegistry {
     entries: BTreeMap<ModuleId, RegistryEntry>,
+    shipped: Vec<ShippedSource>,
 }
 
 impl BundledRegistry {
@@ -168,6 +245,7 @@ impl BundledRegistry {
                 return Err(ProjectError::DuplicateRegistry(id));
             }
         }
+        registry.shipped = shipped_sources();
         Ok(registry)
     }
 
@@ -337,6 +415,14 @@ impl Project {
             ZH_CN_LOCALE.to_owned(),
         )?;
         plan.create(self.root.join("ui/locales/ar.rhai"), AR_LOCALE.to_owned())?;
+        // The token base and palettes are registry copies: their baselines
+        // let `update` merge later registry changes into them.
+        for shipped in shipped_sources() {
+            plan.create(
+                self.root.join(".gpui-rhai/baselines").join(&shipped.path),
+                shipped.source.to_owned(),
+            )?;
+        }
         plan.create(self.root.join("ui/app.toml"), app_manifest_source()?)?;
         plan.create(
             self.root.join(".gpui-rhai/manifest.toml"),
@@ -639,7 +725,7 @@ impl Project {
     pub fn diff(&self) -> Result<Vec<String>, ProjectError> {
         let manifest: LocalManifest =
             toml::from_str(&read(&self.root.join(".gpui-rhai/manifest.toml"))?)?;
-        manifest
+        let mut lines = manifest
             .components
             .keys()
             .map(|raw_id| {
@@ -656,7 +742,23 @@ impl Project {
                     }
                 ))
             })
-            .collect()
+            .collect::<Result<Vec<_>, ProjectError>>()?;
+        for shipped in shipped_sources() {
+            let baseline_path = self.root.join(".gpui-rhai/baselines").join(&shipped.path);
+            if let Some(baseline) = read_existing(&baseline_path)? {
+                let source = read_existing(&self.root.join("ui").join(&shipped.path))?;
+                lines.push(format!(
+                    "ui/{}: {}",
+                    shipped.path,
+                    if source.as_deref() == Some(baseline.as_str()) {
+                        "unchanged"
+                    } else {
+                        "modified"
+                    }
+                ));
+            }
+        }
+        Ok(lines)
     }
 
     /// Plan safe updates from the bundled registry.
@@ -749,22 +851,12 @@ impl Project {
                 },
             );
         }
-        for &(name, source) in BUNDLED_THEME_SOURCES
-            .iter()
-            .filter(|(name, _)| *name != "default_dark.rhai")
-        {
-            let path = self.root.join("ui/themes").join(name);
-            if !path.exists() {
-                plan.create(path, source.to_owned())?;
-            }
+        for shipped in &registry.shipped {
+            self.plan_shipped_update(&mut plan, shipped)?;
         }
         let styles = self.root.join("ui/styles.rhai");
         if !styles.exists() {
             plan.create(styles, DEFAULT_COMPONENT_STYLES.to_owned())?;
-        }
-        let tokens = self.root.join("ui/tokens.rhai");
-        if !tokens.exists() {
-            plan.create(tokens, TOKEN_BASE_SOURCE.to_owned())?;
         }
         plan.update(
             manifest_path,
@@ -772,6 +864,50 @@ impl Project {
             manifest_source,
         );
         Ok(plan)
+    }
+
+    /// Plan the update of one shipped source (#183). With a baseline it merges
+    /// like a component. Without one, as 0.2.0 to 0.2.2 installed it, a copy
+    /// equal to the registry gets a baseline, an unmodified released copy is
+    /// replaced, and any other copy is left to the application with a note.
+    fn plan_shipped_update(
+        &self,
+        plan: &mut ProjectPlan,
+        shipped: &ShippedSource,
+    ) -> Result<(), ProjectError> {
+        let source_path = self.root.join("ui").join(&shipped.path);
+        let baseline_path = self.root.join(".gpui-rhai/baselines").join(&shipped.path);
+        let Some(local) = read_existing(&source_path)? else {
+            plan.create(source_path, shipped.source.to_owned())?;
+            plan.replace_or_create(baseline_path, shipped.source.to_owned())?;
+            return Ok(());
+        };
+        match read_existing(&baseline_path)? {
+            Some(baseline) if baseline == shipped.source => {}
+            Some(baseline) => {
+                let Ok(merged) = three_way_merge(&baseline, &local, shipped.source) else {
+                    plan.replace_or_create(
+                        self.root.join(".gpui-rhai/conflicts").join(&shipped.path),
+                        conflict_artifact(&local, &baseline, shipped.source),
+                    )?;
+                    plan.file_conflicts
+                        .push(Path::new("ui").join(&shipped.path));
+                    return Ok(());
+                };
+                plan.update(source_path, merged, local);
+                plan.update(baseline_path, shipped.source.to_owned(), baseline);
+            }
+            None if local == shipped.source => plan.create(baseline_path, local)?,
+            None if shipped.released.contains(&fnv1a(local.as_bytes())) => {
+                plan.update(source_path, shipped.source.to_owned(), local);
+                plan.create(baseline_path, shipped.source.to_owned())?;
+            }
+            None => plan.notes.push(format!(
+                "ui/{} has no baseline and matches no released copy; update leaves it to the application",
+                shipped.path
+            )),
+        }
+        Ok(())
     }
 
     fn plan_asset_update(
@@ -1828,6 +1964,18 @@ fn read(path: &Path) -> Result<String, ProjectError> {
     })
 }
 
+/// `None` when `path` does not exist.
+fn read_existing(path: &Path) -> Result<Option<String>, ProjectError> {
+    match fs::read_to_string(path) {
+        Ok(source) => Ok(Some(source)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(ProjectError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 #[derive(Clone, Debug)]
 enum ExpectedFile {
     Missing,
@@ -1887,6 +2035,8 @@ pub struct ProjectPlan {
     root: PathBuf,
     writes: Vec<PlannedWrite>,
     conflicts: Vec<ModuleId>,
+    file_conflicts: Vec<PathBuf>,
+    notes: Vec<String>,
 }
 
 impl ProjectPlan {
@@ -1895,6 +2045,8 @@ impl ProjectPlan {
             root,
             writes: Vec::new(),
             conflicts: Vec::new(),
+            file_conflicts: Vec::new(),
+            notes: Vec::new(),
         }
     }
 
@@ -1942,6 +2094,20 @@ impl ProjectPlan {
         &self.conflicts
     }
 
+    /// Shipped sources (the token base and palettes) whose merge conflicted,
+    /// relative to the project root.
+    #[must_use]
+    pub fn file_conflicts(&self) -> &[PathBuf] {
+        &self.file_conflicts
+    }
+
+    /// What the plan leaves to the application, such as a shipped source it
+    /// cannot tell from a local edit.
+    #[must_use]
+    pub fn notes(&self) -> &[String] {
+        &self.notes
+    }
+
     #[must_use]
     pub fn summary(&self) -> String {
         let mut lines = if self.writes.is_empty() {
@@ -1974,6 +2140,18 @@ impl ProjectPlan {
                     .join(", ")
             ));
         }
+        if !self.file_conflicts.is_empty() {
+            lines.push(format!(
+                "{} file merge conflict(s): {}",
+                self.file_conflicts.len(),
+                self.file_conflicts
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        lines.extend(self.notes.iter().map(|note| format!("note: {note}")));
         lines.join("\n")
     }
 
@@ -2396,6 +2574,8 @@ pub enum ProjectError {
     Locale(String),
     #[error("component update conflicts require inspection: {0:?}")]
     UpdateConflictsWritten(Vec<ModuleId>),
+    #[error("update conflicts in shipped sources require inspection: {0:?}")]
+    UpdateFileConflictsWritten(Vec<PathBuf>),
     #[error("failed to start Cargo: {0}")]
     Spawn(std::io::Error),
     #[error("Cargo application exited unsuccessfully with code {0:?}")]
@@ -3403,6 +3583,178 @@ mod tests {
             "{}",
             plan.summary()
         );
+    }
+
+    #[test]
+    fn fnv1a_is_the_manifest_content_hash() {
+        let source = TOKEN_BASE_SOURCE.to_owned();
+        assert_eq!(
+            fnv1a(source.as_bytes()),
+            ScriptAsset::new(ModuleId::parse("tokens").unwrap(), source).content_hash
+        );
+    }
+
+    #[test]
+    fn every_shipped_source_has_its_released_hashes() {
+        let shipped = shipped_sources();
+        assert_eq!(shipped.len(), RELEASED_WITHOUT_BASELINE.len());
+        for source in &shipped {
+            assert!(!source.released.is_empty(), "{}", source.path);
+        }
+    }
+
+    #[test]
+    fn init_records_baselines_for_the_token_base_and_palettes() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        for shipped in shipped_sources() {
+            let baseline = directory
+                .path()
+                .join(".gpui-rhai/baselines")
+                .join(&shipped.path);
+            assert_eq!(read(&baseline).unwrap(), shipped.source, "{}", shipped.path);
+        }
+        assert!(
+            !directory
+                .path()
+                .join(".gpui-rhai/baselines/theme.rhai")
+                .exists(),
+            "the application's theme.rhai is its own"
+        );
+        assert!(
+            project
+                .diff()
+                .unwrap()
+                .contains(&"ui/tokens.rhai: unchanged".to_owned())
+        );
+    }
+
+    /// A registry whose token base differs from the bundled one by `replace`.
+    fn registry_with_token_base(replace: (&str, &str)) -> (BundledRegistry, &'static str) {
+        let mut registry = BundledRegistry::load().unwrap();
+        let tokens = registry
+            .shipped
+            .iter_mut()
+            .find(|shipped| shipped.path == "tokens.rhai")
+            .unwrap();
+        assert!(tokens.source.contains(replace.0));
+        let source: &'static str = Box::leak(
+            tokens
+                .source
+                .replacen(replace.0, replace.1, 1)
+                .into_boxed_str(),
+        );
+        tokens.source = source;
+        (registry, source)
+    }
+
+    #[test]
+    fn update_merges_the_token_base_with_local_changes() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        let tokens_path = directory.path().join("ui/tokens.rhai");
+        let local = format!(
+            "{}\n// application-owned footer\n",
+            read(&tokens_path).unwrap()
+        );
+        fs::write(&tokens_path, &local).unwrap();
+        let first_line = TOKEN_BASE_SOURCE.lines().next().unwrap();
+        let (registry, upstream) =
+            registry_with_token_base((first_line, "// The registry's newer token base."));
+
+        let plan = project.plan_update(&registry).unwrap();
+        assert_eq!(plan.file_conflicts(), [] as [PathBuf; 0]);
+        plan.apply().unwrap();
+        let merged = read(&tokens_path).unwrap();
+        assert!(merged.starts_with("// The registry's newer token base."));
+        assert!(merged.ends_with("// application-owned footer\n"));
+        assert_eq!(
+            read(&directory.path().join(".gpui-rhai/baselines/tokens.rhai")).unwrap(),
+            upstream
+        );
+    }
+
+    #[test]
+    fn update_conflict_in_the_token_base_preserves_it_and_writes_an_artifact() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        let tokens_path = directory.path().join("ui/tokens.rhai");
+        let first_line = TOKEN_BASE_SOURCE.lines().next().unwrap();
+        let local = TOKEN_BASE_SOURCE.replacen(first_line, "// The application's token base.", 1);
+        fs::write(&tokens_path, &local).unwrap();
+        let (registry, _) = registry_with_token_base((first_line, "// The registry's token base."));
+
+        let plan = project.plan_update(&registry).unwrap();
+        assert_eq!(plan.file_conflicts(), [PathBuf::from("ui/tokens.rhai")]);
+        plan.apply().unwrap();
+        assert_eq!(read(&tokens_path).unwrap(), local);
+        assert_eq!(
+            read(&directory.path().join(".gpui-rhai/baselines/tokens.rhai")).unwrap(),
+            TOKEN_BASE_SOURCE
+        );
+        assert!(
+            directory
+                .path()
+                .join(".gpui-rhai/conflicts/tokens.rhai")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn update_adopts_shipped_sources_installed_without_baselines() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        // A project from 0.2.0 to 0.2.2: no baselines for the shipped sources.
+        fs::remove_file(directory.path().join(".gpui-rhai/baselines/tokens.rhai")).unwrap();
+        fs::remove_dir_all(directory.path().join(".gpui-rhai/baselines/themes")).unwrap();
+        let released_nord = "// Nord as an earlier release shipped it.\n";
+        let nord = directory.path().join("ui/themes/nord.rhai");
+        fs::write(&nord, released_nord).unwrap();
+        let owned_gruvbox = "// application-owned Gruvbox\n";
+        let gruvbox = directory.path().join("ui/themes/gruvbox.rhai");
+        fs::write(&gruvbox, owned_gruvbox).unwrap();
+        let mut registry = BundledRegistry::load().unwrap();
+        registry
+            .shipped
+            .iter_mut()
+            .find(|shipped| shipped.path == "themes/nord.rhai")
+            .unwrap()
+            .released
+            .push(fnv1a(released_nord.as_bytes()));
+
+        let plan = project.plan_update(&registry).unwrap();
+        assert_eq!(
+            plan.notes(),
+            [
+                "ui/themes/gruvbox.rhai has no baseline and matches no released copy; update leaves it to the application"
+            ]
+        );
+        plan.apply().unwrap();
+
+        let baselines = directory.path().join(".gpui-rhai/baselines");
+        // Equal to the registry: only the baseline is recorded.
+        assert_eq!(
+            read(&baselines.join("tokens.rhai")).unwrap(),
+            TOKEN_BASE_SOURCE
+        );
+        // An unmodified released copy is replaced.
+        let nord_source = shipped_sources()
+            .into_iter()
+            .find(|shipped| shipped.path == "themes/nord.rhai")
+            .unwrap()
+            .source;
+        assert_eq!(read(&nord).unwrap(), nord_source);
+        assert_eq!(
+            read(&baselines.join("themes/nord.rhai")).unwrap(),
+            nord_source
+        );
+        // Anything else stays the application's.
+        assert_eq!(read(&gruvbox).unwrap(), owned_gruvbox);
+        assert!(!baselines.join("themes/gruvbox.rhai").exists());
     }
 
     #[test]
