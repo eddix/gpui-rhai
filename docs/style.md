@@ -24,7 +24,7 @@ Formal component authors resolve every public part through
 `ui/styles.rhai` rule before the caller's explicit instance override. See
 [component stylesheets](component-styles.md).
 
-The current public builder maps directly to stable GPUI 0.2.2 behavior:
+The current public builder maps directly to GPUI (gpui-pre 0.3.7) behavior:
 
 - block, flex, and bounded explicit grid layout (`grid_cols/rows`, spans);
 - row/column direction, wrapping, boolean or positive weighted grow,
@@ -148,8 +148,8 @@ name. See `assets.md` for ownership and validation.
 
 The remaining final-style gaps are intrinsic/min-content/max-content and custom
 fr/grid-track values, multi-stop gradients, rotation/scale and
-transform-origin, per-edge border colors/styles (GPUI 0.2.2 stores only one
-quad-wide color/style), letter spacing (GPUI 0.2.2 exposes no public shaping
+transform-origin, per-edge border colors/styles (GPUI stores only one
+quad-wide color/style), letter spacing (GPUI exposes no public shaping
 property for it), font aliases and hot
 replacement, selection styling, and explicit hit-testing/stacking-context
 controls beyond GPUI's two occlusion policies. General z-index is not exposed;

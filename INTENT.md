@@ -273,7 +273,7 @@ deterministic test clock.
 Exit nodes leave layout, input, focus, and accessibility immediately while a
 noninteractive paint ghost finishes visual exit. Layout transitions use
 committed old/new geometry and paint transforms rather than rerunning layout
-each Motion frame. General GPUI 0.2.2 subtree scale/rotation is not simulated;
+each Motion frame. General GPUI subtree scale/rotation is not simulated;
 typed Canvas/path primitives own those transforms.
 
 ### 8.3 Colors and themes

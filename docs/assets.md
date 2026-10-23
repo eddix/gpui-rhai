@@ -56,11 +56,12 @@ handler.
 SVG assets may use `currentColor`. The renderer supplies the nearest effective
 semantic text color as the root's inherited default; an explicit `color`
 property on any SVG element therefore retains normal SVG cascade priority.
-The compatibility adapter renders the whole document through the same lazy
-system-font resolver as GPUI 0.2.2, then produces standard RGBA PNG/BGRA render
-data. Fixed colors, gradients, SVG opacity, semantic alpha, text, generic font
-families, and font fallback all survive the adapter while avoiding GPUI 0.2.2's
-in-memory SVG channel mismatch.
+The runtime renders the whole document itself, through a lazy system-font
+resolver like GPUI's, then produces standard RGBA PNG/BGRA render data. It keeps
+this adapter instead of GPUI's SVG renderer because it substitutes
+`currentColor`, caches the color variants and prepares them off the foreground
+thread. Fixed colors, gradients, SVG opacity, semantic alpha, text, generic font
+families, and font fallback all survive the adapter.
 
 Cold inline and semantic-color variants are prepared through GPUI's background
 executor. Their shared LRU cache is bounded to 256 entries and 128 MiB including

@@ -528,7 +528,7 @@ impl GeometryRegistry {
         let result = LayoutMotionSample {
             offset_x: sampled.x - layout.x,
             offset_y: sampled.y - layout.y,
-            // GPUI 0.2.2 exposes an element offset but no public arbitrary
+            // GPUI exposes an element offset but no public arbitrary
             // subtree scale transform. Keep visual/hit geometry honest and
             // snap size while animating position.
             scale_x: 1.0,

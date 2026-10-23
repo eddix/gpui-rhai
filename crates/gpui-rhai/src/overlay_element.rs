@@ -745,7 +745,7 @@ impl ScriptOverlayElement {
                 // finds focus outside and the panel takes it back right after
                 // that frame, instead of relying on a focus-out listener
                 // (whose old path is not observable for every programmatic
-                // focus transfer in GPUI 0.2.x). With several modals open only
+                // focus transfer in GPUI). With several modals open only
                 // the topmost takes it back.
                 self.coordinator.keep_focus_in_topmost_modal(window, cx);
             }
@@ -924,10 +924,11 @@ impl ScriptOverlayElement {
             overlay.child(panel).into_any_element()
         };
         if self.spec.parent.is_some() {
-            // GPUI 0.2.x forbids calling `defer_draw` while it is already
-            // prepainting a deferred element. A nested overlay is rendered as
-            // part of its parent's deferred subtree, while the shared overlay
-            // coordinator still owns placement, ordering, and dismissal.
+            // A nested overlay is rendered as part of its parent's deferred
+            // subtree, while the shared overlay coordinator still owns
+            // placement, ordering, and dismissal. This path exists because
+            // GPUI 0.2 panicked on a nested `defer_draw`; gpui-pre 0.3.7
+            // allows up to ten nested levels.
             Some(overlay)
         } else {
             Some(deferred(overlay).with_priority(priority).into_any_element())
