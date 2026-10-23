@@ -16,14 +16,16 @@ permissions:
   contents: read
 
 jobs:
+  # portable, native and release split the Linux checks into three parallel
+  # jobs; they share the setup below through YAML anchors.
   portable:
     # The schedule only exists for the `stable` job; main was checked on push.
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    # A normal run takes about 20 minutes; the margin covers a cold compiler
+    # A normal run takes under 10 minutes; the margin covers a cold compiler
     # cache together with a slow apt mirror.
-    timeout-minutes: 90
-    env:
+    timeout-minutes: 60
+    env: &cargo-env
       # Incremental caches only cost disk on a one-shot runner, and sccache
       # cannot cache incremental builds.
       CARGO_INCREMENTAL: 0
@@ -40,8 +42,10 @@ jobs:
         with:
           toolchain: 1.95.0
           components: clippy,rustfmt
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-      - name: Install native Linux test dependencies
+      - &sccache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - &linux-test-deps
+        name: Install native Linux test dependencies
         uses: ./.github/actions/apt-install
         with:
           packages: >-
@@ -69,15 +73,11 @@ jobs:
         run: cargo clippy --workspace --all-targets --features gpui-rhai/charts,gpui-rhai/dev-reload -- -D warnings
       # Libraries, binaries and integration tests; examples are compiled by
       # Clippy above, their tests run in crates/gpui-rhai/tests/examples.rs, and
-      # the release build below links the ones CI launches.
+      # the release job links the ones CI launches.
       - name: Test
         run: cargo test --workspace --lib --bins --tests --features gpui-rhai/charts,gpui-rhai/dev-reload
       - name: Default feature contract
         run: cargo test -p gpui-rhai --lib --locked
-      - name: Native keyboard test support
-        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
-      - name: Mounted hot reload
-        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --features dev-reload --test token_reload
       # A registry change updates the reference applications' installed copies
       # in the same pull request (apps/README.md).
       - name: Reference application components and check
@@ -97,13 +97,39 @@ jobs:
           cargo package -p gpui-rhai-cli --no-verify \
             --config 'patch.crates-io.gpui-rhai.path="crates/gpui-rhai"' \
             --config 'patch.crates-io.gpui-rhai-registry.path="registry"'
+
+  # GPUI's test-support window against the official components.
+  native:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env: *cargo-env
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+      - *sccache
+      - *linux-test-deps
+      - name: Native keyboard test support
+        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+      - name: Mounted hot reload
+        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --features dev-reload --test token_reload
+
+  release:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env: *cargo-env
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+      - *sccache
+      - *linux-test-deps
       - name: Release build
         run: |
-          # How much the debug builds took, for the runner's disk budget.
-          du -sh target/debug tests/native-keyboard/target || true
-          df -h /
-          # The debug builds are done; their artifacts would crowd the release build.
-          rm -rf target/debug tests/native-keyboard/target
           # The examples CI launches: the Linux window smoke and the artifact audit.
           examples="phase0_probe $(bash scripts/audit-release-artifacts.sh --list)"
           cargo build --release -p gpui-rhai $(printf -- '--example %s ' ${examples})
@@ -183,7 +209,7 @@ jobs:
   # changing the repository settings. A job skipped by its own `if` passes.
   ci-ok:
     if: always()
-    needs: [portable, apps, stable]
+    needs: [portable, native, release, apps, stable]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
