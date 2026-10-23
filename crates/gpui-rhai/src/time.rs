@@ -574,10 +574,9 @@ mod tests {
     #[test]
     fn clock_ranges_and_dst_are_explicit() {
         assert_eq!(WallClock::fixed(123).now_ms(), 123);
-        assert!(
-            local_time_candidates("2026-03-08", "02:30:00", "America/New_York")
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            local_time_candidates("2026-03-08", "02:30:00", "America/New_York").unwrap(),
+            Vec::<i64>::new()
         );
         let fold = local_time_candidates("2026-11-01", "01:30:00", "America/New_York").unwrap();
         assert_eq!(fold.len(), 2);
