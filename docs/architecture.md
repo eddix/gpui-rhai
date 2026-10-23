@@ -153,7 +153,9 @@ capture intent. Script handlers keep generation, component scope, mount incarnat
 transactions, and runtime traces. Host callbacks execute their labeled Rust
 closure directly. A schema-checked `NativeHandlerRef` lets Rhai attach a Host-
 registered Rust fast path to the same ordinary node and outer transaction.
-Because GPUI 0.2.2 has no direct pointer-capture API, the runtime retains
+GPUI's own `Window::capture_pointer` holds one `HitboxId` per window, and an
+element gets a new `HitboxId` each time it prepaints again, so a capture taken
+there does not follow a node through rerenders. The runtime therefore retains
 `pointer_id -> NodeId` ownership and reroutes window-capture move/up events to
 the captured node until release, pointer-up, or unmount.
 

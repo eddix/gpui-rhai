@@ -164,7 +164,8 @@ copy/cut/paste plus read-only selection against real renderer tab stops,
 official Rhai components, native text editing plus generic Overlay/Layer,
 declarative timers, and transactional
 `ScriptLifecycle` callbacks. The suite also paints an open child Popover inside
-an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
+an open parent Dialog and checks that the window survives the paint; GPUI 0.2
+panicked on a nested `defer_draw`.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
