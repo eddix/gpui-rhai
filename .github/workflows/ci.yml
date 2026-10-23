@@ -150,10 +150,9 @@ jobs:
       - name: Test
         run: cargo test --manifest-path apps/Cargo.toml --locked
 
-  # The latest stable toolchain and the opt-in Grain backend change without a
-  # pull request touching them, so they run on main and weekly, not per PR.
+  # The latest stable toolchain and the opt-in Grain backend. A new stable
+  # release can break them without any change here, so they also run weekly.
   stable:
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -178,3 +177,21 @@ jobs:
         run: cargo +stable check --workspace --all-targets --all-features
       - name: Grain backend
         run: cargo +stable clippy -p gpui-rhai --all-targets --features grain-backend -- -D warnings
+
+  # The one required check of branch protection: it fails when any job above
+  # failed or was cancelled, so jobs can be added or renamed here without
+  # changing the repository settings. A job skipped by its own `if` passes.
+  ci-ok:
+    if: always()
+    needs: [portable, apps, stable]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All jobs passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "${NEEDS}" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "${NEEDS}" | jq -e 'any(.[]; .result != "success" and .result != "skipped")' >/dev/null; then
+            exit 1
+          fi
