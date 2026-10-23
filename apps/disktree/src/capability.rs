@@ -194,6 +194,9 @@ fn run_forwarder(
             last_progress = Instant::now();
         }
         if let Some(outcome) = handle.poll() {
+            // The walk has ended, so its counters are final; the snapshot
+            // above can predate the last files when the walk ends in between.
+            let snapshot = handle.progress.snapshot();
             let event = match outcome {
                 Ok(node) if !snapshot.cancelled && !handle.progress.is_cancelled() => {
                     let space = space::space_info(&root_for_device).ok();
