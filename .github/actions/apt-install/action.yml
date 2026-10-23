@@ -1,0 +1,56 @@
+name: Install apt packages
+description: >-
+  apt-get install that keeps the downloaded .deb files in the Actions cache.
+  The runner's Ubuntu mirror can serve archives at a few kB/s (run 39838535555
+  spent 34 minutes on 54.7 MB), while the index update stays fast; with the
+  archives cached, only packages whose version changed are downloaded.
+inputs:
+  packages:
+    description: Package names, separated by spaces or newlines.
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        # One cache line per runner image and package set.
+        packages="$(printf '%s\n' ${PACKAGES} | sort | sha256sum | cut -c1-16)"
+        echo "prefix=apt-${ImageOS}-${packages}-" >> "${GITHUB_OUTPUT}"
+    - uses: actions/cache/restore@v6
+      with:
+        path: ~/apt-archives
+        key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: ${{ steps.key.outputs.prefix }}
+    - id: install
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        cache="${HOME}/apt-archives"
+        archives=/var/cache/apt/archives
+        mkdir -p "${cache}"
+        # apt skips the download of an archive it already holds with the
+        # index's checksum. It downloads as the `_apt` user, which cannot
+        # write below the runner's home, so the cache is copied in and out.
+        find "${cache}" -maxdepth 1 -name '*.deb' -exec sudo cp -t "${archives}" {} +
+        before="$(ls "${cache}" | sort | sha256sum)"
+        sudo apt-get update
+        sudo apt-get install --yes --no-install-recommends \
+          -o APT::Keep-Downloaded-Packages=true ${PACKAGES}
+        # Drop versions the index no longer offers, so the cache does not grow.
+        sudo apt-get autoclean
+        find "${cache}" -maxdepth 1 -name '*.deb' -delete
+        find "${archives}" -maxdepth 1 -name '*.deb' -exec cp -t "${cache}" {} +
+        after="$(ls "${cache}" | sort | sha256sum)"
+        echo "changed=$([[ "${before}" != "${after}" ]] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+        du -sh "${cache}"
+    # A cache entry cannot be overwritten, so a changed set saves a new one and
+    # the restore above picks the newest by prefix.
+    - if: steps.install.outputs.changed == 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ~/apt-archives
+        key: ${{ steps.key.outputs.prefix }}${{ github.run_id }}-${{ github.run_attempt }}

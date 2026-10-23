@@ -20,32 +20,40 @@ jobs:
     # The schedule only exists for the `stable` job; main was checked on push.
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # A normal run takes about 20 minutes; the margin covers a cold compiler
+    # cache together with a slow apt mirror.
+    timeout-minutes: 90
     env:
-      # Incremental caches only cost disk on a one-shot runner.
+      # Incremental caches only cost disk on a one-shot runner, and sccache
+      # cannot cache incremental builds.
       CARGO_INCREMENTAL: 0
       # Line tables keep file:line in panics and backtraces at a fraction of
       # full debug info's compile, link and disk cost.
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      # Compiled library crates live in the Actions cache, not on the runner's
+      # disk. Pull requests read the entries main's runs wrote.
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.95.0
           components: clippy,rustfmt
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Install native Linux test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            libxcb1-dev \
-            libfontconfig1-dev \
-            libvulkan1 \
-            libwayland-dev \
-            libx11-xcb-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
-            mesa-vulkan-drivers \
-            weston \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            libxcb1-dev
+            libfontconfig1-dev
+            libvulkan1
+            libwayland-dev
+            libx11-xcb-dev
+            libxkbcommon-dev
+            libxkbcommon-x11-dev
+            mesa-vulkan-drivers
+            weston
             xvfb
       - name: Reject gpui-component dependencies
         run: |
@@ -116,21 +124,24 @@ jobs:
     env:
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.95.0
           components: clippy,rustfmt
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       - name: Install native Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            libxcb1-dev \
-            libfontconfig1-dev \
-            libwayland-dev \
-            libx11-xcb-dev \
-            libxkbcommon-dev \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            libxcb1-dev
+            libfontconfig1-dev
+            libwayland-dev
+            libx11-xcb-dev
+            libxkbcommon-dev
             libxkbcommon-x11-dev
       - name: Format
         run: cargo fmt --manifest-path apps/Cargo.toml --all -- --check
@@ -154,14 +165,14 @@ jobs:
         with:
           components: clippy
       - name: Install native Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            libxcb1-dev \
-            libfontconfig1-dev \
-            libwayland-dev \
-            libx11-xcb-dev \
-            libxkbcommon-dev \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            libxcb1-dev
+            libfontconfig1-dev
+            libwayland-dev
+            libx11-xcb-dev
+            libxkbcommon-dev
             libxkbcommon-x11-dev
       - name: Latest stable check
         run: cargo +stable check --workspace --all-targets --all-features
