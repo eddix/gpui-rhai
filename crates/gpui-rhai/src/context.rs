@@ -795,9 +795,9 @@ impl UiRuntimeState {
                 && owner.source.active(incarnations, effects, cascades)
         };
         self.pending_actions
-            .retain(|pending| pending.owner.as_ref().is_none_or(&active));
+            .retain(|pending| pending.owner.as_ref().is_none_or(active));
         self.pending_events
-            .retain(|pending| pending.owner.as_ref().is_none_or(&active));
+            .retain(|pending| pending.owner.as_ref().is_none_or(active));
         self.effect_cascades.prune_dispatches(incarnations, effects);
     }
 
@@ -7074,21 +7074,21 @@ mod tests {
                 .borrow_mut()
                 .rollback_transaction(checkpoint)
                 .unwrap();
-            assert!(
+            assert_eq!(
                 context
                     .runtime()
                     .borrow_mut()
-                    .take_window_element_commands("main")
-                    .is_empty()
+                    .take_window_element_commands("main"),
+                []
             );
         }
         context.copy_text("committed".into()).unwrap();
-        assert!(
+        assert_eq!(
             context
                 .runtime()
                 .borrow_mut()
-                .take_window_element_commands("other")
-                .is_empty()
+                .take_window_element_commands("other"),
+            []
         );
         assert!(
             matches!(context.runtime().borrow_mut().take_window_element_commands("main").as_slice(),
