@@ -167,7 +167,7 @@ mod tests {
         );
         registry.clear();
         sink.image_result("stale", None, None, Some("obsolete".into()));
-        assert!(registry.drain().is_empty());
+        assert_eq!(registry.drain(), Vec::<PresentationDiagnostic>::new());
         let next = registry.sink(generation.next());
         sink.image_result("stale", None, None, Some("obsolete".into()));
         next.image_result("new", None, None, Some("current".into()));
