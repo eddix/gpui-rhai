@@ -101,7 +101,7 @@ fn nav_header(ctx, props, header, enabled, rtl) {
     let header_ref = element_ref("header");
     let trail = [];
     if header == "back" && depth > 1 {
-        let chevron = image(asset(if rtl { "icons/chevron_right" } else { "icons/chevron_left" }))
+        let chevron = image(asset(if rtl { "app/icons/chevron_right" } else { "app/icons/chevron_left" }))
             .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")).flex_shrink(false));
         trail.push(button::Button(#{ key: "back", text: props.stack[depth - 2].title,
             prefix: chevron, variant: "ghost", disabled: !enabled,

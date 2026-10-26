@@ -12,6 +12,7 @@ fn pages() {
         #{ id: "foundations.typography", title: "Typography", group: "Foundations" },
         #{ id: "foundations.color", title: "Color roles", group: "Foundations" },
         #{ id: "foundations.density", title: "Density", group: "Foundations" },
+        #{ id: "foundations.responsive_grid", title: "Responsive grid", group: "Foundations" },
     ]
 }
 
@@ -20,6 +21,7 @@ fn view(ctx, h, v, id) {
     else if id == "foundations.typography" { typography_page(h, v) }
     else if id == "foundations.color" { color_page(h, v) }
     else if id == "foundations.density" { density_page(h, v) }
+    else if id == "foundations.responsive_grid" { responsive_grid_page(h, v) }
     else { () }
 }
 
@@ -128,5 +130,40 @@ fn density_page(h, v) {
     kit::page(h, v, "foundations.density", "Density",
         "Comfortable for large displays, compact for laptops. Density changes space, never font size.", [
         kit::sec("Side by side", kit::densities(density_specimen(h, v, "c"), density_specimen(h, v, "k"))),
+    ])
+}
+
+// A plain page-module callback, not an entry-module handler-map workaround.
+// Its lexical environment is this module; its state owner remains the Gallery.
+fn select_grid_tile(index, ctx, event) {
+    let values = ctx.get_state("values");
+    values["grid.selected"] = index;
+    ctx.set_state("values", values);
+}
+
+fn responsive_grid_page(h, v) {
+    let selected = kit::val(v, "grid.selected", -1);
+    let tiles = [];
+    for index in 0..20 {
+        let cover_style = style().width(relative(1.0)).aspect_ratio(1)
+            .background(if index == selected { theme_color("selection") } else { theme_color("surface_raised") })
+            .border(px(1)).border_color(theme_color("border"));
+        let cover = column([text(`${index + 1}`).with_style(style().typography("display"))])
+            .with_style(cover_style.flex_col().items_center().justify_center());
+        let caption = text(`Item ${index + 1}`).with_style(style().typography("body"));
+        let tile = column([cover, caption]).with_key(`grid-item-${index}`)
+            .with_style(style().width(relative(1.0)).gap(theme_spacing("xs")))
+            .accessibility_role("button").accessibility_label(`Select item ${index + 1}`)
+            .on_click(Fn("select_grid_tile").curry(index));
+        tiles.push(tile);
+    }
+    let grid = box(tiles).with_key("responsive-grid")
+        .with_style(style().width(relative(1.0)).auto_grid_columns(128, 160, 224).gap(theme_spacing("sm")));
+    let choose_first = button::Button(#{key:"grid-select-first", text:"Select first item",
+        on_click:Fn("select_grid_tile").curry(0)});
+    kit::page(h, v, "foundations.responsive_grid", "Responsive grid",
+        "Resize the window: 128–224px auto-fit tracks, equal last-row widths and square covers. Layout runs natively; selection is an ordinary module callback.", [
+        kit::sec("Selection", kit::line([choose_first, kit::note(if selected < 0 { "No selection" } else { `Selected item ${selected + 1}` })])),
+        kit::sec("Twenty items", grid),
     ])
 }

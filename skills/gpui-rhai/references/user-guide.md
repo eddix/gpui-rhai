@@ -516,6 +516,31 @@ selection when a controlled key disappears.
 
 ### 5.2 Other layout and command compositions
 
+For responsive equal-width tiles, use a Box with
+`style().width(relative(1.0)).auto_grid_columns(128, 160, 224).gap(theme_spacing("sm"))`.
+The arguments are minimum, preferred and maximum track widths in logical pixels.
+Minimum determines auto-fit breakpoints: tracks shrink to minimum before
+losing a column. Preferred supplies the native initial/natural width hint,
+not a second breakpoint or a history-dependent column-count policy. Maximum
+caps growth and can leave unused space after the start-aligned tracks.
+The last row uses the same tracks as preceding rows. Rows retain their
+intrinsic content height; square media can use
+`style().width(relative(1.0)).aspect_ratio(1)` on the media node, leaving its
+height automatic. Two explicit dimensions take precedence over aspect ratio.
+
+This is a native equal-cell layout, not complete CSS Grid: use explicit
+`grid_cols` / `col_span` for spanning cells, and virtual collections for large
+data sets. Native width refinement can request one additional presentation
+frame after mount or resize; it does not execute Rhai, invoke resize callbacks
+or write application state. Padding, border and theme gap lengths participate
+in layout. See the CLI Gallery's **Foundations → Responsive grid** page.
+
+Tabs with panels allocate the bounded remainder to their panel container on
+either axis. Give the Tabs root a bounded size (or a flex item allocation) for
+fill-height content such as SplitPane and Table. Without panels, Tabs leave
+cross-axis alignment to their parent; they work in centered TitleBar/Toolbar
+rows without a wrapper override.
+
 `SplitPane` is a controlled two-panel composition. Its `size` is the start
 panel ratio; pointer movement writes only a native optional-float signal and
 `on_resize` fires once on release. Arrow keys on the semantic separator commit
@@ -617,9 +642,25 @@ The runtime binds the callback to:
 - its imported-module invocation context;
 - any `UiValue`-convertible curried arguments.
 
-This is why a callback defined inside an imported component module continues to
-resolve that module's helpers later. Do not reduce callbacks to a function-name
-string or call a retained FnPtr against an unrelated AST.
+`Fn("name")` in the SDK engine retains the module environment **where the
+pointer is created**, including in ordinary application helper/page modules,
+not only formal component modules. `named_function("name")` is its explicit,
+reserved SDK alias (do not declare a script function with that name).
+A callback can be returned from a helper, placed in a handler map,
+curried and forwarded without changing that environment. Same-named helpers
+in different modules remain distinct, including during incremental updates.
+Synchronous `call` and `curry` also retain the module environment.
+
+Lexical lookup and UI state ownership are separate: a plain page function does
+not create a component instance. Its callback still reads/writes the state of
+the calling UI owner. A formal component's own handler uses that component's
+state. Generation, incarnation, event-schema and durable-curry checks still
+apply to both. Anonymous/capturing functions have not become durable callbacks.
+
+This environment retention is an SDK facility over pinned Rhai 1.26, not a
+property of bare Rhai's name-only `Fn`. Do not reduce callbacks to a function-name
+string, reconstruct one in a different module, or call a retained FnPtr against
+an unrelated AST.
 
 A formal component may bind a caller callback to a node it owns, but it must not
 pass that callback through another formal component's callback prop. Although

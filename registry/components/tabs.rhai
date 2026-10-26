@@ -187,10 +187,12 @@ fn render_Tabs(ctx, props) {
         }
         headers.push(header);
         if show_panel && (selected || keep_mounted) && "content" in tab && tab.content != () {
+            let panel_style = style().typography("body").flex_grow().flex_basis(relative(0))
+                .min_width(px(0)).min_height(px(0));
             panels.push(column([tab.content]).with_key(`panel:${tab.value}`)
                 .retained_page(selected).tab_stop(false)
                 .accessibility_role("tabpanel").accessibility_label(tab.label)
-                .with_style(ctx.component_style("panel", style().typography("body").min_width(px(0)).min_height(px(0)))));
+                .with_style(ctx.component_style("panel", panel_style)));
         }
     }
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
@@ -198,12 +200,20 @@ fn render_Tabs(ctx, props) {
     let list_style = style().relative().padding(theme_spacing("xxs")).gap(theme_spacing("xxs"))
         .background(theme_color("surface_hover")).radius(corner).min_width(px(0))
         .focus(style());
+    // Only a track inside our own panel root reserves its main-axis size.
+    // A standalone horizontal switcher must still shrink/scroll in a Toolbar.
+    if panels.len > 0 { list_style = list_style.flex_shrink(false); }
     if orientation == "vertical" {
-        list_style = list_style.min_width(theme_length("metrics.label_column")).self_start();
+        list_style = list_style.min_width(theme_length("metrics.label_column"));
     } else {
         list_style = list_style.min_height(theme_length("metrics.control")).overflow_x_scroll();
         if layout == "equal" { list_style = list_style.width(relative(1.0)); }
-        else { list_style = list_style.width(auto()).self_start(); }
+        else { list_style = list_style.width(auto()); }
+    }
+    // Standalone switchers follow the caller's alignment context. Intrinsic
+    // cross-axis sizing is needed only inside our own panel root.
+    if panels.len > 0 && (orientation == "vertical" || layout == "content") {
+        list_style = list_style.self_start();
     }
     list = list
         .with_style(ctx.component_style("list", list_style))
@@ -225,9 +235,11 @@ fn render_Tabs(ctx, props) {
         if size_env { list = list.env(#{ size: props.size }); }
         return list;
     }
-    let content = column(panels).with_key("panels").with_style(style().min_width(px(0)).min_height(px(0)));
+    let content = column(panels).with_key("panels")
+        .with_style(style().flex_grow().flex_basis(relative(0)).min_width(px(0)).min_height(px(0)));
     let root = if orientation == "vertical" { row([list, content]) } else { column([list, content]) };
-    root = root.with_style(ctx.component_style("root", style().gap(theme_length("space.group"))))
+    root = root.with_style(ctx.component_style("root", style().min_width(px(0)).min_height(px(0))
+        .gap(theme_length("space.group"))))
         .accessibility_role("group").accessibility_label(props.label);
     if size_env { root.env(#{ size: props.size }) } else { root }
 }

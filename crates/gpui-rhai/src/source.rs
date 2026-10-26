@@ -237,7 +237,7 @@ impl ModuleResolver for RestrictedModuleResolver {
                         position,
                     ))
                 })?;
-                crate::engine::validate_assignment_targets(&ast).map_err(|error| {
+                crate::engine::validate_runtime_ast(&ast).map_err(|error| {
                     Box::new(EvalAltResult::ErrorInModule(
                         path.to_owned(),
                         Box::new(runtime_error(error.to_string(), position)),
@@ -268,6 +268,9 @@ fn validate_module_init(
     ast: &AST,
     import_position: Position,
 ) -> Result<(), Box<EvalAltResult>> {
+    // Cached ASTs follow the same declaration rules as freshly compiled ones.
+    crate::engine::validate_runtime_ast(ast)
+        .map_err(|error| Box::new(runtime_error(error.to_string(), import_position)))?;
     let mut definitions = 0_usize;
     for statement in ast.statements() {
         let accepted = match statement {
@@ -320,7 +323,7 @@ fn pure_component_definition(expression: &Expr) -> bool {
             .iter()
             .all(|(_, value)| pure_component_definition(value)),
         Expr::FnCall(call, ..)
-            if call.name == "Fn"
+            if (call.name == "Fn" || call.name == crate::invocation::NAMED_FUNCTION)
                 && !call.is_qualified()
                 && call.args.len() == 1
                 && matches!(call.args[0], Expr::StringConstant(..)) =>

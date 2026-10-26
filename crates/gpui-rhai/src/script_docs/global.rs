@@ -5,6 +5,11 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "named_function(_: string) -> core::result::Result<rhai::types::fn_ptr::FnPtr,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["name"],
+        doc: "Creates a named function pointer retaining this module's lexical environment. Fn(name) is an alias in the SDK engine; curry and synchronous call are supported. UI state ownership is assigned separately when retained as a callback.",
+    },
+    ScriptFnDoc {
         signature: "time_parts(_: i64, _: string) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["ms", "zone"],
         doc: "Returns date, time, offset_minutes and zone for an epoch instant; date/time are ISO and HH:MM:SS.",

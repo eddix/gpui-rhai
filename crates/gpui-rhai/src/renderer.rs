@@ -57,6 +57,7 @@ type ElementHitboxFn = dyn Fn(&crate::ElementRef, &App) -> Option<gpui::HitboxId
 
 #[derive(Clone)]
 pub struct NodeEventDispatcher {
+    presentation: Option<crate::presentation_diagnostic::PresentationSink>,
     script: Rc<DispatchFn>,
     native: Rc<NativeDispatchFn>,
     signal_write: Rc<SignalWriteFn>,
@@ -104,6 +105,7 @@ impl NodeEventDispatcher {
         R: Into<EventResponse>,
     {
         Self {
+            presentation: None,
             script: Rc::new(move |callback, event, payload, target, window, app| {
                 dispatch(callback, event, payload, target, window, app).into()
             }),
@@ -119,6 +121,14 @@ impl NodeEventDispatcher {
             canvas_bounds: Rc::new(|_, _| None),
             canvas_local_point: Rc::new(|_, _, _| None),
         }
+    }
+
+    pub(crate) fn with_presentation_sink(
+        mut self,
+        sink: crate::presentation_diagnostic::PresentationSink,
+    ) -> Self {
+        self.presentation = Some(sink);
+        self
     }
 
     #[must_use]
@@ -2471,6 +2481,7 @@ impl GpuiNodeRenderer {
         let populated = Self::populate_with_interactions(
             element,
             node,
+            &resolved_style,
             &local_environment,
             boundary_fallback,
             path,
@@ -2518,9 +2529,11 @@ impl GpuiNodeRenderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn populate_with_interactions<C: ColorResolver>(
         element: Div,
         node: &UiNode,
+        resolved_style: &StyleProperties,
         environment: &RenderEnvironment<'_, C>,
         boundary_fallback: Option<&UiNode>,
         path: &str,
@@ -2533,6 +2546,7 @@ impl GpuiNodeRenderer {
             Wrapped::Interactive(element) => Self::populate(
                 element,
                 node,
+                resolved_style,
                 environment,
                 boundary_fallback,
                 path,
@@ -2542,6 +2556,7 @@ impl GpuiNodeRenderer {
             Wrapped::Plain(element) => Self::populate(
                 element,
                 node,
+                resolved_style,
                 environment,
                 boundary_fallback,
                 path,
@@ -2753,10 +2768,11 @@ impl GpuiNodeRenderer {
         Wrapped::Interactive(element)
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn populate<C: ColorResolver>(
         element: impl ParentElement + IntoElement,
         node: &UiNode,
+        resolved_style: &StyleProperties,
         environment: &RenderEnvironment<'_, C>,
         boundary_fallback: Option<&UiNode>,
         path: &str,
@@ -2801,24 +2817,15 @@ impl GpuiNodeRenderer {
                     path,
                     retained_id,
                 );
-                let element = if let Some(crate::table_layout::TableLayout::Resolved { extent }) =
-                    node.table_layout()
-                {
-                    let mut track = div()
-                        .flex()
-                        .flex_col()
-                        .w(px(f64_to_f32(*extent)))
-                        .min_w(px(f64_to_f32(*extent)))
-                        .flex_shrink_0();
-                    if node.style().base.flex_grow == Some(true) {
-                        track = track.flex_1().min_h(px(0.0));
-                    }
-                    element.child(track.children(children))
-                } else {
-                    element.children(children)
-                };
-                decorate_scrollbars(element, node, environment, path, retained_id)
-                    .into_any_element()
+                populate_box(
+                    element,
+                    node,
+                    children,
+                    resolved_style,
+                    environment,
+                    path,
+                    retained_id,
+                )
             }
             UiNodeKind::Custom { primitive } => element
                 .child(
@@ -2867,7 +2874,9 @@ impl GpuiNodeRenderer {
                     ),
                 )
                 .into_any_element(),
-            UiNodeKind::Image { source } => render_image(element, source, environment),
+            UiNodeKind::Image { source } => {
+                render_image(element, source, environment, path, retained_id)
+            }
             UiNodeKind::DirectionalImage {
                 left_to_right,
                 right_to_left,
@@ -2876,7 +2885,7 @@ impl GpuiNodeRenderer {
                     TextDirection::LeftToRight => left_to_right,
                     TextDirection::RightToLeft => right_to_left,
                 };
-                render_image(element, source, environment)
+                render_image(element, source, environment, path, retained_id)
             }
             UiNodeKind::Overlay {
                 trigger,
@@ -4035,14 +4044,58 @@ fn node_canvas_point(
     )
 }
 
+// Build container-specific layout after rendering descendants. Large GPUI
+// Div/Style temporaries must not live in every recursive renderer frame.
+#[inline(never)]
+fn populate_box<C: ColorResolver>(
+    element: impl ParentElement + IntoElement,
+    node: &UiNode,
+    children: Vec<AnyElement>,
+    style: &StyleProperties,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> AnyElement {
+    let element = if let Some(columns) = style.auto_grid_columns() {
+        let gap = environment
+            .resolver()
+            .resolve_length(style.gap.unwrap_or(Length::Pixels(0.0)))
+            .unwrap_or(Length::Pixels(0.0));
+        element.child(crate::auto_grid::AutoGridElement {
+            id: SharedString::from(format!("{}:{path}:auto-grid", environment.view_id)),
+            columns,
+            gap,
+            rtl: environment.direction == TextDirection::RightToLeft,
+            children,
+        })
+    } else if let Some(crate::table_layout::TableLayout::Resolved { extent }) = node.table_layout()
+    {
+        let mut track = div()
+            .flex()
+            .flex_col()
+            .w(px(f64_to_f32(*extent)))
+            .min_w(px(f64_to_f32(*extent)))
+            .flex_shrink_0();
+        if node.style().base.flex_grow == Some(true) {
+            track = track.flex_1().min_h(px(0.0));
+        }
+        element.child(track.children(children))
+    } else {
+        element.children(children)
+    };
+    decorate_scrollbars(element, node, environment, path, retained_id).into_any_element()
+}
+
 fn render_image<C: ColorResolver>(
     element: impl ParentElement + IntoElement,
     source: &ImageSourceSpec,
     environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
 ) -> AnyElement {
     let tint = environment.ambient_text_color;
-    environment.assets.map_or_else(
-        || div().child("Image registry unavailable").into_any_element(),
+    let result = environment.assets.map_or_else(
+        || Err("Image registry unavailable".to_owned()),
         |assets| {
             let handle = match source {
                 ImageSourceSpec::Handle(handle) => Ok(handle.clone()),
@@ -4050,14 +4103,27 @@ fn render_image<C: ColorResolver>(
                     .cached_image(asset)
                     .map(|image| image.opaque().clone()),
             };
-            match handle.and_then(|handle| assets.image_source_tinted(&handle, tint)) {
-                Ok(source) => element.child(img(source).size_full()).into_any_element(),
-                Err(error) => div()
-                    .child(format!("Image error: {error}"))
-                    .into_any_element(),
-            }
+            handle
+                .and_then(|handle| assets.image_source_tinted(&handle, tint))
+                .map_err(|error| error.to_string())
         },
-    )
+    );
+    if let Some(sink) = environment
+        .dispatcher
+        .and_then(|dispatcher| dispatcher.presentation.as_ref())
+    {
+        let asset = match source {
+            ImageSourceSpec::Asset(id) => Some(id.as_str()),
+            ImageSourceSpec::Handle(_) => None,
+        };
+        sink.image_result(path, retained_id, asset, result.as_ref().err().cloned());
+    }
+    match result {
+        Ok(source) => element.child(img(source).size_full()).into_any_element(),
+        Err(error) => element
+            .child(format!("Image error: {error}"))
+            .into_any_element(),
+    }
 }
 
 fn render_inline_svg<C: ColorResolver>(
@@ -5925,6 +5991,9 @@ fn apply_flex_alignment(
 }
 
 fn apply_layout_dimensions(mut element: Div, style: &StyleProperties) -> Div {
+    if let Some(ratio) = style.aspect_ratio() {
+        element.style().aspect_ratio = Some(to_f32(ratio));
+    }
     if let Some(value) = style.width {
         element = width(element, value);
     }

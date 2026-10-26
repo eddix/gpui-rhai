@@ -794,7 +794,7 @@ pub fn load_locale_source(
     let mut ast = engine
         .compile(source)
         .map_err(|error| LocaleError::Script(error.to_string()))?;
-    crate::engine::validate_assignment_targets(&ast)
+    crate::engine::validate_runtime_ast(&ast)
         .map_err(|error| LocaleError::Script(error.to_string()))?;
     ast.set_source(source_name);
     let raw: Dynamic = engine

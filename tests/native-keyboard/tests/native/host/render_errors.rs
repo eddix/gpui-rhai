@@ -272,3 +272,75 @@ fn on_error_reports_each_new_failure_once_after_its_frame(cx: &mut TestAppContex
     click(&mut visual, "Break render");
     assert_eq!(observed.reports.borrow().len(), 2);
 }
+
+#[gpui::test]
+fn native_image_failures_are_observable_nonfatal_deduplicated_and_recoverable(
+    cx: &mut TestAppContext,
+) {
+    use crate::support::{Step, settle};
+    use gpui_rhai::ScriptErrorDomain;
+    let observed = Observed::default();
+    let observer = observed.clone();
+    let source = r#"
+        fn state_schema(){#{fields:#{missing:#{schema:#{type:"bool"},"default":#{type:"bool",value:true}}}}}
+        fn toggle(ctx,value){ctx.set_state("missing",!ctx.get_state("missing"));}
+        fn fail(ctx,value){throw "script positive control";}
+        fn view(ctx){column([
+            image(asset(if ctx.get_state("missing"){"app/icons/absent"}else{"app/icons/search"}))
+                .with_key("icon").with_style(style().width(px(20)).height(px(20))),
+            text("Toggle").accessibility_role("button").accessibility_label("Toggle").on_click(Fn("toggle")),
+            text("Fail").accessibility_role("button").accessibility_label("Fail").on_click(Fn("fail"))
+        ])}
+    "#;
+    let (mut visual, view) = Mount::components(source)
+        .id("image-diagnostics")
+        .config(move |config| {
+            config.on_error(move |report, cx| {
+                observer.reports.borrow_mut().push(report.clone());
+                if let Some(handle) = observer.handle.borrow().clone() {
+                    observer
+                        .read_back
+                        .borrow_mut()
+                        .push(handle.last_error(cx).unwrap());
+                }
+            })
+        })
+        .mount(cx);
+    *observed.handle.borrow_mut() = Some(view.clone());
+    settle(&mut visual, Step::Frame, 4);
+    {
+        let reports = observed.reports.borrow();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].domain, ScriptErrorDomain::Presentation);
+        assert_eq!(
+            reports[0]
+                .presentation
+                .as_ref()
+                .unwrap()
+                .asset_id
+                .as_deref(),
+            Some("app/icons/absent")
+        );
+        assert!(reports[0].presentation.as_ref().unwrap().node_id.is_some());
+        assert_eq!(reports[0].view_id, "image-diagnostics");
+    }
+    assert_eq!(last_error(&mut visual, &view), None);
+    for _ in 0..10 {
+        settle(&mut visual, Step::Frame, 1);
+    }
+    assert_eq!(observed.reports.borrow().len(), 1);
+    for expected in [1, 2] {
+        dispatch(&mut visual, &view, by_role("button", "Toggle"), "click").unwrap();
+        settle(&mut visual, Step::Frame, 3);
+        assert_eq!(last_error(&mut visual, &view), None);
+        assert_eq!(observed.reports.borrow().len(), expected);
+    }
+    let _ = dispatch(&mut visual, &view, by_role("button", "Fail"), "click");
+    settle(&mut visual, Step::Frame, 3);
+    assert_eq!(observed.reports.borrow().len(), 3);
+    assert_eq!(
+        observed.reports.borrow()[2].domain,
+        ScriptErrorDomain::Transaction
+    );
+    assert!(observed.reports.borrow()[2].presentation.is_none());
+}

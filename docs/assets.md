@@ -34,6 +34,15 @@ images. Combobox, Select, and Table need no private assets; DatePicker and
 Pagination ship only the minimal calendar and directional SVGs they need;
 complete icon packs remain optional source packs.
 
+An undeclared/dynamic image can still fail during presentation (for example,
+using `icons/search` where only `app/icons/search` was prepared). Its inline
+placeholder now also reports through `ScriptViewConfig::on_error` with
+`ScriptErrorDomain::Presentation`, including its logical asset ID and native
+node identity. Reports are bounded and deduplicated; they do not overwrite the
+last script transaction error. Use the existing stderr mirroring option or the
+Host observer instead of polling the frame or adding per-frame image logs.
+This does not make dynamic Host namespaces statically knowable to the CLI.
+
 ## Dynamic loading
 
 Application lifecycle code may still load or decode dynamic assets:

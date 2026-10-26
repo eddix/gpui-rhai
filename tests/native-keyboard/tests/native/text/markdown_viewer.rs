@@ -443,7 +443,9 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
             "ar.rhai",
             include_str!("../../../../../registry/locales/ar.rhai"),
         )
-        .id(&format!("markdown-visible-y-track-{locale}-{height}-{bounded}"))
+        .id(&format!(
+            "markdown-visible-y-track-{locale}-{height}-{bounded}"
+        ))
         .mount(cx);
     settle(&mut visual, Step::Frame, 5);
     assert_eq!(last_error(&mut visual, &view), None);
@@ -468,7 +470,10 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
     // click at 140px is a valid thumb press, not a page/jump request. Drag the
     // visible thumb instead of assuming an estimated thumb length.
     let start = point(x, table.top() + px(20.0));
-    let end = point(x, table.top() + px(if content && !bounded { 240.0 } else { 140.0 }));
+    let end = point(
+        x,
+        table.top() + px(if content && !bounded { 240.0 } else { 140.0 }),
+    );
     visual.simulate_mouse_move(start, None, Modifiers::default());
     settle(&mut visual, Step::Frame, 1);
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
@@ -478,7 +483,9 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
     let after = visual.debug_bounds("markdown-table:0").unwrap();
     assert_eq!(after, table, "the table viewport itself must not move");
     assert!(
-        visual.debug_bounds("markdown-cell:0:0:0").is_none_or(|header| header.bottom() <= table.top()),
+        visual
+            .debug_bounds("markdown-cell:0:0:0")
+            .is_none_or(|header| header.bottom() <= table.top()),
         "dragging the visible Y thumb must move the header outside the viewport (overscan may retain it): rtl={rtl}, content={content}, table={table:?}, start={start:?}, end={end:?}, header before={header:?}, after={:?}",
         visual.debug_bounds("markdown-cell:0:0:0")
     );

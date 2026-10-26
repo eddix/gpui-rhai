@@ -208,7 +208,10 @@ fn direct_host_document_and_collection_mutations_render_without_a_clock_tick(
             .unwrap()
     );
     settle(&mut visual, Step::Frame, 3);
-    assert_eq!(node_by_test_id(&mut visual, &view, "revision").name, "missing");
+    assert_eq!(
+        node_by_test_id(&mut visual, &view, "revision").name,
+        "missing"
+    );
     visual
         .update(|_, cx| {
             view.register_native_text_document(
