@@ -36,10 +36,26 @@ gap G5) and worked around it by polling `last_error` from its root render.
 - Script windows a view opens inherit its reporting.
 - No environment variable: the Host decides, in code, what its process prints.
 
+### Recoverable presentation diagnostics (#205, 2026-10-26)
+
+The observer is also the Host reporting channel for nonfatal native image
+failures; it is not restricted to failed script transactions. Reports carry
+`ScriptErrorDomain::Transaction` or `Presentation`. The latter includes a
+`PresentationDiagnostic` (node ID/path, logical asset ID, bounded message),
+leaves `last_error`/`last_diagnostic` unchanged, and does not roll back a tree.
+Foreground delivery uses the same deferred observer and stderr policy.
+
+The per-view/generation active-error set deduplicates unchanged failures and
+is bounded to 256 entries with deterministic admission (not an eviction/repaint
+loop). Messages and logical resource/path strings are bounded; image bytes and
+script state are not recorded. Recovery removes an entry, unmount prunes it,
+and reload/disposal invalidate old sinks. Native slot rendering may enqueue
+after the root render; the existing foreground pump drains that queue too.
+
 ## Consequences
 
-- Hosts stop polling. The banner, `last_error` and the observer describe the
-  same failure.
+- Hosts stop polling. Transaction-domain reports describe the banner and
+  `last_error`; presentation-domain reports describe recoverable placeholders.
 - Detection is per frame. A failure is reported when the view next renders,
   which is also when its banner first appears; a view that never renders again
   reports nothing more, as its banner shows nothing more.

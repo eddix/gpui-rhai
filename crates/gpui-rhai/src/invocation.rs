@@ -3,6 +3,88 @@ use std::rc::Rc;
 
 use rhai::{FnPtr, FuncArgs, NativeCallContext};
 
+pub(crate) const NAMED_FUNCTION: &str = "named_function";
+
+/// Lexical provenance is independent of a callback's UI state owner. It travels
+/// with a named function, including through maps, helper modules and curry.
+#[derive(Clone, Debug)]
+pub(crate) struct FunctionEnvironment(pub(crate) ScriptInvocationContext);
+
+/// Rhai's builtin `Fn` is only a name; it does not retain its declaration
+/// environment. Map that one token to an equivalent native constructor. Unlike
+/// source rewriting this preserves strings, comments and diagnostic positions.
+/// The trampoline also supports ordinary synchronous `call`/`curry` semantics.
+#[allow(deprecated)]
+pub(crate) fn register_named_functions(engine: &mut rhai::Engine) {
+    engine.on_parse_token(|token, _, _| match token {
+        rhai::Token::Identifier(name) | rhai::Token::Reserved(name) if name.as_str() == "Fn" => {
+            rhai::Token::Identifier(Box::new(NAMED_FUNCTION.into()))
+        }
+        token => token,
+    });
+    rhai::FuncRegistration::new(NAMED_FUNCTION)
+        .in_global_namespace()
+        .with_purity(false)
+        .with_volatility(true)
+        .register_into_engine(
+            engine,
+            |call: NativeCallContext<'_>, name: rhai::ImmutableString| {
+                let function = FnPtr::new(name.clone())?;
+                let environment = ScriptInvocationContext::capture_retained(&call);
+                let retained = environment.clone();
+                let mut bound = FnPtr::from_fn(name, move |call, args| {
+                    // Rhai puts an object's mutable `this` before curry for
+                    // obj.call(fn, ...); ordinary call has the marker first.
+                    let object_call = args
+                        .get(1)
+                        .is_some_and(|value| value.is::<FunctionEnvironment>())
+                        && args
+                            .first()
+                            .is_some_and(|value| !value.is::<FunctionEnvironment>());
+                    let (object, args) = if object_call {
+                        let (object, args) = args.split_first_mut().expect("object and marker");
+                        (Some(&mut **object), args)
+                    } else {
+                        (None, &mut args[..])
+                    };
+                    let values: Vec<_> = args
+                        .iter_mut()
+                        .filter(|value| !value.is::<FunctionEnvironment>())
+                        .map(|value| value.take())
+                        .collect();
+                    retained.with_synchronous_context(&call, |context| {
+                        function.call_raw(context, object, values)
+                    })
+                })?;
+                bound.add_curry(rhai::Dynamic::from(FunctionEnvironment(environment)));
+                Ok::<_, Box<rhai::EvalAltResult>>(bound)
+            },
+        );
+}
+
+pub(crate) fn take_function_environment(function: &mut FnPtr) -> Option<ScriptInvocationContext> {
+    let mut environment = None;
+    let curry: Vec<_> = function
+        .iter_curry()
+        .filter_map(|value| {
+            if value.is::<FunctionEnvironment>() {
+                environment = Some(value.clone_cast::<FunctionEnvironment>().0);
+                None
+            } else {
+                Some(value.clone())
+            }
+        })
+        .collect();
+    if environment.is_some() {
+        // Retained SDK invocations already re-enter this environment. Do not
+        // retain a second trampoline or charge an extra script/Rust call per
+        // event, component render or virtual row.
+        *function = FnPtr::new(function.fn_name()).expect("a previously validated function name");
+    }
+    function.set_curry(curry);
+    environment
+}
+
 /// The only adapter around Rhai's volatile stored native call context.
 ///
 /// Imported module callbacks need the evaluator's global/module environment in
@@ -63,12 +145,11 @@ impl ScriptInvocationContext {
         self.operation_base
     }
 
-    /// Compare the lexical environment of an explicitly retained Node factory.
+    /// Compare the lexical environment of a retained function.
     /// Shared module identities survive repeated captures of the same program;
-    /// evaluator counters and the stored-context allocation do not. This is
-    /// deliberately not event-callback equality.
+    /// evaluator counters and the stored-context allocation do not.
     #[allow(deprecated)]
-    pub(crate) fn same_factory_environment(&self, other: &Self) -> bool {
+    pub(crate) fn same_environment(&self, other: &Self) -> bool {
         self.stored.source == other.stored.source
             && self.stored.global.source == other.stored.global.source
             && self.stored.global.lib.len() == other.stored.global.lib.len()
@@ -111,6 +192,17 @@ impl ScriptInvocationContext {
         function: &FnPtr,
         args: impl FuncArgs,
     ) -> Result<T, Box<rhai::EvalAltResult>> {
+        self.with_synchronous_context(caller, |context| {
+            function.call_within_context(context, args)
+        })
+    }
+
+    #[allow(deprecated)]
+    fn with_synchronous_context<T>(
+        &self,
+        caller: &NativeCallContext<'_>,
+        operation: impl FnOnce(&NativeCallContext<'_>) -> T,
+    ) -> T {
         let mut stored = (*self.stored).clone();
         let current = caller.global_runtime_state();
         stored.global.level = current.level;
@@ -118,7 +210,7 @@ impl ScriptInvocationContext {
         stored.global.num_modules_loaded = current.num_modules_loaded;
         stored.global.tag = current.tag.clone();
         let context = stored.create_context(caller.engine());
-        function.call_within_context(&context, args)
+        operation(&context)
     }
 }
 
@@ -152,7 +244,7 @@ mod tests {
         engine.eval::<()>("capture(); capture();").unwrap();
         let captures = captures.borrow();
         let first = &captures[0];
-        assert!(first.same_factory_environment(&captures[1]));
+        assert!(first.same_environment(&captures[1]));
 
         #[allow(deprecated)]
         let different_capture = |change: fn(&mut rhai::NativeCallContextStore)| {
@@ -169,17 +261,17 @@ mod tests {
             stored.global.num_modules_loaded = 42;
             stored.global.tag = "another invocation".into();
         });
-        assert!(first.same_factory_environment(&counters));
+        assert!(first.same_environment(&counters));
         let source = different_capture(|stored| stored.source = Some("other/module".into()));
-        assert!(!first.same_factory_environment(&source));
+        assert!(!first.same_environment(&source));
         let library = different_capture(|stored| {
             stored.global.lib.push(rhai::Module::new().into());
         });
-        assert!(!first.same_factory_environment(&library));
+        assert!(!first.same_environment(&library));
         let import = different_capture(|stored| {
             stored.global.push_import("palette", rhai::Module::new());
         });
-        assert!(!first.same_factory_environment(&import));
+        assert!(!first.same_environment(&import));
     }
 
     #[test]

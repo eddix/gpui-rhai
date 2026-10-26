@@ -43,7 +43,9 @@ pub mod node;
 pub mod overlay;
 mod overlay_element;
 pub mod pan_zoom;
+mod presentation_diagnostic;
 pub mod primitive;
+pub use presentation_diagnostic::PresentationDiagnostic;
 pub mod range_input;
 pub mod range_slider;
 mod read_dependency;
@@ -87,6 +89,8 @@ pub mod chart;
 
 pub mod accessibility;
 pub mod action;
+mod auto_grid;
+pub use auto_grid::AutoGridColumns;
 pub mod app;
 pub mod asset;
 pub mod async_runtime;
@@ -115,8 +119,9 @@ pub use action::{
 };
 pub use app::{
     EmbeddedScriptView, FileScriptView, NavigateBack, PreparedScriptView, ScriptApplication,
-    ScriptErrorReport, ScriptViewConfig, ScriptViewError, ScriptViewExtension, ScriptViewHandle,
-    ScriptViewHost, ScriptViewPerformanceSnapshot, ScriptViewState, ThemeHandle, install,
+    ScriptErrorDomain, ScriptErrorReport, ScriptViewConfig, ScriptViewError, ScriptViewExtension,
+    ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot, ScriptViewState, ThemeHandle,
+    install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,

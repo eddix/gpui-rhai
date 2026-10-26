@@ -509,6 +509,16 @@ views and on for `ScriptApplication`, which turns it off with
 `ScriptApplication::mirror_errors_to_stderr(false)`. See
 [ADR 0025](https://github.com/eddix/gpui-rhai/blob/main/docs/adr/0025-host-error-reporting.md).
 
+The same observer also receives recoverable native image failures. Check
+`report.domain`: `Transaction` describes `last_error` / `last_diagnostic`;
+`Presentation` instead carries `report.presentation` (node ID/path, optional
+logical asset ID and bounded message). Presentation errors keep the placeholder
+and do **not** set `last_error`, roll back a valid script tree or stop input.
+They are deduplicated per view/generation/node and error, limited to 256 active
+entries; recovery, unmount, reload and disposal release their entries. Stderr
+mirroring uses `[presentation]` for these reports. Host observers are deferred
+past the view's borrow and may safely read their handle in either domain.
+
 See `cargo run -p gpui-rhai --example embedded_views` for three isolated views,
 automatic compact sizing, escaping Combobox placement, duplicate local IDs,
 cross-view dismissal, shared Layer placement, and explicit dispose/remount.

@@ -941,6 +941,12 @@ impl CustomType for LinearGradientSpec {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum StyleValueError {
+    #[error(
+        "automatic grid widths require 1 <= minimum <= preferred <= maximum <= 1000000, all finite"
+    )]
+    InvalidAutoGrid,
+    #[error("aspect ratio must be finite, positive and representable by GPUI, got {0}")]
+    InvalidAspectRatio(f64),
     #[error("shadow offsets must be finite and blur/spread must be finite and non-negative")]
     InvalidShadow,
     #[error("gradient angle must be finite")]
@@ -1158,6 +1164,13 @@ impl CornerLengths {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LayoutConstraints {
+    pub auto_grid_columns: Option<crate::AutoGridColumns>,
+    #[serde(default, deserialize_with = "deserialize_aspect_ratio")]
+    pub aspect_ratio: Option<f64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct StyleProperties {
     pub display: Option<DisplayMode>,
     pub direction: Option<FlexDirection>,
@@ -1191,6 +1204,10 @@ pub struct StyleProperties {
     pub flex_shrink: Option<bool>,
     pub flex_basis: Option<LayoutLength>,
     pub grid_columns: Option<u16>,
+    /// Optional intrinsic constraints stay off the common style's inline
+    /// footprint, including its eight pseudo-state copies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_constraints: Option<Box<LayoutConstraints>>,
     pub grid_rows: Option<u16>,
     pub column_span: Option<u16>,
     pub row_span: Option<u16>,
@@ -1225,6 +1242,28 @@ pub struct StyleProperties {
 }
 
 impl StyleProperties {
+    pub fn auto_grid_columns(&self) -> Option<crate::AutoGridColumns> {
+        self.layout_constraints
+            .as_deref()
+            .and_then(|layout| layout.auto_grid_columns)
+    }
+
+    pub fn aspect_ratio(&self) -> Option<f64> {
+        self.layout_constraints
+            .as_deref()
+            .and_then(|layout| layout.aspect_ratio)
+    }
+
+    fn constraints_mut(&mut self) -> &mut LayoutConstraints {
+        self.layout_constraints.get_or_insert_with(Box::default)
+    }
+
+    fn clear_auto_grid_columns(&mut self) {
+        if let Some(layout) = &mut self.layout_constraints {
+            layout.auto_grid_columns = None;
+        }
+    }
+
     pub(crate) fn merge(&mut self, overlay: &Self) {
         merge_option(&mut self.display, overlay.display);
         merge_option(&mut self.direction, overlay.direction);
@@ -1265,7 +1304,18 @@ impl StyleProperties {
         }
         merge_option(&mut self.flex_shrink, overlay.flex_shrink);
         merge_option(&mut self.flex_basis, overlay.flex_basis);
-        merge_option(&mut self.grid_columns, overlay.grid_columns);
+        if let Some(columns) = overlay.auto_grid_columns() {
+            self.constraints_mut().auto_grid_columns = Some(columns);
+            self.grid_columns = None;
+        } else if let Some(columns) = overlay.grid_columns {
+            self.grid_columns = Some(columns);
+            self.clear_auto_grid_columns();
+        } else if overlay.display == Some(DisplayMode::Grid) {
+            self.clear_auto_grid_columns();
+        }
+        if let Some(ratio) = overlay.aspect_ratio() {
+            self.constraints_mut().aspect_ratio = Some(ratio);
+        }
         merge_option(&mut self.grid_rows, overlay.grid_rows);
         merge_option(&mut self.column_span, overlay.column_span);
         merge_option(&mut self.row_span, overlay.row_span);
@@ -1679,6 +1729,7 @@ impl Style {
 
     #[must_use]
     pub fn grid(mut self) -> Self {
+        self.base.clear_auto_grid_columns();
         self.base.display = Some(DisplayMode::Grid);
         self
     }
@@ -1820,7 +1871,39 @@ impl Style {
     /// Returns [`StyleValueError`] outside 1..=1024.
     pub fn grid_columns(mut self, columns: i64) -> Result<Self, StyleValueError> {
         self.base.grid_columns = Some(grid_value(columns)?);
+        self.base.clear_auto_grid_columns();
         self.base.display = Some(DisplayMode::Grid);
+        Ok(self)
+    }
+
+    /// A responsive equal-track grid over ordinary Box children. Widths are
+    /// logical pixels; row heights remain intrinsic. Native width refinement
+    /// after mount/resize does not execute Rhai or mutate application state.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidAutoGrid`] for invalid width bounds.
+    pub fn auto_grid_columns(
+        mut self,
+        minimum: f64,
+        preferred: f64,
+        maximum: f64,
+    ) -> Result<Self, StyleValueError> {
+        self.base.constraints_mut().auto_grid_columns =
+            Some(crate::AutoGridColumns::new(minimum, preferred, maximum)?);
+        self.base.grid_columns = None;
+        self.base.display = Some(DisplayMode::Block);
+        Ok(self)
+    }
+
+    /// Set GPUI's width/height ratio, leaving one dimension automatic.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidAspectRatio`] for a non-positive,
+    /// non-finite or unrepresentable ratio.
+    pub fn aspect_ratio(mut self, ratio: f64) -> Result<Self, StyleValueError> {
+        self.base.constraints_mut().aspect_ratio = Some(validate_aspect_ratio(ratio)?);
         Ok(self)
     }
 
@@ -1830,6 +1913,7 @@ impl Style {
     ///
     /// Returns [`StyleValueError`] outside 1..=1024.
     pub fn grid_rows(mut self, rows: i64) -> Result<Self, StyleValueError> {
+        self.base.clear_auto_grid_columns();
         self.base.grid_rows = Some(grid_value(rows)?);
         self.base.display = Some(DisplayMode::Grid);
         Ok(self)
@@ -2605,6 +2689,25 @@ fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
                 .grid_columns(value)
                 .map_err(|error| Box::new(style_runtime_error(error.to_string())))
         })
+        .with_fn(
+            "auto_grid_columns",
+            |style: &mut Style, minimum: Dynamic, preferred: Dynamic, maximum: Dynamic| {
+                style
+                    .clone()
+                    .auto_grid_columns(
+                        style_number(minimum)?,
+                        style_number(preferred)?,
+                        style_number(maximum)?,
+                    )
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn("aspect_ratio", |style: &mut Style, ratio: Dynamic| {
+            style
+                .clone()
+                .aspect_ratio(style_number(ratio)?)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
         .with_fn("grid_rows", |style: &mut Style, value: INT| {
             style
                 .clone()
@@ -3210,6 +3313,33 @@ fn optional_map_number(value: &mut Map, name: &str) -> Result<Option<f64>, Box<E
             }
         })
         .transpose()
+}
+
+fn style_number(value: Dynamic) -> Result<f64, Box<EvalAltResult>> {
+    if value.is::<FLOAT>() {
+        Ok(value.cast::<FLOAT>())
+    } else if value.is::<INT>() {
+        numeric_to_f64(&value.cast::<INT>())
+    } else {
+        Err(Box::new(style_runtime_error("expected a number".into())))
+    }
+}
+
+fn validate_aspect_ratio(ratio: f64) -> Result<f64, StyleValueError> {
+    if ratio.is_finite() && (f64::from(f32::MIN_POSITIVE)..=f64::from(f32::MAX)).contains(&ratio) {
+        Ok(ratio)
+    } else {
+        Err(StyleValueError::InvalidAspectRatio(ratio))
+    }
+}
+
+fn deserialize_aspect_ratio<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    Option::<f64>::deserialize(deserializer)?
+        .map(validate_aspect_ratio)
+        .transpose()
+        .map_err(serde::de::Error::custom)
 }
 
 fn reject_style_map_unknown(value: Map, context: &str) -> Result<(), Box<EvalAltResult>> {

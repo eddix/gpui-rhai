@@ -7,6 +7,28 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- Named `Fn` callbacks now preserve the creating application module's lexical
+  environment independently of UI state ownership, including callback props,
+  forwarding, curry and same-named helpers in different modules (#201).
+  The pinned Rhai adapter also supplies `named_function` as an explicit alias.
+  Anonymous callbacks and stale-generation/incarnation checks are unchanged.
+- Tabs panels fill their allocated remainder on both axes; panel-free Tabs
+  respect their parent's cross-axis alignment (#202, #203). NavigationStack
+  back icons now use the prepared `app/` asset namespace in LTR and RTL (#204).
+- Recoverable image presentation failures reach the existing Host observer and
+  optional stderr channel, with a distinct domain and bounded/deduplicated node
+  and asset context. They do not set `last_error` or roll back valid UI (#205).
+  Rust observers can branch on the new `ScriptErrorReport::domain` field.
+- `Style::auto_grid_columns(minimum, preferred, maximum)` adds native responsive
+  equal-width tracks over Box children; final rows keep the common track size.
+  `aspect_ratio` exposes GPUI's width/height ratio for square or proportional
+  content. Native width refinement runs without Rhai state feedback (#206).
+  The CLI Gallery includes a clickable responsive-grid page with module-local
+  callbacks.
+- New layout constraints are allocated only when used. Container construction
+  happens after child recursion, keeping large GPUI temporaries off recursive
+  renderer frames; native Gallery acceptance stays on the default test stack.
+
 - Motion easings include a CSS cubic Bézier: `cubic_bezier(x1, y1, x2, y2)`
   validates the control points and returns the curve's spelling, which every
   `easing` field and theme easing token accepts; Rust samples it (#186).

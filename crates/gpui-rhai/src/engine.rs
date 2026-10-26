@@ -210,12 +210,11 @@ impl PartialEq for ScriptCallback {
             && self.component == other.component
             && self.incarnation == other.incarnation
             && self.is_node_factory == other.is_node_factory
-            && (!self.is_node_factory
-                || match (&self.native_context, &other.native_context) {
-                    (Some(left), Some(right)) => left.same_factory_environment(right),
-                    (None, None) => true,
-                    _ => false,
-                })
+            && (match (&self.native_context, &other.native_context) {
+                (Some(left), Some(right)) => left.same_environment(right),
+                (None, None) => true,
+                _ => false,
+            })
     }
 }
 
@@ -239,6 +238,7 @@ impl ScriptCallback {
         if function.is_anonymous() {
             return Err(ScriptCallbackDefinitionError::Anonymous);
         }
+        let lexical_context = crate::invocation::take_function_environment(&mut function);
         let mut binding = None;
         let mut curry = Vec::new();
         for (index, value) in function.iter_curry().cloned().enumerate() {
@@ -273,7 +273,7 @@ impl ScriptCallback {
             component,
             incarnation,
             events,
-            native_context,
+            native_context: lexical_context.or(native_context),
             is_node_factory,
         })
     }
@@ -941,7 +941,7 @@ impl RuntimeEngine {
             result.is_ok(),
         );
         let mut ast = result.map_err(|error| RuntimeError::Compile(error.into()))?;
-        validate_assignment_targets(&ast)?;
+        validate_runtime_ast(&ast)?;
         ast.set_source(source_name);
         Ok(CompiledUi { ast, generation })
     }
@@ -971,7 +971,7 @@ impl RuntimeEngine {
         );
         let mut ast = result.map_err(RuntimeError::Compile)?;
         validate_literal_imports(&ast)?;
-        validate_assignment_targets(&ast)?;
+        validate_runtime_ast(&ast)?;
         ast.set_source(source_name);
         Ok(CompiledUi { ast, generation })
     }
@@ -2359,7 +2359,15 @@ impl RuntimeEngine {
     }
 }
 
-pub(crate) fn validate_assignment_targets(ast: &AST) -> Result<(), RuntimeError> {
+pub(crate) fn validate_runtime_ast(ast: &AST) -> Result<(), RuntimeError> {
+    if ast
+        .iter_functions()
+        .any(|function| function.name == crate::invocation::NAMED_FUNCTION)
+    {
+        return Err(RuntimeError::Compile(Box::new(component_render_error(
+            "`named_function` is reserved by the SDK's lexical Fn constructor",
+        ))));
+    }
     let mut invalid = None;
     ast.walk(&mut |path| {
         let Some(ASTNode::Stmt(Stmt::Assignment(assignment))) = path.last() else {
@@ -2508,6 +2516,7 @@ pub(crate) const RHAI_MAX_STRING_SIZE: usize = 1_048_576;
 pub(crate) const RHAI_MAX_DATA_DEPTH: usize = 64;
 
 fn configure_engine_limits(engine: &mut Engine) {
+    crate::invocation::register_named_functions(engine);
     engine.set_max_call_levels(64);
     // Explicit defaults avoid Rhai's profile-dependent parser defaults. A
     // trusted Host may configure these separately; ordinary applications do
@@ -2546,7 +2555,8 @@ fn register_define_component_api(
                         "define_component `render` must be a function pointer",
                     )));
                 }
-                let render = render.cast::<FnPtr>();
+                let mut render = render.cast::<FnPtr>();
+                crate::invocation::take_function_environment(&mut render);
                 if render.is_anonymous() || render.is_curried() {
                     return Err(Box::new(component_render_error(
                         "formal component render must be an uncurried named function",
@@ -3764,8 +3774,9 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
             engine,
             move |call: rhai::NativeCallContext<'_>,
                   config: Map,
-                  renderer: FnPtr|
+                  mut renderer: FnPtr|
                   -> Result<UiNode, Box<EvalAltResult>> {
+                let renderer_context = crate::invocation::take_function_environment(&mut renderer);
                 validate_virtual_renderer(&renderer)?;
                 let mut decoded = decode_virtual_collection(config)?;
 
@@ -3786,6 +3797,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     .with_generation(generation);
                 let native_context =
                     crate::invocation::ScriptInvocationContext::capture_retained(&call);
+                let renderer_context = renderer_context.unwrap_or_else(|| native_context.clone());
                 let on_follow_change = decoded
                     .on_follow_change
                     .take()
@@ -3804,6 +3816,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 let realized = realize_seeded_virtual_collection(
                     &call,
                     &renderer,
+                    &renderer_context,
                     &collection_context,
                     &active,
                     &id,
@@ -3813,7 +3826,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     id: id.clone(),
                     data: decoded.data.clone(),
                     renderer,
-                    renderer_context: native_context,
+                    renderer_context,
                     context: collection_context,
                     generation,
                 };
@@ -3910,13 +3923,14 @@ fn virtual_item_context(
 
 fn realize_initial_collection(
     call: &rhai::NativeCallContext<'_>,
-    renderer: &FnPtr,
+    renderer: (&FnPtr, &crate::invocation::ScriptInvocationContext),
     context: &UiContext,
     active: &ActiveComponentRenderState,
     id: &crate::VirtualCollectionId,
     data: &crate::VirtualCollectionData,
     indices: &BTreeSet<usize>,
 ) -> Result<BTreeMap<usize, UiNode>, Box<EvalAltResult>> {
+    let (renderer, renderer_context) = renderer;
     let mut realized = BTreeMap::new();
     for index in indices.iter().copied().filter(|index| *index < data.len()) {
         let item = data
@@ -3931,7 +3945,8 @@ fn realize_initial_collection(
         add_collection_neighbors(data, index, &mut payload);
         let item_context = virtual_item_context(context, id, &item_key);
         enter_virtual_collection_scope(active, item_context.clone())?;
-        let node = renderer.call_within_context::<UiNode>(call, (item_context, payload));
+        let node =
+            renderer_context.call_synchronous::<UiNode>(call, renderer, (item_context, payload));
         leave_component_render(active)?;
         realized.insert(index, node?.with_key(item_key));
     }
@@ -3941,6 +3956,7 @@ fn realize_initial_collection(
 fn realize_seeded_virtual_collection(
     call: &rhai::NativeCallContext<'_>,
     renderer: &FnPtr,
+    renderer_context: &crate::invocation::ScriptInvocationContext,
     context: &UiContext,
     active: &ActiveComponentRenderState,
     id: &crate::VirtualCollectionId,
@@ -3974,8 +3990,15 @@ fn realize_seeded_virtual_collection(
     let indices =
         virtual_collection_seed_indices(active, id, decoded, count, previous_metrics.as_ref())?;
     enter_virtual_collection_scope(active, context.clone())?;
-    let realized =
-        realize_initial_collection(call, renderer, context, active, id, &decoded.data, &indices);
+    let realized = realize_initial_collection(
+        call,
+        (renderer, renderer_context),
+        context,
+        active,
+        id,
+        &decoded.data,
+        &indices,
+    );
     leave_component_render(active)?;
     realized
 }
@@ -4770,7 +4793,7 @@ mod tests {
     }
 
     #[test]
-    fn node_factory_marker_preserves_curry_and_compares_lexical_environment_only_for_factories() {
+    fn node_factory_marker_preserves_curry_and_compares_callback_environments() {
         let captures = Rc::new(RefCell::new(Vec::new()));
         let sink = captures.clone();
         let context = UiContext::new(
@@ -4822,9 +4845,9 @@ mod tests {
         let mut event_after = captures[2].clone();
         event_before.is_node_factory = false;
         event_after.is_node_factory = false;
-        assert_eq!(
+        assert_ne!(
             event_before, event_after,
-            "ordinary event equality is unchanged"
+            "event equality must also distinguish lexical environments"
         );
     }
 

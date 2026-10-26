@@ -71,7 +71,7 @@ fn evaluate(
     let mut ast = engine
         .compile(source)
         .map_err(|error| ThemeError::Script(error.to_string()))?;
-    crate::engine::validate_assignment_targets(&ast)
+    crate::engine::validate_runtime_ast(&ast)
         .map_err(|error| ThemeError::Script(error.to_string()))?;
     ast.set_source(source_name);
     engine

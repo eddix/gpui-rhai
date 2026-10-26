@@ -12,6 +12,7 @@ mod catalog_story;
 mod inputs_and_choices;
 mod navigation_workflow;
 mod overlay_triggers;
+mod responsive_grid;
 mod stories;
 mod title_bar;
 

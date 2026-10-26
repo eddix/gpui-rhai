@@ -107,6 +107,7 @@ pub struct ScriptViewConfig {
 /// A new failure of a mounted view, as [`ScriptViewConfig::on_error`] passes it.
 #[derive(Clone, Debug)]
 pub struct ScriptErrorReport {
+    pub domain: ScriptErrorDomain,
     /// The view, or the script window it opened, that failed.
     pub view_id: String,
     /// What [`ScriptViewHandle::last_error`] returns for it.
@@ -114,6 +115,14 @@ pub struct ScriptErrorReport {
     /// What [`ScriptViewHandle::last_diagnostic`] returns for it; `None` for
     /// a Host error.
     pub diagnostic: Option<Diagnostic>,
+    /// Recoverable native presentation context; does not set `last_error`.
+    pub presentation: Option<crate::PresentationDiagnostic>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScriptErrorDomain {
+    Transaction,
+    Presentation,
 }
 
 type ErrorCallback = dyn Fn(&ScriptErrorReport, &mut App);
@@ -167,7 +176,10 @@ impl ScriptViewConfig {
     /// [`ScriptViewHandle::last_error`] then reports. It runs on the
     /// foreground after the frame that presents the failure, so it may read
     /// the handle; several failures before that frame report the latest, as
-    /// `last_error` does. Script windows the view opens report through it too.
+    /// `last_error` does. Recoverable image errors also report here with
+    /// `domain == Presentation`, deduplicated and bounded to 256 active entries
+    /// per view; they do not change `last_error` or roll back a transaction.
+    /// Script windows the view opens report through it too.
     #[must_use]
     pub fn on_error(mut self, observer: impl Fn(&ScriptErrorReport, &mut App) + 'static) -> Self {
         self.error_reporting.observer = Some(ErrorObserver(Rc::new(observer)));
@@ -3432,6 +3444,8 @@ impl PreparedScriptView {
                 last_failure: None,
                 failure_serial: 0,
                 reported_failure_serial: 0,
+                presentation_diagnostics:
+                    crate::presentation_diagnostic::PresentationDiagnostics::default(),
                 theme: self.theme,
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -3837,6 +3851,8 @@ fn open_secondary_window(
                 last_failure: None,
                 failure_serial: 0,
                 reported_failure_serial: 0,
+                presentation_diagnostics:
+                    crate::presentation_diagnostic::PresentationDiagnostics::default(),
                 theme: view_factory.theme.clone(),
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -4157,6 +4173,7 @@ struct ScriptHostView {
     failure_serial: u64,
     /// The `failure_serial` last reported to the Host.
     reported_failure_serial: u64,
+    presentation_diagnostics: crate::presentation_diagnostic::PresentationDiagnostics,
     error_reporting: ErrorReporting,
     theme: ThemeVariant,
     theme_handle: ThemeHandle,
@@ -4781,9 +4798,15 @@ impl Render for ScriptHostView {
             self.lifecycle.runtime(),
             Rc::clone(&self.direct_signal_access),
             &self.view_id,
+        )
+        .with_presentation_sink(
+            self.presentation_diagnostics
+                .sink(self.lifecycle.generation()),
         );
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
+        self.presentation_diagnostics
+            .retain_nodes(|node| snapshot.geometry.get(node).is_some());
         self.publish_theme_after_render(&snapshot.theme, cx);
         let a11y_active = window.is_a11y_active();
         let interactions = self.host.interactions();
@@ -4845,6 +4868,7 @@ impl Render for ScriptHostView {
                 )
             },
         );
+        self.report_presentation_diagnostics(cx);
         let content = match (&self.last_failure, self.show_error_banner) {
             (Some(failure), true) => build_error_banner(
                 &self.view_id,
@@ -5108,15 +5132,49 @@ impl ScriptHostView {
         let Some(failure) = &self.last_failure else {
             return;
         };
-        if self.error_reporting.stderr {
-            eprintln!("gpui-rhai: view `{}`: {}", self.view_id, failure.message);
-        }
-        if let Some(ErrorObserver(observer)) = self.error_reporting.observer.clone() {
-            let report = ScriptErrorReport {
+        self.report_to_host(
+            ScriptErrorReport {
+                domain: ScriptErrorDomain::Transaction,
                 view_id: self.view_id.clone(),
                 message: failure.message.clone(),
                 diagnostic: failure.diagnostic.as_deref().cloned(),
-            };
+                presentation: None,
+            },
+            cx,
+        );
+    }
+
+    fn report_presentation_diagnostics(&self, cx: &mut Context<Self>) {
+        // A reload may commit before the next presentation/pump turn.
+        // Invalidate queued reports from that old generation before delivery.
+        self.presentation_diagnostics
+            .sink(self.lifecycle.generation());
+        for diagnostic in self.presentation_diagnostics.drain() {
+            self.report_to_host(
+                ScriptErrorReport {
+                    domain: ScriptErrorDomain::Presentation,
+                    view_id: self.view_id.clone(),
+                    message: diagnostic.message.clone(),
+                    diagnostic: None,
+                    presentation: Some(diagnostic),
+                },
+                cx,
+            );
+        }
+    }
+
+    fn report_to_host(&self, report: ScriptErrorReport, cx: &mut Context<Self>) {
+        if self.error_reporting.stderr {
+            if report.domain == ScriptErrorDomain::Transaction {
+                eprintln!("gpui-rhai: view `{}`: {}", report.view_id, report.message);
+            } else {
+                eprintln!(
+                    "gpui-rhai: view `{}` [presentation]: {}",
+                    report.view_id, report.message
+                );
+            }
+        }
+        if let Some(ErrorObserver(observer)) = self.error_reporting.observer.clone() {
             cx.defer(move |cx| observer(&report, cx));
         }
     }
@@ -6563,6 +6621,7 @@ impl ScriptHostView {
         if self.state.get() == ScriptViewState::Disposed {
             return;
         }
+        self.presentation_diagnostics.clear();
         self.window_appearance.take();
         if let Err(error) = self.primitives.retain_mounted(&BTreeSet::new()) {
             self.set_plain_failure(error.to_string());
@@ -6912,6 +6971,7 @@ impl ScriptHostView {
         if self.state.get() == ScriptViewState::Disposed {
             return;
         }
+        self.report_presentation_diagnostics(cx);
         self.process_window_commands(cx);
         self.sync_program();
         let generation = self.lifecycle.generation();

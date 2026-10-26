@@ -5,6 +5,16 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "auto_grid_columns(_: &mut Style, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["minimum", "preferred", "maximum"],
+        doc: "Lays out Box children in responsive equal-width columns (1 <= minimum <= preferred <= maximum <= 1000000 logical pixels). Minimum determines auto-fit breakpoints, preferred supplies the unmeasured natural width hint, and maximum caps growth. Native width refinement after mount/resize does not run Rhai. Intrinsic row heights and child aspect_ratio use GPUI; the last row keeps the same tracks. One track per child; use explicit grids for spans. Not virtualized.",
+    },
+    ScriptFnDoc {
+        signature: "aspect_ratio(_: &mut Style, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["ratio"],
+        doc: "Sets the positive width/height ratio for GPUI layout. Leave one size automatic, e.g. width(relative(1.0)).aspect_ratio(1) for a square; two explicit dimensions take precedence.",
+    },
+    ScriptFnDoc {
         signature: "absolute(_: &mut Style) -> Style",
         params: &[],
         doc: "Takes the node out of the flow and places it by its insets (`top`, `left`, `inset_start`, ...) within its parent.",

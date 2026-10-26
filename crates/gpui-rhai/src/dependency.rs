@@ -167,7 +167,7 @@ impl ModuleCompileCache {
                         module: id.clone(),
                         source: source.into(),
                     })?;
-            crate::engine::validate_assignment_targets(&ast).map_err(|error| {
+            crate::engine::validate_runtime_ast(&ast).map_err(|error| {
                 DependencyError::UnsafeAst {
                     module: id.clone(),
                     message: error.to_string(),

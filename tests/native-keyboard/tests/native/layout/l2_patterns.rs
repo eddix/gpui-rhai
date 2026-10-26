@@ -2,6 +2,7 @@
 //! passes the productivity audit and its regions take keyboard focus with F6.
 
 use std::collections::BTreeMap;
+use std::{cell::RefCell, rc::Rc};
 
 use gpui::{TestAppContext, VisualTestContext, WindowHandle, rgba};
 use gpui_rhai::*;
@@ -97,6 +98,59 @@ fn view(ctx) {
         status: #{ start: [text("Connected")], end: [text("v0.2.0")] } })
 }
 "#;
+
+#[gpui::test]
+fn navigation_back_uses_the_application_icon_namespace_in_both_directions(cx: &mut TestAppContext) {
+    use crate::support::{Step, settle};
+    fn image_assets(node: &UiNode, ids: &mut Vec<String>) {
+        match node.kind() {
+            UiNodeKind::Image {
+                source: ImageSourceSpec::Asset(id),
+            } => ids.push(id.as_str().to_owned()),
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                for child in children {
+                    image_assets(child, ids);
+                }
+            }
+            _ => {}
+        }
+    }
+    for (locale, icon) in [("en", "chevron_left"), ("ar", "chevron_right")] {
+        let source = format!(
+            r#"
+            import "patterns/navigation_stack" as nav;
+            fn init(ctx){{ctx.set_locale("{locale}");}}
+            fn popped(ctx, proposal){{}}
+            fn view(ctx){{nav::NavigationStack(#{{key:"visits",label:"Visits",header:"back",
+                stack:[#{{key:"root",title:"Library",content:text("Root")}},#{{key:"item",title:"Item",content:text("Item")}}],on_pop:Fn("popped")}})}}
+        "#
+        );
+        let reports = Rc::new(RefCell::new(Vec::new()));
+        let sink = reports.clone();
+        let (mut visual, view) = Mount::components(source)
+            .registry("patterns/navigation_stack")
+            .locale("en.rhai", gpui_rhai_registry::EN_LOCALE)
+            .locale("ar.rhai", gpui_rhai_registry::AR_LOCALE)
+            .config(move |config| {
+                config.on_error(move |report, _| sink.borrow_mut().push(report.message.clone()))
+            })
+            .motion(MotionPreference::None)
+            .mount(cx);
+        settle(&mut visual, Step::Frame, 4);
+        let ids = visual.update(|_, cx| {
+            let mut ids = Vec::new();
+            image_assets(&view.root(cx).unwrap().unwrap(), &mut ids);
+            ids
+        });
+        assert_eq!(ids, vec![format!("app/icons/{icon}")]);
+        assert_eq!(last_error(&mut visual, &view), None);
+        assert!(
+            reports.borrow().is_empty(),
+            "{locale}: {:?}",
+            reports.borrow()
+        );
+    }
+}
 
 fn mount(cx: &mut TestAppContext, script: &str) -> (WindowHandle<Host>, ScriptViewHandle) {
     let overrides = ThemeTokenOverrides {
