@@ -1,4 +1,4 @@
-// Gallery spec pages: list-like components.
+// Gallery spec pages: list-like components, and the tabs and pages that navigate.
 
 import "gallery/kit" as kit;
 import "components/menu" as menu;
@@ -12,6 +12,7 @@ import "components/table" as table;
 import "components/accordion" as accordion;
 import "components/pagination" as pagination;
 import "components/tabs" as tabs;
+import "components/card" as card;
 import "components/button" as button;
 
 fn pages() {
@@ -24,9 +25,9 @@ fn pages() {
         #{ id: "list", title: "List", group: "Lists" },
         #{ id: "table", title: "Table", group: "Lists" },
         #{ id: "accordion", title: "Accordion", group: "Lists" },
-        #{ id: "pagination", title: "Pagination", group: "Lists" },
-        #{ id: "tabs", title: "Tabs", group: "Lists" },
-        #{ id: "tab_bar", title: "TabBar", group: "Lists" },
+        #{ id: "pagination", title: "Pagination", group: "Navigation" },
+        #{ id: "tabs", title: "Tabs", group: "Navigation" },
+        #{ id: "tab_bar", title: "TabBar", group: "Navigation" },
     ]
 }
 
@@ -293,12 +294,26 @@ fn tab_list() {
     ]
 }
 
+fn settings_tabs() {
+    [
+        #{ value: "general", label: "General", content: text("Name, region and owner.") },
+        #{ value: "alerts", label: "Alerts", content: text("Paging rules for this service.") },
+        #{ value: "access", label: "Access", content: text("Who can deploy.") },
+    ]
+}
+
 fn tabs_page(h, v) {
     let value = kit::val(v, "tabs.value", "overview");
-    kit::page(h, v, "tabs", "Tabs", "One track, one raised thumb that carries the list's focus.", [
+    kit::page(h, v, "tabs", "Tabs", "A track with a raised thumb switches views among other controls; underlined labels head the sections of a panel or a card.", [
         kit::sec("With panel", tabs::Tabs(#{ label: "Service", value: value, tabs: tab_list(),
             on_change: kit::store(h, "tabs.value") })),
         kit::sec("View switcher", tabs::Tabs(#{ label: "View", value: value, tabs: tab_list(), panel: false, size: "sm",
             on_change: kit::store(h, "tabs.value") })),
+        kit::sec("Underline", tabs::Tabs(#{ label: "Service sections", value: value, variant: "underline",
+            tabs: tab_list(), on_change: kit::store(h, "tabs.value") })),
+        kit::sec("Underline in a card", card::Card(#{ header: text("Checkout service"),
+            content: tabs::Tabs(#{ label: "Service settings", value: kit::val(v, "tabs.settings", "general"),
+                variant: "underline", tabs: settings_tabs(), on_change: kit::store(h, "tabs.settings") }) })
+            .with_style(style().width(px(360)))),
     ])
 }

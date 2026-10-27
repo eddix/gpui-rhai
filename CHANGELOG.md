@@ -7,6 +7,20 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- `components/tabs` 0.3.0 adds `variant: "underline"` beside the default
+  `"track"`: labels on a `border` hairline that spans the panel, with a 2px
+  `text_primary` bar under the selected one, for the sections of a panel or a
+  card. Props, keyboard, panels and motion are shared; the panel sits
+  `space.related` below the hairline. New parts `line` and `focus_frame`; the
+  variant is horizontal only and throws with `orientation: "vertical"`.
+  `motion/animated_tabs` 0.1.7 forwards `variant`.
+- The Gallery sidebar is grouped by each page's `group` instead of one group
+  per page module: 99 pages in 12 groups following docs/design/atoms.md.
+  Tabs, TabBar and Pagination move to Navigation; Calendar, TimeInput,
+  TimeRangePicker and SelectableCardGroup to Fields; ColumnBrowser, Formatted
+  Table and Timeline to Lists; Scrolling to Containers; MarkdownViewer to
+  Display; Composer to Layouts and patterns; the conversation scene to Scenes.
+  Page IDs and modules are unchanged.
 - Named `Fn` callbacks now preserve the creating application module's lexical
   environment independently of UI state ownership, including callback props,
   forwarding, curry and same-named helpers in different modules (#201).

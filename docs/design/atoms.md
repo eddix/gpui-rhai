@@ -243,6 +243,19 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   stop; its focus frames the thumb (`group_focus`). Tabs can render without a
   panel (`panel: false`) when used as a view switcher; the panel itself is
   unframed.
+- **Tabs, underline** (`variant: "underline"`) heads the sections of a panel or
+  a card: no track; the labels sit on a 1px `border` hairline that spans the
+  panel, and the selected one has a 2px `text_primary` bar under it that
+  covers the hairline. Ink, not accent: tabs often share a screen with the
+  primary action. Slots are `metrics.control` high with `spacing.xs` beside
+  the label, which is just room for the 2px focus frame the list's focus
+  draws over the selected slot, so the first label sits `spacing.xs` off the
+  content edge; labels are about `metrics.control_pad` apart. The hairline
+  already separates the panel, so it sits `space.related` below (and nests
+  inside a card's `group` spacing). Horizontal only: a vertical choice of
+  sections is a list with the indicator bar. Choose the track for a compact
+  switcher among other controls (a toolbar, a header), the underline for the
+  sections a panel or card is divided into.
 
 - **TabBar** switches what a panel shows (open documents, a workspace's
   panels), and the panel's extent says what it switches: the bar is
