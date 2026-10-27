@@ -2,7 +2,7 @@
 {
   "id": "motion/animated_tabs",
   "export": "AnimatedTabs",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/tabs"],
   "capabilities": {}
@@ -15,7 +15,7 @@
 import "components/tabs" as tabs_component;
 
 define_component(#{
-    metadata: #{ id: "motion/animated_tabs", "export": "AnimatedTabs", version: "0.1.6",
+    metadata: #{ id: "motion/animated_tabs", "export": "AnimatedTabs", version: "0.1.7",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tabs"], capabilities: #{} },
     schema: #{ props: #{
@@ -31,6 +31,9 @@ define_component(#{
         layout: #{ schema: #{ type: "string", allowed: ["content", "equal"] }, required: false,
             sensitive: false, "default": #{ type: "string", value: "content" },
             doc: "`content` sizes each tab to its label; `equal` gives horizontal tabs equal widths across the full row." },
+        variant: #{ schema: #{ type: "string", allowed: ["track", "underline"] }, required: false,
+            sensitive: false, "default": #{ type: "string", value: "track" },
+            doc: "`track` slides a raised thumb along a tonal track; `underline` slides a 2px ink bar along a hairline and is horizontal only." },
         tabs: #{ schema: #{ type: "array", max_items: 128, items: #{
             type: "object", allow_unknown: false, fields: #{
                 value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -64,6 +67,7 @@ fn render_AnimatedTabs(ctx, props) {
     let inner = #{ value: props.value, label: props.label, tabs: props.tabs,
         orientation: if "orientation" in props { props.orientation } else { "horizontal" },
         layout: if "layout" in props { props.layout } else { "content" },
+        variant: if "variant" in props { props.variant } else { "track" },
         motion_key: props.key };
     if "on_change" in props { inner.on_change = props.on_change; }
     tabs_component::Tabs(inner).with_key(props.key)

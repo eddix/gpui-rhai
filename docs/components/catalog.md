@@ -356,6 +356,7 @@ independently commit a different panel or thumb position.
 | `tabs` | Required array, at most 128 items |
 | `orientation` | `horizontal` (default) or `vertical` |
 | `layout` | `content` (default) or `equal` |
+| `variant` | `track` (default) or `underline`; `underline` is horizontal only and throws with `orientation: "vertical"` |
 | `motion_key` | Optional stable string, at most 128 characters; empty means direct positioning, nonempty enables shared-layout thumb motion and must be unique within the view |
 | `on_change` | Optional callback receiving the proposed value |
 
@@ -369,22 +370,30 @@ must not add a second action or keyboard entry point.
 Tabs retains one keyboard entry point, orientation-aware arrow navigation,
 disabled-item skipping, and the runtime's horizontal RTL behavior. It exposes
 group/tablist/tab semantics and selected state, rather than button pressed
-state. The track and inset selection thumb follow the
+state. The track and inset selection thumb, and the underline variant's
+hairline and ink bar, follow the
 [Tabs visual contract](../design/atoms.md#related-togglegroup-and-tabs).
+
+`variant: "underline"` keeps the props, keyboard policy, panels and motion of
+the track. With a panel its strip spans the root, so the hairline rules the
+whole panel; without one the strip follows the caller's alignment like the
+track.
 
 | Style part | Responsibility |
 |---|---|
 | `root` | List/panel composition |
-| `list` | Continuous track, padding, radius, and scrolling |
-| `indicator` | Selection thumb fill, border, and radius; no independent action |
+| `list` | Track: continuous track, padding, radius, and scrolling. Underline: the scrolling row of slots |
+| `line` | Underline only: the 1px `border` hairline under the strip; restyle it to remove the line |
+| `indicator` | Track: selection thumb fill, border, and radius. Underline: the 2px bar under the selected label. No independent action |
+| `focus_frame` | Underline only: the 2px focus frame over the selected slot |
 | `tab` | Header slot layout and interaction appearance |
 | `tab_selected` | Selected header styling without a second thumb/background |
 | `label`, `icon` | Header content styling |
 | `panel` | Selected page content |
 
 Styles follow source defaults → component stylesheet → instance overrides.
-`motion/animated_tabs` exposes the same item, orientation, layout, and controlled
-selection contract, requires a stable `key`, and forwards that key as the
+`motion/animated_tabs` exposes the same item, orientation, layout, variant, and
+controlled selection contract, requires a stable `key`, and forwards that key as the
 inner Tabs' motion identity. Its own style part is `root`. It uses the shared
 selection thumb instead of replaying opacity over the entire component.
 

@@ -5,7 +5,7 @@ import "components/button" as button;
 import "components/scroll_area" as scroll_area;
 import "components/code_viewer" as code_viewer;
 
-fn pages() { [#{ id: "scrolling", title: "Scrolling", group: "Interaction" }] }
+fn pages() { [#{ id: "scrolling", title: "Scrolling", group: "Containers" }] }
 
 fn view(ctx, h, v, id) {
     if id != "scrolling" { return (); }

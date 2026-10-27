@@ -1,6 +1,6 @@
 # AnimatedTabs
 
-`motion/animated_tabs` · export `AnimatedTabs` · version 0.1.6. Generated from
+`motion/animated_tabs` · export `AnimatedTabs` · version 0.1.7. Generated from
 [`registry/motion/animated_tabs.rhai`](../../../registry/motion/animated_tabs.rhai); do not edit.
 
 AnimatedTabs is a controlled `Tabs` whose selection indicator slides to the selected tab. State: caller-owned.
@@ -24,6 +24,7 @@ animated_tabs::AnimatedTabs(#{ key: "docs", value: "one", label: "Docs", tabs: t
 | `style` | style | — | Style merged over the root part. |
 | `tabs` | array of object (at most 128) | required | Tabs in display order. |
 | `value` | string | required | Value of the selected tab; the caller stores the `change` payload and passes it back. |
+| `variant` | `"track"` or `"underline"` | `"track"` | `track` slides a raised thumb along a tonal track; `underline` slides a 2px ink bar along a hairline and is horizontal only. |
 
 ### `tabs[]` fields
 

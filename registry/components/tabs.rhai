@@ -2,14 +2,14 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "tokens": [
     "surface_hover", "surface_raised", "focus_ring", "text_primary", "tabs.foreground",
-    "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
-    "metrics.label_column", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+    "border", "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
+    "metrics.label_column", "spacing.xxs", "spacing.xs", "spacing.sm", "space.related", "space.group",
     "radius.md", "radius.lg", "typography.control", "typography.body"
   ],
   "environment": ["size", "density", "corners"]
@@ -18,15 +18,19 @@
 // Controlled tabs with one tab stop and orientation-aware arrow selection.
 // State: controlled selected value.
 // Example: Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("changed") })
+//
+// `variant: "track"` is a tonal track with a raised thumb, for a compact switcher among
+// other controls. `variant: "underline"` is a row of labels on a hairline with a 2px ink
+// bar under the selected one, for the section navigation that heads a panel or a card.
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.2.0",
+        id: "components/tabs", "export": "Tabs", version: "0.3.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_hover", "surface_raised", "focus_ring", "text_primary", "tabs.foreground",
-            "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
-            "metrics.label_column", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+            "border", "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
+            "metrics.label_column", "spacing.xxs", "spacing.xs", "spacing.sm", "space.related", "space.group",
             "radius.md", "radius.lg", "typography.control", "typography.body"
         ],
         environment: ["size", "density", "corners"],
@@ -43,6 +47,9 @@ define_component(#{
             layout: #{ schema: #{ type: "string", allowed: ["content", "equal"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "content" },
                 doc: "Tab widths of a horizontal list: `content` fits each label, `equal` fills the width and shares it equally." },
+            variant: #{ schema: #{ type: "string", allowed: ["track", "underline"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "track" },
+                doc: "`track` is a tonal track with a raised thumb; `underline` puts the labels on a hairline and marks the selected one with a 2px ink bar. `underline` is horizontal only." },
             motion_key: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" },
                 doc: "Shared-layout id, at most 128 characters, that slides the selected indicator between tabs; empty turns it off." },
@@ -77,7 +84,8 @@ define_component(#{
         },
         state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "string" },
             doc: "Emitted when a tab is clicked or an arrow key moves the selection; the payload is the new tab's `value`." } },
-        slots: #{}, parts: ["root", "list", "indicator", "tab", "tab_selected", "label", "icon", "panel"],
+        slots: #{}, parts: ["root", "list", "line", "indicator", "focus_frame", "tab", "tab_selected",
+            "label", "icon", "panel"],
     },
     render: Fn("render_Tabs")
 });
@@ -104,6 +112,10 @@ fn render_Tabs(ctx, props) {
     // A horizontal track is a capsule with round corners; a vertical one rounds like a panel.
     let corner = theme_radius(if orientation == "vertical" { "lg" } else { "md" });
     let layout = if "layout" in props { props.layout } else { "content" };
+    let underline = "variant" in props && props.variant == "underline";
+    if underline && orientation == "vertical" {
+        throw "Tabs variant underline supports horizontal orientation only";
+    }
     let show_panel = if "panel" in props { props.panel } else { true };
     let keep_mounted = "keep_mounted" in props && props.keep_mounted;
     let motion_key = if "motion_key" in props { props.motion_key } else { "" };
@@ -128,6 +140,11 @@ fn render_Tabs(ctx, props) {
         if orientation == "vertical" {
             tab_style = tab_style.width(relative(1.0)).min_height(theme_length("metrics.control"))
                 .padding_x(theme_length("metrics.control_pad")).justify_start();
+        } else if underline {
+            // Just room for the focus frame beside the label, so the first label sits
+            // spacing.xs off the content edge of the panel or card under it.
+            tab_style = tab_style.padding_x(theme_spacing("xs"));
+            if layout == "equal" { tab_style = tab_style.flex_basis(relative(0)).flex_grow().min_width(px(0)); }
         } else if layout == "equal" {
             tab_style = tab_style.flex_basis(relative(0)).flex_grow().min_width(px(0))
                 .padding_x(theme_length("metrics.control_pad"));
@@ -143,7 +160,27 @@ fn render_Tabs(ctx, props) {
         }
 
         let children = [];
-        if selected {
+        if selected && underline {
+            // The bar spans the label, covers the hairline and slides like the thumb. The
+            // focus frame around the slot takes the 2px ink frame the thumb carries.
+            let bar = style().absolute().left(theme_spacing("xs")).right(theme_spacing("xs"))
+                .bottom(px(0)).height(px(2)).background(theme_color("text_primary"));
+            let frame = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+                .border(px(2)).border_color(rgba(0x00000000))
+                .group_focus(style().border_color(theme_color("focus_ring")));
+            let indicator = row([]).with_key("indicator")
+                .with_style(ctx.component_style("indicator", bar));
+            let focus_frame = row([]).with_key("focus_frame")
+                .with_style(ctx.component_style("focus_frame", frame));
+            if motion_key != "" {
+                indicator = indicator.shared_layout(motion_key, "indicator")
+                    .layout_motion(ctx.motion_duration("fast"), ctx.motion_easing("standard"));
+                focus_frame = focus_frame.shared_layout(motion_key, "focus_frame")
+                    .layout_motion(ctx.motion_duration("fast"), ctx.motion_easing("standard"));
+            }
+            children.push(indicator);
+            children.push(focus_frame);
+        } else if selected {
             // The thumb: a raised block inset in the track. It carries the tab list's
             // focus as the 2px ink frame.
             let thumb = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0));
@@ -200,19 +237,28 @@ fn render_Tabs(ctx, props) {
     let list_style = style().relative().padding(theme_spacing("xxs")).gap(theme_spacing("xxs"))
         .background(theme_color("surface_hover")).radius(corner).min_width(px(0))
         .focus(style());
+    // Underlined labels sit about control_pad apart; the strip around the list owns the
+    // outer sizing.
+    if underline {
+        list_style = style().relative().gap(theme_length("metrics.control_pad") * 0.5)
+            .flex_grow().min_width(px(0)).focus(style());
+    }
     // Only a track inside our own panel root reserves its main-axis size.
     // A standalone horizontal switcher must still shrink/scroll in a Toolbar.
-    if panels.len > 0 { list_style = list_style.flex_shrink(false); }
+    if panels.len > 0 && !underline { list_style = list_style.flex_shrink(false); }
     if orientation == "vertical" {
         list_style = list_style.min_width(theme_length("metrics.label_column"));
     } else {
         list_style = list_style.min_height(theme_length("metrics.control")).overflow_x_scroll();
-        if layout == "equal" { list_style = list_style.width(relative(1.0)); }
-        else { list_style = list_style.width(auto()); }
+        // An underline list fills its strip; the strip takes the width instead.
+        if !underline {
+            list_style = list_style.width(if layout == "equal" { relative(1.0) } else { auto() });
+        }
     }
     // Standalone switchers follow the caller's alignment context. Intrinsic
-    // cross-axis sizing is needed only inside our own panel root.
-    if panels.len > 0 && (orientation == "vertical" || layout == "content") {
+    // cross-axis sizing is needed only inside our own panel root; an underline
+    // strip spans the panel instead, so its hairline rules the whole width.
+    if panels.len > 0 && !underline && (orientation == "vertical" || layout == "content") {
         list_style = list_style.self_start();
     }
     list = list
@@ -230,6 +276,17 @@ fn render_Tabs(ctx, props) {
             list = list.on_key_value("left", callback, previous).on_key_value("right", callback, next);
         }
     }
+    if underline {
+        // The hairline is painted first, under the list, so the selected bar covers it. A
+        // bottom border on the scrolling list would clip the bar instead.
+        let line = row([]).with_key("line").with_style(ctx.component_style("line", style()
+            .absolute().left(px(0)).right(px(0)).bottom(px(0)).height(px(1))
+            .background(theme_color("border"))));
+        let strip_style = style().relative().min_width(px(0))
+            .width(if layout == "equal" { relative(1.0) } else { auto() });
+        if panels.len > 0 { strip_style = strip_style.flex_shrink(false); }
+        list = row([line, list]).with_key("strip").with_style(strip_style);
+    }
     let size_env = "size" in props && props.size != ();
     if panels.len == 0 {
         if size_env { list = list.env(#{ size: props.size }); }
@@ -238,8 +295,11 @@ fn render_Tabs(ctx, props) {
     let content = column(panels).with_key("panels")
         .with_style(style().flex_grow().flex_basis(relative(0)).min_width(px(0)).min_height(px(0)));
     let root = if orientation == "vertical" { row([list, content]) } else { column([list, content]) };
+    // The hairline already separates an underline strip from its panel, so the panel sits
+    // only `related` below it; that also nests it inside a card's `group` spacing.
+    let panel_gap = theme_length(if underline { "space.related" } else { "space.group" });
     root = root.with_style(ctx.component_style("root", style().min_width(px(0)).min_height(px(0))
-        .gap(theme_length("space.group"))))
+        .gap(panel_gap)))
         .accessibility_role("group").accessibility_label(props.label);
     if size_env { root.env(#{ size: props.size }) } else { root }
 }

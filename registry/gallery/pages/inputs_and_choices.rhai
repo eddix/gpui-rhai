@@ -8,8 +8,8 @@ import "components/button" as button;
 import "components/tag" as tag;
 
 fn pages() {
-    [#{ id: "composer", title: "Composer", group: "Inputs and choices" },
-     #{ id: "selectable_card_group", title: "SelectableCardGroup", group: "Inputs and choices" }]
+    [#{ id: "composer", title: "Composer", group: "Layouts and patterns" },
+     #{ id: "selectable_card_group", title: "SelectableCardGroup", group: "Fields" }]
 }
 fn view(ctx, h, v, id) {
     if id == "composer" { composer_page(h, v) }

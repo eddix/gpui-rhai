@@ -9,7 +9,7 @@ import "components/button" as button;
 fn pages(){[
     #{id:"calendar",title:"Calendar",group:"Fields"},
     #{id:"time_input",title:"TimeInput",group:"Fields"},
-    #{id:"timeline",title:"Timeline",group:"Data"},
+    #{id:"timeline",title:"Timeline",group:"Lists"},
     #{id:"time_range_picker",title:"TimeRangePicker",group:"Fields"},
 ]}
 fn view(ctx,h,v,id){

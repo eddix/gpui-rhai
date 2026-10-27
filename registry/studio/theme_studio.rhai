@@ -647,7 +647,7 @@ fn specimen_navigation(ctx) {
     let trace_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><path d='M3 12H7L10 5L14 19L17 12H21' stroke='currentColor' stroke-width='2'/></svg>");
     let lock_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><rect x='5' y='10' width='14' height='10' stroke='currentColor' stroke-width='2'/><path d='M8 10V7A4 4 0 0116 7V10' stroke='currentColor' stroke-width='2'/></svg>");
     column([
-        specimen_title("NAVIGATION", "Tabs use one continuous track and one inset selection surface."),
+        specimen_title("NAVIGATION", "Tabs use one continuous track and one inset selection surface, or labels on a hairline with an ink bar."),
         tabs::Tabs(#{ label: "Equal preview tabs", value: ctx.get_state("specimen_tab_equal"), layout: "equal",
             motion_key: "studio-equal-tabs", tabs: [
             #{ value: "status", label: "Status", icon: music_icon, content: text("Foreground healthy") },
@@ -661,6 +661,12 @@ fn specimen_navigation(ctx) {
             #{ value: "trace", label: "详细追踪记录", content: text("No failed deliveries") },
             #{ value: "locked", label: "Locked", content: text(""), disabled: true }
         ], on_change: Fn("set_specimen_tab_content") }),
+        tabs::Tabs(#{ label: "Underline preview tabs", value: ctx.get_state("specimen_tab_content"),
+            variant: "underline", motion_key: "studio-underline-tabs", tabs: [
+            #{ value: "status", label: "Status", content: text("Foreground healthy") },
+            #{ value: "trace", label: "详细追踪记录", content: text("No failed deliveries") },
+            #{ value: "locked", label: "Locked", content: text(""), disabled: true }
+        ], on_change: Fn("set_specimen_tab_content") }).with_style(style().width(px(420))),
         accordion::Accordion(#{ key: "specimen-accordion", expanded: ctx.get_state("specimen_accordion"), mode: "multiple",
             items: [
                 #{ key: "runtime", title: "Runtime", content: text("All checks pass"), content_height: 34 },

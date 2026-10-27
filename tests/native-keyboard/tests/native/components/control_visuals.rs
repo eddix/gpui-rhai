@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
-    WindowHandle, point, px, rgba,
+    Background, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    VisualTestContext, WindowHandle, point, px, rgba,
 };
 use gpui_rhai::*;
 use gpui_rhai_registry::INTERACTION_LAB_STORY_SOURCE as INTERACTION_LAB;
@@ -298,6 +298,166 @@ fn view(ctx){column([
     assert_eq!(vertical_tabs[0].y - vertical_list.y, 2.0);
     let last = vertical_tabs.last().unwrap();
     assert!((vertical_list.y + vertical_list.height - (last.y + last.height) - 2.0).abs() < 0.01);
+}
+
+/// The tab slots of the first tablist in `tree`, in order.
+fn tab_slots(tree: &AccessibilityTree) -> Vec<GeometryBounds> {
+    tree.nodes()
+        .filter(|node| node.role == "tab")
+        .map(|node| node.geometry.unwrap().visual)
+        .collect()
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn near(painted: f32, layout: f64) -> bool {
+    (painted - layout as f32).abs() < 0.01
+}
+
+#[gpui::test]
+fn tabs_underline_bar_covers_the_hairline_under_the_selected_label(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/tabs" as tabs;
+fn changed(ctx,value){}
+fn view(ctx){column([tabs::Tabs(#{label:"Sections",value:"two",variant:"underline",tabs:[
+    #{value:"one",label:"One",content:text("Panel one")},
+    #{value:"two",label:"Much longer",content:text("Panel two")},
+    #{value:"three",label:"中文项目",content:text("Panel three")}
+],on_change:Fn("changed")}).with_style(style().width(px(420)))]).with_style(style().padding(px(12)))}
+"#;
+    let overrides = ThemeTokenOverrides {
+        colors: BTreeMap::from([
+            ("text_primary".to_owned(), Rgba8::from_rgba_hex(0xff00_00ff)),
+            ("border".to_owned(), Rgba8::from_rgba_hex(0x0000_ffff)),
+            ("focus_ring".to_owned(), Rgba8::from_rgba_hex(0x00ff_00ff)),
+        ]),
+        ..Default::default()
+    };
+    let (window, view) = mount_with_overrides(cx, script, "tabs-underline", overrides);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert_eq!(last_error(&mut visual, &view), None);
+    let tree = snapshot(&mut visual, &view);
+    let list = bounds_in(&tree, "tablist", "Sections");
+    let tabs = tab_slots(&tree);
+    assert_eq!(tabs.len(), 3);
+    // With a panel the strip spans it; slots are metrics.control high, start on the edge
+    // (their spacing.xs padding is the label's inset) and sit control_pad / 2 apart.
+    assert_eq!((list.width, list.height), (420.0, 32.0));
+    assert_eq!((tabs[0].x, tabs[0].height), (list.x, 32.0));
+    assert!(
+        (tabs[1].x - (tabs[0].x + tabs[0].width) - 8.0).abs() < 0.01,
+        "{tabs:?}"
+    );
+    // The hairline separates the panel, which sits only space.related (8px) below it.
+    let panel = bounds_in(&tree, "tabpanel", "Much longer");
+    assert_eq!(panel.y - (list.y + list.height), 8.0);
+
+    let quads = painted_quads(&mut visual);
+    let line_fill: Background = rgba(0x0000_ffff).into();
+    let bar_fill: Background = rgba(0xff00_00ff).into();
+    let line_at = quads.iter().position(|quad| quad.background == line_fill);
+    let bar_at = quads.iter().position(|quad| quad.background == bar_fill);
+    let (Some(line_at), Some(bar_at)) = (line_at, bar_at) else {
+        panic!("hairline {line_at:?} and bar {bar_at:?} must both paint");
+    };
+    assert_eq!(
+        quads
+            .iter()
+            .filter(|quad| quad.background == bar_fill)
+            .count(),
+        1
+    );
+    let line = quads[line_at].visible();
+    let bar = quads[bar_at].visible();
+    assert!(
+        near(line.x, list.x) && near(line.width, list.width),
+        "{line:?}"
+    );
+    assert!(
+        line.height == 1.0 && near(line.bottom(), list.y + list.height),
+        "{line:?}"
+    );
+    // Painted after the hairline and not clipped by the scrolling list, the bar covers it
+    // under the label: the slot less spacing.xs on each side.
+    assert!(bar_at > line_at);
+    assert!(
+        bar.height == 2.0 && near(bar.bottom(), list.y + list.height),
+        "{bar:?}"
+    );
+    assert!(
+        near(bar.x, tabs[1].x + 4.0) && near(bar.right(), tabs[1].x + tabs[1].width - 4.0),
+        "bar={bar:?}, tab={:?}",
+        tabs[1]
+    );
+
+    // The list's focus frames the selected slot, as the track frames its thumb.
+    assert!(bordered_quads(&mut visual, 0x00ff_00ff).is_empty());
+    visual.update(|window, cx| view.focus(window, cx)).unwrap();
+    visual.simulate_keystrokes("tab");
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let frames = bordered_quads(&mut visual, 0x00ff_00ff);
+    assert!(
+        !frames.is_empty()
+            && frames
+                .iter()
+                .all(|(width, height)| near(*width, tabs[1].width) && near(*height, tabs[1].height)),
+        "frames={frames:?}, tab={:?}",
+        tabs[1]
+    );
+}
+
+#[gpui::test]
+fn tabs_underline_equal_layout_shares_the_strip(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/tabs" as tabs;
+fn view(ctx){tabs::Tabs(#{label:"Views",value:"one",variant:"underline",layout:"equal",panel:false,tabs:[
+    #{value:"one",label:"One"},#{value:"two",label:"Two wider"},#{value:"three",label:"Three"}
+]}).with_style(style().width(px(306)))}
+"#;
+    let (window, view) = mount(cx, script, "tabs-underline-equal");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert_eq!(last_error(&mut visual, &view), None);
+    let tree = snapshot(&mut visual, &view);
+    let list = bounds_in(&tree, "tablist", "Views");
+    let tabs = tab_slots(&tree);
+    assert_eq!(list.width, 306.0);
+    assert_eq!(tabs[0].x, list.x);
+    assert!((list.x + list.width - (tabs[2].x + tabs[2].width)).abs() < 0.01);
+    assert!(
+        tabs.iter()
+            .all(|tab| (tab.width - tabs[0].width).abs() <= 0.5),
+        "{tabs:?}"
+    );
+}
+
+#[gpui::test]
+fn tabs_underline_rejects_vertical_orientation(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    // A valid first frame, then a selection that turns the list vertical.
+    let script = r#"
+import "components/tabs" as tabs;
+fn state_schema(){#{fields:#{vertical:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}}}}}
+fn changed(ctx,value){ctx.set_state("vertical",true);}
+fn view(ctx){tabs::Tabs(#{label:"Sections",value:"one",variant:"underline",
+    orientation:if ctx.get_state("vertical"){"vertical"}else{"horizontal"},
+    tabs:[#{value:"one",label:"One",content:text("Panel one")},
+        #{value:"two",label:"Two",content:text("Panel two")}],on_change:Fn("changed")})}
+"#;
+    let (window, view) = mount(cx, script, "tabs-underline-vertical");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert_eq!(last_error(&mut visual, &view), None);
+    let tree = snapshot(&mut visual, &view);
+    click_center(&mut visual, bounds_in(&tree, "tab", "Two"));
+    visual.run_until_parked();
+    let error = last_error(&mut visual, &view);
+    assert!(
+        error
+            .as_deref()
+            .is_some_and(|error| error.contains("underline supports horizontal orientation only")),
+        "{error:?}"
+    );
 }
 
 #[gpui::test]

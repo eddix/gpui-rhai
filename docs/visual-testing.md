@@ -18,6 +18,9 @@ Maintain one contextual specimen containing:
   the resolved `spacing.xxs` at every outer edge, with no dividers or selected rail;
 - content-width and equal-width Tabs, unequal English/CJK labels, icons with
   text and icon-only headers, horizontal/vertical and LTR/RTL layouts;
+- underline Tabs with and without a panel and inside a Card: the hairline
+  spans the strip, the 2px bar covers it under the selected label only, and
+  the keyboard focus frame does not touch the label;
 - normal, focused, hovered, disabled, scrolling, interrupted transition, and
   Reduced/None states; focus must not obscure persistent selection;
 - Button and Badge using the same text and color treatment, including a

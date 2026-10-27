@@ -73,8 +73,8 @@ const MACOS_TRAFFIC_LIGHTS: (f32, f32) = (12.0, 11.0);
 /// bar, 36pt with its bottom hairline, has them at 11.
 const MACOS_TRAFFIC_LIGHTS_ABOVE_MIDDLE: f32 = 7.0;
 
-/// Every Gallery page ID, in navigation order, read from the page modules'
-/// `pages()` lists.
+/// Every Gallery page ID, in page-module order, read from the page modules'
+/// `pages()` lists. The sidebar regroups them by each page's `group`.
 ///
 /// # Panics
 /// Panics if the build's bundled page metadata is malformed. No external

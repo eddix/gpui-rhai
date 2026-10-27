@@ -1,9 +1,11 @@
 # Tabs
 
-`components/tabs` · export `Tabs` · version 0.2.0. Generated from
+`components/tabs` · export `Tabs` · version 0.3.0. Generated from
 [`registry/components/tabs.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tabs.rhai); do not edit.
 
 Controlled tabs with one tab stop and orientation-aware arrow selection. State: controlled selected value.
+
+`variant: "track"` is a tonal track with a raised thumb, for a compact switcher among other controls. `variant: "underline"` is a row of labels on a hairline with a 2px ink bar under the selected one, for the section navigation that heads a panel or a card.
 
 ```rhai
 import "components/tabs" as tabs;
@@ -28,6 +30,7 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 | `style` | style | — | Style merged over the root part. |
 | `tabs` | array of object (at most 128) | required | The tabs in list order. |
 | `value` | string | required | The `value` of the selected tab; the caller stores the `change` payload and passes it back. |
+| `variant` | `"track"` or `"underline"` | `"track"` | `track` is a tonal track with a raised thumb; `underline` puts the labels on a hairline and marks the selected one with a 2px ink bar. `underline` is horizontal only. |
 
 ### `tabs[]` fields
 
@@ -48,9 +51,9 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `icon`, `indicator`, `label`, `list`, `panel`, `root`, `tab`, `tab_selected`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `focus_frame`, `icon`, `indicator`, `label`, `line`, `list`, `panel`, `root`, `tab`, `tab_selected`.
 
 ## Theme
 
-- Tokens: `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.icon`, `metrics.label_column`, `radius.lg`, `radius.md`, `space.group`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabs.foreground`, `text_primary`, `typography.body`, `typography.control`
+- Tokens: `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.icon`, `metrics.label_column`, `radius.lg`, `radius.md`, `space.group`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabs.foreground`, `text_primary`, `typography.body`, `typography.control`
 - Environment: `corners`, `density`, `size`

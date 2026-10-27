@@ -172,27 +172,50 @@ fn nav_expand(ctx, keys) { set_value("gallery.nav_expanded", ctx, keys); }
 
 // ---- pages ----------------------------------------------------------------------------
 
-fn sections() {
+// The sidebar groups in order: the chapters of docs/design/atoms.md, then composition,
+// scenes and the motion pack. Every page names one of them in its `group`. Page modules
+// only organize the source, so a new module adds pages to these groups, never a group.
+fn groups() {
+    ["Foundations", "Markers", "Fields", "Lists", "Navigation", "Overlays", "Containers",
+        "Display", "Interaction", "Layouts and patterns", "Scenes", "Effects"]
+}
+
+// The page modules, in the order their pages join a group.
+fn modules() {
     [
-        #{ title: "Foundations", source_module: "gallery/pages/foundations", pages: foundations::pages() },
-        #{ title: "Markers", source_module: "gallery/pages/markers", pages: markers::pages() },
-        #{ title: "Fields", source_module: "gallery/pages/fields", pages: fields::pages() },
-        #{ title: "Lists", source_module: "gallery/pages/lists", pages: lists::pages() },
-        #{ title: "Browsers", source_module: "gallery/pages/browsers", pages: browsers::pages() },
-        #{ title: "Inputs and choices", source_module: "gallery/pages/inputs_and_choices", pages: inputs_and_choices::pages() },
-        #{ title: "Navigation", source_module: "gallery/pages/navigation", pages: navigation_pages::pages() },
-        #{ title: "Time", source_module: "gallery/pages/temporal", pages: temporal::pages() },
-        #{ title: "Scrolling", source_module: "gallery/pages/scrolling", pages: scrolling::pages() },
-        #{ title: "Documents", source_module: "gallery/pages/markdown", pages: markdown_pages::pages() },
-        #{ title: "Conversation", source_module: "gallery/pages/messaging", pages: messaging::pages() },
-        #{ title: "Overlays", source_module: "gallery/pages/overlays", pages: overlays::pages() },
-        #{ title: "Containers", source_module: "gallery/pages/containers", pages: containers::pages() },
-        #{ title: "Display", source_module: "gallery/pages/display", pages: display::pages() },
-        #{ title: "Interaction", source_module: "gallery/pages/interaction", pages: interaction::pages() },
-        #{ title: "Layouts and patterns", source_module: "gallery/pages/composition", pages: composition::pages() },
-        #{ title: "Scenes", source_module: "gallery/pages/scenes", pages: scenes::pages() },
-        #{ title: "Effects", source_module: "gallery/pages/effects", pages: effects::pages() },
+        #{ id: "gallery/pages/foundations", pages: foundations::pages() },
+        #{ id: "gallery/pages/markers", pages: markers::pages() },
+        #{ id: "gallery/pages/fields", pages: fields::pages() },
+        #{ id: "gallery/pages/lists", pages: lists::pages() },
+        #{ id: "gallery/pages/browsers", pages: browsers::pages() },
+        #{ id: "gallery/pages/navigation", pages: navigation_pages::pages() },
+        #{ id: "gallery/pages/overlays", pages: overlays::pages() },
+        #{ id: "gallery/pages/containers", pages: containers::pages() },
+        #{ id: "gallery/pages/scrolling", pages: scrolling::pages() },
+        #{ id: "gallery/pages/display", pages: display::pages() },
+        #{ id: "gallery/pages/markdown", pages: markdown_pages::pages() },
+        #{ id: "gallery/pages/interaction", pages: interaction::pages() },
+        #{ id: "gallery/pages/composition", pages: composition::pages() },
+        #{ id: "gallery/pages/inputs_and_choices", pages: inputs_and_choices::pages() },
+        #{ id: "gallery/pages/temporal", pages: temporal::pages() },
+        #{ id: "gallery/pages/scenes", pages: scenes::pages() },
+        #{ id: "gallery/pages/messaging", pages: messaging::pages() },
+        #{ id: "gallery/pages/effects", pages: effects::pages() },
     ]
+}
+
+fn sections() {
+    let titles = groups();
+    let sections = [];
+    for title in titles { sections.push(#{ title: title, pages: [] }); }
+    for source in modules() {
+        for page in source.pages {
+            let at = if "group" in page { order_position(titles, page.group) } else { -1 };
+            if at < 0 { throw `Gallery page ${page.id} names no group of groups()`; }
+            sections[at].pages.push(page);
+        }
+    }
+    sections
 }
 
 fn all_pages() {
@@ -206,13 +229,10 @@ fn page_title(id) {
     id
 }
 
+// The module whose source the inspector shows for a page.
 fn page_module(id) {
-    for section in sections() {
-        for page in section.pages {
-            if page.id == id {
-                return section.source_module;
-            }
-        }
+    for source in modules() {
+        for page in source.pages { if page.id == id { return source.id; } }
     }
     "gallery/pages/markers"
 }

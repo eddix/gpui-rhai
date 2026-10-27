@@ -55,9 +55,11 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
   (`window_drag`, allowed by the Host). Corner styles are described in
   [design/atoms.md](design/atoms.md#radius-roles-and-the-corner-style); square
   is the design language and the baselines' style.
-- **Sidebar**: a Tree of 85 pages in 11 groups: Foundations 4, Markers 8,
-  Fields 14, Lists 11, Overlays 6, Containers 11, Display 7, Interaction 7,
-  Layouts and patterns 12, Scenes 4, Effects 1.
+- **Sidebar**: a Tree of 99 pages in 12 groups: Foundations 5, Markers 8,
+  Fields 18, Lists 11, Navigation 5, Overlays 6, Containers 12, Display 8,
+  Interaction 7, Layouts and patterns 13, Scenes 5, Effects 1. The groups
+  follow the chapters of [design/atoms.md](design/atoms.md); `groups()` in
+  `main.rhai` fixes them and their order.
 - **Main**: one Region per page. Each section shows a component in real use,
   not a property sheet; size and density comparisons sit side by side.
 - **Source**: the Rhai source of the current page module, beside the page in a
@@ -72,7 +74,7 @@ inside a region; Cmd+K (Ctrl+K) opens the palette, which lists every page and
 the Gallery actions (toggle density, light/dark within the theme family, corner
 style and source).
 
-The four scenes are small complete tasks rather than specimens:
+The five scenes are small complete tasks rather than specimens:
 
 | Page | Task |
 |---|---|
@@ -80,6 +82,7 @@ The four scenes are small complete tasks rather than specimens:
 | `scene.data` | a 120-row paginated table with selection and density |
 | `scene.form` | fill a form, see validation, submit with Enter |
 | `scene.settings` | switch views with Tabs, toggle settings, a disabled managed section |
+| `scene.messages` | send a draft, stream the reply, pause following and stop |
 
 ## Structure
 
@@ -87,7 +90,7 @@ The four scenes are small complete tasks rather than specimens:
 |---|---|
 | `registry/gallery/main.rhai` | the AppShell, navigation, palette, title controls, page dispatch |
 | `registry/gallery/kit.rhai` | page helpers: `page`, `sec`, `line`, `sizes`, `variants`, `densities` |
-| `registry/gallery/pages/*.rhai` | one module per sidebar group; each exports `pages()` and `view(ctx, h, v, id)` |
+| `registry/gallery/pages/*.rhai` | page modules; each exports `pages()` and `view(ctx, h, v, id)`, and every page in `pages()` names its sidebar `group` |
 | `crates/gpui-rhai-cli/src/acceptance.rs` | the Host: assembly, launch selection, key bindings, source documents, audit count |
 
 Pages keep their interactive values in one `values` map owned by `main`; page
@@ -96,8 +99,12 @@ modules receive handler function pointers (`kit::store`, `kit::put`,
 the Cmd+K binding, the page sources as native text documents, and the audit
 count after each frame.
 
-Adding a component means adding its page. `acceptance::page_ids` reads the
-`pages()` lists, and a unit test fails when a bundled component has no page.
+Adding a component means adding its page, with a `group` from `groups()`; a page
+with any other group stops the Gallery from rendering, which the acceptance
+gates catch. A new page module only organizes source: list it in `modules()`
+and `page_view`, and its pages join existing groups. `acceptance::page_ids`
+reads the `pages()` lists, and a unit test fails when a bundled component has
+no page.
 
 ## Gates
 
