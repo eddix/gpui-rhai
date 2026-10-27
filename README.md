@@ -19,7 +19,7 @@ identity and native state and renders it with GPUI.
 - **Standalone or embedded.** Run a window-owning application, or mount
   isolated script views inside an existing GPUI application.
 
-The latest release is 0.2.3 (Runtime API 3). See the
+The latest release is 0.3.0 (Runtime API 3). See the
 [release notes](docs/releases/README.md).
 
 ## Quick start
