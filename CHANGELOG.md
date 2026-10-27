@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## Unreleased
+## 0.3.0 - 2026-10-27
 
 - **Breaking:** `components/tab_bar` is removed; `components/tabs` 0.3.0
   takes its place in three looks that share every capability (D71):
