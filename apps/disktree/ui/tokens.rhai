@@ -82,6 +82,9 @@ fn tokens() {
             titlebar: by_env("density", #{ comfortable: px(36), compact: px(32) }),
             statusbar: by_env("density", #{ comfortable: px(24), compact: px(22) }),
             label_column: px(128),
+            // Count capsule in a tab: the control line height (control_small 16,
+            // control_regular 20), so the capsule is exactly as tall as the label.
+            counter: by_env("size", #{ xs: px(16), sm: px(20), md: px(20), lg: px(20) }),
         },
 
         typography: #{
@@ -110,6 +113,15 @@ fn tokens() {
                 control: by_env("size", #{
                     xs: "control_small", sm: "control_regular", md: "control_regular",
                     lg: "control_regular",
+                }),
+                // Figures in a count capsule: digits are about 0.72em tall, so 12px leaves
+                // about 5.7px above and below them in the 20px capsule and 11px about 4px in
+                // the 16px one. The line box stays inside metrics.counter.
+                counter_small: #{ size: px(11), line_height: px(14), weight: 400 },
+                counter_regular: #{ size: px(12), line_height: px(16), weight: 400 },
+                counter: by_env("size", #{
+                    xs: "counter_small", sm: "counter_regular", md: "counter_regular",
+                    lg: "counter_regular",
                 }),
             },
         },
@@ -146,7 +158,12 @@ fn tokens() {
             "scrollbar.thumb_hover": theme_color("text_muted"),
             "tabs.foreground": readable(theme_color("text_muted"), theme_color("text_primary"),
                 theme_color("surface_hover"), 4.5),
-            // TabBar: the bar sits between the page and a tonal block; the selected tab
+            // Tabs count capsule: a step from the track toward ink, so it shows on the track,
+            // the thumb and the page alike. Its figures are small, so it keeps text_primary at
+            // the 5.2:1 margin of secondary reading text rather than the bare 4.5:1.
+            "tabs.counter": readable(mix(theme_color("surface_hover"), theme_color("text_primary"), 0.14),
+                theme_color("surface_hover"), theme_color("text_primary"), 5.2),
+            // Tabs `bar` variant: the bar sits between the page and a tonal block; the selected tab
             // takes the panel's surface so it joins the panel under it.
             "tabbar.background": mix(theme_color("surface"), theme_color("surface_hover"), 0.5),
             "tabbar.active": theme_color("surface"),
