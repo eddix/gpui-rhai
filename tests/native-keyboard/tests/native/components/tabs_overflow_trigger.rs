@@ -1,10 +1,10 @@
-//! TabBar's all-tabs menu trigger fills the bar's height (#128): it asked for
+//! The Tabs bar's all-tabs menu trigger fills the bar's height (#128): it asked for
 //! `height(relative(1.0))` inside the Menu root, which has no definite height, so it
 //! collapsed to the 16px chevron at the bar's top edge. It now takes `metrics.control`.
 
 use gpui::TestAppContext;
 
-use super::tab_bar::{mount, script};
+use super::tabs_collection::{mount, script};
 use crate::support::bounds;
 
 #[gpui::test]

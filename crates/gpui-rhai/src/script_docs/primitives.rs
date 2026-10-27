@@ -77,7 +77,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "SortableItemPrimitive(_)",
         params: &["props"],
-        doc: "Native drag grip for one keyed item that previews insertion and proposes `reorder`; `components/sortable` and `components/tab_bar` use it.",
+        doc: "Native drag grip for one keyed item that previews insertion and proposes `reorder`; `components/sortable` and reorderable `components/tabs` use it.",
     },
     ScriptFnDoc {
         signature: "SplitResizePrimitive(_)",

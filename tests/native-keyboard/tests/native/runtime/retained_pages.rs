@@ -243,6 +243,7 @@ fn view(ctx) {{ page::view(ctx, #{{}}, #{{}}, "{page}") }}"#
                 "gallery/retained_page_panel",
                 source_file("gallery/retained_page_panel.rhai"),
             )
+            .module("gallery/tabs_demo", source_file("gallery/tabs_demo.rhai"))
             .locale("en.rhai", gpui_rhai_registry::EN_LOCALE)
             .motion(MotionPreference::None)
             .mount(cx);

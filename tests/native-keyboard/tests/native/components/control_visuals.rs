@@ -13,10 +13,16 @@ use crate::support::{
 };
 
 /// The official modules these tests mount; the rest of the registry stays out.
-const MODULES: [&str; 20] = [
+const MODULES: [&str; 25] = [
     "components/button",
     "components/badge",
     "components/tabs",
+    // Tabs' overflow menu and add button, and the menu's own dependency.
+    "components/tab_overflow_menu",
+    "components/menu",
+    "components/divider",
+    "components/kbd",
+    "components/icon_button",
     "components/input",
     "components/input_group",
     "components/checkbox",
@@ -37,8 +43,10 @@ const MODULES: [&str; 20] = [
 ];
 
 /// The only bundled icons these tests install.
-const ICONS: [&str; 4] = [
+const ICONS: [&str; 6] = [
     "icons/chevron_down",
+    "icons/close",
+    "icons/plus",
     "icons/chevron_right",
     "icons/check",
     "icons/minus",
@@ -340,9 +348,12 @@ fn view(ctx){column([tabs::Tabs(#{label:"Sections",value:"two",variant:"underlin
     let list = bounds_in(&tree, "tablist", "Sections");
     let tabs = tab_slots(&tree);
     assert_eq!(tabs.len(), 3);
-    // With a panel the strip spans it; slots are metrics.control high, start on the edge
-    // (their spacing.xs padding is the label's inset) and sit control_pad / 2 apart.
-    assert_eq!((list.width, list.height), (420.0, 32.0));
+    // With a panel the strip spans it; the list fits its tabs, which are metrics.control high,
+    // start on the edge (their spacing.xs padding is the label's inset) and sit
+    // control_pad / 2 apart.
+    let root = bounds_in(&tree, "group", "Sections");
+    assert_eq!((root.width, list.height), (420.0, 32.0));
+    assert!(list.width < 420.0, "the list fits its tabs: {list:?}");
     assert_eq!((tabs[0].x, tabs[0].height), (list.x, 32.0));
     assert!(
         (tabs[1].x - (tabs[0].x + tabs[0].width) - 8.0).abs() < 0.01,
@@ -370,8 +381,8 @@ fn view(ctx){column([tabs::Tabs(#{label:"Sections",value:"two",variant:"underlin
     let line = quads[line_at].visible();
     let bar = quads[bar_at].visible();
     assert!(
-        near(line.x, list.x) && near(line.width, list.width),
-        "{line:?}"
+        near(line.x, root.x) && near(line.width, root.width),
+        "the hairline spans the panel: {line:?}"
     );
     assert!(
         line.height == 1.0 && near(line.bottom(), list.y + list.height),

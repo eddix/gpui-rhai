@@ -375,10 +375,10 @@ fn gallery_theme_picker_lists_loaded_themes_and_switches(cx: &mut TestAppContext
     assert_eq!(
         options[..4],
         [
+            "Absolutely · Dark",
+            "Absolutely · Light",
             "Aetheria",
-            "Catppuccin · Latte",
-            "Catppuccin · Mocha",
-            "Default · Dark"
+            "Catppuccin · Latte"
         ],
         "{options:?}"
     );

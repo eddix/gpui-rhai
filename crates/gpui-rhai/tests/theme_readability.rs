@@ -154,3 +154,46 @@ fn all_palettes_have_reading_margin_and_ordered_perceptual_surface_steps() {
         );
     }
 }
+
+/// The Tabs count capsule shows on every surface a tab sits on (the page, a card, the track,
+/// the selected thumb, a bar and its selected tab) and keeps its figures readable.
+#[test]
+fn tabs_counter_shows_on_every_tab_surface_and_keeps_its_text_readable() {
+    let engine = RuntimeEngine::new();
+    let base = load_token_base(engine.engine(), "tokens.rhai", TOKEN_BASE_SOURCE).unwrap();
+    println!("| Theme | Text on capsule | Weakest step | Against |");
+    for &(file, source) in BUNDLED_THEME_SOURCES {
+        let theme = load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
+            file,
+            source,
+            &ThemeTokenOverrides::default(),
+        )
+        .unwrap();
+        let color = |name: &str| theme.tokens.color(name).unwrap();
+        let counter = color("tabs.counter");
+        let text = color("text_primary").contrast_ratio(counter);
+        let (weakest, against) = [
+            "surface",
+            "surface_raised",
+            "surface_hover",
+            "tabbar.background",
+            "tabbar.active",
+        ]
+        .into_iter()
+        .map(|surface| (counter.contrast_ratio(color(surface)), surface))
+        .fold((f64::INFINITY, ""), |least, step| {
+            if step.0 < least.0 { step } else { least }
+        });
+        println!("| {file} | {text:.2} | {weakest:.3} | {against} |");
+        assert!(
+            text >= 5.2,
+            "{file}: capsule figures need 5.2:1, got {text:.2}"
+        );
+        assert!(
+            weakest >= 1.15,
+            "{file}: the capsule must stand out from {against}: {weakest:.3}"
+        );
+    }
+}

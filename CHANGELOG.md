@@ -7,20 +7,44 @@ semantic versioning from this release.
 
 ## Unreleased
 
-- `components/tabs` 0.3.0 adds `variant: "underline"` beside the default
-  `"track"`: labels on a `border` hairline that spans the panel, with a 2px
-  `text_primary` bar under the selected one, for the sections of a panel or a
-  card. Props, keyboard, panels and motion are shared; the panel sits
-  `space.related` below the hairline. New parts `line` and `focus_frame`; the
-  variant is horizontal only and throws with `orientation: "vertical"`.
-  `motion/animated_tabs` 0.1.7 forwards `variant`.
+- **Breaking:** `components/tab_bar` is removed; `components/tabs` 0.3.0
+  takes its place in three looks that share every capability (D71):
+  `variant: "track"` (default), `"underline"` (labels on a hairline with a 2px
+  ink bar, for the sections of a panel or a card) and `"bar"` (the former
+  TabBar). Any look can show a `count` capsule as tall as the label (corners
+  follow the corner style, `99+` past 99) or a `tone` lamp, close (`closable`,
+  middle press, Delete; `close(#{ value, next })`), add (`on_add` draws a "+"
+  after the last tab), reorder (drag, Alt+Arrow), take `start`/`end` slots
+  outside the list, ask for a context menu and list every tab in
+  `overflow_menu`. The strip scrolls and reveals the selected tab in every
+  look, vertical lists included. The arrows select in every look, with no
+  separate cursor and no Enter step. Migrate `TabBar(#{ ... })` to
+  `Tabs(#{ variant: "bar", panel: false, ... })`, read `on_close`'s payload as
+  `#{ value, next }`, and drop any Enter handling. Tabs stays stateless and
+  needs `key` only with `reorderable` or `overflow_menu`, but it now renders
+  inside a mounted view (it reveals through an effect). New parts include
+  `strip`, `line`, `focus_frame`, `counter`, `lamp`, `add`, `menu`, `start`
+  and `end`; `close_successor(tabs, value)` is exported.
+- `components/tab_overflow_menu` 0.3.0: the all-tabs menu as its own
+  stateful component, used by Tabs and usable beside any strip.
+- `motion/animated_tabs` 0.3.0 forwards `variant`.
+- The token base adds `metrics.counter` (the control line height), the
+  `counter` typography role (11/14 at `xs`, 12/16 otherwise) and
+  `tabs.counter`, a capsule fill derived from `surface_hover` toward ink that
+  keeps `text_primary` at 5.2:1; every bundled palette passes without its own
+  value. Projects with a copied token base get them through `gpui-rhai update`.
+- New bundled themes: Dracula, Molokai, and Absolutely Light and Dark (19
+  variants). Each is calibrated to the palette constraints; adjustments are
+  recorded in the theme files and docs/design/palette-calibration.md.
 - The Gallery sidebar is grouped by each page's `group` instead of one group
   per page module: 99 pages in 12 groups following docs/design/atoms.md.
-  Tabs, TabBar and Pagination move to Navigation; Calendar, TimeInput,
-  TimeRangePicker and SelectableCardGroup to Fields; ColumnBrowser, Formatted
-  Table and Timeline to Lists; Scrolling to Containers; MarkdownViewer to
-  Display; Composer to Layouts and patterns; the conversation scene to Scenes.
-  Page IDs and modules are unchanged.
+  Tabs and Pagination move to Navigation, where the TabOverflowMenu page
+  replaces the TabBar page; Calendar, TimeInput, TimeRangePicker and
+  SelectableCardGroup move to Fields; ColumnBrowser, Formatted Table and
+  Timeline to Lists; Scrolling to Containers; MarkdownViewer to Display;
+  Composer to Layouts and patterns; the conversation scene to Scenes. Other
+  page IDs and modules are unchanged; the Tabs page moved into
+  `gallery/pages/navigation` and shows every look and the collection features.
 - Named `Fn` callbacks now preserve the creating application module's lexical
   environment independently of UI state ownership, including callback props,
   forwarding, curry and same-named helpers in different modules (#201).

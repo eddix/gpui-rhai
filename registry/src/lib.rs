@@ -162,9 +162,9 @@ bundled_components!(
         "../components/column_browser.rhai"
     ),
     (
-        TAB_BAR_SOURCE,
-        "components/tab_bar",
-        "../components/tab_bar.rhai"
+        TAB_OVERFLOW_MENU_SOURCE,
+        "components/tab_overflow_menu",
+        "../components/tab_overflow_menu.rhai"
     ),
     (
         PAGINATION_SOURCE,
@@ -540,6 +540,10 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
         include_str!("../gallery/retained_page_panel.rhai"),
     ),
     (
+        "gallery/tabs_demo",
+        include_str!("../gallery/tabs_demo.rhai"),
+    ),
+    (
         "gallery/pages/temporal",
         include_str!("../gallery/pages/temporal.rhai"),
     ),
@@ -620,6 +624,10 @@ pub const RETRO_82_THEME: &str = include_str!("../themes/retro_82.rhai");
 pub const HERMARCHY_THEME: &str = include_str!("../themes/hermarchy.rhai");
 pub const FUTURISM_THEME: &str = include_str!("../themes/futurism.rhai");
 pub const AETHERIA_THEME: &str = include_str!("../themes/aetheria.rhai");
+pub const DRACULA_THEME: &str = include_str!("../themes/dracula.rhai");
+pub const MOLOKAI_THEME: &str = include_str!("../themes/molokai.rhai");
+pub const ABSOLUTELY_LIGHT_THEME: &str = include_str!("../themes/absolutely_light.rhai");
+pub const ABSOLUTELY_DARK_THEME: &str = include_str!("../themes/absolutely_dark.rhai");
 
 pub const EN_LOCALE: &str = include_str!("../locales/en.rhai");
 pub const ZH_CN_LOCALE: &str = include_str!("../locales/zh_cn.rhai");
@@ -670,7 +678,8 @@ pub const SELECTION_AREA_STORY_SOURCE: &str =
     include_str!("../stories/components/selection_area.rhai");
 pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
 pub const LIST_STORY_SOURCE: &str = include_str!("../stories/components/list.rhai");
-pub const TAB_BAR_STORY_SOURCE: &str = include_str!("../stories/components/tab_bar.rhai");
+pub const TABS_COLLECTION_STORY_SOURCE: &str =
+    include_str!("../stories/components/tabs_collection.rhai");
 pub const INTERACTION_LAB_STORY_SOURCE: &str =
     include_str!("../stories/workbench/interaction_lab.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
@@ -891,7 +900,13 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         purpose: "Exercise controlled selection, content layout, and disabled navigation.",
         category: "navigation",
         keywords: &["navigation", "selection", "panel", "tabs"],
-        module_ids: &["components/tabs", "components/table", "charts/chart"],
+        module_ids: &[
+            "components/tabs",
+            "components/menu",
+            "components/icon_button",
+            "components/table",
+            "charts/chart",
+        ],
         source_module: "stories/components/tabs",
         source: TABS_STORY_SOURCE,
         cases: BASIC_CASE,
@@ -1107,20 +1122,32 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
-        id: "components/tab-bar",
-        title: "TabBar",
-        purpose: "Switch, close and reorder document tabs that belong to the panel under them.",
+        id: "components/tabs-collection",
+        title: "Tabs collection",
+        purpose: "Switch, add and close document tabs in the bar variant, with counts and an overflow menu.",
         category: "navigation",
-        keywords: &["tabs", "documents", "panel", "close", "reorder", "scroll"],
-        module_ids: &["components/tab_bar", "components/menu"],
-        source_module: "stories/components/tab_bar",
-        source: TAB_BAR_STORY_SOURCE,
+        keywords: &[
+            "tabs",
+            "documents",
+            "panel",
+            "close",
+            "add",
+            "count",
+            "scroll",
+        ],
+        module_ids: &[
+            "components/tabs",
+            "components/menu",
+            "components/icon_button",
+        ],
+        source_module: "stories/components/tabs_collection",
+        source: TABS_COLLECTION_STORY_SOURCE,
         cases: BASIC_CASE,
         fixture: None,
         required_features: NO_FEATURES,
         platforms: DESKTOP_PLATFORMS,
         test_requirements: STANDARD_STORY_TESTS,
-        documentation: "docs/components/catalog.md#tabbar",
+        documentation: "docs/components/catalog.md#tabs",
         theme_studio: true,
     },
     StoryDefinition {
@@ -1338,6 +1365,10 @@ pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
     ("hermarchy.rhai", HERMARCHY_THEME),
     ("futurism.rhai", FUTURISM_THEME),
     ("aetheria.rhai", AETHERIA_THEME),
+    ("dracula.rhai", DRACULA_THEME),
+    ("molokai.rhai", MOLOKAI_THEME),
+    ("absolutely_light.rhai", ABSOLUTELY_LIGHT_THEME),
+    ("absolutely_dark.rhai", ABSOLUTELY_DARK_THEME),
 ];
 
 mod skills;
@@ -1572,7 +1603,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
-        assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
+        assert_eq!(BUNDLED_THEME_SOURCES.len(), 19);
         assert_eq!(BUNDLED_STORIES.len(), 24);
         assert!(
             BUNDLED_COMPONENT_SOURCES

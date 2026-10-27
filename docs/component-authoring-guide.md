@@ -54,6 +54,22 @@ and computed definition builders are rejected by the production module
 resolver before the AST is evaluated. Put application work in explicit
 lifecycle/event callbacks and component-owned work in a declared effect.
 
+### Source version
+
+A module's version is the release that ships its latest change: a module edited
+while the workspace is at 0.2.3, for a 0.2.4 release, takes 0.2.4, and a new
+module starts at the release that first ships it. A module that does not change
+keeps its version across releases (the motion pack stayed at 0.1.x through 0.2).
+The release itself follows semantic versioning for 0.x: a breaking change to a
+component's schema, behavior or structure, or a removed module, makes the next
+release 0.(x+1).0; fixes and additive changes stay on 0.x.(y+1). Bump the
+header and `define_component` together; `gpui-rhai check` rejects disagreement.
+
+`gpui-rhai update` uses the version only to never downgrade: at the same version
+the recorded baseline decides whether the copy is stale, so a fix that forgot
+the bump still reaches applications. The number is for readers and the
+changelog, not a cache key.
+
 ## Schema
 
 Declare every prop, local state field, semantic event, slot, styleable part,

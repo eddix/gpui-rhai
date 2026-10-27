@@ -1,9 +1,9 @@
-//! TabBar: document tabs that belong to the panel under them. The selected tab takes the
-//! panel's surface and covers the bar's line; a press selects, the close button and a
-//! middle press close, the keys move a cursor that Enter selects, a right press or
-//! Shift+F10 asks for a menu, tabs reorder by drag or Alt+Arrow, the strip scrolls (also
-//! with a vertical wheel) and keeps the selected tab revealed, and an optional menu lists
-//! every tab.
+//! The Tabs collection, in the `bar` variant: document tabs that belong to the panel under
+//! them. The selected tab takes the panel's surface and covers the bar's line; a press
+//! selects, the close button, a middle press and Delete close (proposing the successor),
+//! the arrows select, a right press or Shift+F10 asks for a menu, tabs reorder by drag or
+//! Alt+Arrow, the strip scrolls (also with a vertical wheel) and keeps the selected tab
+//! revealed, and an optional menu lists every tab.
 
 use gpui::{
     Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
@@ -16,22 +16,22 @@ use crate::support::{
 };
 
 /// A bar `width` wide over `count` tabs (t0..), the selected value in state; `extra` adds
-/// TabBar props. The log line records events.
+/// Tabs props. The log line records events.
 pub(super) fn script(count: usize, width: u32, extra: &str) -> String {
     format!(
-        r#"import "components/tab_bar" as tab_bar;
+        r#"import "components/tabs" as tabs;
 fn state_schema(){{#{{fields:#{{
     value:#{{schema:#{{type:"string"}},"default":#{{type:"string",value:"t1"}}}},
     log:#{{schema:#{{type:"string"}},"default":#{{type:"string",value:""}}}}}}}}}}
 fn note(ctx,line){{ctx.set_state("log",`${{ctx.get_state("log")}} ${{line}}`);}}
 fn changed(ctx,value){{ctx.set_state("value",value);note(ctx,`change:${{value}}`);}}
-fn closed(ctx,value){{note(ctx,`close:${{value}}`);}}
+fn closed(ctx,request){{note(ctx,`close:${{request.value}}>${{request.next}}`);}}
 fn asked(ctx,request){{note(ctx,`ctx:${{request.value}}:${{request.source}}`);}}
 fn moved(ctx,request){{note(ctx,`move:${{request.value}}:${{request.placement}}:${{request.anchor}}`);}}
 fn tabs(){{let result=[];for index in 0..{count}{{
     result.push(#{{value:`t${{index}}`,label:`Tab number ${{index}}`,closable:index<3,dirty:index==2}});}}result}}
 fn view(ctx){{column([
-    tab_bar::TabBar(#{{key:"files",label:"Open files",value:ctx.get_state("value"),tabs:tabs(),
+    tabs::Tabs(#{{key:"files",label:"Open files",value:ctx.get_state("value"),tabs:tabs(),variant:"bar",panel:false,
         on_change:Fn("changed"),on_close:Fn("closed"),on_context_request:Fn("asked"),on_reorder:Fn("moved")
         {extra}}}).with_style(style().width(px({width}))),
     text(ctx.get_state("log")).test_id("log"),
@@ -111,27 +111,43 @@ fn a_press_selects_and_the_close_button_and_middle_press_close(cx: &mut TestAppC
     press(&mut visual, center(close), MouseButton::Left);
     assert_eq!(
         log(&mut visual, &view),
-        "change:t0 close:t0",
+        "change:t0 close:t0>t1",
         "the close button does not select"
     );
     let second = bounds(&mut visual, &view, "tab", "Tab number 1");
     press(&mut visual, center(second), MouseButton::Middle);
-    assert_eq!(log(&mut visual, &view), "change:t0 close:t0 close:t1");
+    assert_eq!(log(&mut visual, &view), "change:t0 close:t0>t1 close:t1>t2");
 }
 
 #[gpui::test]
-fn the_keys_move_a_cursor_and_enter_selects_it(cx: &mut TestAppContext) {
+fn the_arrows_select_and_delete_closes_the_selected_tab(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, script(4, 600, ""));
     focus_strip(&mut visual);
     visual.simulate_keystrokes("right right");
     settle(&mut visual);
-    assert_eq!(log(&mut visual, &view), "", "moving does not select");
-    visual.simulate_keystrokes("enter");
+    assert_eq!(
+        log(&mut visual, &view),
+        "change:t2 change:t3",
+        "each arrow selects"
+    );
+    visual.simulate_keystrokes("home");
     settle(&mut visual);
-    assert_eq!(log(&mut visual, &view), "change:t3");
-    visual.simulate_keystrokes("home space");
+    assert_eq!(log(&mut visual, &view), "change:t2 change:t3 change:t0");
+    // t0 is closable: Delete closes it and proposes the tab after it.
+    visual.simulate_keystrokes("delete");
     settle(&mut visual);
-    assert_eq!(log(&mut visual, &view), "change:t3 change:t0");
+    assert_eq!(
+        log(&mut visual, &view),
+        "change:t2 change:t3 change:t0 close:t0>t1"
+    );
+    // t3 is not closable: Delete does nothing there.
+    visual.simulate_keystrokes("end delete");
+    settle(&mut visual);
+    assert!(
+        log(&mut visual, &view).ends_with("close:t0>t1 change:t3"),
+        "{}",
+        log(&mut visual, &view)
+    );
 }
 
 #[gpui::test]
@@ -179,7 +195,7 @@ fn reorderable_tabs_move_by_drag_and_by_alt_arrows(cx: &mut TestAppContext) {
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::none());
     settle(&mut visual);
     assert_eq!(log(&mut visual, &view), "change:t0 move:t0:after:t1");
-    // Alt+Right moves the cursor tab after its neighbour.
+    // Alt+Right moves the selected tab after its neighbour.
     focus_strip(&mut visual);
     visual.simulate_keystrokes("alt-right");
     settle(&mut visual);
@@ -206,7 +222,7 @@ fn a_narrow_strip_scrolls_and_keeps_the_selected_tab_revealed(cx: &mut TestAppCo
     );
     // Select the last tab by keyboard: it scrolls into view.
     focus_strip(&mut visual);
-    visual.simulate_keystrokes("end enter");
+    visual.simulate_keystrokes("end");
     settle(&mut visual);
     let last = bounds(&mut visual, &view, "tab", "Tab number 11");
     assert!(
@@ -298,13 +314,13 @@ fn tab_count(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> usize {
 }
 
 #[gpui::test]
-fn empty_tab_bar_mounts_without_error(cx: &mut TestAppContext) {
+fn empty_tabs_mount_without_error(cx: &mut TestAppContext) {
     let source = script(0, 360, "").replace_once("value:\"t1\"", "value:\"\"");
     let (mut visual, view) = mount(cx, source);
     let error = last_error(&mut visual, &view);
-    assert!(error.is_none(), "empty TabBar must be valid: {error:?}");
+    assert!(error.is_none(), "empty Tabs must be valid: {error:?}");
     assert_eq!(tab_count(&mut visual, &view), 0);
-    // Every tab disabled and none selected: there is no cursor to reveal either.
+    // Every tab disabled and none selected: there is nothing to reveal or select.
     let source = script(3, 360, "")
         .replace_once("value:\"t1\"", "value:\"\"")
         .replace_once("closable:index<3", "disabled:true,closable:index<3");
@@ -312,7 +328,7 @@ fn empty_tab_bar_mounts_without_error(cx: &mut TestAppContext) {
     let error = last_error(&mut visual, &view);
     assert!(
         error.is_none(),
-        "all-disabled TabBar must be valid: {error:?}"
+        "all-disabled Tabs must be valid: {error:?}"
     );
     assert_eq!(tab_count(&mut visual, &view), 3);
 }
@@ -327,8 +343,8 @@ fn closing_last_tab_commits_empty_state(cx: &mut TestAppContext) {
             "tabs:if ctx.get_state(\"value\") == \"\" { [] } else { tabs() }",
         )
         .replace_once(
-            "fn closed(ctx,value){note(ctx,`close:${value}`);}",
-            "fn closed(ctx,value){ctx.set_state(\"value\",\"\");note(ctx,`close:${value}`);}\n\
+            "fn closed(ctx,request){note(ctx,`close:${request.value}>${request.next}`);}",
+            "fn closed(ctx,request){ctx.set_state(\"value\",\"\");note(ctx,`close:${request.value}`);}\n\
              fn reopen(ctx,payload){ctx.set_state(\"value\",\"t0\");note(ctx,\"open:t0\");}",
         )
         .replace_once(
@@ -375,10 +391,10 @@ fn closing_the_selected_tab(cx: &mut TestAppContext, selection: Option<&str>) {
              \"default\":#{type:\"array\",value:[]}},log:#{schema",
         )
         .replace_once(
-            "fn closed(ctx,value){note(ctx,`close:${value}`);}",
+            "fn closed(ctx,request){note(ctx,`close:${request.value}>${request.next}`);}",
             &format!(
-                "fn closed(ctx,value){{let gone=ctx.get_state(\"closed\");gone.push(value);\
-                 ctx.set_state(\"closed\",gone);{store}note(ctx,`close:${{value}}`);}}"
+                "fn closed(ctx,request){{let gone=ctx.get_state(\"closed\");gone.push(request.value);\
+                 ctx.set_state(\"closed\",gone);{store}note(ctx,`close:${{request.value}}`);}}"
             ),
         )
         .replace_once(
@@ -397,10 +413,9 @@ fn closing_the_selected_tab(cx: &mut TestAppContext, selection: Option<&str>) {
         "closing the selected tab ({selection:?}) should commit: {error:?}"
     );
     assert_eq!(tab_count(&mut visual, &view), 2);
-    // With no selected tab left the cursor starts on the first enabled tab, which Enter
-    // selects.
+    // With no selected tab left, Home selects the first enabled tab.
     focus_strip(&mut visual);
-    visual.simulate_keystrokes("enter");
+    visual.simulate_keystrokes("home");
     settle(&mut visual);
     assert_eq!(log(&mut visual, &view), "close:t1 change:t0");
     assert!(last_error(&mut visual, &view).is_none());
