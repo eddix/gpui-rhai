@@ -783,6 +783,18 @@ impl Project {
         let mut manifest: LocalManifest = toml::from_str(&manifest_source)?;
         let mut plan = ProjectPlan::new(self.root.clone());
         let requested = manifest.components.keys().cloned().collect::<Vec<_>>();
+        // A module the registry no longer ships (TabBar, folded into Tabs in 0.3.0) stays
+        // the application's: its copy still runs, so update keeps it and says so.
+        let (requested, retired): (Vec<_>, Vec<_>) = requested.into_iter().partition(|raw| {
+            ModuleId::parse(raw.clone()).map_or(true, |id| registry.entries.contains_key(&id))
+        });
+        for raw in &retired {
+            let relative = component_relative_path(&ModuleId::parse(raw.clone())?)?;
+            plan.notes.push(format!(
+                "{raw} is no longer in the registry; update leaves ui/{} to the application",
+                slash_path(&relative)
+            ));
+        }
         for id in registry.resolve(&requested)? {
             let upstream = registry
                 .entries
@@ -3602,6 +3614,43 @@ mod tests {
             .unwrap(),
             registry.entries[&ModuleId::parse("components/button").unwrap()].source
         );
+    }
+
+    #[test]
+    fn update_keeps_a_module_the_registry_no_longer_ships() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["badge".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+        let source_path = directory.path().join("ui/components/badge.rhai");
+        let local = read(&source_path).unwrap();
+
+        // A later registry retires the module the project installed.
+        let mut registry = BundledRegistry::load().unwrap();
+        registry
+            .entries
+            .remove(&ModuleId::parse("components/badge").unwrap());
+        let plan = project.plan_update(&registry).unwrap();
+        assert!(
+            plan.notes().iter().any(|note| note
+                == "components/badge is no longer in the registry; update leaves ui/components/badge.rhai to the application"),
+            "{:?}",
+            plan.notes()
+        );
+        assert!(
+            plan.writes
+                .iter()
+                .all(|write| !write.path.ends_with("components/badge.rhai")),
+            "{}",
+            plan.summary()
+        );
+        plan.apply().unwrap();
+        assert_eq!(read(&source_path).unwrap(), local);
+        project.check().unwrap();
     }
 
     #[test]
