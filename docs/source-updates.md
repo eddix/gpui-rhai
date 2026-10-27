@@ -21,6 +21,11 @@ registry copies too: `init` records their baselines and `update` merges them
 the same way, so a component that needs a new token gets it with the update.
 `ui/theme.rhai` is the application's own theme and is never updated.
 
+A module the registry no longer ships (0.3.0 folds `components/tab_bar` into
+`components/tabs`) stays the application's: `update` leaves its copy and
+baseline as they are, prints a `note:` line, and updates everything else. The
+copy keeps running; migrate its callers and remove it when ready.
+
 Projects created by 0.2.0 to 0.2.2 have no baselines for these files. `update`
 records one for a copy equal to the bundled source, replaces a copy that is
 still byte-for-byte what one of those releases installed, and leaves any other

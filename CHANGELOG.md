@@ -25,6 +25,9 @@ semantic versioning from this release.
   inside a mounted view (it reveals through an effect). New parts include
   `strip`, `line`, `focus_frame`, `counter`, `lamp`, `add`, `menu`, `start`
   and `end`; `close_successor(tabs, value)` is exported.
+- `gpui-rhai update` keeps a module the registry no longer ships, such as a
+  copied `components/tab_bar`, as the application's copy and prints a `note:`
+  line, instead of failing the whole update with an unknown component.
 - `components/tab_overflow_menu` 0.3.0: the all-tabs menu as its own
   stateful component, used by Tabs and usable beside any strip.
 - `motion/animated_tabs` 0.3.0 forwards `variant`.
