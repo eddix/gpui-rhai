@@ -68,9 +68,9 @@ The functions, methods and native primitives a script calls are in the
 | [`components/split_pane`](components/split_pane.md) | `SplitPane` | Controlled, nestable two-panel split layout with a native drag hot lane. |
 | [`components/status_bar`](components/status_bar.md) | `StatusBar` | Compact application footer with stable logical start, center, and end regions. |
 | [`components/switch`](components/switch.md) | `Switch` | Controlled binary switch with disabled and loading states. |
-| [`components/tab_bar`](components/tab_bar.md) | `TabBar` | Controlled document tabs that belong to the panel under them: the selected tab takes the panel's surface (`tabbar.active`) and covers the bar's bottom line, so the panel's extent says what the tabs switch. |
+| [`components/tab_overflow_menu`](components/tab_overflow_menu.md) | `TabOverflowMenu` | A chevron button whose menu lists every tab of a strip; picking one reports its value. |
 | [`components/table`](components/table.md) | `Table` | Data-backed Table composed entirely from public Box/Text/virtual_collection APIs. |
-| [`components/tabs`](components/tabs.md) | `Tabs` | Controlled tabs with one tab stop and orientation-aware arrow selection. |
+| [`components/tabs`](components/tabs.md) | `Tabs` | Controlled tabs with one tab stop; the arrow keys select. |
 | [`components/tag`](components/tag.md) | `Tag` | Tag labels a category: a flat tonal tape with an optional facet segment. |
 | [`components/textarea`](components/textarea.md) | `Textarea` | Textarea is a controlled multiline field with native IME, selection, wrapping, and auto-grow. |
 | [`components/time_input`](components/time_input.md) | `TimeInput` | Controlled locale-aware clock editing; partial text remains an editable draft. |

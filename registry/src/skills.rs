@@ -78,7 +78,7 @@ pub const BUNDLED_SKILL_FILES: &[(&str, &str)] = &[
     ("gpui-rhai/references/modules/components/split_pane.md", include_str!("../skills/gpui-rhai/references/modules/components/split_pane.md")),
     ("gpui-rhai/references/modules/components/status_bar.md", include_str!("../skills/gpui-rhai/references/modules/components/status_bar.md")),
     ("gpui-rhai/references/modules/components/switch.md", include_str!("../skills/gpui-rhai/references/modules/components/switch.md")),
-    ("gpui-rhai/references/modules/components/tab_bar.md", include_str!("../skills/gpui-rhai/references/modules/components/tab_bar.md")),
+    ("gpui-rhai/references/modules/components/tab_overflow_menu.md", include_str!("../skills/gpui-rhai/references/modules/components/tab_overflow_menu.md")),
     ("gpui-rhai/references/modules/components/table.md", include_str!("../skills/gpui-rhai/references/modules/components/table.md")),
     ("gpui-rhai/references/modules/components/tabs.md", include_str!("../skills/gpui-rhai/references/modules/components/tabs.md")),
     ("gpui-rhai/references/modules/components/tag.md", include_str!("../skills/gpui-rhai/references/modules/components/tag.md")),

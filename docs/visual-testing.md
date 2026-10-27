@@ -21,6 +21,12 @@ Maintain one contextual specimen containing:
 - underline Tabs with and without a panel and inside a Card: the hairline
   spans the strip, the 2px bar covers it under the selected label only, and
   the keyboard focus frame does not touch the label;
+- bar Tabs over a panel: the selected tab covers the strip's line in every
+  corner style; closable and dirty tabs keep their width as the close button
+  appears;
+- count capsules and tone lamps in every look and corner style: the capsule is
+  exactly the label's line height, its figures sit centred, and `99+` fits;
+  an add button after the last tab and slots on the content edge;
 - normal, focused, hovered, disabled, scrolling, interrupted transition, and
   Reduced/None states; focus must not obscure persistent selection;
 - Button and Badge using the same text and color treatment, including a
@@ -48,9 +54,10 @@ pair for every state, including enabled but unselected Tabs.
 Third-party reference screenshots are not project assets. Keep requirement
 documents text-only; any product captures used during an audit remain outside
 the repository unless their inclusion is explicitly approved for baselines.
-Tabs does not reveal an offscreen selected tab and does not grow with larger
-fonts; neither is certified behavior. Add their geometry and interaction
-assertions when they are implemented.
+Tabs reveal an offscreen selected tab (asserted in
+`tests/native-keyboard/tests/native/components/tabs_collection.rs`). The count
+capsule keeps `metrics.counter` when a Host enlarges the control typography,
+so it can be shorter than an enlarged label; that is not certified behavior.
 Do not replace those assertions with snapshot-only tests.
 
 ## Deterministic matrix

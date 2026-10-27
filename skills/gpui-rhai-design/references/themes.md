@@ -148,6 +148,9 @@ when accent is text; it follows the final merged palette rather than a fixed hex
 | Hermarchy | adapted from [Archer Clawbot's Hermarchy](https://github.com/archer-clawbot/omarchy-hermarchy-theme), MIT |
 | Aetheria | adapted from [Dizziee's Aetheria](https://github.com/JJDizz1L/aetheria), MIT |
 | Futurism | an original palette inspired by [Bjarne Øverli's Futurism](https://github.com/bjarneo/omarchy-futurism-theme); no source code or artwork from it is redistributed |
+| Dracula | adapted from [Dracula](https://github.com/dracula/dracula-theme), MIT |
+| Molokai | adapted from [Tomas Restrepo's Molokai](https://github.com/tomasr/molokai), MIT (after Monokai by Wimer Hazenberg) |
+| Absolutely Light and Dark | adapted from Absolutely, a built-in theme of the OpenAI Codex app, with the anchors republished in [shaw-baobao/codex-themes](https://github.com/shaw-baobao/codex-themes) (MIT) |
 
 All bundled palettes contain colors only and satisfy section 4. Source roles
 are translated into the semantic roles rather than copied mechanically: error,

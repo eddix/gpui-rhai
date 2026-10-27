@@ -55,6 +55,20 @@ between every pair of hover/idle fills or decorative surfaces.
 | Hermarchy | Near-black graphite, pale ink and cyan | Even the abrupt hover step and reduce the peak white while preserving cyan emphasis. |
 | Futurism | Blue-black canvas, pink accent and cyan focus | Keep neon accents as accents; make surfaces a coherent navy ramp and soften the body white. |
 | Aetheria | Purple-black canvas, cyan text and coral action | Preserve the unusual cyan text; deepen coral hover so its pale foreground stays readable. |
+| Dracula | Dracula background, Purple accent, Pink focus | Even Oklab steps with hover on Current Line; a light Comment tint for secondary text; Purple-tinted selection darker than hover. |
+| Molokai | Molokai background, cyan accent, Keyword pink as danger | Lift the pink at its hue to carry the background; keep the warm Visual grey one step above hover. |
+| Absolutely Light | Codex's warm white page, white surface, terracotta and ink | Darken the terracotta at its hue for white text and the 3:1 mark; rose danger and amber warning 30° from the accent; a terracotta-tinted selection lighter than hover. |
+| Absolutely Dark | Codex's warm graphite page, terracotta and paper ink | Even steps from the Codex background; rose and amber statuses; dark ink on the terracotta; a terracotta-tinted selection lighter than hover with secondary text raised to read on it. |
+
+## Tabs count capsule
+
+`tabs.counter` is derived in the token base, not set per palette: it mixes 14%
+of `text_primary` into `surface_hover` and backs off toward `surface_hover`
+until `text_primary` reads at 5.2:1, the secondary-text margin, since its
+figures are small. `theme_readability` checks every bundled variant: figures
+at 5.2:1 or more (5.21 to 9.67) and at least 1.15:1 against the page, the
+raised layer, the track, the bar and its selected tab (1.255 to 1.520, the
+weakest step always the track). No variant needs its own value.
 
 ## Verification and visual review
 

@@ -1000,7 +1000,7 @@ Official components wrap them; application components may too.
 
 ### SortableItemPrimitive
 
-`gpui_rhai::SortableItemPrimitive(props)` · `gpui_rhai.sortable_item`. Native drag grip for one keyed item that previews insertion and proposes `reorder`; `components/sortable` and `components/tab_bar` use it.
+`gpui_rhai::SortableItemPrimitive(props)` · `gpui_rhai.sortable_item`. Native drag grip for one keyed item that previews insertion and proposes `reorder`; `components/sortable` and reorderable `components/tabs` use it.
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|

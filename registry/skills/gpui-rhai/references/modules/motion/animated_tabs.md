@@ -1,6 +1,6 @@
 # AnimatedTabs
 
-`motion/animated_tabs` · export `AnimatedTabs` · version 0.1.7. Generated from
+`motion/animated_tabs` · export `AnimatedTabs` · version 0.3.0. Generated from
 [`registry/motion/animated_tabs.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/motion/animated_tabs.rhai); do not edit.
 
 AnimatedTabs is a controlled `Tabs` whose selection indicator slides to the selected tab. State: caller-owned.

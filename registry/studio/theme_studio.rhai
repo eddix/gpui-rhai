@@ -40,8 +40,8 @@ import "components/tree" as tree;
 import "components/list" as list;
 import "components/column_browser" as column_browser;
 import "components/selectable_card_group" as selectable_card_group;
-import "components/tab_bar" as tab_bar;
 import "components/tabs" as tabs;
+import "components/tab_overflow_menu" as tab_overflow_menu;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
 import "components/toast" as toast;
@@ -684,8 +684,13 @@ fn specimen_navigation(ctx) {
         list::List(#{key:"specimen-list",label:"Theme releases",height:96.0,items:[
             #{key:"r2",title:"Paper 2.1",meta:"Today",badge:#{text:"Draft",variant:"accent"}},
             #{key:"r1",title:"Paper 2.0",secondary:"published",meta:"Mon"}]}),
-        tab_bar::TabBar(#{key:"specimen-tab-bar",label:"Theme files",value:"dark",tabs:[
-            #{value:"dark",label:"dark.rhai",closable:true},#{value:"light",label:"light.rhai",dirty:true}]})
+        row([
+            tabs::Tabs(#{key:"specimen-tab-bar",label:"Theme files",value:"dark",variant:"bar",panel:false,tabs:[
+                #{value:"dark",label:"dark.rhai",closable:true,count:12},
+                #{value:"light",label:"light.rhai",dirty:true,count:3,tone:"accent",tone_label:"changed"}]}),
+            tab_overflow_menu::TabOverflowMenu(#{key:"specimen-tab-menu",label:"All theme files",value:"dark",
+                items:[#{value:"dark",label:"dark.rhai"},#{value:"light",label:"light.rhai"}]}),
+        ]).with_style(style().items_center())
     ]).with_style(style().gap(px(7)))
 }
 

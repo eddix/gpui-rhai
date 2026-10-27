@@ -1,4 +1,4 @@
-// Gallery spec pages: list-like components, and the tabs and pages that navigate.
+// Gallery spec pages: list-like components, and pagination.
 
 import "gallery/kit" as kit;
 import "components/menu" as menu;
@@ -7,12 +7,9 @@ import "components/command" as command;
 import "components/command_dialog" as command_dialog;
 import "components/tree" as tree;
 import "components/list" as list;
-import "components/tab_bar" as tab_bar;
 import "components/table" as table;
 import "components/accordion" as accordion;
 import "components/pagination" as pagination;
-import "components/tabs" as tabs;
-import "components/card" as card;
 import "components/button" as button;
 
 fn pages() {
@@ -26,8 +23,6 @@ fn pages() {
         #{ id: "table", title: "Table", group: "Lists" },
         #{ id: "accordion", title: "Accordion", group: "Lists" },
         #{ id: "pagination", title: "Pagination", group: "Navigation" },
-        #{ id: "tabs", title: "Tabs", group: "Navigation" },
-        #{ id: "tab_bar", title: "TabBar", group: "Navigation" },
     ]
 }
 
@@ -41,8 +36,6 @@ fn view(ctx, h, v, id) {
     else if id == "table" { table_page(h, v) }
     else if id == "accordion" { accordion_page(h, v) }
     else if id == "pagination" { pagination_page(h, v) }
-    else if id == "tabs" { tabs_page(h, v) }
-    else if id == "tab_bar" { tab_bar_page(h, v) }
     else { () }
 }
 
@@ -156,56 +149,6 @@ fn list_page(h, v) {
     ])
 }
 
-// Open documents for the TabBar page: the last closed tab is gone and the last move applies.
-fn document_tabs(v) {
-    let order = ["main", "lib", "app", "theme", "styles", "readme", "changelog", "cargo"];
-    let moved = kit::val(v, "tab_bar.moved", ());
-    if moved != () {
-        let rest = [];
-        for key in order { if key != moved.value { rest.push(key); } }
-        let placed = [];
-        for key in rest {
-            if key == moved.anchor && moved.placement == "before" { placed.push(moved.value); }
-            placed.push(key);
-            if key == moved.anchor && moved.placement == "after" { placed.push(moved.value); }
-        }
-        order = placed;
-    }
-    let names = #{ main: "main.rs", lib: "lib.rs", app: "app.rs", theme: "theme.rhai",
-        styles: "styles.rhai", readme: "README.md", changelog: "CHANGELOG.md", cargo: "Cargo.toml" };
-    let closed = kit::val(v, "tab_bar.closed", "");
-    let tabs = [];
-    for key in order {
-        if key != closed {
-            tabs.push(#{ value: key, label: names[key], closable: true, dirty: key == "lib" || key == "styles" });
-        }
-    }
-    tabs
-}
-
-fn tab_bar_page(h, v) {
-    let value = kit::val(v, "tab_bar.value", "lib");
-    let names = #{ main: "main.rs", lib: "lib.rs", app: "app.rs", theme: "theme.rhai",
-        styles: "styles.rhai", readme: "README.md", changelog: "CHANGELOG.md", cargo: "Cargo.toml" };
-    let panel = box([text(`Editing ${names[value]}`)]).with_style(style().height(px(96))
-        .padding(theme_length("metrics.inset")).background(theme_color("tabbar.active"))
-        .border(px(1)).border_top(px(0)).border_color(theme_color("border")));
-    kit::page(h, v, "tab_bar", "TabBar", "Document tabs that belong to the panel under them: the selected tab takes the panel's surface and covers the bar's line; the strip scrolls when the tabs do not fit.", [
-        kit::sec("Open files", column([
-            tab_bar::TabBar(#{ key: "tab-bar-files", label: "Open files", value: value,
-                tabs: document_tabs(v), overflow_menu: true, reorderable: true,
-                on_change: kit::store(h, "tab_bar.value"), on_close: kit::store(h, "tab_bar.closed"),
-                on_reorder: kit::store(h, "tab_bar.moved") }),
-            panel,
-        ]).with_style(style().width(px(560)))),
-        kit::sec("Panels, compact size", tab_bar::TabBar(#{ key: "tab-bar-panels", label: "Panels",
-            value: kit::val(v, "tab_bar.panel", "tce"), size: "sm",
-            tabs: [#{ value: "tce", label: "TCE" }, #{ value: "oncall", label: "Oncall" },
-                #{ value: "tcc", label: "TCC diff" }, #{ value: "sdk", label: "i18n SDK" }],
-            on_change: kit::store(h, "tab_bar.panel") }).with_style(style().width(px(560)))),
-    ])
-}
-
 fn hosts() {
     [
         #{ id: "a", host: "api-01", region: "us-east", cpu: "42.1", mem: "61.0", state: "Running", tone: "neutral" },
@@ -282,38 +225,5 @@ fn pagination_page(h, v) {
     kit::page(h, v, "pagination", "Pagination", "Ghost page targets; the current page is a selection block, not a primary action.", [
         kit::sec("Pages", pagination::Pagination(#{ key: "pagination-hosts", label: "Hosts pages", total_items: 128,
             current_page: current.current_page, page_size: current.page_size, on_change: page_change(h) })),
-    ])
-}
-
-fn tab_list() {
-    [
-        #{ value: "overview", label: "Overview", content: text("Service overview.") },
-        #{ value: "logs", label: "Logs", content: text("Recent log lines.") },
-        #{ value: "traces", label: "调用链", content: text("Trace samples.") },
-        #{ value: "settings", label: "Settings", content: text("Configuration."), disabled: true },
-    ]
-}
-
-fn settings_tabs() {
-    [
-        #{ value: "general", label: "General", content: text("Name, region and owner.") },
-        #{ value: "alerts", label: "Alerts", content: text("Paging rules for this service.") },
-        #{ value: "access", label: "Access", content: text("Who can deploy.") },
-    ]
-}
-
-fn tabs_page(h, v) {
-    let value = kit::val(v, "tabs.value", "overview");
-    kit::page(h, v, "tabs", "Tabs", "A track with a raised thumb switches views among other controls; underlined labels head the sections of a panel or a card.", [
-        kit::sec("With panel", tabs::Tabs(#{ label: "Service", value: value, tabs: tab_list(),
-            on_change: kit::store(h, "tabs.value") })),
-        kit::sec("View switcher", tabs::Tabs(#{ label: "View", value: value, tabs: tab_list(), panel: false, size: "sm",
-            on_change: kit::store(h, "tabs.value") })),
-        kit::sec("Underline", tabs::Tabs(#{ label: "Service sections", value: value, variant: "underline",
-            tabs: tab_list(), on_change: kit::store(h, "tabs.value") })),
-        kit::sec("Underline in a card", card::Card(#{ header: text("Checkout service"),
-            content: tabs::Tabs(#{ label: "Service settings", value: kit::val(v, "tabs.settings", "general"),
-                variant: "underline", tabs: settings_tabs(), on_change: kit::store(h, "tabs.settings") }) })
-            .with_style(style().width(px(360)))),
     ])
 }

@@ -9,6 +9,13 @@ const SECTION: &str = include_str!("../../../registry/patterns/section.rhai");
 const STAT: &str = include_str!("../../../registry/patterns/stat.rhai");
 const DESCRIPTION_LIST: &str = include_str!("../../../registry/patterns/description_list.rhai");
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
+// What Tabs imports: its overflow menu (and the Menu's own imports) and its add button.
+const TAB_OVERFLOW_MENU: &str = include_str!("../../../registry/components/tab_overflow_menu.rhai");
+const MENU: &str = include_str!("../../../registry/components/menu.rhai");
+const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
+const KBD: &str = include_str!("../../../registry/components/kbd.rhai");
+const ICON_BUTTON: &str = include_str!("../../../registry/components/icon_button.rhai");
+const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const TAG: &str = include_str!("../../../registry/components/tag.rhai");
 const AVATAR: &str = include_str!("../../../registry/components/avatar.rhai");
 const PROGRESS: &str = include_str!("../../../registry/components/progress.rhai");
@@ -168,6 +175,12 @@ pub fn view(theme: &str, locale: &str) -> EmbeddedScriptView {
         module("patterns/stat", STAT),
         module("patterns/description_list", DESCRIPTION_LIST),
         module("components/tabs", TABS),
+        module("components/tab_overflow_menu", TAB_OVERFLOW_MENU),
+        module("components/menu", MENU),
+        module("components/divider", DIVIDER),
+        module("components/kbd", KBD),
+        module("components/icon_button", ICON_BUTTON),
+        module("components/button", BUTTON),
         module("components/tag", TAG),
         module("components/avatar", AVATAR),
         module("components/progress", PROGRESS),

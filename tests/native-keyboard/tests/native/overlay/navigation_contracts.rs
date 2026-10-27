@@ -39,7 +39,7 @@ import "components/context_menu" as context_menu;
 import "components/command" as command;
 import "components/alert_dialog" as alert_dialog;
 import "components/button" as button;
-import "components/tab_bar" as tab_bar;
+import "components/tabs" as tabs;
 import "patterns/app_shell" as app_shell;
 import "motion/animated_tabs" as animated_tabs;
 fn state_schema() {{ #{{ fields: #{{
@@ -339,11 +339,11 @@ fn view(ctx) { column([
 }
 
 #[gpui::test]
-fn tab_bar_rejects_two_tabs_with_one_value(cx: &mut TestAppContext) {
+fn tabs_reject_two_tabs_with_one_value(cx: &mut TestAppContext) {
     let error = try_mount(
         cx,
         r#"fn view(ctx) {
-    tab_bar::TabBar(#{ key: "files", label: "Files", value: "a",
+    tabs::Tabs(#{ key: "files", label: "Files", value: "a", variant: "bar",
         tabs: [#{ value: "a", label: "A" }, #{ value: "a", label: "B" }] })
 }"#,
     )
@@ -351,7 +351,7 @@ fn tab_bar_rejects_two_tabs_with_one_value(cx: &mut TestAppContext) {
     assert!(
         error
             .as_deref()
-            .is_some_and(|error| error.contains("duplicate key `a`")),
+            .is_some_and(|error| error.contains("Tabs values must be unique")),
         "{error:?}"
     );
 }

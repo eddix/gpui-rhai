@@ -242,36 +242,19 @@ the arrows continue from the clicked row and its focus frame shows.
 Source: [list.rhai](../../registry/components/list.rhai).
 Runnable story: `gpui-rhai gallery --story components/list`.
 
-## TabBar
+## TabOverflowMenu
 
-`TabBar` is a controlled strip of document tabs that belong to the panel under
-them (the panel is the caller's; give it `tabbar.active` so the selected tab
-joins it). Tabs keep their width and scroll sideways; the selected tab stays
-revealed, also when the caller reorders, adds or removes tabs while it is in
-view; a strip scrolled away from it by hand stays where it is.
+`TabOverflowMenu` is a chevron button whose menu lists every tab of a strip;
+picking a row reports its `value`. It owns the menu's open state and active
+row, so the tabs beside it stay stateless: `Tabs` uses it for
+`overflow_menu`, and a caller may put it beside any strip of tabs.
 
-| Tab field | Contract |
-|---|---|
-| `value`, `label` | Required strings; the label is the tab's accessible name |
-| `icon` | Optional decorative node before the label |
-| `closable` | Shows a close button (selected or hovered) and closes on a middle press |
-| `dirty` | Shows the unsaved mark, which becomes the close button under the pointer |
-| `disabled` | Takes no input; the cursor skips it |
+Props: `key` (required), `label` (the button's and the menu's accessible
+name), `value` (where the highlight starts each time the menu opens), `items`
+(`value`, `label`, `disabled`, in strip order), `on_pick(value)`; the menu
+closes after a pick. Style part: `trigger`.
 
-Props: `key`, `label`, `value`, `tabs`, `size`, `start` / `end` (nodes beside
-the strip, not scrolled), `overflow_menu` (a menu listing every tab,
-`menu_label`), `close_label`, `reorderable`. Events: `change(value)`,
-`close(value)`, `context_request(#{ value, anchor, source })` from a right
-press or Shift+F10, `reorder(#{ value, anchor, placement })` from a drag (a
-press that does not move selects) or Alt+Left/Right. The strip is one tab
-stop: the arrows, Home and End move a cursor, Enter or Space selects it.
-`tabs` may be empty, and `value` may name no tab (`""`, or a tab the caller just
-closed): no tab is selected and the cursor starts on the first enabled tab; with
-no enabled tab there is no cursor and nothing to reveal, so closing the last tab
-in `on_close` leaves an empty bar.
-
-Source: [tab_bar.rhai](../../registry/components/tab_bar.rhai).
-Runnable story: `gpui-rhai gallery --story components/tab-bar`.
+Source: [tab_overflow_menu.rhai](../../registry/components/tab_overflow_menu.rhai).
 
 ## Foundations and status
 
@@ -344,61 +327,100 @@ non-virtual content.
 
 ### Tabs
 
-`components/tabs` exports controlled `Tabs(props)`. `value` selects one
-associated content panel; `on_change` receives a `change(string)` proposal.
-The caller owns the accepted value. Clicking or keyboard navigation does not
-independently commit a different panel or thumb position.
+`components/tabs` exports controlled `Tabs(props)`: one component for every
+strip of tabs, in three looks that share every capability. `value` selects a
+tab; `on_change` receives a `change(string)` proposal. The caller owns the
+accepted value. Clicking or keyboard navigation does not independently commit
+a different panel or thumb position.
+
+| Variant | Look | Choose it for |
+|---|---|---|
+| `track` (default) | a tonal track with a raised thumb | a compact switcher among other controls: a toolbar, a header |
+| `underline` | labels on a `border` hairline, a 2px `text_primary` bar under the selected one | the sections a panel or a card is divided into |
+| `bar` | document tabs on `tabbar.background`; the selected tab takes `tabbar.active` and covers the strip's line | the region itself: open documents, a workspace's panels, a collection the user manages |
 
 | Prop | Contract |
 |---|---|
-| `value` | Required selected string value |
+| `value` | Required selected string value; a value no tab has (`""`) selects none |
 | `label` | Required accessible name for the tab group |
-| `tabs` | Required array, at most 128 items |
+| `tabs` | Required array, at most 256 items; may be empty |
+| `variant` | `track` (default), `underline` or `bar`; `underline` and `bar` are horizontal only and throw with `orientation: "vertical"` |
 | `orientation` | `horizontal` (default) or `vertical` |
-| `layout` | `content` (default) or `equal` |
-| `variant` | `track` (default) or `underline`; `underline` is horizontal only and throws with `orientation: "vertical"` |
-| `motion_key` | Optional stable string, at most 128 characters; empty means direct positioning, nonempty enables shared-layout thumb motion and must be unique within the view |
-| `on_change` | Optional callback receiving the proposed value |
+| `layout` | `content` (default): tabs keep their width, up to two label columns, and the strip scrolls; `equal`: horizontal tabs share the width |
+| `panel`, `keep_mounted` | Render the selected tab's `content` (default); keep every supplied panel mounted |
+| `start`, `end` | Up to 8 nodes before the list and at the far end of the strip (above and below when vertical), outside the list, each its own tab stop |
+| `on_add`, `add_label` | Draws a "+" `IconButton` right after the last tab, pinned at the strip's end when the tabs overflow |
+| `overflow_menu`, `menu_label` | A `TabOverflowMenu` listing every tab after the add button; needs `key` |
+| `reorderable`, `on_reorder` | Tabs move by drag or Alt+Arrow; `reorder(#{ value, anchor, placement })`; needs `key` |
+| `on_close`, `close_label` | `close(#{ value, next })` from a close button, a middle press or Delete; `next` is the enabled tab after it, else the one before it, else `""` |
+| `on_context_request` | `context_request(#{ value, anchor, source })` from a right press, or Shift+F10 or the menu key on the selected tab |
+| `motion_key` | Optional stable string, at most 128 characters; nonempty slides the selection indicator and focus frame and must be unique within the view |
+| `size`, `key` | Size environment override; stable identity, required with `reorderable` or `overflow_menu` |
+| `on_change` | Optional callback receiving the proposed value; without it the tabs do not select |
 
-Each item requires `value: string`, `label: string`, and `content: node`.
-Optional `icon: node` provides decorative header content; `label_visible`
-defaults to true and may be false only when an icon is provided. A textual
-label remains required for icon-only tabs. `disabled` defaults to false.
-`content` is the page panel, never an alternate header slot. Header icons
-must not add a second action or keyboard entry point.
+Each item requires `value: string` and `label: string`. Optional fields:
 
-Tabs retains one keyboard entry point, orientation-aware arrow navigation,
-disabled-item skipping, and the runtime's horizontal RTL behavior. It exposes
-group/tablist/tab semantics and selected state, rather than button pressed
-state. The track and inset selection thumb, and the underline variant's
-hairline and ink bar, follow the
-[Tabs visual contract](../design/atoms.md#related-togglegroup-and-tabs).
+| Item field | Contract |
+|---|---|
+| `icon`, `label_visible` | A decorative node at icon size before the label; a label may hide only when an icon is given, and stays the accessible name |
+| `count` | A capsule after the label, as tall as the label (`metrics.counter`, the control line height) and at least as wide, in the `counter` type with tabular figures; `99+` past 99, zero shown; corners follow `radius.sm`, so the corner style makes it square, subtle or a capsule. The full number joins the accessible name (`"Repos, 12"`) |
+| `tone`, `tone_label` | `accent`, `warning` or `danger`: fills the capsule (with the matching `on_*` text), or without a `count` shows a 6px lamp after the label. `tone_label` joins the accessible name, since a lamp has no text; the component invents no copy |
+| `closable` | A close button in a reserved square, shown while the tab is selected or hovered |
+| `dirty` | The 6px unsaved mark in the same square; on a closable tab it turns into the close button under the pointer |
+| `content` | The page panel, never an alternate header slot |
+| `disabled` | Ignores the pointer; the arrows skip it |
 
-`variant: "underline"` keeps the props, keyboard policy, panels and motion of
-the track. With a panel its strip spans the root, so the hairline rules the
-whole panel; without one the strip follows the caller's alignment like the
-track.
+A tab carries only what the component draws: icon, label, count or lamp,
+dirty mark and close button. None of them is a tab stop; the list reaches each
+one. The strip is one tab stop and the arrows select: Left/Right (Up/Down when
+vertical), Home and End; Delete or Backspace closes the selected tab;
+Alt+Arrow moves it; Shift+F10 or the menu key asks for its context menu.
+Actions that are not about one tab (add, refresh, remove the current one, the
+previous and next tab) go in `start` and `end`, where each control keeps its
+own tab stop. On an unfilled strip a slot's space faces the list only, so its
+first control sits on the content edge of the panel below; the filled bar
+insets its slots on both sides. `close_successor(tabs, value)` is exported for
+a caller that closes the selected tab from such a slot.
+
+The strip scrolls along its axis (a vertical wheel scrolls a horizontal strip)
+and keeps the selected tab revealed, also when the caller reorders, adds or
+removes tabs while it is in view; a strip scrolled away from it by hand stays
+where it is. Tabs is stateless, so it needs no `key` unless it is reorderable
+or has an overflow menu; it reveals through an effect, so it renders inside a
+mounted view (a `ScriptLifecycle`), as every application does.
+
+Tabs exposes group/tablist/tab semantics and selected state, rather than
+button pressed state. The looks follow the
+[Tabs visual contract](../design/atoms.md#related-togglegroup-and-tabs). With a
+panel an underline or bar strip spans the root, so its line rules the whole
+panel; the underline panel sits `space.related` below the hairline, the bar's
+panel joins the strip with no gap on `tabbar.active`; without a panel the
+strip follows the caller's alignment.
 
 | Style part | Responsibility |
 |---|---|
-| `root` | List/panel composition |
-| `list` | Track: continuous track, padding, radius, and scrolling. Underline: the scrolling row of slots |
-| `line` | Underline only: the 1px `border` hairline under the strip; restyle it to remove the line |
-| `indicator` | Track: selection thumb fill, border, and radius. Underline: the 2px bar under the selected label. No independent action |
-| `focus_frame` | Underline only: the 2px focus frame over the selected slot |
-| `tab` | Header slot layout and interaction appearance |
-| `tab_selected` | Selected header styling without a second thumb/background |
-| `label`, `icon` | Header content styling |
+| `root` | Strip/panel composition |
+| `strip` | The row (column when vertical) of slots, list, add button and menu; the bar's surface |
+| `list` | The scrolling tablist; the track's continuous track, padding and radius |
+| `line` | Underline and bar: the 1px `border` line under the strip; restyle it to remove the line |
+| `indicator` | Track: selection thumb fill, border and radius. Underline: the 2px bar under the selected label. No independent action |
+| `focus_frame` | Underline and bar: the 2px focus frame over the selected tab |
+| `tab`, `tab_selected` | Header slot layout and interaction appearance; selected styling without a second thumb/background |
+| `label`, `icon`, `counter`, `lamp` | Header content |
+| `slot`, `close`, `dirty` | The reserved square, its close button and its unsaved mark |
+| `add`, `menu`, `start`, `end` | The add button, the overflow menu and the slots |
 | `panel` | Selected page content |
 
 Styles follow source defaults → component stylesheet → instance overrides.
-`motion/animated_tabs` exposes the same item, orientation, layout, variant, and
+`motion/animated_tabs` exposes the item, orientation, layout, variant, and
 controlled selection contract, requires a stable `key`, and forwards that key as the
-inner Tabs' motion identity. Its own style part is `root`. It uses the shared
-selection thumb instead of replaying opacity over the entire component.
+inner Tabs' motion identity; collection features are used on Tabs itself with
+`motion_key`. Its own style part is `root`. It uses the shared selection
+indicator instead of replaying opacity over the entire component.
 
-Current limit: horizontal overflow is locally scrollable but controlled
-selection does not automatically reveal an offscreen item.
+Source: [tabs.rhai](../../registry/components/tabs.rhai).
+Runnable stories: `gpui-rhai gallery --story components/tabs` and
+`--story components/tabs-collection`.
 
 ## Command and CommandDialog
 

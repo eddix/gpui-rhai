@@ -3700,12 +3700,29 @@ mod tests {
         );
     }
 
+    /// Shipped sources added after 0.2.2: every release that installs them records a
+    /// baseline, so they have no released hashes.
+    const ADDED_WITH_BASELINES: &[&str] = &[
+        "themes/dracula.rhai",
+        "themes/molokai.rhai",
+        "themes/absolutely_light.rhai",
+        "themes/absolutely_dark.rhai",
+    ];
+
     #[test]
     fn every_shipped_source_has_its_released_hashes() {
         let shipped = shipped_sources();
-        assert_eq!(shipped.len(), RELEASED_WITHOUT_BASELINE.len());
+        assert_eq!(
+            shipped.len(),
+            RELEASED_WITHOUT_BASELINE.len() + ADDED_WITH_BASELINES.len()
+        );
         for source in &shipped {
-            assert!(!source.released.is_empty(), "{}", source.path);
+            assert_eq!(
+                source.released.is_empty(),
+                ADDED_WITH_BASELINES.contains(&source.path.as_str()),
+                "{}",
+                source.path
+            );
         }
     }
 

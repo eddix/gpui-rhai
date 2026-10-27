@@ -949,6 +949,18 @@ fn the_token_base_materializes_complete_derived_palettes() {
     }
 }
 
+/// The tablist inside a Tabs strip: the list always sits in the strip, after the line of the
+/// underline and bar variants and the start slot.
+fn tab_list(strip: &gpui_rhai::UiNode) -> &gpui_rhai::UiNode {
+    let UiNodeKind::Box { children } = strip.kind() else {
+        panic!("a Tabs strip must hold its list");
+    };
+    children
+        .iter()
+        .find(|node| node.attributes().get("role") == Some(&UiValue::String("tablist".to_owned())))
+        .expect("the strip holds a tablist")
+}
+
 /// Asserts that no state of `node` or its descendants sets a font weight.
 fn assert_no_font_weight(node: &gpui_rhai::UiNode) {
     let style = node.style();
@@ -1014,7 +1026,8 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
     // Tabs: one tonal track inset by xxs, rounded by its orientation's role; a raised
     // thumb that carries the list focus; control type at one weight so widths never
     // jitter.
-    for (tabs, corner) in [(&children[0], "md"), (&children[1], "lg")] {
+    for (strip, corner) in [(&children[0], "md"), (&children[1], "lg")] {
+        let tabs = tab_list(strip);
         assert_eq!(
             tabs.attributes().get("role"),
             Some(&UiValue::String("tablist".to_owned()))
@@ -3127,8 +3140,9 @@ fn avatar_progress_skeleton_and_spinner_render_fallbacks_and_native_motion() {
 #[test]
 fn form_field_and_disclosure_composites_wire_labels_motion_and_keys() {
     let (mut engine, compiled) = compile_official("ui/composites.rhai", COMPOSITES_APP);
-    let root = render(&mut engine, &compiled);
-    let UiNodeKind::Box { children } = root.kind() else {
+    // Tabs reveal their selected tab through an effect, so the app needs a lifecycle.
+    let lifecycle = mount(&mut engine, compiled, &new_runtime());
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("composites must compose into a container");
     };
     assert_eq!(
@@ -3187,9 +3201,10 @@ fn form_field_and_disclosure_composites_wire_labels_motion_and_keys() {
     else {
         panic!("Tabs must render list and panel");
     };
-    assert!(tabs_root[0].handlers().contains_key("key:left"));
+    let list = tab_list(&tabs_root[0]);
+    assert!(list.handlers().contains_key("key:left"));
     assert_eq!(
-        tabs_root[0].handler_payload("key:right"),
+        list.handler_payload("key:right"),
         Some(&UiValue::String("advanced".to_owned()))
     );
 }

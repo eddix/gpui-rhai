@@ -236,44 +236,64 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   edge and the group is exactly `metrics.control` high. Unpressed labels are
   `text_muted`. Keyboard: roving focus, one tab stop on the active segment,
   arrows move focus, Enter or Space toggles.
-- **Tabs** selects one associated panel: a continuous `surface_hover` track,
-  `metrics.control` high, and one `surface_raised` thumb inset by
-  `spacing.xxs`; labels in `tabs.foreground` / `text_primary`, `control` type,
-  weight 400 in both states so widths do not jitter. The tab list is one tab
-  stop; its focus frames the thumb (`group_focus`). Tabs can render without a
-  panel (`panel: false`) when used as a view switcher; the panel itself is
-  unframed.
-- **Tabs, underline** (`variant: "underline"`) heads the sections of a panel or
-  a card: no track; the labels sit on a 1px `border` hairline that spans the
-  panel, and the selected one has a 2px `text_primary` bar under it that
-  covers the hairline. Ink, not accent: tabs often share a screen with the
-  primary action. Slots are `metrics.control` high with `spacing.xs` beside
-  the label, which is just room for the 2px focus frame the list's focus
-  draws over the selected slot, so the first label sits `spacing.xs` off the
-  content edge; labels are about `metrics.control_pad` apart. The hairline
-  already separates the panel, so it sits `space.related` below (and nests
-  inside a card's `group` spacing). Horizontal only: a vertical choice of
-  sections is a list with the indicator bar. Choose the track for a compact
-  switcher among other controls (a toolbar, a header), the underline for the
-  sections a panel or card is divided into.
-
-- **TabBar** switches what a panel shows (open documents, a workspace's
-  panels), and the panel's extent says what it switches: the bar is
-  `tabbar.background` with a 1px `border` line along its bottom; the selected
-  tab takes `tabbar.active` (the panel's surface) and 1px side hairlines and
-  covers the line, so it and the panel are one surface. The bar is a
-  rectangle with no margin, so the selected tab stays square in every corner
-  style; a first tab on the bar's start edge draws no start hairline, so it
-  never doubles a separator beside the bar (buttons go in `start`). Unselected tabs are transparent with `tabs.foreground` labels.
-  Tabs are `metrics.control` high, start their text on `metrics.inset`, keep
-  their width (at most two label columns, then an ellipsis) and scroll
-  sideways when they do not fit, a vertical wheel included; the selected tab
-  stays revealed. A closable tab reserves a square slot whose close button
-  shows while the tab is selected or hovered (`group_hover`); a dirty tab shows
-  the 6px mark there until hovered. The strip is one tab stop: the arrows
-  move a cursor (the 2px frame) and Enter selects it, because switching may
-  remount a whole panel. Use Tabs for a few fixed views inside a region,
-  TabBar for the region itself.
+- **Tabs** is one component in three looks that share every capability.
+  Every look is `metrics.control` high with labels in `tabs.foreground` /
+  `text_primary`, `control` type, weight 400 in both states so widths do not
+  jitter. The strip is one tab stop and the arrows select; content-width tabs
+  keep their width (at most two label columns, then an ellipsis) and the strip
+  scrolls when they do not fit, a vertical wheel included, keeping the
+  selected tab revealed. Choose by what the tabs switch:
+  - **track** (default), a compact switcher among other controls (a toolbar,
+    a header): a continuous `surface_hover` track and one `surface_raised`
+    thumb inset by `spacing.xxs`; the list's focus frames the thumb
+    (`group_focus`). Without a panel (`panel: false`) it is a view switcher;
+    the panel itself is unframed. A vertical track is a column beside its
+    panel.
+  - **underline**, the sections a panel or a card is divided into: no track;
+    the labels sit on a 1px `border` hairline that spans the panel, and the
+    selected one has a 2px `text_primary` bar under it that covers the
+    hairline. Ink, not accent: tabs often share a screen with the primary
+    action. Slots have `spacing.xs` beside the label, which is just room for
+    the 2px focus frame the list's focus draws over the selected slot, so the
+    first label sits `spacing.xs` off the content edge; labels are about
+    `metrics.control_pad` apart. The hairline already separates the panel, so
+    it sits `space.related` below (and nests inside a card's `group` spacing).
+    Horizontal only: a vertical choice of sections is a track or a list.
+  - **bar**, the region itself (open documents, a workspace's panels, a
+    collection the user manages), where the panel's extent says what the tabs
+    switch: the strip is `tabbar.background` with a 1px `border` line along
+    its bottom; the selected tab takes `tabbar.active` (the panel's surface)
+    and 1px side hairlines and covers the line, so it and the panel are one
+    surface. The strip is a rectangle with no margin, so the selected tab
+    stays square in every corner style; a first tab on the strip's start edge
+    draws no start hairline, so it never doubles a separator beside the bar.
+    Tabs start their text on `metrics.inset`; the 2px focus frame lies over
+    the selected tab. Horizontal only.
+- **What a tab carries.** Only what the component draws, none of it a tab
+  stop: an icon, the label, a count capsule or a tone lamp, the dirty mark and
+  a close button, each reached from the list (Delete closes the selected tab,
+  Alt+Arrow moves it, Shift+F10 asks for its context menu). A tab never holds
+  a caller's button: a tab may not contain another control, and the one tab
+  stop could not reach it. Actions that are not about one tab go in the
+  strip's `start` and `end` slots and keep their own tab stops; on an unfilled
+  strip a slot's space faces the list only, so its first control sits on the
+  content edge, while the filled bar insets its slots like a toolbar. The "+"
+  of `on_add` follows the last tab and is pinned at the strip's end when the
+  tabs overflow.
+- **Count capsule.** A marker after the label, exactly as tall as the label:
+  `metrics.counter` is the control line height (16 at `xs`, 20 otherwise) and
+  also its minimum width, so one digit in round corners is a circle. Its
+  figures are the `counter` type (11/14 at `xs`, 12/16 otherwise: digits are
+  about 0.72em tall, leaving about 4px and 5.7px above and below them) with
+  tabular figures, `99+` past 99. Its corners are `radius.sm`, the markers'
+  role, so the corner style makes it square, subtle or a capsule. The neutral
+  fill is `tabs.counter`, a step from the track toward ink that holds
+  `text_primary` at 5.2:1 and shows on the track, the thumb, the page and the
+  bar alike; a `tone` fills it with `accent`, `warning` or `danger` and its
+  `on_*` text. A tone without a count is the 6px square lamp. The close slot
+  is reserved even while its button is hidden, so the close button never
+  moves the tab's width when it appears; a count that appears does, since it
+  is content.
 
 ## 6. List-like components
 
@@ -456,7 +476,7 @@ layout shift:
 | `.focus(style)` | the node itself has focus | Button, fields, Tag close, segments, day cells |
 | `.group_focus(style)` | the nearest focusable ancestor-or-self with a `.focus` style has focus; a `tab_stop(false)` child passes ownership up | Checkbox box, Radio ring, Switch track, Tabs thumb, list cursor frames, the focused RadioGroup option |
 | `.focus_within(style)` | the node or a descendant has focus | InputGroup frame |
-| `.group_hover(style)` | the nearest ancestor declaring a `.hover` style is hovered (paint only: background, border, text, opacity) | TabBar close button and dirty mark |
+| `.group_hover(style)` | the nearest ancestor declaring a `.hover` style is hovered (paint only: background, border, text, opacity) | Tabs close button and dirty mark |
 
 A focus owner that needs no visual of its own declares `.focus(style())`. Every
 focused node's border takes `focus_ring` unless its focus style sets a border

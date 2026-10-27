@@ -59,6 +59,15 @@ for every resolved package.
 - Futurism is an original GPUI Rhai semantic palette inspired by
   [Bjarne Øverli's Futurism theme](https://github.com/bjarneo/omarchy-futurism-theme).
   No source code or artwork from that repository is redistributed.
+- Dracula is adapted from [Dracula](https://github.com/dracula/dracula-theme),
+  licensed under MIT.
+- Molokai is adapted from [Tomas Restrepo's Molokai](https://github.com/tomasr/molokai),
+  licensed under MIT; Molokai follows the Monokai theme by Wimer Hazenberg.
+- Absolutely Light and Dark are adapted from Absolutely, a built-in theme of
+  the OpenAI Codex app. The anchor colors (background, surface, foreground and
+  accent) are taken as republished in
+  [shaw-baobao/codex-themes](https://github.com/shaw-baobao/codex-themes),
+  licensed under MIT; only color values are used.
 
 The Rhai files map upstream palette values into GPUI Rhai's independent
 semantic token contract; they do not copy upstream implementation code.

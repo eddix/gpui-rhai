@@ -78,7 +78,7 @@ struct SortableConfig {
     item_ref: Option<crate::ElementRef>,
     focus: Option<FocusHandle>,
     /// A press focuses the item (false: the press leaves focus where it is, for items
-    /// inside a control that keeps one tab stop, such as the tabs of a `TabBar`).
+    /// inside a control that keeps one tab stop, such as reorderable `Tabs`).
     take_focus: bool,
     /// A release before the drag threshold proposes `tap` with the item key, so the
     /// item can be pressed as well as dragged.

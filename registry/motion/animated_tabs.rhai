@@ -2,7 +2,7 @@
 {
   "id": "motion/animated_tabs",
   "export": "AnimatedTabs",
-  "version": "0.1.7",
+  "version": "0.3.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/tabs"],
   "capabilities": {}
@@ -15,7 +15,7 @@
 import "components/tabs" as tabs_component;
 
 define_component(#{
-    metadata: #{ id: "motion/animated_tabs", "export": "AnimatedTabs", version: "0.1.7",
+    metadata: #{ id: "motion/animated_tabs", "export": "AnimatedTabs", version: "0.3.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tabs"], capabilities: #{} },
     schema: #{ props: #{
