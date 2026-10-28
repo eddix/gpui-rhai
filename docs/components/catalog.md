@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 64 editable Rhai source components. They all use the same
+gpui-rhai ships 73 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -256,6 +256,29 @@ closes after a pick. Style part: `trigger`.
 
 Source: [tab_overflow_menu.rhai](../../registry/components/tab_overflow_menu.rhai).
 
+## SlidingPanel
+
+`SlidingPanel` shows `content` and, when `value` changes, slides the new
+content in from the side of the one it replaces as it fades in: a short way
+(`motion_distance("moderate")`, 12px by default) in the `fast` duration, with
+the `entrance` easing. `order` lists every value: content after the one it
+replaces comes from the end side, content before it from the start side; when
+either value is missing from `order` the content comes in without moving, as
+the first content does. `orientation: "vertical"` slides
+from above or below; `wrap` treats `order` as a loop and takes the shorter way
+round. Right-to-left text mirrors the horizontal slide, and the Host's reduced
+or no-motion policy settles it.
+
+Only the new content moves; the one it replaces is gone at once. Nothing is
+painted after it leaves, so any content can slide, native text fields and
+virtual collections included (exit motion cannot paint a copy of those). It
+remembers the value it showed last, so it needs `key`; the components around it
+stay stateless. Tabs uses it for `panel_motion: "slide"`, Carousel for its
+items. Style parts: `root` (stays put and carries the caller's surface) and
+`slide` (moves).
+
+Source: [sliding_panel.rhai](../../registry/components/sliding_panel.rhai).
+
 ## Foundations and status
 
 - `Label`, `Divider`, and `Icon` provide semantic text and visual structure.
@@ -320,8 +343,8 @@ ordering in Rust before virtual projection.
 
 ## Navigation and data
 
-`Tabs`, `Accordion`, `Collapsible`, `Menu`, and `Pagination` implement their
-documented keyboard policies. `Table` and public `virtual_collection` accept
+`Tabs`, `Carousel`, `Accordion`, `Collapsible`, `Menu`, and `Pagination`
+implement their documented keyboard policies. `Table` and public `virtual_collection` accept
 Array or Rust-owned NativeCollection data. `ScrollArea` handles arbitrary
 non-virtual content.
 
@@ -348,6 +371,7 @@ a different panel or thumb position.
 | `orientation` | `horizontal` (default) or `vertical` |
 | `layout` | `content` (default): tabs keep their width, up to two label columns, and the strip scrolls; `equal`: horizontal tabs share the width |
 | `panel`, `keep_mounted` | Render the selected tab's `content` (default); keep every supplied panel mounted |
+| `panel_motion` | `none` (default) switches at once; `slide` brings a newly selected panel in from the side of the tab it replaces (from above or below when vertical) through `SlidingPanel`; needs `key` |
 | `start`, `end` | Up to 8 nodes before the list and at the far end of the strip (above and below when vertical), outside the list, each its own tab stop |
 | `on_add`, `add_label` | Draws a "+" `IconButton` right after the last tab, pinned at the strip's end when the tabs overflow |
 | `overflow_menu`, `menu_label` | A `TabOverflowMenu` listing every tab after the add button; needs `key` |
@@ -355,7 +379,7 @@ a different panel or thumb position.
 | `on_close`, `close_label` | `close(#{ value, next })` from a close button, a middle press or Delete; `next` is the enabled tab after it, else the one before it, else `""` |
 | `on_context_request` | `context_request(#{ value, anchor, source })` from a right press, or Shift+F10 or the menu key on the selected tab |
 | `motion_key` | Optional stable string, at most 128 characters; nonempty slides the selection indicator and focus frame and must be unique within the view |
-| `size`, `key` | Size environment override; stable identity, required with `reorderable` or `overflow_menu` |
+| `size`, `key` | Size environment override; stable identity, required with `reorderable`, `overflow_menu` or a sliding `panel_motion` |
 | `on_change` | Optional callback receiving the proposed value; without it the tabs do not select |
 
 Each item requires `value: string` and `label: string`. Optional fields:
@@ -385,8 +409,8 @@ a caller that closes the selected tab from such a slot.
 The strip scrolls along its axis (a vertical wheel scrolls a horizontal strip)
 and keeps the selected tab revealed, also when the caller reorders, adds or
 removes tabs while it is in view; a strip scrolled away from it by hand stays
-where it is. Tabs is stateless, so it needs no `key` unless it is reorderable
-or has an overflow menu; it reveals through an effect, so it renders inside a
+where it is. Tabs is stateless, so it needs no `key` unless it is reorderable,
+has an overflow menu or slides its panels; it reveals through an effect, so it renders inside a
 mounted view (a `ScriptLifecycle`), as every application does.
 
 Tabs exposes group/tablist/tab semantics and selected state, rather than
@@ -412,8 +436,8 @@ strip follows the caller's alignment.
 | `panel` | Selected page content |
 
 Styles follow source defaults → component stylesheet → instance overrides.
-`motion/animated_tabs` exposes the item, orientation, layout, variant, and
-controlled selection contract, requires a stable `key`, and forwards that key as the
+`motion/animated_tabs` exposes the item, orientation, layout, variant,
+`panel_motion` and controlled selection contract, requires a stable `key`, and forwards that key as the
 inner Tabs' motion identity; collection features are used on Tabs itself with
 `motion_key`. Its own style part is `root`. It uses the shared selection
 indicator instead of replaying opacity over the entire component.
@@ -421,6 +445,54 @@ indicator instead of replaying opacity over the entire component.
 Source: [tabs.rhai](../../registry/components/tabs.rhai).
 Runnable stories: `gpui-rhai gallery --story components/tabs` and
 `--story components/tabs-collection`.
+
+### Carousel
+
+`components/carousel` exports controlled `Carousel(props)`: a pager that shows
+one item at a time, for a compact place that steps through items of one kind
+(alerts, cards, previews). `index` selects the item; arrows, dots and keys
+propose another through `change(integer)`, and the caller stores it. It never
+turns by itself.
+
+| Prop | Contract |
+|---|---|
+| `key`, `label` | Required: identity (it names the sliding panel and keeps the focus state) and the accessible name of the carousel and its controls |
+| `index` | Required position, from 0; an index past the items throws |
+| `items` | Required, 1 to 64 `#{ label, content }`; `label` names the item, its dot and the controls' value, and only the shown `content` renders |
+| `variant` | `header` (default): the label as the title and the controls in a row above the item. `overlay`: arrows over the item's sides, the position below it |
+| `indicator` | `count` (`2 / 5`), `dots` (one per item, a press selects it) or `none`; unset, `count` for `header` and `dots` for `overlay` |
+| `wrap` | Steps past the last item to the first and back; without it the arrow at an end is disabled (`header`) or left out (`overlay`) |
+| `label_visible` | `header` shows the label as its title (default); `false` keeps it only as the accessible name |
+| `previous_label`, `next_label` | The arrows' accessible names, `Previous` and `Next` by default |
+| `size`, `on_change` | Size environment override; without `on_change` the controls are inert |
+
+The controls are one tab stop beside the item, never around it, so keys typed
+in an item (a text field, a list) stay the item's: Left and Right step, Home and
+End go to the ends. The arrows and the dots are pointer targets reached from
+it, not tab stops, so a disabled arrow never holds focus. In `header` the
+controls are the arrows and the position after the title; in `overlay` they
+are the position under the item (with `indicator: "none"` they take no room),
+and the arrows over the item show while it is hovered or the controls, or an
+arrow, hold focus. The tab order follows the reading order: an overlay item
+comes before its controls.
+
+A new item slides in from the side it comes from through `SlidingPanel`, the
+shorter way round with `wrap`, mirrored in right-to-left text. Its height is
+the shown item's, so a caller that needs a steady height sets one on the root.
+The count uses plain figures, so the carousel needs no locale. The looks follow
+the [Carousel visual contract](../design/atoms.md#carousel).
+
+| Style part | Responsibility |
+|---|---|
+| `root` | The column of the header or stage and the controls |
+| `header`, `title` | The `header` row and its title |
+| `controls`, `focus_frame` | The tab stop and the 2px frame its focus draws |
+| `previous`, `next` | The arrows |
+| `count`, `dots`, `dot`, `dot_selected` | The position |
+| `stage`, `arrows` | `overlay`: the item with its arrow layer, which is the hover group |
+| `viewport`, `item` | The sliding panel and the shown item |
+
+Source: [carousel.rhai](../../registry/components/carousel.rhai).
 
 ## Command and CommandDialog
 

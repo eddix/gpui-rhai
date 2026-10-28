@@ -1,6 +1,6 @@
 # AnimatedTabs
 
-`motion/animated_tabs` · export `AnimatedTabs` · version 0.3.0. Generated from
+`motion/animated_tabs` · export `AnimatedTabs` · version 0.3.1. Generated from
 [`registry/motion/animated_tabs.rhai`](../../../registry/motion/animated_tabs.rhai); do not edit.
 
 AnimatedTabs is a controlled `Tabs` whose selection indicator slides to the selected tab. State: caller-owned.
@@ -20,6 +20,7 @@ animated_tabs::AnimatedTabs(#{ key: "docs", value: "one", label: "Docs", tabs: t
 | `layout` | `"content"` or `"equal"` | `"content"` | `content` sizes each tab to its label; `equal` gives horizontal tabs equal widths across the full row. |
 | `on_change` | callback or `()` | — | Called with the chosen tab's `value` when a tab is clicked or an arrow key moves; without it the tabs ignore input. |
 | `orientation` | `"horizontal"` or `"vertical"` | `"horizontal"` | Lays the tabs out in a row or a column; the arrow keys follow it. |
+| `panel_motion` | `"none"` or `"slide"` | `"none"` | `slide` also brings a newly selected panel in from the side of the tab it replaces, as Tabs does. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `style` | style | — | Style merged over the root part. |
 | `tabs` | array of object (at most 128) | required | Tabs in display order. |

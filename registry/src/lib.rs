@@ -167,9 +167,19 @@ bundled_components!(
         "../components/tab_overflow_menu.rhai"
     ),
     (
+        SLIDING_PANEL_SOURCE,
+        "components/sliding_panel",
+        "../components/sliding_panel.rhai"
+    ),
+    (
         PAGINATION_SOURCE,
         "components/pagination",
         "../components/pagination.rhai"
+    ),
+    (
+        CAROUSEL_SOURCE,
+        "components/carousel",
+        "../components/carousel.rhai"
     ),
     (
         CHECKBOX_SOURCE,
@@ -1596,8 +1606,8 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 71);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 71);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 73);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 73);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);

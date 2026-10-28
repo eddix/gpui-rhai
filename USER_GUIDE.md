@@ -400,10 +400,10 @@ events, size vocabulary and style parts:
   RadioGroup, Switch, Toggle, ToggleGroup, Slider, and SelectableCardGroup;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, DatePicker,
   RangeSlider, Calendar, TimeInput, and TimeRangePicker;
-- navigation, layout, and data: Tabs, TabOverflowMenu, Accordion, Collapsible,
-  Menu, Pagination, Table, List, ScrollArea, SplitPane, Resizable, Draggable,
-  DragSource, DropZone, Sortable, PanZoom, Rotatable, SelectionArea, Tree,
-  ColumnBrowser, and Timeline;
+- navigation, layout, and data: Tabs, TabOverflowMenu, Carousel, SlidingPanel,
+  Accordion, Collapsible, Menu, Pagination, Table, List, ScrollArea, SplitPane,
+  Resizable, Draggable, DragSource, DropZone, Sortable, PanZoom, Rotatable,
+  SelectionArea, Tree, ColumnBrowser, and Timeline;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
 - read-only documents: CodeViewer, DiffViewer, and MarkdownViewer;

@@ -6,6 +6,8 @@ import "components/card" as card;
 import "gallery/retained_page_panel" as panel;
 import "components/button" as button;
 import "components/tab_overflow_menu" as tab_overflow_menu;
+import "components/carousel" as carousel;
+import "components/sliding_panel" as sliding_panel;
 import "gallery/tabs_demo" as tabs_demo;
 import "patterns/navigation_stack" as navigation;
 
@@ -13,6 +15,8 @@ fn pages() {
     [
         #{ id: "tabs", title: "Tabs", group: "Navigation" },
         #{ id: "tab_overflow_menu", title: "TabOverflowMenu", group: "Navigation" },
+        #{ id: "carousel", title: "Carousel", group: "Navigation" },
+        #{ id: "sliding_panel", title: "SlidingPanel", group: "Navigation" },
         #{ id: "retained_tabs", title: "Retained tabs", group: "Navigation" },
         #{ id: "navigation_stack", title: "NavigationStack", group: "Navigation" },
     ]
@@ -22,6 +26,10 @@ fn view(ctx, h, v, id) {
         tabs_page(h, v)
     } else if id == "tab_overflow_menu" {
         overflow_page(h, v)
+    } else if id == "carousel" {
+        carousel_page(h, v)
+    } else if id == "sliding_panel" {
+        sliding_page(h, v)
     } else if id == "retained_tabs" {
         kit::page(h, v, id, "Retained tabs", "Drafts, native selection/undo and scrolling survive a tab round trip; hidden pages have no input or accessibility presentation.", [
             kit::sec("Service workspace", render_component("gallery/navigation-demo", #{ key: "retained-tabs", mode: id })),
@@ -113,6 +121,14 @@ fn tabs_page(h, v) {
             content: tabs::Tabs(#{ label: "Service settings", value: kit::val(v, "tabs.settings", "general"),
                 variant: "underline", tabs: settings_tabs(), on_change: kit::store(h, "tabs.settings") }) })
             .with_style(style().width(px(360)))),
+        kit::sec("Sliding panels", kit::pile([
+            tabs::Tabs(#{ label: "Panel motion", value: kit::val(v, "tabs.motion", "slide"), panel: false, size: "sm",
+                tabs: [#{ value: "none", label: "None" }, #{ value: "slide", label: "Slide" }],
+                on_change: kit::store(h, "tabs.motion") }),
+            tabs::Tabs(#{ key: "tabs-sliding", label: "Service sections", value: kit::val(v, "tabs.sliding", "overview"),
+                variant: "underline", panel_motion: kit::val(v, "tabs.motion", "slide"), tabs: tab_list(),
+                on_change: kit::store(h, "tabs.sliding") }),
+        ])),
         kit::sec("Watched repositories", tabs_demo::TabsDemo(#{ key: "tabs-repos", mode: "repos" })),
         kit::sec("Bar of open files", tabs_demo::TabsDemo(#{ key: "tabs-files", mode: "files" })),
         kit::sec("Vertical", tabs_demo::TabsDemo(#{ key: "tabs-vertical", mode: "vertical" })),
@@ -133,3 +149,77 @@ fn overflow_page(h, v) {
     ])
 }
 fn tab_flag(tab) { "disabled" in tab && tab.disabled }
+
+// ---- Carousel --------------------------------------------------------------------------
+
+fn carousel_items() {
+    let alerts = [
+        ["Disk almost full", "edge-07 /var is at 93%. Rotate the logs or grow the volume."],
+        ["Certificate expires soon", "api.example.com renews in 6 days."],
+        ["Deploy waiting for approval", "checkout-api 2026.10.27-3 is staged; two approvals left."],
+        ["Error rate above budget", "Payments returned 2.4% errors over the last 15 minutes, against a 1% budget. The on-call engineer has been paged."],
+        ["Backup finished", "The nightly snapshot of orders-db completed in 41 minutes."],
+    ];
+    let items = [];
+    for alert in alerts {
+        items.push(#{ label: alert[0], content: card::Card(#{ header: text(alert[0]), content: text(alert[1]) }) });
+    }
+    items
+}
+
+fn carousel_specimen(h, v, id, extra) {
+    let config = #{ key: `carousel-${id}`, label: "Active alerts", index: kit::val(v, `carousel.${id}`, 0),
+        items: carousel_items(), on_change: kit::store(h, `carousel.${id}`) };
+    config.mixin(extra);
+    carousel::Carousel(config).with_style(style().width(px(360)))
+}
+
+fn carousel_page(h, v) {
+    kit::page(h, v, "carousel", "Carousel", "A pager that shows one item at a time, for a compact place. The caller owns the index; the controls are one tab stop beside the item, and a new item slides in from the side it comes from.", [
+        kit::sec("Header with a count", carousel_specimen(h, v, "header-count", #{})),
+        kit::sec("Header with dots", carousel_specimen(h, v, "header-dots", #{ indicator: "dots" })),
+        kit::sec("Header without a position, wrapping", carousel_specimen(h, v, "header-none",
+            #{ indicator: "none", wrap: true })),
+        kit::sec("Overlay with dots", carousel_specimen(h, v, "overlay-dots", #{ variant: "overlay" })),
+        kit::sec("Overlay with a count", carousel_specimen(h, v, "overlay-count",
+            #{ variant: "overlay", indicator: "count" })),
+        kit::sec("Overlay without a position, wrapping", carousel_specimen(h, v, "overlay-none",
+            #{ variant: "overlay", indicator: "none", wrap: true })),
+    ])
+}
+
+// ---- SlidingPanel ----------------------------------------------------------------------
+
+fn sliding_steps() { ["plan", "build", "verify", "ship"] }
+fn sliding_text(step) {
+    if step == "plan" { "Plan: agree on the scope and the order of work." }
+    else if step == "build" { "Build: change the code behind a flag." }
+    else if step == "verify" { "Verify: run the checks and look at the result." }
+    else { "Ship: release it and watch the error rate." }
+}
+
+fn sliding_page(h, v) {
+    let steps = sliding_steps();
+    let chosen = kit::val(v, "sliding.step", "plan");
+    let looped = kit::val(v, "sliding.loop", 0);
+    let tabs_for = [];
+    for step in steps { tabs_for.push(#{ value: step, label: step }); }
+    kit::page(h, v, "sliding_panel", "SlidingPanel", "Shows one content and slides the next one in from the side it comes from, as it fades in. Only the new content moves, so any content can slide; Tabs and Carousel use it.", [
+        kit::sec("Beside a switcher", kit::pile([
+            tabs::Tabs(#{ label: "Release step", value: chosen, tabs: tabs_for, panel: false,
+                on_change: kit::store(h, "sliding.step") }),
+            sliding_panel::SlidingPanel(#{ key: "sliding-steps", value: chosen, order: steps,
+                content: text(sliding_text(chosen)) }),
+        ])),
+        kit::sec("In a loop", kit::pile([
+            kit::line([
+                button::Button(#{ key: "sliding-previous", text: "Previous", variant: "ghost",
+                    on_click: kit::put(h, "sliding.loop", (looped + steps.len - 1) % steps.len) }),
+                button::Button(#{ key: "sliding-next", text: "Next", variant: "ghost",
+                    on_click: kit::put(h, "sliding.loop", (looped + 1) % steps.len) }),
+            ]),
+            sliding_panel::SlidingPanel(#{ key: "sliding-loop", value: steps[looped], order: steps, wrap: true,
+                content: text(sliding_text(steps[looped])) }),
+        ])),
+    ])
+}

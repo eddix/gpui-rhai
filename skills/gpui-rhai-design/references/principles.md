@@ -230,6 +230,10 @@ runtime track and do not block the design system:
 - Style lacks letter spacing, per-edge border colors, node rotation/scale,
   multi-stop gradients and general z-index (several are GPUI 0.3.7 limits).
 - Rhai array/map data-size limits constrain large script-side datasets.
+- Exit motion paints a copy of a node after it leaves, and cannot copy native
+  controls (text fields, sliders, viewers) or virtual collections. So a panel
+  cannot slide out: Tabs and Carousel slide only the incoming content in, and
+  the outgoing one is gone at once.
 
 ## Verification
 

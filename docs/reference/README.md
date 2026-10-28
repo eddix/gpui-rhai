@@ -20,6 +20,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/button_group`](components/button_group.md) | `ButtonGroup` | Visually joins related buttons into one horizontal or vertical control. |
 | [`components/calendar`](components/calendar.md) | `Calendar` | The single calendar engine shared by DatePicker and TimeRangePicker. |
 | [`components/card`](components/card.md) | `Card` | General themed content surface with optional header and footer slots. |
+| [`components/carousel`](components/carousel.md) | `Carousel` | A controlled pager that shows one item at a time, for a compact place that steps through items of one kind: alerts, cards, previews. |
 | [`components/checkbox`](components/checkbox.md) | `Checkbox` | Controlled checkbox with checked, unchecked, and indeterminate states. |
 | [`components/code_viewer`](components/code_viewer.md) | `CodeViewer` | Native, virtualized, selectable read-only source document surface. |
 | [`components/collapsible`](components/collapsible.md) | `Collapsible` | Controlled disclosure with trigger/content slots and Rust clip animation. |
@@ -63,6 +64,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/sheet`](components/sheet.md) | `Sheet` | Controlled temporary modal panel attached to a viewport edge. |
 | [`components/skeleton`](components/skeleton.md) | `Skeleton` | Content placeholder with optional Rust-side pulse animation. |
 | [`components/slider`](components/slider.md) | `Slider` | Controlled single-value range input with native drag preview and commit events. |
+| [`components/sliding_panel`](components/sliding_panel.md) | `SlidingPanel` | Shows `content`, and when `value` changes slides the new content in from the side of the one it replaces as it fades in: a short way (`motion_distance("moderate")`) in the `fast` duration, mirrored in right-to-left text and settled by the Host's reduced or no-motion policy. |
 | [`components/sortable`](components/sortable.md) | `Sortable` | Controlled keyed ordering with native pointer targets and keyboard moves. |
 | [`components/spinner`](components/spinner.md) | `Spinner` | Compact indeterminate activity indicator animated by the native runtime clock. |
 | [`components/split_pane`](components/split_pane.md) | `SplitPane` | Controlled, nestable two-panel split layout with a native drag hot lane. |

@@ -1,6 +1,7 @@
 //! Contracts of the official components: labels and defaults, props and parts, control visuals,
 //! the Tabs collection and other single components.
 
+mod carousel;
 mod collapsible_height;
 mod control_visuals;
 mod inline_state_stale_detail;

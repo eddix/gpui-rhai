@@ -1,11 +1,11 @@
 # Tabs
 
-`components/tabs` · export `Tabs` · version 0.3.0. Generated from
+`components/tabs` · export `Tabs` · version 0.3.1. Generated from
 [`registry/components/tabs.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tabs.rhai); do not edit.
 
 Controlled tabs with one tab stop; the arrow keys select. Three looks share every capability: `track` is a tonal track with a raised thumb, for a compact switcher among other controls; `underline` puts the labels on a hairline with a 2px ink bar under the selected one, for the sections of a panel or a card; `bar` is a strip of document tabs whose selected tab takes the panel's surface (`tabbar.active`) and covers its line.
 
-A tab carries only what the component draws: an icon, the label, a count capsule or a tone lamp, a dirty mark and a close button. None of them is a tab stop; the list reaches each one: Left/Right (Up/Down when vertical), Home and End select, Delete or Backspace closes the selected tab, Alt+Arrow moves it when the tabs are reorderable, and Shift+F10 or the menu key asks for a context menu. Actions that are not about one tab go in `start` and `end`, outside the list; `on_add` draws a "+" after the last tab. Tabs keep their width and the strip scrolls when they do not fit, keeping the selected tab revealed.
+A tab carries only what the component draws: an icon, the label, a count capsule or a tone lamp, a dirty mark and a close button. None of them is a tab stop; the list reaches each one: Left/Right (Up/Down when vertical), Home and End select, Delete or Backspace closes the selected tab, Alt+Arrow moves it when the tabs are reorderable, and Shift+F10 or the menu key asks for a context menu. Actions that are not about one tab go in `start` and `end`, outside the list; `on_add` draws a "+" after the last tab. Tabs keep their width and the strip scrolls when they do not fit, keeping the selected tab revealed. With `panel_motion: "slide"` a newly selected panel slides in from the side of the tab it replaces.
 
 ```rhai
 import "components/tabs" as tabs;
@@ -21,7 +21,7 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 | `close_label` | string | `"Close"` | Accessible name of a close button, followed by the tab's label. |
 | `end` | array of node (at most 8) | `[]` | Nodes at the far end of the strip, after the add button and the overflow menu. |
 | `keep_mounted` | bool | `false` | Retains all supplied panels, including native scrolling, caret/selection/undo and focus identity. Hidden panels have no layout, input or presented accessibility. Business effects keep running; use ctx.is_visible() for an explicit application pause policy. |
-| `key` | string | — | Stable identity of the tabs; required with `reorderable` or `overflow_menu`, whose drag list and menu it names. |
+| `key` | string | — | Stable identity of the tabs; required with `reorderable`, `overflow_menu` or a sliding `panel_motion`, whose drag list, menu and sliding panel it names. |
 | `label` | string | required | Accessible name of the tab list, and of the group that holds the list and the panel. |
 | `layout` | `"content"` or `"equal"` | `"content"` | Tab widths of a horizontal list: `content` fits each label and scrolls when the tabs do not fit, `equal` fills the width and shares it equally. |
 | `menu_label` | string | `"All tabs"` | Accessible name of the overflow menu button and its menu. |
@@ -34,6 +34,7 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 | `orientation` | `"horizontal"` or `"vertical"` | `"horizontal"` | Direction of the list: `horizontal` is a row moved with Left/Right, `vertical` a column beside the panel moved with Up/Down. |
 | `overflow_menu` | bool | `false` | Whether a menu button lists every tab; picking one selects it. Needs `key`. |
 | `panel` | bool | `true` | Whether the selected tab's `content` renders; `false` renders only the strip, for view switchers. |
+| `panel_motion` | `"none"` or `"slide"` | `"none"` | `slide` brings a newly selected panel in from the side of the tab it replaces, a short way as it fades in (from above or below when vertical); the panel it replaces is gone at once, and the Host's motion policy settles it. `none` switches at once. `slide` needs `key`. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `reorderable` | bool | `false` | Whether tabs move by dragging or Alt+Arrow; moves are reported through `on_reorder`. Needs `key`. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Overrides the `size` environment for the tabs. |
@@ -87,4 +88,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `add`, `close`, `counter
 
 ## Dependencies
 
-[`components/icon_button`](icon_button.md), [`components/tab_overflow_menu`](tab_overflow_menu.md)
+[`components/icon_button`](icon_button.md), [`components/sliding_panel`](sliding_panel.md), [`components/tab_overflow_menu`](tab_overflow_menu.md)

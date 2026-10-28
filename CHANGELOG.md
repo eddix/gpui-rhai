@@ -7,9 +7,28 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- `components/carousel` 0.3.1: a controlled pager that shows one item at a
+  time for compact places (D72). `variant: "header"` (default) puts the label
+  and the controls above the item; `"overlay"` lays the arrows over its sides,
+  shown on hover or focus, with the position below. `indicator` is `count`
+  (`2 / 5`), `dots` or `none`, and `wrap` steps past the ends. The controls are
+  one tab stop beside the item (Left/Right, Home/End), so keys typed inside an
+  item stay the item's. It never turns by itself. The prop is `wrap` rather
+  than `loop`, which Rhai reserves.
+- `components/sliding_panel` 0.3.1: shows one content and slides the next in
+  from the side it comes from as it fades in (`fast`, `entrance`,
+  `motion_distance("moderate")`), mirrored in right-to-left text and settled by
+  the Host's motion policy. Only the incoming content moves, so any content can
+  slide; it keeps the last value, so the components around it stay stateless.
+- `components/tabs` 0.3.1 adds `panel_motion: "slide"`, which slides a newly
+  selected panel in from the side of the tab it replaces (from above or below
+  when vertical); it needs `key`. `motion/animated_tabs` 0.3.1 forwards it.
 - Fix: a disabled `IconButton` and the `prefix`/`suffix` icons of a disabled
   `Button` now take the `disabled` ink like the label, instead of keeping the
   enabled color (`components/icon_button` and `components/button` 0.3.1).
+- The Gallery has Carousel and SlidingPanel pages (101 pages), and the Tabs
+  page shows the panel slide. Theme Studio's specimen includes both new
+  components.
 
 ## 0.3.0 - 2026-10-27
 
