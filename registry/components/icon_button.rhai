@@ -2,7 +2,7 @@
 {
   "id": "components/icon_button",
   "export": "IconButton",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button"],
   "capabilities": {},
@@ -24,7 +24,7 @@ define_component(#{
     metadata: #{
         id: "components/icon_button",
         "export": "IconButton",
-        version: "0.2.0",
+        version: "0.3.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button"],
         capabilities: #{},
@@ -137,7 +137,8 @@ fn render_IconButton(ctx, props) {
     let icon = props.icon.with_style(ctx.component_style("icon", style()
         .width(theme_length("metrics.icon"))
         .height(theme_length("metrics.icon"))
-        .text_color(foreground)));
+        .text_color(foreground)
+        .disabled(style().text_color(theme_color("disabled")))));
     let node = row([icon])
         .with_style(ctx.component_style("root", base))
         .disabled(disabled || loading)

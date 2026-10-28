@@ -5,6 +5,12 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## Unreleased
+
+- Fix: a disabled `IconButton` and the `prefix`/`suffix` icons of a disabled
+  `Button` now take the `disabled` ink like the label, instead of keeping the
+  enabled color (`components/icon_button` and `components/button` 0.3.1).
+
 ## 0.3.0 - 2026-10-27
 
 - **Breaking:** `components/tab_bar` is removed; `components/tabs` 0.3.0

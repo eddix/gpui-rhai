@@ -2,7 +2,7 @@
 {
   "id": "components/button",
   "export": "Button",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -27,7 +27,7 @@ define_component(#{
     metadata: #{
         id: "components/button",
         "export": "Button",
-        version: "0.2.0",
+        version: "0.3.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
@@ -227,7 +227,7 @@ fn render_Button(ctx, props) {
     let children = [];
     if "prefix" in props && props.prefix != () {
         children.push(props.prefix.with_style(ctx.component_style("prefix",
-            style().text_color(foreground))));
+            style().text_color(foreground).disabled(style().text_color(theme_color("disabled"))))));
     }
     if show_loading_text {
         // The idle label stays laid out at zero height and unpainted, so the
@@ -242,7 +242,7 @@ fn render_Button(ctx, props) {
     }
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(ctx.component_style("suffix",
-            style().text_color(foreground))));
+            style().text_color(foreground).disabled(style().text_color(theme_color("disabled"))))));
     }
     if shortcut != () {
         // The inline key legend of Menu and Command (the label voice), in the
