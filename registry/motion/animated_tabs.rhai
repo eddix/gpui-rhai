@@ -2,7 +2,7 @@
 {
   "id": "motion/animated_tabs",
   "export": "AnimatedTabs",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/tabs"],
   "capabilities": {}
@@ -15,7 +15,7 @@
 import "components/tabs" as tabs_component;
 
 define_component(#{
-    metadata: #{ id: "motion/animated_tabs", "export": "AnimatedTabs", version: "0.3.0",
+    metadata: #{ id: "motion/animated_tabs", "export": "AnimatedTabs", version: "0.3.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tabs"], capabilities: #{} },
     schema: #{ props: #{
@@ -34,6 +34,9 @@ define_component(#{
         variant: #{ schema: #{ type: "string", allowed: ["track", "underline"] }, required: false,
             sensitive: false, "default": #{ type: "string", value: "track" },
             doc: "`track` slides a raised thumb along a tonal track; `underline` slides a 2px ink bar along a hairline and is horizontal only." },
+        panel_motion: #{ schema: #{ type: "string", allowed: ["none", "slide"] }, required: false,
+            sensitive: false, "default": #{ type: "string", value: "none" },
+            doc: "`slide` also brings a newly selected panel in from the side of the tab it replaces, as Tabs does." },
         tabs: #{ schema: #{ type: "array", max_items: 128, items: #{
             type: "object", allow_unknown: false, fields: #{
                 value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -68,7 +71,10 @@ fn render_AnimatedTabs(ctx, props) {
         orientation: if "orientation" in props { props.orientation } else { "horizontal" },
         layout: if "layout" in props { props.layout } else { "content" },
         variant: if "variant" in props { props.variant } else { "track" },
+        panel_motion: if "panel_motion" in props { props.panel_motion } else { "none" },
         motion_key: props.key };
+    // The sliding panel is named after the key.
+    if inner.panel_motion == "slide" { inner.key = props.key; }
     if "on_change" in props { inner.on_change = props.on_change; }
     tabs_component::Tabs(inner).with_key(props.key)
         .with_style(ctx.component_style("root", style()))

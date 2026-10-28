@@ -11,6 +11,7 @@ const DESCRIPTION_LIST: &str = include_str!("../../../registry/patterns/descript
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 // What Tabs imports: its overflow menu (and the Menu's own imports) and its add button.
 const TAB_OVERFLOW_MENU: &str = include_str!("../../../registry/components/tab_overflow_menu.rhai");
+const SLIDING_PANEL: &str = include_str!("../../../registry/components/sliding_panel.rhai");
 const MENU: &str = include_str!("../../../registry/components/menu.rhai");
 const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
 const KBD: &str = include_str!("../../../registry/components/kbd.rhai");
@@ -176,6 +177,7 @@ pub fn view(theme: &str, locale: &str) -> EmbeddedScriptView {
         module("patterns/description_list", DESCRIPTION_LIST),
         module("components/tabs", TABS),
         module("components/tab_overflow_menu", TAB_OVERFLOW_MENU),
+        module("components/sliding_panel", SLIDING_PANEL),
         module("components/menu", MENU),
         module("components/divider", DIVIDER),
         module("components/kbd", KBD),

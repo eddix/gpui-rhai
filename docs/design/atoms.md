@@ -294,6 +294,38 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   is reserved even while its button is hidden, so the close button never
   moves the tab's width when it appears; a count that appears does, since it
   is content.
+- **Panel slide.** Off by default. With `panel_motion: "slide"` a newly
+  selected panel comes in from the side of the tab it replaces (from above or
+  below in a vertical list), `motion_distance("moderate")` away, fading in,
+  in `fast` with the `entrance` easing; the panel it replaces is gone at once.
+
+### Carousel
+
+A pager for a compact place that steps through items of one kind. It never
+turns by itself.
+
+- **header** (default): one row, `space.related` above the item, with the
+  label as the title in `control` type and `text_primary` (it truncates), and
+  the controls at the end: ghost IconButtons around the position. The row's
+  space below is its padding, since it leads the item as a heading does.
+- **overlay**: outline IconButtons on `surface_raised` over the item's sides,
+  `spacing.xs` in and vertically centred, shown while the item is hovered or
+  the controls hold focus; an arrow at an end is left out rather than drawn
+  disabled over content. The position sits under the item, centred in a
+  `metrics.control` row.
+- **Position.** A count is `2 / 5` in `control` type, tabular figures and
+  `text_muted`, in a box as wide as the widest position (`5 / 5`), so the
+  arrows beside it never move.
+  Dots are the 6px lamp squares in `control.border` (`text_muted` under the
+  pointer), the selected one stretched to `metrics.icon` wide in
+  `text_primary`, so the position never rests on color alone; their corners
+  are `radius.sm`, so the corner style makes them squares, rounded squares or
+  circles and pills. Each dot sits in a touching `metrics.icon` square target.
+- **Focus.** The controls are one tab stop beside the item, framed by the 2px
+  `focus_ring` frame (`radius.md`) when focused; the arrows and dots inside are
+  not tab stops. A disabled arrow takes `disabled` ink.
+- **Motion.** A new item slides in like a Tabs panel, from the side it comes
+  from, the shorter way round when the items wrap.
 
 ## 6. List-like components
 
@@ -461,7 +493,9 @@ Things you type into have a frame; things you press are blocks.
 
 ## 9. Motion in components
 
-Allowed: Tabs thumb movement (`fast`, `standard`), overlay enter/exit (`fast`),
+Allowed: Tabs thumb movement (`fast`, `standard`), the opt-in Tabs panel slide
+and the Carousel item slide (`fast`, `entrance`, `motion_distance("moderate")`
+with a fade, the incoming content only), overlay enter/exit (`fast`),
 Toast enter/exit, Progress indeterminate stripe, Skeleton shimmer, Spinner.
 Everything follows the Host motion policy; `None` places final states directly.
 Decorative motion lives in `motion/*` and is never used by `components/`.

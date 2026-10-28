@@ -10,7 +10,7 @@ identity and native state and renders it with GPUI.
   three-way and never overwrites a local edit.
 - **A neutral runtime with an optional design system.** The runtime draws what
   a script declares and has no visual opinions. The official registry adds a
-  design system for productivity tools: a token base, 64 components, layouts
+  design system for productivity tools: a token base, 73 components, layouts
   and patterns, a composition audit, and the Gallery that shows every component
   in both densities. It is specified in [docs/design](docs/design/).
 - **Native where frames matter.** Text editing, virtual lists, tables, charts,

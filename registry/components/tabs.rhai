@@ -2,9 +2,9 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
-  "dependencies": ["components/tab_overflow_menu", "components/icon_button"],
+  "dependencies": ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
   "capabilities": {},
   "assets": ["icons/close.svg", "icons/plus.svg"],
   "tokens": [
@@ -33,16 +33,19 @@
 // closes the selected tab, Alt+Arrow moves it when the tabs are reorderable, and Shift+F10
 // or the menu key asks for a context menu. Actions that are not about one tab go in `start`
 // and `end`, outside the list; `on_add` draws a "+" after the last tab. Tabs keep their width
-// and the strip scrolls when they do not fit, keeping the selected tab revealed.
+// and the strip scrolls when they do not fit, keeping the selected tab revealed. With
+// `panel_motion: "slide"` a newly selected panel slides in from the side of the tab it replaces.
 
 import "components/tab_overflow_menu" as tab_overflow_menu;
 import "components/icon_button" as icon_button;
+import "components/sliding_panel" as sliding_panel;
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.3.0",
+        id: "components/tabs", "export": "Tabs", version: "0.3.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/tab_overflow_menu", "components/icon_button"], capabilities: #{},
+        dependencies: ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
+        capabilities: #{},
         tokens: [
             "surface_hover", "surface_raised", "focus_ring", "text_primary", "tabs.foreground",
             "tabs.counter", "control.hover", "border", "disabled", "tabbar.background", "tabbar.active",
@@ -58,7 +61,7 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                doc: "Stable identity of the tabs; required with `reorderable` or `overflow_menu`, whose drag list and menu it names." },
+                doc: "Stable identity of the tabs; required with `reorderable`, `overflow_menu` or a sliding `panel_motion`, whose drag list, menu and sliding panel it names." },
             value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "The `value` of the selected tab, or one no tab has (such as `\"\"`) for none; the caller stores the `change` payload and passes it back." },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -111,6 +114,9 @@ define_component(#{
             keep_mounted: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Retains all supplied panels, including native scrolling, caret/selection/undo and focus identity. Hidden panels have no layout, input or presented accessibility. Business effects keep running; use ctx.is_visible() for an explicit application pause policy." },
+            panel_motion: #{ schema: #{ type: "string", allowed: ["none", "slide"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "none" },
+                doc: "`slide` brings a newly selected panel in from the side of the tab it replaces, a short way as it fades in (from above or below when vertical); the panel it replaces is gone at once, and the Host's motion policy settles it. `none` switches at once. `slide` needs `key`." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false, doc: "Overrides the `size` environment for the tabs." },
             start: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
@@ -574,8 +580,9 @@ fn render_Tabs(ctx, props) {
     let reorderable = prop_or(props, "reorderable", false);
     let has_menu = prop_or(props, "overflow_menu", false) && tabs.len > 0;
     let key = prop_or(props, "key", "");
-    if (reorderable || prop_or(props, "overflow_menu", false)) && key == "" {
-        throw "Tabs needs a key with reorderable or overflow_menu";
+    let slide = prop_or(props, "panel_motion", "none") == "slide";
+    if (reorderable || prop_or(props, "overflow_menu", false) || slide) && key == "" {
+        throw "Tabs needs a key with reorderable, overflow_menu or a sliding panel_motion";
     }
     let values = [];
     for tab in tabs {
@@ -706,6 +713,14 @@ fn render_Tabs(ctx, props) {
     let content_style = style().flex_grow().flex_basis(relative(0)).min_width(px(0)).min_height(px(0));
     if variant == "bar" { content_style = content_style.background(theme_color("tabbar.active")); }
     let content = column(panels).with_key("panels").with_style(content_style);
+    if slide {
+        // The sliding panel keeps the surface and the size; only the panels move over it.
+        content = sliding_panel::SlidingPanel(#{ key: `${key}-panel`, value: props.value, order: values,
+            orientation: if vertical { "vertical" } else { "horizontal" },
+            content: column(panels).with_key("panels").with_style(style().flex_grow().min_width(px(0))
+                .min_height(px(0))) })
+            .with_style(content_style);
+    }
     let root = if vertical { row([strip, content]) } else { column([strip, content]) };
     root = root.with_style(ctx.component_style("root", style().min_width(px(0)).min_height(px(0))
         .gap(gap)))

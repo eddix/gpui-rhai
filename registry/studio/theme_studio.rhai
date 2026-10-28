@@ -42,6 +42,8 @@ import "components/column_browser" as column_browser;
 import "components/selectable_card_group" as selectable_card_group;
 import "components/tabs" as tabs;
 import "components/tab_overflow_menu" as tab_overflow_menu;
+import "components/sliding_panel" as sliding_panel;
+import "components/carousel" as carousel;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
 import "components/toast" as toast;
@@ -690,7 +692,13 @@ fn specimen_navigation(ctx) {
                 #{value:"light",label:"light.rhai",dirty:true,count:3,tone:"accent",tone_label:"changed"}]}),
             tab_overflow_menu::TabOverflowMenu(#{key:"specimen-tab-menu",label:"All theme files",value:"dark",
                 items:[#{value:"dark",label:"dark.rhai"},#{value:"light",label:"light.rhai"}]}),
-        ]).with_style(style().items_center())
+        ]).with_style(style().items_center()),
+        carousel::Carousel(#{key:"specimen-carousel",label:"Theme notes",index:1,indicator:"dots",items:[
+            #{label:"Contrast",content:text("Primary text holds 7:1 on every surface")},
+            #{label:"Steps",content:text("Surface steps stay perceptually even")},
+            #{label:"Accent",content:text("The accent keeps its original hue")}]}),
+        sliding_panel::SlidingPanel(#{key:"specimen-sliding",value:"dark",order:["dark","light"],
+            content:text("A new panel slides in from the side it comes from")}),
     ]).with_style(style().gap(px(7)))
 }
 

@@ -13,12 +13,13 @@ use crate::support::{
 };
 
 /// The official modules these tests mount; the rest of the registry stays out.
-const MODULES: [&str; 25] = [
+const MODULES: [&str; 26] = [
     "components/button",
     "components/badge",
     "components/tabs",
     // Tabs' overflow menu and add button, and the menu's own dependency.
     "components/tab_overflow_menu",
+    "components/sliding_panel",
     "components/menu",
     "components/divider",
     "components/kbd",
