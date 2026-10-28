@@ -23,6 +23,12 @@ semantic versioning from this release.
 - `components/tabs` 0.3.1 adds `panel_motion: "slide"`, which slides a newly
   selected panel in from the side of the tab it replaces (from above or below
   when vertical); it needs `key`. `motion/animated_tabs` 0.3.1 forwards it.
+- Fix: a scroll container whose box is not a flex container, such as
+  `ScrollArea`'s viewport, no longer scrolls a viewport's height past its last
+  row. The runtime's overlay scrollbar is an absolutely positioned child with no
+  insets; in a block container that put it after the content, where it added
+  its own height to the scrolled extent. It is now pinned to the container's
+  origin.
 - Fix: a disabled `IconButton` and the `prefix`/`suffix` icons of a disabled
   `Button` now take the `disabled` ink like the label, instead of keeping the
   enabled color (`components/icon_button` and `components/button` 0.3.1).
