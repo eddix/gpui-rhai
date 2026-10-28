@@ -6,8 +6,8 @@ content_hash = "b02152f557c7b567"
 dependencies = []
 
 [components."components/button"]
-version = "0.2.0"
-content_hash = "3e290100b1ed56bc"
+version = "0.3.1"
+content_hash = "b1c767616b0d61f0"
 dependencies = []
 
 [components."components/checkbox"]
