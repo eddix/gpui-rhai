@@ -608,8 +608,16 @@ impl Element for ThemedScrollbar {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        // Pinned to the scroll container's origin. Without insets an absolute child sits at its
+        // static position, which in a block container is after the content, and the overlay
+        // then adds a viewport's height to the extent the container scrolls through.
         let style = Style {
             position: Position::Absolute,
+            inset: Edges {
+                top: px(0.0).into(),
+                left: px(0.0).into(),
+                ..Edges::auto()
+            },
             size: size(relative(1.0).into(), relative(1.0).into()),
             ..Style::default()
         };
