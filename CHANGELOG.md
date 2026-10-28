@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## Unreleased
+## 0.3.1 - 2026-10-28
 
 - `components/carousel` 0.3.1: a controlled pager that shows one item at a
   time for compact places (D72). `variant: "header"` (default) puts the label
