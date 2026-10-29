@@ -29,3 +29,15 @@ poll time, commits and the time of each commit phase, all read from the
 view's `take_render_statistics`. `gpui_replay` measures GPUI alone: a view
 rendered every frame beside a static subtree built inline, as a plain child
 view, or as a cached child view.
+
+Shell typing reports use `gpui-rhai-shell-typing-v1`
+(`app_shell_typing_baseline`, written to `GPUI_RHAI_SHELL_BENCH_OUTPUT`). They
+type into a field of an `AppShell` with the draft held by the view or by a
+component around the field, with cache islands off and on, and record per
+keystroke the time, host renders, render and build time, and the islands
+replayed and rendered in place.
+
+`scroll-mac17-8-release-0.3.2.json`, `scroll-mac17-8-release-0.3.3.json` and
+`shell-typing-mac17-8-release-0.3.3.json` were recorded on the same Mac
+(Mac17,8, macOS 27.0.1, Rust 1.95.0, release, 30 samples after 5 warmup steps)
+on 2026-10-29; the 0.3.2 report is that release with the benchmark added.

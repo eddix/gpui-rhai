@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "schema": "gpui-rhai-shell-typing-v1",
+    "commit": "165938931eb032e54fa5f9c18bba790e2219cdd2",
+    "dirty": true,
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2",
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+    "hardware": "Mac17,8",
+    "profile": "release",
+    "features": "default",
+    "data_backend": "native_collection",
+    "label": "",
+    "samples": 30,
+    "warmup": 5,
+    "window": [
+      1180.0,
+      820.0
+    ]
+  },
+  "layouts": [
+    {
+      "name": "view_state",
+      "islands": false,
+      "retained_nodes": 407,
+      "keystroke": {
+        "steps": 30,
+        "total_p50_us": 2545,
+        "total_p90_us": 2740,
+        "render_p50_us": 391,
+        "build_p50_us": 361,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "island_hits_per_keystroke": 0.0,
+      "island_uncached_per_keystroke": 0.0
+    },
+    {
+      "name": "view_state",
+      "islands": true,
+      "retained_nodes": 407,
+      "keystroke": {
+        "steps": 30,
+        "total_p50_us": 1094,
+        "total_p90_us": 1117,
+        "render_p50_us": 97,
+        "build_p50_us": 68,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "island_hits_per_keystroke": 4.0,
+      "island_uncached_per_keystroke": 0.0
+    },
+    {
+      "name": "component_state",
+      "islands": false,
+      "retained_nodes": 407,
+      "keystroke": {
+        "steps": 30,
+        "total_p50_us": 1841,
+        "total_p90_us": 1931,
+        "render_p50_us": 369,
+        "build_p50_us": 352,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "island_hits_per_keystroke": 0.0,
+      "island_uncached_per_keystroke": 0.0
+    },
+    {
+      "name": "component_state",
+      "islands": true,
+      "retained_nodes": 407,
+      "keystroke": {
+        "steps": 30,
+        "total_p50_us": 413,
+        "total_p90_us": 421,
+        "render_p50_us": 40,
+        "build_p50_us": 24,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "island_hits_per_keystroke": 4.0,
+      "island_uncached_per_keystroke": 0.0
+    }
+  ]
+}

@@ -118,6 +118,64 @@ Measured on an Apple Silicon Mac (release, 2026-10-05), before and after:
 | Rhai work per keystroke in a filter | 10.6 ms | 5.1 ms |
 | Rhai render, light/dark switch | 21 ms | 14 ms |
 
+## Frame replay
+
+A view renders its committed tree into GPUI elements on every frame GPUI draws
+it, and GPUI lays them out and paints them. A frame that changes one part of a
+view, a scrolled Table, a hovered button or a typed field, replays the parts it
+did not change instead (cache islands, 0.3.3):
+
+- A subtree of at least 16 nodes with nothing that changes from frame to frame
+  is embedded as a cached GPUI view. Motion, signal styles, scroll containers,
+  virtual collections, overlays and layers, primitives, canvases and images,
+  element refs, raw pointer handlers and window drag areas stay outside it.
+- It is replayed while its nodes (the same ones, or equal ones after a render
+  of the whole view) and what it inherits from its place are the same: theme,
+  locale, environment, opacity, focus, and a width that does not depend on its
+  content. Its parent must be a flex column, and its own height must follow
+  its content. A frame that changes it renders it once in place to measure it.
+- The width of a view that fills its window ([`ScriptApplication`], script
+  windows) is known; a view a Host mounts says so with
+  `ScriptViewConfig::host_sets_width(true)`. A row's one growing child, as an
+  `AppShell`'s main area, takes the room its fixed siblings leave.
+- GPUI itself renders every cached view again on some frames: a click
+  (active state), a focus change, an inspector pick.
+
+`ScriptViewConfig::render_islands(false)` or `GPUI_RHAI_RENDER_ISLANDS=off`
+renders every frame in full. `GPUI_RHAI_RENDER_ISLANDS=verify` panics when a
+replayed subtree would lay out at another height or under other ids;
+`aggressive` also makes every subtree of one node an island and assumes every
+view's width is set by its Host, which CI runs over the native suite.
+`ScriptViewHandle::take_render_statistics` (hidden, unstable) counts island
+hits, misses, in-place renders and height mismatches.
+
+Commits do work proportional to what changed where they can: a subtree the
+candidate shares with the last commit keeps its retained nodes; motion, exit
+ghosts, signal validation, budgets, collection bindings, page visibility and the
+focus and scroll handles read counts the retained tree keeps per subtree
+instead of walking it.
+
+Scroll benchmark (`scroll_end_to_end_baseline`, release, Apple Silicon,
+2026-10-29, 30 steps), a 400-row Table above plain filler rows, p50 per wheel
+step; 0.3.2 is that release with the benchmark added (`0039b8f`):
+
+| filler rows | 0.3.2 quiet | 0.3.3 quiet | 0.3.2 realizing | 0.3.3 realizing |
+|---:|---:|---:|---:|---:|
+| 330 | 5.6 ms | 0.51 ms | 15.2 ms | 2.7 ms |
+| 1,000 | 18.2 ms | 0.74 ms | 43.4 ms | 4.0 ms |
+| 2,500 | 49.5 ms | 1.2 ms | 120.7 ms | 7.4 ms |
+| 1,000, two Tables | 19.0 ms | 2.9 ms | 45.6 ms | 6.5 ms |
+
+A quiet step scrolls within the rows already rendered; a realizing step
+renders new rows and commits them. Filler laid out beside the Table, as a
+child of a row, is not replayed (19.8 to 16.2 ms quiet): an island's parent is
+a flex column, and its rows of four nodes are each too small to be one.
+
+`app_shell_typing_baseline` types into a field of an `AppShell` with a sidebar
+and three cards (407 nodes), p50 per keystroke, islands off and on: 2.5 to
+1.1 ms with the draft in the view, which renders the view whole, and 1.8 to
+0.41 ms with the draft in a component around the field.
+
 ## Trusted Host execution policy
 
 Ordinary applications keep `DEFAULT_SCRIPT_OPERATION_LIMIT = 1_000_000` and
