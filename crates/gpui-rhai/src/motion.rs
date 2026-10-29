@@ -1639,6 +1639,18 @@ impl MotionRuntime {
         }
     }
 
+    /// Whether `domain` holds no live motion and no timeline, which a commit
+    /// that declares none would cancel.
+    pub(crate) fn live_scope_idle(&self, domain: &str) -> bool {
+        let live = |retention: &MotionRetention| matches!(retention, MotionRetention::Live(owner) if owner == domain);
+        !self.active.values().any(|motion| live(&motion.retention))
+            && !self.settled_retention.values().any(live)
+            && !self
+                .timelines
+                .keys()
+                .any(|handle| handle.in_node_scope(domain))
+    }
+
     pub(crate) fn set_active_limit(&mut self, limit: usize) {
         self.active_limit = limit;
     }
@@ -3579,6 +3591,38 @@ fn validate_node_property(
     } else {
         Ok(())
     }
+}
+
+/// Whether a commit's motion phase reads anything of `node` beyond its
+/// place in the tree: a motion, timeline or progress binding, a layout,
+/// shared-layout or other motion attribute, a native signal binding (which
+/// claims its property), a keyed or animated span, or a collection whose
+/// realized items do not each have a key of their own. A tree with none of
+/// them declares no motion, and validates as one.
+pub(crate) fn node_takes_motion(node: &UiNode) -> bool {
+    !node.motions().is_empty()
+        || !node.exit_motions().is_empty()
+        || !node.progress_motions().is_empty()
+        || !node.timelines().is_empty()
+        || node.signal_bindings().next().is_some()
+        || node.attributes().keys().any(|key| {
+            key.starts_with("motion")
+                || key.starts_with("layout_motion")
+                || key.starts_with("shared_layout")
+        })
+        || match node.kind() {
+            UiNodeKind::RichText { spans, .. } => spans
+                .iter()
+                .any(|span| span.key().is_some() || !span.motions().is_empty()),
+            UiNodeKind::VirtualCollection { spec } => {
+                let mut keys = BTreeSet::new();
+                !spec.realized.keys().all(|index| {
+                    crate::virtual_list_element::collection_item_key(spec, *index)
+                        .is_some_and(|key| keys.insert(key))
+                })
+            }
+            _ => false,
+        }
 }
 
 pub(crate) fn child_path(path: &str, index: usize, child: &UiNode) -> String {
