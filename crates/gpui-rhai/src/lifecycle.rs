@@ -35,6 +35,7 @@ pub struct ScriptLifecycle {
     suspended_at: Option<std::time::Instant>,
     /// Advances whenever a new retained tree is committed (or restored).
     revision: u64,
+    commit_statistics: CommitStatistics,
 }
 
 #[derive(Clone)]
@@ -45,6 +46,54 @@ pub(crate) struct ScriptLifecycleCheckpoint {
     retained: crate::RetainedUiTree,
     semantics: crate::CommittedSemanticFrame,
     suspended_at: Option<std::time::Instant>,
+}
+
+/// Commits and the time spent in each of their phases, summed since the last
+/// [`ScriptLifecycle::take_commit_statistics`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CommitStatistics {
+    pub commits: u64,
+    /// Phases in the order they first ran.
+    pub phases: Vec<(&'static str, std::time::Duration)>,
+}
+
+impl CommitStatistics {
+    fn add(&mut self, phase: &'static str, elapsed: std::time::Duration) {
+        if let Some((_, total)) = self.phases.iter_mut().find(|(name, _)| *name == phase) {
+            *total += elapsed;
+        } else {
+            self.phases.push((phase, elapsed));
+        }
+    }
+
+    pub(crate) fn merge(&mut self, other: Self) {
+        self.commits += other.commits;
+        for (phase, elapsed) in other.phases {
+            self.add(phase, elapsed);
+        }
+    }
+}
+
+/// Laps one commit's phases; folded into the lifecycle's statistics when the
+/// commit ends, whether it succeeded or not.
+struct PhaseClock {
+    last: std::time::Instant,
+    laps: CommitStatistics,
+}
+
+impl PhaseClock {
+    fn start() -> Self {
+        Self {
+            last: std::time::Instant::now(),
+            laps: CommitStatistics::default(),
+        }
+    }
+
+    fn lap(&mut self, phase: &'static str) {
+        let now = std::time::Instant::now();
+        self.laps.add(phase, now - self.last);
+        self.last = now;
+    }
 }
 
 #[derive(Default)]
@@ -118,7 +167,13 @@ impl ScriptLifecycle {
             semantics: crate::CommittedSemanticFrame::default(),
             suspended_at: None,
             revision: 0,
+            commit_statistics: CommitStatistics::default(),
         })
+    }
+
+    /// Commits since the last call and the time each phase took.
+    pub(crate) fn take_commit_statistics(&mut self) -> CommitStatistics {
+        std::mem::take(&mut self.commit_statistics)
     }
 
     /// The revision of the committed retained tree; it advances on every
@@ -236,6 +291,7 @@ impl ScriptLifecycle {
                 operation: "render",
             });
         }
+        let mut clock = PhaseClock::start();
         let runtime_snapshot = self.begin_runtime_transaction()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let previous_root = reuse_dirty.and_then(|_| self.root.clone());
@@ -250,23 +306,14 @@ impl ScriptLifecycle {
                 )?,
                 _ => engine.render_with_context_staged(&self.compiled, context)?,
             };
+            clock.lap("render");
             let mut retained = self.retained.clone();
-            let motion_reconcile_report = retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained, &root)?;
-            self.reconcile_motion(&root, &retained, self.compiled.generation())?;
-            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
-            self.reconcile_effects(
-                engine,
-                &self.compiled,
-                runtime_snapshot.component_state().clone(),
-                &retained,
-                &root,
-            )?;
-            self.retain_geometry_nodes(&retained)?;
-            self.validate_signal_bindings(&root)?;
-            let semantics = crate::CommittedSemanticFrame::from_retained(&retained)?;
+            clock.lap("clone");
+            let semantics =
+                self.commit_phases(engine, &runtime_snapshot, &mut retained, &root, &mut clock)?;
             Ok((root, retained, semantics))
         })();
+        self.commit_statistics.merge(clock.laps);
         match result {
             Ok((root, retained, semantics)) => {
                 self.trace_reconcile("full", retained.last_report());
@@ -340,7 +387,9 @@ impl ScriptLifecycle {
             return self.render_dirty_full(engine, &dirty, runtime_snapshot, engine_checkpoint);
         };
         engine.begin_execution_session();
+        let mut clock = PhaseClock::start();
         let mut retained = self.retained.clone();
+        clock.lap("clone");
         let result = (|| {
             for path in topmost {
                 let subtree = engine.rerender_component(&path, &root, &dirty)?;
@@ -348,21 +397,10 @@ impl ScriptLifecycle {
                     return Err(LifecycleError::MissingComponentSubtree(path));
                 }
             }
-            let motion_reconcile_report = retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained, &root)?;
-            self.reconcile_motion(&root, &retained, self.compiled.generation())?;
-            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
-            self.reconcile_effects(
-                engine,
-                &self.compiled,
-                runtime_snapshot.component_state().clone(),
-                &retained,
-                &root,
-            )?;
-            self.retain_geometry_nodes(&retained)?;
-            self.validate_signal_bindings(&root)?;
-            Ok(crate::CommittedSemanticFrame::from_retained(&retained)?)
+            clock.lap("render");
+            self.commit_phases(engine, &runtime_snapshot, &mut retained, &root, &mut clock)
         })();
+        self.commit_statistics.merge(clock.laps);
         match result {
             Ok(semantics) => {
                 self.trace_reconcile("incremental", retained.last_report());
@@ -456,7 +494,9 @@ impl ScriptLifecycle {
             .as_deref()
             .cloned()
             .ok_or(LifecycleError::MissingRoot)?;
+        let mut clock = PhaseClock::start();
         let mut retained = self.retained.clone();
+        clock.lap("clone");
         let result = (|| {
             let mut changed = false;
             for (id, indices) in selected {
@@ -483,7 +523,9 @@ impl ScriptLifecycle {
                         .clone()
                         .map(|group| (group, spec.inherited_motion_scope.clone()))
                 });
+                clock.lap("lookup");
                 items = engine.realize_virtual_collection(&id, &indices, &items)?;
+                clock.lap("realize");
                 if let Some((group, scope)) = inherited_motion_group {
                     for node in items.values_mut() {
                         crate::node::apply_motion_group(node, &group, scope.as_deref());
@@ -495,27 +537,15 @@ impl ScriptLifecycle {
                 engine.update_virtual_collection_snapshot(&id, &items);
                 changed = true;
             }
+            clock.lap("replace");
             if !changed {
                 return Ok((false, self.semantics.clone()));
             }
-            let motion_reconcile_report = retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained, &root)?;
-            self.reconcile_motion(&root, &retained, self.compiled.generation())?;
-            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
-            self.reconcile_effects(
-                engine,
-                &self.compiled,
-                runtime_snapshot.component_state().clone(),
-                &retained,
-                &root,
-            )?;
-            self.retain_geometry_nodes(&retained)?;
-            self.validate_signal_bindings(&root)?;
-            Ok((
-                true,
-                crate::CommittedSemanticFrame::from_retained(&retained)?,
-            ))
+            let semantics =
+                self.commit_phases(engine, &runtime_snapshot, &mut retained, &root, &mut clock)?;
+            Ok((true, semantics))
         })();
+        self.commit_statistics.merge(clock.laps);
         match result {
             Ok((changed, semantics)) => {
                 if changed {
@@ -537,6 +567,44 @@ impl ScriptLifecycle {
                 Err(error)
             }
         }
+    }
+
+    /// The phases every commit runs over its candidate root, in order:
+    /// reconcile `retained` (the working copy that becomes the committed tree
+    /// on success) against `root`, then budgets, motion, exit ghosts,
+    /// effects, geometry, signal bindings and the semantic frame.
+    fn commit_phases(
+        &self,
+        engine: &mut RuntimeEngine,
+        runtime_snapshot: &crate::UiStateSnapshot,
+        retained: &mut crate::RetainedUiTree,
+        root: &UiNode,
+        clock: &mut PhaseClock,
+    ) -> Result<crate::CommittedSemanticFrame, LifecycleError> {
+        clock.laps.commits += 1;
+        let motion_reconcile_report = retained.reconcile(root.clone())?;
+        clock.lap("reconcile");
+        self.validate_resource_budgets(engine, retained, root)?;
+        clock.lap("budgets");
+        self.reconcile_motion(root, retained, self.compiled.generation())?;
+        clock.lap("motion");
+        self.reconcile_exit_ghosts(&motion_reconcile_report)?;
+        clock.lap("ghosts");
+        self.reconcile_effects(
+            engine,
+            &self.compiled,
+            runtime_snapshot.component_state().clone(),
+            retained,
+            root,
+        )?;
+        clock.lap("effects");
+        self.retain_geometry_nodes(retained)?;
+        clock.lap("geometry");
+        self.validate_signal_bindings(root)?;
+        clock.lap("signals");
+        let semantics = crate::CommittedSemanticFrame::from_retained(retained)?;
+        clock.lap("semantics");
+        Ok(semantics)
     }
 
     /// Run optional `dispose(ctx)` once and make the lifecycle terminal.

@@ -982,6 +982,32 @@ pub struct ScriptViewPerformanceSnapshot {
     pub pending_virtual_requests: bool,
 }
 
+/// Render and commit counters of one mounted view since the last
+/// [`ScriptViewHandle::take_render_statistics`], for benchmarks and performance
+/// tests. Not a stable interface: fields are added as the runtime counts more.
+#[doc(hidden)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ScriptViewRenderStatistics {
+    /// Frames that rendered the view.
+    pub host_renders: u64,
+    /// Time in the view's render, building its elements included.
+    pub host_render_time: Duration,
+    /// Time turning the retained tree into GPUI elements.
+    pub build_time: Duration,
+    /// Polls that ran script work: effects, virtual realization, dirty renders.
+    pub polls: u64,
+    /// Time in those polls, the application checkpoint included.
+    pub poll_time: Duration,
+    /// Trees committed.
+    pub commits: u64,
+    /// Time in each commit phase, summed over the commits, in the order the
+    /// phases first ran.
+    pub commit_phases: Vec<(&'static str, Duration)>,
+    /// Nodes in the committed tree when the statistics were taken.
+    pub retained_nodes: usize,
+}
+
 struct ScriptViewHandleInner {
     entity: Entity<ScriptHostView>,
     theme: ThemeHandle,
@@ -1226,6 +1252,28 @@ impl ScriptViewHandle {
             }
         });
         Ok(())
+    }
+
+    /// Render and commit counters since the last call, for benchmarks and
+    /// performance tests. Not a stable interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    #[doc(hidden)]
+    pub fn take_render_statistics(
+        &self,
+        cx: &mut App,
+    ) -> Result<ScriptViewRenderStatistics, ScriptViewError> {
+        self.require_not_disposed()?;
+        Ok(self.0.entity.update(cx, |view, _| {
+            let commits = view.lifecycle.take_commit_statistics();
+            let mut statistics = std::mem::take(&mut view.render_statistics);
+            statistics.commits = commits.commits;
+            statistics.commit_phases = commits.phases;
+            statistics.retained_nodes = view.lifecycle.retained().len();
+            statistics
+        }))
     }
 
     /// Drain execution timings and snapshot retained/virtual metrics.
@@ -3453,6 +3501,7 @@ impl PreparedScriptView {
                 #[cfg(feature = "dev-reload")]
                 inspector_open: false,
                 timings,
+                render_statistics: ScriptViewRenderStatistics::default(),
                 overlays,
                 host: view_host,
                 paint_background: config.paint_background,
@@ -3860,6 +3909,7 @@ fn open_secondary_window(
                 #[cfg(feature = "dev-reload")]
                 inspector_open: false,
                 timings,
+                render_statistics: ScriptViewRenderStatistics::default(),
                 overlays: view_host.overlays(),
                 host: view_host.clone(),
                 paint_background: true,
@@ -4182,6 +4232,7 @@ struct ScriptHostView {
     #[cfg(feature = "dev-reload")]
     inspector_open: bool,
     timings: Vec<crate::ExecutionTiming>,
+    render_statistics: ScriptViewRenderStatistics,
     overlays: WindowOverlayCoordinator,
     host: ScriptViewHost,
     paint_background: bool,
@@ -4779,11 +4830,21 @@ fn resolve_root_theme_from_runtime(
 }
 
 impl Render for ScriptHostView {
-    #[allow(clippy::too_many_lines)]
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.state.get() != ScriptViewState::Active {
             return div().into_any_element();
         }
+        let started = Instant::now();
+        let element = self.render_active(window, cx);
+        self.render_statistics.host_renders += 1;
+        self.render_statistics.host_render_time += started.elapsed();
+        element
+    }
+}
+
+impl ScriptHostView {
+    #[allow(clippy::too_many_lines)]
+    fn render_active(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         self.consume_pending_interaction_cancel(window, cx);
         self.prepare_host_render(window, cx);
         self.consume_pending_interaction_cancel(window, cx);
@@ -4856,6 +4917,7 @@ impl Render for ScriptHostView {
             a11y_active,
             window_drag: self.window_drag_areas,
         };
+        let build_started = Instant::now();
         let content = self.lifecycle.retained().root().map_or_else(
             || div().child("Script view has no root").into_any_element(),
             |_| {
@@ -4868,6 +4930,7 @@ impl Render for ScriptHostView {
                 )
             },
         );
+        self.render_statistics.build_time += build_started.elapsed();
         self.report_presentation_diagnostics(cx);
         let content = match (&self.last_failure, self.show_error_banner) {
             (Some(failure), true) => build_error_banner(
@@ -7007,14 +7070,18 @@ impl ScriptHostView {
 
         let (delivery_changed, delivery_error) = self.deliver_async_batch(deliveries);
         let result = if dirty || pending_dispatch || virtual_requests {
-            self.run_script_transaction(|view| {
+            let started = Instant::now();
+            let result = self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;
                 let result = view.lifecycle.realize_virtual_requests(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 Ok(changed || delivery_changed)
-            })
+            });
+            self.render_statistics.polls += 1;
+            self.render_statistics.poll_time += started.elapsed();
+            result
         } else {
             Ok(delivery_changed)
         };
