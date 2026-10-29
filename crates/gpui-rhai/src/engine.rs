@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -479,6 +479,55 @@ struct VirtualCollectionRecipe {
     renderer_context: crate::invocation::ScriptInvocationContext,
     context: UiContext,
     generation: ScriptGeneration,
+    /// Items rendered beyond the needed ones when a scroll needs new items.
+    batch_items: usize,
+    /// Items released from the realized range, shared by the clones of this
+    /// recipe. A new render of the collection makes a new recipe, so what it
+    /// kept is dropped with the data and renderer it was rendered from.
+    offscreen: Rc<RefCell<OffscreenItems>>,
+}
+
+/// Rendered items a virtual collection keeps after they leave its realized
+/// range, by index into its recipe's data, least recently released first.
+#[derive(Debug, Default)]
+struct OffscreenItems {
+    capacity: usize,
+    items: BTreeMap<usize, UiNode>,
+    order: VecDeque<usize>,
+}
+
+impl OffscreenItems {
+    fn new(capacity: usize) -> Self {
+        Self {
+            capacity,
+            ..Self::default()
+        }
+    }
+
+    /// Keep `node`, released at `index`, dropping the least recently released
+    /// items beyond the capacity.
+    fn keep(&mut self, index: usize, node: UiNode) {
+        if self.capacity == 0 {
+            return;
+        }
+        if self.items.insert(index, node).is_some() {
+            self.order.retain(|kept| *kept != index);
+        }
+        self.order.push_back(index);
+        while self.items.len() > self.capacity {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            self.items.remove(&oldest);
+        }
+    }
+
+    /// Take back the item kept for `index`.
+    fn take(&mut self, index: usize) -> Option<UiNode> {
+        let node = self.items.remove(&index)?;
+        self.order.retain(|kept| *kept != index);
+        Some(node)
+    }
 }
 
 type ActiveComponentRenderState = Rc<RefCell<Option<ActiveComponentRender>>>;
@@ -593,6 +642,7 @@ pub struct RuntimeEngine {
     component_element_refs: BTreeSet<crate::ElementRefId>,
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
     component_renderers: ComponentRenderRegistry,
+    virtual_collection_policy: Rc<Cell<crate::VirtualCollectionPolicy>>,
     native_handlers: crate::NativeHandlerRegistry,
     syntax_registry: crate::SyntaxRegistry,
     document_runtime: crate::DocumentRuntimeConfig,
@@ -698,6 +748,7 @@ impl RuntimeEngine {
     /// Panics only if a compile-time built-in descriptor violates the same
     /// validation rules enforced for downstream custom primitives.
     #[must_use]
+    #[allow(clippy::too_many_lines)] // Wires every runtime registry into one engine.
     pub fn new() -> Self {
         let mut engine = Engine::new();
         engine.set_module_resolver(crate::source::RestrictedModuleResolver::new());
@@ -742,10 +793,13 @@ impl RuntimeEngine {
         crate::collection_projection::register_collection_projection_api(&mut engine);
         let evaluation_generation = Rc::new(Cell::new(ScriptGeneration::default()));
         let component_exports = ComponentExportCollector::new();
+        let virtual_collection_policy =
+            Rc::new(Cell::new(crate::VirtualCollectionPolicy::default()));
         let (component_render, component_renderers) = register_component_runtime_apis(
             &mut engine,
             &component_exports,
             &evaluation_generation,
+            &virtual_collection_policy,
         );
         let primitives = PrimitiveRegistry::new();
         let native_handlers = crate::NativeHandlerRegistry::new();
@@ -787,6 +841,7 @@ impl RuntimeEngine {
             component_element_refs: BTreeSet::new(),
             pending_component_commits: BTreeMap::new(),
             component_renderers,
+            virtual_collection_policy,
             native_handlers,
             syntax_registry,
             document_runtime,
@@ -1616,18 +1671,51 @@ impl RuntimeEngine {
                 current_generation: self.generation,
             });
         }
+        let batched = batched_indices(indices, previous, recipe.batch_items, recipe.data.len());
+        if batched == *indices {
+            return self.realize_virtual_items(&recipe, indices, previous);
+        }
+        // The items rendered ahead are a bonus: when one of them fails, the realization
+        // renders only the requested ones, and the failure it recovered from stays out of
+        // the reports. A failing requested item still fails it.
+        let failures = (
+            self.last_failed_timing.borrow().clone(),
+            self.last_failed_component.borrow().clone(),
+        );
+        self.realize_virtual_items(&recipe, &batched, previous)
+            .or_else(|_| {
+                let result = self.realize_virtual_items(&recipe, indices, previous);
+                if result.is_ok() {
+                    *self.last_failed_timing.borrow_mut() = failures.0;
+                    *self.last_failed_component.borrow_mut() = failures.1;
+                }
+                result
+            })
+    }
+
+    /// Realize exactly `indices` of `recipe`'s collection, reusing what `previous` and
+    /// the kept items have and rendering the rest.
+    fn realize_virtual_items(
+        &mut self,
+        recipe: &VirtualCollectionRecipe,
+        indices: &BTreeSet<usize>,
+        previous: &BTreeMap<usize, UiNode>,
+    ) -> Result<BTreeMap<usize, UiNode>, RuntimeError> {
+        let id = &recipe.id;
         let scope = id.component.child("VirtualCollection", id.key.clone());
         let context = recipe
             .context
             .for_structural_scope(scope, BTreeMap::new())
             .with_generation(recipe.generation);
-        let retained = previous
-            .iter()
-            .filter(|(index, _)| indices.contains(index))
-            .map(|(index, node)| (*index, node.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let previous_root = Rc::new(UiNode::box_node(retained.values().cloned().collect()));
-        prune_virtual_read_contributions(&context, id, &recipe.data, indices, &previous_root)?;
+        let (retained, plan, contributing) = self.reuse_kept_items(recipe, indices, previous);
+        let previous_root = Rc::new(UiNode::box_node(plan));
+        prune_virtual_read_contributions(
+            &context,
+            id,
+            &recipe.data,
+            &contributing,
+            &previous_root,
+        )?;
         self.begin_component_render(
             context.clone(),
             recipe.generation,
@@ -1637,11 +1725,12 @@ impl RuntimeEngine {
         retain_virtual_component_manifest(&self.component_render)?;
         let result = (|| {
             let mut realized = retained;
-            for index in indices
+            let missing = indices
                 .iter()
                 .copied()
-                .filter(|index| *index < recipe.data.len() && !previous.contains_key(index))
-            {
+                .filter(|index| *index < recipe.data.len() && !realized.contains_key(index))
+                .collect::<Vec<_>>();
+            for index in missing {
                 let item = recipe
                     .data
                     .item(index)
@@ -1689,6 +1778,111 @@ impl RuntimeEngine {
         }
         self.finish_component_render(result.is_ok())?;
         result
+    }
+
+    /// Move the items leaving the realized range to the recipe's kept items and take back
+    /// the kept items `indices` needs. Returns the items that need no render, the nodes
+    /// the reuse plan keeps alive (those and every kept item) and the indices whose read
+    /// dependencies stay.
+    fn reuse_kept_items(
+        &self,
+        recipe: &VirtualCollectionRecipe,
+        indices: &BTreeSet<usize>,
+        previous: &BTreeMap<usize, UiNode>,
+    ) -> (BTreeMap<usize, UiNode>, Vec<UiNode>, BTreeSet<usize>) {
+        let mut retained = previous
+            .iter()
+            .filter(|(index, _)| indices.contains(index))
+            .map(|(index, node)| (*index, node.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let mut offscreen = recipe.offscreen.borrow_mut();
+        // A failed realization rolls the items back but not what it kept: an item that is
+        // realized again has no kept copy.
+        for index in previous.keys() {
+            offscreen.take(*index);
+        }
+        // Items leaving the realized range are kept, unless a component inside one owns an
+        // effect, a timer or a signal: that item is released, so its work stops as before.
+        for (index, node) in previous
+            .iter()
+            .filter(|(index, _)| !indices.contains(index))
+        {
+            let owns_work = recipe
+                .data
+                .key(*index)
+                .is_some_and(|key| self.virtual_item_owns_work(&recipe.id, key));
+            if !owns_work {
+                offscreen.keep(*index, node.clone());
+            }
+        }
+        // Kept items come back without running the renderer.
+        let unrendered = indices
+            .iter()
+            .copied()
+            .filter(|index| !retained.contains_key(index))
+            .collect::<Vec<_>>();
+        for index in unrendered {
+            if let Some(node) = offscreen.take(index)
+                && node.key().map(crate::NodeKey::as_str) == recipe.data.key(index)
+            {
+                retained.insert(index, node);
+            }
+        }
+        // Kept items stay in the reuse plan and keep their read dependencies, so the
+        // components inside them live on until they come back or are dropped, and a change
+        // they read renders the collection again, which drops them.
+        let mut contributing = indices.clone();
+        contributing.extend(offscreen.items.keys().copied());
+        let mut plan = retained.values().cloned().collect::<Vec<_>>();
+        plan.extend(offscreen.items.values().cloned());
+        (retained, plan, contributing)
+    }
+
+    /// The read contributions of the items the virtual collections in `scope` keep. They
+    /// stay with the committed items' contributions, so a change a kept item read renders
+    /// its collection again, which drops it.
+    pub(crate) fn kept_virtual_read_contributions(
+        &self,
+        scope: &ComponentInstancePath,
+    ) -> BTreeSet<crate::read_dependency::ReadContribution> {
+        let mut active = BTreeSet::new();
+        for recipe in self
+            .virtual_collections
+            .values()
+            .filter(|recipe| recipe.id.component.is_within(scope))
+        {
+            let kept = recipe.offscreen.borrow();
+            for (index, node) in &kept.items {
+                if let Some(key) = recipe.data.key(*index) {
+                    active.insert(crate::read_dependency::ReadContribution::VirtualItem {
+                        collection: recipe.id.clone(),
+                        key: key.to_owned(),
+                    });
+                }
+                active.extend(node.virtual_read_contributions());
+            }
+        }
+        active
+    }
+
+    /// Whether a formal component inside item `key` of collection `id` owns an
+    /// effect, a timer or a signal.
+    fn virtual_item_owns_work(&self, id: &crate::VirtualCollectionId, key: &str) -> bool {
+        let item = id
+            .component
+            .child("VirtualCollection", id.key.clone())
+            .child("Item", key);
+        self.component_effects
+            .keys()
+            .any(|effect| effect.component().is_within(&item))
+            || self
+                .component_timers
+                .keys()
+                .any(|timer| timer.component().is_within(&item))
+            || self
+                .component_signals
+                .keys()
+                .any(|signal| signal.component().is_within(&item))
     }
 
     pub(crate) fn update_virtual_collection_snapshot(
@@ -2146,6 +2340,21 @@ impl RuntimeEngine {
     #[must_use]
     pub fn document_runtime_config(&self) -> crate::DocumentRuntimeConfig {
         self.document_runtime.clone()
+    }
+
+    /// The Host defaults for data-backed virtual collections.
+    #[must_use]
+    pub fn virtual_collection_policy(&self) -> crate::VirtualCollectionPolicy {
+        self.virtual_collection_policy.get()
+    }
+
+    /// Set the Host defaults for data-backed virtual collections, usually in
+    /// `ScriptViewExtension::configure_engine`. A collection's own
+    /// `overscan_items`, `batch_items` and `retain_items` take precedence. The
+    /// policy applies from each collection's next render; values are clamped
+    /// to their bounds.
+    pub fn set_virtual_collection_policy(&self, policy: crate::VirtualCollectionPolicy) {
+        self.virtual_collection_policy.set(policy.clamped());
     }
 
     /// Register one trusted Rust chart transform.
@@ -2623,6 +2832,7 @@ fn register_component_runtime_apis(
     engine: &mut Engine,
     exports: &ComponentExportCollector,
     generation: &Rc<Cell<ScriptGeneration>>,
+    virtual_policy: &Rc<Cell<crate::VirtualCollectionPolicy>>,
 ) -> (ActiveComponentRenderState, ComponentRenderRegistry) {
     let active = Rc::new(RefCell::new(None));
     let renderers = Rc::new(RefCell::new(BTreeMap::new()));
@@ -2632,7 +2842,7 @@ fn register_component_runtime_apis(
     register_timer_api(engine, &active);
     register_signal_api(engine, &active);
     register_element_ref_api(engine, &active);
-    register_virtual_collection_api(engine, &active);
+    register_virtual_collection_api(engine, &active, virtual_policy);
     (active, renderers)
 }
 
@@ -3635,6 +3845,8 @@ struct DecodedVirtualCollection {
     estimated_height: f64,
     height: Option<f64>,
     overdraw_pixels: f64,
+    /// The collection's own render-ahead settings, before the Host policy.
+    ahead: RenderAhead,
     bottom_align: bool,
     follow_tail: bool,
     on_follow_change: Option<FnPtr>,
@@ -3664,6 +3876,39 @@ impl DecodedVirtualCollection {
             inherited_motion_group: None,
             inherited_motion_scope: None,
         }
+    }
+}
+
+/// A collection's own `overscan_items`, `batch_items` and `retain_items`.
+#[derive(Clone, Copy, Debug)]
+struct RenderAhead {
+    overscan: Option<usize>,
+    batch: Option<usize>,
+    retain: Option<usize>,
+}
+
+impl RenderAhead {
+    fn decode(config: &mut Map) -> Result<Self, Box<EvalAltResult>> {
+        Ok(Self {
+            overscan: collection_optional_count(
+                config,
+                "overscan_items",
+                0,
+                crate::MAX_VIRTUAL_OVERSCAN_ITEMS,
+            )?,
+            batch: collection_optional_count(
+                config,
+                "batch_items",
+                1,
+                crate::MAX_VIRTUAL_BATCH_ITEMS,
+            )?,
+            retain: collection_optional_count(
+                config,
+                "retain_items",
+                0,
+                crate::MAX_VIRTUAL_RETAIN_ITEMS,
+            )?,
+        })
     }
 }
 
@@ -3701,6 +3946,7 @@ fn decode_virtual_collection(
             "virtual collection overdraw_pixels must be between 0 and 10000",
         )));
     }
+    let ahead = RenderAhead::decode(&mut config)?;
     let alignment =
         collection_optional_string(&mut config, "alignment")?.unwrap_or_else(|| "top".to_owned());
     let bottom_align = match alignment.as_str() {
@@ -3758,6 +4004,7 @@ fn decode_virtual_collection(
         estimated_height,
         height,
         overdraw_pixels,
+        ahead,
         bottom_align,
         follow_tail,
         on_follow_change,
@@ -3766,8 +4013,13 @@ fn decode_virtual_collection(
     })
 }
 
-fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
+fn register_virtual_collection_api(
+    engine: &mut Engine,
+    active: &ActiveComponentRenderState,
+    policy: &Rc<Cell<crate::VirtualCollectionPolicy>>,
+) {
     let active = Rc::clone(active);
+    let policy = Rc::clone(policy);
     FuncRegistration::new("virtual_collection")
         .in_global_namespace()
         .register_into_engine(
@@ -3779,6 +4031,15 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 let renderer_context = crate::invocation::take_function_environment(&mut renderer);
                 validate_virtual_renderer(&renderer)?;
                 let mut decoded = decode_virtual_collection(config)?;
+                // The collection's own settings, then the Host's, then the built-in values.
+                // An overscan in items replaces the collection's own `overdraw_pixels`.
+                let policy = policy.get();
+                if let Some(items) = policy.overscan_for(decoded.ahead.overscan) {
+                    decoded.overdraw_pixels =
+                        (usize_to_f64(items) * decoded.estimated_height).min(10_000.0);
+                }
+                let batch_items = policy.batch_for(decoded.ahead.batch);
+                let retain_items = policy.retain_for(decoded.ahead.retain);
 
                 let VirtualCollectionContext {
                     component,
@@ -3829,6 +4090,8 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     renderer_context,
                     context: collection_context,
                     generation,
+                    batch_items,
+                    offscreen: Rc::new(RefCell::new(OffscreenItems::new(retain_items))),
                 };
                 let mut guard = active.try_borrow_mut().map_err(|_| {
                     Box::new(component_render_error(
@@ -4026,8 +4289,24 @@ fn virtual_collection_seed_indices(
     });
 
     if preserves_scroll {
+        let overdraw = virtual_overdraw_items(decoded);
+        // A new render keeps the items around the last presented viewport, not the batch
+        // a scroll rendered ahead: rendering again is what the batch saved. Before a
+        // frame has reported what it showed, every realized item stays.
+        let around = metrics
+            .filter(|metrics| !metrics.visible_range.is_empty())
+            .map(|metrics| {
+                metrics.visible_range.start.saturating_sub(overdraw)
+                    ..metrics.visible_range.end.saturating_add(overdraw)
+            });
         if let Some(previous) = previous {
-            indices.extend(previous.realized.keys().copied());
+            indices.extend(
+                previous
+                    .realized
+                    .keys()
+                    .copied()
+                    .filter(|index| around.as_ref().is_none_or(|around| around.contains(index))),
+            );
         }
         if let Some(metrics) = metrics {
             extend_virtual_window(
@@ -4035,7 +4314,7 @@ fn virtual_collection_seed_indices(
                 metrics.scroll_item,
                 count,
                 decoded.data.len(),
-                virtual_overdraw_items(decoded),
+                overdraw,
             );
         }
     } else if decoded.reveal_key.is_none() && !decoded.bottom_align && !decoded.follow_tail {
@@ -4071,6 +4350,48 @@ fn same_collection_key_order(
 ) -> bool {
     current.len() == next.len()
         && (0..current.len()).all(|index| current.key(index) == next.key(index))
+}
+
+/// The indices a realization renders: the requested ones, and when a scroll
+/// needs items that are not rendered yet, `batch - 1` more beyond the farthest
+/// requested index on each side the new items lie, so the next scroll steps
+/// find their items rendered.
+fn batched_indices(
+    requested: &BTreeSet<usize>,
+    previous: &BTreeMap<usize, UiNode>,
+    batch: usize,
+    len: usize,
+) -> BTreeSet<usize> {
+    let mut indices = requested.clone();
+    let extra = batch.saturating_sub(1);
+    let (Some(&first), Some(&last)) = (requested.first(), requested.last()) else {
+        return indices;
+    };
+    if extra == 0 {
+        return indices;
+    }
+    let realized = (previous.keys().next(), previous.keys().next_back());
+    let (mut after, mut before) = (false, false);
+    for index in requested
+        .iter()
+        .filter(|index| !previous.contains_key(index))
+    {
+        match realized {
+            (Some(start), Some(end)) => {
+                after |= index > end;
+                before |= index < start;
+            }
+            _ => after = true,
+        }
+    }
+    if after {
+        let end = last.saturating_add(extra).saturating_add(1).min(len);
+        indices.extend(last.saturating_add(1)..end);
+    }
+    if before {
+        indices.extend(first.saturating_sub(extra)..first);
+    }
+    indices
 }
 
 fn virtual_overdraw_items(decoded: &DecodedVirtualCollection) -> usize {
@@ -4191,6 +4512,29 @@ fn collection_optional_number(
                     "virtual collection `{name}` must be a number"
                 ))))
             }
+        })
+        .transpose()
+}
+
+/// An optional item count between `min` and `max`.
+fn collection_optional_count(
+    config: &mut Map,
+    name: &str,
+    min: usize,
+    max: usize,
+) -> Result<Option<usize>, Box<EvalAltResult>> {
+    config
+        .remove(name)
+        .map(|value| {
+            let count = value
+                .try_cast::<rhai::INT>()
+                .and_then(|count| usize::try_from(count).ok())
+                .filter(|count| (min..=max).contains(count));
+            count.ok_or_else(|| {
+                Box::new(component_render_error(format!(
+                    "virtual collection `{name}` must be an integer from {min} to {max}"
+                )))
+            })
         })
         .transpose()
 }
@@ -4338,6 +4682,11 @@ fn add_collection_neighbors(data: &crate::VirtualCollectionData, index: usize, p
 
 fn nonnegative_usize(value: f64) -> usize {
     value.to_string().parse().unwrap_or(usize::MAX)
+}
+
+/// An item count as pixels' factor; counts here are bounded far below `u32::MAX`.
+fn usize_to_f64(value: usize) -> f64 {
+    f64::from(u32::try_from(value).unwrap_or(u32::MAX))
 }
 
 fn component_event_callbacks(
@@ -4674,6 +5023,65 @@ fn register_chart_validation_api(engine: &mut Engine) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offscreen_items_drop_the_least_recently_released_beyond_capacity() {
+        let mut kept = OffscreenItems::new(3);
+        for index in 0..5 {
+            kept.keep(index, UiNode::text(format!("{index}")));
+        }
+        assert_eq!(kept.items.keys().copied().collect::<Vec<_>>(), [2, 3, 4]);
+        // Releasing 2 again makes it the newest, so 3 goes first.
+        kept.keep(2, UiNode::text("2"));
+        kept.keep(5, UiNode::text("5"));
+        assert_eq!(kept.items.keys().copied().collect::<Vec<_>>(), [2, 4, 5]);
+        assert!(kept.take(4).is_some());
+        assert!(kept.take(4).is_none());
+        assert_eq!(kept.order, [2, 5]);
+
+        let mut none = OffscreenItems::new(0);
+        none.keep(0, UiNode::text("0"));
+        assert!(none.items.is_empty());
+    }
+
+    #[test]
+    fn a_batch_extends_toward_the_items_a_scroll_needs() {
+        let realized = |range: std::ops::Range<usize>| {
+            range
+                .map(|index| (index, UiNode::text(format!("{index}"))))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let set = |range: std::ops::Range<usize>| range.collect::<BTreeSet<_>>();
+        // Down: rows after the realized ones are needed.
+        assert_eq!(
+            batched_indices(&set(2..8), &realized(0..6), 4, 100),
+            set(2..11)
+        );
+        // Up: rows before them are needed, clamped at the first row.
+        assert_eq!(
+            batched_indices(&set(1..6), &realized(2..8), 4, 100),
+            set(0..6)
+        );
+        // Nothing needed, or a batch of one: the request as it is.
+        assert_eq!(
+            batched_indices(&set(2..6), &realized(0..8), 4, 100),
+            set(2..6)
+        );
+        assert_eq!(
+            batched_indices(&set(2..8), &realized(0..6), 1, 100),
+            set(2..8)
+        );
+        // Clamped at the last row.
+        assert_eq!(
+            batched_indices(&set(96..100), &realized(90..98), 8, 100),
+            set(96..100)
+        );
+        // Nothing realized yet: ahead.
+        assert_eq!(
+            batched_indices(&set(0..2), &BTreeMap::new(), 3, 100),
+            set(0..4)
+        );
+    }
 
     fn virtual_config(sticky: &[i64], alignment: &str) -> Map {
         let mut item = Map::new();

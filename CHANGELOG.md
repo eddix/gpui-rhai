@@ -5,6 +5,24 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## Unreleased
+
+- Virtual collections render ahead and keep what they rendered (D73).
+  `virtual_collection` takes `overscan_items` (items beyond each edge of the
+  viewport, replacing `overdraw_pixels`), `batch_items` (a scroll that needs
+  items also renders the ones after them, 16 unless set) and `retain_items`
+  (items a scroll left come back without running the renderer until the
+  collection renders again, 200 unless set; an item whose component owns an
+  effect, a timer or a signal is released as before). A Host sets defaults for
+  every collection with `RuntimeEngine::set_virtual_collection_policy` in
+  `configure_engine`; a collection's own value wins. A frame now asks for a
+  render only when it needs an item, so scrolling inside a rendered batch
+  commits nothing, and a new render of a collection keeps the items around the
+  viewport rather than the batch ahead. Scrolling a Table 64 rows one row per
+  step rendered on 4 steps instead of 63.
+- `components/table` 0.3.2 takes `overscan_rows`, `batch_rows` and
+  `retain_rows` for these settings.
+
 ## 0.3.1 - 2026-10-28
 
 - `components/carousel` 0.3.1: a controlled pager that shows one item at a

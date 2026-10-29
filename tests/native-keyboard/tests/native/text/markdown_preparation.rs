@@ -1,4 +1,5 @@
-//! Actual preparation counts across row eviction, not an Entity-retention proxy.
+//! Actual preparation counts across row eviction, not an Entity-retention proxy. The
+//! transcript renders no batch ahead and keeps no rows, so rows leave and their viewers go.
 
 use crate::support::{Mount, Step, bounds, by_test_id, click_center, dispatch, last_error, settle};
 use gpui::TestAppContext;
@@ -127,7 +128,7 @@ fn view(ctx){
  column([row([text("History").test_id("history").on_click(Fn("top")),
  text("Latest").test_id("latest").on_click(Fn("bottom"))]),
  virtual_collection(#{key:"agent-transcript",data:data,estimated_height:120,overdraw_pixels:240,
- fill_height:true,alignment:"bottom",follow_tail:true},Fn("item"))
+ batch_items:1,retain_items:0,fill_height:true,alignment:"bottom",follow_tail:true},Fn("item"))
  .with_style(style().flex_grow().flex_basis(px(0)).min_height(px(0)))])
  .with_style(style().width(px(520)).height(px(320)))
 }

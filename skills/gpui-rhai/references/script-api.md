@@ -34,7 +34,7 @@ Functions that build `UiNode` values.
 | `svg(markup: String) -> UiNode` | Creates an inline SVG node from self-contained markup of at most 64 KiB and 2,048 elements; scripts and external references are rejected. |
 | `text(spans: Array) -> UiNode` | Creates a rich text node from `span` values; no span may split a grapheme cluster. |
 | `text(content: String) -> UiNode` | Creates a plain text node. |
-| `virtual_collection(config: Map, renderer: FnPtr) -> UiNode` | Creates a virtual list of `config.data` rendering visible items via named `renderer(ctx, payload)`; needs `key`, `estimated_height`, `height` or `fill_height`. |
+| `virtual_collection(config: Map, renderer: FnPtr) -> UiNode` | Creates a virtual list of `config.data` rendering visible items via named `renderer(ctx, payload)`; needs `key`, `estimated_height`, `height` or `fill_height`. `overscan_items`, `batch_items` and `retain_items` set how far it renders ahead and what it keeps. |
 
 ## Styles, lengths and colors
 

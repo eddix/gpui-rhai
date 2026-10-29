@@ -116,6 +116,58 @@ Trusted Rust can resolve `ScriptViewHandle::collection_scroll_handle(id, cx)`
 `scroll_to_start`, `scroll_by`, and `pause_following`. Handles keep native GPUI state only;
 resolve again after unmount/replacement. An ID in another view cannot resolve.
 
+## Rendering ahead and keeping items
+
+Three optional settings shape how far a collection renders ahead and what it
+keeps. The collection's own value wins, then the Host's
+`VirtualCollectionPolicy`, then the built-in value:
+
+- `overscan_items` (0 to 1000): items rendered beyond each edge of the
+  viewport. It replaces `overdraw_pixels`, as `items × estimated_height` up to
+  10000 pixels; unset everywhere, `overdraw_pixels` stays the collection's own.
+- `batch_items` (1 to 1000, built-in 16): when a frame needs items that are not
+  rendered, the realization also renders `batch_items − 1` beyond the farthest
+  needed one, on the side the needed items lie. The following frames find their
+  items rendered and ask for nothing, so a scroll renders and reconciles once
+  per batch instead of once per item. The first render is not batched. When an
+  item rendered ahead fails, the realization renders only the needed items and
+  reports nothing; a needed item that fails still fails it.
+- `retain_items` (0 to 10000, built-in 200): items that leave the realized
+  range are kept, least recently released dropped first, and come back without
+  running the renderer. They belong to the collection's current render:
+  rendering the collection again (new data, props or state of its component)
+  drops them, so a kept item never outlives the data and renderer it was
+  rendered from. A kept item keeps its read dependencies and the components
+  inside it, like a hidden `keep_mounted` panel; a change it read renders the
+  collection again. An item whose component owns an effect, a timer or a signal
+  is never kept: it is released as before, and its work stops when it leaves.
+
+A new render of the collection keeps the items around the last presented
+viewport, not the batch a scroll rendered ahead, so a selection or data change
+does not render the batch again.
+
+The Host sets its defaults in `ScriptViewExtension::configure_engine`; they
+apply from each collection's next render, clamped to their bounds:
+
+```rust
+use gpui_rhai::{RuntimeEngine, ScriptViewExtension, VirtualCollectionPolicy};
+
+struct Lists;
+impl ScriptViewExtension for Lists {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine.set_virtual_collection_policy(VirtualCollectionPolicy {
+            overscan_items: None,
+            batch_items: Some(32),
+            retain_items: Some(500),
+        });
+        Ok(())
+    }
+}
+```
+
+Table passes its own `overscan_rows`, `batch_rows` and `retain_rows` as these
+settings.
+
 ## Focus and active-item ownership
 
 `virtual_collection` is a presentation and scrolling mechanism. It does not
@@ -184,7 +236,9 @@ key>]`, prunes items outside the target, reconciles once, runs effects, and
 notifies GPUI. A component key inside an item only has to be unique within that
 item, and a keyless component is named by its item, not by how many items the
 batch rendered before it.
-Every commit uses the complete target, including a prune-only change. Retained
+Every commit uses the complete target. A frame that needs no unrendered item
+asks for nothing, so items that left the halo are pruned with the next frame
+that needs one (see [Rendering ahead and keeping items](#rendering-ahead-and-keeping-items)). Retained
 rows preserve state, incarnation, dependencies, effects, timers, signals and
 refs; removed rows release those resources together. A failed candidate restores
 the last successful node and resource manifest.
@@ -196,7 +250,8 @@ When the same target is already realized, no request is queued and the frame
 poll does not notify, so cached overdraw cannot create an evaluation or repaint
 loop.
 
-Realized windows replace offscreen item subtrees and clean their component
+Items that leave the realized window are kept or released (see below); a released
+item's subtree is replaced and cleans its component
 state/tasks/effects. The GPUI `ListState` is not reset when only the realized map
 or item payload changes while ordered stable keys stay identical, preserving
 measured heights and the user's scroll anchor. Keyed insertions, deletions and

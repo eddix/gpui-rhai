@@ -8,6 +8,86 @@ use thiserror::Error;
 
 use crate::{ComponentInstancePath, UiNode};
 
+/// Items a scroll that needs unrendered items renders beyond them, unless the
+/// collection or the Host sets `batch_items`.
+pub const DEFAULT_VIRTUAL_BATCH_ITEMS: usize = 16;
+/// Rendered items a collection keeps after they leave its realized range,
+/// unless the collection or the Host sets `retain_items`.
+pub const DEFAULT_VIRTUAL_RETAIN_ITEMS: usize = 200;
+/// Largest `overscan_items` a collection or the Host may set.
+pub const MAX_VIRTUAL_OVERSCAN_ITEMS: usize = 1_000;
+/// Largest `batch_items` a collection or the Host may set.
+pub const MAX_VIRTUAL_BATCH_ITEMS: usize = 1_000;
+/// Largest `retain_items` a collection or the Host may set.
+pub const MAX_VIRTUAL_RETAIN_ITEMS: usize = 10_000;
+
+/// Host defaults for how data-backed virtual collections render ahead and keep
+/// what they rendered. A collection's own setting takes precedence over these;
+/// a field left `None` falls back to the built-in value.
+///
+/// - `overscan_items`: items rendered beyond each edge of the viewport. `None`
+///   keeps each collection's own `overdraw_pixels`.
+/// - `batch_items`: when scrolling needs items that are not rendered yet, the
+///   number rendered beyond them in the same direction, so the following
+///   scroll steps need no new render. `None` is [`DEFAULT_VIRTUAL_BATCH_ITEMS`].
+/// - `retain_items`: rendered items kept after they leave the realized range,
+///   reused without running the renderer when they come back. The kept items
+///   are dropped when the collection renders again. `None` is
+///   [`DEFAULT_VIRTUAL_RETAIN_ITEMS`]; `Some(0)` keeps none.
+///
+/// Values above the `MAX_VIRTUAL_*` bounds are clamped, and a batch of zero
+/// renders only the needed items, like a batch of one.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct VirtualCollectionPolicy {
+    pub overscan_items: Option<usize>,
+    pub batch_items: Option<usize>,
+    pub retain_items: Option<usize>,
+}
+
+impl VirtualCollectionPolicy {
+    /// The policy with every value inside its bounds.
+    #[must_use]
+    pub fn clamped(self) -> Self {
+        Self {
+            overscan_items: self
+                .overscan_items
+                .map(|items| items.min(MAX_VIRTUAL_OVERSCAN_ITEMS)),
+            batch_items: self
+                .batch_items
+                .map(|items| items.clamp(1, MAX_VIRTUAL_BATCH_ITEMS)),
+            retain_items: self
+                .retain_items
+                .map(|items| items.min(MAX_VIRTUAL_RETAIN_ITEMS)),
+        }
+    }
+
+    /// The batch a collection uses: its own value, else this policy's, else the
+    /// built-in default.
+    #[must_use]
+    pub fn batch_for(self, own: Option<usize>) -> usize {
+        own.or(self.batch_items)
+            .unwrap_or(DEFAULT_VIRTUAL_BATCH_ITEMS)
+            .clamp(1, MAX_VIRTUAL_BATCH_ITEMS)
+    }
+
+    /// The number of kept items a collection uses, resolved like
+    /// [`Self::batch_for`].
+    #[must_use]
+    pub fn retain_for(self, own: Option<usize>) -> usize {
+        own.or(self.retain_items)
+            .unwrap_or(DEFAULT_VIRTUAL_RETAIN_ITEMS)
+            .min(MAX_VIRTUAL_RETAIN_ITEMS)
+    }
+
+    /// The overscan a collection uses, in items, or `None` to keep its own
+    /// `overdraw_pixels`.
+    #[must_use]
+    pub fn overscan_for(self, own: Option<usize>) -> Option<usize> {
+        own.or(self.overscan_items)
+            .map(|items| items.min(MAX_VIRTUAL_OVERSCAN_ITEMS))
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct VirtualCollectionId {
     pub component: ComponentInstancePath,
@@ -827,6 +907,27 @@ mod tests {
             .unwrap();
         assert_eq!(list.measured_count(), 1);
         assert!((list.tail_offset(50.0) - 50.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn a_policy_resolves_a_collection_setting_then_its_own_then_the_built_in() {
+        let host = VirtualCollectionPolicy {
+            overscan_items: Some(5_000),
+            batch_items: Some(0),
+            retain_items: Some(99_999),
+        }
+        .clamped();
+        assert_eq!(host.overscan_items, Some(MAX_VIRTUAL_OVERSCAN_ITEMS));
+        assert_eq!(host.batch_items, Some(1));
+        assert_eq!(host.retain_items, Some(MAX_VIRTUAL_RETAIN_ITEMS));
+        assert_eq!(host.batch_for(Some(4)), 4);
+        assert_eq!(host.batch_for(None), 1);
+        let unset = VirtualCollectionPolicy::default();
+        assert_eq!(unset.batch_for(None), DEFAULT_VIRTUAL_BATCH_ITEMS);
+        assert_eq!(unset.retain_for(None), DEFAULT_VIRTUAL_RETAIN_ITEMS);
+        assert_eq!(unset.retain_for(Some(0)), 0);
+        assert_eq!(unset.overscan_for(None), None);
+        assert_eq!(unset.overscan_for(Some(3)), Some(3));
     }
 
     #[test]
