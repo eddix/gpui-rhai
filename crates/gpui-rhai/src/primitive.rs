@@ -1594,6 +1594,14 @@ impl PrimitiveRegistry {
             })
     }
 
+    /// Registrations so far. A registration is never replaced or removed, so
+    /// anything derived from the registered primitives holds while this does.
+    pub(crate) fn epoch(&self) -> usize {
+        self.inner
+            .try_borrow()
+            .map_or(0, |inner| inner.entries.len())
+    }
+
     pub(crate) fn uses_primary_focus(&self, primitive: &PrimitiveId) -> bool {
         self.inner.try_borrow().is_ok_and(|inner| {
             inner

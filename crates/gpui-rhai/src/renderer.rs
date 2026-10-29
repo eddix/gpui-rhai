@@ -1147,29 +1147,36 @@ pub(crate) fn pointer_capture_router_element(
     scroll_handles: &BTreeMap<NodeId, ScrollHandle>,
     interactions: crate::interaction::WindowInteractionCoordinator,
 ) -> AnyElement {
+    let move_handlers = retained_handlers(tree, "pointer_move");
+    let up_handlers = retained_handlers(tree, "pointer_up");
+    // A route reads a payload context only for the captured node's own
+    // handlers, so only nodes with `pointer_move` or `pointer_up` need one.
+    let payload_contexts = move_handlers
+        .keys()
+        .chain(up_handlers.keys())
+        .filter_map(|id| tree.node(*id))
+        .map(|node| {
+            (
+                node.id(),
+                PointerPayloadContext::retained(
+                    node.id(),
+                    geometry.clone(),
+                    node.canvas_scene().cloned(),
+                    scroll_handles_for_node(Some(tree), Some(node.id()), scroll_handles),
+                ),
+            )
+        })
+        .collect();
     PointerCaptureRouterElement {
         child: Some(child),
         interactions,
         routes: Some(PointerCaptureRoutes {
             view_id: view_id.to_owned(),
-            move_handlers: retained_handlers(tree, "pointer_move"),
-            up_handlers: retained_handlers(tree, "pointer_up"),
+            move_handlers,
+            up_handlers,
             dispatcher: dispatcher.clone(),
             captures: captures.clone(),
-            payload_contexts: tree
-                .nodes()
-                .map(|node| {
-                    (
-                        node.id(),
-                        PointerPayloadContext::retained(
-                            node.id(),
-                            geometry.clone(),
-                            node.canvas_scene().cloned(),
-                            scroll_handles_for_node(Some(tree), Some(node.id()), scroll_handles),
-                        ),
-                    )
-                })
-                .collect(),
+            payload_contexts,
         }),
     }
     .into_any_element()

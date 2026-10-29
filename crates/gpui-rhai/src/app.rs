@@ -995,6 +995,9 @@ pub struct ScriptViewRenderStatistics {
     pub host_render_time: Duration,
     /// Time turning the retained tree into GPUI elements.
     pub build_time: Duration,
+    /// Frames that walked the whole committed tree to sync primitive mounts,
+    /// focus and scroll handles and page focus: frames after a commit.
+    pub tree_walks: u64,
     /// Polls that ran script work: effects, virtual realization, dirty renders.
     pub polls: u64,
     /// Time in those polls, the application checkpoint included.
@@ -1028,6 +1031,15 @@ pub struct ScriptViewFrameDigest {
     pub virtual_collections: Vec<crate::VirtualCollectionMetrics>,
     /// The view's last error.
     pub last_error: Option<String>,
+}
+
+/// The committed tree (generation and revision) and the primitive
+/// registrations the per-frame tree walks derived from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DerivedKey {
+    generation: crate::ScriptGeneration,
+    revision: u64,
+    primitives: usize,
 }
 
 struct ScriptViewHandleInner {
@@ -3568,6 +3580,7 @@ impl PreparedScriptView {
                 inspector_open: false,
                 timings,
                 render_statistics: ScriptViewRenderStatistics::default(),
+                derived_key: None,
                 overlays,
                 host: view_host,
                 paint_background: config.paint_background,
@@ -3976,6 +3989,7 @@ fn open_secondary_window(
                 inspector_open: false,
                 timings,
                 render_statistics: ScriptViewRenderStatistics::default(),
+                derived_key: None,
                 overlays: view_host.overlays(),
                 host: view_host.clone(),
                 paint_background: true,
@@ -4299,6 +4313,8 @@ struct ScriptHostView {
     inspector_open: bool,
     timings: Vec<crate::ExecutionTiming>,
     render_statistics: ScriptViewRenderStatistics,
+    /// The committed tree and primitives the last frame's walks derived from.
+    derived_key: Option<DerivedKey>,
     overlays: WindowOverlayCoordinator,
     host: ScriptViewHost,
     paint_background: bool,
@@ -5577,16 +5593,38 @@ impl ScriptHostView {
 
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
-        self.host
-            .interactions()
-            .set_retained_tree(&self.view_id, self.lifecycle.retained());
+        // What the walks below derive (primitive mounts, the parent map,
+        // focus and scroll handles, page focus) comes from the committed tree
+        // and the registered primitives; when neither changed since the last
+        // frame, that frame's result stands.
+        let derived = DerivedKey {
+            generation: self.lifecycle.generation(),
+            revision: self.lifecycle.revision(),
+            primitives: self.primitives.epoch(),
+        };
+        let walk = self.derived_key != Some(derived);
+        if walk {
+            self.retain_mounted_primitives();
+        }
+        self.host.interactions().set_retained_tree(
+            &self.view_id,
+            self.lifecycle.retained(),
+            (derived.generation, derived.revision),
+        );
         self.lifecycle
             .runtime()
             .borrow()
             .geometry_for(Some(&self.view_id))
             .begin_frame();
         self.text_selection.retain(self.lifecycle.retained());
-        self.sync_focus_handles(window, cx);
+        if walk {
+            self.sync_focus_handles(window, cx);
+            self.derived_key = Some(derived);
+            self.render_statistics.tree_walks += 1;
+        } else {
+            #[cfg(debug_assertions)]
+            self.debug_assert_walks_current();
+        }
         self.process_element_commands(window, cx);
     }
 
@@ -5605,7 +5643,7 @@ impl ScriptHostView {
         }
         self.sync_viewport_class(window);
         debug_assert!(self.engine.is_current(self.lifecycle.generation()));
-        self.reconcile_primitive_lifecycle();
+        self.primitives.set_generation(self.lifecycle.generation());
     }
 
     /// Listens for focus entering and leaving each node with a `focus_within_change` handler,
@@ -5986,10 +6024,9 @@ impl ScriptHostView {
         self.page_scopes = scopes;
     }
 
-    fn sync_focus_handles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sync_retained_page_focus(window, cx);
-        let active = self
-            .lifecycle
+    /// The nodes that get a focus handle.
+    fn focusable_nodes(&self) -> BTreeSet<crate::NodeId> {
+        self.lifecycle
             .retained()
             .nodes()
             // An overlay's handle is its panel's: the view owns it so the panel
@@ -6013,7 +6050,42 @@ impl ScriptHostView {
                     || !node.event_handlers("focus_within_change").is_empty()
             })
             .map(crate::RetainedNode::id)
-            .collect::<BTreeSet<_>>();
+            .collect()
+    }
+
+    /// The nodes that get a scroll handle.
+    fn scrollable_nodes(&self) -> BTreeSet<crate::NodeId> {
+        self.lifecycle
+            .retained()
+            .nodes()
+            .filter(|node| node.scrollable())
+            .map(crate::RetainedNode::id)
+            .collect()
+    }
+
+    /// In debug builds, a frame that kept the last frame's walks checks they
+    /// still describe the committed tree.
+    #[cfg(debug_assertions)]
+    fn debug_assert_walks_current(&self) {
+        debug_assert!(
+            self.focus_handles
+                .keys()
+                .copied()
+                .eq(self.focusable_nodes()),
+            "focus handles fell behind the committed tree"
+        );
+        debug_assert!(
+            self.scroll_handles
+                .keys()
+                .copied()
+                .eq(self.scrollable_nodes()),
+            "scroll handles fell behind the committed tree"
+        );
+    }
+
+    fn sync_focus_handles(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_retained_page_focus(window, cx);
+        let active = self.focusable_nodes();
         self.focus_handles.retain(|node, _| active.contains(node));
         for node in active {
             self.focus_handles
@@ -6021,13 +6093,7 @@ impl ScriptHostView {
                 .or_insert_with(|| cx.focus_handle());
         }
         self.sync_focus_within_listeners(window, cx);
-        let scrollable = self
-            .lifecycle
-            .retained()
-            .nodes()
-            .filter(|node| node.scrollable())
-            .map(crate::RetainedNode::id)
-            .collect::<BTreeSet<_>>();
+        let scrollable = self.scrollable_nodes();
         self.scroll_handles
             .retain(|node, _| scrollable.contains(node));
         for node in scrollable {
@@ -6155,8 +6221,7 @@ impl ScriptHostView {
         }
     }
 
-    fn reconcile_primitive_lifecycle(&mut self) {
-        self.primitives.set_generation(self.lifecycle.generation());
+    fn retain_mounted_primitives(&mut self) {
         if !self.lifecycle.retained().is_empty()
             && let Err(error) = self.primitives.retain_tree(self.lifecycle.retained())
         {
