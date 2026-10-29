@@ -3337,6 +3337,11 @@ pub(crate) fn motion_group_node(
 /// the declaring instance when known; otherwise the next component binding
 /// supplies it.
 pub(crate) fn apply_motion_group(node: &mut UiNode, group: &str, scope: Option<&str>) {
+    // Applying a group twice changes nothing; checking first spares the copy
+    // that reaching into a shared node makes.
+    if !motion_group_changes(node, group, scope) {
+        return;
+    }
     if node.component_root.is_some() {
         node.apply_presentation_mutation(NodePresentationMutation::MotionGroup(
             group.to_owned(),
@@ -3344,6 +3349,44 @@ pub(crate) fn apply_motion_group(node: &mut UiNode, group: &str, scope: Option<&
         ));
     } else {
         apply_motion_group_contents(node, group, scope);
+    }
+}
+
+/// Whether [`apply_motion_group`] would change `node`.
+fn motion_group_changes(node: &UiNode, group: &str, scope: Option<&str>) -> bool {
+    if node.component_root.is_some() {
+        return !node
+            .presentation
+            .contains(&NodePresentationMutation::MotionGroup(
+                group.to_owned(),
+                scope.map(str::to_owned),
+            ));
+    }
+    if node.attributes.contains_key("shared_layout_id")
+        && !node.attributes.contains_key("shared_layout_group")
+    {
+        return true;
+    }
+    let changes = |child: &UiNode| motion_group_changes(child, group, scope);
+    match &node.kind {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            children.iter().any(changes)
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => changes(trigger) || changes(content),
+        UiNodeKind::Layer { content, .. } => changes(content),
+        UiNodeKind::ErrorBoundary { child, fallback } => changes(child) || changes(fallback),
+        UiNodeKind::VirtualCollection { spec } => {
+            spec.inherited_motion_group.is_none() || spec.realized.values().any(changes)
+        }
+        UiNodeKind::Text { .. }
+        | UiNodeKind::RichText { .. }
+        | UiNodeKind::Canvas { .. }
+        | UiNodeKind::Svg { .. }
+        | UiNodeKind::Custom { .. }
+        | UiNodeKind::Image { .. }
+        | UiNodeKind::DirectionalImage { .. } => false,
     }
 }
 

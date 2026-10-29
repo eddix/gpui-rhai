@@ -27,6 +27,9 @@ semantic versioning from this release.
   Hover now drives the motion from the node's one hover listener, and a
   disabled node keeps its motions at rest, as it keeps its paint.
   `motion_focus` was not affected.
+- Fix: realizing items of a virtual collection inside a `motion_group` no
+  longer copies every item it keeps and records the group on component items
+  once more each time; the group is applied to new items only, once.
 - Fix: in an application with several script windows, a commit in one window
   no longer drops the virtual collection state of the others: their pending
   renders, scroll positions, metrics and queued scroll commands.
