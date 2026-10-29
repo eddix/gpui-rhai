@@ -2567,11 +2567,13 @@ impl GpuiNodeRenderer {
         let node_environment = environment
             .with_node_scope(node)
             .with_focus_scope(node, retained_id);
-        let mut wheel_parents = node_environment.wheel_parents.to_vec();
+        // A scroll container puts itself in front of its ancestors' wheel
+        // chain; every other node passes the chain on as it is.
+        let mut wheel_parents = std::borrow::Cow::Borrowed(node_environment.wheel_parents);
         if node_scrollable(node)
             && let Some(handle) = retained_id.and_then(|id| environment.scroll_handles.get(&id))
         {
-            wheel_parents.insert(
+            wheel_parents.to_mut().insert(
                 0,
                 crate::scrollbar::ScrollWheelSource::new(
                     handle.clone(),
@@ -2592,11 +2594,15 @@ impl GpuiNodeRenderer {
             return table;
         }
         let local_interaction = scoped_interaction(environment);
-        let motion_path = retained_id.map_or_else(
-            || path.to_owned(),
-            |node| crate::motion::retained_node_path(path, node),
-        );
-        let mut animation = node_motion(environment.motions, &motion_path);
+        let mut animation = if environment.motions.is_empty() {
+            NodeMotionValues::default()
+        } else {
+            let motion_path = retained_id.map_or_else(
+                || path.to_owned(),
+                |node| crate::motion::retained_node_path(path, node),
+            );
+            node_motion(environment.motions, &motion_path)
+        };
         if let Some(retained_id) = retained_id {
             for binding in node.progress_motions() {
                 if let Some(value) = environment
@@ -2619,6 +2625,8 @@ impl GpuiNodeRenderer {
         // Every layer that can set a width, margin, alignment or position is
         // merged before the stretch rules read the style.
         let mut resolved_style = node.style().resolve(&local_interaction);
+        // Hit testing follows the node's own style, before signals.
+        let hit_test = resolved_style.hit_test;
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
         apply_signal_state_style(&mut resolved_style, environment.signals, node);
@@ -2689,7 +2697,7 @@ impl GpuiNodeRenderer {
         let populated = Self::populate_with_interactions(
             element,
             node,
-            &resolved_style,
+            (&resolved_style, hit_test),
             &local_environment,
             boundary_fallback,
             path,
@@ -2712,6 +2720,7 @@ impl GpuiNodeRenderer {
                 child: Some(element),
                 node: retained,
                 hit_area: node.element_ref().is_some(),
+                canvas: matches!(node.kind(), UiNodeKind::Canvas { .. }),
                 registry: environment.geometry.clone(),
                 translate_x: translate_x.unwrap_or(0.0),
                 translate_y: translate_y.unwrap_or(0.0),
@@ -2722,12 +2731,17 @@ impl GpuiNodeRenderer {
                         Ok(crate::SignalValue::String(state)) if trigger.active_states.contains(&state));
                     Some((binding.property(), active))
                 }).collect(),
+                // Only scroll progress reads the scroll containers above.
+                scroll_handles: if progress_motions.is_empty() {
+                    Vec::new()
+                } else {
+                    scroll_handles_for_node(
+                        environment.retained,
+                        retained_id,
+                        environment.scroll_handles,
+                    )
+                },
                 progress_motions,
-                scroll_handles: scroll_handles_for_node(
-                    environment.retained,
-                    retained_id,
-                    environment.scroll_handles,
-                ),
                 focus_handle,
                 now: environment.now,
                 motion_preference: environment.motion_preference,
@@ -2741,7 +2755,7 @@ impl GpuiNodeRenderer {
     fn populate_with_interactions<C: ColorResolver>(
         element: Div,
         node: &UiNode,
-        resolved_style: &StyleProperties,
+        (resolved_style, hit_test): (&StyleProperties, Option<HitTestBehavior>),
         environment: &RenderEnvironment<'_, C>,
         boundary_fallback: Option<&UiNode>,
         path: &str,
@@ -2750,7 +2764,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         // The interaction wrapper is built in its own frame, which is gone
         // before the children render: the recursion carries only this frame.
-        match Self::wrap_interactions(element, node, environment, path, retained_id) {
+        match Self::wrap_interactions(element, node, environment, path, retained_id, hit_test) {
             Wrapped::Interactive(element) => Self::populate(
                 element,
                 node,
@@ -2784,6 +2798,7 @@ impl GpuiNodeRenderer {
         environment: &RenderEnvironment<'_, C>,
         path: &str,
         retained_id: Option<NodeId>,
+        hit_test: Option<HitTestBehavior>,
     ) -> Wrapped {
         let disabled = environment.inherited_disabled;
         let click = (!disabled && !node.event_handlers("click").is_empty()).then(|| {
@@ -2799,7 +2814,6 @@ impl GpuiNodeRenderer {
             )
         });
         let key_handlers = key_handler_bindings(node, disabled);
-        let hit_test = resolved_hit_test(node, environment);
         let semantic = environment
             .a11y_active
             .then(|| {
@@ -3617,19 +3631,19 @@ fn render_flattened_children<C: ColorResolver>(
     path: &str,
     retained_id: Option<NodeId>,
 ) -> Vec<AnyElement> {
-    let mut rendered = Vec::new();
+    let mut rendered = Vec::with_capacity(children.len());
+    let child_ids = RetainedChildIds::new(
+        environment.retained,
+        environment.retained_links,
+        retained_id,
+        "children",
+    );
     for (index, child) in children.iter().enumerate() {
         let child_path = child.key().map_or_else(
             || format!("{path}/{index}"),
             |key| format!("{path}/{}", key.as_str()),
         );
-        let child_id = retained_child_id(
-            environment.retained,
-            environment.retained_links,
-            retained_id,
-            "children",
-            index,
-        );
+        let child_id = child_ids.get(index);
         let island = child_id.and_then(|id| {
             let frame = environment.island.islands?;
             Some((id, frame, frame.entries.get(&id)?))
@@ -3971,15 +3985,6 @@ fn scoped_interaction<C>(environment: &RenderEnvironment<'_, C>) -> InteractionS
     }
 }
 
-fn resolved_hit_test<C: ColorResolver>(
-    node: &UiNode,
-    environment: &RenderEnvironment<'_, C>,
-) -> Option<HitTestBehavior> {
-    node.style()
-        .resolve(&scoped_interaction(environment))
-        .hit_test
-}
-
 fn apply_hit_test(element: Stateful<Div>, hit_test: Option<HitTestBehavior>) -> Stateful<Div> {
     match hit_test {
         Some(HitTestBehavior::Block) => element.occlude(),
@@ -4087,6 +4092,58 @@ fn apply_tab_behavior(
 
 fn interaction_element_id(retained_id: Option<NodeId>, path: &str) -> String {
     retained_id.map_or_else(|| path.to_owned(), |id| format!("gpui-rhai-node-{id}"))
+}
+
+/// The retained ids of one group of a parent's children, found once for all
+/// of them: child `index` is what [`retained_child_id`] finds for it.
+struct RetainedChildIds {
+    tree: Vec<NodeId>,
+    links: Vec<NodeId>,
+}
+
+impl RetainedChildIds {
+    fn new(
+        tree: Option<&RetainedUiTree>,
+        links: Option<&BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
+        parent: Option<NodeId>,
+        group: &str,
+    ) -> Self {
+        let Some(parent) = parent else {
+            return Self {
+                tree: Vec::new(),
+                links: Vec::new(),
+            };
+        };
+        let in_group = |child: &&crate::RetainedChildLink| child.group() == group;
+        Self {
+            tree: tree
+                .and_then(|tree| tree.node(parent))
+                .map(|node| {
+                    node.children()
+                        .filter(in_group)
+                        .map(crate::RetainedChildLink::node)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            links: links
+                .and_then(|links| links.get(&parent))
+                .map(|children| {
+                    children
+                        .iter()
+                        .filter(in_group)
+                        .map(crate::RetainedChildLink::node)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+
+    fn get(&self, index: usize) -> Option<NodeId> {
+        self.tree
+            .get(index)
+            .or_else(|| self.links.get(index))
+            .copied()
+    }
 }
 
 fn retained_child_id(
@@ -5433,21 +5490,16 @@ fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
 }
 
 fn node_motion(values: &BTreeMap<MotionKey, f64>, path: &str) -> NodeMotionValues {
-    let value = |property| values.get(&MotionKey::for_node(path, property)).copied();
-    NodeMotionValues {
-        opacity: value(MotionProperty::Opacity),
-        translate_x: value(MotionProperty::TranslateX),
-        translate_y: value(MotionProperty::TranslateY),
-        rotate: value(MotionProperty::Rotate),
-        scale_x: value(MotionProperty::ScaleX),
-        scale_y: value(MotionProperty::ScaleY),
-        skew_x: value(MotionProperty::SkewX),
-        skew_y: value(MotionProperty::SkewY),
-        width: value(MotionProperty::Width),
-        height: value(MotionProperty::Height),
-        clip_height: value(MotionProperty::ClipHeight),
-        path_progress: value(MotionProperty::PathProgress),
+    // A node's keys sort together, from its first property on.
+    let first = MotionKey::for_node(path, MotionProperty::Opacity);
+    let mut motion = NodeMotionValues::default();
+    for (key, value) in values.range(&first..) {
+        if key.component != first.component {
+            break;
+        }
+        motion.set(key.property, *value);
     }
+    motion
 }
 
 fn apply_motion_dimensions(style: &mut StyleProperties, values: NodeMotionValues) {
@@ -5829,6 +5881,9 @@ struct GeometryTrackedElement {
     /// The node has an element ref: it records a hitbox over its visual
     /// bounds, under its ancestors' clip and in its place in paint order.
     hit_area: bool,
+    /// A Canvas node, whose drawable bounds are kept relative to its element
+    /// offset.
+    canvas: bool,
     registry: crate::GeometryRegistry,
     translate_x: f64,
     translate_y: f64,
@@ -5883,11 +5938,13 @@ impl Element for GeometryTrackedElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let base_offset = window.pixel_snap_point(window.element_offset());
-        self.registry.record_element_offset(
-            self.node,
-            (f64::from(base_offset.x), f64::from(base_offset.y)),
-        );
+        if self.canvas {
+            let base_offset = window.pixel_snap_point(window.element_offset());
+            self.registry.record_element_offset(
+                self.node,
+                (f64::from(base_offset.x), f64::from(base_offset.y)),
+            );
+        }
         if let Ok(layout) = crate::GeometryBounds::new(
             f64::from(bounds.origin.x),
             f64::from(bounds.origin.y),
@@ -7372,6 +7429,24 @@ mod tests {
         assert_eq!(style.width, Some(Length::Pixels(180.0).into()));
         assert_eq!(style.height, Some(Length::Pixels(64.0).into()));
         assert_eq!(sampled.translate_x, Some(12.0));
+    }
+
+    #[test]
+    fn a_node_samples_only_its_own_motion_values() {
+        let key = MotionKey::for_node;
+        let values = BTreeMap::from([
+            (key("root/car", MotionProperty::PathProgress), 1.0),
+            (key("root/card", MotionProperty::Opacity), 0.5),
+            (key("root/card", MotionProperty::PathProgress), 0.25),
+            (key("root/card/x", MotionProperty::Opacity), 2.0),
+            (key("root/cardx", MotionProperty::Width), 3.0),
+        ]);
+        let card = node_motion(&values, "root/card");
+        assert_eq!(card.opacity, Some(0.5));
+        assert_eq!(card.path_progress, Some(0.25));
+        assert_eq!(card.width, None);
+        assert!(node_motion(&values, "root/ca").opacity.is_none());
+        assert_eq!(node_motion(&values, "root/cardx").width, Some(3.0));
     }
 
     #[test]
