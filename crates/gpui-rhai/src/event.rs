@@ -319,10 +319,9 @@ impl PointerCaptureRegistry {
         self.active.borrow().get(&pointer_id).copied()
     }
 
-    pub(crate) fn retain_nodes(&self, nodes: &std::collections::BTreeSet<crate::NodeId>) {
-        self.active
-            .borrow_mut()
-            .retain(|_, node| nodes.contains(node));
+    /// Releases every capture whose node `active` rejects.
+    pub(crate) fn retain_nodes(&self, active: impl Fn(crate::NodeId) -> bool) {
+        self.active.borrow_mut().retain(|_, node| active(*node));
     }
 
     pub(crate) fn snapshot(&self) -> BTreeMap<u64, crate::NodeId> {
@@ -779,7 +778,7 @@ mod tests {
         let captures = PointerCaptureRegistry::new();
         captures.capture(0, node);
         assert_eq!(captures.captured(0), Some(node));
-        captures.retain_nodes(&std::collections::BTreeSet::new());
+        captures.retain_nodes(|_| false);
         assert_eq!(captures.captured(0), None);
     }
 
