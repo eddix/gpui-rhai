@@ -552,12 +552,13 @@ impl RetainedUiTree {
     /// Returns a structural error without changing the current snapshot, IDs,
     /// or allocation cursor.
     pub fn reconcile(&mut self, candidate: UiNode) -> Result<ReconcileReport, ReconcileError> {
+        // The new table starts as the old one: a subtree kept as it is costs
+        // nothing, and reconciled, mounted and unmounted nodes change it.
         let mut transaction = ReconcileTransaction {
             old_nodes: &self.nodes,
-            new_nodes: BTreeMap::new(),
+            new_nodes: (*self.nodes).clone(),
             next_id: self.next_id,
             report: ReconcileReport::default(),
-            reused: BTreeSet::new(),
             unmounted: BTreeSet::new(),
         };
         let root_id = match (self.root.as_ref(), self.root_id) {
@@ -571,11 +572,35 @@ impl RetainedUiTree {
             (None, None) => transaction.reconcile_node(None, None, &candidate, None, false)?,
             _ => return Err(ReconcileError::RootStateMismatch),
         };
-        for old_id in self.nodes.keys().copied() {
-            if !transaction.reused.contains(&old_id) && transaction.unmounted.insert(old_id) {
-                transaction.report.unmounted.push(old_id);
+        // Every old node is reused or unmounted, so the table holds the new
+        // tree, which its root's summary counts; any other node is unmounted.
+        let live = transaction
+            .new_nodes
+            .get(&root_id)
+            .map_or(0, |root| root.summary.nodes as usize);
+        if transaction.new_nodes.len() != live {
+            let mut reachable = BTreeSet::new();
+            let mut stack = vec![root_id];
+            while let Some(id) = stack.pop() {
+                if reachable.insert(id)
+                    && let Some(node) = transaction.new_nodes.get(&id)
+                {
+                    stack.extend(node.children.iter().map(|child| child.node));
+                }
+            }
+            for old_id in self.nodes.keys().copied() {
+                if !reachable.contains(&old_id) && transaction.unmounted.insert(old_id) {
+                    transaction.report.unmounted.push(old_id);
+                    transaction.new_nodes.remove(&old_id);
+                }
             }
         }
+        transaction.report.preserved = self
+            .nodes
+            .keys()
+            .copied()
+            .filter(|id| !transaction.unmounted.contains(id))
+            .collect();
         transaction.report.sort();
 
         let ReconcileTransaction {
@@ -599,7 +624,6 @@ struct ReconcileTransaction<'a> {
     new_nodes: NodeTable,
     next_id: u64,
     report: ReconcileReport,
-    reused: BTreeSet<NodeId>,
     /// The ids in `report.unmounted`.
     unmounted: BTreeSet<NodeId>,
 }
@@ -623,8 +647,6 @@ impl ReconcileTransaction<'_> {
         }
         validate_fragment(candidate)?;
         let id = if let Some(id) = old_id {
-            self.reused.insert(id);
-            self.report.preserved.push(id);
             if moved {
                 self.report.moved.push(id);
             }
@@ -776,21 +798,13 @@ impl ReconcileTransaction<'_> {
     }
 
     /// Keeps the old subtree at `root` as it is, as a reconcile of the same
-    /// snapshot would.
+    /// snapshot would: the new table already holds it.
     fn keep_subtree(&mut self, root: NodeId, moved: bool) -> Result<(), ReconcileError> {
+        if !self.old_nodes.contains_key(&root) {
+            return Err(ReconcileError::MissingNode(root));
+        }
         if moved {
             self.report.moved.push(root);
-        }
-        let mut stack = vec![root];
-        while let Some(id) = stack.pop() {
-            let node = self
-                .old_nodes
-                .get(&id)
-                .ok_or(ReconcileError::MissingNode(id))?;
-            self.reused.insert(id);
-            self.report.preserved.push(id);
-            stack.extend(node.children.iter().map(|child| child.node));
-            self.new_nodes.insert(id, Rc::clone(node));
         }
         Ok(())
     }
@@ -818,6 +832,7 @@ impl ReconcileTransaction<'_> {
         }
         self.unmounted.insert(id);
         self.report.unmounted.push(id);
+        self.new_nodes.remove(&id);
         Ok(())
     }
 }
@@ -991,6 +1006,145 @@ mod tests {
                 .unwrap();
             assert_eq!(kept_report, rebuilt_report);
             assert!(kept.nodes().eq(rebuilt.nodes()));
+        }
+    }
+
+    /// Random trees of keyed and unkeyed rows, columns and texts, edited
+    /// from one commit to the next by replacing, removing, inserting and
+    /// reordering children while sharing the subtrees an edit leaves: each
+    /// commit equals the commit of the same tree rebuilt without sharing, and
+    /// its report accounts for every old and new node.
+    #[test]
+    fn random_edits_reconcile_as_rebuilt_trees_do() {
+        struct Random(u64);
+        impl Random {
+            fn next(&mut self, below: u64) -> u64 {
+                self.0 ^= self.0 << 13;
+                self.0 ^= self.0 >> 7;
+                self.0 ^= self.0 << 17;
+                self.0 % below
+            }
+        }
+        fn leaf(random: &mut Random, label: u64) -> UiNode {
+            let node = UiNode::text(format!("t{label}"));
+            if random.next(2) == 0 {
+                node.with_key(format!("k{label}"))
+            } else {
+                node
+            }
+        }
+        fn tree(random: &mut Random, depth: u32, label: &mut u64) -> UiNode {
+            *label += 1;
+            if depth == 0 || random.next(4) == 0 {
+                return leaf(random, *label);
+            }
+            let children = (0..random.next(4))
+                .map(|_| tree(random, depth - 1, label))
+                .collect();
+            let node = if random.next(2) == 0 {
+                UiNode::column(children)
+            } else {
+                UiNode::row(children)
+            };
+            if random.next(3) == 0 {
+                node.with_key(format!("b{label}"))
+            } else {
+                node
+            }
+        }
+        fn edit(random: &mut Random, node: &UiNode, label: &mut u64) -> UiNode {
+            let crate::UiNodeKind::Box { children } = node.kind() else {
+                return if random.next(4) == 0 {
+                    tree(random, 2, label)
+                } else {
+                    node.clone()
+                };
+            };
+            if random.next(5) == 0 {
+                return node.clone();
+            }
+            let mut children = children.clone();
+            match random.next(5) {
+                0 if !children.is_empty() => {
+                    let index = random.next(children.len() as u64) as usize;
+                    children.remove(index);
+                }
+                1 => {
+                    let index = random.next(children.len() as u64 + 1) as usize;
+                    children.insert(index, tree(random, 2, label));
+                }
+                2 if children.len() > 1 => children.reverse(),
+                _ => {
+                    for child in &mut children {
+                        *child = edit(random, child, label);
+                    }
+                }
+            }
+            like(node, children)
+        }
+        // A box like `node` holding `children`.
+        fn like(node: &UiNode, children: Vec<UiNode>) -> UiNode {
+            let edited = if node.style().base.direction == Some(crate::FlexDirection::Row) {
+                UiNode::row(children)
+            } else {
+                UiNode::column(children)
+            };
+            match node.key() {
+                Some(key) => edited.with_key(key.as_str()),
+                None => edited,
+            }
+        }
+        // A copy that shares no node with the original.
+        fn rebuilt(node: &UiNode) -> UiNode {
+            match node.kind() {
+                crate::UiNodeKind::Box { children } => {
+                    like(node, children.iter().map(rebuilt).collect())
+                }
+                crate::UiNodeKind::Text { text } => {
+                    let copy = UiNode::text(text.to_string());
+                    match node.key() {
+                        Some(key) => copy.with_key(key.as_str()),
+                        None => copy,
+                    }
+                }
+                _ => unreachable!("the trees hold boxes and texts"),
+            }
+        }
+        for seed in 1..=300_u64 {
+            let mut random = Random(seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1);
+            let mut label = 0;
+            let mut current = UiNode::column(vec![tree(&mut random, 4, &mut label)]);
+            let mut shared = RetainedUiTree::new();
+            let mut fresh = RetainedUiTree::new();
+            for step in 0..6 {
+                let old_ids = shared
+                    .nodes()
+                    .map(RetainedNode::id)
+                    .collect::<BTreeSet<_>>();
+                let shared_report = shared.reconcile(current.clone()).unwrap();
+                let fresh_report = fresh.reconcile(rebuilt(&current)).unwrap();
+                assert_eq!(shared_report, fresh_report, "seed {seed} step {step}");
+                assert!(shared.nodes().eq(fresh.nodes()), "seed {seed} step {step}");
+                let accounted = shared_report
+                    .preserved
+                    .iter()
+                    .chain(&shared_report.unmounted)
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(accounted, old_ids, "seed {seed} step {step}");
+                let live = shared
+                    .nodes()
+                    .map(RetainedNode::id)
+                    .collect::<BTreeSet<_>>();
+                let expected = shared_report
+                    .preserved
+                    .iter()
+                    .chain(&shared_report.mounted)
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(live, expected, "seed {seed} step {step}");
+                current = edit(&mut random, &current, &mut label);
+            }
         }
     }
 
