@@ -13,6 +13,9 @@ semantic versioning from this release.
   Hover now drives the motion from the node's one hover listener, and a
   disabled node keeps its motions at rest, as it keeps its paint.
   `motion_focus` was not affected.
+- Fix: in an application with several script windows, a commit in one window
+  no longer drops the virtual collection state of the others: their pending
+  renders, scroll positions, metrics and queued scroll commands.
 
 ## 0.3.2 - 2026-10-29
 

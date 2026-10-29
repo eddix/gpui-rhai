@@ -423,23 +423,30 @@ impl VirtualRequestRegistry {
         *self.scroll_commands.borrow_mut() = snapshot.scroll_commands;
     }
 
-    pub(crate) fn retain(&self, active: &BTreeSet<VirtualCollectionId>) {
-        self.active.borrow_mut().clone_from(active);
-        self.scroll_commands
-            .borrow_mut()
-            .retain(|id, _| active.contains(id));
-        self.requests
-            .borrow_mut()
-            .retain(|id, _| active.contains(id));
-        self.metrics
-            .borrow_mut()
-            .retain(|id, _| active.contains(id));
-        self.item_bounds
-            .borrow_mut()
-            .retain(|id, _| active.contains(id));
-        self.scrolls
-            .borrow_mut()
-            .retain(|id, _| active.contains(id));
+    /// Keeps the collections of `root` that are in `active`, and leaves every
+    /// other scope's collections alone: views and windows sharing this runtime
+    /// commit independently.
+    pub(crate) fn retain_within(
+        &self,
+        root: &ComponentInstancePath,
+        active: &BTreeSet<VirtualCollectionId>,
+    ) {
+        let keep = |id: &VirtualCollectionId| !id.component.is_within(root) || active.contains(id);
+        {
+            let mut current = self.active.borrow_mut();
+            current.retain(|id| !id.component.is_within(root));
+            current.extend(
+                active
+                    .iter()
+                    .filter(|id| id.component.is_within(root))
+                    .cloned(),
+            );
+        }
+        self.scroll_commands.borrow_mut().retain(|id, _| keep(id));
+        self.requests.borrow_mut().retain(|id, _| keep(id));
+        self.metrics.borrow_mut().retain(|id, _| keep(id));
+        self.item_bounds.borrow_mut().retain(|id, _| keep(id));
+        self.scrolls.borrow_mut().retain(|id, _| keep(id));
     }
 
     pub(crate) fn release_scope(&self, root: &ComponentInstancePath) {
@@ -974,11 +981,48 @@ mod tests {
         assert_eq!(registry.inspect()[0].requested_count, 0);
         registry.restore(snapshot);
         assert_eq!(registry.inspect()[0].requested_count, 2);
-        registry.retain(&BTreeSet::new());
+        registry.retain_within(&id.component, &BTreeSet::new());
         assert_eq!(
             registry.inspect(),
             [] as [crate::virtual_list::VirtualCollectionMetrics; 0]
         );
+    }
+
+    #[test]
+    fn retaining_one_scope_leaves_the_other_scopes_collections() {
+        let ours = VirtualCollectionId {
+            component: ComponentInstancePath::root("View", "main"),
+            key: "rows".to_owned(),
+        };
+        let theirs = VirtualCollectionId {
+            component: ComponentInstancePath::root("View", "window"),
+            key: "rows".to_owned(),
+        };
+        let registry = VirtualRequestRegistry::new();
+        registry.retain_within(&theirs.component, &BTreeSet::from([theirs.clone()]));
+        registry.retain_within(&ours.component, &BTreeSet::from([ours.clone()]));
+        registry.request(ours.clone(), [1]);
+        registry.request(theirs.clone(), [2]);
+        registry.report_scroll(&theirs, 0..3, true);
+        registry.queue_scroll(theirs.clone(), CollectionScrollCommand::End);
+
+        // Our scope commits without its collection: only ours goes.
+        registry.retain_within(&ours.component, &BTreeSet::new());
+        assert_eq!(
+            registry.drain(),
+            BTreeMap::from([(theirs.clone(), BTreeSet::from([2]))])
+        );
+        let metrics = registry.inspect();
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].id, theirs);
+        assert!(metrics[0].is_scrolled);
+        assert!(matches!(
+            registry.take_scroll_commands(&theirs)[..],
+            [CollectionScrollCommand::End]
+        ));
+        // Their collection is still active, ours is not.
+        registry.queue_scroll(ours.clone(), CollectionScrollCommand::End);
+        assert!(registry.take_scroll_commands(&ours).is_empty());
     }
 
     #[test]
@@ -988,7 +1032,7 @@ mod tests {
             key: "history".to_owned(),
         };
         let registry = VirtualRequestRegistry::new();
-        registry.retain(&BTreeSet::from([id.clone()]));
+        registry.retain_within(&id.component, &BTreeSet::from([id.clone()]));
         let unseen = Rc::new(RefCell::new(BTreeSet::from(["appended".to_owned()])));
         let state = gpui::ListState::new(10, gpui::ListAlignment::Top, gpui::px(1.0));
         registry.set_scroll_handle(
@@ -1003,7 +1047,7 @@ mod tests {
         let bounds = crate::GeometryBounds::new(0.0, 12.0, 100.0, 32.0).unwrap();
         registry.set_item_bounds_reader(id.clone(), move |_| Some(bounds));
         let snapshot = registry.snapshot();
-        registry.retain(&BTreeSet::new());
+        registry.retain_within(&id.component, &BTreeSet::new());
         assert!(registry.scroll_handle(&id).is_none());
         assert!(registry.item_bounds(&id, 0).is_none());
 
