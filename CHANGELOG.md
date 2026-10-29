@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## Unreleased
+## 0.3.3 - 2026-10-29
 
 - A frame replays the unchanged parts of a view instead of building, laying
   out and painting them again (cache islands). A subtree of 16 nodes or more
@@ -32,7 +32,8 @@ semantic versioning from this release.
 - Rendering a node does less: motion is looked up only when a motion is
   sampled, a parent finds its children's retained ids once instead of once per
   child, hit testing reuses the resolved style, and only scroll containers copy
-  the wheel chain. A full render of 4,000 nodes took 3.8 ms instead of 6.8 ms.
+  the wheel chain. Building a view of 4,100 nodes in full took 3.8 ms instead
+  of 6.3 ms.
 - Commits do work proportional to what changed: a subtree the candidate shares
   with the last commit keeps its retained nodes (which are now shared), the
   table of nodes is copied rather than rebuilt, and motion, exit ghosts, signal

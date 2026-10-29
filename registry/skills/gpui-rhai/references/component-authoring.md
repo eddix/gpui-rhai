@@ -57,7 +57,7 @@ lifecycle/event callbacks and component-owned work in a declared effect.
 ### Source version
 
 A module's version is the release that ships its latest change: a module edited
-while the workspace is at 0.3.2, for a 0.3.3 release, takes 0.3.3, and a new
+while the workspace is at 0.3.3, for a 0.3.4 release, takes 0.3.4, and a new
 module starts at the release that first ships it. A module that does not change
 keeps its version across releases (the motion pack stayed at 0.1.x through 0.2).
 The release itself follows semantic versioning for 0.x: a breaking change to a
