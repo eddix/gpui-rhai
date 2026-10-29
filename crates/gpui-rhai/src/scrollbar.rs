@@ -934,9 +934,11 @@ fn register_wheel_listener(
         let remaining = chain.iter().fold(delta, |remaining, source| {
             source.apply(event.position, remaining)
         });
+        // The view notified below holds every source of the chain, which are
+        // the scroll containers around this one: notifying it redraws them,
+        // and leaves the cached views outside them to replay.
         if remaining != delta {
             cx.stop_propagation();
-            window.refresh();
         }
         let mut inner = state.0.get();
         if let Some(source) = chain.first() {
