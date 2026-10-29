@@ -3492,7 +3492,10 @@ fn render_island_boundary<C: ColorResolver>(
             .get(&id)
             .map_or_else(|| Rc::from([]), Rc::clone),
     };
-    let pin = entry.slot.borrow_mut().decide(capture, eligible, tree);
+    let pin = entry
+        .slot
+        .borrow_mut()
+        .decide(capture, eligible, tree, frame.policy.verify);
     let view = entry.view.clone();
     let child = match pin {
         Some(height) => view

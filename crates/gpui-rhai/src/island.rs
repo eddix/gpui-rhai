@@ -232,15 +232,34 @@ pub(crate) struct IslandSlot {
 }
 
 impl IslandSlot {
-    /// Whether `capture` renders what the island last rendered. A commit
-    /// that kept the root's node keeps the subtree's ids unless their order
-    /// changed, which `ids` checks.
-    fn renders_as_before(&self, capture: &IslandCapture, tree: &RetainedUiTree) -> bool {
+    /// Whether `capture` renders what the island last rendered: the same
+    /// inputs over the same retained ids. One reconcile of the root's own
+    /// node keeps its subtree as it was (the revision after another is
+    /// always its reconcile); across more, `ids` checks.
+    fn renders_as_before(
+        &self,
+        capture: &IslandCapture,
+        tree: &RetainedUiTree,
+        verify: bool,
+    ) -> bool {
         let Some((rendered, ids)) = &self.rendered else {
             return false;
         };
-        rendered.same_inputs(capture)
-            && (rendered.revision == capture.revision || **ids == *subtree_ids(tree, capture.root))
+        if !rendered.same_inputs(capture) {
+            return false;
+        }
+        let kept = rendered.revision == capture.revision
+            || rendered.revision.wrapping_add(1) == capture.revision;
+        if kept && !verify {
+            return true;
+        }
+        let same_ids = **ids == *subtree_ids(tree, capture.root);
+        assert!(
+            !kept || same_ids,
+            "island {:?} changed its ids in one reconcile of the same node",
+            capture.root
+        );
+        same_ids
     }
 
     /// How this frame embeds the island: cached at the measured height when
@@ -250,8 +269,9 @@ impl IslandSlot {
         capture: IslandCapture,
         eligible: bool,
         tree: &RetainedUiTree,
+        verify: bool,
     ) -> Option<Pixels> {
-        let same = eligible && self.renders_as_before(&capture, tree);
+        let same = eligible && self.renders_as_before(&capture, tree, verify);
         if !same {
             self.demoted = false;
         }

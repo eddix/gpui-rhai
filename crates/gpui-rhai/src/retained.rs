@@ -93,6 +93,8 @@ pub(crate) struct SubtreeSummary {
     pub signals: u32,
     /// Virtual collections.
     pub collections: u32,
+    /// Nodes the view looks up after a commit ([`RetainedNode::host_reads`]).
+    pub host: u32,
     /// What the commit's resource budgets count.
     pub resources: ResourceTotals,
     /// The root itself lays out or moves its children in ways an island
@@ -161,6 +163,7 @@ impl SubtreeSummary {
                 crate::UiNodeKind::VirtualCollection { .. }
             )),
             resources: ResourceTotals::default(),
+            host: 0,
             opaque: node.table_layout().is_some() || crate::renderer::node_scrollable(node),
         }
     }
@@ -174,6 +177,7 @@ impl SubtreeSummary {
             exit: self.exit.saturating_add(other.exit),
             signals: self.signals.saturating_add(other.signals),
             collections: self.collections.saturating_add(other.collections),
+            host: self.host.saturating_add(other.host),
             resources: self.resources.add(other.resources),
             opaque: self.opaque,
         }
@@ -181,6 +185,31 @@ impl SubtreeSummary {
 }
 
 impl RetainedNode {
+    /// Whether a view's walks after a commit may take the node: focus
+    /// (element refs, focus styles, clicks, tab stops, pages, navigation,
+    /// headings, primitives, overlays, focus-within listeners), scrolling
+    /// and primitive mounts.
+    pub(crate) fn host_reads(&self) -> bool {
+        self.element_ref.is_some()
+            || self.focus_styled
+            || self.scrollable
+            || self.primitive.is_some()
+            || self.kind == UiNodeKindTag::Overlay
+            || ["click", "focus_within_change"].into_iter().any(|event| {
+                self.handlers
+                    .get(event)
+                    .is_some_and(|handlers| !handlers.is_empty())
+            })
+            || self.attributes.get("tab_stop") == Some(&crate::UiValue::Bool(true))
+            || self.attributes.get("role") == Some(&crate::UiValue::String("heading".to_owned()))
+            || self
+                .attributes
+                .contains_key(crate::retained_page::PAGE_VISIBLE)
+            || self
+                .attributes
+                .contains_key(crate::retained_page::NAVIGATION_DEPTH)
+    }
+
     #[must_use]
     pub const fn id(&self) -> NodeId {
         self.id
@@ -360,6 +389,9 @@ pub enum ReconcileError {
     FragmentDecoration,
 }
 
+/// A committed tree's nodes by id.
+pub(crate) type NodeTable = BTreeMap<NodeId, Rc<RetainedNode>>;
+
 /// One accepted declarative snapshot plus its stable runtime identity graph.
 ///
 /// Reconciliation builds a complete candidate map and only replaces live state
@@ -369,9 +401,9 @@ pub enum ReconcileError {
 pub struct RetainedUiTree {
     root: Option<UiNode>,
     root_id: Option<NodeId>,
-    /// Shared with the trees an unchanged subtree was kept from, and with
-    /// their clones.
-    nodes: BTreeMap<NodeId, Rc<RetainedNode>>,
+    /// Shared with the tree's clones, and node by node with the trees an
+    /// unchanged subtree was kept from.
+    nodes: Rc<NodeTable>,
     next_id: u64,
     last_report: ReconcileReport,
 }
@@ -381,7 +413,7 @@ impl Default for RetainedUiTree {
         Self {
             root: None,
             root_id: None,
-            nodes: BTreeMap::new(),
+            nodes: Rc::default(),
             next_id: 1,
             last_report: ReconcileReport::default(),
         }
@@ -461,6 +493,36 @@ impl RetainedUiTree {
             })
     }
 
+    /// The nodes for which [`RetainedNode::host_reads`] holds, found through
+    /// the subtrees that hold one.
+    pub(crate) fn host_nodes(&self) -> Vec<&RetainedNode> {
+        let mut found = Vec::new();
+        let mut stack = self.root_id.into_iter().collect::<Vec<_>>();
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.node(id) else {
+                continue;
+            };
+            if node.summary.host == 0 {
+                continue;
+            }
+            if node.host_reads() {
+                found.push(node);
+            }
+            stack.extend(node.children.iter().map(|child| child.node));
+        }
+        debug_assert_eq!(
+            found.len(),
+            self.nodes().filter(|node| node.host_reads()).count(),
+            "the host summaries lost a node"
+        );
+        found
+    }
+
+    /// The tree's nodes, for a reader that outlives this borrow.
+    pub(crate) fn node_table(&self) -> Rc<NodeTable> {
+        Rc::clone(&self.nodes)
+    }
+
     /// The summary of the whole tree, empty without a root.
     pub(crate) fn summary(&self) -> SubtreeSummary {
         self.root_id
@@ -521,7 +583,7 @@ impl RetainedUiTree {
 
         self.root = Some(candidate);
         self.root_id = Some(root_id);
-        self.nodes = new_nodes;
+        self.nodes = Rc::new(new_nodes);
         self.next_id = next_id;
         self.last_report = report.clone();
         Ok(report)
@@ -529,8 +591,8 @@ impl RetainedUiTree {
 }
 
 struct ReconcileTransaction<'a> {
-    old_nodes: &'a BTreeMap<NodeId, Rc<RetainedNode>>,
-    new_nodes: BTreeMap<NodeId, Rc<RetainedNode>>,
+    old_nodes: &'a NodeTable,
+    new_nodes: NodeTable,
     next_id: u64,
     report: ReconcileReport,
     reused: BTreeSet<NodeId>,
@@ -701,6 +763,7 @@ impl ReconcileTransaction<'_> {
             .fold(
                 SubtreeSummary {
                     resources: ResourceTotals::of(&node),
+                    host: u32::from(node.host_reads()),
                     ..SubtreeSummary::of(candidate)
                 },
                 |summary, child| summary.add(child.summary),

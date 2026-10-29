@@ -1992,7 +1992,8 @@ fn primitive_is_retained(
 }
 
 fn collect_primitive_instances(tree: &crate::RetainedUiTree) -> BTreeSet<PrimitiveInstanceId> {
-    tree.nodes()
+    tree.host_nodes()
+        .into_iter()
         .filter_map(|node| {
             Some(PrimitiveInstanceId {
                 primitive: node.primitive()?.clone(),
