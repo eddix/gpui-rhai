@@ -1015,6 +1015,7 @@ mod tests {
     /// commit equals the commit of the same tree rebuilt without sharing, and
     /// its report accounts for every old and new node.
     #[test]
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
     fn random_edits_reconcile_as_rebuilt_trees_do() {
         struct Random(u64);
         impl Random {
