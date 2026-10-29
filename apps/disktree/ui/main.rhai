@@ -2031,7 +2031,7 @@ fn with_keys(node) {
         "t", "r", "i", "d", "p", "o", "?", "q", "s", "e",
         "a", "b", "c", "f", "g", "m", "n", "v", "w", "x", "y", "z",
         "1", "2", "3", "4", "5", "6", "7", "8", "9",
-        ".", "_",
+        ".", "_", "/",
     ];
     for key in keys {
         node = node.on_key_value(key, Fn("on_key"), key);
