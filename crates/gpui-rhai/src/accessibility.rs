@@ -301,6 +301,56 @@ fn semantic_node(
     disabled: bool,
     labels: &BTreeMap<String, String>,
 ) -> Result<Option<AccessibilityNode>, AccessibilityError> {
+    // Most nodes carry no attribute: they are plain text, or nothing.
+    if node.attributes().is_empty() {
+        let plain = node.text().map(|text| AccessibilityNode {
+            id: node.id(),
+            parent,
+            role: "text".to_owned(),
+            name: text.to_owned(),
+            description: String::new(),
+            semantic_id: None,
+            test_id: None,
+            value: None,
+            checked: None,
+            selected: None,
+            pressed: None,
+            expanded: None,
+            orientation: None,
+            value_min: None,
+            value_max: None,
+            current: None,
+            placeholder: None,
+            key_shortcuts: None,
+            level: None,
+            position_in_set: None,
+            size_of_set: None,
+            row_index: None,
+            column_index: None,
+            row_count: None,
+            column_count: None,
+            disabled,
+            read_only: false,
+            invalid: false,
+            required: false,
+            geometry: None,
+            children: Vec::new(),
+        });
+        debug_assert_eq!(
+            Ok(plain.clone()),
+            semantic_node_from_attributes(node, parent, disabled, labels)
+        );
+        return Ok(plain);
+    }
+    semantic_node_from_attributes(node, parent, disabled, labels)
+}
+
+fn semantic_node_from_attributes(
+    node: &RetainedNode,
+    parent: Option<NodeId>,
+    disabled: bool,
+    labels: &BTreeMap<String, String>,
+) -> Result<Option<AccessibilityNode>, AccessibilityError> {
     let Some(role) =
         string_attribute(node, "role").or_else(|| node.text().map(|_| "text".to_owned()))
     else {

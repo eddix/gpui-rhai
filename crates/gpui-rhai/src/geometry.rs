@@ -993,6 +993,16 @@ impl GeometryRegistry {
                 .any(|nodes| nodes.binary_search(&node).is_ok())
     }
 
+    /// Forgets every node `tree` does not hold.
+    pub(crate) fn retain_tree(&self, tree: &crate::RetainedUiTree) {
+        // Sorted ids answer membership faster than the tree's own table.
+        let live = tree
+            .nodes()
+            .map(crate::RetainedNode::id)
+            .collect::<Vec<_>>();
+        self.retain_nodes(|node| live.binary_search(&node).is_ok());
+    }
+
     /// Forgets every node for which `active` is false.
     pub(crate) fn retain_nodes(&self, active: impl Fn(NodeId) -> bool) {
         let mut current = self.inner.borrow_mut();

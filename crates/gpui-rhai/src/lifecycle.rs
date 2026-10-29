@@ -1954,7 +1954,7 @@ impl ScriptLifecycle {
             .map_err(|_| LifecycleError::Borrowed)?;
         runtime
             .geometry_for(self.presentation_scope())
-            .retain_nodes(|node| retained.node(node).is_some());
+            .retain_tree(retained);
         runtime
             .pointer_capture_for(self.presentation_scope())
             .retain_nodes(|node| retained.node(node).is_some() && retained.is_page_visible(node));

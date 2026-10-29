@@ -112,10 +112,12 @@ impl PageVisibility {
     }
 }
 
-/// Every retained node with whether its pages permit presentation
-/// ([`RetainedUiTree::is_page_visible`]), found top down.
+/// The retained nodes page visibility tracks, with whether their pages
+/// permit presentation ([`RetainedUiTree::is_page_visible`]), found top down:
+/// every node a hidden page holds, and every page and node presenting a
+/// component. A visible subtree without one is passed over.
 fn page_visibility(tree: &RetainedUiTree) -> Vec<(&crate::RetainedNode, bool)> {
-    let mut nodes = Vec::with_capacity(tree.len());
+    let mut nodes = Vec::new();
     let mut stack = tree
         .root_id()
         .and_then(|id| tree.node(id))
@@ -123,6 +125,9 @@ fn page_visibility(tree: &RetainedUiTree) -> Vec<(&crate::RetainedNode, bool)> {
         .into_iter()
         .collect::<Vec<_>>();
     while let Some((node, above)) = stack.pop() {
+        if above && node.summary().pages == 0 {
+            continue;
+        }
         let visible = above && node.attributes().get(PAGE_VISIBLE) != Some(&UiValue::Bool(false));
         nodes.push((node, visible));
         stack.extend(
@@ -131,7 +136,11 @@ fn page_visibility(tree: &RetainedUiTree) -> Vec<(&crate::RetainedNode, bool)> {
                 .map(|child| (child, visible)),
         );
     }
-    if nodes.len() != tree.len() {
+    let reachable = tree
+        .root_id()
+        .and_then(|id| tree.node(id))
+        .map_or(0, |root| root.summary().nodes as usize);
+    if reachable != tree.len() {
         // A node the walk from the root misses decides by its own ancestors.
         return tree
             .nodes()
@@ -219,11 +228,23 @@ fn view(ctx) { column([
         ]))
         .unwrap();
         let found = page_visibility(&tree);
-        assert_eq!(found.len(), tree.len());
         assert!(found.iter().any(|(_, visible)| !visible));
-        for (node, visible) in found {
-            assert_eq!(visible, tree.is_page_visible(node.id()), "{:?}", node.id());
+        for (node, visible) in &found {
+            assert_eq!(*visible, tree.is_page_visible(node.id()), "{:?}", node.id());
         }
+        // Every hidden node and every page is found; the walk passes over
+        // visible subtrees without one.
+        for node in tree.nodes() {
+            let tracked = !tree.is_page_visible(node.id())
+                || node.attributes().contains_key(PAGE_VISIBLE)
+                || node.presented_components().next().is_some();
+            assert!(
+                !tracked || found.iter().any(|(found, _)| found.id() == node.id()),
+                "{:?}",
+                node.id()
+            );
+        }
+        assert!(found.len() < tree.len());
     }
 
     #[test]
