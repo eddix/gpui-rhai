@@ -1,0 +1,4964 @@
+{
+  "metadata": {
+    "schema": "gpui-rhai-scroll-e2e-v1",
+    "commit": "0039b8f0 (0.3.2 with the scroll benchmark)",
+    "dirty": true,
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: aarch64-apple-darwin\nrelease: 1.95.0\nLLVM version: 22.1.2",
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434",
+    "hardware": "Mac17,8",
+    "profile": "release",
+    "features": "default",
+    "data_backend": "rhai_array",
+    "label": "",
+    "samples": 30,
+    "warmup": 5,
+    "window": [
+      1180.0,
+      820.0
+    ]
+  },
+  "layouts": [
+    {
+      "name": "filler_0",
+      "retained_nodes": 108,
+      "quiet": {
+        "steps": 28,
+        "total_p50_us": 493,
+        "total_p90_us": 529,
+        "render_p50_us": 49,
+        "build_p50_us": 27,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "realizing": {
+        "steps": 2,
+        "total_p50_us": 2968,
+        "total_p90_us": 3140,
+        "render_p50_us": 113,
+        "build_p50_us": 62,
+        "poll_p50_us": 1907,
+        "host_renders_p50": 2
+      },
+      "commit_phases_us": [
+        [
+          "clone",
+          135
+        ],
+        [
+          "lookup",
+          2
+        ],
+        [
+          "realize",
+          2085
+        ],
+        [
+          "replace",
+          13
+        ],
+        [
+          "reconcile",
+          351
+        ],
+        [
+          "budgets",
+          11
+        ],
+        [
+          "motion",
+          245
+        ],
+        [
+          "ghosts",
+          20
+        ],
+        [
+          "effects",
+          87
+        ],
+        [
+          "geometry",
+          36
+        ],
+        [
+          "signals",
+          6
+        ],
+        [
+          "semantics",
+          105
+        ]
+      ],
+      "steps": [
+        {
+          "total_us": 459,
+          "host_renders": 1,
+          "render_us": 45,
+          "build_us": 24,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 514,
+          "host_renders": 1,
+          "render_us": 44,
+          "build_us": 24,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 578,
+          "host_renders": 1,
+          "render_us": 74,
+          "build_us": 41,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 529,
+          "host_renders": 1,
+          "render_us": 63,
+          "build_us": 35,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 504,
+          "host_renders": 1,
+          "render_us": 58,
+          "build_us": 32,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 508,
+          "host_renders": 1,
+          "render_us": 51,
+          "build_us": 28,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 483,
+          "host_renders": 1,
+          "render_us": 47,
+          "build_us": 25,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 485,
+          "host_renders": 1,
+          "render_us": 47,
+          "build_us": 26,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 479,
+          "host_renders": 1,
+          "render_us": 47,
+          "build_us": 25,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 468,
+          "host_renders": 1,
+          "render_us": 48,
+          "build_us": 28,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 459,
+          "host_renders": 1,
+          "render_us": 43,
+          "build_us": 24,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 463,
+          "host_renders": 1,
+          "render_us": 43,
+          "build_us": 23,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 3140,
+          "host_renders": 2,
+          "render_us": 127,
+          "build_us": 68,
+          "polls": 1,
+          "poll_us": 2061,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              79
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              1086
+            ],
+            [
+              "replace",
+              8
+            ],
+            [
+              "reconcile",
+              183
+            ],
+            [
+              "budgets",
+              6
+            ],
+            [
+              "motion",
+              124
+            ],
+            [
+              "ghosts",
+              10
+            ],
+            [
+              "effects",
+              40
+            ],
+            [
+              "geometry",
+              18
+            ],
+            [
+              "signals",
+              3
+            ],
+            [
+              "semantics",
+              61
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 522,
+          "host_renders": 1,
+          "render_us": 55,
+          "build_us": 30,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 499,
+          "host_renders": 1,
+          "render_us": 51,
+          "build_us": 27,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 482,
+          "host_renders": 1,
+          "render_us": 46,
+          "build_us": 25,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 1046,
+          "host_renders": 2,
+          "render_us": 122,
+          "build_us": 63,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 522,
+          "host_renders": 1,
+          "render_us": 63,
+          "build_us": 34,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 513,
+          "host_renders": 1,
+          "render_us": 52,
+          "build_us": 28,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 488,
+          "host_renders": 1,
+          "render_us": 49,
+          "build_us": 27,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 473,
+          "host_renders": 1,
+          "render_us": 47,
+          "build_us": 25,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 515,
+          "host_renders": 1,
+          "render_us": 46,
+          "build_us": 25,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 528,
+          "host_renders": 1,
+          "render_us": 65,
+          "build_us": 35,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 505,
+          "host_renders": 1,
+          "render_us": 54,
+          "build_us": 29,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 493,
+          "host_renders": 1,
+          "render_us": 59,
+          "build_us": 30,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 488,
+          "host_renders": 1,
+          "render_us": 51,
+          "build_us": 28,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 481,
+          "host_renders": 1,
+          "render_us": 46,
+          "build_us": 25,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 470,
+          "host_renders": 1,
+          "render_us": 45,
+          "build_us": 25,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 2968,
+          "host_renders": 2,
+          "render_us": 113,
+          "build_us": 62,
+          "polls": 1,
+          "poll_us": 1907,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              56
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              999
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              168
+            ],
+            [
+              "budgets",
+              5
+            ],
+            [
+              "motion",
+              121
+            ],
+            [
+              "ghosts",
+              10
+            ],
+            [
+              "effects",
+              47
+            ],
+            [
+              "geometry",
+              18
+            ],
+            [
+              "signals",
+              3
+            ],
+            [
+              "semantics",
+              44
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 511,
+          "host_renders": 1,
+          "render_us": 53,
+          "build_us": 29,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        }
+      ]
+    },
+    {
+      "name": "filler_330",
+      "retained_nodes": 1428,
+      "quiet": {
+        "steps": 28,
+        "total_p50_us": 5580,
+        "total_p90_us": 6273,
+        "render_p50_us": 2130,
+        "build_p50_us": 1842,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "realizing": {
+        "steps": 2,
+        "total_p50_us": 15238,
+        "total_p90_us": 16319,
+        "render_p50_us": 4351,
+        "build_p50_us": 3774,
+        "poll_p50_us": 4147,
+        "host_renders_p50": 2
+      },
+      "commit_phases_us": [
+        [
+          "clone",
+          245
+        ],
+        [
+          "lookup",
+          3
+        ],
+        [
+          "realize",
+          2151
+        ],
+        [
+          "replace",
+          11
+        ],
+        [
+          "reconcile",
+          1294
+        ],
+        [
+          "budgets",
+          66
+        ],
+        [
+          "motion",
+          1955
+        ],
+        [
+          "ghosts",
+          152
+        ],
+        [
+          "effects",
+          219
+        ],
+        [
+          "geometry",
+          422
+        ],
+        [
+          "signals",
+          42
+        ],
+        [
+          "semantics",
+          578
+        ]
+      ],
+      "steps": [
+        {
+          "total_us": 5518,
+          "host_renders": 1,
+          "render_us": 2095,
+          "build_us": 1795,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5523,
+          "host_renders": 1,
+          "render_us": 2098,
+          "build_us": 1800,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 6224,
+          "host_renders": 1,
+          "render_us": 2122,
+          "build_us": 1832,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5816,
+          "host_renders": 1,
+          "render_us": 2208,
+          "build_us": 1900,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5563,
+          "host_renders": 1,
+          "render_us": 2158,
+          "build_us": 1868,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5524,
+          "host_renders": 1,
+          "render_us": 2130,
+          "build_us": 1850,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5498,
+          "host_renders": 1,
+          "render_us": 2078,
+          "build_us": 1805,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5547,
+          "host_renders": 1,
+          "render_us": 2148,
+          "build_us": 1860,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5538,
+          "host_renders": 1,
+          "render_us": 2090,
+          "build_us": 1813,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5639,
+          "host_renders": 1,
+          "render_us": 2129,
+          "build_us": 1825,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5673,
+          "host_renders": 1,
+          "render_us": 2161,
+          "build_us": 1864,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5580,
+          "host_renders": 1,
+          "render_us": 2111,
+          "build_us": 1825,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 15238,
+          "host_renders": 2,
+          "render_us": 4351,
+          "build_us": 3774,
+          "polls": 1,
+          "poll_us": 4147,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              122
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              1076
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              619
+            ],
+            [
+              "budgets",
+              36
+            ],
+            [
+              "motion",
+              966
+            ],
+            [
+              "ghosts",
+              67
+            ],
+            [
+              "effects",
+              105
+            ],
+            [
+              "geometry",
+              204
+            ],
+            [
+              "signals",
+              22
+            ],
+            [
+              "semantics",
+              280
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 5677,
+          "host_renders": 1,
+          "render_us": 2173,
+          "build_us": 1865,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5630,
+          "host_renders": 1,
+          "render_us": 2196,
+          "build_us": 1882,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5579,
+          "host_renders": 1,
+          "render_us": 2143,
+          "build_us": 1837,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 10998,
+          "host_renders": 2,
+          "render_us": 4286,
+          "build_us": 3697,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5419,
+          "host_renders": 1,
+          "render_us": 2082,
+          "build_us": 1792,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5505,
+          "host_renders": 1,
+          "render_us": 2126,
+          "build_us": 1835,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5500,
+          "host_renders": 1,
+          "render_us": 2129,
+          "build_us": 1842,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5478,
+          "host_renders": 1,
+          "render_us": 2128,
+          "build_us": 1841,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5415,
+          "host_renders": 1,
+          "render_us": 2073,
+          "build_us": 1793,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5594,
+          "host_renders": 1,
+          "render_us": 2109,
+          "build_us": 1809,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 6599,
+          "host_renders": 1,
+          "render_us": 2158,
+          "build_us": 1863,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 5778,
+          "host_renders": 1,
+          "render_us": 2208,
+          "build_us": 1901,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 6086,
+          "host_renders": 1,
+          "render_us": 2253,
+          "build_us": 1934,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 6015,
+          "host_renders": 1,
+          "render_us": 2246,
+          "build_us": 1933,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 6273,
+          "host_renders": 1,
+          "render_us": 2282,
+          "build_us": 1922,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 16319,
+          "host_renders": 2,
+          "render_us": 4447,
+          "build_us": 3800,
+          "polls": 1,
+          "poll_us": 4296,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              123
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              1075
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              675
+            ],
+            [
+              "budgets",
+              30
+            ],
+            [
+              "motion",
+              989
+            ],
+            [
+              "ghosts",
+              85
+            ],
+            [
+              "effects",
+              114
+            ],
+            [
+              "geometry",
+              218
+            ],
+            [
+              "signals",
+              20
+            ],
+            [
+              "semantics",
+              298
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 5809,
+          "host_renders": 1,
+          "render_us": 2230,
+          "build_us": 1915,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        }
+      ]
+    },
+    {
+      "name": "filler_1000",
+      "retained_nodes": 4108,
+      "quiet": {
+        "steps": 28,
+        "total_p50_us": 18163,
+        "total_p90_us": 24316,
+        "render_p50_us": 7301,
+        "build_p50_us": 6333,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "realizing": {
+        "steps": 2,
+        "total_p50_us": 43417,
+        "total_p90_us": 45863,
+        "render_p50_us": 14246,
+        "build_p50_us": 12381,
+        "poll_p50_us": 9176,
+        "host_renders_p50": 2
+      },
+      "commit_phases_us": [
+        [
+          "clone",
+          424
+        ],
+        [
+          "lookup",
+          5
+        ],
+        [
+          "realize",
+          2292
+        ],
+        [
+          "replace",
+          16
+        ],
+        [
+          "reconcile",
+          3693
+        ],
+        [
+          "budgets",
+          342
+        ],
+        [
+          "motion",
+          5558
+        ],
+        [
+          "ghosts",
+          462
+        ],
+        [
+          "effects",
+          497
+        ],
+        [
+          "geometry",
+          1203
+        ],
+        [
+          "signals",
+          263
+        ],
+        [
+          "semantics",
+          1574
+        ]
+      ],
+      "steps": [
+        {
+          "total_us": 17769,
+          "host_renders": 1,
+          "render_us": 7276,
+          "build_us": 6333,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18196,
+          "host_renders": 1,
+          "render_us": 7376,
+          "build_us": 6434,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 24316,
+          "host_renders": 1,
+          "render_us": 7296,
+          "build_us": 6279,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18315,
+          "host_renders": 1,
+          "render_us": 7287,
+          "build_us": 6333,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17905,
+          "host_renders": 1,
+          "render_us": 7337,
+          "build_us": 6374,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18546,
+          "host_renders": 1,
+          "render_us": 7134,
+          "build_us": 6187,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17989,
+          "host_renders": 1,
+          "render_us": 7236,
+          "build_us": 6275,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18071,
+          "host_renders": 1,
+          "render_us": 7351,
+          "build_us": 6356,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17868,
+          "host_renders": 1,
+          "render_us": 7250,
+          "build_us": 6305,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18328,
+          "host_renders": 1,
+          "render_us": 7381,
+          "build_us": 6373,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17965,
+          "host_renders": 1,
+          "render_us": 7312,
+          "build_us": 6323,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18163,
+          "host_renders": 1,
+          "render_us": 7301,
+          "build_us": 6297,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 45863,
+          "host_renders": 2,
+          "render_us": 14664,
+          "build_us": 12760,
+          "polls": 1,
+          "poll_us": 9391,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              225
+            ],
+            [
+              "lookup",
+              3
+            ],
+            [
+              "realize",
+              1215
+            ],
+            [
+              "replace",
+              10
+            ],
+            [
+              "reconcile",
+              1924
+            ],
+            [
+              "budgets",
+              152
+            ],
+            [
+              "motion",
+              2727
+            ],
+            [
+              "ghosts",
+              254
+            ],
+            [
+              "effects",
+              241
+            ],
+            [
+              "geometry",
+              582
+            ],
+            [
+              "signals",
+              125
+            ],
+            [
+              "semantics",
+              767
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 18328,
+          "host_renders": 1,
+          "render_us": 7332,
+          "build_us": 6334,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18230,
+          "host_renders": 1,
+          "render_us": 7416,
+          "build_us": 6420,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18223,
+          "host_renders": 1,
+          "render_us": 7295,
+          "build_us": 6274,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 35804,
+          "host_renders": 2,
+          "render_us": 14619,
+          "build_us": 12693,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19240,
+          "host_renders": 1,
+          "render_us": 7573,
+          "build_us": 6545,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18476,
+          "host_renders": 1,
+          "render_us": 7607,
+          "build_us": 6600,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 24749,
+          "host_renders": 1,
+          "render_us": 7448,
+          "build_us": 6425,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19013,
+          "host_renders": 1,
+          "render_us": 7693,
+          "build_us": 6680,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18264,
+          "host_renders": 1,
+          "render_us": 7407,
+          "build_us": 6398,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17740,
+          "host_renders": 1,
+          "render_us": 7353,
+          "build_us": 6356,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 16985,
+          "host_renders": 1,
+          "render_us": 7032,
+          "build_us": 6107,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 16992,
+          "host_renders": 1,
+          "render_us": 7058,
+          "build_us": 6139,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17841,
+          "host_renders": 1,
+          "render_us": 7292,
+          "build_us": 6395,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17128,
+          "host_renders": 1,
+          "render_us": 7050,
+          "build_us": 6159,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17873,
+          "host_renders": 1,
+          "render_us": 7218,
+          "build_us": 6327,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 43417,
+          "host_renders": 2,
+          "render_us": 14246,
+          "build_us": 12381,
+          "polls": 1,
+          "poll_us": 9176,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              199
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              1077
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1769
+            ],
+            [
+              "budgets",
+              190
+            ],
+            [
+              "motion",
+              2831
+            ],
+            [
+              "ghosts",
+              208
+            ],
+            [
+              "effects",
+              256
+            ],
+            [
+              "geometry",
+              621
+            ],
+            [
+              "signals",
+              138
+            ],
+            [
+              "semantics",
+              807
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 16765,
+          "host_renders": 1,
+          "render_us": 7019,
+          "build_us": 6094,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        }
+      ]
+    },
+    {
+      "name": "filler_2500",
+      "retained_nodes": 10108,
+      "quiet": {
+        "steps": 28,
+        "total_p50_us": 49460,
+        "total_p90_us": 67656,
+        "render_p50_us": 21536,
+        "build_p50_us": 18840,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "realizing": {
+        "steps": 2,
+        "total_p50_us": 120720,
+        "total_p90_us": 121071,
+        "render_p50_us": 43403,
+        "build_p50_us": 37947,
+        "poll_p50_us": 21100,
+        "host_renders_p50": 2
+      },
+      "commit_phases_us": [
+        [
+          "clone",
+          861
+        ],
+        [
+          "lookup",
+          6
+        ],
+        [
+          "realize",
+          2644
+        ],
+        [
+          "replace",
+          16
+        ],
+        [
+          "reconcile",
+          9083
+        ],
+        [
+          "budgets",
+          962
+        ],
+        [
+          "motion",
+          14375
+        ],
+        [
+          "ghosts",
+          1362
+        ],
+        [
+          "effects",
+          1344
+        ],
+        [
+          "geometry",
+          3176
+        ],
+        [
+          "signals",
+          749
+        ],
+        [
+          "semantics",
+          3978
+        ]
+      ],
+      "steps": [
+        {
+          "total_us": 49792,
+          "host_renders": 1,
+          "render_us": 22018,
+          "build_us": 19138,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 49460,
+          "host_renders": 1,
+          "render_us": 21676,
+          "build_us": 18997,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 67656,
+          "host_renders": 1,
+          "render_us": 21872,
+          "build_us": 19215,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 47697,
+          "host_renders": 1,
+          "render_us": 21104,
+          "build_us": 18355,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 46373,
+          "host_renders": 1,
+          "render_us": 21127,
+          "build_us": 18743,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 45225,
+          "host_renders": 1,
+          "render_us": 20718,
+          "build_us": 18204,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 45841,
+          "host_renders": 1,
+          "render_us": 20675,
+          "build_us": 18270,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 47561,
+          "host_renders": 1,
+          "render_us": 21431,
+          "build_us": 18678,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 48561,
+          "host_renders": 1,
+          "render_us": 21863,
+          "build_us": 19416,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 50567,
+          "host_renders": 1,
+          "render_us": 22969,
+          "build_us": 20135,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 49704,
+          "host_renders": 1,
+          "render_us": 21536,
+          "build_us": 18911,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 68082,
+          "host_renders": 1,
+          "render_us": 21901,
+          "build_us": 19294,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 120720,
+          "host_renders": 2,
+          "render_us": 43572,
+          "build_us": 38220,
+          "polls": 1,
+          "poll_us": 21100,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              424
+            ],
+            [
+              "lookup",
+              3
+            ],
+            [
+              "realize",
+              1410
+            ],
+            [
+              "replace",
+              7
+            ],
+            [
+              "reconcile",
+              4493
+            ],
+            [
+              "budgets",
+              439
+            ],
+            [
+              "motion",
+              7149
+            ],
+            [
+              "ghosts",
+              684
+            ],
+            [
+              "effects",
+              650
+            ],
+            [
+              "geometry",
+              1523
+            ],
+            [
+              "signals",
+              389
+            ],
+            [
+              "semantics",
+              1918
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 67482,
+          "host_renders": 1,
+          "render_us": 21263,
+          "build_us": 18573,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 49694,
+          "host_renders": 1,
+          "render_us": 21638,
+          "build_us": 18840,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 49414,
+          "host_renders": 1,
+          "render_us": 21290,
+          "build_us": 18474,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 103097,
+          "host_renders": 2,
+          "render_us": 44912,
+          "build_us": 39141,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 50736,
+          "host_renders": 1,
+          "render_us": 22188,
+          "build_us": 19465,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 50313,
+          "host_renders": 1,
+          "render_us": 21842,
+          "build_us": 19044,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 49731,
+          "host_renders": 1,
+          "render_us": 21692,
+          "build_us": 18894,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 48886,
+          "host_renders": 1,
+          "render_us": 21479,
+          "build_us": 18665,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 46473,
+          "host_renders": 1,
+          "render_us": 20844,
+          "build_us": 18360,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 47816,
+          "host_renders": 1,
+          "render_us": 21693,
+          "build_us": 19111,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 46151,
+          "host_renders": 1,
+          "render_us": 20937,
+          "build_us": 18493,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 45646,
+          "host_renders": 1,
+          "render_us": 20879,
+          "build_us": 18494,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 47942,
+          "host_renders": 1,
+          "render_us": 21102,
+          "build_us": 18747,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 50691,
+          "host_renders": 1,
+          "render_us": 22401,
+          "build_us": 19588,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 50200,
+          "host_renders": 1,
+          "render_us": 22407,
+          "build_us": 19727,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 121071,
+          "host_renders": 2,
+          "render_us": 43403,
+          "build_us": 37947,
+          "polls": 1,
+          "poll_us": 21587,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              437
+            ],
+            [
+              "lookup",
+              3
+            ],
+            [
+              "realize",
+              1234
+            ],
+            [
+              "replace",
+              9
+            ],
+            [
+              "reconcile",
+              4590
+            ],
+            [
+              "budgets",
+              523
+            ],
+            [
+              "motion",
+              7226
+            ],
+            [
+              "ghosts",
+              678
+            ],
+            [
+              "effects",
+              694
+            ],
+            [
+              "geometry",
+              1653
+            ],
+            [
+              "signals",
+              360
+            ],
+            [
+              "semantics",
+              2060
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 49759,
+          "host_renders": 1,
+          "render_us": 21466,
+          "build_us": 18740,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        }
+      ]
+    },
+    {
+      "name": "filler_1000_batch_1",
+      "retained_nodes": 4063,
+      "quiet": {
+        "steps": 0,
+        "total_p50_us": 0,
+        "total_p90_us": 0,
+        "render_p50_us": 0,
+        "build_p50_us": 0,
+        "poll_p50_us": 0,
+        "host_renders_p50": 0
+      },
+      "realizing": {
+        "steps": 30,
+        "total_p50_us": 44791,
+        "total_p90_us": 93343,
+        "render_p50_us": 14672,
+        "build_p50_us": 12698,
+        "poll_p50_us": 8339,
+        "host_renders_p50": 2
+      },
+      "commit_phases_us": [
+        [
+          "clone",
+          6119
+        ],
+        [
+          "lookup",
+          51
+        ],
+        [
+          "realize",
+          7727
+        ],
+        [
+          "replace",
+          178
+        ],
+        [
+          "reconcile",
+          53667
+        ],
+        [
+          "budgets",
+          4897
+        ],
+        [
+          "motion",
+          80825
+        ],
+        [
+          "ghosts",
+          6892
+        ],
+        [
+          "effects",
+          6739
+        ],
+        [
+          "geometry",
+          18393
+        ],
+        [
+          "signals",
+          4061
+        ],
+        [
+          "semantics",
+          24463
+        ]
+      ],
+      "steps": [
+        {
+          "total_us": 44863,
+          "host_renders": 2,
+          "render_us": 14843,
+          "build_us": 12845,
+          "polls": 1,
+          "poll_us": 8456,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              219
+            ],
+            [
+              "lookup",
+              3
+            ],
+            [
+              "realize",
+              294
+            ],
+            [
+              "replace",
+              7
+            ],
+            [
+              "reconcile",
+              1840
+            ],
+            [
+              "budgets",
+              155
+            ],
+            [
+              "motion",
+              2741
+            ],
+            [
+              "ghosts",
+              257
+            ],
+            [
+              "effects",
+              239
+            ],
+            [
+              "geometry",
+              591
+            ],
+            [
+              "signals",
+              138
+            ],
+            [
+              "semantics",
+              846
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 93343,
+          "host_renders": 2,
+          "render_us": 14898,
+          "build_us": 12926,
+          "polls": 1,
+          "poll_us": 8423,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              180
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              267
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1937
+            ],
+            [
+              "budgets",
+              154
+            ],
+            [
+              "motion",
+              2749
+            ],
+            [
+              "ghosts",
+              249
+            ],
+            [
+              "effects",
+              231
+            ],
+            [
+              "geometry",
+              653
+            ],
+            [
+              "signals",
+              138
+            ],
+            [
+              "semantics",
+              819
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 42868,
+          "host_renders": 2,
+          "render_us": 14634,
+          "build_us": 12671,
+          "polls": 1,
+          "poll_us": 7916,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              172
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              253
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1701
+            ],
+            [
+              "budgets",
+              157
+            ],
+            [
+              "motion",
+              2674
+            ],
+            [
+              "ghosts",
+              219
+            ],
+            [
+              "effects",
+              217
+            ],
+            [
+              "geometry",
+              575
+            ],
+            [
+              "signals",
+              109
+            ],
+            [
+              "semantics",
+              815
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 41241,
+          "host_renders": 2,
+          "render_us": 14227,
+          "build_us": 12421,
+          "polls": 1,
+          "poll_us": 7511,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              176
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              225
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1541
+            ],
+            [
+              "budgets",
+              121
+            ],
+            [
+              "motion",
+              2653
+            ],
+            [
+              "ghosts",
+              203
+            ],
+            [
+              "effects",
+              220
+            ],
+            [
+              "geometry",
+              587
+            ],
+            [
+              "signals",
+              98
+            ],
+            [
+              "semantics",
+              763
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 42540,
+          "host_renders": 2,
+          "render_us": 14479,
+          "build_us": 12635,
+          "polls": 1,
+          "poll_us": 7712,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              196
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              225
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1650
+            ],
+            [
+              "budgets",
+              127
+            ],
+            [
+              "motion",
+              2632
+            ],
+            [
+              "ghosts",
+              199
+            ],
+            [
+              "effects",
+              205
+            ],
+            [
+              "geometry",
+              571
+            ],
+            [
+              "signals",
+              106
+            ],
+            [
+              "semantics",
+              792
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 41087,
+          "host_renders": 2,
+          "render_us": 14130,
+          "build_us": 12347,
+          "polls": 1,
+          "poll_us": 7572,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              176
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              259
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1544
+            ],
+            [
+              "budgets",
+              111
+            ],
+            [
+              "motion",
+              2678
+            ],
+            [
+              "ghosts",
+              190
+            ],
+            [
+              "effects",
+              213
+            ],
+            [
+              "geometry",
+              585
+            ],
+            [
+              "signals",
+              82
+            ],
+            [
+              "semantics",
+              772
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 42330,
+          "host_renders": 2,
+          "render_us": 14357,
+          "build_us": 12520,
+          "polls": 1,
+          "poll_us": 7605,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              175
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              236
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1529
+            ],
+            [
+              "budgets",
+              123
+            ],
+            [
+              "motion",
+              2694
+            ],
+            [
+              "ghosts",
+              195
+            ],
+            [
+              "effects",
+              213
+            ],
+            [
+              "geometry",
+              601
+            ],
+            [
+              "signals",
+              77
+            ],
+            [
+              "semantics",
+              824
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 45360,
+          "host_renders": 2,
+          "render_us": 14712,
+          "build_us": 12784,
+          "polls": 1,
+          "poll_us": 8559,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              207
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              244
+            ],
+            [
+              "replace",
+              7
+            ],
+            [
+              "reconcile",
+              2047
+            ],
+            [
+              "budgets",
+              168
+            ],
+            [
+              "motion",
+              2776
+            ],
+            [
+              "ghosts",
+              244
+            ],
+            [
+              "effects",
+              224
+            ],
+            [
+              "geometry",
+              602
+            ],
+            [
+              "signals",
+              128
+            ],
+            [
+              "semantics",
+              873
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44870,
+          "host_renders": 2,
+          "render_us": 14639,
+          "build_us": 12638,
+          "polls": 1,
+          "poll_us": 8393,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              234
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              344
+            ],
+            [
+              "replace",
+              9
+            ],
+            [
+              "reconcile",
+              1823
+            ],
+            [
+              "budgets",
+              142
+            ],
+            [
+              "motion",
+              2676
+            ],
+            [
+              "ghosts",
+              221
+            ],
+            [
+              "effects",
+              215
+            ],
+            [
+              "geometry",
+              599
+            ],
+            [
+              "signals",
+              221
+            ],
+            [
+              "semantics",
+              826
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44791,
+          "host_renders": 2,
+          "render_us": 14805,
+          "build_us": 12856,
+          "polls": 1,
+          "poll_us": 8240,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              210
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              259
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1815
+            ],
+            [
+              "budgets",
+              151
+            ],
+            [
+              "motion",
+              2727
+            ],
+            [
+              "ghosts",
+              236
+            ],
+            [
+              "effects",
+              211
+            ],
+            [
+              "geometry",
+              600
+            ],
+            [
+              "signals",
+              164
+            ],
+            [
+              "semantics",
+              839
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44336,
+          "host_renders": 2,
+          "render_us": 14570,
+          "build_us": 12698,
+          "polls": 1,
+          "poll_us": 8228,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              203
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              276
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1868
+            ],
+            [
+              "budgets",
+              156
+            ],
+            [
+              "motion",
+              2659
+            ],
+            [
+              "ghosts",
+              216
+            ],
+            [
+              "effects",
+              216
+            ],
+            [
+              "geometry",
+              638
+            ],
+            [
+              "signals",
+              161
+            ],
+            [
+              "semantics",
+              760
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44704,
+          "host_renders": 2,
+          "render_us": 14805,
+          "build_us": 12893,
+          "polls": 1,
+          "poll_us": 8316,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              195
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              267
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1875
+            ],
+            [
+              "budgets",
+              157
+            ],
+            [
+              "motion",
+              2723
+            ],
+            [
+              "ghosts",
+              229
+            ],
+            [
+              "effects",
+              239
+            ],
+            [
+              "geometry",
+              625
+            ],
+            [
+              "signals",
+              145
+            ],
+            [
+              "semantics",
+              794
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44398,
+          "host_renders": 2,
+          "render_us": 14424,
+          "build_us": 12458,
+          "polls": 1,
+          "poll_us": 8119,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              208
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              248
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1743
+            ],
+            [
+              "budgets",
+              162
+            ],
+            [
+              "motion",
+              2686
+            ],
+            [
+              "ghosts",
+              237
+            ],
+            [
+              "effects",
+              211
+            ],
+            [
+              "geometry",
+              606
+            ],
+            [
+              "signals",
+              173
+            ],
+            [
+              "semantics",
+              773
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 45135,
+          "host_renders": 2,
+          "render_us": 14924,
+          "build_us": 12964,
+          "polls": 1,
+          "poll_us": 8476,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              219
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              265
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1804
+            ],
+            [
+              "budgets",
+              180
+            ],
+            [
+              "motion",
+              2780
+            ],
+            [
+              "ghosts",
+              253
+            ],
+            [
+              "effects",
+              224
+            ],
+            [
+              "geometry",
+              613
+            ],
+            [
+              "signals",
+              125
+            ],
+            [
+              "semantics",
+              812
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44806,
+          "host_renders": 2,
+          "render_us": 14738,
+          "build_us": 12794,
+          "polls": 1,
+          "poll_us": 8399,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              206
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              266
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1875
+            ],
+            [
+              "budgets",
+              181
+            ],
+            [
+              "motion",
+              2703
+            ],
+            [
+              "ghosts",
+              257
+            ],
+            [
+              "effects",
+              226
+            ],
+            [
+              "geometry",
+              602
+            ],
+            [
+              "signals",
+              138
+            ],
+            [
+              "semantics",
+              804
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 95132,
+          "host_renders": 2,
+          "render_us": 14896,
+          "build_us": 12930,
+          "polls": 1,
+          "poll_us": 8399,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              208
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              249
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1883
+            ],
+            [
+              "budgets",
+              167
+            ],
+            [
+              "motion",
+              2690
+            ],
+            [
+              "ghosts",
+              244
+            ],
+            [
+              "effects",
+              247
+            ],
+            [
+              "geometry",
+              655
+            ],
+            [
+              "signals",
+              138
+            ],
+            [
+              "semantics",
+              811
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 63690,
+          "host_renders": 3,
+          "render_us": 22583,
+          "build_us": 19557,
+          "polls": 1,
+          "poll_us": 8360,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              208
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              247
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1801
+            ],
+            [
+              "budgets",
+              212
+            ],
+            [
+              "motion",
+              2666
+            ],
+            [
+              "ghosts",
+              228
+            ],
+            [
+              "effects",
+              224
+            ],
+            [
+              "geometry",
+              616
+            ],
+            [
+              "signals",
+              185
+            ],
+            [
+              "semantics",
+              832
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 45127,
+          "host_renders": 2,
+          "render_us": 14982,
+          "build_us": 12997,
+          "polls": 1,
+          "poll_us": 8536,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              212
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              255
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1938
+            ],
+            [
+              "budgets",
+              182
+            ],
+            [
+              "motion",
+              2704
+            ],
+            [
+              "ghosts",
+              282
+            ],
+            [
+              "effects",
+              248
+            ],
+            [
+              "geometry",
+              679
+            ],
+            [
+              "signals",
+              133
+            ],
+            [
+              "semantics",
+              818
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 95127,
+          "host_renders": 2,
+          "render_us": 14617,
+          "build_us": 12671,
+          "polls": 1,
+          "poll_us": 8537,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              212
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              270
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1854
+            ],
+            [
+              "budgets",
+              206
+            ],
+            [
+              "motion",
+              2764
+            ],
+            [
+              "ghosts",
+              231
+            ],
+            [
+              "effects",
+              223
+            ],
+            [
+              "geometry",
+              618
+            ],
+            [
+              "signals",
+              199
+            ],
+            [
+              "semantics",
+              823
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 95646,
+          "host_renders": 2,
+          "render_us": 15049,
+          "build_us": 13029,
+          "polls": 1,
+          "poll_us": 8416,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              204
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              243
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1871
+            ],
+            [
+              "budgets",
+              204
+            ],
+            [
+              "motion",
+              2664
+            ],
+            [
+              "ghosts",
+              234
+            ],
+            [
+              "effects",
+              234
+            ],
+            [
+              "geometry",
+              633
+            ],
+            [
+              "signals",
+              174
+            ],
+            [
+              "semantics",
+              840
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 43644,
+          "host_renders": 2,
+          "render_us": 14494,
+          "build_us": 12570,
+          "polls": 1,
+          "poll_us": 7990,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              227
+            ],
+            [
+              "lookup",
+              4
+            ],
+            [
+              "realize",
+              240
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1704
+            ],
+            [
+              "budgets",
+              157
+            ],
+            [
+              "motion",
+              2619
+            ],
+            [
+              "ghosts",
+              218
+            ],
+            [
+              "effects",
+              216
+            ],
+            [
+              "geometry",
+              601
+            ],
+            [
+              "signals",
+              135
+            ],
+            [
+              "semantics",
+              804
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 42105,
+          "host_renders": 2,
+          "render_us": 14486,
+          "build_us": 12591,
+          "polls": 1,
+          "poll_us": 7851,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              202
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              247
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1637
+            ],
+            [
+              "budgets",
+              151
+            ],
+            [
+              "motion",
+              2632
+            ],
+            [
+              "ghosts",
+              209
+            ],
+            [
+              "effects",
+              220
+            ],
+            [
+              "geometry",
+              593
+            ],
+            [
+              "signals",
+              111
+            ],
+            [
+              "semantics",
+              806
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44250,
+          "host_renders": 2,
+          "render_us": 14710,
+          "build_us": 12778,
+          "polls": 1,
+          "poll_us": 8309,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              207
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              262
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1805
+            ],
+            [
+              "budgets",
+              155
+            ],
+            [
+              "motion",
+              2684
+            ],
+            [
+              "ghosts",
+              245
+            ],
+            [
+              "effects",
+              237
+            ],
+            [
+              "geometry",
+              635
+            ],
+            [
+              "signals",
+              129
+            ],
+            [
+              "semantics",
+              813
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 42019,
+          "host_renders": 2,
+          "render_us": 14466,
+          "build_us": 12530,
+          "polls": 1,
+          "poll_us": 7914,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              199
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              242
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1634
+            ],
+            [
+              "budgets",
+              144
+            ],
+            [
+              "motion",
+              2690
+            ],
+            [
+              "ghosts",
+              202
+            ],
+            [
+              "effects",
+              227
+            ],
+            [
+              "geometry",
+              589
+            ],
+            [
+              "signals",
+              103
+            ],
+            [
+              "semantics",
+              841
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 41277,
+          "host_renders": 2,
+          "render_us": 14429,
+          "build_us": 12594,
+          "polls": 1,
+          "poll_us": 7467,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              192
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              221
+            ],
+            [
+              "replace",
+              5
+            ],
+            [
+              "reconcile",
+              1493
+            ],
+            [
+              "budgets",
+              116
+            ],
+            [
+              "motion",
+              2632
+            ],
+            [
+              "ghosts",
+              189
+            ],
+            [
+              "effects",
+              212
+            ],
+            [
+              "geometry",
+              581
+            ],
+            [
+              "signals",
+              85
+            ],
+            [
+              "semantics",
+              802
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 45005,
+          "host_renders": 2,
+          "render_us": 14932,
+          "build_us": 12897,
+          "polls": 1,
+          "poll_us": 8718,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              216
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              279
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1900
+            ],
+            [
+              "budgets",
+              259
+            ],
+            [
+              "motion",
+              2753
+            ],
+            [
+              "ghosts",
+              244
+            ],
+            [
+              "effects",
+              219
+            ],
+            [
+              "geometry",
+              617
+            ],
+            [
+              "signals",
+              128
+            ],
+            [
+              "semantics",
+              843
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44985,
+          "host_renders": 2,
+          "render_us": 14731,
+          "build_us": 12716,
+          "polls": 1,
+          "poll_us": 8479,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              212
+            ],
+            [
+              "lookup",
+              2
+            ],
+            [
+              "realize",
+              268
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1952
+            ],
+            [
+              "budgets",
+              164
+            ],
+            [
+              "motion",
+              2675
+            ],
+            [
+              "ghosts",
+              227
+            ],
+            [
+              "effects",
+              218
+            ],
+            [
+              "geometry",
+              607
+            ],
+            [
+              "signals",
+              123
+            ],
+            [
+              "semantics",
+              837
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44673,
+          "host_renders": 2,
+          "render_us": 14672,
+          "build_us": 12684,
+          "polls": 1,
+          "poll_us": 8339,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              217
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              253
+            ],
+            [
+              "replace",
+              7
+            ],
+            [
+              "reconcile",
+              1782
+            ],
+            [
+              "budgets",
+              168
+            ],
+            [
+              "motion",
+              2636
+            ],
+            [
+              "ghosts",
+              232
+            ],
+            [
+              "effects",
+              220
+            ],
+            [
+              "geometry",
+              619
+            ],
+            [
+              "signals",
+              137
+            ],
+            [
+              "semantics",
+              848
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 44851,
+          "host_renders": 2,
+          "render_us": 14634,
+          "build_us": 12633,
+          "polls": 1,
+          "poll_us": 8462,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              220
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              247
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1878
+            ],
+            [
+              "budgets",
+              194
+            ],
+            [
+              "motion",
+              2697
+            ],
+            [
+              "ghosts",
+              242
+            ],
+            [
+              "effects",
+              242
+            ],
+            [
+              "geometry",
+              652
+            ],
+            [
+              "signals",
+              139
+            ],
+            [
+              "semantics",
+              816
+            ]
+          ],
+          "rows_rendered": 1
+        },
+        {
+          "total_us": 45085,
+          "host_renders": 2,
+          "render_us": 14690,
+          "build_us": 12714,
+          "polls": 1,
+          "poll_us": 8633,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              207
+            ],
+            [
+              "lookup",
+              1
+            ],
+            [
+              "realize",
+              276
+            ],
+            [
+              "replace",
+              6
+            ],
+            [
+              "reconcile",
+              1943
+            ],
+            [
+              "budgets",
+              173
+            ],
+            [
+              "motion",
+              2768
+            ],
+            [
+              "ghosts",
+              260
+            ],
+            [
+              "effects",
+              248
+            ],
+            [
+              "geometry",
+              650
+            ],
+            [
+              "signals",
+              139
+            ],
+            [
+              "semantics",
+              817
+            ]
+          ],
+          "rows_rendered": 1
+        }
+      ]
+    },
+    {
+      "name": "filler_1000_first",
+      "retained_nodes": 4109,
+      "quiet": {
+        "steps": 28,
+        "total_p50_us": 19806,
+        "total_p90_us": 37970,
+        "render_p50_us": 7331,
+        "build_p50_us": 6306,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "realizing": {
+        "steps": 2,
+        "total_p50_us": 47516,
+        "total_p90_us": 50081,
+        "render_p50_us": 14558,
+        "build_p50_us": 12652,
+        "poll_p50_us": 9790,
+        "host_renders_p50": 2
+      },
+      "commit_phases_us": [
+        [
+          "clone",
+          488
+        ],
+        [
+          "lookup",
+          106
+        ],
+        [
+          "realize",
+          2292
+        ],
+        [
+          "replace",
+          662
+        ],
+        [
+          "reconcile",
+          3534
+        ],
+        [
+          "budgets",
+          326
+        ],
+        [
+          "motion",
+          5598
+        ],
+        [
+          "ghosts",
+          552
+        ],
+        [
+          "effects",
+          591
+        ],
+        [
+          "geometry",
+          1228
+        ],
+        [
+          "signals",
+          256
+        ],
+        [
+          "semantics",
+          1609
+        ]
+      ],
+      "steps": [
+        {
+          "total_us": 19583,
+          "host_renders": 1,
+          "render_us": 7175,
+          "build_us": 6196,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19740,
+          "host_renders": 1,
+          "render_us": 7207,
+          "build_us": 6249,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 37970,
+          "host_renders": 1,
+          "render_us": 7335,
+          "build_us": 6377,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19792,
+          "host_renders": 1,
+          "render_us": 7217,
+          "build_us": 6232,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20366,
+          "host_renders": 1,
+          "render_us": 7503,
+          "build_us": 6522,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20475,
+          "host_renders": 1,
+          "render_us": 7501,
+          "build_us": 6516,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20807,
+          "host_renders": 1,
+          "render_us": 7768,
+          "build_us": 6728,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20148,
+          "host_renders": 1,
+          "render_us": 7520,
+          "build_us": 6529,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19871,
+          "host_renders": 1,
+          "render_us": 7292,
+          "build_us": 6273,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19243,
+          "host_renders": 1,
+          "render_us": 7331,
+          "build_us": 6306,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18527,
+          "host_renders": 1,
+          "render_us": 7060,
+          "build_us": 6126,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18355,
+          "host_renders": 1,
+          "render_us": 6860,
+          "build_us": 5941,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 47516,
+          "host_renders": 2,
+          "render_us": 14558,
+          "build_us": 12652,
+          "polls": 1,
+          "poll_us": 9790,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              258
+            ],
+            [
+              "lookup",
+              55
+            ],
+            [
+              "realize",
+              1182
+            ],
+            [
+              "replace",
+              343
+            ],
+            [
+              "reconcile",
+              1687
+            ],
+            [
+              "budgets",
+              162
+            ],
+            [
+              "motion",
+              2773
+            ],
+            [
+              "ghosts",
+              238
+            ],
+            [
+              "effects",
+              264
+            ],
+            [
+              "geometry",
+              607
+            ],
+            [
+              "signals",
+              118
+            ],
+            [
+              "semantics",
+              819
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 18674,
+          "host_renders": 1,
+          "render_us": 7137,
+          "build_us": 6204,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18738,
+          "host_renders": 1,
+          "render_us": 7049,
+          "build_us": 6148,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18726,
+          "host_renders": 1,
+          "render_us": 7214,
+          "build_us": 6234,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 56029,
+          "host_renders": 2,
+          "render_us": 14468,
+          "build_us": 12578,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19327,
+          "host_renders": 1,
+          "render_us": 7287,
+          "build_us": 6236,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18529,
+          "host_renders": 1,
+          "render_us": 7075,
+          "build_us": 6124,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19806,
+          "host_renders": 1,
+          "render_us": 7218,
+          "build_us": 6299,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20927,
+          "host_renders": 1,
+          "render_us": 7567,
+          "build_us": 6587,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20067,
+          "host_renders": 1,
+          "render_us": 7382,
+          "build_us": 6302,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19918,
+          "host_renders": 1,
+          "render_us": 7609,
+          "build_us": 6605,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20022,
+          "host_renders": 1,
+          "render_us": 7460,
+          "build_us": 6455,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19718,
+          "host_renders": 1,
+          "render_us": 7358,
+          "build_us": 6341,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19880,
+          "host_renders": 1,
+          "render_us": 7452,
+          "build_us": 6487,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 38358,
+          "host_renders": 1,
+          "render_us": 7372,
+          "build_us": 6361,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 20194,
+          "host_renders": 1,
+          "render_us": 7451,
+          "build_us": 6438,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 50081,
+          "host_renders": 2,
+          "render_us": 14640,
+          "build_us": 12680,
+          "polls": 1,
+          "poll_us": 10187,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              230
+            ],
+            [
+              "lookup",
+              51
+            ],
+            [
+              "realize",
+              1110
+            ],
+            [
+              "replace",
+              319
+            ],
+            [
+              "reconcile",
+              1847
+            ],
+            [
+              "budgets",
+              164
+            ],
+            [
+              "motion",
+              2825
+            ],
+            [
+              "ghosts",
+              314
+            ],
+            [
+              "effects",
+              327
+            ],
+            [
+              "geometry",
+              621
+            ],
+            [
+              "signals",
+              138
+            ],
+            [
+              "semantics",
+              790
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 19751,
+          "host_renders": 1,
+          "render_us": 7318,
+          "build_us": 6340,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        }
+      ]
+    },
+    {
+      "name": "two_tables_filler_1000",
+      "retained_nodes": 4160,
+      "quiet": {
+        "steps": 28,
+        "total_p50_us": 18970,
+        "total_p90_us": 38640,
+        "render_p50_us": 7515,
+        "build_p50_us": 6497,
+        "poll_p50_us": 0,
+        "host_renders_p50": 1
+      },
+      "realizing": {
+        "steps": 2,
+        "total_p50_us": 45566,
+        "total_p90_us": 48476,
+        "render_p50_us": 14510,
+        "build_p50_us": 12557,
+        "poll_p50_us": 10023,
+        "host_renders_p50": 2
+      },
+      "commit_phases_us": [
+        [
+          "clone",
+          526
+        ],
+        [
+          "lookup",
+          8
+        ],
+        [
+          "realize",
+          2269
+        ],
+        [
+          "replace",
+          100
+        ],
+        [
+          "reconcile",
+          3920
+        ],
+        [
+          "budgets",
+          404
+        ],
+        [
+          "motion",
+          5586
+        ],
+        [
+          "ghosts",
+          489
+        ],
+        [
+          "effects",
+          505
+        ],
+        [
+          "geometry",
+          1216
+        ],
+        [
+          "signals",
+          267
+        ],
+        [
+          "semantics",
+          1657
+        ]
+      ],
+      "steps": [
+        {
+          "total_us": 18826,
+          "host_renders": 1,
+          "render_us": 7380,
+          "build_us": 6386,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19188,
+          "host_renders": 1,
+          "render_us": 7695,
+          "build_us": 6572,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 39228,
+          "host_renders": 1,
+          "render_us": 7561,
+          "build_us": 6532,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19396,
+          "host_renders": 1,
+          "render_us": 7598,
+          "build_us": 6564,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19263,
+          "host_renders": 1,
+          "render_us": 7571,
+          "build_us": 6543,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18584,
+          "host_renders": 1,
+          "render_us": 7308,
+          "build_us": 6299,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17927,
+          "host_renders": 1,
+          "render_us": 7405,
+          "build_us": 6441,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17419,
+          "host_renders": 1,
+          "render_us": 7130,
+          "build_us": 6177,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17517,
+          "host_renders": 1,
+          "render_us": 7006,
+          "build_us": 6087,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17679,
+          "host_renders": 1,
+          "render_us": 7252,
+          "build_us": 6314,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18155,
+          "host_renders": 1,
+          "render_us": 7200,
+          "build_us": 6265,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18849,
+          "host_renders": 1,
+          "render_us": 7533,
+          "build_us": 6570,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 45566,
+          "host_renders": 2,
+          "render_us": 14510,
+          "build_us": 12557,
+          "polls": 1,
+          "poll_us": 10023,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              241
+            ],
+            [
+              "lookup",
+              4
+            ],
+            [
+              "realize",
+              1158
+            ],
+            [
+              "replace",
+              51
+            ],
+            [
+              "reconcile",
+              1980
+            ],
+            [
+              "budgets",
+              183
+            ],
+            [
+              "motion",
+              2808
+            ],
+            [
+              "ghosts",
+              223
+            ],
+            [
+              "effects",
+              256
+            ],
+            [
+              "geometry",
+              587
+            ],
+            [
+              "signals",
+              125
+            ],
+            [
+              "semantics",
+              803
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 17398,
+          "host_renders": 1,
+          "render_us": 7230,
+          "build_us": 6260,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18382,
+          "host_renders": 1,
+          "render_us": 7309,
+          "build_us": 6289,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 17756,
+          "host_renders": 1,
+          "render_us": 7223,
+          "build_us": 6191,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 37811,
+          "host_renders": 2,
+          "render_us": 15215,
+          "build_us": 13061,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 39530,
+          "host_renders": 1,
+          "render_us": 7884,
+          "build_us": 6733,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19263,
+          "host_renders": 1,
+          "render_us": 7496,
+          "build_us": 6357,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19193,
+          "host_renders": 1,
+          "render_us": 7574,
+          "build_us": 6520,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18856,
+          "host_renders": 1,
+          "render_us": 7608,
+          "build_us": 6566,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18793,
+          "host_renders": 1,
+          "render_us": 7515,
+          "build_us": 6497,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 18970,
+          "host_renders": 1,
+          "render_us": 7458,
+          "build_us": 6452,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19010,
+          "host_renders": 1,
+          "render_us": 7660,
+          "build_us": 6548,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19070,
+          "host_renders": 1,
+          "render_us": 7445,
+          "build_us": 6353,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19047,
+          "host_renders": 1,
+          "render_us": 7609,
+          "build_us": 6514,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 38640,
+          "host_renders": 1,
+          "render_us": 7535,
+          "build_us": 6509,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 19290,
+          "host_renders": 1,
+          "render_us": 7651,
+          "build_us": 6505,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        },
+        {
+          "total_us": 48476,
+          "host_renders": 2,
+          "render_us": 14990,
+          "build_us": 12948,
+          "polls": 1,
+          "poll_us": 10472,
+          "commits": 1,
+          "commit_phases_us": [
+            [
+              "clone",
+              285
+            ],
+            [
+              "lookup",
+              4
+            ],
+            [
+              "realize",
+              1111
+            ],
+            [
+              "replace",
+              49
+            ],
+            [
+              "reconcile",
+              1940
+            ],
+            [
+              "budgets",
+              221
+            ],
+            [
+              "motion",
+              2778
+            ],
+            [
+              "ghosts",
+              266
+            ],
+            [
+              "effects",
+              249
+            ],
+            [
+              "geometry",
+              629
+            ],
+            [
+              "signals",
+              142
+            ],
+            [
+              "semantics",
+              854
+            ]
+          ],
+          "rows_rendered": 16
+        },
+        {
+          "total_us": 19499,
+          "host_renders": 1,
+          "render_us": 7608,
+          "build_us": 6530,
+          "polls": 0,
+          "poll_us": 0,
+          "commits": 0,
+          "commit_phases_us": [],
+          "rows_rendered": 0
+        }
+      ]
+    }
+  ],
+  "gpui_replay": [
+    {
+      "rows": 0,
+      "mode": "inline",
+      "frame_p50_us": 3,
+      "frame_p90_us": 3
+    },
+    {
+      "rows": 0,
+      "mode": "entity",
+      "frame_p50_us": 3,
+      "frame_p90_us": 4
+    },
+    {
+      "rows": 0,
+      "mode": "cached",
+      "frame_p50_us": 3,
+      "frame_p90_us": 3
+    },
+    {
+      "rows": 330,
+      "mode": "inline",
+      "frame_p50_us": 2425,
+      "frame_p90_us": 2512
+    },
+    {
+      "rows": 330,
+      "mode": "entity",
+      "frame_p50_us": 2418,
+      "frame_p90_us": 2444
+    },
+    {
+      "rows": 330,
+      "mode": "cached",
+      "frame_p50_us": 87,
+      "frame_p90_us": 90
+    },
+    {
+      "rows": 1000,
+      "mode": "inline",
+      "frame_p50_us": 7469,
+      "frame_p90_us": 7653
+    },
+    {
+      "rows": 1000,
+      "mode": "entity",
+      "frame_p50_us": 7589,
+      "frame_p90_us": 7671
+    },
+    {
+      "rows": 1000,
+      "mode": "cached",
+      "frame_p50_us": 174,
+      "frame_p90_us": 179
+    }
+  ]
+}

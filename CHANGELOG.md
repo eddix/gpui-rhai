@@ -8,15 +8,40 @@ semantic versioning from this release.
 ## Unreleased
 
 - A frame replays the unchanged parts of a view instead of building, laying
-  out and painting them again. A subtree with nothing that changes per frame
-  (no motion, signal style, scroll container, collection, overlay, primitive,
-  image or element ref) is embedded as a cached GPUI view in a flex column
-  whose width does not depend on its content, and replayed while its nodes and
-  what it inherits stay the same. Scrolling a Table above 1,000 plain rows
-  took 0.8 ms a step instead of 17 ms. On by default;
+  out and painting them again (cache islands). A subtree of 16 nodes or more
+  with nothing that changes from frame to frame (no motion, signal style,
+  scroll container, collection, overlay, layer, primitive, canvas, image,
+  element ref, raw pointer handler or window drag area) is embedded as a
+  cached GPUI view in a flex column, pinned to the height it measured, and
+  replayed while its nodes (the same, or equal after a render of the whole
+  view) and what it inherits stay the same, including a width that does not
+  depend on its content. Scrolling a Table above 1,000 plain rows took
+  0.74 ms a step instead of 18.2 ms. On by default;
   `ScriptViewConfig::render_islands(false)` or `GPUI_RHAI_RENDER_ISLANDS=off`
-  renders every frame in full, and `GPUI_RHAI_RENDER_ISLANDS=verify` panics
-  when a replayed subtree would lay out differently.
+  renders every frame in full, `GPUI_RHAI_RENDER_ISLANDS=verify` panics when a
+  replayed subtree would lay out differently, and `aggressive` makes every
+  subtree an island, which CI runs over the native suite.
+- `ScriptViewConfig::host_sets_width(true)` tells a mounted view that its Host
+  lays it out at a width its content cannot change, as when it fills the
+  window; frames then also replay subtrees whose width follows the view's.
+  `ScriptApplication` windows are laid out so already. A row's one growing
+  child, as an `AppShell`'s main area, takes the room its fixed siblings leave.
+- A wheel over a scrollbar and a drag that autoscrolls a collection notify the
+  view they scroll instead of refreshing the window, so the cached parts of
+  the window beside them replay.
+- Rendering a node does less: motion is looked up only when a motion is
+  sampled, a parent finds its children's retained ids once instead of once per
+  child, hit testing reuses the resolved style, and only scroll containers copy
+  the wheel chain. A full render of 4,000 nodes took 3.8 ms instead of 6.8 ms.
+- Commits do work proportional to what changed: a subtree the candidate shares
+  with the last commit keeps its retained nodes (which are now shared), the
+  table of nodes is copied rather than rebuilt, and motion, exit ghosts, signal
+  validation, resource budgets, collection bindings, page visibility,
+  semantics and the focus, scroll and primitive walks after a commit read
+  counts the retained tree keeps per subtree, or carry what they inherit down,
+  instead of walking the tree or each node's ancestors. A geometry state a
+  transaction shares is copied only when a change needs it. Realizing rows of
+  that Table took 4.0 ms a step instead of 43.4 ms.
 - gpui-pre/core/platform move from 0.3.7 to 0.3.9 (Zed `93d7456`), the
   snapshot gpui-kit pins. A Host with direct `gpui`/`gpui_platform`
   dependencies pins `=0.3.9`; `gpui-rhai check` reports a mismatch. The APIs
@@ -33,6 +58,8 @@ semantic versioning from this release.
 - Fix: in an application with several script windows, a commit in one window
   no longer drops the virtual collection state of the others: their pending
   renders, scroll positions, metrics and queued scroll commands.
+- Fix: a commit commits its runtime transaction before it publishes the new
+  tree, and rolls the runtime and the engine back if that fails.
 
 ## 0.3.2 - 2026-10-29
 
