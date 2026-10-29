@@ -5,6 +5,15 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## Unreleased
+
+- Fix: `motion_hover` and `motion_press` now run. On a node with no other
+  pointer handling they never received the pointer events, and `motion_hover`
+  on a node with its own handlers, such as `on_click`, made the render fail.
+  Hover now drives the motion from the node's one hover listener, and a
+  disabled node keeps its motions at rest, as it keeps its paint.
+  `motion_focus` was not affected.
+
 ## 0.3.2 - 2026-10-29
 
 - Virtual collections render ahead and keep what they rendered (D73).

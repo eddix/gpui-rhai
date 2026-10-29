@@ -723,13 +723,22 @@ fn apply_raw_pointer_handlers(
     )
 }
 
+/// The element's one hover listener (GPUI takes one per element): it runs the
+/// node's `hover_change` handlers and drives its `motion_hover` motions.
 fn apply_hover_handler(
     element: Stateful<Div>,
     hover: Option<(Vec<crate::UiEventBinding>, Option<UiValue>)>,
     dispatcher: Option<NodeEventDispatcher>,
     target: EventTargetContext,
+    motion: Option<(NodeId, crate::GeometryRegistry)>,
 ) -> Stateful<Div> {
     element.on_hover(move |hovered, window, cx| {
+        if let Some((node, geometry)) = &motion {
+            geometry.set_motion_trigger(*node, crate::MotionProgressDriver::Hover, *hovered);
+            // A pointer event is outside any draw, so the frame is requested
+            // from the window rather than from a view being drawn.
+            window.refresh();
+        }
         if let Some((bindings, value)) = &hover {
             // A handler with a value, its own or the node's, receives
             // `#{ hovered, value }`; a plain handler receives the bool.
@@ -758,7 +767,9 @@ fn apply_hover_handler(
     })
 }
 
-fn apply_motion_trigger_handlers(
+/// Drives the node's `motion_press` motions; `motion_hover` runs from the
+/// hover listener ([`apply_hover_handler`]).
+fn apply_press_motion_handlers(
     mut element: Stateful<Div>,
     node: Option<NodeId>,
     bindings: &[crate::MotionProgressBinding],
@@ -769,28 +780,20 @@ fn apply_motion_trigger_handlers(
     };
     if bindings
         .iter()
-        .any(|binding| binding.driver == crate::MotionProgressDriver::Hover)
-    {
-        let geometry = geometry.clone();
-        element = element.on_hover(move |hovered, window, _| {
-            geometry.set_motion_trigger(node, crate::MotionProgressDriver::Hover, *hovered);
-            window.request_animation_frame();
-        });
-    }
-    if bindings
-        .iter()
         .any(|binding| binding.driver == crate::MotionProgressDriver::Press)
     {
+        // Pointer events are outside any draw, so they ask the window for the
+        // next frame rather than a view being drawn.
         let down_geometry = geometry.clone();
         element = element.on_any_mouse_down(move |_, window, _| {
             down_geometry.set_motion_trigger(node, crate::MotionProgressDriver::Press, true);
-            window.request_animation_frame();
+            window.refresh();
         });
         for button in MouseButton::all() {
             let up_geometry = geometry.clone();
             element = element.on_mouse_up(button, move |_, window, _| {
                 up_geometry.set_motion_trigger(node, crate::MotionProgressDriver::Press, false);
-                window.request_animation_frame();
+                window.refresh();
             });
         }
     }
@@ -2681,12 +2684,26 @@ impl GpuiNodeRenderer {
             persistent_focus,
         );
         let element = apply_environment_scroll(element, node, retained_id, environment);
-        let element = apply_motion_trigger_handlers(
-            element,
-            retained_id,
-            node.progress_motions(),
-            environment.geometry,
-        );
+        // A disabled node keeps its paint, so pointer-driven motions stay put.
+        let element = if disabled {
+            element
+        } else {
+            apply_press_motion_handlers(
+                element,
+                retained_id,
+                node.progress_motions(),
+                environment.geometry,
+            )
+        };
+        let hover_motion = retained_id
+            .filter(|_| {
+                !disabled
+                    && node
+                        .progress_motions()
+                        .iter()
+                        .any(|binding| binding.driver == crate::MotionProgressDriver::Hover)
+            })
+            .map(|node| (node, environment.geometry.clone()));
         let element = if let Some((bindings, payload)) = click {
             element.on_click(move |event, window, cx| {
                 if !matches!(event, ClickEvent::Mouse(_)) {
@@ -2706,7 +2723,8 @@ impl GpuiNodeRenderer {
         } else {
             element
         };
-        let element = apply_hover_handler(element, hover, hover_dispatcher, hover_target);
+        let element =
+            apply_hover_handler(element, hover, hover_dispatcher, hover_target, hover_motion);
         let element = if key_handlers.values().any(|(bindings, _)| {
             bindings
                 .iter()
@@ -3242,7 +3260,7 @@ fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> b
         // and go with `open`, so its focus state survives opening and closing.
         || matches!(node.kind(), UiNodeKind::Overlay { .. })
         || !disabled
-            && (needs & 0b0111 != 0
+            && (needs & 0b1_0111 != 0
                 || node_has_focus_declaration(node)
                 // The view tracks its focus handle here, so focus inside it is
                 // focus within the node.
