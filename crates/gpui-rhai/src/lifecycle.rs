@@ -527,11 +527,16 @@ impl ScriptLifecycle {
                         .map(|group| (group, spec.inherited_motion_scope.clone()))
                 });
                 clock.lap("lookup");
-                items = engine.realize_virtual_collection(&id, &indices, &items)?;
+                let previous = items;
+                items = engine.realize_virtual_collection(&id, &indices, &previous)?;
                 clock.lap("realize");
                 if let Some((group, scope)) = inherited_motion_group {
-                    for node in items.values_mut() {
-                        crate::node::apply_motion_group(node, &group, scope.as_deref());
+                    // An item kept from before has its group already; applying
+                    // it again would copy the item and add the mutation twice.
+                    for (index, node) in &mut items {
+                        if !previous.get(index).is_some_and(|kept| kept.ptr_eq(node)) {
+                            crate::node::apply_motion_group(node, &group, scope.as_deref());
+                        }
                     }
                 }
                 if !root.replace_virtual_collection_items(&id, items.clone()) {
@@ -3138,6 +3143,78 @@ mod tests {
             runtime.borrow().component_state.get(&path, "phase"),
             Some(&UiValue::String("candidate-resumed".to_owned()))
         );
+    }
+
+    #[test]
+    fn a_realization_in_a_motion_group_keeps_the_items_it_kept() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn render_item(ctx, payload) {
+                        text(payload.item.label).with_key(payload.key)
+                            .shared_layout(payload.key)
+                    }
+                    fn view(ctx) {
+                        let data = [];
+                        for index in 0..32 {
+                            data.push(#{ key: `row-${index}`, label: `Row ${index}` });
+                        }
+                        motion_group("rows", [virtual_collection(#{
+                            key: "rows", label: "Rows", data: data,
+                            estimated_height: 24, height: 96,
+                            overdraw_pixels: 24, alignment: "top", follow_tail: false,
+                            batch_items: 1, retain_items: 0
+                        }, Fn("render_item"))])
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let path = ComponentInstancePath::root("App", "root");
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            path.clone(),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let id = engine
+            .virtual_collection_ids_in_scope(&path)
+            .into_iter()
+            .next()
+            .unwrap();
+        let items = |lifecycle: &ScriptLifecycle| {
+            lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&id)
+                .unwrap()
+                .clone()
+        };
+        let before = items(&lifecycle);
+        let kept = *before.keys().last().unwrap();
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(id.clone(), [kept, kept + 1]);
+        assert!(lifecycle.realize_virtual_requests(&mut engine).unwrap());
+        let after = items(&lifecycle);
+        assert!(
+            after[&kept].ptr_eq(&before[&kept]),
+            "the kept item was copied"
+        );
+        assert_eq!(
+            after[&(kept + 1)].attributes().get("shared_layout_group"),
+            Some(&UiValue::String("rows".to_owned()))
+        );
+        // Applying the group to a grouped item changes nothing.
+        let mut again = after[&(kept + 1)].clone();
+        crate::node::apply_motion_group(&mut again, "rows", None);
+        assert!(again.ptr_eq(&after[&(kept + 1)]));
     }
 
     #[test]
