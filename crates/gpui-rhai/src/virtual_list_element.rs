@@ -175,7 +175,13 @@ fn committed_collection_bindings(
                 .retained_child_groups()
                 .into_iter()
                 .flat_map(|(_, children)| children)
-                .zip(node.children().map(crate::RetainedChildLink::node)),
+                .zip(node.children().map(crate::RetainedChildLink::node))
+                // A subtree without a collection binds none.
+                .filter(|(_, id)| {
+                    retained
+                        .node(*id)
+                        .is_none_or(|node| node.summary().collections > 0)
+                }),
         );
     }
     collections

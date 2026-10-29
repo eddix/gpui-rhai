@@ -600,7 +600,10 @@ impl ScriptLifecycle {
         clock.lap("effects");
         self.retain_geometry_nodes(retained)?;
         clock.lap("geometry");
-        self.validate_signal_bindings(root)?;
+        // A tree whose nodes read no signal has none to validate.
+        if retained.summary().signals > 0 {
+            self.validate_signal_bindings(root)?;
+        }
         clock.lap("signals");
         let semantics = crate::CommittedSemanticFrame::from_retained(retained)?;
         clock.lap("semantics");
@@ -1527,6 +1530,14 @@ impl ScriptLifecycle {
         let Some(root_id) = self.retained.root_id() else {
             return Ok(());
         };
+        // Only a removed node with exit motions leaves a ghost.
+        if report.unmounted.iter().all(|id| {
+            self.retained
+                .node(*id)
+                .is_none_or(|node| node.summary().exit == 0)
+        }) {
+            return Ok(());
+        }
         let removed = report.unmounted.iter().copied().collect::<BTreeSet<_>>();
         let mut exits = Vec::<(crate::NodeId, &UiNode)>::new();
         collect_removed_exit_nodes(previous, root_id, &self.retained, &removed, &mut exits);
@@ -1594,38 +1605,26 @@ impl ScriptLifecycle {
             .clone();
         budgets.validate()?;
         crate::RuntimeBudgets::check("retained_nodes", retained.len(), budgets.retained_nodes)?;
-        let handlers = retained.nodes().fold(0usize, |total, node| {
-            total.saturating_add(node.handler_count())
-        });
-        crate::RuntimeBudgets::check("event_handlers", handlers, budgets.event_handlers)?;
-        let layers = retained
-            .nodes()
-            .filter(|node| node.kind() == crate::UiNodeKindTag::Layer)
-            .count();
-        crate::RuntimeBudgets::check("layers", layers, budgets.layers)?;
-        let canvas_scenes = retained
-            .nodes()
-            .filter(|node| node.kind() == crate::UiNodeKindTag::Canvas)
-            .count();
-        crate::RuntimeBudgets::check("canvas_scenes", canvas_scenes, budgets.canvas_scenes)?;
-        let canvas_commands = retained.nodes().fold(0usize, |total, node| {
-            total.saturating_add(node.canvas_command_count())
-        });
-        crate::RuntimeBudgets::check("canvas_commands", canvas_commands, budgets.canvas_commands)?;
-        let virtual_data = retained.nodes().fold(0usize, |total, node| {
-            total.saturating_add(node.virtual_data_item_count())
-        });
-        let virtual_realized = retained.nodes().fold(0usize, |total, node| {
-            total.saturating_add(node.virtual_realized_item_count())
-        });
+        // The tree keeps these totals as it is reconciled.
+        let summary = retained.summary();
+        let totals = summary.resources;
+        debug_assert_eq!(totals, retained.recounted_resources());
+        crate::RuntimeBudgets::check("event_handlers", totals.handlers, budgets.event_handlers)?;
+        crate::RuntimeBudgets::check("layers", totals.layers, budgets.layers)?;
+        crate::RuntimeBudgets::check("canvas_scenes", totals.canvas_scenes, budgets.canvas_scenes)?;
+        crate::RuntimeBudgets::check(
+            "canvas_commands",
+            totals.canvas_commands,
+            budgets.canvas_commands,
+        )?;
         crate::RuntimeBudgets::check(
             "virtual_data_items",
-            virtual_data,
+            totals.virtual_data_items,
             budgets.virtual_data_items,
         )?;
         crate::RuntimeBudgets::check(
             "virtual_realized_items",
-            virtual_realized,
+            totals.virtual_realized_items,
             budgets.virtual_realized_items,
         )?;
         crate::RuntimeBudgets::check(
@@ -1655,7 +1654,12 @@ impl ScriptLifecycle {
             engine.component_timers_in_scope(&self.root_path).len(),
             budgets.timers,
         )?;
-        let motion = crate::motion::node_motion_resource_usage(root);
+        // A tree that declares no motion uses none of these.
+        let motion = if summary.motion == 0 {
+            crate::motion::MotionResourceUsage::default()
+        } else {
+            crate::motion::node_motion_resource_usage(root)
+        };
         crate::RuntimeBudgets::check(
             "motion_declarations",
             motion.declarations,
@@ -2147,6 +2151,9 @@ fn collect_removed_exit_nodes<'a>(
     let Some(retained_node) = retained.node(id) else {
         return;
     };
+    if retained_node.summary().exit == 0 {
+        return;
+    }
     for (group, children) in node.retained_child_groups() {
         let ids = retained_node
             .children()
