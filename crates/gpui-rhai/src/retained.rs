@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::rc::Rc;
 
 use thiserror::Error;
 
@@ -301,7 +302,9 @@ pub enum ReconcileError {
 pub struct RetainedUiTree {
     root: Option<UiNode>,
     root_id: Option<NodeId>,
-    nodes: BTreeMap<NodeId, RetainedNode>,
+    /// Shared with the trees an unchanged subtree was kept from, and with
+    /// their clones.
+    nodes: BTreeMap<NodeId, Rc<RetainedNode>>,
     next_id: u64,
     last_report: ReconcileReport,
 }
@@ -336,7 +339,7 @@ impl RetainedUiTree {
 
     #[must_use]
     pub fn node(&self, id: NodeId) -> Option<&RetainedNode> {
-        self.nodes.get(&id)
+        self.nodes.get(&id).map(|node| &**node)
     }
 
     /// Read one accepted declarative snapshot by retained identity. Walking
@@ -374,7 +377,7 @@ impl RetainedUiTree {
     }
 
     pub fn nodes(&self) -> impl ExactSizeIterator<Item = &RetainedNode> {
-        self.nodes.values()
+        self.nodes.values().map(|node| &**node)
     }
 
     #[must_use]
@@ -405,6 +408,7 @@ impl RetainedUiTree {
             next_id: self.next_id,
             report: ReconcileReport::default(),
             reused: BTreeSet::new(),
+            unmounted: BTreeSet::new(),
         };
         let root_id = match (self.root.as_ref(), self.root_id) {
             (Some(old), Some(old_id)) if reusable(old, &candidate) => {
@@ -418,9 +422,7 @@ impl RetainedUiTree {
             _ => return Err(ReconcileError::RootStateMismatch),
         };
         for old_id in self.nodes.keys().copied() {
-            if !transaction.reused.contains(&old_id)
-                && !transaction.report.unmounted.contains(&old_id)
-            {
+            if !transaction.reused.contains(&old_id) && transaction.unmounted.insert(old_id) {
                 transaction.report.unmounted.push(old_id);
             }
         }
@@ -443,11 +445,13 @@ impl RetainedUiTree {
 }
 
 struct ReconcileTransaction<'a> {
-    old_nodes: &'a BTreeMap<NodeId, RetainedNode>,
-    new_nodes: BTreeMap<NodeId, RetainedNode>,
+    old_nodes: &'a BTreeMap<NodeId, Rc<RetainedNode>>,
+    new_nodes: BTreeMap<NodeId, Rc<RetainedNode>>,
     next_id: u64,
     report: ReconcileReport,
     reused: BTreeSet<NodeId>,
+    /// The ids in `report.unmounted`.
+    unmounted: BTreeSet<NodeId>,
 }
 
 impl ReconcileTransaction<'_> {
@@ -459,6 +463,14 @@ impl ReconcileTransaction<'_> {
         parent: Option<NodeId>,
         moved: bool,
     ) -> Result<NodeId, ReconcileError> {
+        // The same snapshot accepted again keeps its subtree: reconciling it
+        // would match every node to its old id and rebuild what it holds.
+        if let (Some(old_snapshot), Some(old_id)) = (old_snapshot, old_id)
+            && old_snapshot.ptr_eq(candidate)
+        {
+            self.keep_subtree(old_id, moved)?;
+            return Ok(old_id);
+        }
         validate_fragment(candidate)?;
         let id = if let Some(id) = old_id {
             self.reused.insert(id);
@@ -564,7 +576,7 @@ impl ReconcileTransaction<'_> {
             });
         self.new_nodes.insert(
             id,
-            RetainedNode {
+            Rc::new(RetainedNode {
                 id,
                 parent,
                 key: candidate.key().map(|key| key.as_str().to_owned()),
@@ -605,8 +617,28 @@ impl ReconcileTransaction<'_> {
                 },
                 children,
                 summary,
-            },
+            }),
         );
+    }
+
+    /// Keeps the old subtree at `root` as it is, as a reconcile of the same
+    /// snapshot would.
+    fn keep_subtree(&mut self, root: NodeId, moved: bool) -> Result<(), ReconcileError> {
+        if moved {
+            self.report.moved.push(root);
+        }
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            let node = self
+                .old_nodes
+                .get(&id)
+                .ok_or(ReconcileError::MissingNode(id))?;
+            self.reused.insert(id);
+            self.report.preserved.push(id);
+            stack.extend(node.children.iter().map(|child| child.node));
+            self.new_nodes.insert(id, Rc::clone(node));
+        }
+        Ok(())
     }
 
     fn allocate(&mut self) -> Result<NodeId, ReconcileError> {
@@ -620,7 +652,7 @@ impl ReconcileTransaction<'_> {
     }
 
     fn collect_unmounted(&mut self, id: NodeId) -> Result<(), ReconcileError> {
-        if self.report.unmounted.contains(&id) {
+        if self.unmounted.contains(&id) {
             return Ok(());
         }
         let node = self
@@ -630,6 +662,7 @@ impl ReconcileTransaction<'_> {
         for child in &node.children {
             self.collect_unmounted(child.node)?;
         }
+        self.unmounted.insert(id);
         self.report.unmounted.push(id);
         Ok(())
     }
@@ -766,6 +799,45 @@ mod tests {
         assert_eq!(report.mounted, [] as [crate::retained::NodeId; 0]);
         assert_eq!(report.unmounted, [] as [crate::retained::NodeId; 0]);
         assert_eq!(report.moved, before);
+    }
+
+    #[test]
+    fn a_shared_subtree_is_kept_as_a_rebuilt_one_would_be() {
+        let block = |label: &str| {
+            UiNode::column(
+                (0..4)
+                    .map(|index| {
+                        UiNode::row(vec![
+                            UiNode::text(format!("{label} {index}")),
+                            keyed_text("detail", "detail"),
+                        ])
+                        .with_key(format!("r{index}"))
+                    })
+                    .collect(),
+            )
+        };
+        let page = |shared: &UiNode, moved: bool, extra: &str| {
+            let mut children = vec![shared.clone(), keyed_text("extra", extra)];
+            if moved {
+                children.reverse();
+            }
+            UiNode::column(children)
+        };
+        let shared = block("Row").with_key("shared");
+        let mut kept = RetainedUiTree::new();
+        let mut rebuilt = RetainedUiTree::new();
+        kept.reconcile(page(&shared, false, "one")).unwrap();
+        rebuilt
+            .reconcile(page(&block("Row").with_key("shared"), false, "one"))
+            .unwrap();
+        for (moved, extra) in [(false, "two"), (true, "three"), (true, "three")] {
+            let kept_report = kept.reconcile(page(&shared, moved, extra)).unwrap();
+            let rebuilt_report = rebuilt
+                .reconcile(page(&block("Row").with_key("shared"), moved, extra))
+                .unwrap();
+            assert_eq!(kept_report, rebuilt_report);
+            assert!(kept.nodes().eq(rebuilt.nodes()));
+        }
     }
 
     #[test]
