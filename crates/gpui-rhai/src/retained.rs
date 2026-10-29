@@ -86,9 +86,58 @@ pub(crate) struct SubtreeSummary {
     /// Nodes a commit's motion phase has to visit
     /// ([`crate::motion::node_takes_motion`]).
     pub motion: u32,
+    /// Nodes with exit motions, which leave a ghost when removed.
+    pub exit: u32,
+    /// Nodes that read a native signal: a binding, a signal style or a
+    /// signal-triggered progress motion.
+    pub signals: u32,
+    /// Virtual collections.
+    pub collections: u32,
+    /// What the commit's resource budgets count.
+    pub resources: ResourceTotals,
     /// The root itself lays out or moves its children in ways an island
     /// below it cannot follow: Table layout or a scroll container.
     pub opaque: bool,
+}
+
+/// The amounts of a subtree that a commit checks against its resource
+/// budgets, each summed with saturation as the check sums them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ResourceTotals {
+    pub handlers: usize,
+    pub layers: usize,
+    pub canvas_scenes: usize,
+    pub canvas_commands: usize,
+    pub virtual_data_items: usize,
+    pub virtual_realized_items: usize,
+}
+
+impl ResourceTotals {
+    fn of(node: &RetainedNode) -> Self {
+        Self {
+            handlers: node.handler_count(),
+            layers: usize::from(node.kind == UiNodeKindTag::Layer),
+            canvas_scenes: usize::from(node.kind == UiNodeKindTag::Canvas),
+            canvas_commands: node.canvas_commands,
+            virtual_data_items: node.virtual_data_items,
+            virtual_realized_items: node.virtual_realized_items,
+        }
+    }
+
+    const fn add(self, other: Self) -> Self {
+        Self {
+            handlers: self.handlers.saturating_add(other.handlers),
+            layers: self.layers.saturating_add(other.layers),
+            canvas_scenes: self.canvas_scenes.saturating_add(other.canvas_scenes),
+            canvas_commands: self.canvas_commands.saturating_add(other.canvas_commands),
+            virtual_data_items: self
+                .virtual_data_items
+                .saturating_add(other.virtual_data_items),
+            virtual_realized_items: self
+                .virtual_realized_items
+                .saturating_add(other.virtual_realized_items),
+        }
+    }
 }
 
 impl SubtreeSummary {
@@ -98,6 +147,20 @@ impl SubtreeSummary {
             hot: u32::from(crate::renderer::island_hot(node)),
             group_hover: u32::from(node.style().group_hover.is_some()),
             motion: u32::from(crate::motion::node_takes_motion(node)),
+            exit: u32::from(!node.exit_motions().is_empty()),
+            signals: u32::from(
+                node.signal_bindings().next().is_some()
+                    || node.signal_style().is_some()
+                    || node
+                        .progress_motions()
+                        .iter()
+                        .any(|binding| binding.signal_trigger.is_some()),
+            ),
+            collections: u32::from(matches!(
+                node.kind(),
+                crate::UiNodeKind::VirtualCollection { .. }
+            )),
+            resources: ResourceTotals::default(),
             opaque: node.table_layout().is_some() || crate::renderer::node_scrollable(node),
         }
     }
@@ -108,6 +171,10 @@ impl SubtreeSummary {
             hot: self.hot.saturating_add(other.hot),
             group_hover: self.group_hover.saturating_add(other.group_hover),
             motion: self.motion.saturating_add(other.motion),
+            exit: self.exit.saturating_add(other.exit),
+            signals: self.signals.saturating_add(other.signals),
+            collections: self.collections.saturating_add(other.collections),
+            resources: self.resources.add(other.resources),
             opaque: self.opaque,
         }
     }
@@ -385,6 +452,23 @@ impl RetainedUiTree {
         self.nodes.len()
     }
 
+    /// The resource totals summed over every node, as the summaries keep
+    /// them.
+    pub(crate) fn recounted_resources(&self) -> ResourceTotals {
+        self.nodes()
+            .fold(ResourceTotals::default(), |totals, node| {
+                totals.add(ResourceTotals::of(node))
+            })
+    }
+
+    /// The summary of the whole tree, empty without a root.
+    pub(crate) fn summary(&self) -> SubtreeSummary {
+        self.root_id
+            .and_then(|id| self.node(id))
+            .map(RetainedNode::summary)
+            .unwrap_or_default()
+    }
+
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
@@ -567,58 +651,61 @@ impl ReconcileTransaction<'_> {
         candidate: &UiNode,
         children: Vec<RetainedChildLink>,
     ) {
+        let mut node = RetainedNode {
+            id,
+            parent,
+            key: candidate.key().map(|key| key.as_str().to_owned()),
+            kind: candidate.kind_tag(),
+            primitive: match candidate.kind() {
+                crate::UiNodeKind::Custom { primitive } => Some(primitive.primitive.clone()),
+                _ => None,
+            },
+            component_root: candidate.component_root().cloned(),
+            forwarded_components: candidate.forwarded_components().cloned(),
+            element_ref: candidate.element_ref().cloned(),
+            attributes: candidate.attributes().clone(),
+            text: match candidate.kind() {
+                crate::UiNodeKind::Text { text } | crate::UiNodeKind::RichText { text, .. } => {
+                    Some(text.to_string())
+                }
+                _ => None,
+            },
+            handlers: candidate.handlers().clone(),
+            handler_payloads: candidate.handler_payloads().clone(),
+            scrollable: snapshot_scrollable(candidate),
+            focus_styled: candidate.style().focus.is_some(),
+            canvas_commands: match candidate.kind() {
+                crate::UiNodeKind::Canvas { scene } => scene.complexity(),
+                _ => 0,
+            },
+            canvas_scene: match candidate.kind() {
+                crate::UiNodeKind::Canvas { scene } => Some(scene.clone()),
+                _ => None,
+            },
+            virtual_data_items: match candidate.kind() {
+                crate::UiNodeKind::VirtualCollection { spec } => spec.data.len(),
+                _ => 0,
+            },
+            virtual_realized_items: match candidate.kind() {
+                crate::UiNodeKind::VirtualCollection { spec } => spec.realized.len(),
+                _ => 0,
+            },
+            children,
+            summary: SubtreeSummary::default(),
+        };
         // Children are inserted before their parent.
-        let summary = children
+        node.summary = node
+            .children
             .iter()
             .filter_map(|link| self.new_nodes.get(&link.node))
-            .fold(SubtreeSummary::of(candidate), |summary, child| {
-                summary.add(child.summary)
-            });
-        self.new_nodes.insert(
-            id,
-            Rc::new(RetainedNode {
-                id,
-                parent,
-                key: candidate.key().map(|key| key.as_str().to_owned()),
-                kind: candidate.kind_tag(),
-                primitive: match candidate.kind() {
-                    crate::UiNodeKind::Custom { primitive } => Some(primitive.primitive.clone()),
-                    _ => None,
+            .fold(
+                SubtreeSummary {
+                    resources: ResourceTotals::of(&node),
+                    ..SubtreeSummary::of(candidate)
                 },
-                component_root: candidate.component_root().cloned(),
-                forwarded_components: candidate.forwarded_components().cloned(),
-                element_ref: candidate.element_ref().cloned(),
-                attributes: candidate.attributes().clone(),
-                text: match candidate.kind() {
-                    crate::UiNodeKind::Text { text } | crate::UiNodeKind::RichText { text, .. } => {
-                        Some(text.to_string())
-                    }
-                    _ => None,
-                },
-                handlers: candidate.handlers().clone(),
-                handler_payloads: candidate.handler_payloads().clone(),
-                scrollable: snapshot_scrollable(candidate),
-                focus_styled: candidate.style().focus.is_some(),
-                canvas_commands: match candidate.kind() {
-                    crate::UiNodeKind::Canvas { scene } => scene.complexity(),
-                    _ => 0,
-                },
-                canvas_scene: match candidate.kind() {
-                    crate::UiNodeKind::Canvas { scene } => Some(scene.clone()),
-                    _ => None,
-                },
-                virtual_data_items: match candidate.kind() {
-                    crate::UiNodeKind::VirtualCollection { spec } => spec.data.len(),
-                    _ => 0,
-                },
-                virtual_realized_items: match candidate.kind() {
-                    crate::UiNodeKind::VirtualCollection { spec } => spec.realized.len(),
-                    _ => 0,
-                },
-                children,
-                summary,
-            }),
-        );
+                |summary, child| summary.add(child.summary),
+            );
+        self.new_nodes.insert(id, Rc::new(node));
     }
 
     /// Keeps the old subtree at `root` as it is, as a reconcile of the same
