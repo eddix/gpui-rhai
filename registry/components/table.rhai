@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.2.1",
+  "version": "0.3.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/badge"],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.2.1",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.3.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
         tokens: ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
@@ -116,6 +116,12 @@ define_component(#{
             estimated_row_height: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: false, sensitive: false,
                 "default": #{ type: "float", value: 32.0 },
                 doc: "Row height in logical pixels the virtual body assumes before rows are measured; rows draw at `metrics.row`." },
+            overscan_rows: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 0, max: 1000 } }, required: false, sensitive: false,
+                doc: "Rows rendered beyond each edge of the viewport, so a scroll finds them ready; unset, the Host's virtual collection policy decides, else 4." },
+            batch_rows: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 1, max: 1000 } }, required: false, sensitive: false,
+                doc: "When a scroll needs rows that are not rendered, how many it renders at once, so the next scroll steps render nothing; unset, the Host's policy decides, else 16." },
+            retain_rows: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 0, max: 10000 } }, required: false, sensitive: false,
+                doc: "Rendered rows kept after they scroll away and reused when they come back, until the Table renders again (a selection, sort or data change); unset, the Host's policy decides, else 200; `0` keeps none." },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Shows `loading_content` below the header instead of the rows." },
@@ -729,6 +735,11 @@ fn render_Table(ctx, props) {
         overdraw_pixels: row_height * 4.0,
         alignment: "top", follow_tail: false
     };
+    // Only what the caller sets goes to the collection; the rest is the Host's policy.
+    for name in ["overscan", "batch", "retain"] {
+        let field = `${name}_rows`;
+        if field in props && props[field] != () { collection[`${name}_items`] = props[field]; }
+    }
     // Both data sources are keyboard operable; the current row stays revealed. A native
     // collection finds its targets in native code, without enumerating rows in Rhai.
     let neighbors = ();

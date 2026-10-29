@@ -38,10 +38,18 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
   are exact formal-component dependencies. Native-only locale direction repaint
   is queued separately, so it does not force an otherwise clean Rhai root.
 - A 5,000-item `VirtualList` must realize only the viewport plus configured
-  overscan; tests enforce bounded realization and stable focus.
+  overscan and at most one batch rendered ahead; tests enforce bounded
+  realization and stable focus.
 - A 10,000-row scalar Table must retain row maps as data and realize only the
-  vertical viewport plus overscan. Header/body horizontal scrolling must not
-  trigger Rhai evaluation.
+  vertical viewport plus overscan and one batch. Header/body horizontal
+  scrolling must not trigger Rhai evaluation.
+- A scroll renders new rows in batches (`batch_items`, 16 unless the
+  collection or the Host sets it): each realization reconciles the view once,
+  so batches cut those passes as well as renderer calls. Scrolling a Table 64
+  rows, one row per step, rendered on 63 steps with a batch of 1 and on 4 with
+  16, about the same 64 rows either way (`tests/native/table/render_ahead.rs`).
+  Rows a scroll left come back without the renderer while the collection keeps
+  them (`retain_items`, 200).
 - Native Table grouping may perform one O(n) partition when sort/group/collapse
   policy changes, but the flattened order and sticky indices must be cached.
   Selection-only updates reuse that order and continue projecting only the

@@ -311,7 +311,10 @@ impl Element for VirtualListEntityElement {
             .collect::<BTreeSet<_>>();
         let halo = overdraw_item_count(&self.content);
         let target = retained_frame_target(&required, &realized, self.content.data.len(), halo);
-        if target.is_empty() || target == realized {
+        // Only a frame that needs an unrendered item asks for a render; items that left
+        // the halo are pruned with it. A scroll inside a batch rendered ahead therefore
+        // commits nothing.
+        if target.is_empty() || required.is_subset(&realized) {
             self.runtime.virtual_requests.clear_target(&self.content.id);
         } else {
             self.runtime

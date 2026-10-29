@@ -327,8 +327,10 @@ pub use value::{
     OpaqueHandle, UiValue, UiValueError, UiValuePath, UiValuePathError, UiValuePathSegment,
 };
 pub use virtual_list::{
-    VariableListSpec, VariableListState, VariableListWindow, VirtualCollectionFollowStatus,
-    VirtualCollectionId, VirtualCollectionMetrics, VirtualCollectionNodeSpec,
+    DEFAULT_VIRTUAL_BATCH_ITEMS, DEFAULT_VIRTUAL_RETAIN_ITEMS, MAX_VIRTUAL_BATCH_ITEMS,
+    MAX_VIRTUAL_OVERSCAN_ITEMS, MAX_VIRTUAL_RETAIN_ITEMS, VariableListSpec, VariableListState,
+    VariableListWindow, VirtualCollectionFollowStatus, VirtualCollectionId,
+    VirtualCollectionMetrics, VirtualCollectionNodeSpec, VirtualCollectionPolicy,
     VirtualCollectionScrollHandle, VirtualListError, VirtualRequestRegistry,
 };
 pub use window::{

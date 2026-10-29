@@ -106,6 +106,25 @@ sort/check assets were removed. Applications that require richer cells should
 supply domain data formatted before the Table boundary or compose a specialized
 source component over `virtual_collection`.
 
+## Rendering ahead and keeping rows
+
+Table renders its rows through `virtual_collection`: a row runs
+`render_table_row` once when it enters the rendered window, and the window
+moves with the scroll. Three props tune that per Table; unset, the Host's
+virtual collection policy decides, then the built-in value:
+
+| Prop | Built-in | What it does |
+|---|---|---|
+| `overscan_rows` | 4 | Rows rendered beyond each edge of the viewport, so a scroll finds them ready |
+| `batch_rows` | 16 | When a scroll needs rows that are not rendered, how many it renders at once; the next scroll steps render nothing. `1` renders row by row |
+| `retain_rows` | 200 | Rows a scroll left are kept and come back without rendering, until the Table renders again (a selection, sort, filter or data change). `0` keeps none |
+
+Each realization also reconciles the view, so batches cut those passes as well
+as the renderer calls: scrolling 64 rows one row per step rendered on 63 steps
+with a batch of 1 and on 4 with 16. A larger overscan or batch renders more
+rows ahead; a larger retain keeps more rows in memory. The mechanism is the
+generic one in [virtual-list.md](../virtual-list.md#rendering-ahead-and-keeping-items).
+
 ## Column resizing
 
 Set `resizable_columns: true` to add a divider between eligible headers. A

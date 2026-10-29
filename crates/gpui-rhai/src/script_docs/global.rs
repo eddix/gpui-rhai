@@ -721,6 +721,6 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "virtual_collection(_: map, _: Fn) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["config", "renderer"],
-        doc: "Creates a virtual list of `config.data` rendering visible items via named `renderer(ctx, payload)`; needs `key`, `estimated_height`, `height` or `fill_height`.",
+        doc: "Creates a virtual list of `config.data` rendering visible items via named `renderer(ctx, payload)`; needs `key`, `estimated_height`, `height` or `fill_height`. `overscan_items`, `batch_items` and `retain_items` set how far it renders ahead and what it keeps.",
     },
 ];

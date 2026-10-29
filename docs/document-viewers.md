@@ -75,7 +75,12 @@ their alt run; Host-provided asset presentation stays inside that same parent.
 
 ## Host-owned Markdown preparation caches
 
-Virtual rows still unmount when they leave the realized range. To reuse parsing
+Virtual rows unmount when they leave the realized range unless their collection
+keeps them (`retain_items`), and every row unmounts when its collection renders
+again. A kept row keeps its live Viewer and needs no preparation when it comes
+back; a row that unmounted does. Rendering rows ahead (`batch_items`) also
+prepares the batch's documents early, so a transcript of expensive replies may
+want a smaller batch. To reuse parsing
 and syntax work without keeping offscreen UI alive, install an application-owned
 `MarkdownPreparationCache` in `RuntimeEngine::document_runtime_config()` during
 `ScriptViewExtension::configure_engine`. No cache is installed by default.

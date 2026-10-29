@@ -1525,10 +1525,13 @@ impl ScriptLifecycle {
             signals: engine.component_signals_in_scope(&self.root_path),
             element_refs: self.element_ref_bindings(engine, retained)?,
         };
+        // The items virtual collections keep keep their reads too.
+        let mut contributions = root.virtual_read_contributions();
+        contributions.extend(engine.kept_virtual_read_contributions(&self.root_path));
         self.runtime
             .try_borrow_mut()
             .map_err(|_| LifecycleError::Borrowed)?
-            .retain_virtual_read_contributions(&self.root_path, &root.virtual_read_contributions());
+            .retain_virtual_read_contributions(&self.root_path, &contributions);
         self.reconcile_effect_candidate(engine, candidate, declarations, Some(previous_state))?;
         self.runtime
             .try_borrow()
@@ -2967,7 +2970,8 @@ mod tests {
                         virtual_collection(#{
                             key: "rows", label: "Rows", data: data,
                             estimated_height: 24, height: 96,
-                            overdraw_pixels: 24, alignment: "top", follow_tail: false
+                            overdraw_pixels: 24, alignment: "top", follow_tail: false,
+                            batch_items: 1, retain_items: 0
                         }, Fn("render_item"))
                     }
                 "#,
@@ -3145,7 +3149,7 @@ mod tests {
             fn view(ctx) {
                 let data=[];for index in 0..20 {data.push(#{key:`row-${index}`});}
                 virtual_collection(#{key:"rows",label:"Rows",data:data,height:24,
-                    estimated_height:24,overdraw_pixels:0},Fn("row"))
+                    estimated_height:24,overdraw_pixels:0,batch_items:1,retain_items:0},Fn("row"))
             }
         "#.replace("WRAPPER_BODY",wrapper).replace("ROW_BODY",row);
             let compiled = engine.compile(&source).unwrap();
@@ -3293,11 +3297,11 @@ mod tests {
             }
             fn outer_row(ctx,payload) {
                 virtual_collection(#{key:`inner-${payload.key}`,label:"Inner",data:data(),height:24,
-                    estimated_height:24,overdraw_pixels:0},Fn("inner_row"))
+                    estimated_height:24,overdraw_pixels:0,batch_items:1,retain_items:0},Fn("inner_row"))
             }
             fn render_panel(ctx,props) {
                 virtual_collection(#{key:"outer",label:"Outer",data:data(),height:24,
-                    estimated_height:24,overdraw_pixels:0},Fn("outer_row"))
+                    estimated_height:24,overdraw_pixels:0,batch_items:1,retain_items:0},Fn("outer_row"))
             }
             fn view(ctx) {column([text(`${ctx.get_state("other")}`),render_component("test/panel",#{key:"panel"})])}
         "#).unwrap();
@@ -3429,6 +3433,331 @@ mod tests {
         );
     }
 
+    /// 64 rows of 24px in a 96px viewport with one row of overdraw, `EXTRA` appended to
+    /// the collection's config. Rows from 40 on are a component that owns an effect, and
+    /// row 50 fails to render. The state `version` renders the collection again.
+    const RENDER_AHEAD: &str = r#"
+        define_component(#{
+            metadata:#{id:"test/ticking","export":"Ticking",version:"0.1.0",
+                runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
+            schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
+                state:#{fields:#{}},events:#{},slots:#{},parts:[],effects:["tick"]},
+            render:Fn("render_ticking")
+        });
+        fn start(ctx,deps) {()}
+        fn stop(ctx,deps) {()}
+        fn render_ticking(ctx,props) {
+            effect("tick",(),Fn("start"),Fn("stop"));
+            text("ticking").with_key(props.key)
+        }
+        fn row(ctx,payload) {
+            if payload.index == 50 { throw "row 50 failed"; }
+            if payload.index >= 40 { render_component("test/ticking",#{key:payload.key}) }
+            else { text(payload.item.label).with_key(payload.key) }
+        }
+        fn view(ctx) {
+            let version = ctx.get_state("version");
+            let data=[];
+            for index in 0..64 {data.push(#{key:`row-${index}`,label:`Row ${index}:${version}`});}
+            virtual_collection(#{key:"rows",label:"Rows",data:data,height:96,
+                estimated_height:24,overdraw_pixels:24 EXTRA},Fn("row"))
+        }
+    "#;
+
+    struct RenderAhead {
+        engine: RuntimeEngine,
+        lifecycle: ScriptLifecycle,
+        runtime: Rc<RefCell<UiRuntimeState>>,
+        id: crate::VirtualCollectionId,
+        path: ComponentInstancePath,
+    }
+
+    impl RenderAhead {
+        fn start(extra: &str, policy: crate::VirtualCollectionPolicy) -> Self {
+            let mut engine = RuntimeEngine::new();
+            engine.set_virtual_collection_policy(policy);
+            let compiled = engine
+                .compile(&RENDER_AHEAD.replace("EXTRA", extra))
+                .unwrap();
+            let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+            let path = ComponentInstancePath::root("App", "ahead");
+            let schema = ComponentStateSchema::new(BTreeMap::from([(
+                "version".to_owned(),
+                StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
+            )]))
+            .unwrap();
+            let mut lifecycle = ScriptLifecycle::new(
+                compiled,
+                Rc::clone(&runtime),
+                path.clone(),
+                Some("main".to_owned()),
+                BTreeMap::new(),
+                &schema,
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).unwrap();
+            let id = engine
+                .virtual_collection_ids_in_scope(&path)
+                .into_iter()
+                .next()
+                .unwrap();
+            let _ = engine.take_timings();
+            Self {
+                engine,
+                lifecycle,
+                runtime,
+                id,
+                path,
+            }
+        }
+
+        fn realized(&self) -> Vec<usize> {
+            self.lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&self.id)
+                .unwrap()
+                .keys()
+                .copied()
+                .collect()
+        }
+
+        /// Ask for `range`, as a frame that needs it does, replacing any pending target;
+        /// returns the rows the renderer rendered for it.
+        fn request(&mut self, range: std::ops::Range<usize>) -> usize {
+            self.runtime
+                .borrow()
+                .virtual_requests
+                .request_target(self.id.clone(), range);
+            self.lifecycle
+                .realize_virtual_requests(&mut self.engine)
+                .unwrap();
+            self.engine
+                .take_timings()
+                .iter()
+                .filter(|timing| {
+                    matches!(timing.operation, ExecutionOperation::VirtualCollection(_))
+                })
+                .count()
+        }
+
+        fn render_again(&mut self) {
+            self.runtime
+                .borrow_mut()
+                .set_component_state_from_host(&self.path, "version", UiValue::Integer(1))
+                .unwrap();
+            assert!(self.lifecycle.render_dirty(&mut self.engine).unwrap());
+            let _ = self.engine.take_timings();
+        }
+    }
+
+    #[test]
+    fn a_scroll_that_needs_new_items_renders_a_batch_beyond_them() {
+        let mut ahead = RenderAhead::start(
+            ",batch_items:8,retain_items:0",
+            crate::VirtualCollectionPolicy::default(),
+        );
+        assert_eq!(ahead.realized(), (0..6).collect::<Vec<_>>());
+        // Rows 6 and 7 are needed; seven more follow them.
+        assert_eq!(ahead.request(2..8), 9);
+        assert_eq!(ahead.realized(), (2..15).collect::<Vec<_>>());
+        // Scrolling back up needs rows 0 and 1, and renders seven above them where there
+        // are rows: none.
+        assert_eq!(ahead.request(0..6), 2);
+        assert_eq!(ahead.realized(), (0..6).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn items_leaving_the_range_come_back_without_rendering() {
+        let mut ahead = RenderAhead::start(
+            ",batch_items:1,retain_items:32",
+            crate::VirtualCollectionPolicy::default(),
+        );
+        assert_eq!(ahead.request(20..26), 6);
+        assert_eq!(ahead.request(0..6), 0, "rows 0 to 5 were kept");
+        assert_eq!(ahead.realized(), (0..6).collect::<Vec<_>>());
+        let items = ahead
+            .lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_items(&ahead.id)
+            .unwrap()
+            .clone();
+        assert!(matches!(items[&3].kind(), UiNodeKind::Text { text } if text == "Row 3:0"));
+        assert_eq!(ahead.request(20..26), 0, "and so were rows 20 to 25");
+    }
+
+    #[test]
+    fn kept_items_are_dropped_when_the_collection_renders_again() {
+        let mut ahead = RenderAhead::start(
+            ",batch_items:1,retain_items:32",
+            crate::VirtualCollectionPolicy::default(),
+        );
+        assert_eq!(ahead.request(20..26), 6);
+        assert_eq!(ahead.request(30..36), 6);
+        ahead.render_again();
+        // Rows 20 to 25 were kept from the first render; the new one renders them anew,
+        // with the new data.
+        assert_eq!(ahead.request(20..26), 6);
+        let items = ahead
+            .lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_items(&ahead.id)
+            .unwrap()
+            .clone();
+        assert!(matches!(items[&22].kind(), UiNodeKind::Text { text } if text == "Row 22:1"));
+    }
+
+    #[test]
+    fn an_item_whose_component_owns_an_effect_is_released_not_kept() {
+        let mut ahead = RenderAhead::start(
+            ",batch_items:1,retain_items:32",
+            crate::VirtualCollectionPolicy::default(),
+        );
+        assert_eq!(ahead.request(40..46), 6);
+        assert_eq!(ahead.request(20..26), 6);
+        // Rows 40 to 45 stopped their effects when they left; they render again.
+        assert_eq!(ahead.request(40..46), 6);
+        // Rows 20 to 25 own no work and were kept.
+        assert_eq!(ahead.request(20..26), 0);
+    }
+
+    #[test]
+    fn kept_items_survive_a_failed_realization() {
+        let mut ahead = RenderAhead::start(
+            ",batch_items:1,retain_items:32",
+            crate::VirtualCollectionPolicy::default(),
+        );
+        assert_eq!(ahead.request(20..26), 6);
+        // Row 50 fails: the items roll back to 20 to 25, which this attempt had kept.
+        ahead
+            .runtime
+            .borrow()
+            .virtual_requests
+            .request(ahead.id.clone(), 48..52);
+        assert!(
+            ahead
+                .lifecycle
+                .realize_virtual_requests(&mut ahead.engine)
+                .is_err()
+        );
+        let _ = ahead.engine.take_timings();
+        assert_eq!(ahead.realized(), (20..26).collect::<Vec<_>>());
+        // What the collection kept before and during the failed attempt still comes back
+        // without rendering.
+        assert_eq!(ahead.request(0..6), 0);
+        assert_eq!(ahead.request(20..26), 0);
+        assert_eq!(ahead.realized(), (20..26).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_failing_item_rendered_ahead_falls_back_to_the_requested_ones() {
+        let mut ahead = RenderAhead::start(
+            ",batch_items:8,retain_items:0",
+            crate::VirtualCollectionPolicy::default(),
+        );
+        // The batch after rows 44 and 45 reaches row 50, which fails: rows 44 to 49 render
+        // and 50 fails (seven renders), then only the requested rows render again (two).
+        // No failure is reported.
+        assert_eq!(ahead.request(44..46), 9);
+        assert_eq!(ahead.realized(), vec![44, 45]);
+        // Within the engine's session, before the lifecycle starts another, the recovered
+        // failure is not the last one either.
+        let previous = ahead
+            .lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_items(&ahead.id)
+            .unwrap()
+            .clone();
+        ahead.engine.begin_execution_session();
+        let realized = ahead
+            .engine
+            .realize_virtual_collection(&ahead.id, &BTreeSet::from([46, 47]), &previous)
+            .unwrap();
+        assert_eq!(realized.keys().copied().collect::<Vec<_>>(), vec![46, 47]);
+        assert_eq!(ahead.engine.last_failed_timing(), None);
+        assert_eq!(ahead.engine.last_failed_component(), None);
+        // A failing requested row still fails the realization.
+        ahead
+            .runtime
+            .borrow()
+            .virtual_requests
+            .request_target(ahead.id.clone(), 50..51);
+        assert!(
+            ahead
+                .lifecycle
+                .realize_virtual_requests(&mut ahead.engine)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn the_host_policy_applies_unless_a_collection_sets_its_own() {
+        let policy = crate::VirtualCollectionPolicy {
+            overscan_items: Some(3),
+            batch_items: Some(4),
+            retain_items: Some(0),
+        };
+        let mut ahead = RenderAhead::start("", policy);
+        // Three items of overscan replace the collection's own 24 pixels.
+        let spec = ahead
+            .lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_spec(&ahead.id)
+            .unwrap()
+            .clone();
+        assert!((spec.overdraw_pixels - 72.0).abs() < f64::EPSILON);
+        let first = *ahead.realized().last().unwrap() + 1;
+        // The Host's batch of four: the needed row and three more.
+        assert_eq!(ahead.request(first..first + 1), 4);
+
+        let mut own = RenderAhead::start(",overscan_items:0,batch_items:1", policy);
+        let spec = own
+            .lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_spec(&own.id)
+            .unwrap()
+            .clone();
+        assert!(spec.overdraw_pixels.abs() < f64::EPSILON);
+        let first = *own.realized().last().unwrap() + 1;
+        assert_eq!(own.request(first..first + 1), 1);
+    }
+
+    #[test]
+    fn render_ahead_settings_are_validated() {
+        for (extra, field) in [
+            (",batch_items:0", "batch_items"),
+            (",retain_items:-1", "retain_items"),
+            (",overscan_items:1001", "overscan_items"),
+            (",batch_items:2.5", "batch_items"),
+        ] {
+            let mut engine = RuntimeEngine::new();
+            let compiled = engine
+                .compile(&RENDER_AHEAD.replace("EXTRA", extra))
+                .unwrap();
+            let schema = ComponentStateSchema::new(BTreeMap::from([(
+                "version".to_owned(),
+                StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
+            )]))
+            .unwrap();
+            let mut lifecycle = ScriptLifecycle::new(
+                compiled,
+                Rc::new(RefCell::new(UiRuntimeState::new())),
+                ComponentInstancePath::root("App", "invalid"),
+                Some("main".to_owned()),
+                BTreeMap::new(),
+                &schema,
+            )
+            .unwrap();
+            let error = lifecycle.start(&mut engine).unwrap_err().to_string();
+            assert!(error.contains(field), "{extra}: {error}");
+        }
+    }
+
     #[test]
     fn controlled_rerender_synchronously_rebuilds_the_retained_virtual_window() {
         let mut engine = RuntimeEngine::new();
@@ -3452,6 +3781,7 @@ mod tests {
                             key: "rows", label: "Rows", data: data,
                             estimated_height: 24, height: 96,
                             overdraw_pixels: 24, alignment: "top", follow_tail: false,
+                            batch_items: 1, retain_items: 0,
                             reveal_key: `row-${active}`,
                         }, Fn("render_item"))
                     }

@@ -1,6 +1,8 @@
 use gpui_rhai::*;
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
+// Both collections render no batch ahead and keep no rows, so rows that scroll away release
+// their reads; `a_kept_row_keeps_its_reads...` covers kept rows.
 const SOURCE: &str = r#"
 fn load(ctx,key){try{let value=ctx.get_native_collection(key);return text("ready");}catch(err){return text(err.to_string());}}
 fn rows(){let data=[];for i in 0..80{data.push(#{key:`source-${i}`});}data}
@@ -11,8 +13,8 @@ fn row(ctx,p){
  load(ctx,p.key)
 }
 fn view(ctx){let root=load(ctx,"root-source");column([root,
- virtual_collection(#{key:"a",label:"A",data:rows(),height:24,estimated_height:24,overdraw_pixels:0},Fn("row")),
- virtual_collection(#{key:"b",label:"B",data:rows(),height:24,estimated_height:24,overdraw_pixels:0},Fn("row"))])}
+ virtual_collection(#{key:"a",label:"A",data:rows(),height:24,estimated_height:24,overdraw_pixels:0,batch_items:1,retain_items:0},Fn("row")),
+ virtual_collection(#{key:"b",label:"B",data:rows(),height:24,estimated_height:24,overdraw_pixels:0,batch_items:1,retain_items:0},Fn("row"))])}
 "#;
 
 fn setup() -> (
@@ -132,5 +134,64 @@ fn failed_row_candidate_restores_the_previous_read_contributions() {
     );
     assert!(
         matches!(collection(life.root().unwrap(),"a").unwrap().realized[&0].kind(),UiNodeKind::Text{text} if text=="ready")
+    );
+}
+
+#[test]
+fn a_kept_row_keeps_its_reads_so_a_change_renders_the_collection_again() {
+    let mut engine = RuntimeEngine::new();
+    let source = SOURCE.replacen(
+        "batch_items:1,retain_items:0",
+        "batch_items:1,retain_items:32",
+        1,
+    );
+    assert_ne!(source, SOURCE);
+    let compiled = engine.compile(&source).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let path = ComponentInstancePath::root("App", "kept-readers");
+    let mut life = ScriptLifecycle::new(
+        compiled,
+        runtime.clone(),
+        path.clone(),
+        Some("main".into()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    life.start(&mut engine).unwrap();
+    let a = collection(life.root().unwrap(), "a").unwrap().id.clone();
+    for index in [2, 10] {
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(a.clone(), [index]);
+        life.realize_virtual_requests(&mut engine).unwrap();
+    }
+    assert!(
+        !collection(life.root().unwrap(), "a")
+            .unwrap()
+            .realized
+            .contains_key(&2)
+    );
+    // Row 2 is kept with its read of source-2: registering it renders the collection again.
+    runtime
+        .borrow_mut()
+        .register_native_collection_from_host(&path, "source-2", empty_collection())
+        .unwrap();
+    assert!(
+        life.render_dirty(&mut engine).unwrap(),
+        "a kept row's read must render its collection again"
+    );
+    runtime.borrow().virtual_requests.request(a.clone(), [2]);
+    life.realize_virtual_requests(&mut engine).unwrap();
+    let UiNodeKind::Text { text } =
+        collection(life.root().unwrap(), "a").unwrap().realized[&2].kind()
+    else {
+        panic!("raw row must remain text")
+    };
+    assert_eq!(
+        text.as_str(),
+        "ready",
+        "the row comes back rendered from the new data"
     );
 }

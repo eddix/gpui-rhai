@@ -1746,7 +1746,8 @@ fn data_backed_virtual_collection_realizes_only_requested_items_off_layout_path(
                     virtual_collection(#{
                         key: "messages", label: "Messages", data: data,
                         estimated_height: 20, height: 100, overdraw_pixels: 40,
-                        alignment: "top", follow_tail: false
+                        alignment: "top", follow_tail: false,
+                        batch_items: 1, retain_items: 0
                     }, Fn("item"))
                 }
             "#,

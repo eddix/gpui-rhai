@@ -1,6 +1,6 @@
 # Table
 
-`components/table` · export `Table` · version 0.2.1. Generated from
+`components/table` · export `Table` · version 0.3.2. Generated from
 [`registry/components/table.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/table.rhai); do not edit.
 
 Data-backed Table composed entirely from public Box/Text/virtual_collection APIs. Use either a positive logical-pixel height or fill_height for flex layouts.
@@ -18,6 +18,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `batch_rows` | integer 1–1000 or `()` | — | When a scroll needs rows that are not rendered, how many it renders at once, so the next scroll steps render nothing; unset, the Host's policy decides, else 16. |
 | `collapsed_groups` | array of string (at most 100000) | `[]` | Group values whose rows are hidden; needs `group_by`, and the caller toggles the `group_toggle` payload in it. |
 | `columns` | array of object (at most 256) | required | Columns in display order; 1 to 256 with unique keys. |
 | `empty` | node or `()` | — | Node shown instead of `empty_text` when no row is left to show. |
@@ -36,11 +37,13 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `on_row_click` | callback or `()` | — | Called with the row key when a row is clicked, or Enter is pressed on the selected row. |
 | `on_selection_change` | callback or `()` | — | Called with the next selected keys when a row is clicked, Up, Down, Home or End is pressed, or a context request selects a row. |
 | `on_sort_change` | callback or `()` | — | Called with the next `sort`, or `()` after descending, when a sortable header is clicked. |
+| `overscan_rows` | integer 0–1000 or `()` | — | Rows rendered beyond each edge of the viewport, so a scroll finds them ready; unset, the Host's virtual collection policy decides, else 4. |
 | `page` | integer ≥ 1 | `1` | One-based page shown when `page_size` is set, counted after `query` filters the rows. |
 | `page_size` | integer ≥ 1 or `()` | — | Rows per page; `()` shows every row that matches `query`. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `query` | string | `""` | Case-insensitive substring filter over `search_fields`; a non-empty query needs `search_fields`. |
 | `resizable_columns` | bool | `false` | Makes columns resizable: drag a header edge, double-click it to fit the content, or press Left/Right on its handle. |
+| `retain_rows` | integer 0–10000 or `()` | — | Rendered rows kept after they scroll away and reused when they come back, until the Table renders again (a selection, sort or data change); unset, the Host's policy decides, else 200; `0` keeps none. |
 | `row_key` | string | required | Row field whose value, as a string, identifies the row in `selected_keys` and events. |
 | `rows` | array of map of any value (at most 100000) or native collection | required | Row maps keyed by field, or a NativeCollection that sorts, groups and filters in Rust; cells show values as strings. |
 | `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared native body scrollbar visibility; selection keeps its keyboard ownership. |
