@@ -96,12 +96,17 @@ pub fn install(cx: &mut App) {
 }
 
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ScriptViewConfig {
     view_id: String,
     paint_background: bool,
     show_error_banner: bool,
     window_drag_areas: bool,
     error_reporting: ErrorReporting,
+    render_islands: Option<bool>,
+    /// The view fills its window, which [`ScriptApplication`] and script
+    /// windows lay out; a Host lays out the views it mounts.
+    fills_window: bool,
 }
 
 /// A new failure of a mounted view, as [`ScriptViewConfig::on_error`] passes it.
@@ -152,6 +157,8 @@ impl ScriptViewConfig {
             show_error_banner: true,
             window_drag_areas: false,
             error_reporting: ErrorReporting::default(),
+            render_islands: None,
+            fills_window: false,
         }
     }
 
@@ -202,6 +209,22 @@ impl ScriptViewConfig {
     #[must_use]
     pub const fn window_drag_areas(mut self, enabled: bool) -> Self {
         self.window_drag_areas = enabled;
+        self
+    }
+
+    /// Whether frames replay the unchanged parts of the view instead of
+    /// building them again (on by default). Turning it off renders every
+    /// frame in full, as 0.3.2 did, which also
+    /// `GPUI_RHAI_RENDER_ISLANDS=off` does for every view. Script windows
+    /// the view opens follow it.
+    #[must_use]
+    pub const fn render_islands(mut self, enabled: bool) -> Self {
+        self.render_islands = Some(enabled);
+        self
+    }
+
+    const fn fills_window(mut self) -> Self {
+        self.fills_window = true;
         self
     }
 
@@ -1009,6 +1032,14 @@ pub struct ScriptViewRenderStatistics {
     pub commit_phases: Vec<(&'static str, Duration)>,
     /// Nodes in the committed tree when the statistics were taken.
     pub retained_nodes: usize,
+    /// Cache islands replayed from the frame before.
+    pub island_hits: u64,
+    /// Cache islands embedded cached that rendered.
+    pub island_misses: u64,
+    /// Cache islands rendered in place.
+    pub island_uncached: u64,
+    /// Cached island renders whose height differed from the pinned one.
+    pub island_drift: u64,
 }
 
 /// What a view committed and presented, for comparing two windows that run the
@@ -1350,6 +1381,14 @@ impl ScriptViewHandle {
             statistics.commits = commits.commits;
             statistics.commit_phases = commits.phases;
             statistics.retained_nodes = view.lifecycle.retained().len();
+            let islands = std::mem::take(&mut *view.islands.counters.borrow_mut());
+            // Islands render after the view, as part of its frame.
+            statistics.host_render_time += islands.render_time;
+            statistics.build_time += islands.render_time;
+            statistics.island_hits = islands.hits;
+            statistics.island_misses = islands.misses;
+            statistics.island_uncached = islands.uncached;
+            statistics.island_drift = islands.drift;
             statistics
         }))
     }
@@ -2333,6 +2372,7 @@ impl FileScriptView {
             theme_layers: RefCell::new(theme_layers),
             show_error_banner: Cell::new(true),
             error_reporting: RefCell::new(ErrorReporting::default()),
+            render_islands: Cell::new(None),
             execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -2649,6 +2689,7 @@ impl EmbeddedScriptView {
             theme_layers: RefCell::new(theme_layers),
             show_error_banner: Cell::new(true),
             error_reporting: RefCell::new(ErrorReporting::default()),
+            render_islands: Cell::new(None),
             execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -3273,6 +3314,8 @@ struct ScriptWindowFactory {
     show_error_banner: Cell<bool>,
     /// The mounting view's reporting, which the script windows it opens share.
     error_reporting: RefCell<ErrorReporting>,
+    /// The mounting view's [`ScriptViewConfig::render_islands`].
+    render_islands: Cell<Option<bool>>,
     execution_policy: ScriptExecutionPolicy,
     #[cfg(feature = "dev-reload")]
     development: bool,
@@ -3502,6 +3545,7 @@ impl PreparedScriptView {
         self.factory
             .error_reporting
             .replace(config.error_reporting.clone());
+        self.factory.render_islands.set(config.render_islands);
         let window_authority = host
             .bind_window(&config.view_id, window.window_handle(), policy, cx)
             .inspect_err(|_| {
@@ -3581,6 +3625,8 @@ impl PreparedScriptView {
                 timings,
                 render_statistics: ScriptViewRenderStatistics::default(),
                 derived_key: None,
+                islands: IslandTable::new(config.render_islands, config.fills_window),
+                frame: None,
                 overlays,
                 host: view_host,
                 paint_background: config.paint_background,
@@ -3790,6 +3836,7 @@ impl ScriptApplication {
                 window.defer(cx, move |window, cx| {
                     let view = prepared.mount_with_registry(
                         ScriptViewConfig::new("main")
+                            .fills_window()
                             .paint_background(true)
                             .show_error_banner(show_error_banner)
                             .mirror_errors_to_stderr(mirror_errors_to_stderr)
@@ -3990,6 +4037,8 @@ fn open_secondary_window(
                 timings,
                 render_statistics: ScriptViewRenderStatistics::default(),
                 derived_key: None,
+                islands: IslandTable::new(view_factory.render_islands.get(), true),
+                frame: None,
                 overlays: view_host.overlays(),
                 host: view_host.clone(),
                 paint_background: true,
@@ -4315,6 +4364,9 @@ struct ScriptHostView {
     render_statistics: ScriptViewRenderStatistics,
     /// The committed tree and primitives the last frame's walks derived from.
     derived_key: Option<DerivedKey>,
+    islands: IslandTable,
+    /// What the last frame rendered from, which its islands render from.
+    frame: Option<Rc<HostFrame>>,
     overlays: WindowOverlayCoordinator,
     host: ScriptViewHost,
     paint_background: bool,
@@ -4961,59 +5013,37 @@ impl ScriptHostView {
             );
         }
         let focus_path = self.focus_path(window);
-        let render_resources = crate::renderer::WindowRenderResources {
-            now: snapshot.now,
-            clock: &snapshot.clock,
-            motion_preference: snapshot.motion_preference,
-            motion_quality: snapshot.motion_quality,
-            assets: &snapshot.assets,
-            dispatcher: &dispatcher,
-            overlays: &self.overlays,
-            interactions: &interactions,
-            motions: &snapshot.motions,
-            signals: &snapshot.signals,
-            geometry: &snapshot.geometry,
-            pointer_capture: &snapshot.pointer_capture,
-            focus_handles: &self.focus_handles,
-            // The view renders its retained tree, where owners are found by
-            // walking ancestors; only slot content carries an owner map.
-            focus_owners: &BTreeMap::new(),
-            scroll_handles: &self.scroll_handles,
-            scroll_anchors: &self.scroll_anchors,
-            wheel_parents: &[],
-            intrinsic_size: None,
-            virtual_requests: &snapshot.virtual_requests,
-            text_selection: &self.text_selection,
-            host_focus: Some(&self.host_focus),
-            direction: snapshot.direction,
-            locale: &snapshot.locale,
-            number: snapshot.number.as_ref(),
-            ambient_text_color: None,
-            environment: crate::Environment::EMPTY,
-            inherited_disabled: false,
-            focus_path: &focus_path,
-            owner_focused: false,
-            root_path: &motion_root,
-            view_id: &self.view_id,
-            semantics: &semantics,
+        let frame = Rc::new(HostFrame {
+            number: self.islands.next_frame(),
+            snapshot,
+            dispatcher,
+            interactions,
+            semantics,
+            focus_path,
+            motion_root,
             a11y_active,
-            window_drag: self.window_drag_areas,
-        };
+            focus_owners: BTreeMap::new(),
+        });
+        self.frame = Some(Rc::clone(&frame));
+        let islands = self.island_frame(&frame, window, cx);
         let build_started = Instant::now();
         let content = self.lifecycle.retained().root().map_or_else(
             || div().child("Script view has no root").into_any_element(),
             |_| {
+                let mut resources = frame.resources(self);
+                resources.islands = islands.as_ref();
                 GpuiNodeRenderer::render_retained_with_window_runtime(
                     self.lifecycle.retained(),
-                    &snapshot.theme,
+                    &frame.snapshot.theme,
                     &InteractionState::default(),
                     &self.primitives,
-                    &render_resources,
+                    &resources,
                 )
             },
         );
         self.render_statistics.build_time += build_started.elapsed();
         self.report_presentation_diagnostics(cx);
+        let snapshot = &frame.snapshot;
         let content = match (&self.last_failure, self.show_error_banner) {
             (Some(failure), true) => build_error_banner(
                 &self.view_id,
@@ -5030,29 +5060,40 @@ impl ScriptHostView {
             ),
             _ => content,
         };
-        let motion_ghosts = snapshot
-            .motion_ghosts
-            .iter()
-            .map(|ghost| {
-                crate::renderer::render_motion_ghost(
-                    ghost,
-                    &snapshot.theme,
-                    &self.primitives,
-                    &render_resources,
-                )
-            })
-            .collect::<Vec<_>>();
+        let motion_ghosts = {
+            let resources = frame.resources(self);
+            snapshot
+                .motion_ghosts
+                .iter()
+                .map(|ghost| {
+                    crate::renderer::render_motion_ghost(
+                        ghost,
+                        &snapshot.theme,
+                        &self.primitives,
+                        &resources,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
         #[cfg(feature = "dev-reload")]
         let runtime = self.lifecycle.runtime();
         #[cfg(feature = "dev-reload")]
         let inspector = self.inspector_element(&runtime, &snapshot.theme);
         let text_selection = self.text_selection.clone();
+        let (down, up, up_outside) = (
+            Rc::clone(&self.islands.pressed),
+            Rc::clone(&self.islands.pressed),
+            Rc::clone(&self.islands.pressed),
+        );
         let root = build_host_root(&self.host_focus, &snapshot.theme, self.paint_background)
             .on_mouse_down(MouseButton::Left, move |event, window, _| {
                 if text_selection.clear_outside(event.position) {
                     window.refresh();
                 }
             })
+            .capture_any_mouse_down(move |_, _, _| down.set(true))
+            .capture_any_mouse_up(move |_, _, _| up.set(false))
+            .on_mouse_up_out(MouseButton::Left, move |_, _, _| up_outside.set(false))
             .child(content)
             .children(motion_ghosts)
             .children({
@@ -5088,12 +5129,248 @@ impl ScriptHostView {
             root.into_any_element(),
             &self.view_id,
             self.lifecycle.retained(),
-            &dispatcher,
+            &frame.dispatcher,
             &snapshot.pointer_capture,
             &snapshot.geometry,
             &self.scroll_handles,
-            interactions.clone(),
+            frame.interactions.clone(),
         )
+    }
+
+    /// This frame's cache islands: the plan of the committed tree, made again
+    /// after a commit, and what every island's render depends on beyond its
+    /// subtree. `None` when the view embeds none.
+    fn island_frame(
+        &mut self,
+        frame: &HostFrame,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<crate::island::IslandFrame> {
+        let policy = self.islands.policy;
+        if !policy.enabled {
+            return None;
+        }
+        let tree = self.lifecycle.retained();
+        let planned = (self.lifecycle.generation(), self.lifecycle.revision());
+        let generation_changed =
+            self.islands.planned.map(|(generation, _)| generation) != Some(planned.0);
+        // A new plan moves the elements of the islands it changes to other
+        // GPUI element ids, which would drop a click in progress: while a
+        // button is down, the islands of the last plan stay.
+        if self.islands.planned != Some(planned)
+            && (generation_changed || !self.islands.pressed.get())
+        {
+            if generation_changed {
+                self.islands.entries.clear();
+            }
+            let entries = &mut self.islands.entries;
+            let roots = crate::island::plan(tree, policy.min_nodes, |id| entries.contains_key(&id));
+            entries.retain(|id, _| roots.contains(id));
+            let host = cx.weak_entity();
+            for root in roots {
+                entries.entry(root).or_insert_with(|| {
+                    let slot = Rc::default();
+                    let island = cx.new(|_| RetainedIsland {
+                        host: host.clone(),
+                        slot: Rc::clone(&slot),
+                    });
+                    (
+                        island.clone(),
+                        crate::island::IslandEntry {
+                            view: island.into(),
+                            slot,
+                        },
+                    )
+                });
+            }
+            self.islands.planned = Some(planned);
+        }
+        if self.islands.entries.is_empty() {
+            return None;
+        }
+        // Reading every island keeps it among the entities the window tracks,
+        // so a notify from GPUI inside a replayed island still reaches it.
+        for (island, _) in self.islands.entries.values() {
+            island.read(cx);
+        }
+        let snapshot = &frame.snapshot;
+        let fingerprint = crate::island::FrameFingerprint {
+            generation: planned.0,
+            theme: snapshot.theme.clone(),
+            locale: snapshot.locale.clone(),
+            number: snapshot.number.clone(),
+            motion_preference: snapshot.motion_preference,
+            motion_quality: snapshot.motion_quality,
+            primitives: self.primitives.epoch(),
+            window_drag: self.window_drag_areas,
+            rem_bits: f32::from(window.rem_size()).to_bits(),
+            scale_bits: window.scale_factor().to_bits(),
+        };
+        let fingerprint = match &self.islands.fingerprint {
+            Some(previous) if **previous == fingerprint => Rc::clone(previous),
+            _ => Rc::new(fingerprint),
+        };
+        self.islands.fingerprint = Some(Rc::clone(&fingerprint));
+        // The viewport is the width of a view that fills its window, unless
+        // the error banner lays the content out.
+        let root_anchor = ((self.islands.fills_window || policy.anchor_hosted_root)
+            && !(self.last_failure.is_some() && self.show_error_banner))
+            .then(|| u64::from(f32::from(window.viewport_size().width).to_bits()));
+        let mut islands = crate::island::IslandFrame {
+            frame: frame.number,
+            policy,
+            fingerprint,
+            revision: planned.1,
+            entries: self
+                .islands
+                .entries
+                .iter()
+                .map(|(id, (_, entry))| (*id, entry.clone()))
+                .collect(),
+            counters: Rc::clone(&self.islands.counters),
+            root_anchor,
+            motions: BTreeMap::new(),
+            motion_unknown: false,
+        };
+        islands.assign_motions(tree, &snapshot.motions, &frame.motion_root);
+        Some(islands)
+    }
+}
+
+/// What one frame of a view rendered from, kept for the cache islands it
+/// embeds: they render after the view, from the same frame.
+struct HostFrame {
+    number: u64,
+    snapshot: ScriptRenderSnapshot,
+    dispatcher: NodeEventDispatcher,
+    interactions: crate::interaction::WindowInteractionCoordinator,
+    semantics: crate::CommittedSemanticFrame,
+    focus_path: Vec<crate::NodeId>,
+    motion_root: String,
+    a11y_active: bool,
+    /// The view renders its retained tree, where owners are found by walking
+    /// ancestors; only slot content carries an owner map.
+    focus_owners: BTreeMap<crate::NodeId, FocusHandle>,
+}
+
+impl HostFrame {
+    fn resources<'a>(
+        &'a self,
+        view: &'a ScriptHostView,
+    ) -> crate::renderer::WindowRenderResources<'a> {
+        let snapshot = &self.snapshot;
+        crate::renderer::WindowRenderResources {
+            now: snapshot.now,
+            clock: &snapshot.clock,
+            motion_preference: snapshot.motion_preference,
+            motion_quality: snapshot.motion_quality,
+            assets: &snapshot.assets,
+            dispatcher: &self.dispatcher,
+            overlays: &view.overlays,
+            interactions: &self.interactions,
+            motions: &snapshot.motions,
+            signals: &snapshot.signals,
+            geometry: &snapshot.geometry,
+            pointer_capture: &snapshot.pointer_capture,
+            focus_handles: &view.focus_handles,
+            focus_owners: &self.focus_owners,
+            scroll_handles: &view.scroll_handles,
+            scroll_anchors: &view.scroll_anchors,
+            wheel_parents: &[],
+            intrinsic_size: None,
+            virtual_requests: &snapshot.virtual_requests,
+            text_selection: &view.text_selection,
+            host_focus: Some(&view.host_focus),
+            direction: snapshot.direction,
+            locale: &snapshot.locale,
+            number: snapshot.number.as_ref(),
+            ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
+            focus_path: &self.focus_path,
+            owner_focused: false,
+            root_path: &self.motion_root,
+            view_id: &view.view_id,
+            semantics: &self.semantics,
+            a11y_active: self.a11y_active,
+            window_drag: view.window_drag_areas,
+            islands: None,
+        }
+    }
+}
+
+/// A view's cache islands ([`crate::island`]) across frames.
+struct IslandTable {
+    policy: crate::island::IslandPolicy,
+    /// Whether the view fills its window, whose width then anchors the
+    /// widths in it.
+    fills_window: bool,
+    /// The committed tree (generation and revision) the plan was made from.
+    planned: Option<(crate::ScriptGeneration, u64)>,
+    entries: BTreeMap<crate::NodeId, (Entity<RetainedIsland>, crate::island::IslandEntry)>,
+    fingerprint: Option<Rc<crate::island::FrameFingerprint>>,
+    counters: Rc<RefCell<crate::island::IslandCounters>>,
+    frames: u64,
+    /// A mouse button went down in the view and has not come up.
+    pressed: Rc<Cell<bool>>,
+}
+
+impl IslandTable {
+    fn new(config: Option<bool>, fills_window: bool) -> Self {
+        Self {
+            policy: crate::island::IslandPolicy::resolve(config),
+            fills_window,
+            planned: None,
+            entries: BTreeMap::new(),
+            fingerprint: None,
+            counters: Rc::default(),
+            frames: 0,
+            pressed: Rc::default(),
+        }
+    }
+
+    const fn next_frame(&mut self) -> u64 {
+        self.frames += 1;
+        self.frames
+    }
+}
+
+/// A cache island's view: its root, rendered from the frame its view last
+/// rendered with what the root inherits there.
+struct RetainedIsland {
+    host: gpui::WeakEntity<ScriptHostView>,
+    slot: Rc<RefCell<crate::island::IslandSlot>>,
+}
+
+impl Render for RetainedIsland {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(host) = self.host.upgrade() else {
+            return gpui::Empty.into_any_element();
+        };
+        let host = host.read(cx);
+        let (capture, root_width) = {
+            let slot = self.slot.borrow();
+            (
+                slot.capture.clone(),
+                slot.render_bounds.map(|bounds| bounds.size.width),
+            )
+        };
+        let (Some(frame), Some(capture)) = (host.frame.as_deref(), capture) else {
+            return gpui::Empty.into_any_element();
+        };
+        let started = Instant::now();
+        let tree = host.lifecycle.retained();
+        let element = GpuiNodeRenderer::render_island_root(
+            tree,
+            &frame.snapshot.theme,
+            &host.primitives,
+            &frame.resources(host),
+            &capture,
+            root_width,
+        );
+        self.slot.borrow_mut().rendered(frame.number, tree);
+        host.islands.counters.borrow_mut().render_time += started.elapsed();
+        element
     }
 }
 

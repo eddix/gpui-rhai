@@ -496,7 +496,7 @@ fn key_handler_bindings(
         .collect()
 }
 
-fn node_scrollable(node: &UiNode) -> bool {
+pub(crate) fn node_scrollable(node: &UiNode) -> bool {
     matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll))
         || matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll))
 }
@@ -522,6 +522,48 @@ fn scroll_handles_for_node(
         node = parent;
     }
     resolved
+}
+
+/// Whether a node stays on the uncached spine rather than inside a cached
+/// island: what it draws or registers each frame depends on more than its
+/// committed subtree and the context it inherits. Collections, overlays,
+/// layers, primitives, canvases, images and boundaries; Table layout; scroll
+/// containers; nodes with motion, signal-driven style, an element ref, raw
+/// pointer handlers or a window drag area.
+pub(crate) fn island_hot(node: &UiNode) -> bool {
+    match node.kind() {
+        UiNodeKind::VirtualCollection { .. }
+        | UiNodeKind::Overlay { .. }
+        | UiNodeKind::Layer { .. }
+        | UiNodeKind::Canvas { .. }
+        | UiNodeKind::Custom { .. }
+        | UiNodeKind::Image { .. }
+        | UiNodeKind::DirectionalImage { .. }
+        | UiNodeKind::Svg { .. }
+        | UiNodeKind::ErrorBoundary { .. } => return true,
+        UiNodeKind::RichText { spans, .. }
+            if spans.iter().any(|span| !span.motions().is_empty()) =>
+        {
+            return true;
+        }
+        _ => {}
+    }
+    node.table_layout().is_some()
+        || node.table_column().is_some()
+        || node_scrollable(node)
+        || !node.motions().is_empty()
+        || !node.exit_motions().is_empty()
+        || !node.progress_motions().is_empty()
+        || !node.timelines().is_empty()
+        || node
+            .attributes()
+            .keys()
+            .any(|key| key.starts_with("layout_motion") || key.starts_with("shared_layout"))
+        || node.signal_bindings().next().is_some()
+        || node.signal_style().is_some()
+        || node.element_ref().is_some()
+        || node_has_raw_pointer_handlers(node)
+        || is_window_drag_area(node)
 }
 
 fn node_has_raw_pointer_handlers(node: &UiNode) -> bool {
@@ -1634,6 +1676,43 @@ struct RenderEnvironment<'a, C> {
     /// The nearest ancestor declaring a `hover` style: its GPUI group drives
     /// `group_hover` paint below it.
     hover_group: Option<NodeId>,
+    /// What a cache island below this node inherits, and the frame's islands.
+    island: IslandContext<'a>,
+}
+
+/// The context a cache island's root inherits beyond the render environment,
+/// accumulated as the tree is walked.
+#[derive(Clone, Copy)]
+struct IslandContext<'a> {
+    /// The frame's islands; none inside an island or outside a view's tree.
+    islands: Option<&'a crate::island::IslandFrame>,
+    /// The product of the ancestors' opacity.
+    opacity: f32,
+    /// An ancestor is invisible.
+    invisible: bool,
+    /// The parent's content width, identified when it does not depend on the
+    /// content below it.
+    width_anchor: Option<u64>,
+    /// The parent lays its children out in a flex column without wrapping.
+    parent_flex_column: bool,
+    /// The island root being rendered into a cached view, and the width its
+    /// view was laid out at.
+    root_width: Option<(NodeId, Pixels)>,
+    /// The parent is a block box, where a child with an auto width takes the
+    /// parent's: the view root's.
+    block_parent: bool,
+}
+
+impl IslandContext<'_> {
+    const NONE: Self = Self {
+        islands: None,
+        opacity: 1.0,
+        invisible: false,
+        width_anchor: None,
+        parent_flex_column: false,
+        root_width: None,
+        block_parent: false,
+    };
 }
 
 /// An overlay whose content is being rendered: its script key and its
@@ -1761,6 +1840,8 @@ pub(crate) struct WindowRenderResources<'a> {
     /// Whether `window_drag_area()` nodes move the window
     /// (`ScriptViewConfig::window_drag_areas`).
     pub window_drag: bool,
+    /// The view's cache islands this frame; only the view's own tree has them.
+    pub islands: Option<&'a crate::island::IslandFrame>,
 }
 
 #[derive(Clone, Copy)]
@@ -1852,6 +1933,7 @@ impl GpuiNodeRenderer {
             row_children: false,
             overlay_scope: None,
             hover_group: None,
+            island: IslandContext::NONE,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1942,6 +2024,7 @@ impl GpuiNodeRenderer {
             row_children: false,
             overlay_scope: None,
             hover_group: None,
+            island: IslandContext::NONE,
         };
         tree.root().map_or_else(
             || {
@@ -2025,6 +2108,7 @@ impl GpuiNodeRenderer {
             row_children: false,
             overlay_scope: None,
             hover_group: None,
+            island: IslandContext::NONE,
         };
         tree.root().map_or_else(
             || {
@@ -2100,6 +2184,7 @@ impl GpuiNodeRenderer {
             row_children: false,
             overlay_scope: None,
             hover_group: None,
+            island: IslandContext::NONE,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -2159,6 +2244,7 @@ impl GpuiNodeRenderer {
             semantics: &crate::CommittedSemanticFrame::default(),
             a11y_active: false,
             window_drag: false,
+            islands: None,
         };
         Self::render_with_window_runtime(node, colors, interaction, primitives, &resources)
     }
@@ -2235,6 +2321,12 @@ impl GpuiNodeRenderer {
             row_children: false,
             overlay_scope: None,
             hover_group: None,
+            island: IslandContext {
+                islands: resources.islands,
+                width_anchor: resources.islands.and_then(|islands| islands.root_anchor),
+                block_parent: true,
+                ..IslandContext::NONE
+            },
         };
         tree.root().map_or_else(
             || {
@@ -2310,6 +2402,7 @@ impl GpuiNodeRenderer {
             row_children: false,
             overlay_scope: None,
             hover_group: None,
+            island: IslandContext::NONE,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -2371,8 +2464,89 @@ impl GpuiNodeRenderer {
             row_children: false,
             overlay_scope: None,
             hover_group: None,
+            island: IslandContext::NONE,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
+    }
+
+    /// A cache island's root, rendered with what it inherits from its place
+    /// in the view: in its place when `root_width` is `None`, and as the root
+    /// of a cached view laid out at that width otherwise.
+    pub(crate) fn render_island_root(
+        tree: &RetainedUiTree,
+        colors: &impl ColorResolver,
+        primitives: &PrimitiveRegistry,
+        resources: &WindowRenderResources<'_>,
+        capture: &crate::island::IslandCapture,
+        root_width: Option<Pixels>,
+    ) -> AnyElement {
+        let inherited = capture.inherited;
+        let interaction = InteractionState::default();
+        let environment = RenderEnvironment {
+            now: resources.now,
+            clock: resources.clock,
+            motion_preference: resources.motion_preference,
+            motion_quality: resources.motion_quality,
+            colors,
+            interaction: &interaction,
+            primitives,
+            dispatcher: Some(resources.dispatcher),
+            assets: Some(resources.assets),
+            overlays: resources.overlays,
+            interactions: resources.interactions,
+            motions: resources.motions,
+            signals: resources.signals,
+            geometry: resources.geometry,
+            pointer_capture: resources.pointer_capture,
+            focus_handles: resources.focus_handles,
+            focus_owners: resources.focus_owners,
+            scroll_handles: resources.scroll_handles,
+            scroll_anchors: resources.scroll_anchors,
+            wheel_parents: &[],
+            intrinsic_size: None,
+            virtual_requests: resources.virtual_requests,
+            text_selection: resources.text_selection,
+            host_focus: resources.host_focus,
+            direction: inherited.direction,
+            locale: resources.locale,
+            number: resources.number,
+            ambient_text_color: inherited.ambient_text_color,
+            environment: inherited.environment,
+            inherited_disabled: inherited.inherited_disabled,
+            focus_path: resources.focus_path,
+            focus: NodeFocus {
+                owner: inherited.focus_owner,
+                within: inherited.focus_within,
+            },
+            view_id: resources.view_id,
+            retained: Some(tree),
+            retained_links: None,
+            semantics: Some(resources.semantics),
+            a11y_active: resources.a11y_active,
+            window_drag: resources.window_drag,
+            stretch_parent: inherited.stretch_parent,
+            stretch_children: false,
+            row_parent: inherited.row_parent,
+            row_children: false,
+            overlay_scope: None,
+            hover_group: inherited.hover_group,
+            island: IslandContext {
+                islands: None,
+                opacity: f32::from_bits(inherited.opacity_bits),
+                invisible: false,
+                width_anchor: None,
+                parent_flex_column: true,
+                root_width: root_width.map(|width| (capture.root, width)),
+                block_parent: false,
+            },
+        };
+        Self::render_internal(
+            &capture.node,
+            &environment,
+            None,
+            &capture.path,
+            Some(capture.root),
+        )
     }
 
     #[allow(clippy::too_many_lines)]
@@ -2460,10 +2634,34 @@ impl GpuiNodeRenderer {
             !environment.row_parent && environment.direction == TextDirection::RightToLeft,
         );
         normalize_text_content_layout(node, &mut resolved_style);
+        // A cache island's root rendered into a cached view takes the width the
+        // view was laid out at; its place's outer box is the view's.
+        if let Some((root, width)) = environment.island.root_width
+            && retained_id == Some(root)
+        {
+            island_root_box(&mut resolved_style, width);
+        }
         let mut local_environment = environment.below(&resolved_style);
         if node.style().hover.is_some() && retained_id.is_some() {
             local_environment.hover_group = retained_id;
         }
+        local_environment.island = IslandContext {
+            islands: environment.island.islands,
+            opacity: environment.island.opacity
+                * f64_to_f32(resolved_style.opacity.unwrap_or(1.0).clamp(0.0, 1.0))
+                * f64_to_f32(
+                    signals
+                        .opacity
+                        .or(animation.opacity)
+                        .unwrap_or(1.0)
+                        .clamp(0.0, 1.0),
+                ),
+            invisible: environment.island.invisible || resolved_style.visible == Some(false),
+            width_anchor: content_width_anchor(&resolved_style, environment),
+            parent_flex_column: is_flex_column(&resolved_style),
+            root_width: None,
+            block_parent: false,
+        };
         let mut element = apply_style(
             div(),
             &resolved_style,
@@ -3213,6 +3411,205 @@ fn render_virtual_collection<C: ColorResolver>(
         .into_any_element()
 }
 
+/// A planned cache island at `id`: its view embedded cached at the root's
+/// measured height when the island renders as it last did and its root can be
+/// laid out without its content, and in place otherwise.
+fn render_island_boundary<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    id: NodeId,
+    frame: &crate::island::IslandFrame,
+    entry: &crate::island::IslandEntry,
+) -> AnyElement {
+    let Some(tree) = environment.retained else {
+        return GpuiNodeRenderer::render_internal(node, environment, None, path, Some(id));
+    };
+    let node_environment = environment
+        .with_node_scope(node)
+        .with_focus_scope(node, Some(id));
+    let style = island_root_style(node, &node_environment);
+    let width_anchor = node_width_anchor(&style, environment);
+    let summary = tree.node(id).map(crate::RetainedNode::summary);
+    let group_hover = summary.is_none_or(|summary| summary.group_hover > 0);
+    // A plan kept through a press can hold a root that became hot.
+    let cold = summary.is_some_and(|summary| summary.hot == 0);
+    let eligible = frame.policy.enabled
+        && cold
+        && !environment.a11y_active
+        && !environment.island.invisible
+        && style.visible != Some(false)
+        && environment.island.parent_flex_column
+        && environment.wheel_parents.is_empty()
+        && environment.overlay_scope.is_none()
+        && environment.intrinsic_size.is_none()
+        && width_anchor.is_some()
+        && (environment.hover_group.is_none() || !group_hover)
+        && island_root_sized_by_content(&style)
+        && !frame.motion_unknown;
+    let focus = environment
+        .focus_path
+        .iter()
+        .position(|node| *node == id)
+        .map(|position| environment.focus_path[..=position].to_vec())
+        .unwrap_or_default();
+    let capture = crate::island::IslandCapture {
+        node: node.clone(),
+        root: id,
+        path: Rc::from(path),
+        inherited: crate::island::IslandInherited {
+            environment: environment.environment,
+            inherited_disabled: environment.inherited_disabled,
+            focus_owner: environment.focus.owner,
+            focus_within: environment.focus.within,
+            ambient_text_color: environment.ambient_text_color,
+            stretch_parent: environment.stretch_parent,
+            row_parent: environment.row_parent,
+            direction: environment.direction,
+            opacity_bits: environment.island.opacity.to_bits(),
+            width_anchor: width_anchor.unwrap_or(0),
+            hover_group: environment.hover_group.filter(|_| group_hover),
+        },
+        fingerprint: Rc::clone(&frame.fingerprint),
+        revision: frame.revision,
+        focus,
+        motion: frame
+            .motions
+            .get(&id)
+            .map_or_else(|| Rc::from([]), Rc::clone),
+    };
+    let pin = entry.slot.borrow_mut().decide(capture, eligible, tree);
+    let view = entry.view.clone();
+    let child = match pin {
+        Some(height) => view
+            .cached(island_view_style(&style, environment, height))
+            .into_any_element(),
+        None => view.into_any_element(),
+    };
+    crate::island::IslandHostElement {
+        child,
+        slot: Rc::clone(&entry.slot),
+        frame: frame.frame,
+        geometry: environment.geometry.clone(),
+        counters: Rc::clone(&frame.counters),
+        verify: frame.policy.verify,
+    }
+    .into_any_element()
+}
+
+/// An island root's resolved style, as [`GpuiNodeRenderer::render_internal`]
+/// resolves a node without motion or signals; `environment` is the root's own
+/// scope.
+fn island_root_style<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+) -> StyleProperties {
+    let resolved = node.style().resolve(&scoped_interaction(environment));
+    let mut resolved = definite_stretch(
+        rtl_start_edge(
+            resolved,
+            environment.stretch_parent && environment.direction == TextDirection::RightToLeft,
+        ),
+        environment.stretch_parent,
+    );
+    mirror_self_alignment(
+        &mut resolved,
+        !environment.row_parent && environment.direction == TextDirection::RightToLeft,
+    );
+    normalize_text_content_layout(node, &mut resolved);
+    resolved
+}
+
+/// Whether a root in a flex column is exactly as tall as its content: in
+/// flow, unmoved, unclipped, with no height, basis, growth or aspect of its
+/// own, and no percentage padding, margin or border.
+fn island_root_sized_by_content(style: &StyleProperties) -> bool {
+    let relative = |length: Option<Length>| matches!(length, Some(Length::Relative(_)));
+    let relative_layout = |length: Option<crate::LayoutLength>| {
+        matches!(
+            length,
+            Some(
+                crate::LayoutLength::Definite(Length::Relative(_))
+                    | crate::LayoutLength::Signed(crate::SignedLength::Relative(_))
+            )
+        )
+    };
+    let (padding, margin, border) = (&style.padding, &style.margin, &style.border_widths);
+    style.position != Some(PositionMode::Absolute)
+        && [
+            style.top,
+            style.right,
+            style.bottom,
+            style.left,
+            style.inset_start,
+            style.inset_end,
+        ]
+        .iter()
+        .all(Option::is_none)
+        && style.translate_x.is_none()
+        && style.translate_y.is_none()
+        && !matches!(
+            style.overflow_x,
+            Some(OverflowMode::Hidden | OverflowMode::Scroll)
+        )
+        && !matches!(
+            style.overflow_y,
+            Some(OverflowMode::Hidden | OverflowMode::Scroll)
+        )
+        && style.clip != Some(true)
+        && style.display != Some(DisplayMode::None)
+        && style.height.is_none()
+        && style.min_height.is_none()
+        && style.max_height.is_none()
+        && style.flex_basis.is_none()
+        && style.flex_grow != Some(true)
+        && style.aspect_ratio().is_none()
+        && ![
+            padding.top,
+            padding.right,
+            padding.bottom,
+            padding.left,
+            padding.start,
+            padding.end,
+        ]
+        .into_iter()
+        .chain([
+            border.top,
+            border.right,
+            border.bottom,
+            border.left,
+            border.start,
+            border.end,
+        ])
+        .any(relative)
+        && ![
+            margin.top,
+            margin.right,
+            margin.bottom,
+            margin.left,
+            margin.start,
+            margin.end,
+        ]
+        .into_iter()
+        .any(relative_layout)
+}
+
+/// The style a cached island view is laid out at: its root's outer box, at
+/// the height the root was measured in place.
+fn island_view_style<C: ColorResolver>(
+    style: &StyleProperties,
+    environment: &RenderEnvironment<'_, C>,
+    height: Pixels,
+) -> gpui::StyleRefinement {
+    let mut element = apply_style(div(), style, &environment.resolver(), environment.direction)
+        .h(height)
+        .min_h(height)
+        .flex_none();
+    let refinement = element.style();
+    refinement.max_size.height = None;
+    refinement.clone()
+}
+
 fn render_flattened_children<C: ColorResolver>(
     children: &[UiNode],
     environment: &RenderEnvironment<'_, C>,
@@ -3233,6 +3630,10 @@ fn render_flattened_children<C: ColorResolver>(
             "children",
             index,
         );
+        let island = child_id.and_then(|id| {
+            let frame = environment.island.islands?;
+            Some((id, frame, frame.entries.get(&id)?))
+        });
         if let UiNodeKind::Fragment { children } = child.kind() {
             rendered.extend(render_flattened_children(
                 children,
@@ -3240,6 +3641,15 @@ fn render_flattened_children<C: ColorResolver>(
                 boundary_fallback,
                 &child_path,
                 child_id,
+            ));
+        } else if let Some((id, frame, entry)) = island {
+            rendered.push(render_island_boundary(
+                child,
+                environment,
+                &child_path,
+                id,
+                frame,
+                entry,
             ));
         } else {
             rendered.push(GpuiNodeRenderer::render_internal(
@@ -4375,6 +4785,139 @@ fn rtl_start_edge(mut style: StyleProperties, rtl_stretch_parent: bool) -> Style
         style.align_self = Some(Align::Start);
     }
     style
+}
+
+/// The outer box of a cache island's root rendered into a cached view: the
+/// view's width, and nothing that places the root in its parent, which the
+/// view's own layout did.
+fn island_root_box(style: &mut StyleProperties, width: Pixels) {
+    style.width = Some(Length::Pixels(f64::from(f32::from(width))).into());
+    style.min_width = None;
+    style.max_width = None;
+    style.height = None;
+    style.min_height = None;
+    style.max_height = None;
+    style.margin = crate::style::LayoutEdgeLengths::default();
+    style.align_self = None;
+    style.flex_grow = None;
+    style.flex_grow_weight = None;
+    style.flex_shrink = None;
+    style.flex_basis = None;
+}
+
+/// Whether a node lays its children out in a flex column that does not wrap.
+fn is_flex_column(style: &StyleProperties) -> bool {
+    style.direction == Some(FlexDirection::Column)
+        && !matches!(style.display, Some(DisplayMode::Grid | DisplayMode::None))
+        && style.grid_columns.is_none()
+        && !matches!(
+            style.flex_wrap,
+            Some(FlexWrapMode::Wrap | FlexWrapMode::WrapReverse)
+        )
+}
+
+fn mix_bits(hash: u64, value: u64) -> u64 {
+    (hash.rotate_left(5) ^ value).wrapping_mul(0x517c_c1b7_2722_0a95)
+}
+
+fn length_bits(value: Option<Length>) -> u64 {
+    match value {
+        None => 0,
+        Some(Length::Pixels(value)) => mix_bits(1, value.to_bits()),
+        Some(Length::Rems(value)) => mix_bits(2, value.to_bits()),
+        Some(Length::Relative(value)) => mix_bits(3, value.to_bits()),
+        Some(Length::Token(token)) => mix_bits(4, token.identity_bits()),
+    }
+}
+
+fn layout_length_bits(value: Option<crate::LayoutLength>) -> u64 {
+    match value {
+        None => 0,
+        Some(crate::LayoutLength::Auto) => 5,
+        Some(crate::LayoutLength::Definite(length)) => mix_bits(6, length_bits(Some(length))),
+        Some(crate::LayoutLength::Signed(
+            crate::SignedLength::Pixels(value)
+            | crate::SignedLength::Rems(value)
+            | crate::SignedLength::Relative(value),
+        )) => mix_bits(7, value.to_bits()),
+    }
+}
+
+/// Identifies a node's width when it does not depend on any content: an
+/// absolute width that a row cannot shrink or grow, or a percentage of a
+/// parent whose content width is itself identified. A stretched child takes
+/// a percentage width ([`definite_stretch`]). Size limits and horizontal
+/// margins are part of it.
+fn node_width_anchor<C>(
+    style: &StyleProperties,
+    environment: &RenderEnvironment<'_, C>,
+) -> Option<u64> {
+    if style.position == Some(PositionMode::Absolute) || style.aspect_ratio().is_some() {
+        return None;
+    }
+    let flexible_in_row = environment.row_parent
+        && (style.flex_shrink != Some(false) || style.flex_grow == Some(true));
+    let base = match style.width {
+        Some(crate::LayoutLength::Definite(
+            Length::Pixels(_) | Length::Rems(_) | Length::Token(_),
+        )) if !flexible_in_row => 0x5f37_59df,
+        Some(crate::LayoutLength::Definite(Length::Relative(_))) if !environment.row_parent => {
+            environment.island.width_anchor?
+        }
+        None | Some(crate::LayoutLength::Auto) if environment.island.block_parent => {
+            environment.island.width_anchor?
+        }
+        _ => return None,
+    };
+    let margin = &style.margin;
+    Some(
+        [
+            layout_length_bits(style.width),
+            layout_length_bits(style.min_width),
+            layout_length_bits(style.max_width),
+            layout_length_bits(margin.left),
+            layout_length_bits(margin.right),
+            layout_length_bits(margin.start),
+            layout_length_bits(margin.end),
+        ]
+        .into_iter()
+        .fold(base, mix_bits),
+    )
+}
+
+/// The node's content width as its children see it: its own width without
+/// its horizontal padding and borders. A grid or a wrapping row sizes its
+/// children's room by their content.
+fn content_width_anchor<C>(
+    style: &StyleProperties,
+    environment: &RenderEnvironment<'_, C>,
+) -> Option<u64> {
+    if matches!(style.display, Some(DisplayMode::Grid))
+        || style.grid_columns.is_some()
+        || matches!(
+            style.flex_wrap,
+            Some(FlexWrapMode::Wrap | FlexWrapMode::WrapReverse)
+        )
+    {
+        return None;
+    }
+    let anchor = node_width_anchor(style, environment)?;
+    let (padding, border) = (&style.padding, &style.border_widths);
+    Some(
+        [
+            padding.left,
+            padding.right,
+            padding.start,
+            padding.end,
+            border.left,
+            border.right,
+            border.start,
+            border.end,
+        ]
+        .into_iter()
+        .map(length_bits)
+        .fold(anchor, mix_bits),
+    )
 }
 
 /// A stretched child takes its stretched width as a definite width.

@@ -333,6 +333,10 @@ pub struct ElementGeometry {
 struct GeometryState {
     committed: BTreeMap<NodeId, ElementGeometry>,
     presented: BTreeSet<NodeId>,
+    /// Nodes presented by cache islands replayed this frame, each sorted.
+    presented_islands: Vec<Rc<[NodeId]>>,
+    /// The nodes presented while an island records its render.
+    island_record: Option<Vec<NodeId>>,
     readers: BTreeMap<NodeId, BTreeSet<crate::read_dependency::ReadDependency>>,
     // Keep direct NodeId dependencies separate: detaching a ref must not detach
     // an independent direct read of the same node by the same contribution.
@@ -452,6 +456,9 @@ impl GeometryRegistry {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
         state.presented.insert(node);
+        if let Some(record) = &mut state.island_record {
+            record.push(node);
+        }
         if state.committed.get(&node) == Some(&geometry) {
             return false;
         }
@@ -914,8 +921,35 @@ impl GeometryRegistry {
             .shared_layout
             .retain(|_, (node, _)| state.presented.contains(node));
         state.presented.clear();
+        state.presented_islands.clear();
         // A node that is not drawn this frame has no hitbox.
         state.hitboxes.clear();
+    }
+
+    /// Starts recording the nodes an island's render presents.
+    pub(crate) fn begin_island_record(&self) {
+        Rc::make_mut(&mut self.inner.borrow_mut()).island_record = Some(Vec::new());
+    }
+
+    /// The nodes presented since [`Self::begin_island_record`], sorted.
+    pub(crate) fn end_island_record(&self) -> Rc<[NodeId]> {
+        let mut nodes = Rc::make_mut(&mut self.inner.borrow_mut())
+            .island_record
+            .take()
+            .unwrap_or_default();
+        nodes.sort_unstable();
+        nodes.dedup();
+        nodes.into()
+    }
+
+    /// Presents the nodes an island presented when it last rendered: a frame
+    /// that replays the island's drawing does not run its elements.
+    pub(crate) fn replay_presented(&self, nodes: Rc<[NodeId]>) {
+        if !nodes.is_empty() {
+            Rc::make_mut(&mut self.inner.borrow_mut())
+                .presented_islands
+                .push(nodes);
+        }
     }
 
     pub(crate) fn finish_frame(&self) {
@@ -927,7 +961,12 @@ impl GeometryRegistry {
     }
 
     pub(crate) fn is_presented(&self, node: NodeId) -> bool {
-        self.inner.borrow().presented.contains(&node)
+        let state = self.inner.borrow();
+        state.presented.contains(&node)
+            || state
+                .presented_islands
+                .iter()
+                .any(|nodes| nodes.binary_search(&node).is_ok())
     }
 
     pub(crate) fn retain_nodes(&self, active: &BTreeSet<NodeId>) {
@@ -935,6 +974,15 @@ impl GeometryRegistry {
         let state = Rc::make_mut(&mut current);
         state.committed.retain(|node, _| active.contains(node));
         state.presented.retain(|node| active.contains(node));
+        for nodes in &mut state.presented_islands {
+            if nodes.iter().any(|node| !active.contains(node)) {
+                *nodes = nodes
+                    .iter()
+                    .copied()
+                    .filter(|node| active.contains(node))
+                    .collect();
+            }
+        }
         state.readers.retain(|node, _| active.contains(node));
         state.ref_readers.retain(|node, _| active.contains(node));
         state.layout_motion.retain(|node, _| active.contains(node));

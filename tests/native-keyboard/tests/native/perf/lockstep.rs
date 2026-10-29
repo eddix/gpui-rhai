@@ -1,6 +1,6 @@
 //! Two windows of the same script stay frame-for-frame identical through
-//! scrolling, selection, keyboard focus and hover. Both run the same render
-//! path today; a faster path runs in window B against the plain path in A.
+//! scrolling, selection, keyboard focus and hover: window A renders every
+//! frame in full, window B replays its cache islands.
 
 use gpui::{Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, point, px, size};
 
@@ -30,10 +30,33 @@ fn table_mount() -> Mount {
         .bundled_assets()
 }
 
+fn full_frames(mount: Mount) -> Mount {
+    mount.config(|config| config.render_islands(false))
+}
+
+/// Window B's island hits since the last call; A has none.
+fn island_hits(sides: &mut Lockstep) -> u64 {
+    let mut hits = Vec::new();
+    sides.act(|visual, view| {
+        let statistics = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        assert_eq!(statistics.island_drift, 0);
+        hits.push(statistics.island_hits);
+    });
+    assert_eq!(hits[0], 0, "window A replayed an island");
+    hits[1]
+}
+
 #[gpui::test]
 fn scrolling_and_selecting_a_table_keeps_the_windows_identical(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let mut sides = Lockstep::mount(cx, table_mount(), table_mount(), size(px(900.0), px(700.0)));
+    let mut sides = Lockstep::mount(
+        cx,
+        full_frames(table_mount()),
+        table_mount(),
+        size(px(900.0), px(700.0)),
+    );
     sides.assert_same("mounted");
     let mut at = None;
     sides.act(|visual, view| {
@@ -60,6 +83,7 @@ fn scrolling_and_selecting_a_table_keeps_the_windows_identical(cx: &mut TestAppC
         settle(visual, Step::Tick, 2);
     });
     sides.assert_same("selected a row");
+    assert!(island_hits(&mut sides) > 30);
 }
 
 const CONTROLS: &str = r#"import "components/button" as button;
@@ -75,7 +99,7 @@ fn view(ctx){
         checkbox::Checkbox(#{checked:false,label:"Agree",on_change:Fn("noop")}),
         tabs::Tabs(#{key:"tabs",label:"Sections",value:ctx.get_state("tab"),on_change:Fn("pick"),
             tabs:[#{value:"one",label:"One",content:text("First")},#{value:"two",label:"Two",content:text("Second")}]}),
-    ]).with_style(style().gap(px(8)).padding(px(16)))
+    ]).with_style(style().width(px(560)).gap(px(8)).padding(px(16)))
 }"#;
 
 #[gpui::test]
@@ -83,7 +107,7 @@ fn focus_and_hover_keep_the_windows_identical(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let mut sides = Lockstep::mount(
         cx,
-        Mount::components(CONTROLS),
+        full_frames(Mount::components(CONTROLS)),
         Mount::components(CONTROLS),
         size(px(600.0), px(400.0)),
     );
@@ -121,4 +145,83 @@ fn focus_and_hover_keep_the_windows_identical(cx: &mut TestAppContext) {
         settle(visual, Step::Tick, 2);
     });
     sides.assert_same("picked a tab");
+}
+
+/// Cold rows with hover and focus styles, below a control that commits.
+const STYLED_ROWS: &str = r#"fn state_schema(){#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn bump(ctx,payload){ctx.set_state("count",ctx.get_state("count")+1);}
+fn rows(){let result=[];for i in 0..12{result.push(row([text(`Row ${i}`),text("detail")])
+    .with_key(`r${i}`).tab_index(i).accessibility_role("listitem").accessibility_label(`Row ${i}`)
+    .with_style(style().padding(px(4)).gap(px(8)).hover(style().background(rgba(0x3060ffff)))
+        .focus(style().background(rgba(0x30c060ff)))));}result}
+fn view(ctx){
+    column([
+        text(`Count ${ctx.get_state("count")}`).accessibility_role("button").accessibility_label("Bump").on_click(Fn("bump"))
+            .with_style(style().hover(style().background(rgba(0xc03030ff)))),
+        column(rows()).with_style(style().gap(px(2))),
+    ]).with_style(style().width(px(360)).padding(px(8)))
+}"#;
+
+#[gpui::test]
+fn hover_and_focus_inside_an_island_keep_the_windows_identical(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let mut sides = Lockstep::mount(
+        cx,
+        full_frames(Mount::new(STYLED_ROWS)),
+        Mount::new(STYLED_ROWS),
+        size(px(500.0), px(500.0)),
+    );
+    sides.assert_same("mounted");
+    let _ = island_hits(&mut sides);
+    let mut rows = Vec::new();
+    sides.act(|visual, view| {
+        if rows.is_empty() {
+            rows = [1, 4, 7]
+                .into_iter()
+                .map(|row| center(bounds(visual, view, "listitem", &format!("Row {row}"))))
+                .collect();
+        }
+    });
+    for (index, row) in rows.iter().enumerate() {
+        sides.act(|visual, _| {
+            visual.simulate_mouse_move(*row, None, Modifiers::none());
+            settle(visual, Step::Tick, 1);
+        });
+        sides.assert_same(&format!("hover row {index}"));
+    }
+    sides.act(|visual, _| {
+        visual.update(|window, _| window.activate_window());
+        settle(visual, Step::Tick, 1);
+    });
+    for press in 0..4 {
+        sides.act(|visual, _| {
+            visual.simulate_keystrokes("tab");
+            settle(visual, Step::Tick, 1);
+        });
+        sides.assert_same(&format!("tab press {press}"));
+    }
+    sides.act(|visual, view| {
+        let bump = bounds(visual, view, "button", "Bump");
+        visual.simulate_click(center(bump), Modifiers::none());
+        settle(visual, Step::Tick, 2);
+    });
+    sides.assert_same("committed above the rows");
+    let _ = island_hits(&mut sides);
+    // Hovering the control above from outside the rows repaints the view
+    // around rows whose hover did not change.
+    let outside = point(px(450.0), px(450.0));
+    for index in 0..2 {
+        sides.act(|visual, _| {
+            visual.simulate_mouse_move(outside, None, Modifiers::none());
+            settle(visual, Step::Tick, 1);
+        });
+        sides.assert_same(&format!("left the rows {index}"));
+        sides.act(|visual, view| {
+            let bump = center(bounds(visual, view, "button", "Bump"));
+            visual.simulate_mouse_move(bump, None, Modifiers::none());
+            settle(visual, Step::Tick, 1);
+        });
+        sides.assert_same(&format!("hover the control {index}"));
+    }
+    assert!(island_hits(&mut sides) > 0);
 }

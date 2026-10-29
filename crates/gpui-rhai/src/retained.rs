@@ -17,6 +17,11 @@ impl NodeId {
     pub const fn get(self) -> u64 {
         self.0
     }
+
+    /// The id whose [`Self::get`] is `value`, as a motion path names it.
+    pub(crate) const fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
 }
 
 impl fmt::Display for NodeId {
@@ -64,12 +69,53 @@ pub struct RetainedNode {
     virtual_data_items: usize,
     virtual_realized_items: usize,
     children: Vec<RetainedChildLink>,
+    summary: SubtreeSummary,
+}
+
+/// What a retained subtree holds, kept on its root for the render path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SubtreeSummary {
+    /// Nodes in the subtree, its root included.
+    pub nodes: u32,
+    /// Nodes that a cached island cannot hold
+    /// ([`crate::renderer::island_hot`]).
+    pub hot: u32,
+    /// Nodes with a `group_hover` style, painted by an ancestor's hover.
+    pub group_hover: u32,
+    /// The root itself lays out or moves its children in ways an island
+    /// below it cannot follow: Table layout or a scroll container.
+    pub opaque: bool,
+}
+
+impl SubtreeSummary {
+    fn of(node: &UiNode) -> Self {
+        Self {
+            nodes: 1,
+            hot: u32::from(crate::renderer::island_hot(node)),
+            group_hover: u32::from(node.style().group_hover.is_some()),
+            opaque: node.table_layout().is_some() || crate::renderer::node_scrollable(node),
+        }
+    }
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            nodes: self.nodes.saturating_add(other.nodes),
+            hot: self.hot.saturating_add(other.hot),
+            group_hover: self.group_hover.saturating_add(other.group_hover),
+            opaque: self.opaque,
+        }
+    }
 }
 
 impl RetainedNode {
     #[must_use]
     pub const fn id(&self) -> NodeId {
         self.id
+    }
+
+    /// What this node's subtree holds.
+    pub(crate) const fn summary(&self) -> SubtreeSummary {
+        self.summary
     }
 
     #[must_use]
@@ -504,6 +550,13 @@ impl ReconcileTransaction<'_> {
         candidate: &UiNode,
         children: Vec<RetainedChildLink>,
     ) {
+        // Children are inserted before their parent.
+        let summary = children
+            .iter()
+            .filter_map(|link| self.new_nodes.get(&link.node))
+            .fold(SubtreeSummary::of(candidate), |summary, child| {
+                summary.add(child.summary)
+            });
         self.new_nodes.insert(
             id,
             RetainedNode {
@@ -546,6 +599,7 @@ impl ReconcileTransaction<'_> {
                     _ => 0,
                 },
                 children,
+                summary,
             },
         );
     }

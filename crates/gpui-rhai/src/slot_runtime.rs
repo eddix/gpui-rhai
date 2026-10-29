@@ -117,6 +117,7 @@ impl NodeSlotRuntime {
             semantics: &self.semantics,
             a11y_active: self.a11y_active,
             window_drag: self.window_drag,
+            islands: None,
         };
         GpuiNodeRenderer::render_subtree_with_window_runtime_at(
             node,

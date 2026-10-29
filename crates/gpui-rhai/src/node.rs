@@ -365,7 +365,6 @@ impl std::fmt::Debug for UiNode {
 
 impl UiNode {
     /// Whether both handles hold the same node, not merely equal ones.
-    #[cfg(test)]
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }

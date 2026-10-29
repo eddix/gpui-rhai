@@ -62,3 +62,42 @@ fn only_frames_after_a_commit_walk_the_committed_tree(cx: &mut TestAppContext) {
         "{quiet} quiet and {committing} committing steps"
     );
 }
+
+#[gpui::test]
+fn quiet_scroll_frames_replay_the_cold_filler(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (mut visual, view) = Mount::new(TABLE_AND_FILLER)
+        .registry("components/table")
+        .registry("components/badge")
+        .bundled_assets()
+        .mount(cx);
+    visual.simulate_resize(size(px(900.0), px(700.0)));
+    settle(&mut visual, Step::Tick, 2);
+    let at = center(bounds(&mut visual, &view, "table", "Rows"));
+    let _ = visual
+        .update(|_, cx| view.take_render_statistics(cx))
+        .unwrap();
+    let mut quiet = 0;
+    for step in 0..20 {
+        visual.simulate_event(ScrollWheelEvent {
+            position: at,
+            delta: ScrollDelta::Pixels(point(px(0.0), px(-32.0))),
+            ..ScrollWheelEvent::default()
+        });
+        settle(&mut visual, Step::Tick, 2);
+        let statistics = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        assert_eq!(statistics.island_drift, 0, "step {step}");
+        if statistics.commits == 0 {
+            quiet += 1;
+            assert!(
+                statistics.island_hits >= statistics.host_renders
+                    && statistics.island_misses == 0
+                    && statistics.island_uncached == 0,
+                "step {step} rendered the filler again: {statistics:?}"
+            );
+        }
+    }
+    assert!(quiet >= 15, "{quiet} quiet steps");
+}

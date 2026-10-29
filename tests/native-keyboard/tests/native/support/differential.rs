@@ -5,7 +5,7 @@
 use gpui::{Pixels, Size, TestAppContext, VisualTestContext};
 use gpui_rhai::{ScriptViewFrameDigest, ScriptViewHandle};
 
-use super::{Mount, Step, settle};
+use super::{Mount, Step, painted_quads, settle};
 
 pub(crate) struct Lockstep {
     sides: Vec<(VisualTestContext, ScriptViewHandle)>,
@@ -44,16 +44,28 @@ impl Lockstep {
         visual.update(|window, cx| view.debug_frame_digest(window, cx).unwrap())
     }
 
-    /// Panics with the first difference when the two windows' digests differ.
+    /// Every quad window `side` painted in its last frame, in paint order.
+    pub(crate) fn quads(&mut self, side: usize) -> Vec<String> {
+        painted_quads(&mut self.sides[side].0)
+            .iter()
+            .map(|quad| format!("{quad:?}"))
+            .collect()
+    }
+
+    /// Panics with the first difference when the two windows' digests or
+    /// painted quads differ.
     #[track_caller]
     pub(crate) fn assert_same(&mut self, label: &str) {
         let a = self.digest(0);
         let b = self.digest(1);
-        if a == b {
-            return;
+        if a != b {
+            let difference = first_difference(&a, &b);
+            panic!("{label}: the windows differ: {difference}");
         }
-        let difference = first_difference(&a, &b);
-        panic!("{label}: the windows differ: {difference}");
+        let (a, b) = (self.quads(0), self.quads(1));
+        if let Some(difference) = first_of("painted quads", &a, &b) {
+            panic!("{label}: the windows paint differently: {difference}");
+        }
     }
 }
 
