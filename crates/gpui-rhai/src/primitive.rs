@@ -531,6 +531,10 @@ impl PrimitiveProps {
         self.0.iter().map(|(name, value)| (name.as_str(), value))
     }
 
+    pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut PrimitiveValue> {
+        self.0.get_mut(name)
+    }
+
     pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut PrimitiveValue)> {
         self.0
             .iter_mut()

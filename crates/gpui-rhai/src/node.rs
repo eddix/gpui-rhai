@@ -314,6 +314,23 @@ pub enum UiNodeKind {
     },
 }
 
+/// One step from a node to a node it holds.
+#[derive(Clone, Debug)]
+enum HeldSlot {
+    /// A Box or Fragment child.
+    Child(usize),
+    /// A virtual collection's realized item, by data index.
+    Realized(usize),
+    /// A Custom primitive's node prop.
+    PropNode(String),
+    /// One node of a Custom primitive's node list prop.
+    PropNodes(String, usize),
+    /// An overlay's trigger or a boundary's child.
+    First,
+    /// An overlay's content, a boundary's fallback or a layer's content.
+    Second,
+}
+
 /// Stable discriminant used by retained reconciliation without exposing GPUI
 /// element types or borrowing a complete [`UiNodeKind`] payload.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -343,6 +360,14 @@ pub struct UiNode(Rc<UiNodeData>);
 impl std::fmt::Debug for UiNode {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(formatter)
+    }
+}
+
+impl UiNode {
+    /// Whether both handles hold the same node, not merely equal ones.
+    #[cfg(test)]
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -1295,61 +1320,23 @@ impl UiNode {
         self.forwarded_components.as_ref()
     }
 
+    /// Replace the first subtree, in search order, whose root belongs to
+    /// `component`. Only the nodes on the way to it are copied: the subtrees
+    /// beside them stay shared with every other holder of this tree.
     pub(crate) fn replace_component_subtree(
         &mut self,
         component: &ComponentInstancePath,
         replacement: Self,
     ) -> bool {
-        if self.component_root.as_ref() == Some(component) {
-            let presentation = std::mem::take(&mut self.presentation);
-            *self = replacement;
-            self.restore_presentation(presentation);
-            return true;
-        }
-        match &mut self.kind {
-            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-                replace_in_nodes(children.iter_mut(), component, &replacement)
-            }
-            UiNodeKind::Custom { primitive } => {
-                for (_, value) in primitive.props.iter_mut() {
-                    let replaced = match value {
-                        crate::PrimitiveValue::Node(node) => {
-                            node.replace_component_subtree(component, replacement.clone())
-                        }
-                        crate::PrimitiveValue::Nodes(nodes) => {
-                            replace_in_nodes(nodes.iter_mut(), component, &replacement)
-                        }
-                        _ => false,
-                    };
-                    if replaced {
-                        return true;
-                    }
-                }
-                false
-            }
-            UiNodeKind::Overlay {
-                trigger, content, ..
-            }
-            | UiNodeKind::ErrorBoundary {
-                child: trigger,
-                fallback: content,
-            } => {
-                trigger.replace_component_subtree(component, replacement.clone())
-                    || content.replace_component_subtree(component, replacement)
-            }
-            UiNodeKind::Layer { content, .. } => {
-                content.replace_component_subtree(component, replacement)
-            }
-            UiNodeKind::VirtualCollection { spec } => {
-                replace_in_nodes(spec.realized.values_mut(), component, &replacement)
-            }
-            UiNodeKind::Text { .. }
-            | UiNodeKind::RichText { .. }
-            | UiNodeKind::Canvas { .. }
-            | UiNodeKind::Svg { .. }
-            | UiNodeKind::Image { .. }
-            | UiNodeKind::DirectionalImage { .. } => false,
-        }
+        let Some(target) =
+            self.held_node_mut(|node| node.component_root.as_ref() == Some(component))
+        else {
+            return false;
+        };
+        let presentation = std::mem::take(&mut target.presentation);
+        *target = replacement;
+        target.restore_presentation(presentation);
+        true
     }
 
     pub(crate) fn activate_component_snapshots(&mut self) {
@@ -1504,62 +1491,130 @@ impl UiNode {
         }
     }
 
+    /// Move the realized items into the first matching collection, in search
+    /// order. Only the nodes on the way to it are copied: the subtrees beside
+    /// them stay shared with every other holder of this tree.
     pub(crate) fn replace_virtual_collection_items(
         &mut self,
         id: &crate::VirtualCollectionId,
         items: BTreeMap<usize, UiNode>,
     ) -> bool {
-        self.replace_virtual_collection_items_in(id, &mut Some(items))
+        let Some(target) = self.held_node_mut(
+            |node| matches!(&node.kind, UiNodeKind::VirtualCollection { spec } if &spec.id == id),
+        ) else {
+            return false;
+        };
+        let UiNodeKind::VirtualCollection { spec } = &mut target.kind else {
+            unreachable!("the search matched a virtual collection");
+        };
+        spec.realized = items;
+        true
     }
 
-    /// Move the realized items into the matching collection. Nodes passed on
-    /// the way down receive nothing: cloning the whole realized map for every
-    /// visited child made each scroll step cost (nodes before the collection)
-    /// x (realized items).
-    fn replace_virtual_collection_items_in(
-        &mut self,
-        id: &crate::VirtualCollectionId,
-        items: &mut Option<BTreeMap<usize, UiNode>>,
-    ) -> bool {
-        match &mut self.kind {
-            UiNodeKind::VirtualCollection { spec } if &spec.id == id => {
-                if let Some(items) = items.take() {
-                    spec.realized = items;
-                }
-                true
-            }
+    /// The first node, in search order, that `matches`, reached mutably: only
+    /// the nodes on the way to it are made unique.
+    fn held_node_mut(&mut self, matches: impl Fn(&UiNode) -> bool) -> Option<&mut UiNode> {
+        let path = self.held_path(&matches)?;
+        let mut node = self;
+        for slot in path.iter().rev() {
+            node = node.held_child_mut(slot)?;
+        }
+        Some(node)
+    }
+
+    /// The slots from this node down to the first node that `matches`, in the
+    /// search order of the collection and component lookups, innermost first.
+    fn held_path(&self, matches: &impl Fn(&UiNode) -> bool) -> Option<Vec<HeldSlot>> {
+        if matches(self) {
+            return Some(Vec::new());
+        }
+        let found = |slot: HeldSlot, child: &UiNode| {
+            child.held_path(matches).map(|mut path| {
+                path.push(slot);
+                path
+            })
+        };
+        match &self.kind {
             UiNodeKind::VirtualCollection { spec } => spec
                 .realized
-                .values_mut()
-                .any(|child| child.replace_virtual_collection_items_in(id, items)),
+                .iter()
+                .find_map(|(index, child)| found(HeldSlot::Realized(*index), child)),
             UiNodeKind::Custom { primitive } => {
-                primitive.props.iter_mut().any(|(_, value)| match value {
-                    crate::PrimitiveValue::Node(node) => {
-                        node.replace_virtual_collection_items_in(id, items)
-                    }
-                    crate::PrimitiveValue::Nodes(nodes) => nodes
-                        .iter_mut()
-                        .any(|node| node.replace_virtual_collection_items_in(id, items)),
-                    _ => false,
-                })
+                primitive
+                    .props
+                    .iter()
+                    .find_map(|(name, value)| match value {
+                        crate::PrimitiveValue::Node(node) => {
+                            found(HeldSlot::PropNode(name.to_owned()), node)
+                        }
+                        crate::PrimitiveValue::Nodes(nodes) => {
+                            nodes.iter().enumerate().find_map(|(index, node)| {
+                                found(HeldSlot::PropNodes(name.to_owned(), index), node)
+                            })
+                        }
+                        _ => None,
+                    })
             }
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
-                .iter_mut()
-                .any(|child| child.replace_virtual_collection_items_in(id, items)),
+                .iter()
+                .enumerate()
+                .find_map(|(index, child)| found(HeldSlot::Child(index), child)),
             UiNodeKind::Overlay {
                 trigger, content, ..
             }
             | UiNodeKind::ErrorBoundary {
                 child: trigger,
                 fallback: content,
-            } => {
-                trigger.replace_virtual_collection_items_in(id, items)
-                    || content.replace_virtual_collection_items_in(id, items)
+            } => found(HeldSlot::First, trigger).or_else(|| found(HeldSlot::Second, content)),
+            UiNodeKind::Layer { content, .. } => found(HeldSlot::Second, content),
+            UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. } => None,
+        }
+    }
+
+    fn held_child_mut(&mut self, slot: &HeldSlot) -> Option<&mut UiNode> {
+        match (&mut self.kind, slot) {
+            (
+                UiNodeKind::Box { children } | UiNodeKind::Fragment { children },
+                HeldSlot::Child(index),
+            ) => children.get_mut(*index),
+            (UiNodeKind::VirtualCollection { spec }, HeldSlot::Realized(index)) => {
+                spec.realized.get_mut(index)
             }
-            UiNodeKind::Layer { content, .. } => {
-                content.replace_virtual_collection_items_in(id, items)
+            (UiNodeKind::Custom { primitive }, HeldSlot::PropNode(name)) => {
+                match primitive.props.get_mut(name)? {
+                    crate::PrimitiveValue::Node(node) => Some(&mut **node),
+                    _ => None,
+                }
             }
-            _ => false,
+            (UiNodeKind::Custom { primitive }, HeldSlot::PropNodes(name, index)) => {
+                match primitive.props.get_mut(name)? {
+                    crate::PrimitiveValue::Nodes(nodes) => nodes.get_mut(*index),
+                    _ => None,
+                }
+            }
+            (
+                UiNodeKind::Overlay { trigger: first, .. }
+                | UiNodeKind::ErrorBoundary { child: first, .. },
+                HeldSlot::First,
+            ) => Some(first),
+            (
+                UiNodeKind::Overlay {
+                    content: second, ..
+                }
+                | UiNodeKind::ErrorBoundary {
+                    fallback: second, ..
+                }
+                | UiNodeKind::Layer {
+                    content: second, ..
+                },
+                HeldSlot::Second,
+            ) => Some(second),
+            _ => None,
         }
     }
 
@@ -2190,19 +2245,6 @@ impl UiNode {
             _ => {}
         }
     }
-}
-
-fn replace_in_nodes<'a>(
-    nodes: impl IntoIterator<Item = &'a mut UiNode>,
-    component: &ComponentInstancePath,
-    replacement: &UiNode,
-) -> bool {
-    for node in nodes {
-        if node.replace_component_subtree(component, replacement.clone()) {
-            return true;
-        }
-    }
-    false
 }
 
 /// `node.signal_style(signal, #{ state: style() })`.
@@ -3814,6 +3856,76 @@ mod tests {
         ColorValue, EventPropagation, Length, MotionProperty, MotionTransition, Rgba8, SignalId,
         SignalKind, SignalProperty,
     };
+
+    fn collection(key: &str, items: &[(usize, &str)]) -> UiNode {
+        UiNode::virtual_collection(crate::VirtualCollectionNodeSpec {
+            id: crate::VirtualCollectionId {
+                component: ComponentInstancePath::root("View", "main"),
+                key: key.to_owned(),
+            },
+            label: key.to_owned(),
+            data: crate::VirtualCollectionData::from(Vec::<UiValue>::new()),
+            realized: items
+                .iter()
+                .map(|(index, text)| (*index, UiNode::text(*text)))
+                .collect(),
+            estimated_height: 24.0,
+            height: Some(120.0),
+            overdraw_pixels: 0.0,
+            bottom_align: false,
+            follow_tail: false,
+            on_follow_change: None,
+            reveal_key: None,
+            sticky_headers: std::sync::Arc::new(BTreeSet::new()),
+            inherited_motion_group: None,
+            inherited_motion_scope: None,
+        })
+    }
+
+    #[test]
+    fn replacing_held_nodes_copies_only_the_way_to_them() {
+        let before = UiNode::column(vec![UiNode::text("a"), UiNode::text("b")]);
+        let after = UiNode::column(vec![UiNode::text("c")]);
+        let mut root = UiNode::column(vec![
+            before.clone(),
+            UiNode::column(vec![collection("rows", &[(0, "zero")])]),
+            after.clone(),
+        ]);
+        let shared = root.clone();
+        let id = crate::VirtualCollectionId {
+            component: ComponentInstancePath::root("View", "main"),
+            key: "rows".to_owned(),
+        };
+        assert!(
+            root.replace_virtual_collection_items(&id, BTreeMap::from([(0, UiNode::text("new"))]))
+        );
+        let children = |node: &UiNode| match node.kind() {
+            UiNodeKind::Box { children } => children.clone(),
+            _ => unreachable!(),
+        };
+        // The subtrees beside the path, before and after it, stay shared.
+        assert!(children(&root)[0].ptr_eq(&before));
+        assert!(children(&root)[2].ptr_eq(&after));
+        assert!(!children(&root)[1].ptr_eq(&children(&shared)[1]));
+        assert_eq!(
+            root.virtual_collection_items(&id).unwrap()[&0],
+            UiNode::text("new")
+        );
+        assert_eq!(
+            shared.virtual_collection_items(&id).unwrap()[&0],
+            UiNode::text("zero")
+        );
+
+        let component = ComponentInstancePath::root("Card", "after");
+        let mut owned = root.clone();
+        let replacement = UiNode::text("replaced");
+        assert!(!owned.replace_component_subtree(&component, replacement.clone()));
+        let tagged_after = after.clone().with_component_root(component.clone());
+        let mut tagged = UiNode::column(vec![before.clone(), tagged_after]);
+        assert!(tagged.replace_component_subtree(&component, replacement));
+        assert!(children(&tagged)[0].ptr_eq(&before));
+        assert_eq!(children(&tagged)[1], UiNode::text("replaced"));
+    }
 
     #[test]
     fn node_styles_share_immutable_snapshots_and_mutate_without_aliasing() {
