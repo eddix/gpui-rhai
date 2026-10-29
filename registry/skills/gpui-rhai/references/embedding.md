@@ -107,6 +107,14 @@ The container is layout-transparent. It initializes the shared Host once per
 frame and installs native capture routing. Rendering a handle outside its Host
 container produces a visible diagnostic.
 
+A frame replays the parts of a view that did not change instead of building
+them again ([frame replay](https://github.com/eddix/gpui-rhai/blob/main/docs/performance.md#frame-replay)). When the Host gives a
+view a width its content cannot change, as when the view fills the window or a
+pane the Host sizes, say so with `ScriptViewConfig::host_sets_width(true)`:
+subtrees whose width follows the view's are then replayed too. A view the
+Host lays out by its content keeps the default. `render_islands(false)` turns
+replay off for one view, and `GPUI_RHAI_RENDER_ISLANDS=off` for every view.
+
 Use `flex_item()` when the view is a direct child of a Rust flex row or column.
 It supplies a zero flex basis and `min-width/min-height: 0`, so wide scrollable
 script content cannot become the host item's automatic min-content size. Use
