@@ -1583,3 +1583,228 @@ fn scroll_end_to_end_baseline(cx: &mut TestAppContext) {
         std::fs::write(path, format!("{json}\n")).unwrap();
     }
 }
+
+/// S8: typing into a field of an application shell, with the draft held by
+/// the view (every keystroke renders it whole) or by a component around the
+/// field (a keystroke renders that component).
+const SHELL_SCRIPT: &str = r#"import "patterns/app_shell" as shell;
+import "components/input" as input;
+define_component(#{
+    metadata: #{ id: "bench/composer", "export": "Composer", version: "0.2.2",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: ["components/input"], capabilities: #{} },
+    schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+        state: #{ fields: #{ draft: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } } } },
+        events: #{}, slots: #{}, parts: [] },
+    render: Fn("render_composer")
+});
+fn composer_changed(ctx, value) { ctx.set_state("draft", value); }
+fn render_composer(ctx, props) {
+    column([
+        input::Input(#{ key: "field", label: "Message", value: ctx.get_state("draft"), on_change: Fn("composer_changed") }),
+        text(`${ctx.get_state("draft").len()} characters`),
+    ])
+}
+fn state_schema() { #{ fields: #{ draft: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } } } } }
+fn changed(ctx, value) { ctx.set_state("draft", value); }
+fn card(title, rows) {
+    let lines = [text(title)];
+    for i in 0..rows { lines.push(row([text(`${title} line ${i}`), text("value")]).with_key(`l${i}`)); }
+    column(lines).with_key(title).with_style(style().padding(px(8)).gap(px(2)))
+}
+fn view(ctx) {
+    let nav = [];
+    for i in 0..30 { nav.push(text(`Section ${i}`).with_key(`n${i}`)); }
+    let field = if COMPONENT { render_component("bench/composer", #{ key: "composer" }) } else {
+        column([
+            input::Input(#{ key: "field", label: "Message", value: ctx.get_state("draft"), on_change: Fn("changed") }),
+            text(`${ctx.get_state("draft").len()} characters`),
+        ])
+    };
+    shell::AppShell(#{ key: "app", label: "Benchmark",
+        sidebar: column(nav).with_style(style().padding(px(8)).gap(px(2))),
+        main: column([field, card("Summary", 40), card("Details", 40), card("History", 40)])
+            .with_style(style().padding(px(12)).gap(px(8))),
+    })
+}"#;
+
+#[derive(Serialize)]
+struct ShellLayoutReport {
+    name: &'static str,
+    islands: bool,
+    retained_nodes: usize,
+    keystroke: ScrollClass,
+    island_hits_per_keystroke: f64,
+    island_uncached_per_keystroke: f64,
+}
+
+#[derive(Serialize)]
+struct ShellBenchmarkReport {
+    metadata: BenchmarkMetadata,
+    layouts: Vec<ShellLayoutReport>,
+}
+
+fn shell_view(component: bool) -> gpui_rhai::EmbeddedScriptView {
+    use std::collections::BTreeMap;
+    let module =
+        |id: &str, source: &str| (gpui_rhai::ModuleId::parse(id).unwrap(), source.to_owned());
+    let main = SHELL_SCRIPT.replace("COMPONENT", if component { "true" } else { "false" });
+    let scripts = gpui_rhai::EmbeddedScriptSource::new(BTreeMap::from([
+        module("main", &main),
+        module(
+            "patterns/app_shell",
+            include_str!("../../../registry/patterns/app_shell.rhai"),
+        ),
+        module(
+            "components/title_bar",
+            include_str!("../../../registry/components/title_bar.rhai"),
+        ),
+        module(
+            "components/status_bar",
+            include_str!("../../../registry/components/status_bar.rhai"),
+        ),
+        module(
+            "components/input",
+            include_str!("../../../registry/components/input.rhai"),
+        ),
+    ]));
+    gpui_rhai::EmbeddedScriptView::new(
+        gpui_rhai::ModuleId::parse("main").unwrap(),
+        scripts,
+        SCROLL_THEME,
+    )
+    .token_base(SCROLL_TOKENS)
+}
+
+fn shell_layout(
+    cx: &mut TestAppContext,
+    (name, component, islands): (&'static str, bool, bool),
+    warmup: usize,
+    steps: usize,
+) -> ShellLayoutReport {
+    let prepared = shell_view(component).prepare().unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("shell-benchmark-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("shell-benchmark-view")
+                    .render_islands(islands)
+                    .host_sets_width(true),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        BenchmarkHost { host, view }
+    });
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(SCROLL_WINDOW[0]), px(SCROLL_WINDOW[1])));
+    scroll_settle(&mut visual);
+    let field = visual
+        .update(|_, cx| view.accessibility_snapshot(cx))
+        .unwrap()
+        .find_by_role_and_name("text_field", "Message")
+        .next()
+        .and_then(|node| node.geometry)
+        .expect("the field has geometry")
+        .visual;
+    #[allow(clippy::cast_possible_truncation)]
+    visual.simulate_click(
+        gpui::point(
+            px((field.x + field.width / 2.0) as f32),
+            px((field.y + field.height / 2.0) as f32),
+        ),
+        gpui::Modifiers::none(),
+    );
+    scroll_settle(&mut visual);
+    let mut measured = Vec::with_capacity(steps);
+    let (mut hits, mut uncached) = (0, 0);
+    for step in 0..warmup + steps {
+        let _ = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        let started = Instant::now();
+        visual.simulate_keystrokes("a");
+        scroll_settle(&mut visual);
+        let total_us = micros(started);
+        let statistics = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        if step < warmup {
+            continue;
+        }
+        hits += statistics.island_hits;
+        uncached += statistics.island_uncached;
+        measured.push(ScrollStep {
+            total_us,
+            host_renders: statistics.host_renders,
+            render_us: duration_us(statistics.host_render_time),
+            build_us: duration_us(statistics.build_time),
+            polls: statistics.polls,
+            poll_us: duration_us(statistics.poll_time),
+            commits: statistics.commits,
+            commit_phases_us: Vec::new(),
+            rows_rendered: 0,
+        });
+    }
+    let typed = visual
+        .update(|_, cx| view.accessibility_snapshot(cx))
+        .unwrap()
+        .find_by_role_and_name("text_field", "Message")
+        .next()
+        .and_then(|node| node.value.clone());
+    assert!(
+        matches!(&typed, Some(UiValue::String(text)) if text.len() >= steps),
+        "{name}: the field holds {typed:?}"
+    );
+    let retained_nodes = visual
+        .update(|_, cx| view.take_render_statistics(cx))
+        .unwrap()
+        .retained_nodes;
+    #[allow(clippy::cast_precision_loss)]
+    let per = |count: u64| count as f64 / steps.max(1) as f64;
+    ShellLayoutReport {
+        name,
+        islands,
+        retained_nodes,
+        keystroke: scroll_class(&measured.iter().collect::<Vec<_>>()),
+        island_hits_per_keystroke: per(hits),
+        island_uncached_per_keystroke: per(uncached),
+    }
+}
+
+#[gpui::test]
+#[ignore = "run with scripts/benchmark.sh"]
+fn app_shell_typing_baseline(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let steps = env_usize(
+        "GPUI_RHAI_BENCH_SAMPLES",
+        if cfg!(debug_assertions) { 8 } else { 32 },
+    );
+    let warmup = env_usize(
+        "GPUI_RHAI_BENCH_WARMUP",
+        if cfg!(debug_assertions) { 1 } else { 4 },
+    );
+    let layouts = [
+        ("view_state", false, false),
+        ("view_state", false, true),
+        ("component_state", true, false),
+        ("component_state", true, true),
+    ]
+    .into_iter()
+    .map(|layout| shell_layout(cx, layout, warmup, steps))
+    .collect();
+    let mut metadata = metadata(steps, warmup);
+    metadata.schema = "gpui-rhai-shell-typing-v1";
+    metadata.window = SCROLL_WINDOW.map(f64::from);
+    let report = ShellBenchmarkReport { metadata, layouts };
+    let json = serde_json::to_string_pretty(&report).unwrap();
+    println!("{json}");
+    if let Ok(path) = std::env::var("GPUI_RHAI_SHELL_BENCH_OUTPUT") {
+        std::fs::write(path, format!("{json}\n")).unwrap();
+    }
+}
