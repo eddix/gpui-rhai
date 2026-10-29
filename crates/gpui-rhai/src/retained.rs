@@ -97,6 +97,9 @@ pub(crate) struct SubtreeSummary {
     pub collections: u32,
     /// Nodes the view looks up after a commit ([`RetainedNode::host_reads`]).
     pub host: u32,
+    /// Retained pages and nodes that present a component, which page
+    /// visibility tracks.
+    pub pages: u32,
     /// What the commit's resource budgets count.
     pub resources: ResourceTotals,
     /// The root itself lays out or moves its children in ways an island
@@ -167,6 +170,7 @@ impl SubtreeSummary {
             )),
             resources: ResourceTotals::default(),
             host: 0,
+            pages: 0,
             opaque: node.table_layout().is_some() || crate::renderer::node_scrollable(node),
         }
     }
@@ -182,6 +186,7 @@ impl SubtreeSummary {
             signals: self.signals.saturating_add(other.signals),
             collections: self.collections.saturating_add(other.collections),
             host: self.host.saturating_add(other.host),
+            pages: self.pages.saturating_add(other.pages),
             resources: self.resources.add(other.resources),
             opaque: self.opaque,
         }
@@ -790,6 +795,11 @@ impl ReconcileTransaction<'_> {
                 SubtreeSummary {
                     resources: ResourceTotals::of(&node),
                     host: u32::from(node.host_reads()),
+                    pages: u32::from(
+                        node.attributes
+                            .contains_key(crate::retained_page::PAGE_VISIBLE)
+                            || node.presented_components().next().is_some(),
+                    ),
                     ..SubtreeSummary::of(candidate)
                 },
                 |summary, child| summary.add(child.summary),
