@@ -1677,7 +1677,9 @@ impl ScriptLifecycle {
             let geometry_bindings = runtime.element_refs.geometry_bindings(&self.root_path);
             let geometry = runtime.geometry_for(self.presentation_scope());
             geometry.sync_ref_readers(&self.root_path, geometry_bindings);
-            runtime.virtual_requests.retain(&virtual_collections);
+            runtime
+                .virtual_requests
+                .retain_within(&self.root_path, &virtual_collections);
         }
         for (descriptor, scope) in plan.start_descriptors() {
             self.invoke_effect_callback(
@@ -3617,6 +3619,27 @@ mod tests {
             assert!(self.lifecycle.render_dirty(&mut self.engine).unwrap());
             let _ = self.engine.take_timings();
         }
+    }
+
+    #[test]
+    fn a_commit_keeps_the_requests_of_other_scopes_sharing_the_runtime() {
+        let mut ahead = RenderAhead::start(
+            ",batch_items:1,retain_items:0",
+            crate::VirtualCollectionPolicy::default(),
+        );
+        // A window opened from this view shares its runtime and commits on its own.
+        let theirs = crate::VirtualCollectionId {
+            component: ComponentInstancePath::root("View", "window"),
+            key: "rows".to_owned(),
+        };
+        ahead
+            .runtime
+            .borrow()
+            .virtual_requests
+            .request(theirs.clone(), [4]);
+        assert_eq!(ahead.request(2..8), 2);
+        let pending = ahead.runtime.borrow().virtual_requests.drain();
+        assert_eq!(pending.get(&theirs), Some(&BTreeSet::from([4])));
     }
 
     #[test]
