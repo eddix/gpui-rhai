@@ -319,13 +319,13 @@ impl ScriptLifecycle {
         self.commit_statistics.merge(clock.laps);
         match result {
             Ok((root, retained, semantics)) => {
+                self.commit_or_roll_back(engine, runtime_snapshot, engine_checkpoint)?;
                 self.trace_reconcile("full", retained.last_report());
                 self.retained = retained;
                 self.semantics = semantics;
                 self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
-                self.commit_runtime_transaction()?;
                 self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
@@ -406,13 +406,13 @@ impl ScriptLifecycle {
         self.commit_statistics.merge(clock.laps);
         match result {
             Ok(semantics) => {
+                self.commit_or_roll_back(engine, runtime_snapshot, engine_checkpoint)?;
                 self.trace_reconcile("incremental", retained.last_report());
                 self.root = Some(Rc::new(root));
                 self.retained = retained;
                 self.semantics = semantics;
                 self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
-                self.commit_runtime_transaction()?;
                 Ok(true)
             }
             Err(error) => {
@@ -556,6 +556,7 @@ impl ScriptLifecycle {
         self.commit_statistics.merge(clock.laps);
         match result {
             Ok((changed, semantics)) => {
+                self.commit_or_roll_back(engine, runtime_snapshot, engine_checkpoint)?;
                 if changed {
                     self.trace_reconcile("virtual", retained.last_report());
                     self.root = Some(Rc::new(root));
@@ -563,7 +564,6 @@ impl ScriptLifecycle {
                     self.semantics = semantics;
                     self.revision = self.revision.wrapping_add(1);
                 }
-                self.commit_runtime_transaction()?;
                 Ok(changed)
             }
             Err(error) => {
@@ -1172,6 +1172,7 @@ impl ScriptLifecycle {
         })();
         match result {
             Ok((root, retained, semantics)) => {
+                self.commit_or_roll_back(engine, snapshot, engine_checkpoint)?;
                 self.trace_reconcile("reload", retained.last_report());
                 self.compiled = candidate;
                 self.retained = retained;
@@ -1179,7 +1180,6 @@ impl ScriptLifecycle {
                 self.revision = self.revision.wrapping_add(1);
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
-                self.commit_runtime_transaction()?;
                 self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
@@ -1279,6 +1279,10 @@ impl ScriptLifecycle {
         })();
         match result {
             Ok((root, retained, semantics)) => {
+                if let Err(error) = self.commit_or_roll_back(engine, snapshot, engine_checkpoint) {
+                    self.state = LifecycleState::Suspended;
+                    return Err(error);
+                }
                 self.trace_reconcile("resume_reload", retained.last_report());
                 self.compiled = candidate;
                 self.retained = retained;
@@ -1287,7 +1291,6 @@ impl ScriptLifecycle {
                 self.root = Some(Rc::new(root));
                 self.suspended_at = None;
                 self.state = LifecycleState::Running;
-                self.commit_runtime_transaction()?;
                 self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
@@ -1977,6 +1980,26 @@ impl ScriptLifecycle {
             .effect_cascades
             .restart(&self.root_path);
         Ok(())
+    }
+
+    /// Commits the runtime transaction a commit began, before the commit
+    /// publishes anything; when that fails, rolls the runtime and the engine
+    /// back, so nothing of the commit stays.
+    fn commit_or_roll_back(
+        &self,
+        engine: &mut RuntimeEngine,
+        snapshot: crate::UiStateSnapshot,
+        checkpoint: crate::engine::RuntimeEngineCheckpoint,
+    ) -> Result<(), LifecycleError> {
+        let Err(error) = self.commit_runtime_transaction() else {
+            return Ok(());
+        };
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .restore(snapshot)?;
+        engine.restore_execution_checkpoint(checkpoint);
+        Err(error)
     }
 
     fn commit_runtime_transaction(&self) -> Result<(), LifecycleError> {
