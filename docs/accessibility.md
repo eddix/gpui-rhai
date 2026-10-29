@@ -112,8 +112,8 @@ datum as an AX node.
 
 ## Current upstream and platform boundaries
 
-Version 0.1.6 uses the exact `gpui-pre 0.3.7` family, traced to Zed commit
-`1a28cff4b409169bac058bca40dfbfeb7621d19b`.
+Version 0.3.3 uses the exact `gpui-pre 0.3.9` family, traced to Zed commit
+`93d745668805029476e6d7fbb19652116fed51de`.
 This snapshot exposes public AccessKit roles, properties, synthetic children and
 actions, so the former GPUI 0.2.2 native-semantic limitation no longer applies.
 It remains a community-published snapshot of a traceable Zed commit, not a Zed

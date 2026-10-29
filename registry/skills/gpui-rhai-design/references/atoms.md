@@ -123,7 +123,7 @@ numbers stay in the UI family with `tnum` (tabular figures) and `cv08`
 (slashed zero) features; the mono family is for code and the label voice.
 
 The label voice uppercases Latin text in the component (`to_upper`); CJK text
-is unaffected. GPUI 0.3.7 has no letter spacing, which is why the label voice
+is unaffected. GPUI 0.3.9 has no letter spacing, which is why the label voice
 uses the monospace family: its built-in advance keeps uppercase legible.
 
 ## 4. Color roles in components

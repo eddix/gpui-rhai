@@ -927,7 +927,7 @@ impl ScriptOverlayElement {
             // A nested overlay is rendered as part of its parent's deferred
             // subtree, while the shared overlay coordinator still owns
             // placement, ordering, and dismissal. This path exists because
-            // GPUI 0.2 panicked on a nested `defer_draw`; gpui-pre 0.3.7
+            // GPUI 0.2 panicked on a nested `defer_draw`; gpui-pre 0.3.9
             // allows up to ten nested levels.
             Some(overlay)
         } else {

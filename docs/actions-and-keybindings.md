@@ -33,7 +33,7 @@ host.bind_keys(prepared.key_bindings().iter().cloned(), cx)?;
 The same declaration is available on `FileScriptView`, but mounting a view never
 changes the App keymap automatically. The host must explicitly approve and bind
 the declarations. Binding the same keys/context to different actions is an
-error; repeating the same binding is idempotent. In the pinned gpui-pre 0.3.7,
+error; repeating the same binding is idempotent. In the pinned gpui-pre 0.3.9,
 matching Host keybindings may dispatch and consume an action before raw node
 Capture/Target/Bubble handlers run. A consumed chord does not also reach node
 capture. Character-preferred text input can bypass bindings; this is not a
