@@ -92,6 +92,11 @@ pub struct LengthToken {
 }
 
 impl LengthToken {
+    /// Bits that tell this token from another: its path and scale.
+    pub(crate) fn identity_bits(&self) -> u64 {
+        u64::from(self.path.0) ^ self.scale.to_bits().rotate_left(17)
+    }
+
     /// Reference a token path such as `spacing.sm` or `metrics.row`.
     ///
     /// # Errors

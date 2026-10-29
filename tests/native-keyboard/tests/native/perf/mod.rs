@@ -3,4 +3,5 @@
 //! committing and presenting the same frame.
 
 mod invariants;
+mod islands;
 mod lockstep;

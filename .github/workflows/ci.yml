@@ -113,6 +113,13 @@ jobs:
       - *linux-test-deps
       - name: Native keyboard test support
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+      # Every subtree of one node or more becomes a cache island, every view
+      # anchors its width and a cached render that lays out differently
+      # panics, so each native test also tests the islands.
+      - name: Native tests over cache islands
+        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --test native
+        env:
+          GPUI_RHAI_RENDER_ISLANDS: aggressive
       - name: Mounted hot reload
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --features dev-reload --test token_reload
 

@@ -101,6 +101,7 @@ pub mod canvas;
 pub mod capability;
 pub mod clock;
 mod collection_projection;
+mod island;
 pub mod motion;
 
 pub use gpui;

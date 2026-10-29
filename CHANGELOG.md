@@ -7,6 +7,16 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- A frame replays the unchanged parts of a view instead of building, laying
+  out and painting them again. A subtree with nothing that changes per frame
+  (no motion, signal style, scroll container, collection, overlay, primitive,
+  image or element ref) is embedded as a cached GPUI view in a flex column
+  whose width does not depend on its content, and replayed while its nodes and
+  what it inherits stay the same. Scrolling a Table above 1,000 plain rows
+  took 0.8 ms a step instead of 17 ms. On by default;
+  `ScriptViewConfig::render_islands(false)` or `GPUI_RHAI_RENDER_ISLANDS=off`
+  renders every frame in full, and `GPUI_RHAI_RENDER_ISLANDS=verify` panics
+  when a replayed subtree would lay out differently.
 - gpui-pre/core/platform move from 0.3.7 to 0.3.9 (Zed `93d7456`), the
   snapshot gpui-kit pins. A Host with direct `gpui`/`gpui_platform`
   dependencies pins `=0.3.9`; `gpui-rhai check` reports a mismatch. The APIs
