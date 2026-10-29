@@ -19,3 +19,13 @@ when `metadata.data_backend` also matches: eager Rhai arrays and
 `native_collection` intentionally exercise different ownership models.
 Chart reports use `gpui-rhai-chart-e2e-v2` and additionally require the same
 point count, theme, and chart feature configuration.
+
+Scroll reports use `gpui-rhai-scroll-e2e-v1` (`scroll_end_to_end_baseline`,
+written to `GPUI_RHAI_SCROLL_BENCH_OUTPUT` when set). Each layout mounts a
+400-row Table beside 0 to 2500 rows of plain filler and scrolls it one row per
+step; a step is `quiet` when it rendered no rows and `realizing` when it did.
+Per step they record host renders, render and element-build time, polls and
+poll time, commits and the time of each commit phase, all read from the
+view's `take_render_statistics`. `gpui_replay` measures GPUI alone: a view
+rendered every frame beside a static subtree built inline, as a plain child
+view, or as a cached child view.

@@ -1085,3 +1085,490 @@ fn chart_end_to_end_baseline(cx: &mut TestAppContext) {
     };
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
 }
+
+// Scroll benchmark: what one wheel step over a Table costs end to end, beside
+// trees of growing size. Schema `gpui-rhai-scroll-e2e-v1`.
+
+const SCROLL_TABLE: &str = include_str!("../../../registry/components/table.rhai");
+const SCROLL_BADGE: &str = include_str!("../../../registry/components/badge.rhai");
+const SCROLL_THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
+const SCROLL_TOKENS: &str = include_str!("../../../registry/tokens.rhai");
+const SCROLL_WINDOW: [f32; 2] = [1_180.0, 820.0];
+
+/// One page the scroll benchmark mounts: a 400-row Table of 320px beside
+/// `filler` plain rows of three texts (four nodes each), before or after it,
+/// and optionally a second Table, which is the one scrolled.
+#[derive(Clone, Copy)]
+struct ScrollLayout {
+    name: &'static str,
+    filler: usize,
+    filler_first: bool,
+    two_tables: bool,
+    props: &'static str,
+}
+
+const SCROLL_LAYOUTS: &[ScrollLayout] = &[
+    ScrollLayout {
+        name: "filler_0",
+        filler: 0,
+        filler_first: false,
+        two_tables: false,
+        props: "",
+    },
+    ScrollLayout {
+        name: "filler_330",
+        filler: 330,
+        filler_first: false,
+        two_tables: false,
+        props: "",
+    },
+    ScrollLayout {
+        name: "filler_1000",
+        filler: 1_000,
+        filler_first: false,
+        two_tables: false,
+        props: "",
+    },
+    ScrollLayout {
+        name: "filler_2500",
+        filler: 2_500,
+        filler_first: false,
+        two_tables: false,
+        props: "",
+    },
+    ScrollLayout {
+        name: "filler_1000_batch_1",
+        filler: 1_000,
+        filler_first: false,
+        two_tables: false,
+        props: "batch_rows:1,retain_rows:0,",
+    },
+    ScrollLayout {
+        name: "filler_1000_first",
+        filler: 1_000,
+        filler_first: true,
+        two_tables: false,
+        props: "",
+    },
+    ScrollLayout {
+        name: "two_tables_filler_1000",
+        filler: 1_000,
+        filler_first: false,
+        two_tables: true,
+        props: "",
+    },
+];
+
+fn scroll_source(layout: ScrollLayout) -> String {
+    let table = |key: &str, label: &str| {
+        format!(
+            r#"table::Table(#{{key:"{key}",label:"{label}",row_key:"id",height:320,rows:rows(),{props}
+            columns:[#{{key:"label",title:"Label",width:#{{kind:"fixed",value:200}}}}]}})"#,
+            props = layout.props
+        )
+    };
+    let mut tables = Vec::new();
+    if layout.two_tables {
+        tables.push(table("first", "First"));
+    }
+    tables.push(table("rows", "Rows"));
+    // Filler first sits beside the Tables, so they stay in the window while
+    // the filler comes first in the tree; otherwise it follows them.
+    let page = if layout.filler_first {
+        format!(
+            "row([column(fillers()).with_style(style().width(px(400))), column([{}]).with_style(style().width(px(400)))])",
+            tables.join(", ")
+        )
+    } else {
+        format!(
+            "column([{}, column(fillers())]).with_style(style().width(px(400)))",
+            tables.join(", ")
+        )
+    };
+    format!(
+        r#"import "components/table" as table;
+fn rows(){{let result=[];for index in 0..400{{result.push(#{{id:`r${{index}}`,label:`Row ${{index}}`}});}}result}}
+fn fillers(){{let result=[];for i in 0..{filler}{{result.push(row([text(`Filler ${{i}}`),text("a"),text("b")]).with_key(`f${{i}}`));}}result}}
+fn view(ctx){{ {page} }}"#,
+        filler = layout.filler,
+    )
+}
+
+fn scroll_view(layout: ScrollLayout) -> gpui_rhai::EmbeddedScriptView {
+    use std::collections::BTreeMap;
+    let module =
+        |id: &str, source: &str| (gpui_rhai::ModuleId::parse(id).unwrap(), source.to_owned());
+    let scripts = gpui_rhai::EmbeddedScriptSource::new(BTreeMap::from([
+        module("main", &scroll_source(layout)),
+        module("components/table", SCROLL_TABLE),
+        module("components/badge", SCROLL_BADGE),
+    ]));
+    let assets: Vec<(String, gpui_rhai::AssetData)> = [
+        (
+            "icons/disclosure_down",
+            include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice(),
+        ),
+        (
+            "icons/chevron_right",
+            include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice(),
+        ),
+        (
+            "icons/sort_ascending",
+            include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice(),
+        ),
+        (
+            "icons/sort_descending",
+            include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| {
+        (
+            name.to_owned(),
+            gpui_rhai::AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: bytes.to_vec(),
+            },
+        )
+    })
+    .collect();
+    gpui_rhai::EmbeddedScriptView::new(
+        gpui_rhai::ModuleId::parse("main").unwrap(),
+        scripts,
+        SCROLL_THEME,
+    )
+    .token_base(SCROLL_TOKENS)
+    .asset_sources(assets)
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+struct ScrollStep {
+    total_us: u64,
+    host_renders: u64,
+    render_us: u64,
+    build_us: u64,
+    polls: u64,
+    poll_us: u64,
+    commits: u64,
+    commit_phases_us: Vec<(&'static str, u64)>,
+    rows_rendered: usize,
+}
+
+#[derive(Serialize)]
+struct ScrollClass {
+    steps: usize,
+    total_p50_us: u64,
+    total_p90_us: u64,
+    render_p50_us: u64,
+    build_p50_us: u64,
+    poll_p50_us: u64,
+    host_renders_p50: u64,
+}
+
+#[derive(Serialize)]
+struct ScrollLayoutReport {
+    name: &'static str,
+    retained_nodes: usize,
+    /// Steps that rendered no rows.
+    quiet: ScrollClass,
+    /// Steps that rendered rows: a poll, a commit and their frames.
+    realizing: ScrollClass,
+    /// Commit phases summed over the measured steps.
+    commit_phases_us: Vec<(&'static str, u64)>,
+    steps: Vec<ScrollStep>,
+}
+
+#[derive(Serialize)]
+struct ReplayReport {
+    rows: usize,
+    mode: &'static str,
+    frame_p50_us: u64,
+    frame_p90_us: u64,
+}
+
+#[derive(Serialize)]
+struct ScrollBenchmarkReport {
+    metadata: BenchmarkMetadata,
+    layouts: Vec<ScrollLayoutReport>,
+    /// GPUI alone: a view rendered every frame beside a static subtree built
+    /// inline, as a plain child view, or as a cached child view.
+    gpui_replay: Vec<ReplayReport>,
+}
+
+fn duration_us(duration: Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
+}
+
+fn scroll_class(steps: &[&ScrollStep]) -> ScrollClass {
+    let p = |values: Vec<u64>, rank: usize| {
+        if values.is_empty() {
+            return 0;
+        }
+        let mut values = values;
+        values.sort_unstable();
+        percentile(&values, rank)
+    };
+    ScrollClass {
+        steps: steps.len(),
+        total_p50_us: p(steps.iter().map(|step| step.total_us).collect(), 50),
+        total_p90_us: p(steps.iter().map(|step| step.total_us).collect(), 90),
+        render_p50_us: p(steps.iter().map(|step| step.render_us).collect(), 50),
+        build_p50_us: p(steps.iter().map(|step| step.build_us).collect(), 50),
+        poll_p50_us: p(steps.iter().map(|step| step.poll_us).collect(), 50),
+        host_renders_p50: p(steps.iter().map(|step| step.host_renders).collect(), 50),
+    }
+}
+
+/// Advances the clock, draws a frame and runs until parked, twice: what a
+/// wheel step needs to realize rows, commit them and draw them.
+fn scroll_settle(visual: &mut VisualTestContext) {
+    for _ in 0..2 {
+        visual.run_until_parked();
+        visual.executor().advance_clock(Duration::from_millis(32));
+        visual.update(|window, cx| window.simulate_next_frame(cx));
+        visual.run_until_parked();
+    }
+}
+
+fn scroll_layout(
+    cx: &mut TestAppContext,
+    layout: ScrollLayout,
+    warmup: usize,
+    steps: usize,
+) -> ScrollLayoutReport {
+    let prepared = scroll_view(layout).prepare().unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("scroll-benchmark-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("scroll-benchmark-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        BenchmarkHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(SCROLL_WINDOW[0]), px(SCROLL_WINDOW[1])));
+    scroll_settle(&mut visual);
+    let table = visual
+        .update(|_, cx| view.accessibility_snapshot(cx))
+        .unwrap()
+        .find_by_role_and_name("table", "Rows")
+        .next()
+        .and_then(|node| node.geometry)
+        .expect("the scrolled Table has geometry")
+        .visual;
+    #[allow(clippy::cast_possible_truncation)]
+    let at = gpui::point(
+        px((table.x + table.width / 2.0) as f32),
+        px((table.y + table.height / 2.0) as f32),
+    );
+    let mut measured = Vec::with_capacity(steps);
+    for step in 0..warmup + steps {
+        let _ = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        let _ = take_snapshot(&mut visual, &view);
+        let started = Instant::now();
+        visual.simulate_event(gpui::ScrollWheelEvent {
+            position: at,
+            delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(-32.0))),
+            ..gpui::ScrollWheelEvent::default()
+        });
+        scroll_settle(&mut visual);
+        let total_us = micros(started);
+        let statistics = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        let snapshot = take_snapshot(&mut visual, &view);
+        if step < warmup {
+            continue;
+        }
+        measured.push(ScrollStep {
+            total_us,
+            host_renders: statistics.host_renders,
+            render_us: duration_us(statistics.host_render_time),
+            build_us: duration_us(statistics.build_time),
+            polls: statistics.polls,
+            poll_us: duration_us(statistics.poll_time),
+            commits: statistics.commits,
+            commit_phases_us: statistics
+                .commit_phases
+                .iter()
+                .map(|(phase, elapsed)| (*phase, duration_us(*elapsed)))
+                .collect(),
+            rows_rendered: snapshot
+                .timings
+                .iter()
+                .filter(|timing| {
+                    matches!(timing.operation, ExecutionOperation::VirtualCollection(_))
+                })
+                .count(),
+        });
+    }
+    let retained_nodes = visual
+        .update(|_, cx| view.take_render_statistics(cx))
+        .unwrap()
+        .retained_nodes;
+    let mut commit_phases_us: Vec<(&'static str, u64)> = Vec::new();
+    for step in &measured {
+        for (phase, elapsed) in &step.commit_phases_us {
+            match commit_phases_us.iter_mut().find(|(name, _)| name == phase) {
+                Some((_, total)) => *total += elapsed,
+                None => commit_phases_us.push((phase, *elapsed)),
+            }
+        }
+    }
+    let quiet = measured
+        .iter()
+        .filter(|step| step.rows_rendered == 0)
+        .collect::<Vec<_>>();
+    let realizing = measured
+        .iter()
+        .filter(|step| step.rows_rendered > 0)
+        .collect::<Vec<_>>();
+    ScrollLayoutReport {
+        name: layout.name,
+        retained_nodes,
+        quiet: scroll_class(&quiet),
+        realizing: scroll_class(&realizing),
+        commit_phases_us,
+        steps: measured,
+    }
+}
+
+struct ReplayFiller(usize);
+
+fn replay_rows(count: usize) -> gpui::Div {
+    use gpui::{ParentElement, Styled, div};
+    div().flex().flex_col().children((0..count).map(|index| {
+        div()
+            .flex()
+            .flex_row()
+            .gap_2()
+            .child(format!("Filler {index}"))
+            .child("a")
+            .child("b")
+    }))
+}
+
+impl Render for ReplayFiller {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        replay_rows(self.0)
+    }
+}
+
+struct ReplayRoot {
+    mode: usize,
+    rows: usize,
+    filler: gpui::Entity<ReplayFiller>,
+    frames: u64,
+}
+
+impl Render for ReplayRoot {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        use gpui::{ParentElement, Styled, div};
+        self.frames += 1;
+        let base = div()
+            .flex()
+            .flex_col()
+            .w(px(400.0))
+            .child(format!("frame {}", self.frames));
+        match self.mode {
+            0 => base.child(replay_rows(self.rows)),
+            1 => base.child(self.filler.clone()),
+            _ => {
+                #[allow(clippy::cast_precision_loss)]
+                let height = self.rows as f32 * 20.0;
+                base.child(
+                    gpui::AnyView::from(self.filler.clone())
+                        .cached(gpui::StyleRefinement::default().w_full().h(px(height))),
+                )
+            }
+        }
+    }
+}
+
+fn gpui_replay(cx: &mut TestAppContext, frames: usize) -> Vec<ReplayReport> {
+    use gpui::AppContext as _;
+    let mut reports = Vec::new();
+    for rows in [0_usize, 330, 1_000] {
+        for (mode, name) in ["inline", "entity", "cached"].into_iter().enumerate() {
+            let window = cx.add_window(|_, cx| {
+                let filler = cx.new(|_| ReplayFiller(rows));
+                ReplayRoot {
+                    mode,
+                    rows,
+                    filler,
+                    frames: 0,
+                }
+            });
+            let mut visual = VisualTestContext::from_window(*window, cx);
+            let mut times = Vec::with_capacity(frames);
+            for frame in 0..frames + 8 {
+                let started = Instant::now();
+                window.update(cx, |_, _, cx| cx.notify()).unwrap();
+                visual.run_until_parked();
+                visual.update(|window, cx| window.simulate_next_frame(cx));
+                visual.run_until_parked();
+                if frame >= 8 {
+                    times.push(micros(started));
+                }
+            }
+            let drawn = window.update(cx, |root, _, _| root.frames).unwrap();
+            assert!(
+                drawn >= u64::try_from(frames).unwrap(),
+                "{name} drew {drawn} frames"
+            );
+            times.sort_unstable();
+            reports.push(ReplayReport {
+                rows,
+                mode: name,
+                frame_p50_us: percentile(&times, 50),
+                frame_p90_us: percentile(&times, 90),
+            });
+        }
+    }
+    reports
+}
+
+#[gpui::test]
+#[ignore = "run with scripts/benchmark.sh"]
+fn scroll_end_to_end_baseline(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let steps = env_usize(
+        "GPUI_RHAI_BENCH_SAMPLES",
+        if cfg!(debug_assertions) { 8 } else { 32 },
+    );
+    let warmup = env_usize(
+        "GPUI_RHAI_BENCH_WARMUP",
+        if cfg!(debug_assertions) { 1 } else { 4 },
+    );
+    let layouts = SCROLL_LAYOUTS
+        .iter()
+        .map(|layout| scroll_layout(cx, *layout, warmup, steps))
+        .collect();
+    let mut metadata = metadata(steps, warmup);
+    metadata.schema = "gpui-rhai-scroll-e2e-v1";
+    metadata.data_backend = "rhai_array";
+    metadata.window = SCROLL_WINDOW.map(f64::from);
+    let report = ScrollBenchmarkReport {
+        metadata,
+        layouts,
+        gpui_replay: gpui_replay(cx, steps),
+    };
+    let json = serde_json::to_string_pretty(&report).unwrap();
+    println!("{json}");
+    if let Ok(path) = std::env::var("GPUI_RHAI_SCROLL_BENCH_OUTPUT") {
+        std::fs::write(path, format!("{json}\n")).unwrap();
+    }
+}
