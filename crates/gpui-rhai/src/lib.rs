@@ -120,8 +120,8 @@ pub use action::{
 pub use app::{
     EmbeddedScriptView, FileScriptView, NavigateBack, PreparedScriptView, ScriptApplication,
     ScriptErrorDomain, ScriptErrorReport, ScriptViewConfig, ScriptViewError, ScriptViewExtension,
-    ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot, ScriptViewRenderStatistics,
-    ScriptViewState, ThemeHandle, install,
+    ScriptViewFrameDigest, ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot,
+    ScriptViewRenderStatistics, ScriptViewState, ThemeHandle, install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,
