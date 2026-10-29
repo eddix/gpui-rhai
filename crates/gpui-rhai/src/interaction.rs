@@ -579,9 +579,15 @@ struct InteractionState {
     drop_targets: BTreeMap<InteractionOwner, DropTargetRegistration>,
     next_drop_order: u64,
     virtual_scrolls: BTreeMap<String, VirtualScrollTarget>,
-    parents: BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
-    /// The committed tree each view's parents came from.
-    parent_trees: BTreeMap<String, (crate::ScriptGeneration, u64)>,
+    /// Each view's committed tree, for the parents of its nodes, with its
+    /// generation and revision.
+    trees: BTreeMap<
+        String,
+        (
+            (crate::ScriptGeneration, u64),
+            Rc<crate::retained::NodeTable>,
+        ),
+    >,
     scroll_tick_queued: bool,
     wheel_regions: BTreeMap<InteractionOwner, NativeWheelRegion>,
 }
@@ -647,8 +653,8 @@ impl WindowInteractionCoordinator {
             .collect()
     }
 
-    /// Records the parents of `view`'s committed tree, identified by its
-    /// generation and revision; the same tree again is not walked again.
+    /// Records `view`'s committed tree, identified by its generation and
+    /// revision, for the parents of its nodes.
     pub(crate) fn set_retained_tree(
         &self,
         view: &str,
@@ -656,15 +662,16 @@ impl WindowInteractionCoordinator {
         committed: (crate::ScriptGeneration, u64),
     ) {
         let mut state = self.0.borrow_mut();
-        if state.parent_trees.get(view) == Some(&committed) {
+        if state
+            .trees
+            .get(view)
+            .is_some_and(|(current, _)| *current == committed)
+        {
             return;
         }
-        state.parent_trees.insert(view.to_owned(), committed);
-        state.parents.retain(|(owner, _), _| owner != view);
-        state.parents.extend(
-            tree.nodes()
-                .map(|node| ((view.to_owned(), node.id()), node.parent())),
-        );
+        state
+            .trees
+            .insert(view.to_owned(), (committed, tree.node_table()));
     }
     pub(crate) fn begin_frame(&self) {
         let mut state = self.0.borrow_mut();
@@ -945,7 +952,7 @@ impl WindowInteractionCoordinator {
             let virtual_scroll = resolve_virtual_scroll_target(
                 target.as_ref(),
                 &state.virtual_scrolls,
-                &state.parents,
+                &state.trees,
                 position,
             )
             .or_else(|| {
@@ -1286,8 +1293,7 @@ impl WindowInteractionCoordinator {
         }
         state.captured_move.remove(view);
         state.captured_up.remove(view);
-        state.parents.retain(|(owner, _), _| owner != view);
-        state.parent_trees.remove(view);
+        state.trees.remove(view);
         state
             .drop_targets
             .retain(|owner, _| !owner.belongs_to(view));
@@ -1498,7 +1504,13 @@ fn resolve_drop_target(
 fn resolve_virtual_scroll_target(
     active_target: Option<&DropTargetRegistration>,
     virtual_scrolls: &BTreeMap<String, VirtualScrollTarget>,
-    parents: &BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
+    trees: &BTreeMap<
+        String,
+        (
+            (crate::ScriptGeneration, u64),
+            Rc<crate::retained::NodeTable>,
+        ),
+    >,
     position: Point<Pixels>,
 ) -> Option<VirtualScrollTarget> {
     let target = active_target?;
@@ -1512,7 +1524,10 @@ fn resolve_virtual_scroll_target(
         }) {
             return Some(scroll.clone());
         }
-        cursor = parents.get(&(view.clone(), node)).copied().flatten();
+        cursor = trees
+            .get(view)
+            .and_then(|(_, nodes)| nodes.get(&node))
+            .and_then(|node| node.parent());
     }
     None
 }

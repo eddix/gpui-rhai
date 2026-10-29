@@ -122,7 +122,10 @@ impl ScriptLifecycle {
         self.root = checkpoint.root;
         self.retained = checkpoint.retained;
         self.semantics = checkpoint.semantics;
-        self.revision = self.revision.wrapping_add(1);
+        // Two steps: a revision one past another is always the reconcile of
+        // the tree before it, which cache islands rely on, and a restore is
+        // not.
+        self.revision = self.revision.wrapping_add(2);
         self.suspended_at = checkpoint.suspended_at;
     }
 

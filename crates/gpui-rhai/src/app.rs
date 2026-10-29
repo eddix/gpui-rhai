@@ -5931,7 +5931,8 @@ impl ScriptHostView {
         let watched = self
             .lifecycle
             .retained()
-            .nodes()
+            .host_nodes()
+            .into_iter()
             .filter(|node| !node.event_handlers("focus_within_change").is_empty())
             .map(crate::RetainedNode::id)
             .collect::<BTreeSet<_>>();
@@ -6144,7 +6145,8 @@ impl ScriptHostView {
     fn sync_retained_page_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let tree = self.lifecycle.retained();
         let pages = tree
-            .nodes()
+            .host_nodes()
+            .into_iter()
             .filter(|node| {
                 node.attributes()
                     .contains_key(crate::retained_page::PAGE_VISIBLE)
@@ -6305,7 +6307,8 @@ impl ScriptHostView {
     fn focusable_nodes(&self) -> BTreeSet<crate::NodeId> {
         self.lifecycle
             .retained()
-            .nodes()
+            .host_nodes()
+            .into_iter()
             // An overlay's handle is its panel's: the view owns it so the panel
             // holding focus is part of the focus path seen by `group_focus`.
             .filter(|node| {
@@ -6334,7 +6337,8 @@ impl ScriptHostView {
     fn scrollable_nodes(&self) -> BTreeSet<crate::NodeId> {
         self.lifecycle
             .retained()
-            .nodes()
+            .host_nodes()
+            .into_iter()
             .filter(|node| node.scrollable())
             .map(crate::RetainedNode::id)
             .collect()
@@ -6379,7 +6383,8 @@ impl ScriptHostView {
         let anchors = self
             .lifecycle
             .retained()
-            .nodes()
+            .host_nodes()
+            .into_iter()
             .filter(|node| node.element_ref().is_some())
             .filter_map(|node| {
                 nearest_scroll_ancestor(self.lifecycle.retained(), node.id())
