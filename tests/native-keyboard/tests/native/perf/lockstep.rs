@@ -225,3 +225,53 @@ fn hover_and_focus_inside_an_island_keep_the_windows_identical(cx: &mut TestAppC
     }
     assert!(island_hits(&mut sides) > 0);
 }
+
+/// A scroll container beside a block of cold rows.
+const SCROLL_BESIDE_ROWS: &str = r#"fn lines(){let result=[];for i in 0..60{result.push(text(`Line ${i}`).with_key(`l${i}`));}result}
+fn rows(){let result=[];for i in 0..40{result.push(row([text(`Row ${i}`),text("detail")]).with_key(`r${i}`));}result}
+fn view(ctx){
+    column([
+        column(lines()).with_key("scroller").accessibility_role("region").accessibility_label("Lines")
+            .with_style(style().height(px(160)).overflow_y_scroll()).scrollbars("hidden", "always"),
+        column(rows()).with_key("rows"),
+    ]).with_style(style().width(px(360)))
+}"#;
+
+#[gpui::test]
+fn scrolling_a_container_replays_the_islands_beside_it(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let mut sides = Lockstep::mount(
+        cx,
+        full_frames(Mount::new(SCROLL_BESIDE_ROWS)),
+        Mount::new(SCROLL_BESIDE_ROWS),
+        size(px(500.0), px(900.0)),
+    );
+    sides.assert_same("mounted");
+    let _ = island_hits(&mut sides);
+    // Over the scrollbar track, where the view's own wheel handler scrolls.
+    let mut at = None;
+    sides.act(|visual, view| {
+        at.get_or_insert_with(|| {
+            let region = bounds(visual, view, "region", "Lines");
+            point(
+                px((region.x + region.width) as f32 - 3.0),
+                px((region.y + region.height / 2.0) as f32),
+            )
+        });
+    });
+    let at = at.unwrap();
+    let mut hits = 0;
+    for step in 0..12 {
+        sides.act(|visual, _| {
+            visual.simulate_event(ScrollWheelEvent {
+                position: at,
+                delta: ScrollDelta::Pixels(point(px(0.0), px(if step < 9 { -24.0 } else { 40.0 }))),
+                ..ScrollWheelEvent::default()
+            });
+            settle(visual, Step::Tick, 2);
+        });
+        sides.assert_same(&format!("scroll step {step}"));
+        hits += island_hits(&mut sides);
+    }
+    assert!(hits >= 10, "{hits} island hits over 12 scroll steps");
+}

@@ -989,7 +989,6 @@ impl WindowInteractionCoordinator {
             .is_some_and(|target| auto_scroll_virtual_target(target, position));
         if virtual_scrolled && let Some(target) = virtual_scroll {
             notifications.insert(target.notify);
-            window.refresh();
         }
         if old_target != new_target || scrolled || virtual_scrolled {
             for notify in notifications {
