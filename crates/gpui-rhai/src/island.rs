@@ -161,8 +161,10 @@ pub(crate) struct FrameFingerprint {
 pub(crate) struct IslandInherited {
     pub environment: crate::Environment,
     pub inherited_disabled: bool,
+    /// Whether the focus owner above has focus, when a node of the island
+    /// styles `group_focus` by it. (Whether focus is within a node follows
+    /// from the focus path.)
     pub focus_owner: bool,
-    pub focus_within: bool,
     pub ambient_text_color: Option<crate::Rgba8>,
     pub stretch_parent: bool,
     pub row_parent: bool,
@@ -174,6 +176,8 @@ pub(crate) struct IslandInherited {
     /// The nearest ancestor with a `hover` style, when a node of the island
     /// paints `group_hover` by it.
     pub hover_group: Option<NodeId>,
+    /// The room a row leaves the root, when the root grows into it.
+    pub room: Option<u64>,
 }
 
 /// Everything an island's render reads: when two frames capture the same,
@@ -195,9 +199,11 @@ pub(crate) struct IslandCapture {
 }
 
 impl IslandCapture {
-    /// The same render inputs, the committed revision aside.
+    /// The same render inputs, the committed revision aside. A node equal to
+    /// the one rendered, as a render of the whole view yields, renders the
+    /// same.
     fn same_inputs(&self, other: &Self) -> bool {
-        self.node.ptr_eq(&other.node)
+        self.node == other.node
             && self.root == other.root
             && self.path == other.path
             && self.inherited == other.inherited
@@ -249,7 +255,8 @@ impl IslandSlot {
             return false;
         }
         let kept = rendered.revision == capture.revision
-            || rendered.revision.wrapping_add(1) == capture.revision;
+            || (rendered.revision.wrapping_add(1) == capture.revision
+                && rendered.node.ptr_eq(&capture.node));
         if kept && !verify {
             return true;
         }
@@ -276,8 +283,10 @@ impl IslandSlot {
             self.demoted = false;
         }
         if same && let Some((rendered, _)) = &mut self.rendered {
-            // Keep comparing against the newest revision the subtree held.
+            // Keep comparing against the newest revision and node the subtree
+            // held, which the next frames' captures share.
             rendered.revision = capture.revision;
+            rendered.node = capture.node.clone();
         }
         self.capture = Some(capture);
         self.cached = same && !self.demoted && self.measured.is_some();

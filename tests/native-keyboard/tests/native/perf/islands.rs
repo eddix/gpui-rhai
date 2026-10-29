@@ -3,7 +3,7 @@
 
 use gpui::{Modifiers, MouseButton, TestAppContext, px, size};
 
-use crate::support::{Mount, Step, bounds, center, settle, text_of};
+use crate::support::{Mount, Step, bounds, by_test_id, center, dispatch, settle, text_of};
 
 /// A press on the page adds a hot node to the block of rows, which takes the
 /// block out of its island; the row pressed keeps its click.
@@ -43,4 +43,45 @@ fn a_press_that_replans_the_islands_keeps_its_click(cx: &mut TestAppContext) {
     visual.simulate_mouse_up(row, MouseButton::Left, Modifiers::none());
     settle(&mut visual, Step::Tick, 2);
     assert_eq!(text_of(&mut visual, &view, "clicked"), "r3");
+}
+
+/// A count held by the view, so a click renders the view whole, above rows
+/// that render the same each time.
+const VIEW_STATE: &str = r#"fn state_schema(){#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn bump(ctx,payload){ctx.set_state("count",ctx.get_state("count")+1);}
+fn rows(){let result=[];for i in 0..20{result.push(row([text(`Row ${i}`),text("detail")]).with_key(`r${i}`));}result}
+fn view(ctx){
+    column([
+        text(`Count ${ctx.get_state("count")}`).test_id("count"),
+        text("Bump").test_id("bump").on_click(Fn("bump")),
+        column(rows()).with_key("rows"),
+    ]).with_style(style().width(px(360)))
+}"#;
+
+#[gpui::test]
+fn a_whole_view_render_replays_the_rows_it_renders_again_unchanged(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (mut visual, view) = Mount::new(VIEW_STATE).mount(cx);
+    visual.simulate_resize(size(px(500.0), px(700.0)));
+    settle(&mut visual, Step::Tick, 2);
+    for click in 1..=3 {
+        let _ = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        // Dispatched, as automation does: a pointer click also makes GPUI
+        // render every cached view again for its active state.
+        dispatch(&mut visual, &view, by_test_id("bump"), "click").unwrap();
+        settle(&mut visual, Step::Tick, 2);
+        let statistics = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        assert_eq!(text_of(&mut visual, &view, "count"), format!("Count {click}"));
+        assert!(statistics.commits > 0, "click {click} committed nothing");
+        // Under GPUI_RHAI_RENDER_ISLANDS=aggressive the count's own text is an
+        // island too, and renders again.
+        assert!(
+            statistics.island_hits > statistics.island_uncached,
+            "click {click} rendered the rows again: {statistics:?}"
+        );
+    }
 }

@@ -275,3 +275,58 @@ fn scrolling_a_container_replays_the_islands_beside_it(cx: &mut TestAppContext) 
     }
     assert!(hits >= 10, "{hits} island hits over 12 scroll steps");
 }
+
+/// An application shell: a fixed sidebar beside a main area that grows into
+/// the rest of the row, each holding cold rows, under a control that commits.
+const SHELL: &str = r#"fn state_schema(){#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn bump(ctx,payload){ctx.set_state("count",ctx.get_state("count")+1);}
+fn rows(label){let result=[];for i in 0..20{result.push(row([text(`${label} ${i}`),text("detail")]).with_key(`r${i}`));}result}
+fn noop(ctx,payload){()}
+fn view(ctx){
+    column([
+        text(`Count ${ctx.get_state("count")}`).accessibility_role("button").accessibility_label("Bump").on_click(Fn("bump"))
+            .with_style(style().hover(style().background(rgba(0xc03030ff)))),
+        row([
+            column([column(rows("Nav")).with_key("nav")]).with_key("sidebar").on("pointer_down",Fn("noop"))
+                .with_style(style().width(px(180)).flex_shrink(false)),
+            column([column(rows("Item")).with_key("items")]).with_key("main").on("pointer_down",Fn("noop"))
+                .with_style(style().flex_grow().min_width(px(0)).padding(px(8))),
+        ]).with_key("shell").with_style(style().gap(px(4))),
+    ]).with_style(style().width(px(640)))
+}"#;
+
+#[gpui::test]
+fn a_shell_main_area_holds_islands_and_keeps_the_windows_identical(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let mut sides = Lockstep::mount(
+        cx,
+        full_frames(Mount::new(SHELL)),
+        Mount::new(SHELL),
+        size(px(800.0), px(900.0)),
+    );
+    sides.assert_same("mounted");
+    let _ = island_hits(&mut sides);
+    let outside = point(px(760.0), px(880.0));
+    let mut hits = 0;
+    for index in 0..3 {
+        sides.act(|visual, _| {
+            visual.simulate_mouse_move(outside, None, Modifiers::none());
+            settle(visual, Step::Tick, 1);
+        });
+        sides.act(|visual, view| {
+            let bump = center(bounds(visual, view, "button", "Bump"));
+            visual.simulate_mouse_move(bump, None, Modifiers::none());
+            settle(visual, Step::Tick, 1);
+        });
+        sides.assert_same(&format!("hover {index}"));
+        hits += island_hits(&mut sides);
+    }
+    sides.act(|visual, view| {
+        let bump = center(bounds(visual, view, "button", "Bump"));
+        visual.simulate_click(bump, Modifiers::none());
+        settle(visual, Step::Tick, 2);
+    });
+    sides.assert_same("committed");
+    // The sidebar's rows and the main area's rows replay, two islands a frame.
+    assert!(hits >= 10, "{hits} island hits over 3 hovers");
+}
