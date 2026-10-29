@@ -83,6 +83,8 @@ pub(crate) struct SubtreeSummary {
     pub hot: u32,
     /// Nodes with a `group_hover` style, painted by an ancestor's hover.
     pub group_hover: u32,
+    /// Nodes with a `group_focus` style, which follows an ancestor's focus.
+    pub group_focus: u32,
     /// Nodes a commit's motion phase has to visit
     /// ([`crate::motion::node_takes_motion`]).
     pub motion: u32,
@@ -148,6 +150,7 @@ impl SubtreeSummary {
             nodes: 1,
             hot: u32::from(crate::renderer::island_hot(node)),
             group_hover: u32::from(node.style().group_hover.is_some()),
+            group_focus: u32::from(node.style().group_focus.is_some()),
             motion: u32::from(crate::motion::node_takes_motion(node)),
             exit: u32::from(!node.exit_motions().is_empty()),
             signals: u32::from(
@@ -173,6 +176,7 @@ impl SubtreeSummary {
             nodes: self.nodes.saturating_add(other.nodes),
             hot: self.hot.saturating_add(other.hot),
             group_hover: self.group_hover.saturating_add(other.group_hover),
+            group_focus: self.group_focus.saturating_add(other.group_focus),
             motion: self.motion.saturating_add(other.motion),
             exit: self.exit.saturating_add(other.exit),
             signals: self.signals.saturating_add(other.signals),

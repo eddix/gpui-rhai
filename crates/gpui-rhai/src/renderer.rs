@@ -1701,6 +1701,11 @@ struct IslandContext<'a> {
     /// The parent is a block box, where a child with an auto width takes the
     /// parent's: the view root's.
     block_parent: bool,
+    /// A flex row's one child that grows into the room its siblings leave,
+    /// and that room's anchor ([`row_room`]); on the row's environment.
+    row_room: Option<(usize, u64)>,
+    /// This node is that child: the anchor of its width.
+    room: Option<u64>,
 }
 
 impl IslandContext<'_> {
@@ -1712,6 +1717,8 @@ impl IslandContext<'_> {
         parent_flex_column: false,
         root_width: None,
         block_parent: false,
+        row_room: None,
+        room: None,
     };
 }
 
@@ -2514,9 +2521,10 @@ impl GpuiNodeRenderer {
             environment: inherited.environment,
             inherited_disabled: inherited.inherited_disabled,
             focus_path: resources.focus_path,
+            // The root finds whether focus is within it from the focus path.
             focus: NodeFocus {
                 owner: inherited.focus_owner,
-                within: inherited.focus_within,
+                within: false,
             },
             view_id: resources.view_id,
             retained: Some(tree),
@@ -2538,6 +2546,8 @@ impl GpuiNodeRenderer {
                 parent_flex_column: true,
                 root_width: root_width.map(|width| (capture.root, width)),
                 block_parent: false,
+                row_room: None,
+                room: inherited.room,
             },
         };
         Self::render_internal(
@@ -2669,6 +2679,9 @@ impl GpuiNodeRenderer {
             parent_flex_column: is_flex_column(&resolved_style),
             root_width: None,
             block_parent: false,
+            row_room: content_width_anchor(&resolved_style, environment)
+                .and_then(|anchor| row_room(node, &resolved_style, anchor)),
+            room: None,
         };
         let mut element = apply_style(
             div(),
@@ -3446,6 +3459,7 @@ fn render_island_boundary<C: ColorResolver>(
     let width_anchor = node_width_anchor(&style, environment);
     let summary = tree.node(id).map(crate::RetainedNode::summary);
     let group_hover = summary.is_none_or(|summary| summary.group_hover > 0);
+    let group_focus = summary.is_none_or(|summary| summary.group_focus > 0);
     // A plan kept through a press can hold a root that became hot.
     let cold = summary.is_some_and(|summary| summary.hot == 0);
     let eligible = frame.policy.enabled
@@ -3474,8 +3488,7 @@ fn render_island_boundary<C: ColorResolver>(
         inherited: crate::island::IslandInherited {
             environment: environment.environment,
             inherited_disabled: environment.inherited_disabled,
-            focus_owner: environment.focus.owner,
-            focus_within: environment.focus.within,
+            focus_owner: environment.focus.owner && group_focus,
             ambient_text_color: environment.ambient_text_color,
             stretch_parent: environment.stretch_parent,
             row_parent: environment.row_parent,
@@ -3483,6 +3496,7 @@ fn render_island_boundary<C: ColorResolver>(
             opacity_bits: environment.island.opacity.to_bits(),
             width_anchor: width_anchor.unwrap_or(0),
             hover_group: environment.hover_group.filter(|_| group_hover),
+            room: environment.island.room,
         },
         fingerprint: Rc::clone(&frame.fingerprint),
         revision: frame.revision,
@@ -3647,6 +3661,20 @@ fn render_flattened_children<C: ColorResolver>(
             |key| format!("{path}/{}", key.as_str()),
         );
         let child_id = child_ids.get(index);
+        let room_environment;
+        let environment = match environment.island.row_room {
+            Some((grows, anchor)) => {
+                room_environment = RenderEnvironment {
+                    island: IslandContext {
+                        room: (grows == index).then_some(anchor),
+                        ..environment.island
+                    },
+                    ..*environment
+                };
+                &room_environment
+            }
+            None => environment,
+        };
         let island = child_id.and_then(|id| {
             let frame = environment.island.islands?;
             Some((id, frame, frame.entries.get(&id)?))
@@ -4927,6 +4955,10 @@ fn node_width_anchor<C>(
         None | Some(crate::LayoutLength::Auto) if environment.island.block_parent => {
             environment.island.width_anchor?
         }
+        // The room a row leaves its one growing child.
+        None | Some(crate::LayoutLength::Auto) if environment.row_parent => {
+            environment.island.room?
+        }
         _ => return None,
     };
     let margin = &style.margin;
@@ -4978,6 +5010,139 @@ fn content_width_anchor<C>(
         .map(length_bits)
         .fold(anchor, mix_bits),
     )
+}
+
+/// The most children a row is checked for [`row_room`].
+const ROW_ROOM_CHILDREN: usize = 8;
+
+/// In a flex row that does not wrap and whose content width is `anchor`,
+/// the one child that grows into the room the others leave, and an anchor
+/// of that room: every other child has a definite width it neither grows
+/// nor shrinks from, or takes no room, and the growing one has an auto width
+/// and basis, a definite minimum (an automatic one is its content's) and no
+/// maximum. No child's width may move with a signal, a motion or an
+/// interaction state.
+fn row_room(node: &UiNode, style: &StyleProperties, anchor: u64) -> Option<(usize, u64)> {
+    if style.direction != Some(FlexDirection::Row)
+        || !matches!(style.display, None | Some(DisplayMode::Flex))
+        || style.grid_columns.is_some()
+        || matches!(
+            style.flex_wrap,
+            Some(FlexWrapMode::Wrap | FlexWrapMode::WrapReverse)
+        )
+    {
+        return None;
+    }
+    let UiNodeKind::Box { children } = node.kind() else {
+        return None;
+    };
+    if children.len() > ROW_ROOM_CHILDREN {
+        return None;
+    }
+    let definite = |length: Option<crate::LayoutLength>| {
+        matches!(
+            length,
+            None | Some(crate::LayoutLength::Definite(
+                Length::Pixels(_) | Length::Rems(_) | Length::Token(_)
+            ))
+        )
+    };
+    let mut grows = None;
+    let mut hash = mix_bits(anchor, length_bits(style.gap));
+    for (index, child) in children.iter().enumerate() {
+        let base = &child.style().base;
+        let moves = width_may_move(child);
+        if matches!(child.kind(), UiNodeKind::Fragment { .. }) || moves {
+            return None;
+        }
+        if base.position == Some(PositionMode::Absolute)
+            || base.display == Some(DisplayMode::None)
+            || child.attributes().get(crate::retained_page::PAGE_VISIBLE)
+                == Some(&UiValue::Bool(false))
+        {
+            // Out of the row's flow.
+            hash = mix_bits(hash, 0x2f);
+            continue;
+        }
+        let margin = &base.margin;
+        let margins = [margin.left, margin.right, margin.start, margin.end];
+        if !margins.iter().all(|margin| definite(*margin)) || base.aspect_ratio().is_some() {
+            return None;
+        }
+        let growing = base.flex_grow == Some(true)
+            || base.flex_grow_weight.is_some_and(|weight| weight > 0.0);
+        let fixed = matches!(
+            base.width,
+            Some(crate::LayoutLength::Definite(
+                Length::Pixels(_) | Length::Rems(_) | Length::Token(_)
+            ))
+        ) && base.flex_shrink == Some(false)
+            && !growing
+            && base.flex_basis.is_none()
+            && definite(base.min_width)
+            && definite(base.max_width);
+        let room = growing
+            && grows.is_none()
+            && matches!(base.width, None | Some(crate::LayoutLength::Auto))
+            && base.flex_basis.is_none()
+            && base.min_width.is_some()
+            && definite(base.min_width)
+            && base.max_width.is_none();
+        if room {
+            grows = Some(index);
+        } else if !fixed {
+            return None;
+        }
+        hash = [
+            u64::from(room),
+            layout_length_bits(base.width),
+            layout_length_bits(base.min_width),
+            layout_length_bits(base.max_width),
+        ]
+        .into_iter()
+        .chain(margins.into_iter().map(layout_length_bits))
+        .fold(hash, mix_bits);
+    }
+    grows.map(|index| (index, hash))
+}
+
+/// Whether a node's width may change without its node changing: through a
+/// signal, a motion or an interaction state that sets a width property.
+fn width_may_move(node: &UiNode) -> bool {
+    let style = node.style();
+    !node.motions().is_empty()
+        || !node.progress_motions().is_empty()
+        || !node.timelines().is_empty()
+        || node.signal_bindings().next().is_some()
+        || node.signal_style().is_some()
+        || node
+            .attributes()
+            .keys()
+            .any(|key| key.starts_with("layout_motion"))
+        || [
+            &style.hover,
+            &style.active,
+            &style.focus,
+            &style.group_focus,
+            &style.group_hover,
+            &style.focus_within,
+            &style.disabled,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|state| {
+            state.width.is_some()
+                || state.min_width.is_some()
+                || state.max_width.is_some()
+                || state.flex_grow.is_some()
+                || state.flex_grow_weight.is_some()
+                || state.flex_shrink.is_some()
+                || state.flex_basis.is_some()
+                || state.display.is_some()
+                || state.position.is_some()
+                || state.layout_constraints.is_some()
+                || state.margin != crate::style::LayoutEdgeLengths::default()
+        })
 }
 
 /// A stretched child takes its stretched width as a definite width.

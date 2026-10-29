@@ -104,8 +104,9 @@ pub struct ScriptViewConfig {
     window_drag_areas: bool,
     error_reporting: ErrorReporting,
     render_islands: Option<bool>,
-    /// The view fills its window, which [`ScriptApplication`] and script
-    /// windows lay out; a Host lays out the views it mounts.
+    /// The view's width does not depend on its content: it fills its window,
+    /// as [`ScriptApplication`] and script windows lay it out, or the Host
+    /// says so ([`Self::host_sets_width`]).
     fills_window: bool,
 }
 
@@ -223,9 +224,19 @@ impl ScriptViewConfig {
         self
     }
 
-    const fn fills_window(mut self) -> Self {
-        self.fills_window = true;
+    /// Tell the view that the Host lays it out at a width its content does
+    /// not change, as when it fills a window or a pane the Host sizes. Frames
+    /// then also replay the unchanged subtrees whose width follows the
+    /// view's, which they cannot otherwise tell from content. Off by default;
+    /// [`ScriptApplication`] windows are laid out so.
+    #[must_use]
+    pub const fn host_sets_width(mut self, fixed: bool) -> Self {
+        self.fills_window = fixed;
         self
+    }
+
+    const fn fills_window(self) -> Self {
+        self.host_sets_width(true)
     }
 
     #[must_use]
