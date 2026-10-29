@@ -268,7 +268,7 @@ reorder/filter, return anchor scroll correction after remeasurement, and
 compute bottom/tail offsets. It does not drive the rendered collection or add
 a competing position engine. Rendered collections use one GPUI `ListState`.
 The initial native scrollbar extent uses `estimated_height`; actual native
-measurements replace hints as rows are encountered. GPUI 0.3.7's splice API does
+measurements replace hints as rows are encountered. GPUI 0.3.9's splice API does
 not accept per-item size hints. After structural insertions/moves the adapter
 therefore re-seeds the native hint tree: already measured native dimensions
 remain exact height hints, unknown/moved rows use the estimate, and only

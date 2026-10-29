@@ -47,9 +47,9 @@ Supported properties are `opacity`, `translate_x`, `translate_y`, `rotate`,
 `path_progress`. Ordinary GPUI nodes support opacity, translation, and
 dimensions. Canvas/path primitives additionally support 2D rotation, scale,
 skew, trim, follow, and compatible-topology morphing. A Canvas command with an
-axis-aligned clip rectangle rejects rotate/scale/skew motion because gpui-pre 0.3.7
+axis-aligned clip rectangle rejects rotate/scale/skew motion because gpui-pre 0.3.9
 does not expose an equivalent transformed clip; the runtime does not paint and
-hit-test two different shapes. gpui-pre 0.3.7 has no public arbitrary-subtree
+hit-test two different shapes. gpui-pre 0.3.9 has no public arbitrary-subtree
 scale/rotate transform, so the generic node API does not claim otherwise.
 
 Use `.motion_replay_key(value)` when a semantically new value should replay an
@@ -146,7 +146,7 @@ to the component instance that named it (the one calling `motion_group` or
 `.shared_layout(group, id)`), so two instances of a component keep separate
 identities; within one instance a group and id are unique in the view/window
 presentation domain. Direct window, splitter, Table-column,
-and other pointer-following resize remains immediate. The generic gpui-pre 0.3.7
+and other pointer-following resize remains immediate. The generic gpui-pre 0.3.9
 FLIP layer guarantees positional transforms; typed Canvas/path primitives own
 scale and rotation.
 

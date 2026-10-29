@@ -228,7 +228,7 @@ runtime track and do not block the design system:
 - Canvas geometry cannot bind to native signals, so data-driven shape
   animation requires Rhai execution per frame.
 - Style lacks letter spacing, per-edge border colors, node rotation/scale,
-  multi-stop gradients and general z-index (several are GPUI 0.3.7 limits).
+  multi-stop gradients and general z-index (several are GPUI 0.3.9 limits).
 - Rhai array/map data-size limits constrain large script-side datasets.
 - Exit motion paints a copy of a node after it leaves, and cannot copy native
   controls (text fields, sliders, viewers) or virtual collections. So a panel

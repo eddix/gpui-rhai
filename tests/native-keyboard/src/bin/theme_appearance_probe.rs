@@ -358,7 +358,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
                 done.set(true);
                 let (cleanup_evidence,clean)=cx.update(cleanup);
                 capture_exit.set(if result.is_ok()&&clean{0}else{1});
-                let report=json!({"platform":"actual macOS MacPlatform (current_platform(false))","gpui_pre":"0.3.7","source_sha":options.source_sha,"initial":mode(initial),"samples":result.as_ref().ok(),"error":result.as_ref().err(),"records":records.values.borrow().clone(),"os_preferences_changed":false,"cleanup":cleanup_evidence,"process_id":std::process::id(),"binary_path":std::env::current_exe().ok()});
+                let report=json!({"platform":"actual macOS MacPlatform (current_platform(false))","gpui_pre":"0.3.9","source_sha":options.source_sha,"initial":mode(initial),"samples":result.as_ref().ok(),"error":result.as_ref().err(),"records":records.values.borrow().clone(),"os_preferences_changed":false,"cleanup":cleanup_evidence,"process_id":std::process::id(),"binary_path":std::env::current_exe().ok()});
                 let text=serde_json::to_string_pretty(&report).unwrap();
                 println!("{text}");
                 if let Err(error)=std::fs::write(&options.output,&text){eprintln!("failed writing {}: {error}",options.output.display());capture_exit.set(1);}

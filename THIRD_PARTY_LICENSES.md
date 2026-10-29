@@ -9,7 +9,7 @@ icon or raster image assets are currently included.
 
 ## Direct Rust dependencies
 
-- gpui-pre / gpui-pre-platform 0.3.7 — Apache-2.0.
+- gpui-pre / gpui-pre-platform 0.3.9 — Apache-2.0.
   `crates/gpui-rhai/src/text_input.rs` adapts GPUI's Apache-2.0
   `examples/input.rs`; the source notice and Zed Industries copyright are
   retained in that module and the distributed Apache license.

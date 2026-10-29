@@ -24,7 +24,7 @@ Formal component authors resolve every public part through
 `ui/styles.rhai` rule before the caller's explicit instance override. See
 [component stylesheets](component-styles.md).
 
-The current public builder maps directly to GPUI (gpui-pre 0.3.7) behavior:
+The current public builder maps directly to GPUI (gpui-pre 0.3.9) behavior:
 
 - block, flex, and bounded explicit grid layout (`grid_cols/rows`, spans);
 - row/column direction, wrapping, boolean or positive weighted grow,

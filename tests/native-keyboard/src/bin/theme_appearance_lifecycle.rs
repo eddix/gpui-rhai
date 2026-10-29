@@ -462,7 +462,7 @@ fn view(ctx){text("token-only").accessibility_role("status").with_style(style().
                 let result=exercise(handle,cx,&records).await;done.set(true);let cleanup=cx.update(cleanup);
                 let passed=result.is_ok()&&cleanup["remaining_owned_windows"]==0&&cleanup["errors"].as_array().is_some_and(Vec::is_empty);
                 final_exit.set(if passed {0}else{1});
-                let report=json!({"source_sha":source_sha,"platform":"actual macOS MacPlatform","gpui_pre":"0.3.7","passed":passed,
+                let report=json!({"source_sha":source_sha,"platform":"actual macOS MacPlatform","gpui_pre":"0.3.9","passed":passed,
                     "samples":result.as_ref().ok(),"error":result.as_ref().err(),"records":records.values.borrow().clone(),"cleanup":cleanup,
                     "os_preferences_changed":false,"maximum_own_windows":1,"maximum_live_views":3,"binary_path":std::env::current_exe().ok()});
                 let text=serde_json::to_string_pretty(&report).unwrap();println!("{text}");if let Err(error)=std::fs::write(&output,text){eprintln!("report write failed: {error}");final_exit.set(1);}

@@ -7,6 +7,10 @@ semantic versioning from this release.
 
 ## Unreleased
 
+- gpui-pre/core/platform move from 0.3.7 to 0.3.9 (Zed `93d7456`), the
+  snapshot gpui-kit pins. A Host with direct `gpui`/`gpui_platform`
+  dependencies pins `=0.3.9`; `gpui-rhai check` reports a mismatch. The APIs
+  gpui-rhai uses did not change, and MSRV stays 1.95.
 - Fix: `motion_hover` and `motion_press` now run. On a node with no other
   pointer handling they never received the pointer events, and `motion_hover`
   on a node with its own handlers, such as `on_click`, made the render fail.
