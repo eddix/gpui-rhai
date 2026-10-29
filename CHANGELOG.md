@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## Unreleased
+## 0.3.2 - 2026-10-29
 
 - Virtual collections render ahead and keep what they rendered (D73).
   `virtual_collection` takes `overscan_items` (items beyond each edge of the
