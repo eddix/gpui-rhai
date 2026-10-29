@@ -860,9 +860,16 @@ impl GeometryRegistry {
         self.inner.borrow().committed.get(&node).copied()
     }
 
+    // The state is shared with the snapshot a transaction holds: each change
+    // below first checks that it changes something, so a transaction does not
+    // copy the state of every view it passes over.
+
     pub(crate) fn reset_contribution(&self, reader: &crate::read_dependency::ReadDependency) {
         let mut current = self.inner.borrow_mut();
-        retain_geometry_readers(Rc::make_mut(&mut current), |existing| existing != reader);
+        let keep = |existing: &crate::read_dependency::ReadDependency| existing != reader;
+        if !geometry_readers_kept(&current, &keep) {
+            retain_geometry_readers(Rc::make_mut(&mut current), keep);
+        }
     }
     pub(crate) fn retain_contributions(
         &self,
@@ -870,9 +877,12 @@ impl GeometryRegistry {
         active: &BTreeSet<crate::read_dependency::ReadContribution>,
     ) {
         let mut current = self.inner.borrow_mut();
-        retain_geometry_readers(Rc::make_mut(&mut current), |reader| {
+        let keep = |reader: &crate::read_dependency::ReadDependency| {
             reader.retained_in_contribution_scope(scope, active)
-        });
+        };
+        if !geometry_readers_kept(&current, &keep) {
+            retain_geometry_readers(Rc::make_mut(&mut current), keep);
+        }
     }
 
     pub(crate) fn retain_reader_scope(
@@ -881,15 +891,29 @@ impl GeometryRegistry {
         active: &BTreeSet<ComponentInstancePath>,
     ) {
         let mut current = self.inner.borrow_mut();
-        let state = Rc::make_mut(&mut current);
-        retain_geometry_readers(state, |reader| {
+        let keep = |reader: &crate::read_dependency::ReadDependency| {
             reader.retained_in_owner_scope(scope, active)
-        });
+        };
+        let provided = |reference: &crate::ElementRefId| {
+            let provider = reference.component();
+            !provider.is_within(scope) || provider == scope || active.contains(provider)
+        };
+        if geometry_readers_kept(&current, &keep)
+            && current
+                .ref_readers
+                .values()
+                .all(|refs| refs.keys().all(provided))
+            && current
+                .dirty
+                .iter()
+                .all(|owner| !owner.is_within(scope) || owner == scope || active.contains(owner))
+        {
+            return;
+        }
+        let state = Rc::make_mut(&mut current);
+        retain_geometry_readers(state, keep);
         for refs in state.ref_readers.values_mut() {
-            refs.retain(|reference, _| {
-                let provider = reference.component();
-                !provider.is_within(scope) || provider == scope || active.contains(provider)
-            });
+            refs.retain(|reference, _| provided(reference));
         }
         state.ref_readers.retain(|_, refs| !refs.is_empty());
         state
@@ -969,42 +993,58 @@ impl GeometryRegistry {
                 .any(|nodes| nodes.binary_search(&node).is_ok())
     }
 
-    pub(crate) fn retain_nodes(&self, active: &BTreeSet<NodeId>) {
+    /// Forgets every node for which `active` is false.
+    pub(crate) fn retain_nodes(&self, active: impl Fn(NodeId) -> bool) {
         let mut current = self.inner.borrow_mut();
-        let state = Rc::make_mut(&mut current);
-        state.committed.retain(|node, _| active.contains(node));
-        state.presented.retain(|node| active.contains(node));
-        for nodes in &mut state.presented_islands {
-            if nodes.iter().any(|node| !active.contains(node)) {
-                *nodes = nodes
+        let state = &**current;
+        let kept = |mut nodes: Box<dyn Iterator<Item = NodeId> + '_>| nodes.all(&active);
+        let kept = kept(Box::new(state.committed.keys().copied()))
+            && kept(Box::new(state.presented.iter().copied()))
+            && kept(Box::new(
+                state
+                    .presented_islands
                     .iter()
-                    .copied()
-                    .filter(|node| active.contains(node))
-                    .collect();
+                    .flat_map(|nodes| nodes.iter().copied()),
+            ))
+            && kept(Box::new(state.readers.keys().copied()))
+            && kept(Box::new(state.ref_readers.keys().copied()))
+            && kept(Box::new(state.layout_motion.keys().copied()))
+            && kept(Box::new(
+                state.motion_progress.keys().map(|(node, _)| *node),
+            ))
+            && kept(Box::new(
+                state.motion_trigger_targets.keys().map(|(node, _)| *node),
+            ))
+            && kept(Box::new(
+                state.motion_triggers.keys().map(|(node, _)| *node),
+            ))
+            && kept(Box::new(state.canvas_transforms.keys().copied()))
+            && kept(Box::new(state.canvas_drawables.keys().copied()))
+            && kept(Box::new(state.element_offsets.keys().copied()))
+            && kept(Box::new(state.hitboxes.keys().copied()));
+        if kept {
+            return;
+        }
+        let state = Rc::make_mut(&mut current);
+        state.committed.retain(|node, _| active(*node));
+        state.presented.retain(|node| active(*node));
+        for nodes in &mut state.presented_islands {
+            if nodes.iter().any(|node| !active(*node)) {
+                *nodes = nodes.iter().copied().filter(|node| active(*node)).collect();
             }
         }
-        state.readers.retain(|node, _| active.contains(node));
-        state.ref_readers.retain(|node, _| active.contains(node));
-        state.layout_motion.retain(|node, _| active.contains(node));
-        state
-            .motion_progress
-            .retain(|(node, _), _| active.contains(node));
+        state.readers.retain(|node, _| active(*node));
+        state.ref_readers.retain(|node, _| active(*node));
+        state.layout_motion.retain(|node, _| active(*node));
+        state.motion_progress.retain(|(node, _), _| active(*node));
         state
             .motion_trigger_targets
-            .retain(|(node, _), _| active.contains(node));
-        state
-            .motion_triggers
-            .retain(|(node, _), _| active.contains(node));
-        state
-            .canvas_transforms
-            .retain(|node, _| active.contains(node));
-        state
-            .canvas_drawables
-            .retain(|node, _| active.contains(node));
-        state
-            .element_offsets
-            .retain(|node, _| active.contains(node));
-        state.hitboxes.retain(|node, _| active.contains(node));
+            .retain(|(node, _), _| active(*node));
+        state.motion_triggers.retain(|(node, _), _| active(*node));
+        state.canvas_transforms.retain(|node, _| active(*node));
+        state.canvas_drawables.retain(|node, _| active(*node));
+        state.element_offsets.retain(|node, _| active(*node));
+        state.hitboxes.retain(|node, _| active(*node));
     }
 
     pub(crate) fn retain_shared_layout_ids(&self, active: &BTreeSet<(String, String)>) {
@@ -1051,6 +1091,23 @@ fn geometry_read_owners(
         )
         .map(|reader| reader.owner.clone())
         .collect()
+}
+
+/// Whether [`retain_geometry_readers`] would keep every reader and entry.
+fn geometry_readers_kept(
+    state: &GeometryState,
+    predicate: &impl Fn(&crate::read_dependency::ReadDependency) -> bool,
+) -> bool {
+    state
+        .readers
+        .values()
+        .all(|readers| !readers.is_empty() && readers.iter().all(predicate))
+        && state.ref_readers.values().all(|refs| {
+            !refs.is_empty()
+                && refs
+                    .values()
+                    .all(|readers| !readers.is_empty() && readers.keys().all(predicate))
+        })
 }
 
 fn retain_geometry_readers(

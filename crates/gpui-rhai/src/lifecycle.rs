@@ -1933,23 +1933,16 @@ impl ScriptLifecycle {
         &self,
         retained: &crate::RetainedUiTree,
     ) -> Result<(), LifecycleError> {
-        let nodes = retained.nodes().map(crate::RetainedNode::id).collect();
         let runtime = self
             .runtime
             .try_borrow()
             .map_err(|_| LifecycleError::Borrowed)?;
         runtime
             .geometry_for(self.presentation_scope())
-            .retain_nodes(&nodes);
+            .retain_nodes(|node| retained.node(node).is_some());
         runtime
             .pointer_capture_for(self.presentation_scope())
-            .retain_nodes(
-                &retained
-                    .nodes()
-                    .filter(|node| retained.is_page_visible(node.id()))
-                    .map(crate::RetainedNode::id)
-                    .collect(),
-            );
+            .retain_nodes(|node| retained.node(node).is_some() && retained.is_page_visible(node));
         Ok(())
     }
 

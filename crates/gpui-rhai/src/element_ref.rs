@@ -868,7 +868,7 @@ mod tests {
             BTreeMap::from([(reference.id().clone(), replacement)]),
         );
         geometry.sync_ref_readers(&component, refs.geometry_bindings(&component));
-        geometry.retain_nodes(&BTreeSet::from([replacement]));
+        geometry.retain_nodes(|node| node == replacement);
         geometry.update(
             replacement,
             crate::ElementGeometry {

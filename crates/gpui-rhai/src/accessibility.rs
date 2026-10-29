@@ -60,11 +60,7 @@ impl CommittedSemanticFrame {
     /// invalid retained traversal.
     pub fn from_retained(tree: &RetainedUiTree) -> Result<Self, AccessibilityError> {
         Ok(Self {
-            tree: Arc::new(AccessibilityTree::build(
-                tree,
-                &GeometryRegistry::new(),
-                false,
-            )?),
+            tree: Arc::new(AccessibilityTree::build(tree)?),
         })
     }
 
@@ -150,23 +146,13 @@ impl AccessibilityTree {
         output
     }
 
-    fn build(
-        tree: &RetainedUiTree,
-        geometry: &GeometryRegistry,
-        presented_only: bool,
-    ) -> Result<Self, AccessibilityError> {
-        let labels = semantic_labels(tree, geometry, presented_only)?;
+    /// The committed semantic tree, before any geometry: every retained
+    /// node, in tree order.
+    fn build(tree: &RetainedUiTree) -> Result<Self, AccessibilityError> {
+        let labels = semantic_labels(tree)?;
         let mut output = Self::default();
         if let Some(root) = tree.root_id() {
-            visit_retained(
-                tree,
-                geometry,
-                root,
-                None,
-                &labels,
-                presented_only,
-                &mut output,
-            )?;
+            visit_retained(tree, root, None, false, &labels, &mut output)?;
         }
         Ok(output)
     }
@@ -248,16 +234,9 @@ impl AccessibilityTree {
     }
 }
 
-fn semantic_labels(
-    tree: &RetainedUiTree,
-    geometry: &GeometryRegistry,
-    presented_only: bool,
-) -> Result<BTreeMap<String, String>, AccessibilityError> {
+fn semantic_labels(tree: &RetainedUiTree) -> Result<BTreeMap<String, String>, AccessibilityError> {
     let mut labels = BTreeMap::new();
     for node in tree.nodes() {
-        if presented_only && !geometry.is_presented(node.id()) {
-            continue;
-        }
         let Some(id) = string_attribute(node, "semantic_id") else {
             continue;
         };
@@ -271,22 +250,21 @@ fn semantic_labels(
     Ok(labels)
 }
 
+/// `disabled_above`: a retained ancestor of `id` is disabled.
 fn visit_retained(
     tree: &RetainedUiTree,
-    geometry: &GeometryRegistry,
     id: NodeId,
     semantic_parent: Option<NodeId>,
+    disabled_above: bool,
     labels: &BTreeMap<String, String>,
-    presented_only: bool,
     output: &mut AccessibilityTree,
 ) -> Result<(), AccessibilityError> {
     let retained = tree
         .node(id)
         .ok_or(AccessibilityError::MissingRetainedNode(id))?;
-    if presented_only && !geometry.is_presented(id) {
-        return Ok(());
-    }
-    let semantic = semantic_node(tree, retained, semantic_parent, geometry, labels)?;
+    // A node is disabled when it or any retained ancestor is disabled.
+    let disabled = disabled_above || bool_attribute(retained, "disabled");
+    let semantic = semantic_node(retained, semantic_parent, disabled, labels)?;
     let next_parent = if let Some(node) = semantic {
         if semantic_parent.is_none() {
             output.roots.push(id);
@@ -310,24 +288,17 @@ fn visit_retained(
         semantic_parent
     };
     for child in retained.children() {
-        visit_retained(
-            tree,
-            geometry,
-            child.node(),
-            next_parent,
-            labels,
-            presented_only,
-            output,
-        )?;
+        visit_retained(tree, child.node(), next_parent, disabled, labels, output)?;
     }
     Ok(())
 }
 
+/// A retained node's committed semantics; geometry comes with presentation
+/// ([`project_committed_node`]).
 fn semantic_node(
-    tree: &RetainedUiTree,
     node: &RetainedNode,
     parent: Option<NodeId>,
-    geometry: &GeometryRegistry,
+    disabled: bool,
     labels: &BTreeMap<String, String>,
 ) -> Result<Option<AccessibilityNode>, AccessibilityError> {
     let Some(role) =
@@ -367,31 +338,13 @@ fn semantic_node(
         column_index: usize_attribute(node, "column_index"),
         row_count: usize_attribute(node, "row_count"),
         column_count: usize_attribute(node, "column_count"),
-        disabled: disabled_in_tree(tree, node),
+        disabled,
         read_only: bool_attribute(node, "read_only"),
         invalid: bool_attribute(node, "invalid"),
         required: bool_attribute(node, "required"),
-        geometry: retained_geometry(tree, node, geometry),
+        geometry: None,
         children: Vec::new(),
     }))
-}
-
-/// A node is disabled when it or any retained ancestor is disabled.
-fn disabled_in_tree(tree: &RetainedUiTree, node: &RetainedNode) -> bool {
-    if bool_attribute(node, "disabled") {
-        return true;
-    }
-    let mut current = node.parent();
-    while let Some(id) = current {
-        let Some(ancestor) = tree.node(id) else {
-            return false;
-        };
-        if bool_attribute(ancestor, "disabled") {
-            return true;
-        }
-        current = ancestor.parent();
-    }
-    false
 }
 
 fn project_committed_node(

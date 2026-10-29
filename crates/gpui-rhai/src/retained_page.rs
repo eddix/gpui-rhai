@@ -78,8 +78,7 @@ impl PageVisibility {
                 .is_some_and(|node| tree.is_page_visible(node)),
         )]);
         let mut hidden = BTreeSet::new();
-        for node in tree.nodes() {
-            let visible = tree.is_page_visible(node.id());
+        for (node, visible) in page_visibility(tree) {
             for component in node.presented_components() {
                 next.entry(component.clone())
                     .and_modify(|current| *current |= visible)
@@ -111,6 +110,35 @@ impl PageVisibility {
         self.values.extend(next);
         dirty
     }
+}
+
+/// Every retained node with whether its pages permit presentation
+/// ([`RetainedUiTree::is_page_visible`]), found top down.
+fn page_visibility(tree: &RetainedUiTree) -> Vec<(&crate::RetainedNode, bool)> {
+    let mut nodes = Vec::with_capacity(tree.len());
+    let mut stack = tree
+        .root_id()
+        .and_then(|id| tree.node(id))
+        .map(|root| (root, true))
+        .into_iter()
+        .collect::<Vec<_>>();
+    while let Some((node, above)) = stack.pop() {
+        let visible = above && node.attributes().get(PAGE_VISIBLE) != Some(&UiValue::Bool(false));
+        nodes.push((node, visible));
+        stack.extend(
+            node.children()
+                .filter_map(|child| tree.node(child.node()))
+                .map(|child| (child, visible)),
+        );
+    }
+    if nodes.len() != tree.len() {
+        // A node the walk from the root misses decides by its own ancestors.
+        return tree
+            .nodes()
+            .map(|node| (node, tree.is_page_visible(node.id())))
+            .collect();
+    }
+    nodes
 }
 
 impl RetainedUiTree {
@@ -175,6 +203,28 @@ fn view(ctx) { column([
     outer::Outer(#{ key: "outer" }).with_key("outer").retained_page(ctx.get_state("visible")),
 ]).with_key("root") }
 "#;
+
+    #[test]
+    fn page_visibility_found_top_down_is_each_node_s_own() {
+        let page =
+            |visible: bool, children: Vec<UiNode>| UiNode::column(children).retained_page(visible);
+        let mut tree = RetainedUiTree::new();
+        tree.reconcile(UiNode::column(vec![
+            page(
+                true,
+                vec![UiNode::text("a"), page(false, vec![UiNode::text("b")])],
+            ),
+            page(false, vec![page(true, vec![UiNode::text("c")])]),
+            UiNode::text("d"),
+        ]))
+        .unwrap();
+        let found = page_visibility(&tree);
+        assert_eq!(found.len(), tree.len());
+        assert!(found.iter().any(|(_, visible)| !visible));
+        for (node, visible) in found {
+            assert_eq!(visible, tree.is_page_visible(node.id()), "{:?}", node.id());
+        }
+    }
 
     #[test]
     #[allow(clippy::too_many_lines)]
