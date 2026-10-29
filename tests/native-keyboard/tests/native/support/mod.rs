@@ -3,12 +3,14 @@
 //! `node_by_test_id`, `text_of`, `bounds`, `last_error`), acting on it (`click_center`,
 //! `dispatch`) and reading the painted quads in logical pixels (`painted_quads`, `filled`).
 
+mod differential;
 mod host;
 mod mount;
 mod paint;
 mod query;
 mod settle;
 
+pub(crate) use differential::Lockstep;
 pub(crate) use host::{
     KeyboardHost, click_palette_trigger, dispatch_script_button, node_texts, palette_texts,
     wait_for_view_text,

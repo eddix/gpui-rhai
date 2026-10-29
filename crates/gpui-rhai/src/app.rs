@@ -1008,6 +1008,28 @@ pub struct ScriptViewRenderStatistics {
     pub retained_nodes: usize,
 }
 
+/// What a view committed and presented, for comparing two windows that run the
+/// same script through the same events. Not a stable interface.
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct ScriptViewFrameDigest {
+    /// Nodes in the committed tree.
+    pub retained_nodes: usize,
+    /// Layout, visual and clip bounds of every presented node, in node order.
+    pub geometry: Vec<(crate::NodeId, crate::ElementGeometry)>,
+    /// The accessibility snapshot of the presented nodes.
+    pub accessibility: Vec<crate::AccessibilityNode>,
+    /// The focused node and its ancestors, innermost first.
+    pub focus_path: Vec<crate::NodeId>,
+    /// The offset of every scroll container.
+    pub scroll_offsets: Vec<(crate::NodeId, [f32; 2])>,
+    /// Every virtual collection's window, scroll position and policies.
+    pub virtual_collections: Vec<crate::VirtualCollectionMetrics>,
+    /// The view's last error.
+    pub last_error: Option<String>,
+}
+
 struct ScriptViewHandleInner {
     entity: Entity<ScriptHostView>,
     theme: ThemeHandle,
@@ -1252,6 +1274,50 @@ impl ScriptViewHandle {
             }
         });
         Ok(())
+    }
+
+    /// What the view committed and presented in its last frame, for comparing
+    /// two windows that run the same script. Not a stable interface.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError`] unless the view is active.
+    #[doc(hidden)]
+    pub fn debug_frame_digest(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Result<ScriptViewFrameDigest, ScriptViewError> {
+        let accessibility = self.accessibility_snapshot(cx)?.nodes().cloned().collect();
+        let view = self.0.entity.read(cx);
+        let runtime = view.lifecycle.runtime();
+        let runtime = runtime.borrow();
+        let geometry = runtime.geometry_for(Some(&view.view_id));
+        let retained = view.lifecycle.retained();
+        Ok(ScriptViewFrameDigest {
+            retained_nodes: retained.len(),
+            geometry: retained
+                .nodes()
+                .map(crate::RetainedNode::id)
+                .filter(|node| geometry.is_presented(*node))
+                .filter_map(|node| geometry.get(node).map(|bounds| (node, bounds)))
+                .collect(),
+            accessibility,
+            focus_path: view.focus_path(window),
+            scroll_offsets: view
+                .scroll_handles
+                .iter()
+                .map(|(node, handle)| {
+                    let offset = handle.offset();
+                    (*node, [f32::from(offset.x), f32::from(offset.y)])
+                })
+                .collect(),
+            virtual_collections: runtime.virtual_requests.inspect(),
+            last_error: view
+                .last_failure
+                .as_ref()
+                .map(|failure| failure.message.clone()),
+        })
     }
 
     /// Render and commit counters since the last call, for benchmarks and

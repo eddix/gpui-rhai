@@ -18,6 +18,7 @@ mod layout;
 mod manipulation;
 mod motion;
 mod overlay;
+mod perf;
 mod runtime;
 mod table;
 mod text;
