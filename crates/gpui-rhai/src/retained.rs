@@ -82,6 +82,9 @@ pub(crate) struct SubtreeSummary {
     pub hot: u32,
     /// Nodes with a `group_hover` style, painted by an ancestor's hover.
     pub group_hover: u32,
+    /// Nodes a commit's motion phase has to visit
+    /// ([`crate::motion::node_takes_motion`]).
+    pub motion: u32,
     /// The root itself lays out or moves its children in ways an island
     /// below it cannot follow: Table layout or a scroll container.
     pub opaque: bool,
@@ -93,6 +96,7 @@ impl SubtreeSummary {
             nodes: 1,
             hot: u32::from(crate::renderer::island_hot(node)),
             group_hover: u32::from(node.style().group_hover.is_some()),
+            motion: u32::from(crate::motion::node_takes_motion(node)),
             opaque: node.table_layout().is_some() || crate::renderer::node_scrollable(node),
         }
     }
@@ -102,6 +106,7 @@ impl SubtreeSummary {
             nodes: self.nodes.saturating_add(other.nodes),
             hot: self.hot.saturating_add(other.hot),
             group_hover: self.group_hover.saturating_add(other.group_hover),
+            motion: self.motion.saturating_add(other.motion),
             opaque: self.opaque,
         }
     }

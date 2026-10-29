@@ -1553,8 +1553,15 @@ fn scroll_end_to_end_baseline(cx: &mut TestAppContext) {
         "GPUI_RHAI_BENCH_WARMUP",
         if cfg!(debug_assertions) { 1 } else { 4 },
     );
+    // `GPUI_RHAI_SCROLL_BENCH_LAYOUTS=filler_1000,...` runs only those, and
+    // not the GPUI replay comparison, as when sampling one under a profiler.
+    let only = std::env::var("GPUI_RHAI_SCROLL_BENCH_LAYOUTS").ok();
     let layouts = SCROLL_LAYOUTS
         .iter()
+        .filter(|layout| {
+            only.as_deref()
+                .is_none_or(|only| only.split(',').any(|name| name == layout.name))
+        })
         .map(|layout| scroll_layout(cx, *layout, warmup, steps))
         .collect();
     let mut metadata = metadata(steps, warmup);
@@ -1564,7 +1571,11 @@ fn scroll_end_to_end_baseline(cx: &mut TestAppContext) {
     let report = ScrollBenchmarkReport {
         metadata,
         layouts,
-        gpui_replay: gpui_replay(cx, steps),
+        gpui_replay: if only.is_some() {
+            Vec::new()
+        } else {
+            gpui_replay(cx, steps)
+        },
     };
     let json = serde_json::to_string_pretty(&report).unwrap();
     println!("{json}");

@@ -1334,6 +1334,19 @@ impl ScriptLifecycle {
         generation: ScriptGeneration,
     ) -> Result<(), LifecycleError> {
         let domain = self.motion_root_path();
+        let inert = retained
+            .root_id()
+            .and_then(|id| retained.node(id))
+            .is_some_and(|node| node.summary().motion == 0)
+            && self
+                .runtime
+                .try_borrow()
+                .map_err(|_| LifecycleError::Borrowed)?
+                .motions
+                .live_scope_idle(&domain);
+        if inert {
+            return self.reconcile_inert_motion(root, retained, generation, &domain);
+        }
         let identities = crate::motion::retained_motion_identities(root, retained, &domain)?;
         let mut runtime = self
             .runtime
@@ -1383,6 +1396,108 @@ impl ScriptLifecycle {
             runtime.motions.snapshot(now)
         };
         Ok(())
+    }
+
+    /// [`Self::reconcile_motion`] for a tree that declares no motion
+    /// ([`crate::motion::node_takes_motion`]) in a domain that holds none:
+    /// the declarations, identities and scene it would walk the tree for are
+    /// empty, and the scopes it would retain hold nothing to cancel, so what
+    /// remains are its budget checks, reservations and resamples.
+    fn reconcile_inert_motion(
+        &self,
+        root: &UiNode,
+        retained: &crate::RetainedUiTree,
+        generation: ScriptGeneration,
+        domain: &str,
+    ) -> Result<(), LifecycleError> {
+        #[cfg(debug_assertions)]
+        let reference = self.reference_motion_outcome(root, retained, generation, domain);
+        #[cfg(not(debug_assertions))]
+        let _ = (root, generation);
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?;
+        let now = runtime.clock.now();
+        let active_limit = runtime.budgets.active_motions;
+        runtime.motions.set_active_limit(active_limit);
+        runtime
+            .geometry_for(self.presentation_scope())
+            .retain_shared_layout_ids(&BTreeSet::new());
+        runtime.motions.set_active_reservation(domain, 0);
+        let usage = runtime.motions.resource_usage();
+        let active = usage.active.saturating_add(usage.geometry_slots);
+        let result = if active > active_limit {
+            Err(crate::motion::MotionError::ActiveBudget {
+                actual: active,
+                limit: active_limit,
+            }
+            .into())
+        } else {
+            runtime.reconcile_page_visibility(retained, &self.root_path, domain);
+            runtime.motion_values = runtime.motions.snapshot(now);
+            Ok(())
+        };
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(
+            result
+                .as_ref()
+                .map(|()| runtime.motions.snapshot(now))
+                .map_err(ToString::to_string),
+            reference,
+            "an inert commit's motion phase differs from the full one"
+        );
+        result
+    }
+
+    /// The motion values (or the error) the full motion phase reaches from
+    /// the current motion state, which it leaves as it is.
+    #[cfg(debug_assertions)]
+    fn reference_motion_outcome(
+        &self,
+        root: &UiNode,
+        retained: &crate::RetainedUiTree,
+        generation: ScriptGeneration,
+        domain: &str,
+    ) -> Result<BTreeMap<crate::MotionKey, f64>, String> {
+        let runtime = self.runtime.borrow();
+        let mut motions = runtime.motions.transaction_snapshot();
+        let now = runtime.clock.now();
+        let outcome = (|| {
+            let identities = crate::motion::retained_motion_identities(root, retained, domain)?;
+            let geometry_slots = crate::motion::node_motion_resource_usage(root).geometry_slots;
+            crate::RuntimeBudgets::check(
+                "active_motions",
+                geometry_slots,
+                runtime.budgets.active_motions,
+            )?;
+            motions.set_active_limit(runtime.budgets.active_motions);
+            let shared_layout_ids = crate::motion::shared_layout_ids(root)?;
+            assert!(shared_layout_ids.is_empty(), "an inert tree shares layout");
+            motions.set_active_reservation(domain, geometry_slots);
+            let incarnations = runtime.component_incarnations_snapshot();
+            crate::motion::reconcile_node_motion_scoped_owned(
+                root,
+                &mut motions,
+                now,
+                domain,
+                crate::motion::MotionReconcileContext {
+                    domain,
+                    root_component: &self.root_path,
+                    root_incarnation: runtime
+                        .component_incarnation(&self.root_path)
+                        .unwrap_or_else(crate::ComponentIncarnation::unscoped),
+                    generation,
+                    incarnations: &incarnations,
+                    identities: Some(&identities),
+                },
+            )?;
+            let usage = motions.resource_usage();
+            let active = usage.active.saturating_add(usage.geometry_slots);
+            crate::RuntimeBudgets::check("active_motions", active, runtime.budgets.active_motions)?;
+            Ok::<_, LifecycleError>(motions.snapshot(now))
+        })();
+        outcome.map_err(|error| error.to_string())
     }
 
     fn resume_runtime_mechanisms(
