@@ -118,6 +118,33 @@ fn assert_no_error(cx: &mut VisualTestAppContext, view: &ScriptViewHandle, stage
     );
 }
 
+/// Waits for the scan a key started to land: the scan panel shows its Cancel
+/// button while the walk runs. The scan subscription is throttled on the real
+/// clock and its held results are polled on GPUI's, which a test context only
+/// moves on request, so both move here. A key that reaches the view while the
+/// scan runs is dropped, and Escape cancels the scan.
+fn wait_for_scan(
+    cx: &mut VisualTestAppContext,
+    window: AnyWindowHandle,
+    view: &ScriptViewHandle,
+) -> Result<(), String> {
+    let step = std::time::Duration::from_millis(20);
+    for _ in 0..250 {
+        let reading = cx
+            .update(|cx| view.accessibility_snapshot(cx))
+            .map_err(|error| error.to_string())?
+            .nodes()
+            .any(|node| node.role == "button" && node.name == "Cancel");
+        if !reading {
+            return Ok(());
+        }
+        std::thread::sleep(step);
+        cx.advance_clock(step);
+        settle(cx, window)?;
+    }
+    Err("the scan did not land within 5 seconds".into())
+}
+
 /// The active theme variant's name, through the handle's theme snapshot.
 fn variant_name(cx: &mut VisualTestAppContext, view: &ScriptViewHandle) -> String {
     cx.update(|cx| view.theme_snapshot(cx))
@@ -201,6 +228,7 @@ pub fn main() {
     // Let the scan land and the first layout draw.
     std::thread::sleep(std::time::Duration::from_millis(500));
     settle(&mut cx, window).expect("settle");
+    wait_for_scan(&mut cx, window, &view).expect("the first scan");
     assert_no_error(&mut cx, &view, "mounted");
 
     // Navigation and view keys on the landed mosaic.
@@ -216,7 +244,11 @@ pub fn main() {
     assert_no_error(&mut cx, &view, "navigation");
 
     // Metric, depth, visibility, zoom.
-    keys(&mut cx, window, "t t t [ ] - = 0 i d").expect("control keys");
+    // Hidden files and apparent size each scan again.
+    keys(&mut cx, window, "t t t [ ] - = 0 i").expect("control keys");
+    wait_for_scan(&mut cx, window, &view).expect("the hidden files scan");
+    keys(&mut cx, window, "d").expect("apparent size key");
+    wait_for_scan(&mut cx, window, &view).expect("the apparent size scan");
     assert_no_error(&mut cx, &view, "controls");
 
     // The find flow: type, apply, clear.
@@ -263,8 +295,7 @@ pub fn main() {
 
     // Rescan while mounted.
     keys(&mut cx, window, "r").expect("rescan");
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    settle(&mut cx, window).expect("settle after rescan");
+    wait_for_scan(&mut cx, window, &view).expect("the rescan");
     assert_no_error(&mut cx, &view, "rescan");
 
     println!("key_harness: every key went through a real window, no script errors");
