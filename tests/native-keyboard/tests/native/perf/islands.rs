@@ -75,7 +75,10 @@ fn a_whole_view_render_replays_the_rows_it_renders_again_unchanged(cx: &mut Test
         let statistics = visual
             .update(|_, cx| view.take_render_statistics(cx))
             .unwrap();
-        assert_eq!(text_of(&mut visual, &view, "count"), format!("Count {click}"));
+        assert_eq!(
+            text_of(&mut visual, &view, "count"),
+            format!("Count {click}")
+        );
         assert!(statistics.commits > 0, "click {click} committed nothing");
         // Under GPUI_RHAI_RENDER_ISLANDS=aggressive the count's own text is an
         // island too, and renders again.
