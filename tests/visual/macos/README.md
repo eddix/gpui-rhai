@@ -14,7 +14,10 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
   the Lists sidebar; on 2026-10-09 the 19 Gallery files and the Settings, Form,
   Data Table and Embedded Views files for the field padding of decision D65;
   on 2026-10-31 all 57 files (19 Gallery, 38 examples) for the radius roles
-  and field padding of decisions D74 and D75
+  and field padding of decisions D74 and D75, and then the 19 Gallery files,
+  Data Table's selected rows and Embedded Views for the rounded rows, Toolbar
+  order and baseline legends of D76, D77 and D79 (the other 36 rendered
+  byte-identical)
 - Environment of the current files: macOS 27.0, gpui-pre 0.3.9, Rust 1.95.0,
   rendered offscreen and read back from the GPU texture (no window chrome, no
   screen capture), stored in device pixels (2x)
