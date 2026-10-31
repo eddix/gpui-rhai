@@ -38,6 +38,10 @@ semantic versioning from this release.
   `focus`, `group_focus` and `focus_within` styles, overlay triggers, and the
   native SplitPane and Resizable handles and sliders (`PrimitiveContext::
   focus_indicators` for custom primitives). D78.
+- `items_baseline()` aligns a row's text children on the baseline of the row's
+  own text style, from GPUI's font metrics. Button, Menu and Command set their
+  key legends on the label's baseline (the `⌘K` of `Search ⌘K` sat 1.5pt high),
+  and an inline Kbd renders one run of text. D79.
 
 ## 0.3.3 - 2026-10-29
 

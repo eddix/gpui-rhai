@@ -219,12 +219,15 @@ fn menu_item(ctx, props, item) {
             .width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
             .text_color(theme_color("text.accent"))
             .opacity(if checked { 1.0 } else { 0.0 }))),
-        text(label).with_style(style().flex_grow()),
     ];
+    // The label and its key legend share one baseline, as words in one line do.
+    let words = [text(label).with_style(style().flex_grow())];
     if shortcut != "" {
-        children.push(kbd::Kbd(#{ text: shortcut, appearance: "inline" })
+        words.push(kbd::Kbd(#{ text: shortcut, appearance: "inline" })
             .with_style(ctx.component_style("shortcut", style())));
     }
+    children.push(row(words).with_style(style().flex_grow().min_width(px(0)).items_baseline()
+        .gap(theme_spacing("xs"))));
     if active && !disabled { children.push(menu_indicator(ctx)); }
     let row_node = row(children)
         .with_style(ctx.component_style("item", item_style))

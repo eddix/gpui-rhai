@@ -7,7 +7,7 @@ dependencies = []
 
 [components."components/button"]
 version = "0.3.1"
-content_hash = "234fb11cc28e72ec"
+content_hash = "f93a5bbaec1f9638"
 dependencies = []
 
 [components."components/checkbox"]
@@ -32,7 +32,7 @@ dependencies = []
 
 [components."components/kbd"]
 version = "0.2.0"
-content_hash = "8501018ea8fa8610"
+content_hash = "0979caec95158cbf"
 dependencies = []
 
 [components."components/popover"]

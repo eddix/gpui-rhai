@@ -775,6 +775,10 @@ pub enum Align {
     Center,
     End,
     Stretch,
+    /// Cross-axis alignment of a row's text children on one baseline: each text
+    /// child's first baseline sits on the baseline of the row's own text style.
+    /// Other children align to the start. Only `items_baseline` sets it.
+    Baseline,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1772,6 +1776,14 @@ impl Style {
         self
     }
 
+    /// Aligns a row's text children on the baseline of the row's own text style,
+    /// as text in one line is set; other children align to the start.
+    #[must_use]
+    pub fn items_baseline(mut self) -> Self {
+        self.base.align = Some(Align::Baseline);
+        self
+    }
+
     #[must_use]
     pub fn self_start(mut self) -> Self {
         self.base.align_self = Some(Align::Start);
@@ -2466,6 +2478,9 @@ impl CustomType for Style {
                 style.clone().items_start()
             })
             .with_fn("items_end", |style: &mut Self| style.clone().items_end())
+            .with_fn("items_baseline", |style: &mut Self| {
+                style.clone().items_baseline()
+            })
             .with_fn("justify_center", |style: &mut Self| {
                 style.clone().justify_center()
             })

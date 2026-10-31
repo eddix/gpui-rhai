@@ -1674,6 +1674,11 @@ struct RenderEnvironment<'a, C> {
     row_parent: bool,
     /// This node lays its children out in a row.
     row_children: bool,
+    /// The parent is an `items_baseline` row: a text node sets its first baseline on
+    /// the row's.
+    baseline_parent: bool,
+    /// This node is an `items_baseline` row.
+    baseline_children: bool,
     /// The overlays whose content this node is in, innermost first, so a
     /// `parent` key names the nearest enclosing overlay with that key.
     overlay_scope: Option<&'a OverlayScope<'a>>,
@@ -1757,6 +1762,10 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
                 && matches!(style.align, None | Some(Align::Stretch)),
             row_parent: false,
             row_children: style.direction == Some(FlexDirection::Row),
+            // A node's own content still sits in its parent's baseline row.
+            baseline_parent: self.baseline_parent,
+            baseline_children: style.direction == Some(FlexDirection::Row)
+                && style.align == Some(Align::Baseline),
             ..self.with_resolved_text_color(style)
         }
     }
@@ -1947,6 +1956,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: false,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: None,
             island: IslandContext::NONE,
@@ -2039,6 +2050,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: false,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: None,
             island: IslandContext::NONE,
@@ -2124,6 +2137,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: false,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: None,
             island: IslandContext::NONE,
@@ -2201,6 +2216,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: false,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: None,
             island: IslandContext::NONE,
@@ -2340,6 +2357,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: false,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: None,
             island: IslandContext {
@@ -2422,6 +2441,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: false,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: None,
             island: IslandContext::NONE,
@@ -2485,6 +2506,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: false,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: None,
             island: IslandContext::NONE,
@@ -2553,6 +2576,8 @@ impl GpuiNodeRenderer {
             stretch_children: false,
             row_parent: inherited.row_parent,
             row_children: false,
+            baseline_parent: false,
+            baseline_children: false,
             overlay_scope: None,
             hover_group: inherited.hover_group,
             island: IslandContext {
@@ -3043,7 +3068,7 @@ impl GpuiNodeRenderer {
 
     #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
     fn populate<C: ColorResolver>(
-        element: impl ParentElement + IntoElement,
+        element: impl ParentElement + Element + Styled,
         node: &UiNode,
         resolved_style: &StyleProperties,
         environment: &RenderEnvironment<'_, C>,
@@ -3053,9 +3078,15 @@ impl GpuiNodeRenderer {
         motion: NodeMotionValues,
     ) -> AnyElement {
         match node.kind() {
-            UiNodeKind::Text { text } => {
-                render_text_node(element, node, text.as_str(), environment, path, retained_id)
-            }
+            UiNodeKind::Text { text } => render_text_node(
+                element,
+                node,
+                text.as_str(),
+                resolved_style,
+                environment,
+                path,
+                retained_id,
+            ),
             UiNodeKind::RichText { text, spans } => element
                 .child(styled_text(
                     text.as_str(),
@@ -3081,6 +3112,7 @@ impl GpuiNodeRenderer {
                 let child_environment = RenderEnvironment {
                     stretch_parent: environment.stretch_children,
                     row_parent: environment.row_children,
+                    baseline_parent: environment.baseline_children,
                     ..*environment
                 };
                 let children = render_flattened_children(
@@ -3413,15 +3445,43 @@ fn normalize_text_content_layout(node: &UiNode, style: &mut StyleProperties) {
 }
 
 fn render_text_node<C: ColorResolver>(
-    element: impl ParentElement + IntoElement,
+    element: impl ParentElement + Element + Styled,
+    node: &UiNode,
+    text: &str,
+    resolved_style: &StyleProperties,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> AnyElement {
+    let element = text_node_content(element, node, text, environment, path, retained_id);
+    if environment.baseline_parent {
+        // The node's own type over the row's sets how far its baseline sits from the
+        // row's; the probe reads the refinement the node's element was given.
+        let mut style = resolved_style.clone();
+        let resolver = environment.resolver();
+        resolve_typography_role(&mut style, &resolver);
+        resolve_style_lengths(&mut style, &resolver);
+        let mut probe = apply_typography(div(), &style, environment.direction);
+        if let Some(value) = style.font_size {
+            probe = font_size(probe, value);
+        }
+        let text_style = probe.style().text.clone();
+        crate::baseline::BaselineText::new(element, text_style).into_any_element()
+    } else {
+        element.into_any_element()
+    }
+}
+
+fn text_node_content<C: ColorResolver, E: ParentElement>(
+    element: E,
     node: &UiNode,
     text: &str,
     environment: &RenderEnvironment<'_, C>,
     path: &str,
     retained_id: Option<NodeId>,
-) -> AnyElement {
+) -> E {
     if !node_selectable(node) {
-        return element.child(text.to_owned()).into_any_element();
+        return element.child(text.to_owned());
     }
     let highlight = environment
         .colors
@@ -3431,16 +3491,14 @@ fn render_text_node<C: ColorResolver>(
         || path.to_owned(),
         |node| format!("{}:{node}", environment.view_id),
     );
-    element
-        .child(SelectableText::new(
-            selection_id,
-            retained_id,
-            text,
-            highlight,
-            environment.text_selection.clone(),
-            environment.host_focus.cloned(),
-        ))
-        .into_any_element()
+    element.child(SelectableText::new(
+        selection_id,
+        retained_id,
+        text,
+        highlight,
+        environment.text_selection.clone(),
+        environment.host_focus.cloned(),
+    ))
 }
 
 fn render_virtual_collection<C: ColorResolver>(
@@ -6771,7 +6829,8 @@ fn apply_flex_alignment(
     }
     if let Some(align) = style.align_self {
         element.style().align_self = Some(match align {
-            Align::Start => GpuiAlignSelf::Start,
+            // No style method sets a baseline self-alignment; a deserialized one starts.
+            Align::Start | Align::Baseline => GpuiAlignSelf::Start,
             Align::Center => GpuiAlignSelf::Center,
             Align::End => GpuiAlignSelf::End,
             Align::Stretch => GpuiAlignSelf::Stretch,
@@ -6790,7 +6849,9 @@ fn apply_flex_alignment(
             align
         };
         element = match align {
-            Align::Start => element.items_start(),
+            // Baseline children start; each text child then shifts itself onto the
+            // row's baseline (`BaselineText`).
+            Align::Start | Align::Baseline => element.items_start(),
             Align::Center => element.items_center(),
             Align::End => element.items_end(),
             Align::Stretch => element,
