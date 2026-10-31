@@ -24,6 +24,12 @@ semantic versioning from this release.
   application with its own copy of `ui/tokens.rhai` keeps working
   until it updates the copy; update the token base and the components
   together, since components no longer declare `corners`. Design decision D74.
+- Field text starts about 1.4 times the vertical gap from the frame again
+  (`metrics.field_pad`: comfortable 5 / 7 / 10 / 12, compact 3 / 4 / 6 / 10),
+  so md field text lines up with row text on `metrics.inset`; the half-height
+  padding existed only for capsule fields. Textarea pads evenly:
+  `metrics.multiline_pad` is `field_pad` less the half-leading of its text
+  (comfortable 2 / 3 / 6 / 8, compact 0 / 0 / 2 / 6). D75.
 - The Gallery drops its Corners toggle, palette commands and status item.
 
 ## 0.3.3 - 2026-10-29

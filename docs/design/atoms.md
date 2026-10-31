@@ -41,8 +41,8 @@ section 9 repeats them for reviews.
 |---|---:|---:|---|
 | `metrics.control` by size `xs` / `sm` / `md` / `lg` | 24 / 28 / 32 / 36 | 20 / 24 / 28 / 32 | Button, inputs, Select, Toggle, Tabs slots |
 | `metrics.control_pad` by size | 8 / 12 / 16 / 20 | 8 / 8 / 12 / 16 | horizontal padding of pressed controls: Button, Tabs, ToggleGroup |
-| `metrics.field_pad` by size | 11 / 13 / 15 / 17 | 9 / 11 / 13 / 15 | horizontal padding of fields (section 7) |
-| `metrics.multiline_pad` by size | 0 / 1 / 3 / 5 | 0 / 0 / 0 / 3 | vertical padding of Textarea (section 7) |
+| `metrics.field_pad` by size | 5 / 7 / 10 / 12 | 3 / 4 / 6 / 10 | horizontal padding of fields (section 7) |
+| `metrics.multiline_pad` by size | 2 / 3 / 6 / 8 | 0 / 0 / 2 / 6 | vertical padding of Textarea (section 7) |
 | `metrics.row` | 32 | 28 | Menu, Command, option lists, Table, Tree, navigation rows |
 | `metrics.inset` | 12 | 8 | text start in rows, panel padding |
 | `metrics.marker` | 20 | 20 | Badge, Tag, Kbd height (`metrics.marker_small` 18) |
@@ -419,23 +419,23 @@ Things you type into have a frame; things you press are blocks.
   height `metrics.control` by size, `surface_raised` well, 2px `border` frame,
   padding `metrics.field_pad`, `control` text. Text therefore starts at the
   same x in every field. Textarea keeps `body` for multi-line reading.
-- Field text starts half the control height plus 1px from the outer edge
-  (`field_pad` = height / 2 − 1 inside the 2px frame): in the round corner
-  style a field is a capsule whose ends are half its height wide, and text
-  and caret must not sit in them. Square and subtle use the same value, so
-  switching the corner style never moves a field's text or changes a layout.
+- Field text starts about 1.4 times the vertical gap between the frame and
+  the text from the frame (`field_pad`), so the side space never reads as a
+  typed space; md text starts on `metrics.inset` like row text, compact xs
+  keeps room for the caret and lg sits on the spacing scale. Fields are
+  rounded rectangles, never capsules, so no corner pushes the text in.
 
   | Size | comfortable height → text start (`field_pad`) | compact |
   |---|---|---|
-  | xs | 24 → 13 (11) | 20 → 11 (9) |
-  | sm | 28 → 15 (13) | 24 → 13 (11) |
-  | md | 32 → 17 (15) | 28 → 15 (13) |
-  | lg | 36 → 19 (17) | 32 → 17 (15) |
+  | xs | 24 → 7 (5) | 20 → 5 (3) |
+  | sm | 28 → 9 (7) | 24 → 6 (4) |
+  | md | 32 → 12 (10) | 28 → 8 (6) |
+  | lg | 36 → 14 (12) | 32 → 12 (10) |
 
-- Textarea keeps the same text column. Its vertical padding
-  `metrics.multiline_pad` (comfortable 0 / 1 / 3 / 5, compact 0 / 0 / 0 / 3)
-  keeps the space above the first line from the earlier ratio rule: its
-  corners are 8px, not a capsule, so they do not push the text down.
+- Textarea keeps the same text column and pads evenly: its vertical padding
+  `metrics.multiline_pad` is `field_pad` less the half-leading of its text
+  (comfortable 2 / 3 / 6 / 8, compact 0 / 0 / 2 / 6), so the first line's
+  type sits as far below the frame as the text column sits inside it.
 - InputGroup pads its prefix and suffix by `field_pad` on the frame side; the
   inner control keeps its own `field_pad` toward the affix.
 - Pressed controls keep `metrics.control_pad`: a label you did not type cannot
