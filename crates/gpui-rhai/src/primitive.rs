@@ -850,6 +850,8 @@ pub struct PrimitiveContext {
     retained_node: Option<crate::NodeId>,
     /// The focus handle of the node that hosts the primitive, if it has one.
     focus_handle: Option<gpui::FocusHandle>,
+    /// Whether the view shows focus indicators this frame.
+    focus_indicators: bool,
 }
 
 /// A schema-checked semantic proposal produced by a native primitive policy.
@@ -1210,6 +1212,14 @@ impl PrimitiveContext {
         self.focus_handle
             .as_ref()
             .is_some_and(|handle| handle.is_focused(window))
+    }
+
+    /// Whether the view shows focus indicators this frame
+    /// (`ScriptViewConfig::focus_indicators`); a primitive that paints its own
+    /// focus state paints it only then.
+    #[must_use]
+    pub const fn focus_indicators(&self) -> bool {
+        self.focus_indicators
     }
 
     /// Read the last committed layout bounds for a primitive-owned element ref.
@@ -2035,6 +2045,7 @@ pub(crate) struct PrimitiveWindowContext {
     wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
     intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     view_id: String,
+    focus_indicators: bool,
 }
 
 impl PrimitiveWindowContext {
@@ -2056,7 +2067,13 @@ impl PrimitiveWindowContext {
             wheel_parents: Vec::new(),
             intrinsic_size: None,
             view_id: view_id.into(),
+            focus_indicators: true,
         }
+    }
+
+    pub(crate) fn with_focus_indicators(mut self, shown: bool) -> Self {
+        self.focus_indicators = shown;
+        self
     }
 
     pub(crate) fn with_wheel_parents(
@@ -2121,6 +2138,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             instance: None,
             retained_node: self.retained.as_ref().map(|(node, _)| *node),
             focus_handle: self.focus_handle.clone(),
+            focus_indicators: self.runtime.focus_indicators,
         };
         match registry.render_instance(
             self.node,
@@ -2773,6 +2791,7 @@ mod tests {
             instance: None,
             retained_node: None,
             focus_handle: None,
+            focus_indicators: true,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

@@ -248,7 +248,10 @@ impl Render for RangeInputEntity {
         let thumb = crate::renderer::apply_style_override_in(
             div().flex_none(),
             &self.thumb_style,
-            &crate::renderer::part_interaction(self.focus.is_focused(window), self.disabled),
+            &crate::renderer::part_interaction(
+                self.events.focus_indicators() && self.focus.is_focused(window),
+                self.disabled,
+            ),
             &self.theme,
             direction,
         );

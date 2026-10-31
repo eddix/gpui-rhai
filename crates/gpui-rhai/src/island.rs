@@ -165,6 +165,8 @@ pub(crate) struct IslandInherited {
     /// styles `group_focus` by it. (Whether focus is within a node follows
     /// from the focus path.)
     pub focus_owner: bool,
+    /// Whether focus styles paint, when the island has focus or a focused owner.
+    pub focus_indicators: bool,
     pub ambient_text_color: Option<crate::Rgba8>,
     pub stretch_parent: bool,
     pub row_parent: bool,

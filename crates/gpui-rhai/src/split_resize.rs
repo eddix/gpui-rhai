@@ -216,7 +216,7 @@ impl Element for SplitResizeHandle {
                 self.config.disabled,
                 dragged,
                 hovered,
-                self.events.is_focused(window),
+                self.events.focus_indicators() && self.events.is_focused(window),
             );
             let mut inner = prepaint.state.0.borrow_mut();
             crate::handle_state::publish_state(

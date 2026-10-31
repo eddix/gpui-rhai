@@ -409,7 +409,10 @@ impl RangeSliderEntity {
         let element = crate::renderer::apply_style_override_in(
             div().flex_none(),
             &self.thumb_style,
-            &crate::renderer::part_interaction(focus.is_focused(window), self.disabled),
+            &crate::renderer::part_interaction(
+                self.events.focus_indicators() && focus.is_focused(window),
+                self.disabled,
+            ),
             &self.theme,
             self.theme.direction(),
         );

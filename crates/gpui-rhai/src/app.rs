@@ -108,6 +108,25 @@ pub struct ScriptViewConfig {
     /// as [`ScriptApplication`] and script windows lay it out, or the Host
     /// says so ([`Self::host_sets_width`]).
     fills_window: bool,
+    focus_indicators: FocusIndicators,
+}
+
+/// When a view shows focus indicators: the focus frame of a focused control or
+/// container, the keyboard cursor of a list, a focused handle's color. A text
+/// field that holds focus always shows its frame, since typing goes there.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FocusIndicators {
+    /// After a navigation key (Tab, Shift+Tab, an arrow, Home, End, Page Up,
+    /// Page Down, F6) until the next pointer press, as a browser's
+    /// `:focus-visible`. A key with Command, Control or Alt, a shortcut, does
+    /// not show them.
+    #[default]
+    Navigation,
+    /// Whenever a node holds focus.
+    Always,
+    /// Never, for an application driven by shortcuts rather than by moving
+    /// focus.
+    Never,
 }
 
 /// A new failure of a mounted view, as [`ScriptViewConfig::on_error`] passes it.
@@ -160,6 +179,7 @@ impl ScriptViewConfig {
             error_reporting: ErrorReporting::default(),
             render_islands: None,
             fills_window: false,
+            focus_indicators: FocusIndicators::Navigation,
         }
     }
 
@@ -237,6 +257,14 @@ impl ScriptViewConfig {
 
     const fn fills_window(self) -> Self {
         self.host_sets_width(true)
+    }
+
+    /// When the view shows focus indicators; [`FocusIndicators::Navigation`]
+    /// by default. Script windows the view opens follow it.
+    #[must_use]
+    pub const fn focus_indicators(mut self, indicators: FocusIndicators) -> Self {
+        self.focus_indicators = indicators;
+        self
     }
 
     #[must_use]
@@ -2384,6 +2412,7 @@ impl FileScriptView {
             show_error_banner: Cell::new(true),
             error_reporting: RefCell::new(ErrorReporting::default()),
             render_islands: Cell::new(None),
+            focus_indicators: Cell::new(FocusIndicators::Navigation),
             execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -2701,6 +2730,7 @@ impl EmbeddedScriptView {
             show_error_banner: Cell::new(true),
             error_reporting: RefCell::new(ErrorReporting::default()),
             render_islands: Cell::new(None),
+            focus_indicators: Cell::new(FocusIndicators::Navigation),
             execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -3327,6 +3357,8 @@ struct ScriptWindowFactory {
     error_reporting: RefCell<ErrorReporting>,
     /// The mounting view's [`ScriptViewConfig::render_islands`].
     render_islands: Cell<Option<bool>>,
+    /// The mounting view's [`ScriptViewConfig::focus_indicators`].
+    focus_indicators: Cell<FocusIndicators>,
     execution_policy: ScriptExecutionPolicy,
     #[cfg(feature = "dev-reload")]
     development: bool,
@@ -3557,6 +3589,7 @@ impl PreparedScriptView {
             .error_reporting
             .replace(config.error_reporting.clone());
         self.factory.render_islands.set(config.render_islands);
+        self.factory.focus_indicators.set(config.focus_indicators);
         let window_authority = host
             .bind_window(&config.view_id, window.window_handle(), policy, cx)
             .inspect_err(|_| {
@@ -3644,6 +3677,8 @@ impl PreparedScriptView {
                 show_error_banner: config.show_error_banner,
                 error_reporting: config.error_reporting.clone(),
                 window_drag_areas: config.window_drag_areas,
+                focus_indicators: config.focus_indicators,
+                navigating: false,
                 content_bounds: None,
                 factory,
                 native_windows: Rc::clone(native_windows),
@@ -4056,6 +4091,8 @@ fn open_secondary_window(
                 show_error_banner: view_factory.show_error_banner.get(),
                 error_reporting: view_factory.error_reporting.borrow().clone(),
                 window_drag_areas: false,
+                focus_indicators: view_factory.focus_indicators.get(),
+                navigating: false,
                 content_bounds: None,
                 factory: Rc::clone(&view_factory),
                 native_windows: Rc::clone(&view_native_windows),
@@ -4383,6 +4420,10 @@ struct ScriptHostView {
     paint_background: bool,
     show_error_banner: bool,
     window_drag_areas: bool,
+    focus_indicators: FocusIndicators,
+    /// A navigation key came after the last pointer press, so
+    /// [`FocusIndicators::Navigation`] shows indicators.
+    navigating: bool,
     content_bounds: Option<Bounds<Pixels>>,
     factory: Rc<ScriptWindowFactory>,
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
@@ -4565,6 +4606,26 @@ fn retained_depth(tree: &crate::RetainedUiTree, node: crate::NodeId) -> usize {
     depth
 }
 
+/// A key that moves or uses focus: Tab, an arrow, Home, End, Page Up, Page Down
+/// or F6, with Shift at most. With Command, Control or Alt it is a shortcut.
+fn is_navigation_key(keystroke: &gpui::Keystroke) -> bool {
+    let modifiers = &keystroke.modifiers;
+    !(modifiers.control || modifiers.alt || modifiers.platform || modifiers.function)
+        && matches!(
+            keystroke.key.as_str(),
+            "tab"
+                | "up"
+                | "down"
+                | "left"
+                | "right"
+                | "home"
+                | "end"
+                | "pageup"
+                | "pagedown"
+                | "f6"
+        )
+}
+
 fn handle_tab_navigation(event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App) {
     if event.keystroke.key.as_str() == "tab" {
         if event.keystroke.modifiers.shift {
@@ -4591,6 +4652,9 @@ fn apply_root_text_direction(
 /// `layer(...)` the Host portal paints outside the root.
 #[derive(Clone)]
 struct ViewKeyScope {
+    /// Records whether the last input that decides focus indicators was a
+    /// navigation key (`true`) or a pointer press (`false`).
+    input_modality: ActionListener<bool>,
     dispatch_key_binding: ActionListener<DispatchScriptAction>,
     copy_selected_text: ActionListener<CopySelectedText>,
     navigate_back: ActionListener<NavigateBack>,
@@ -4603,6 +4667,14 @@ type ActionListener<A> = Rc<dyn Fn(&A, &mut Window, &mut App)>;
 impl ViewKeyScope {
     fn new(cx: &mut Context<ScriptHostView>) -> Self {
         Self {
+            input_modality: Rc::new(cx.listener(|view, navigating: &bool, _, cx| {
+                if view.navigating != *navigating {
+                    view.navigating = *navigating;
+                    if view.focus_indicators == FocusIndicators::Navigation {
+                        cx.notify();
+                    }
+                }
+            })),
             dispatch_key_binding: Rc::new(cx.listener(ScriptHostView::dispatch_key_binding)),
             copy_selected_text: Rc::new(cx.listener(ScriptHostView::copy_selected_text)),
             navigate_back: Rc::new(cx.listener(|view, _: &NavigateBack, window, cx| {
@@ -4619,8 +4691,19 @@ impl ViewKeyScope {
         let dispatch_key_binding = Rc::clone(&self.dispatch_key_binding);
         let copy_selected_text = Rc::clone(&self.copy_selected_text);
         let navigate_back = Rc::clone(&self.navigate_back);
+        let (key_modality, pointer_modality) = (
+            Rc::clone(&self.input_modality),
+            Rc::clone(&self.input_modality),
+        );
         let element = element
             .key_context(HOST_KEY_CONTEXT)
+            // Seen before any handler takes the key or the press, and never stopped.
+            .capture_key_down(move |event, window, cx| {
+                if is_navigation_key(&event.keystroke) {
+                    key_modality(&true, window, cx);
+                }
+            })
+            .capture_any_mouse_down(move |_, window, cx| pointer_modality(&false, window, cx))
             .on_key_down(handle_tab_navigation)
             .on_action(move |action: &DispatchScriptAction, window, cx| {
                 dispatch_key_binding(action, window, cx);
@@ -5024,6 +5107,7 @@ impl ScriptHostView {
             );
         }
         let focus_path = self.focus_path(window);
+        let focus_indicators = self.focus_indicators_shown(&focus_path);
         let frame = Rc::new(HostFrame {
             number: self.islands.next_frame(),
             snapshot,
@@ -5031,6 +5115,7 @@ impl ScriptHostView {
             interactions,
             semantics,
             focus_path,
+            focus_indicators,
             motion_root,
             a11y_active,
             focus_owners: BTreeMap::new(),
@@ -5257,6 +5342,8 @@ struct HostFrame {
     interactions: crate::interaction::WindowInteractionCoordinator,
     semantics: crate::CommittedSemanticFrame,
     focus_path: Vec<crate::NodeId>,
+    /// Whether focus styles paint this frame ([`ScriptViewConfig::focus_indicators`]).
+    focus_indicators: bool,
     motion_root: String,
     a11y_active: bool,
     /// The view renders its retained tree, where owners are found by walking
@@ -5299,6 +5386,7 @@ impl HostFrame {
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             focus_path: &self.focus_path,
+            focus_indicators: self.focus_indicators,
             owner_focused: false,
             root_path: &self.motion_root,
             view_id: &view.view_id,
@@ -6027,6 +6115,29 @@ impl ScriptHostView {
 
     /// The focused retained node followed by its ancestors, for `group_focus`
     /// and `focus_within` styles.
+    /// Whether focus styles paint, by the view's policy, unless a text field holds
+    /// focus: its frame shows where typing goes.
+    fn focus_indicators_shown(&self, focus_path: &[crate::NodeId]) -> bool {
+        let by_policy = match self.focus_indicators {
+            FocusIndicators::Always => true,
+            FocusIndicators::Never => false,
+            FocusIndicators::Navigation => self.navigating,
+        };
+        by_policy
+            || focus_path.first().is_some_and(|focused| {
+                self.lifecycle
+                    .retained()
+                    .node(*focused)
+                    .and_then(crate::RetainedNode::primitive)
+                    .is_some_and(|primitive| {
+                        matches!(
+                            primitive.as_str(),
+                            "gpui_rhai.text_input" | "gpui_rhai.textarea"
+                        )
+                    })
+            })
+    }
+
     fn focus_path(&self, window: &Window) -> Vec<crate::NodeId> {
         let Some(focused) = self
             .focus_handles
