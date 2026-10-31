@@ -23,7 +23,7 @@ outside dismissal, Escape routing, focus fallback, and approved key bindings.
 
 ## GPUI package identity
 
-gpui-rhai 0.3.3 uses the exact `gpui-pre 0.3.9` core/platform family while
+gpui-rhai 0.4.0 uses the exact `gpui-pre 0.3.9` core/platform family while
 preserving the Rust use names `gpui` and `gpui_platform`. Prefer the public
 re-exports so every Host type is guaranteed to match the runtime:
 
@@ -41,7 +41,7 @@ exact family version:
 
 ```toml
 [dependencies]
-gpui-rhai = "0.3.3"
+gpui-rhai = "0.4.0"
 gpui = { package = "gpui-pre", version = "=0.3.9", default-features = false, features = ["font-kit"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 ```
