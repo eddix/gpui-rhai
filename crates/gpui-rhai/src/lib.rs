@@ -96,6 +96,7 @@ pub mod asset;
 pub mod async_runtime;
 pub mod automation;
 mod backend;
+mod baseline;
 pub mod budget;
 pub mod canvas;
 pub mod capability;

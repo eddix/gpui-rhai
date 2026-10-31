@@ -229,26 +229,29 @@ fn render_Button(ctx, props) {
         children.push(props.prefix.with_style(ctx.component_style("prefix",
             style().text_color(foreground).disabled(style().text_color(theme_color("disabled"))))));
     }
-    if show_loading_text {
+    let label = if show_loading_text {
         // The idle label stays laid out at zero height and unpainted, so the
         // label box is as wide as the wider of the two texts.
-        children.push(column([
+        column([
             text(loading_text),
             text(props.text).with_style(style().height(px(0)).invisible())
                 .accessibility_role("presentation")
-        ]).with_style(ctx.component_style("label", style().items_center())));
+        ]).with_style(ctx.component_style("label", style().items_center()))
     } else {
-        children.push(text(props.text).with_style(ctx.component_style("label", style())));
+        text(props.text).with_style(ctx.component_style("label", style()))
+    };
+    if shortcut == () {
+        children.push(label);
+    } else {
+        // The inline key legend of Menu and Command (the label voice), in the button's own
+        // color, on the label's baseline as words in one line are set.
+        let legend = text(shortcut.label).with_style(ctx.component_style("shortcut",
+            style().typography("label").opacity(0.7)));
+        children.push(row([label, legend]).with_style(style().items_baseline().gap(theme_spacing("xs"))));
     }
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(ctx.component_style("suffix",
             style().text_color(foreground).disabled(style().text_color(theme_color("disabled"))))));
-    }
-    if shortcut != () {
-        // The inline key legend of Menu and Command (the label voice), in the
-        // button's own color.
-        children.push(text(shortcut.label).with_style(ctx.component_style("shortcut",
-            style().typography("label").opacity(0.7))));
     }
     let button = row(children)
         .with_style(ctx.component_style("root", base))

@@ -73,6 +73,16 @@ fn render_Kbd(ctx, props) {
     let name = if "label" in props && props.label != () { props.label }
         else if keys.is_empty() { legend }
         else { keys.reduce(|sum, key| if sum == () { key } else { `${sum} ${key}` }) };
+    if inline {
+        // An inline legend is one run of text, so a row that sets it on its label's
+        // baseline (`items_baseline`) can: Menu and Command rows do.
+        let run = if keys.is_empty() { legend } else { keys.reduce(|sum, key| if sum == () { key } else { `${sum}${key}` }) };
+        return text(run)
+            .with_style(ctx.component_style("root", ctx.component_style("key", style()
+                .text_color(theme_color("text_muted")).typography("label"))))
+            .accessibility_role("text")
+            .accessibility_label(name);
+    }
     row(caps)
         .with_style(ctx.component_style("root", style()
             .flex_row().items_center()

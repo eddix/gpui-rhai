@@ -444,6 +444,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.inset_start(inset: SignedLength) -> Style` | Sets the inset from the logical start edge (left in LTR, right in RTL) to a signed `offset_*` length; overrides `left`/`right`. |
 | `style.invisible() -> Style` | Hides the node but keeps its layout space; `visible` undoes it. |
 | `style.italic() -> Style` | Sets the italic font style. |
+| `style.items_baseline() -> Style` | In a row, sets each text child's first baseline on the baseline of the row's own text style, as words in one line are set, so a smaller key legend sits on its label's baseline; other children align to the start. |
 | `style.items_center() -> Style` | Centers children on the container's cross axis. |
 | `style.items_end() -> Style` | Aligns children to the cross-axis end: the bottom of a row, the logical end of a column (left in RTL). |
 | `style.items_start() -> Style` | Aligns children to the cross-axis start: the top of a row, the logical start of a column (right in RTL). |

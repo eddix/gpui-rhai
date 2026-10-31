@@ -335,6 +335,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Sets the italic font style.",
     },
     ScriptFnDoc {
+        signature: "items_baseline(_: &mut Style) -> Style",
+        params: &[],
+        doc: "In a row, sets each text child's first baseline on the baseline of the row's own text style, as words in one line are set, so a smaller key legend sits on its label's baseline; other children align to the start.",
+    },
+    ScriptFnDoc {
         signature: "items_center(_: &mut Style) -> Style",
         params: &[],
         doc: "Centers children on the container's cross axis.",

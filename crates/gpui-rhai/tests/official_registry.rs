@@ -1681,8 +1681,12 @@ fn command_array_items_keep_text_semantics_with_rich_visual_content() {
     let UiNodeKind::Box { children } = item.kind() else {
         panic!("command item must remain a composed row");
     };
+    // The label and its key legend share a baseline row; the rich content leads it.
+    let UiNodeKind::Box { children: words } = children[0].kind() else {
+        panic!("the label and legend share one row");
+    };
     assert_eq!(
-        children[0].key().map(gpui_rhai::NodeKey::as_str),
+        words[0].key().map(gpui_rhai::NodeKey::as_str),
         Some("rich-command-content")
     );
 }

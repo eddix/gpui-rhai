@@ -238,11 +238,14 @@ fn render_command_row(content, total_rows, ctx, payload) {
             if bound == () { "" } else { bound.label }
         } else { "" };
     let label = if item.value in content { content[item.value] } else { text(item.label) };
-    let children = [label.with_style(ctx.component_style("label", style().flex_grow()))];
+    // The label and its key legend share one baseline, as words in one line do.
+    let words = [label.with_style(ctx.component_style("label", style().flex_grow()))];
     if shortcut != "" {
-        children.push(kbd::Kbd(#{ key: `${payload.key}-shortcut`, text: shortcut, appearance: "inline" })
+        words.push(kbd::Kbd(#{ key: `${payload.key}-shortcut`, text: shortcut, appearance: "inline" })
             .with_style(ctx.component_style("shortcut", style())));
     }
+    let children = [row(words).with_style(style().flex_grow().min_width(px(0)).items_baseline()
+        .gap(theme_spacing("xs")))];
     if item.active && !disabled { children.push(command_indicator(ctx)); }
     let row_style = style()
         .height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))

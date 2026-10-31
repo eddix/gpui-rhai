@@ -28,7 +28,10 @@ The current public builder maps directly to GPUI (gpui-pre 0.3.9) behavior:
 
 - block, flex, and bounded explicit grid layout (`grid_cols/rows`, spans);
 - row/column direction, wrapping, boolean or positive weighted grow,
-  shrink/basis, alignment, and justification;
+  shrink/basis, alignment, and justification; `items_baseline()` sets a row's
+  text children on the baseline of the row's own text style, from the font
+  metrics GPUI paints with (GPUI gives Taffy no text baselines, so other
+  children start);
 - min/max/fixed/auto sizing and flex basis, gaps, physical/logical padding and
   definite/auto/signed margins;
 - relative/absolute positioning with definite/auto/signed four-edge insets and
