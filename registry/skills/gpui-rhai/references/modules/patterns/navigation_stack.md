@@ -51,7 +51,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `back`, `brea
 ## Theme
 
 - Tokens: `metrics.icon`, `space.group`, `space.related`, `spacing.xs`, `text_muted`, `text_primary`, `typography.title`
-- Environment: `corners`, `density`, `size`
+- Environment: `density`, `size`
 
 ## Dependencies
 

@@ -14,7 +14,7 @@
     "metrics.marker", "spacing.xs", "spacing.sm", "radius.sm",
     "typography.caption", "typography.label"
   ],
-  "environment": ["corners"]
+  "environment": []
 }
 */
 // Tag labels a category: a flat tonal tape with an optional facet segment.
@@ -37,7 +37,7 @@ define_component(#{
             "metrics.marker", "spacing.xs", "spacing.sm", "radius.sm",
             "typography.caption", "typography.label"
         ],
-        environment: ["corners"],
+        environment: [],
     },
     schema: #{
         props: #{

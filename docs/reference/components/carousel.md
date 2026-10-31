@@ -56,7 +56,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `arrows`, `controls`, `c
 ## Theme
 
 - Tokens: `control.border`, `focus_ring`, `metrics.control`, `metrics.icon`, `radius.md`, `radius.sm`, `space.related`, `spacing.xs`, `spacing.xxs`, `surface_raised`, `text_muted`, `text_primary`, `typography.control`
-- Environment: `corners`, `density`, `size`
+- Environment: `density`, `size`
 
 ## Dependencies
 

@@ -94,8 +94,7 @@ fn controls(nodes: &[(String, String, f64, f64)]) -> Vec<&str> {
 
 /// At each width the title and the page title are drawn whole, the controls follow them
 /// without overlap and none runs past the bar's end inset. A wide window keeps every control;
-/// narrower, the Density and Corners toggles give way, and in a compact window the theme
-/// picker too.
+/// narrower, the Density toggle gives way, and in a compact window the theme picker too.
 #[gpui::test]
 fn the_title_bar_fits_narrow_windows(cx: &mut TestAppContext) {
     let width_of = |nodes: &[(String, String, f64, f64)], name: &str| {
@@ -104,10 +103,7 @@ fn the_title_bar_fits_narrow_windows(cx: &mut TestAppContext) {
     // The title and page title as a wide window draws them.
     let mut whole = None;
     for (width, expected) in [
-        (
-            1280.0,
-            &["Density", "Corners", "Theme", "Locale", "Commands"][..],
-        ),
+        (1280.0, &["Density", "Theme", "Locale", "Commands"][..]),
         (852.0, &["Theme", "Locale", "Commands"][..]),
         (560.0, &["Locale", "Commands"][..]),
     ] {

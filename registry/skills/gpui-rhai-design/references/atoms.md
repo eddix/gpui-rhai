@@ -59,37 +59,47 @@ offsets, semantic circles. The registry lint
 other literal height or font size, and any token a component reads without
 declaring it.
 
-### Radius roles and the corner style
+### Radius roles
 
-Corners are an environment axis, `corners`, like density: `square` (the
-default and the design language), `subtle` and `round`. Every role is zero in
-`square`, so choosing nothing changes nothing.
+Radius follows what a shape is; it is not a preference and no environment
+value changes it. Square rectangles alone could only tell a button from a tag
+by size, and a toolbar holding both at different heights read as a jagged row.
+Each component takes the role of its kind:
 
-| Role | Used by | square | subtle | round |
-|---|---|---:|---:|---:|
-| `radius.xs` | Checkbox box, Kbd keycap | 0 | 2 | 4 |
-| `radius.sm` | Tag (and its facet and close target), strong Badge, Combobox chips, Switch track and thumb | 0 | 2 | capsule |
-| `radius.md` | Button, IconButton, Input, Select and DatePicker triggers and day cells, ToggleGroup, ButtonGroup, InputGroup, horizontal Tabs | 0 | 4 | capsule |
-| `radius.lg` | Card, Alert, Toast, Dialog, Popover, Menu, Command and field panels, Tooltip, Textarea, vertical Tabs, ToggleGroup and ButtonGroup | 0 | 4 | 8 |
+| Kind | Role | Value | Used by |
+|---|---|---:|---|
+| Layout | none | 0 | Card, Alert, Region, Table, List and Tree rows, Tabs `underline` and `bar`, SelectableCardGroup cards, Sheet, SplitPane, TitleBar, StatusBar |
+| Control | `radius.md` | 4 / 6 | Button, IconButton, Input, Textarea, Select, Combobox and DatePicker triggers, InputGroup, ToggleGroup, ButtonGroup and the Tabs `track` in either orientation, calendar day cells, Composer, DatePicker presets |
+| Box in a control | `radius.xs` | half of md | Checkbox box, Kbd keycap, the Tabs thumb and close button, a field's clear button, Toast close and Clear all |
+| Marker | `radius.sm` | capsule | Tag (and its facet and close target), Badge, Combobox chips, Switch track and thumb, the Tabs count, the Toast count, Carousel dots |
+| Floating surface | `radius.lg` | 8 | Menu, Popover, Dialog, Toast, Command, CommandDialog and field panels |
 
-"Capsule" is 999px: radii clamp to half the shorter side, so a control
-becomes a capsule and a square control (IconButton, a day cell) a circle.
-Panels stay at 8px in `round` because their rows are inset 4px from the edge;
-a larger radius would show a highlighted first or last row's corner outside
+A control's radius follows its height: 4px at 24px or less (comfortable xs,
+compact xs and sm) and 6px from 28px. Its 2px frame leaves 2px or 4px inside,
+so the shape reads as a rounded rectangle rather than a blunted square, and a
+20px compact control stays clearly apart from a 20px Tag capsule. A box inside
+a control takes half that (2px or 3px). "Capsule" is 999px: radii clamp to
+half the shorter side, so a marker is a capsule and a round thumb a circle.
+A one-line Tooltip is about 22px tall and rounds like a control of that
+height, at half of `radius.lg` (4px); at 8px it would read as a capsule.
+
+Floating surfaces are 8px; transient list panels inset their square rows by
+half of that on every side, so a highlighted first or last row stays inside
 the curve (clipping is rectangular). Joined groups round only their outer
 corners: the first and last items use `radius_start` / `radius_end`, so a
-pressed segment or a Tag facet never pokes past the frame.
+pressed segment or a Tag facet never pokes past the frame. The Tabs thumb sits
+2px inside the track and takes the box role, close to the concentric radius.
 
-Some shapes do not follow the corner style, on purpose:
+Some shapes keep their own form, on purpose:
 
-- Checkbox stays a box (`xs`): a round checkbox reads as a Radio.
+- Checkbox stays a box: a round checkbox reads as a Radio.
 - Status lamps stay square: they are a recognizability signature (G2).
 - Slider and RangeSlider caps stay rectangular faders on square tracks, and
   Progress stays a square bar.
 - Tables, lists, trees and their selection rows stay square; the indicator bar
   needs a straight start edge.
 
-Semantic circles (Radio, Avatar, presence) use half their size in every style.
+Semantic circles (Radio, Avatar, presence) use half their size.
 
 ## 3. Typography
 
@@ -197,7 +207,8 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 ### Tag
 
 - Tonal `surface_hover` block, horizontal padding `spacing.sm` in both
-  densities (markers do not change with density), `radius.sm`.
+  densities (markers do not change with density), `radius.sm`: a capsule, so
+  a tag never reads as a button beside one.
 - Color variants (`accent`, `success`, `warning`, `danger`) mark a
   **category**, not a status: without a facet they color the text with the
   derived `text.*` role; with a facet they fill the facet segment with the color
@@ -264,8 +275,8 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
     switch: the strip is `tabbar.background` with a 1px `border` line along
     its bottom; the selected tab takes `tabbar.active` (the panel's surface)
     and 1px side hairlines and covers the line, so it and the panel are one
-    surface. The strip is a rectangle with no margin, so the selected tab
-    stays square in every corner style; a first tab on the strip's start edge
+    surface. The strip is a rectangle with no margin and the tabs are layout,
+    so the selected tab stays square like the panel; a first tab on the strip's start edge
     draws no start hairline, so it never doubles a separator beside the bar.
     Tabs start their text on `metrics.inset`; the 2px focus frame lies over
     the selected tab. Horizontal only.
@@ -282,11 +293,11 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   tabs overflow.
 - **Count capsule.** A marker after the label, exactly as tall as the label:
   `metrics.counter` is the control line height (16 at `xs`, 20 otherwise) and
-  also its minimum width, so one digit in round corners is a circle. Its
+  also its minimum width, so one digit is a circle. Its
   figures are the `counter` type (11/14 at `xs`, 12/16 otherwise: digits are
   about 0.72em tall, leaving about 4px and 5.7px above and below them) with
   tabular figures, `99+` past 99. Its corners are `radius.sm`, the markers'
-  role, so the corner style makes it square, subtle or a capsule. The neutral
+  role: a capsule. The neutral
   fill is `tabs.counter`, a step from the track toward ink that holds
   `text_primary` at 5.2:1 and shows on the track, the thumb, the page and the
   bar alike; a `tone` fills it with `accent`, `warning` or `danger` and its
@@ -319,8 +330,8 @@ turns by itself.
   Dots are the 6px lamp squares in `control.border` (`text_muted` under the
   pointer), the selected one stretched to `metrics.icon` wide in
   `text_primary`, so the position never rests on color alone; their corners
-  are `radius.sm`, so the corner style makes them squares, rounded squares or
-  circles and pills. Each dot sits in a touching `metrics.icon` square target.
+  are `radius.sm`, so they are circles and the selected one a pill. Each dot
+  sits in a touching `metrics.icon` square target.
 - **Focus.** The controls are one tab stop beside the item, framed by the 2px
   `focus_ring` frame (`radius.md`) when focused; the arrows and dots inside are
   not tab stops. A disabled arrow takes `disabled` ink.
@@ -446,8 +457,8 @@ Things you type into have a frame; things you press are blocks.
   keeps its color at reduced opacity.
 - Checkbox: `metrics.mark` box with a 2px `border` frame on the well; checked
   fills `accent` with an `on_accent` mark. Radio: the same frame as a circle
-  with a 6px accent dot. Switch: rectangular 32×16 track (`metrics.mark` × 2),
-  `surface_hover` off and `accent` on, a 12px square thumb, ink off and
+  with a 6px accent dot. Switch: a 32×16 capsule track (`metrics.mark` × 2),
+  `surface_hover` off and `accent` on, a 12px round thumb, ink off and
   `on_accent` on. In all three the row is the target and the mark shows focus,
   so the mark stays on the content edge. Rows are `metrics.control` high.
 - Slider and RangeSlider: a 4px track, `accent` fill and a fader cap (a 12×20
@@ -460,14 +471,14 @@ Things you type into have a frame; things you press are blocks.
 ## 8. Overlays and containers
 
 - Overlay panels (Menu, Combobox/Select/DatePicker panels, Popover, Dialog,
-  Sheet, Toast, Command) are `surface_raised` blocks with a 1px `border`
-  hairline and `radius.lg`; no shadow. Menus and field panels align to their
+  Toast, Command) are `surface_raised` blocks with a 1px `border` hairline and
+  `radius.lg`; no shadow. A Sheet is attached to the window edge and stays
+  square. Menus and field panels align to their
   trigger's start edge (`align: "start"`, RTL-aware); Tooltips center.
 - Panels of transient lists (Menu and ContextMenu, Select and Combobox
-  options, Command, CommandDialog) pad every side by half of `radius.lg`:
-  nothing in the square style, where rows bleed to the hairline as in Table and
-  List, and 2px or 4px in the subtle and round styles, where the square row
-  blocks clear the rounded corner. CommandDialog pads its dialog panel, so its
+  options, Command, CommandDialog) pad every side by half of `radius.lg` (4px),
+  so the square row blocks clear the rounded corner. CommandDialog pads its
+  dialog panel, so its
   title and the Command inside share one text edge.
 - Dialog and Sheet pad with `spacing.xl`; actions are separated by space, not
   a rule. Sheets draw their hairline only on the edge facing the window. A

@@ -10,7 +10,7 @@
     "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.xs",
     "typography.label"
   ],
-  "environment": ["corners"]
+  "environment": ["size", "density"]
 }
 */
 // Kbd presents a key legend: a framed keycap, or an inline legend inside menus and buttons.
@@ -26,7 +26,7 @@ define_component(#{
             "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.xs",
             "typography.label"
         ],
-        environment: ["corners"] },
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             text: #{ schema: #{ type: "string" }, required: false, sensitive: false,

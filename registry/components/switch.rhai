@@ -11,7 +11,7 @@
     "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.sm",
     "typography.control", "typography.caption"
   ],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // Controlled binary switch with disabled and loading states.
@@ -28,7 +28,7 @@ define_component(#{
             "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.sm",
             "typography.control", "typography.caption"
         ],
-        environment: ["size", "density", "corners"],
+        environment: ["size", "density"],
     },
     schema: #{
         props: #{
@@ -70,9 +70,8 @@ fn render_Switch(ctx, props) {
     let loading = if "loading" in props { props.loading } else { false };
     let blocked = disabled || loading;
     let fill = if props.checked { theme_color("accent") } else { theme_color("surface_hover") };
-    // A rectangular track with a square thumb (a capsule and a circle with round
-    // corners). The 2px track border is reserved and takes the fill until focus turns
-    // it ink.
+    // A capsule track with a round thumb: a marker shape, so a switch never reads as a
+    // button. The 2px track border is reserved and takes the fill until focus turns it ink.
     let thumb = text(if loading { "·" } else { "" }).with_style(ctx.component_style("thumb", style()
         .width(theme_length("metrics.mark") * 0.75).height(theme_length("metrics.mark") * 0.75)
         .radius(theme_radius("sm")).items_center().justify_center().typography("caption")

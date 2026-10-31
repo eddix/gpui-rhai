@@ -497,7 +497,7 @@ runtime from an optional design system. The runtime keeps no visual opinions:
 it resolves whatever tokens a project declares through environment axes. The
 official registry ships a design system for keyboard-first productivity tools:
 a token base (spacing, relationships, metrics, radius and typography resolved
-through density, size and corners), palettes that hold colors only, the
+through density and size), palettes that hold colors only, the
 official components rebuilt on one set of contracts, layouts and patterns,
 application profiles, a composition audit, and the Gallery as its acceptance
 application. The specification lives in `docs/design/`; an application may

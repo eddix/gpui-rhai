@@ -70,7 +70,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `calendar`, `
 ## Theme
 
 - Tokens: `border`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.inset`, `radius.lg`, `radius.md`, `selection`, `spacing.lg`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `text.danger`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`, `typography.control`
-- Environment: `corners`, `density`, `size`
+- Environment: `density`, `size`
 
 ## Dependencies
 

@@ -288,7 +288,7 @@ A profile packages an application's policy:
 | `ui/profile.rhai` | audit rule set and its severity |
 
 `gpui-rhai init --profile productivity` installs the reference profile: the
-design language defaults, comfortable density, square corners and all audit
+design language defaults, comfortable density, the radius roles and all audit
 rules below. Without a profile, `gpui-rhai check` and the audit report only
 correctness problems.
 

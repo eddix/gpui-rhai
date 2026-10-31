@@ -36,7 +36,7 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ ●●● GPUI RHAI  Button  [Comfortable|Compact] [Square|Subtle|Round] [Default · Dark▾] [English▾] Commands ⌘K │
+│ ●●● GPUI RHAI  Button  [Comfortable|Compact] [Default · Dark▾] [English▾] Commands ⌘K │
 ├──────────────┬──────────────────────────────────────────────────────┤
 │ ⌄ Foundations│ Button                                        Source │
 │ ⌄ Markers    │ One solid button per group.                          │
@@ -44,17 +44,15 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
 │   IconButton │ [Deploy] [Export] [Duplicate] Cancel                 │
 │   …          │ …                                                    │
 ├──────────────┴──────────────────────────────────────────────────────┤
-│ DENSITY comfortable  THEME Default Dark  CORNERS square  LOCALE en   AUDIT 0  ⌘K │
+│ DENSITY comfortable  THEME Default Dark  LOCALE en   AUDIT 0  ⌘K │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Title bar**: density and corner style (ToggleGroups), the theme (a Select
-  of every loaded theme, from `ctx.theme_variants()`), locale (Select) and the
-  command palette. On macOS it replaces the platform title bar: the window
-  buttons sit at its start and dragging its background moves the window
-  (`window_drag`, allowed by the Host). Corner styles are described in
-  [design/atoms.md](design/atoms.md#radius-roles-and-the-corner-style); square
-  is the design language and the baselines' style.
+- **Title bar**: density (a ToggleGroup), the theme (a Select of every loaded
+  theme, from `ctx.theme_variants()`), locale (Select) and the command
+  palette. On macOS it replaces the platform title bar: the window buttons sit
+  at its start and dragging its background moves the window (`window_drag`,
+  allowed by the Host).
 - **Sidebar**: a Tree of 101 pages in 12 groups: Foundations 5, Markers 8,
   Fields 18, Lists 11, Navigation 7, Overlays 6, Containers 12, Display 8,
   Interaction 7, Layouts and patterns 13, Scenes 5, Effects 1. The groups
@@ -71,8 +69,8 @@ The same launch can come from the environment (`GPUI_RHAI_GALLERY=1` with
 
 Keyboard: F6 / Shift+F6 move between sidebar, main and inspector; Tab moves
 inside a region; Cmd+K (Ctrl+K) opens the palette, which lists every page and
-the Gallery actions (toggle density, light/dark within the theme family, corner
-style and source).
+the Gallery actions (toggle density, light/dark within the theme family, and
+source).
 
 The five scenes are small complete tasks rather than specimens:
 

@@ -387,7 +387,7 @@ Each item requires `value: string` and `label: string`. Optional fields:
 | Item field | Contract |
 |---|---|
 | `icon`, `label_visible` | A decorative node at icon size before the label; a label may hide only when an icon is given, and stays the accessible name |
-| `count` | A capsule after the label, as tall as the label (`metrics.counter`, the control line height) and at least as wide, in the `counter` type with tabular figures; `99+` past 99, zero shown; corners follow `radius.sm`, so the corner style makes it square, subtle or a capsule. The full number joins the accessible name (`"Repos, 12"`) |
+| `count` | A capsule after the label, as tall as the label (`metrics.counter`, the control line height) and at least as wide, in the `counter` type with tabular figures; `99+` past 99, zero shown; corners follow `radius.sm`, the markers' capsule. The full number joins the accessible name (`"Repos, 12"`) |
 | `tone`, `tone_label` | `accent`, `warning` or `danger`: fills the capsule (with the matching `on_*` text), or without a `count` shows a 6px lamp after the label. `tone_label` joins the accessible name, since a lamp has no text; the component invents no copy |
 | `closable` | A close button in a reserved square, shown while the tab is selected or hovered |
 | `dirty` | The 6px unsaved mark in the same square; on a closable tab it turns into the close button under the pointer |

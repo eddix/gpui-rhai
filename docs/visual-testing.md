@@ -21,10 +21,9 @@ Maintain one contextual specimen containing:
 - underline Tabs with and without a panel and inside a Card: the hairline
   spans the strip, the 2px bar covers it under the selected label only, and
   the keyboard focus frame does not touch the label;
-- bar Tabs over a panel: the selected tab covers the strip's line in every
-  corner style; closable and dirty tabs keep their width as the close button
-  appears;
-- count capsules and tone lamps in every look and corner style: the capsule is
+- bar Tabs over a panel: the selected tab is square and covers the strip's
+  line; closable and dirty tabs keep their width as the close button appears;
+- count capsules and tone lamps in every look: the capsule is
   exactly the label's line height, its figures sit centred, and `99+` fits;
   an add button after the last tab and slots on the content edge;
 - normal, focused, hovered, disabled, scrolling, interrupted transition, and

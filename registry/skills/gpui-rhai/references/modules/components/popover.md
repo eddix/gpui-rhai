@@ -52,4 +52,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `focus_frame`
 ## Theme
 
 - Tokens: `border`, `focus_ring`, `metrics.inset`, `radius.lg`, `space.related`, `surface_raised`, `typography.body`
-- Environment: `corners`, `density`
+- Environment: `density`

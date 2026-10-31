@@ -83,8 +83,8 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `add`, `close`, `counter
 
 ## Theme
 
-- Tokens: `accent`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.counter`, `metrics.icon`, `metrics.inset`, `metrics.label_column`, `on_accent`, `on_danger`, `on_warning`, `radius.lg`, `radius.md`, `radius.sm`, `space.group`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabbar.active`, `tabbar.background`, `tabs.counter`, `tabs.foreground`, `text_primary`, `typography.body`, `typography.control`, `typography.counter`, `warning`
-- Environment: `corners`, `density`, `size`
+- Tokens: `accent`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.counter`, `metrics.icon`, `metrics.inset`, `metrics.label_column`, `on_accent`, `on_danger`, `on_warning`, `radius.md`, `radius.sm`, `radius.xs`, `space.group`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabbar.active`, `tabbar.background`, `tabs.counter`, `tabs.foreground`, `text_primary`, `typography.body`, `typography.control`, `typography.counter`, `warning`
+- Environment: `density`, `size`
 
 ## Dependencies
 

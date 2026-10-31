@@ -207,7 +207,7 @@ fn radio_group_page(h, v) {
 }
 
 fn switch_page(h, v) {
-    kit::page(h, v, "switch", "Switch", "A rectangular track with a square thumb, for settings that apply at once.", [
+    kit::page(h, v, "switch", "Switch", "A capsule track with a round thumb, for settings that apply at once.", [
         kit::sec("States", kit::line([
             switch_control::Switch(#{ checked: kit::val(v, "switch.updates", true), label: "Automatic updates",
                 on_change: kit::store(h, "switch.updates") }),

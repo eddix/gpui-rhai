@@ -43,4 +43,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `day`, `day_disabled`, `
 ## Theme
 
 - Tokens: `accent`, `accent_hover`, `disabled`, `focus_ring`, `metrics.control`, `metrics.marker`, `on_accent`, `radius.md`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
-- Environment: `corners`, `density`, `size`
+- Environment: `density`, `size`

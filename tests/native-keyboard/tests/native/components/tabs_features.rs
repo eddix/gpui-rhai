@@ -1,5 +1,5 @@
 //! What any Tabs variant can carry beyond selection: a count capsule as tall as the label,
-//! whose corners follow the corner style, a tone that fills it or shows a lamp, an add button
+//! a marker's capsule in shape, a tone that fills it or shows a lamp, an add button
 //! right after the last tab, slots on the content edge, the close successor, and the same
 //! collection keys in a vertical list.
 
@@ -55,22 +55,18 @@ fn fills(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32, f32, f32,
         .collect()
 }
 
-/// Three tabs with a count, a toned count past 99, and a lamp; `corners` sets the style.
-fn counts(corners: &str) -> String {
-    format!(
-        r#"import "components/tabs" as tabs;
-fn changed(ctx,value){{}}
-fn view(ctx){{tabs::Tabs(#{{label:"Repos",value:"a",variant:"underline",panel:false,tabs:[
-    #{{value:"a",label:"Alpha",count:7}},
-    #{{value:"b",label:"Beta",count:1234,tone:"accent",tone_label:"new"}},
-    #{{value:"c",label:"Gamma",tone:"danger",tone_label:"failed"}}
-],on_change:Fn("changed")}}).env(#{{corners:"{corners}"}})}}"#
-    )
-}
+/// Three tabs with a count, a toned count past 99, and a lamp.
+const COUNTS: &str = r#"import "components/tabs" as tabs;
+fn changed(ctx,value){}
+fn view(ctx){tabs::Tabs(#{label:"Repos",value:"a",variant:"underline",panel:false,tabs:[
+    #{value:"a",label:"Alpha",count:7},
+    #{value:"b",label:"Beta",count:1234,tone:"accent",tone_label:"new"},
+    #{value:"c",label:"Gamma",tone:"danger",tone_label:"failed"}
+],on_change:Fn("changed")})}"#;
 
 #[gpui::test]
 fn a_count_capsule_is_as_tall_as_the_label_and_joins_the_name(cx: &mut TestAppContext) {
-    let (mut visual, view) = mount(cx, counts("square"));
+    let (mut visual, view) = mount(cx, COUNTS.to_owned());
     assert_eq!(last_error(&mut visual, &view), None);
     // The count and the tone join the accessible name; a lamp has only its tone label.
     let alpha = bounds(&mut visual, &view, "tab", "Alpha, 7");
@@ -80,7 +76,8 @@ fn a_count_capsule_is_as_tall_as_the_label_and_joins_the_name(cx: &mut TestAppCo
     bounds(&mut visual, &view, "text", "99+");
 
     // A neutral capsule in tabs.counter: metrics.counter (20, the control line height) tall,
-    // at least as wide, centred in the 32px tab like the label, square in the square style.
+    // at least as wide, centred in the 32px tab like the label, a capsule: radius.sm clamps
+    // to half the height.
     let neutral = fills(&mut visual, COUNTER);
     assert_eq!(neutral.len(), 1, "{neutral:?}");
     let (x, y, width, height, radius) = neutral[0];
@@ -100,7 +97,7 @@ fn a_count_capsule_is_as_tall_as_the_label_and_joins_the_name(cx: &mut TestAppCo
         x > alpha.x as f32 && x + width < tab_right,
         "after the label, inside the tab"
     );
-    assert!(radius.abs() < 0.01, "square corners: {radius}");
+    assert!((radius - 10.0).abs() < 0.01, "a capsule: {radius}");
 
     // A toned count fills the capsule with the tone; a tone alone is a 6px lamp.
     let toned = fills(&mut visual, ACCENT);
@@ -114,17 +111,6 @@ fn a_count_capsule_is_as_tall_as_the_label_and_joins_the_name(cx: &mut TestAppCo
             .any(|quad| (quad.2 - 6.0).abs() < 0.01 && (quad.3 - 6.0).abs() < 0.01),
         "{lamp:?}"
     );
-}
-
-#[gpui::test]
-fn the_capsule_corners_follow_the_corner_style(cx: &mut TestAppContext) {
-    // Round markers are capsules: radius.sm clamps to half the 20px height.
-    let (mut visual, _) = mount(cx, counts("round"));
-    let neutral = fills(&mut visual, COUNTER);
-    assert!((neutral[0].4 - 10.0).abs() < 0.01, "round: {neutral:?}");
-    let (mut visual, _) = mount(cx, counts("subtle"));
-    let neutral = fills(&mut visual, COUNTER);
-    assert!((neutral[0].4 - 2.0).abs() < 0.01, "subtle: {neutral:?}");
 }
 
 /// `count` tabs in a strip `width` wide with an add button; adding logs.

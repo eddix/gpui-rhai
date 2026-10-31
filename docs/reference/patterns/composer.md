@@ -58,8 +58,8 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `counter`, `e
 
 ## Theme
 
-- Tokens: `border`, `focus_ring`, `metrics.inset`, `radius.lg`, `space.related`, `surface_raised`, `text.danger`, `text_muted`, `typography.caption`
-- Environment: `corners`, `density`, `size`
+- Tokens: `border`, `focus_ring`, `metrics.inset`, `radius.md`, `space.related`, `surface_raised`, `text.danger`, `text_muted`, `typography.caption`
+- Environment: `density`, `size`
 
 ## Dependencies
 

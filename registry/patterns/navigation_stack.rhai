@@ -5,7 +5,7 @@
   "dependencies": ["components/button", "components/menu"], "capabilities": {},
   "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"],
   "tokens": ["text_primary", "text_muted", "metrics.icon", "spacing.xs", "space.related", "space.group", "typography.title"],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // Controlled visit stack. Construction ownership stays with the caller (ADR 0019).
@@ -23,7 +23,7 @@ define_component(#{
         dependencies: ["components/button", "components/menu"], capabilities: #{},
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"],
         tokens: ["text_primary", "text_muted", "metrics.icon", "spacing.xs", "space.related", "space.group", "typography.title"],
-        environment: ["size", "density", "corners"] },
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false,

@@ -35,5 +35,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `first`, `item`, `last`,
 
 ## Theme
 
-- Tokens: `radius.lg`, `radius.md`, `spacing.xxs`
-- Environment: `corners`, `density`, `size`
+- Tokens: `radius.md`, `spacing.xxs`
+- Environment: `density`, `size`

@@ -13,7 +13,7 @@
     "metrics.icon", "spacing.xs", "spacing.sm", "radius.lg", "typography.body",
     "typography.label"
   ],
-  "environment": ["density", "corners"]
+  "environment": ["density"]
 }
 */
 // Controlled in-window menu with roving selection and nested submenu nodes.
@@ -35,7 +35,7 @@ define_component(#{
             "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "radius.lg",
             "typography.body", "typography.label"
         ],
-        environment: ["density", "corners"], assets: ["icons/check.svg"],
+        environment: ["density"], assets: ["icons/check.svg"],
     },
     schema: #{
         props: #{
@@ -301,8 +301,8 @@ fn render_Menu(ctx, props) {
         .with_key(`${props.key}-content`)
         .with_style(ctx.component_style("content",
         // Overlays are raised blocks with a hairline; rows carry their own inset. Every side
-        // pads by half of radius.lg so the square rows clear the corner: nothing in the
-        // square style, where rows bleed to the hairline.
+        // pads by half of radius.lg so the square rows clear the rounded corner (clipping is
+        // rectangular).
         style().relative().min_width(px(240)).padding(theme_radius("lg") * 0.5).radius(theme_radius("lg"))
                 .border(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface_raised"))

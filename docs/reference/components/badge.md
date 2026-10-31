@@ -33,4 +33,3 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `label`, `lamp`, `root`.
 ## Theme
 
 - Tokens: `accent`, `danger`, `metrics.marker`, `metrics.marker_small`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.sm`, `spacing.sm`, `spacing.xs`, `success`, `surface`, `text_muted`, `text_primary`, `typography.caption`, `warning`
-- Environment: `corners`

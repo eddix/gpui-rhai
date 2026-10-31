@@ -5,6 +5,27 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## Unreleased
+
+- **Breaking:** the token base drops the `corners` environment axis (`square`,
+  `subtle`, `round`). Radius now follows a component's kind instead of a
+  preference: layout (Card, Alert, Region, rows, Tabs `underline` and `bar`)
+  is square; controls take `radius.md`, 4px up to 24px tall and 6px from 28px
+  (Button, IconButton, fields, Textarea, triggers, ToggleGroup, ButtonGroup and
+  the Tabs `track` in either orientation); boxes inside a control take
+  `radius.xs`, half of that (Checkbox, Kbd, the Tabs thumb, clear and close
+  targets); markers take `radius.sm`, a capsule (Tag, Badge, Combobox chips,
+  Switch, counts); floating surfaces take `radius.lg`, 8px (Menu, Popover,
+  Dialog, Toast, Command and field panels, whose list rows sit 4px in); a
+  one-line Tooltip takes 4px. A Host that sets `corners` through
+  `ThemeTokenOverrides::environment_defaults` must drop it: theme preparation
+  now fails with an undeclared environment value. A script's
+  `.env(#{ corners: ... })` no longer has any effect and can be removed. An
+  application with its own copy of `ui/tokens.rhai` keeps working
+  until it updates the copy; update the token base and the components
+  together, since components no longer declare `corners`. Design decision D74.
+- The Gallery drops its Corners toggle, palette commands and status item.
+
 ## 0.3.3 - 2026-10-29
 
 - A frame replays the unchanged parts of a view instead of building, laying

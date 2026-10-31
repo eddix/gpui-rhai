@@ -10,7 +10,7 @@
     "control.border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
     "metrics.field_pad", "radius.md", "typography.control"
   ],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // Composes an input-like control with integrated prefix and suffix content.
@@ -23,7 +23,7 @@ define_component(#{
             "control.border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
             "metrics.field_pad", "radius.md", "typography.control"
         ],
-        environment: ["size", "density", "corners"] },
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             control: #{ schema: #{ type: "node" }, required: true, sensitive: false,

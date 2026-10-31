@@ -32,4 +32,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `key`, `root`.
 ## Theme
 
 - Tokens: `border`, `metrics.marker`, `radius.xs`, `spacing.xs`, `spacing.xxs`, `text_muted`, `typography.label`
-- Environment: `corners`
+- Environment: `density`, `size`
