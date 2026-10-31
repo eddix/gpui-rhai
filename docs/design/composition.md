@@ -39,7 +39,7 @@ breaks a rule, the audit reports it.
 |---|---|---|
 | `layouts/stack` | `Stack` | a column with one relationship (`gap: "related"` by default) |
 | `layouts/inline` | `Inline` | a row with one relationship and one control `size` |
-| `layouts/toolbar` | `Toolbar` | context, filters, one `fill` field, actions, one primary; wraps when narrow |
+| `layouts/toolbar` | `Toolbar` | one `fill` field, filters, then context; actions and one primary at the end; wraps when narrow |
 | `layouts/region` | `Region` | title and actions, toolbar, filling body, footer; `bleed` for rows, `scroll` for long bodies |
 | `patterns/section` | `Section` | a subtitle (or label voice), description, end actions, content |
 | `patterns/description_list` | `DescriptionList` | label and value pairs on one label column |
@@ -140,9 +140,14 @@ prefer the aliases over raw steps so the intent is readable.
   give fixed heights only to lists stacked above a detail view.
 - **One field takes the rest of the bar.** A search or query field that should
   take whatever the other controls leave goes in Toolbar's `fill` slot
-  (DataView: `toolbar.fill`). It sits between the start and end groups, at
-  least `metrics.label_column` wide, and the bar wraps only when that minimum
-  does not fit. In `filters`, `width: relative(1.0)` has nothing to resolve
+  (DataView: `toolbar.fill`). It leads the bar, at least
+  `metrics.label_column` wide, and the bar wraps only when that minimum does
+  not fit.
+- **Fields first, markers inside, actions last.** Toolbar sets the fields
+  (`fill`, then `filters`) at the start, what the bar acts on (`context`: tags,
+  a breadcrumb) after them, and the actions at the end, so control-height items
+  hold both edges and the shorter markers sit between them; a tag at the start
+  edge made the bar lean against the buttons at the other. In `filters`, `width: relative(1.0)` has nothing to resolve
   against: the filter group is as wide as its content.
 - **A long body scrolls only when asked.** A Region's body fills the region
   and clips; `scroll: true` makes it scroll, with ScrollArea's overlay
@@ -260,7 +265,7 @@ AppShell
 │ ● ● ●  Title                                    ⌘K       │ TitleBar
 ├────────────┬─────────────────────────────────┬───────────┤
 │ SECTION    │ Region title                    │ INSPECTOR │
-│▌Current    │ [context][filters]  [ghost][■■] │           │ Toolbar
+│ Current    │ [filters][context]  [ghost][■■] │           │ Toolbar
 │ Item       │ body (fills)                    │           │
 │ Item       │                                 │           │
 │            │ ■ status            12 items    │           │ Footer

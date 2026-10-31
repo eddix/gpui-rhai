@@ -90,7 +90,7 @@ fn hosts_toolbar(h, v, key) {
 }
 
 fn toolbar_page(h, v) {
-    kit::page(h, v, "toolbar", "Toolbar", "Context and filters at the start, actions and one primary at the end.", [
+    kit::page(h, v, "toolbar", "Toolbar", "Fields at the start, then what the bar acts on; actions and one primary at the end.", [
         kit::sec("Hosts", hosts_toolbar(h, v, "toolbar")),
         kit::sec("Search fills the bar", toolbar::Toolbar(#{ label: "Logs toolbar",
             context: [tag::Tag(#{ facet: "psm", text: "api.gateway" })],
