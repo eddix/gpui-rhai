@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## Unreleased
+## 0.4.0 - 2026-10-31
 
 - **Breaking:** the token base drops the `corners` environment axis (`square`,
   `subtle`, `round`). Radius now follows a component's kind instead of a
