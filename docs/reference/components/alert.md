@@ -39,5 +39,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `body`, `cont
 
 ## Theme
 
-- Tokens: `danger`, `metrics.icon`, `metrics.inset`, `radius.lg`, `space.related`, `spacing.sm`, `spacing.xxs`, `success`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `warning`
-- Environment: `corners`, `density`
+- Tokens: `danger`, `metrics.icon`, `metrics.inset`, `space.related`, `spacing.sm`, `spacing.xxs`, `success`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `warning`
+- Environment: `density`

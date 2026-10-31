@@ -9,9 +9,6 @@ fn tokens() {
         environment: #{
             density: #{ values: ["comfortable", "compact"], "default": "comfortable" },
             size: #{ values: ["xs", "sm", "md", "lg"], "default": "md" },
-            // Corner style. Square is the design language; subtle and round are opt-in
-            // (`.env(#{ corners: "round" })`, or a Host environment default).
-            corners: #{ values: ["square", "subtle", "round"], "default": "square" },
         },
 
         // Density-aware spacing scale. Compact shrinks only the outer steps.
@@ -32,17 +29,24 @@ fn tokens() {
             section: by_env("density", #{ comfortable: px(24), compact: px(16) }),
         },
 
-        // Radius roles, all zero unless `corners` asks otherwise. xs: boxes that must
-        // stay boxes (Checkbox, Kbd); sm: markers (Tag, strong Badge, chips); md:
-        // single-line controls; lg: panels, multi-line fields and tooltips. Round makes
-        // markers and controls capsules (a square control a circle: radii clamp to half
-        // the shorter side) and keeps panels at 8px. List panels pad by half of radius.lg on
-        // every side, so their square rows clear the corner.
+        // Radius roles follow what a shape is, not a preference. Layout (containers, grids,
+        // rows, divider-built bars) takes no radius at all. md: controls, a rounded rectangle
+        // by control height, 4px up to 24px and 6px from 28px. xs: boxes inside or beside a
+        // control (Checkbox, Kbd, a field's clear target, the Tabs thumb), half of md. sm:
+        // markers (Tag, Badge, chips, Switch, counts), a capsule: radii clamp to half the
+        // shorter side. lg: floating surfaces (Menu, Popover, Dialog, Toast, field panels);
+        // list panels pad by half of it on every side, so their square rows clear the corner.
         radius: #{
-            xs: by_env("corners", #{ square: px(0), subtle: px(2), round: px(4) }),
-            sm: by_env("corners", #{ square: px(0), subtle: px(2), round: px(999) }),
-            md: by_env("corners", #{ square: px(0), subtle: px(4), round: px(999) }),
-            lg: by_env("corners", #{ square: px(0), subtle: px(4), round: px(8) }),
+            xs: by_env(["density", "size"], #{
+                comfortable: #{ xs: px(2), sm: px(3), md: px(3), lg: px(3) },
+                compact: #{ xs: px(2), sm: px(2), md: px(3), lg: px(3) },
+            }),
+            sm: px(999),
+            md: by_env(["density", "size"], #{
+                comfortable: #{ xs: px(4), sm: px(6), md: px(6), lg: px(6) },
+                compact: #{ xs: px(4), sm: px(4), md: px(6), lg: px(6) },
+            }),
+            lg: px(8),
         },
 
         metrics: #{
@@ -54,20 +58,21 @@ fn tokens() {
                 comfortable: #{ xs: px(8), sm: px(12), md: px(16), lg: px(20) },
                 compact: #{ xs: px(8), sm: px(8), md: px(12), lg: px(16) },
             }),
-            // Fields start their text half the control height plus 1px from the outer edge
-            // (inside the 2px frame: height / 2 - 1), so in the round corner style the text
-            // and caret clear the capsule's ends; square and subtle use the same value, so
-            // switching corner style never moves a field's text.
+            // Fields put their text about 1.4 times the vertical gap from the frame
+            // (control height minus the 2px frames and the type size, halved), so the
+            // side space never reads as a typed space. md lands on metrics.inset, the
+            // text start of rows; compact md is nudged down to it, compact xs up to
+            // leave the caret room, lg down to the spacing scale.
             field_pad: by_env(["density", "size"], #{
-                comfortable: #{ xs: px(11), sm: px(13), md: px(15), lg: px(17) },
-                compact: #{ xs: px(9), sm: px(11), md: px(13), lg: px(15) },
+                comfortable: #{ xs: px(5), sm: px(7), md: px(10), lg: px(12) },
+                compact: #{ xs: px(3), sm: px(4), md: px(6), lg: px(10) },
             }),
-            // Textarea's vertical padding: the space above the first line, kept from the
-            // ratio rule fields used before (field padding about 1.4 times the gap above
-            // the text, less the half-leading of body text). Corners do not reach it.
+            // Textarea's vertical padding: field_pad less the half-leading of its text
+            // (body_small at xs, body above), so the first line's type sits as far below the
+            // frame as the text column sits inside it, and the field pads evenly all round.
             multiline_pad: by_env(["density", "size"], #{
-                comfortable: #{ xs: px(0), sm: px(1), md: px(3), lg: px(5) },
-                compact: #{ xs: px(0), sm: px(0), md: px(0), lg: px(3) },
+                comfortable: #{ xs: px(2), sm: px(3), md: px(6), lg: px(8) },
+                compact: #{ xs: px(0), sm: px(0), md: px(2), lg: px(6) },
             }),
             icon: by_env(["density", "size"], #{
                 comfortable: #{ xs: px(12), sm: px(14), md: px(16), lg: px(16) },

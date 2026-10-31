@@ -6,8 +6,8 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/textarea", "components/button"],
   "capabilities": {},
-  "tokens": ["surface_raised", "border", "focus_ring", "text_muted", "text.danger", "metrics.inset", "space.related", "radius.lg", "typography.caption"],
-  "environment": ["size", "density", "corners"]
+  "tokens": ["surface_raised", "border", "focus_ring", "text_muted", "text.danger", "metrics.inset", "space.related", "radius.md", "typography.caption"],
+  "environment": ["size", "density"]
 }
 */
 // Controlled drafting surface. Busy blocks sending, never drafting; the application
@@ -22,8 +22,8 @@ define_component(#{
     metadata: #{ id: "patterns/composer", "export": "Composer", version: "0.2.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/textarea", "components/button"], capabilities: #{},
-        tokens: ["surface_raised", "border", "focus_ring", "text_muted", "text.danger", "metrics.inset", "space.related", "radius.lg", "typography.caption"],
-        environment: ["size", "density", "corners"] },
+        tokens: ["surface_raised", "border", "focus_ring", "text_muted", "text.danger", "metrics.inset", "space.related", "radius.md", "typography.caption"],
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false, doc: "Stable drafting identity; changing it resets native editing state." },
@@ -111,7 +111,7 @@ fn render_Composer(ctx, props) {
         .items_center().gap(theme_length("space.related"))))])
         .with_style(ctx.component_style("root", style().padding(theme_length("metrics.inset"))
             .gap(theme_length("space.related")).background(theme_color("surface_raised"))
-            .border(px(2)).border_color(theme_color("border")).radius(theme_radius("lg"))
+            .border(px(2)).border_color(theme_color("border")).radius(theme_radius("md"))
             .focus_within(style().border_color(theme_color("focus_ring")))))
         .accessibility_role("group").accessibility_label(props.label);
     if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }

@@ -7,10 +7,10 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "surface_raised", "border", "text_primary", "metrics.inset", "space.group", "radius.lg",
+    "surface_raised", "border", "text_primary", "metrics.inset", "space.group",
     "typography.subtitle"
   ],
-  "environment": ["density", "corners"]
+  "environment": ["density"]
 }
 */
 // General themed content surface with optional header and footer slots.
@@ -22,9 +22,9 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "border", "text_primary", "metrics.inset", "space.group",
-            "radius.lg", "typography.subtitle"
+            "typography.subtitle"
         ],
-        environment: ["density", "corners"] },
+        environment: ["density"] },
     schema: #{
         props: #{
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
@@ -62,8 +62,7 @@ fn render_Card(ctx, props) {
     }
     // A card is a color block; the outline variant is for cards placed on a raised
     // surface. Parts are separated by space, not rules.
-    let root = style().padding(theme_length("metrics.inset")).gap(theme_length("space.group"))
-        .radius(theme_radius("lg"));
+    let root = style().padding(theme_length("metrics.inset")).gap(theme_length("space.group"));
     root = if variant == "outline" {
         root.border(px(1)).border_color(theme_color("border"))
     } else { root.background(theme_color("surface_raised")) };

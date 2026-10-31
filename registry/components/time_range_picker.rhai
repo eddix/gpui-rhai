@@ -1,5 +1,5 @@
 /* gpui-rhai
-{"id":"components/time_range_picker","export":"TimeRangePicker","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/calendar","components/time_input","components/input","components/button"],"capabilities":{},"tokens":["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],"environment":["size","density","corners"]}
+{"id":"components/time_range_picker","export":"TimeRangePicker","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/calendar","components/time_input","components/input","components/button"],"capabilities":{},"tokens":["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],"environment":["size","density"]}
 */
 // Controlled relative windows and explicit date-time drafts, committed only on Apply.
 // Example: TimeRangePicker(#{key:"period",label:"Query period",
@@ -11,7 +11,7 @@ import "components/button" as button;
 // The controlled value changes only through presets, shifts, or Apply. A draft never queries.
 define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRangePicker",version:"0.2.2",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:["components/calendar","components/time_input","components/input","components/button"],capabilities:#{},
-    tokens:["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],environment:["size","density","corners"]},
+    tokens:["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],environment:["size","density"]},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Stable picker and overlay identity."},
         label:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Accessible picker name."},

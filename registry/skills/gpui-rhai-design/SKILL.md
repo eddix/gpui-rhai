@@ -44,7 +44,9 @@ A floor, not a substitute for the specification.
   AppShell, ...), not from hand-built rows of padding and gaps.
 - **Tokens before values.** No literal pixels or colors in application source:
   `metrics.*`, `space.*`, `spacing.*`, `radius.*`, semantic colors, typography
-  roles. Density, size and corners are environment axes, not separate styles.
+  roles. Density and size are environment axes, not separate styles; radius
+  follows a component's kind (layout square, controls `md`, markers `sm`
+  capsules, floating surfaces `lg`), so never pick corners per screen.
 - **One content edge.** Text in rows, headers and panels starts on
   `metrics.inset`; fields, lists and regions line up on it.
 - **Spacing nests.** Relationships go `unit < related < group < section`; an

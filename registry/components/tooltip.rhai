@@ -10,7 +10,7 @@
     "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg", "typography.caption",
     "typography.label"
   ],
-  "environment": ["corners"]
+  "environment": []
 }
 */
 // Native delayed tooltip using the per-window overlay scheduler.
@@ -26,7 +26,7 @@ define_component(#{
             "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg",
             "typography.caption", "typography.label"
         ],
-        environment: ["corners"],
+        environment: [],
     },
     schema: #{
         props: #{
@@ -79,11 +79,13 @@ fn render_Tooltip(ctx, props) {
         children.push(text(shortcut).with_style(ctx.component_style("shortcut",
             style().typography("label").opacity(0.7))));
     }
-    // Tooltips invert ink and paper; a key legend follows the hint.
+    // Tooltips invert ink and paper; a key legend follows the hint. A one-line tooltip is
+    // about 22px tall, so it rounds like a control of that height (half of radius.lg)
+    // rather than like a panel, which at this height would read as a marker's capsule.
     let content = row(children).with_style(ctx.component_style("content",
         style().max_width(px(320)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xxs"))
             .gap(theme_spacing("sm")).items_center()
-            .radius(theme_radius("lg")).typography("caption")
+            .radius(theme_radius("lg") * 0.5).typography("caption")
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
     )).accessibility_role("tooltip").accessibility_label(props.label);

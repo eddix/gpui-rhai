@@ -1,7 +1,7 @@
 //! Input `appearance: "embedded"`: the search line that heads Command, CommandDialog and a
 //! searchable Combobox panel. It has no frame or well of its own, spans its container inside
-//! the hairline, keeps a 1px `border` line under it while focused, and starts its text on
-//! metrics.inset like the rows below.
+//! the panel's padding, keeps a 1px `border` line under it while focused, and starts its text
+//! on metrics.inset like the rows below.
 
 use std::collections::BTreeMap;
 
@@ -62,6 +62,9 @@ fn caret_x(visual: &mut VisualTestContext) -> Option<f64> {
         .map(|quad| f64::from(quad.bounds.x))
 }
 
+/// A list panel's 1px hairline plus its padding, half of `radius.lg` (8), on every side.
+const PAD: f64 = 5.0;
+
 fn near(left: f64, right: f64) -> bool {
     (left - right).abs() < 0.5
 }
@@ -84,13 +87,13 @@ fn the_command_search_spans_the_panel_on_the_rows_inset(cx: &mut TestAppContext)
         let (mut visual, view) = mount(cx, command_script(density));
         let panel = layout(&mut visual, &view, "listbox", "Commands");
         let search = layout(&mut visual, &view, "text_field", "Commands");
-        // Full width inside the panel's 1px hairline, flush with its top, one size up.
+        // Full width inside the panel's hairline and padding, at its top, one size up.
         assert!(
-            near(search.x, panel.x + 1.0) && near(search.width, panel.width - 2.0),
+            near(search.x, panel.x + PAD) && near(search.width, panel.width - 2.0 * PAD),
             "{density}: search {search:?} in panel {panel:?}"
         );
         assert!(
-            near(search.y, panel.y + 1.0),
+            near(search.y, panel.y + PAD),
             "{density}: search {search:?} in panel {panel:?}"
         );
         assert!(
@@ -137,9 +140,9 @@ fn view(ctx) { command_dialog::CommandDialog(#{ key: "palette", open: true, quer
     let dialog = layout(&mut visual, &view, "dialog", "Commands");
     let search = layout(&mut visual, &view, "text_field", "Commands");
     assert!(
-        near(search.x, dialog.x + 1.0)
-            && near(search.y, dialog.y + 1.0)
-            && near(search.width, dialog.width - 2.0),
+        near(search.x, dialog.x + PAD)
+            && near(search.y, dialog.y + PAD)
+            && near(search.width, dialog.width - 2.0 * PAD),
         "search {search:?} in dialog {dialog:?}"
     );
 }
@@ -155,9 +158,9 @@ fn view(ctx) { column([combobox::Combobox(#{ key: "regions", label: "Regions",
     let panel = layout(&mut visual, &view, "listbox", "Regions");
     let search = layout(&mut visual, &view, "text_field", "Regions");
     assert!(
-        near(search.x, panel.x + 1.0)
-            && near(search.y, panel.y + 1.0)
-            && near(search.width, panel.width - 2.0),
+        near(search.x, panel.x + PAD)
+            && near(search.y, panel.y + PAD)
+            && near(search.width, panel.width - 2.0 * PAD),
         "search {search:?} in panel {panel:?}"
     );
 }

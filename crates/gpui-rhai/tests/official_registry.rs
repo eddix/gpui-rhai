@@ -688,28 +688,31 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
             "{name}: palettes must contain colors only"
         );
         let theme = load_bundled(&engine, name, source);
-        // Square is the default corner style and every role is zero in it, so
-        // choosing no corner style leaves the design pixel-identical.
-        for radius in ["xs", "sm", "md", "lg"] {
-            assert_eq!(
-                theme.resolve_length(Length::theme_radius(radius).unwrap()),
-                Some(Length::Pixels(0.0)),
-                "{name}: radius {radius}"
-            );
-        }
-        for (corners, expected) in [
-            ("subtle", [2.0, 2.0, 4.0, 4.0]),
-            ("round", [4.0, 999.0, 999.0, 8.0]),
-        ] {
-            for (radius, pixels) in ["xs", "sm", "md", "lg"].into_iter().zip(expected) {
-                assert_eq!(
-                    theme.resolve_length_in(
-                        Length::theme_radius(radius).unwrap(),
-                        &environment(&[("corners", corners)])
-                    ),
-                    Some(Length::Pixels(pixels)),
-                    "{name}: radius {radius} with {corners} corners"
-                );
+        // Radius follows the shape: md is a control's rounded rectangle by control height
+        // (4px up to 24px, 6px from 28px), xs a box inside it at half that, sm a marker's
+        // capsule and lg a floating surface. Layout takes no radius role at all.
+        for density in ["comfortable", "compact"] {
+            for size in ["xs", "sm", "md", "lg"] {
+                let pairs = environment(&[("density", density), ("size", size)]);
+                let resolve = |token: Length| match theme.resolve_length_in(token, &pairs) {
+                    Some(Length::Pixels(value)) => value,
+                    other => panic!("{name} {density} {size}: {other:?}"),
+                };
+                let height = resolve(Length::token("metrics.control").unwrap());
+                let control = if height <= 24.0 { 4.0 } else { 6.0 };
+                for (radius, pixels) in [
+                    ("xs", control / 2.0),
+                    ("sm", 999.0),
+                    ("md", control),
+                    ("lg", 8.0),
+                ] {
+                    let actual = resolve(Length::theme_radius(radius).unwrap());
+                    assert!(
+                        (actual - pixels).abs() < 0.01,
+                        "{name}: radius {radius} is {actual} in a {height}px {density} {size} \
+                         control, expected {pixels}"
+                    );
+                }
             }
         }
         for &(role, size, line_height, weight) in &typography {
@@ -740,8 +743,36 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
     }
 }
 
+/// D74 removed the `corners` axis: a Host still setting it as an environment default gets
+/// a preparation error rather than a silently ignored preference.
 #[test]
-fn field_text_clears_a_capsule_end_in_every_corner_style() {
+fn the_token_base_no_longer_declares_a_corner_style() {
+    let engine = RuntimeEngine::new();
+    let base =
+        gpui_rhai::load_token_base(engine.engine(), "tokens.rhai", registry::TOKEN_BASE_SOURCE)
+            .unwrap();
+    let result = gpui_rhai::load_theme_with_layers(
+        engine.engine(),
+        Some(&base),
+        "default_light.rhai",
+        registry::DEFAULT_LIGHT_THEME,
+        &gpui_rhai::ThemeTokenOverrides {
+            environment_defaults: std::collections::BTreeMap::from([(
+                "corners".to_owned(),
+                "subtle".to_owned(),
+            )]),
+            ..gpui_rhai::ThemeTokenOverrides::default()
+        },
+    );
+    assert!(
+        matches!(result, Err(gpui_rhai::ThemeError::UndeclaredEnvironment { ref name, .. }) if name == "corners"),
+        "{:?}",
+        result.err()
+    );
+}
+
+#[test]
+fn field_padding_follows_the_vertical_gap_between_frame_and_text() {
     use gpui_rhai::{ColorResolver, Length};
     let engine = RuntimeEngine::new();
     let theme = load_bundled(&engine, "default_light.rhai", registry::DEFAULT_LIGHT_THEME);
@@ -751,30 +782,50 @@ fn field_text_clears_a_capsule_end_in_every_corner_style() {
         Some(Length::Pixels(value)) => value,
         other => panic!("{token} {pairs:?}: {other:?}"),
     };
-    // Fields have a 2px frame on each side; their text starts half the control height
-    // plus 1px from the outer edge, past a capsule's end, in every corner style.
+    let type_size = |role: &str, pairs: &[(&str, &str)]| match theme
+        .resolve_typography_in(role, &environment(pairs))
+    {
+        Some(token) => match (token.size, token.line_height) {
+            (Length::Pixels(size), Length::Pixels(line_height)) => (size, line_height),
+            other => panic!("{role}: {other:?}"),
+        },
+        None => panic!("{role}: missing"),
+    };
+    // Fields have a 2px frame on each side.
     let frame = 2.0;
-    // Textarea's vertical padding is kept from the earlier ratio rule.
-    let multiline = [
-        ("comfortable", [0.0, 1.0, 3.0, 5.0]),
-        ("compact", [0.0, 0.0, 0.0, 3.0]),
-    ];
-    for (density, vertical) in multiline {
-        for (size, expected) in ["xs", "sm", "md", "lg"].into_iter().zip(vertical) {
-            let base = pixels("metrics.control", &[("density", density), ("size", size)]);
-            for corners in ["square", "subtle", "round"] {
-                let pairs = [("density", density), ("size", size), ("corners", corners)];
-                let start = frame + pixels("metrics.field_pad", &pairs);
+    for density in ["comfortable", "compact"] {
+        for size in ["xs", "sm", "md", "lg"] {
+            let pairs = [("density", density), ("size", size)];
+            let (font, _) = type_size("control", &pairs);
+            let vertical = (pixels("metrics.control", &pairs) - 2.0 * frame - font) / 2.0;
+            let pad = pixels("metrics.field_pad", &pairs);
+            // About 1.4 times the vertical gap; the nudges stay within a pixel.
+            assert!(
+                (pad - 1.4 * vertical).abs() <= 1.0,
+                "{density} {size}: field_pad {pad} for a vertical gap of {vertical}"
+            );
+            assert!(pad >= 3.0, "{density} {size}: the caret needs room");
+            assert!(
+                pad < pixels("metrics.control_pad", &pairs),
+                "{density} {size}: fields stay tighter than buttons"
+            );
+            if size == "md" {
+                let inset = pixels("metrics.inset", &pairs);
                 assert!(
-                    (start - (base / 2.0 + 1.0)).abs() < 0.01,
-                    "{density} {size} {corners}: text starts at {start} in a {base}px field"
+                    (frame + pad - inset).abs() < 0.01,
+                    "{density}: md field text starts at {}, rows at {inset}",
+                    frame + pad
                 );
             }
-            let pairs = [("density", density), ("size", size)];
-            let pad = pixels("metrics.multiline_pad", &pairs);
+            // Textarea pads evenly: field_pad less the half-leading of its text role puts
+            // the first line's type as far below the frame as the column sits inside it.
+            let role = if size == "xs" { "body_small" } else { "body" };
+            let (font, line_height) = type_size(role, &pairs);
+            let expected = (pad - (line_height - font) / 2.0).round().max(0.0);
+            let multiline = pixels("metrics.multiline_pad", &pairs);
             assert!(
-                (pad - expected).abs() < 0.01,
-                "{density} {size}: multiline_pad {pad}, expected {expected}"
+                (multiline - expected).abs() < 0.01,
+                "{density} {size}: multiline_pad {multiline}, expected {expected}"
             );
         }
     }
@@ -1023,10 +1074,10 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
     let token = |name: &str| Some(ColorValue::Token(name.to_owned()));
     let row = Length::token("metrics.row").unwrap();
 
-    // Tabs: one tonal track inset by xxs, rounded by its orientation's role; a raised
-    // thumb that carries the list focus; control type at one weight so widths never
-    // jitter.
-    for (strip, corner) in [(&children[0], "md"), (&children[1], "lg")] {
+    // Tabs: one tonal track inset by xxs with a control's corners in either orientation;
+    // a raised thumb, rounded like a box inside it, that carries the list focus; control
+    // type at one weight so widths never jitter.
+    for strip in [&children[0], &children[1]] {
         let tabs = tab_list(strip);
         assert_eq!(
             tabs.attributes().get("role"),
@@ -1040,7 +1091,7 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
         );
         assert_eq!(
             track.radii,
-            CornerLengths::all(Length::theme_radius(corner).unwrap())
+            CornerLengths::all(Length::theme_radius("md").unwrap())
         );
         let UiNodeKind::Box { children: slots } = tabs.kind() else {
             panic!("Tabs list must hold its tab slots");
@@ -1054,6 +1105,10 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
         };
         let thumb = selected[0].style();
         assert_eq!(thumb.base.background, token("surface_raised"));
+        assert_eq!(
+            thumb.base.radii,
+            CornerLengths::all(Length::theme_radius("xs").unwrap())
+        );
         assert_eq!(
             thumb.group_focus.as_ref().unwrap().border_color,
             token("focus_ring")

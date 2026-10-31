@@ -7,8 +7,8 @@
   "dependencies": ["components/toggle_group"],
   "assets": ["icons/check.svg"],
   "capabilities": {},
-  "tokens": ["surface_raised", "surface_hover", "border", "accent", "on_accent", "focus_ring", "text_primary", "text_muted", "disabled", "metrics.inset", "metrics.mark", "space.unit", "space.related", "space.group", "radius.lg", "radius.xs", "typography.subtitle", "typography.caption"],
-  "environment": ["size", "density", "corners"]
+  "tokens": ["surface_raised", "surface_hover", "border", "accent", "on_accent", "focus_ring", "text_primary", "text_muted", "disabled", "metrics.inset", "metrics.mark", "space.unit", "space.related", "space.group", "radius.xs", "typography.subtitle", "typography.caption"],
+  "environment": ["size", "density"]
 }
 */
 // Small controlled rich choices with one roving selection tab stop. `content`
@@ -22,8 +22,8 @@ import "components/toggle_group" as choices;
 define_component(#{
     metadata: #{ id: "components/selectable_card_group", "export": "SelectableCardGroup", version: "0.2.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: ["components/toggle_group"], capabilities: #{}, assets: ["icons/check.svg"],
-        tokens: ["surface_raised", "surface_hover", "border", "accent", "on_accent", "focus_ring", "text_primary", "text_muted", "disabled", "metrics.inset", "metrics.mark", "space.unit", "space.related", "space.group", "radius.lg", "radius.xs", "typography.subtitle", "typography.caption"],
-        environment: ["size", "density", "corners"] },
+        tokens: ["surface_raised", "surface_hover", "border", "accent", "on_accent", "focus_ring", "text_primary", "text_muted", "disabled", "metrics.inset", "metrics.mark", "space.unit", "space.related", "space.group", "radius.xs", "typography.subtitle", "typography.caption"],
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false, doc: "Stable group identity and item-ref prefix." },
@@ -116,7 +116,6 @@ fn render_choice_card(ctx, props, item, active) {
     ]).with_style(style().items_center().gap(theme_length("space.unit")));
     let surface = style().flex_col().flex_grow().min_width(px(0)).padding(theme_length("metrics.inset"))
         .gap(theme_length("space.group")).text_color(theme_color("text_primary"))
-        .radius(theme_radius("lg"))
         .hover(style().background(theme_color("surface_hover")))
         .disabled(style().text_color(theme_color("disabled")).opacity(0.65));
     let node = column([heading, item.content.accessibility_id(description)
@@ -154,7 +153,7 @@ fn render_choice_card(ctx, props, item, active) {
     // One Card surface frames the presentational radio and its independent
     // actions. The frame is not an input target: action input cannot select it.
     let frame = ctx.component_style("card", style().flex_col().flex_grow().min_width(px(0))
-        .background(theme_color("surface_raised")).radius(theme_radius("lg"))
+        .background(theme_color("surface_raised"))
         .border(px(2)).border_color(theme_color("border"))
         .focus_within(style().border_color(theme_color("focus_ring"))));
     if selected { frame = ctx.component_style("card_selected", frame.border_color(theme_color("accent"))); }

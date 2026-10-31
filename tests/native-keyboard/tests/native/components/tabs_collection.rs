@@ -274,24 +274,20 @@ fn selected_quad(visual: &mut VisualTestContext) -> (f32, f32) {
 }
 
 #[gpui::test]
-fn the_selected_tab_is_square_in_every_corner_style_and_owns_no_edge_line(cx: &mut TestAppContext) {
-    // Round corners, the first tab selected on the bar's start edge.
+fn the_selected_tab_is_square_and_owns_no_edge_line(cx: &mut TestAppContext) {
+    // The first tab selected on the bar's start edge. A bar tab is layout, joined to the
+    // panel under it, so it takes no radius.
     let source = script(
         3,
         600,
         ",part_styles:#{tab_selected:style().background(rgba(0x00ff00ff))}",
     )
-    .replace_once(r#"value:ctx.get_state("value")"#, r#"value:"t0""#)
-    .replace_once(
-        "}).with_style(style().width(px(600))),",
-        "}).env(#{corners:\"round\"}).with_style(style().width(px(600))),",
-    );
-    assert!(source.contains("corners"), "the round corner style is set");
+    .replace_once(r#"value:ctx.get_state("value")"#, r#"value:"t0""#);
     let (mut visual, _) = mount(cx, source.clone());
     let (radius, start_border) = selected_quad(&mut visual);
     assert!(
         radius.abs() < 0.005,
-        "round corners leave the selected tab square: {radius}"
+        "the selected bar tab is square: {radius}"
     );
     assert!(
         start_border.abs() < 0.005,

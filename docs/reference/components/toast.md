@@ -53,5 +53,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `close`, `lamp`, `messag
 
 ## Theme
 
-- Tokens: `border`, `danger`, `focus_ring`, `metrics.icon`, `metrics.inset`, `radius.lg`, `radius.sm`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `success`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`, `warning`
-- Environment: `corners`, `density`
+- Tokens: `border`, `danger`, `focus_ring`, `metrics.icon`, `metrics.inset`, `radius.lg`, `radius.sm`, `radius.xs`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `success`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`, `warning`
+- Environment: `density`

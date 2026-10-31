@@ -1223,17 +1223,19 @@ Values come from three layers, and components name roles rather than numbers:
 | Token base | `ui/tokens.rhai` | the spacing scale, spacing relationships, radius roles, metrics and typography roles |
 | Part styles | `ui/styles.rhai` | application-wide styles for the parts of official components |
 
-The token base resolves through three environment axes: `density`
-(`comfortable`, `compact`), `size` (`xs` to `lg`) and `corners` (`square`,
-`subtle`, `round`). A subtree selects them with `.env(#{ density: "compact" })`;
-most controls also take a `size` prop. Write roles, not pixels:
+The token base resolves through two environment axes: `density`
+(`comfortable`, `compact`) and `size` (`xs` to `lg`). A subtree selects them
+with `.env(#{ density: "compact" })`; most controls also take a `size` prop.
+Radius roles follow a component's kind (layout square, controls `md`, markers
+`sm` capsules, floating surfaces `lg`), not an environment value. Write roles,
+not pixels:
 
 ```rhai
 style()
     .min_height(theme_length("metrics.control"))   // control height for size and density
     .padding_x(theme_length("metrics.inset"))      // the content inset of rows and panels
     .gap(theme_length("space.related"))            // unit < related < group < section
-    .radius(theme_radius("md"))                    // zero unless corners asks otherwise
+    .radius(theme_radius("md"))                    // a control's corners, 4 or 6 by height
     .background(theme_color("surface_raised"))
     .typography("control")
 ```

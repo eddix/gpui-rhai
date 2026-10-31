@@ -44,4 +44,3 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `root`, `shor
 ## Theme
 
 - Tokens: `radius.lg`, `spacing.sm`, `spacing.xxs`, `surface`, `text_primary`, `typography.caption`, `typography.label`
-- Environment: `corners`

@@ -79,7 +79,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `content`, `foc
 ## Theme
 
 - Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
-- Environment: `corners`, `density`
+- Environment: `density`
 
 ## Dependencies
 

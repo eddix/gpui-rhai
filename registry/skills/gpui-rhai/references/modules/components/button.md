@@ -55,4 +55,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `label`, `prefix`, `root
 ## Theme
 
 - Tokens: `accent`, `accent_hover`, `border`, `control.border`, `control.danger_hover`, `control.hover`, `control.success_hover`, `control.warning_hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.md`, `spacing.xs`, `success`, `surface_hover`, `text_primary`, `typography.control`, `typography.label`, `warning`
-- Environment: `corners`, `density`, `size`
+- Environment: `density`, `size`
