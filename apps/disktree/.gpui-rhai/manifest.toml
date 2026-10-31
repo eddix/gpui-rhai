@@ -17,7 +17,7 @@ dependencies = []
 
 [components."components/combobox"]
 version = "0.2.1"
-content_hash = "5e5bf7dba765d184"
+content_hash = "b39148f4f988000d"
 dependencies = ["components/input"]
 
 [components."components/divider"]
@@ -57,7 +57,7 @@ dependencies = []
 
 [components."components/split_pane"]
 version = "0.2.0"
-content_hash = "61d98606c6332b82"
+content_hash = "19a702fc17e4f5c3"
 dependencies = []
 
 [components."components/status_bar"]

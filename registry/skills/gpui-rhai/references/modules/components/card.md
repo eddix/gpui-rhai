@@ -37,5 +37,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `footer`, `he
 
 ## Theme
 
-- Tokens: `border`, `metrics.inset`, `space.group`, `surface_raised`, `text_primary`, `typography.subtitle`
+- Tokens: `border`, `metrics.inset`, `radius.lg`, `space.group`, `surface_raised`, `text_primary`, `typography.subtitle`
 - Environment: `density`

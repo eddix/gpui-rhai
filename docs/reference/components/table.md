@@ -115,11 +115,11 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `body`, `cursor`, `empty`, `focus_frame`, `group_count`, `group_header`, `group_indicator`, `group_label`, `header`, `header_cell`, `indicator_bar`, `loading`, `resize_handle`, `root`, `row`, `row_selected`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `body`, `cursor`, `empty`, `focus_frame`, `group_count`, `group_header`, `group_indicator`, `group_label`, `header`, `header_cell`, `loading`, `resize_handle`, `root`, `row`, `row_selected`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.md`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
+- Tokens: `border`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.md`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
 - Environment: `density`
 
 ## Dependencies

@@ -25,7 +25,7 @@ section 9 repeats them for reviews.
 | C5 | **No outer margin** | Components never add space outside their own root. Spacing between components belongs to the parent. |
 | C6 | **Shared line box** | Controls of the same size use the same typography role, so text in a row of mixed controls shares one baseline when centered. Minimum heights are lower bounds; larger type grows the control. |
 | C7 | **Declared consumption** | Component metadata lists the tokens (`tokens`) and environment values (`environment`) it reads. Preparation validates the active theme against the union of mounted components. |
-| C8 | **Removable signatures** | Each structural signature is a declared part (`indicator_bar`, `lamp`, `facet`, `shortcut`, `label`, `cursor`, `focus_frame`), so `ui/styles.rhai` can restyle or hide it. |
+| C8 | **Removable signatures** | Each structural signature is a declared part (`lamp`, `facet`, `shortcut`, `label`, `cursor`, `focus_frame`), so `ui/styles.rhai` can restyle or hide it. |
 | C9 | **States without layout shift** | State priority is `active > focus > hover/cursor > selected > idle`; `disabled` suppresses interaction and wins over pointer states. Borders are reserved in idle geometry. Selection stays visible under focus. |
 | C10 | **Visible focus** | Focus is always a 2px `focus_ring` frame (the ink color by default) and never moves layout. A control frames itself with a reserved 2px border that idles in its fill or, for outline treatments, in `border`. A compound control frames its mark instead of the whole row (`group_focus`), a list frames its cursor row with an overlay, and a field group frames itself while its input has focus (`focus_within`). The one exception is the embedded search line that heads a panel and holds focus while it is open: its caret shows focus (section 7). By default the frame shows after a navigation key, not after a pointer press (`focus_indicators`); a focused text field always shows its frame. See section 10. |
 | C11 | **Inherited disabled** | A disabled container disables every descendant natively: input, focus, pseudo styles and accessibility semantics. Components do not need to forward `disabled` to children. |
@@ -52,7 +52,7 @@ section 9 repeats them for reviews.
 | `metrics.statusbar` | 24 | 22 | StatusBar |
 
 Structural constants that stay literal in component source, with a comment:
-the 1px hairline, the 2px focus border, the 2px indicator bar, the 6px lamp,
+the 1px hairline, the 2px focus border, the 6px lamp,
 the 4px slider track, the 8px splitter grab zone, the 12px close glyph, zero
 offsets, semantic circles. The registry lint
 (`components_declare_what_they_read_and_keep_geometry_in_tokens`) rejects any
@@ -68,11 +68,11 @@ Each component takes the role of its kind:
 
 | Kind | Role | Value | Used by |
 |---|---|---:|---|
-| Layout | none | 0 | Card, Alert, Region, Table, List and Tree rows, Tabs `underline` and `bar`, SelectableCardGroup cards, Sheet, SplitPane, TitleBar, StatusBar |
-| Control | `radius.md` | 4 / 6 | Button, IconButton, Input, Textarea, Select, Combobox and DatePicker triggers, InputGroup, ToggleGroup, ButtonGroup and the Tabs `track` in either orientation, calendar day cells, Composer, DatePicker presets |
+| Layout | none | 0 | Region, Table rows and List rows between dividers, Tabs `underline` and `bar`, Sheet, SplitPane, TitleBar, StatusBar |
+| Control | `radius.md` | 4 / 6 | Button, IconButton, Input, Textarea, Select, Combobox and DatePicker triggers, InputGroup, ToggleGroup, ButtonGroup and the Tabs `track` in either orientation, calendar day cells, Composer, DatePicker presets; rows that float: Menu items, Select and Combobox options, Command rows, Tree, Timeline and undivided List rows |
 | Box in a control | `radius.xs` | half of md | Checkbox box, Kbd keycap, the Tabs thumb and close button, a field's clear button, Toast close and Clear all |
-| Marker | `radius.sm` | capsule | Tag (and its facet and close target), Badge, Combobox chips, Switch track and thumb, the Tabs count, the Toast count, Carousel dots |
-| Floating surface | `radius.lg` | 8 | Menu, Popover, Dialog, Toast, Command, CommandDialog and field panels |
+| Marker | `radius.sm` | capsule | Tag (and its facet and close target), Badge, Combobox chips, Switch track and thumb, the Tabs count, the Toast count, Carousel dots, the SplitPane grip |
+| Surface | `radius.lg` | 8 | Card, Alert, SelectableCardGroup cards; floating: Menu, Popover, Dialog, Toast, Command, CommandDialog and field panels |
 
 A control's radius follows its height: 4px at 24px or less (comfortable xs,
 compact xs and sm) and 6px from 28px. Its 2px frame leaves 2px or 4px inside,
@@ -83,9 +83,17 @@ half the shorter side, so a marker is a capsule and a round thumb a circle.
 A one-line Tooltip is about 22px tall and rounds like a control of that
 height, at half of `radius.lg` (4px); at 8px it would read as a capsule.
 
-Floating surfaces are 8px; transient list panels inset their square rows by
-half of that on every side, so a highlighted first or last row stays inside
-the curve (clipping is rectangular). Joined groups round only their outer
+Surfaces are 8px: a card holds rounded controls, so it rounds too. Transient
+list panels inset their rows by half of that on every side, so a highlighted
+first or last row stays inside the curve (clipping is rectangular).
+
+A row you press is a control: a rounded block with no bar at its start, its
+selection a fill. Rows that float (menus, options, palettes, Tree, Timeline,
+an undivided List) take `radius.md` and sit `spacing.xs` in from a bare
+container's sides, or inside a panel's padding, so the corners never touch an
+edge. Rows bounded by dividers (Table, a List with `dividers: true`) fill the
+band between the lines edge to edge and stay square. The keyboard cursor frame
+takes its row's corners. Joined groups round only their outer
 corners: the first and last items use `radius_start` / `radius_end`, so a
 pressed segment or a Tag facet never pokes past the frame. The Tabs thumb sits
 2px inside the track and takes the box role, close to the concentric radius.
@@ -96,8 +104,6 @@ Some shapes keep their own form, on purpose:
 - Status lamps stay square: they are a recognizability signature (G2).
 - Slider and RangeSlider caps stay rectangular faders on square tracks, and
   Progress stays a square bar.
-- Tables, lists, trees and their selection rows stay square; the indicator bar
-  needs a straight start edge.
 
 Semantic circles (Radio, Avatar, presence) use half their size.
 
@@ -144,7 +150,7 @@ uses the monospace family: its built-in advance keeps uppercase legible.
 | `surface_raised` | input and field wells, raised panels, Tabs thumb |
 | `surface_hover` | tonal blocks: secondary Button, Tag, Tabs track, hover and cursor rows |
 | `selection` | persistent selection and the current item block |
-| `accent` | primary Button fill, indicator bar, checked controls, caret, progress |
+| `accent` | primary Button fill, checked controls, caret, progress |
 | `accent_hover` | primary Button hover |
 | `on_accent`, `on_danger`, `on_warning`, `on_success` | text and marks on the matching fill |
 | `danger`, `warning`, `success` | status lamps, strong Badges, status Buttons, invalid frames |
@@ -348,7 +354,7 @@ navigation lists and Table rows share one row grammar:
 | idle | transparent |
 | hover | `surface_hover` block |
 | keyboard cursor in a persistent list (Tree, Accordion, Collapsible) | a 2px `focus_ring` frame drawn over the row (part `cursor` / `focus_frame`), only while the list has focus |
-| current item, or the cursor in a transient list (menus, palettes, options) | `selection` block plus the 2px `accent` **indicator bar** on the start edge (part `indicator_bar`, absolutely positioned, so it never pushes text) |
+| current item, or the cursor in a transient list (menus, palettes, options) | `selection` block with the row's corners (see [radius roles](#radius-roles)) |
 | checked | check mark in a fixed leading column; the column is reserved for every row of a checkable list |
 | disabled | `disabled` text, no hover |
 
@@ -377,7 +383,7 @@ navigation lists and Table rows share one row grammar:
 - `height` takes pixels or a Length (`theme_length("metrics.row") * n` for n
   rows in either density). While `loading` the list shows `loading_content`
   (a muted "Loading…" line by default) in its place, as Table does.
-- Selection follows Table: `table.selection` and the indicator bar, the focus
+- Selection follows Table: `table.selection` filling the row, the focus
   frame on the selected row while the list has focus, one tab stop whose
   arrows move the selection, Enter for `row_click`, `on_context_request` for
   a caller menu. Without a selection mode `on_context_request` makes the list
@@ -397,7 +403,7 @@ navigation lists and Table rows share one row grammar:
   author wrote, so it is not uppercased.
 - Body rows `metrics.row`, cell text at `metrics.inset`, hairline separators in
   `border`, no zebra striping by default (`striped` remains opt-in).
-- Selected rows use `table.selection` and the indicator bar on the row start.
+- Selected rows fill the band between their dividers with `table.selection`.
 - `numeric: true` columns align to the end with tabular figures unless an
   `align` is given.
 - Adornments (Badges) follow the cell text; a column whose row has no value of
@@ -567,7 +573,8 @@ the stops of each interactive component.
 - [ ] Declares `size` if interactive; reads every height from `metrics.*`.
 - [ ] Declares the tokens and environment values it reads (C7), and the assets
       it draws with `asset(...)`: only declared assets are preloaded.
-- [ ] Rows use `metrics.row` and `metrics.inset`; the indicator bar is a part.
+- [ ] Rows use `metrics.row` and `metrics.inset`; pressable rows take their
+      corners from the radius roles.
 - [ ] No literal color, font size, line height, control height or spacing;
       structural constants commented.
 - [ ] Sizes to content; no outer margin.

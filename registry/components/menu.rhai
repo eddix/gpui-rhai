@@ -8,12 +8,12 @@
   "capabilities": {},
   "assets": ["icons/check.svg"],
   "tokens": [
-    "surface_raised", "border", "focus_ring", "surface_hover", "selection", "accent",
+    "surface_raised", "border", "focus_ring", "surface_hover", "selection",
     "text.accent", "text_primary", "text_muted", "disabled", "metrics.row", "metrics.inset",
-    "metrics.icon", "spacing.xs", "spacing.sm", "radius.lg", "typography.body",
+    "metrics.icon", "spacing.xs", "spacing.sm", "radius.md", "radius.lg", "typography.body",
     "typography.label"
   ],
-  "environment": ["density"]
+  "environment": ["size", "density"]
 }
 */
 // Controlled in-window menu with roving selection and nested submenu nodes.
@@ -30,12 +30,12 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/divider", "components/kbd"], capabilities: #{},
         tokens: [
-            "surface_raised", "border", "focus_ring", "surface_hover", "selection", "accent",
+            "surface_raised", "border", "focus_ring", "surface_hover", "selection",
             "text.accent", "text_primary", "text_muted", "disabled", "metrics.row",
-            "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "radius.lg",
+            "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "radius.md", "radius.lg",
             "typography.body", "typography.label"
         ],
-        environment: ["density"], assets: ["icons/check.svg"],
+        environment: ["size", "density"], assets: ["icons/check.svg"],
     },
     schema: #{
         props: #{
@@ -118,7 +118,7 @@ define_component(#{
         },
         slots: #{ trigger: #{ required: true, multiple: false, doc: "Node that anchors and toggles the menu." } },
         parts: ["root", "trigger", "content", "item", "separator", "shortcut", "submenu",
-            "label", "check", "indicator_bar", "focus_frame"],
+            "label", "check", "focus_frame"],
     },
     render: Fn("render_Menu")
 });
@@ -188,12 +188,6 @@ fn context_request(ctx, event) {
     ctx.emit("context_request", event);
     event_response().prevent_default().stop()
 }
-fn menu_indicator(ctx) {
-    row([]).with_style(ctx.component_style("indicator_bar", style()
-        .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
-        .width(px(2)).background(theme_color("accent"))))
-}
-
 fn menu_item(ctx, props, item) {
     let checked = "checked" in item && item.checked;
     let action = item_action(item);
@@ -205,10 +199,10 @@ fn menu_item(ctx, props, item) {
         } else { "" };
     let label = if "label" in item && item.label != () { item.label } else { "" };
     let active = "value" in item && item.value == props.active_value;
-    // List rows: metrics.row high, text at metrics.inset; the cursor is a selection
-    // block plus the 2px indicator bar inside the inset.
+    // List rows: metrics.row high, text at metrics.inset; the cursor is a selection block
+    // with a control's corners, inside the panel's padding.
     let item_style = style().height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
-        .gap(theme_spacing("sm")).items_center().typography("body")
+        .radius(theme_radius("md")).gap(theme_spacing("sm")).items_center().typography("body")
         .text_color(theme_color("text_primary"));
     item_style = if active {
         item_style.background(theme_color("selection")).hover(style().background(theme_color("selection")))
@@ -228,7 +222,6 @@ fn menu_item(ctx, props, item) {
     }
     children.push(row(words).with_style(style().flex_grow().min_width(px(0)).items_baseline()
         .gap(theme_spacing("xs"))));
-    if active && !disabled { children.push(menu_indicator(ctx)); }
     let row_node = row(children)
         .with_style(ctx.component_style("item", item_style))
         .tab_stop(false)

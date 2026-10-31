@@ -8,11 +8,11 @@
   "capabilities": {},
   "assets": ["icons/chevron_down.svg", "icons/chevron_right.svg"],
   "tokens": [
-    "selection", "surface_hover", "accent", "focus_ring", "text_primary", "text_muted",
+    "selection", "surface_hover", "focus_ring", "text_primary", "text_muted",
     "disabled", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.lg",
-    "typography.body"
+    "typography.body", "radius.md"
   ],
-  "environment": ["density"]
+  "environment": ["size", "density"]
 }
 */
 // Controlled virtualized hierarchical outline over the shared Rust projection.
@@ -22,11 +22,11 @@ define_component(#{
     metadata:#{id:"components/tree","export":"Tree",version: "0.2.0",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{},
         tokens: [
-            "selection", "surface_hover", "accent", "focus_ring", "text_primary", "text_muted",
+            "selection", "surface_hover", "focus_ring", "text_primary", "text_muted",
             "disabled", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
-            "spacing.lg", "typography.body"
+            "spacing.lg", "typography.body", "radius.md"
         ],
-        environment: ["density"],
+        environment: ["size", "density"],
         assets:["icons/chevron_down.svg","icons/chevron_right.svg"]},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false},
@@ -75,7 +75,7 @@ define_component(#{
             doc:"Emitted when a row is clicked or Enter is pressed, unless `selection_mode` is `none`; the payload is the next selection."},
         active_change:#{payload:#{type:"optional",value:#{type:"string"}},
             doc:"Emitted when a click or Up, Down, Home, End, Left or Right moves the cursor; the payload is the new cursor key."},
-    },slots:#{},parts:["root","row","row_active","row_selected","disclosure","label","loading","indicator_bar","cursor"]},
+    },slots:#{},parts:["root","row","row_active","row_selected","disclosure","label","loading","cursor"]},
     render:Fn("render_Tree")
 });
 
@@ -99,8 +99,9 @@ fn tree_keyboard(expanded,mode,selected,ctx,action){
     handled()
 }
 // Persistent list rows: metrics.row high, text at metrics.inset plus one indent step per
-// depth. Selection is a selection block with the 2px indicator bar; the keyboard cursor
-// is a 2px focus frame drawn over the row while the tree has focus.
+// depth. A row is a pressable block with a control's corners, spacing.xs in from the
+// tree's sides so the corners stay clear of its edge; selection fills it, and the keyboard
+// cursor is a 2px focus frame drawn over the row while the tree has focus.
 fn tree_row(expanded,selected,active,mode,disabled,ctx,payload){
     let item=payload.item;let is_active=active!=()&&active==item.key;let is_selected=item.key in selected;
     let children=[];
@@ -118,13 +119,12 @@ fn tree_row(expanded,selected,active,mode,disabled,ctx,payload){
     children.push(text(item.label).with_style(ctx.component_style("label",style().flex_grow().min_width(px(0))
         .whitespace_nowrap().text_ellipsis())));
     if item.loading{children.push(text("…").with_style(ctx.component_style("loading",style().text_color(theme_color("text_muted")))));}
-    if is_selected{children.push(row([]).with_style(ctx.component_style("indicator_bar",style()
-        .absolute().inset_start(px(0)).top(px(0)).bottom(px(0)).width(px(2)).background(theme_color("accent")))));}
     if is_active{children.push(row([]).with_style(ctx.component_style("cursor",style()
-        .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+        .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)).radius(theme_radius("md"))
         .border(px(2)).border_color(rgba(0x00000000))
         .group_focus(style().border_color(theme_color("focus_ring"))))));}
-    let row_style=style().height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
+    let row_style=style().height(theme_length("metrics.row")).margin_x(theme_spacing("xs"))
+        .padding_x(theme_length("metrics.inset")).radius(theme_radius("md"))
         .gap(theme_spacing("xs")).items_center().typography("body")
         .text_color(theme_color("text_primary"))
         .disabled(style().text_color(theme_color("disabled")));

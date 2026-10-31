@@ -77,11 +77,11 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `clear`, `empty`, `focus_frame`, `group`, `indicator`, `indicator_bar`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `trigger`, `value`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `clear`, `empty`, `focus_frame`, `group`, `indicator`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `trigger`, `value`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `radius.xs`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
+- Tokens: `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `radius.xs`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.control`, `typography.label`
 - Environment: `density`, `size`
 
 ## Dependencies

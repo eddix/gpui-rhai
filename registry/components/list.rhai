@@ -7,11 +7,11 @@
   "dependencies": ["components/badge"],
   "capabilities": {},
   "tokens": [
-    "table.selection", "surface_hover", "accent", "focus_ring", "border", "text_primary",
+    "table.selection", "surface_hover", "focus_ring", "border", "text_primary",
     "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-    "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover"
+    "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover", "radius.md"
   ],
-  "environment": ["density"]
+  "environment": ["size", "density"]
 }
 */
 // Controlled virtualized list of keyed rows: the rows Table draws, without columns.
@@ -34,11 +34,11 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
         tokens: [
-            "table.selection", "surface_hover", "accent", "focus_ring", "border", "text_primary",
+            "table.selection", "surface_hover", "focus_ring", "border", "text_primary",
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-            "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover"
+            "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover", "radius.md"
         ],
-        environment: ["density"] },
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
@@ -152,7 +152,7 @@ define_component(#{
             empty: #{ required: false, multiple: false,
                 doc: "Node shown instead of `empty_text` when `items` is empty." },
         },
-        parts: ["root", "row", "row_selected", "badge", "title", "secondary", "meta", "indicator_bar",
+        parts: ["root", "row", "row_selected", "badge", "title", "secondary", "meta",
             "cursor", "focus_frame", "loading", "empty", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_List")
@@ -283,21 +283,22 @@ fn render_list_row(active, below, dividers, badge_slot, context, total, mode, se
         children.push(text(if is_rtl(ctx) { "‹" } else { "›" })
             .with_style(style().flex_shrink(false).text_color(theme_color("text_muted"))));
     }
-    // Selection is the table selection tint plus the 2px indicator bar on the row start;
-    // while the list has keyboard focus the selected row also shows the focus frame.
+    // Selection is the table selection tint; while the list has keyboard focus the selected
+    // row also shows the focus frame. Rows between dividers fill the band edge to edge, like
+    // Table rows; without dividers a row is a pressable block with a control's corners,
+    // spacing.xs in from the list's sides so the corners stay clear of its edge.
+    let corner = if dividers { px(0) } else { theme_radius("md") };
     if item.selected {
-        children.push(row([]).with_style(ctx.component_style("indicator_bar", style()
-            .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
-            .width(px(2)).background(theme_color("accent")))));
         let cursor = style()
-            .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)).radius(corner)
             .border(px(2)).border_color(rgba(0x00000000))
             .group_focus(style().border_color(theme_color("focus_ring")));
         if item.active { children.push(row([]).with_style(ctx.component_style("cursor", cursor))); }
     }
-    let base = style().relative().width(relative(1.0)).items_center().gap(theme_spacing("sm"))
-        .padding_x(theme_length("metrics.inset"))
+    let base = style().relative().items_center().gap(theme_spacing("sm"))
+        .padding_x(theme_length("metrics.inset")).radius(corner)
         .background(if item.selected { theme_color("table.selection") } else { rgba(0x00000000) });
+    base = if dividers { base.width(relative(1.0)) } else { base.margin_x(theme_spacing("xs")) };
     base = if below { base.padding_y(theme_spacing("xs")).min_height(theme_length("metrics.row")) }
         else { base.height(theme_length("metrics.row")) };
     if dividers { base = base.border_bottom(px(1)).border_color(theme_color("border")); }
