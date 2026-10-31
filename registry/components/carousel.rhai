@@ -12,7 +12,7 @@
     "metrics.control", "metrics.icon", "spacing.xxs", "spacing.xs", "space.related",
     "radius.sm", "radius.md", "typography.control"
   ],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // A controlled pager that shows one item at a time, for a compact place that steps through
@@ -47,7 +47,7 @@ define_component(#{
             "metrics.control", "metrics.icon", "spacing.xxs", "spacing.xs", "space.related",
             "radius.sm", "radius.md", "typography.control"
         ],
-        environment: ["size", "density", "corners"],
+        environment: ["size", "density"],
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"],
     },
     schema: #{

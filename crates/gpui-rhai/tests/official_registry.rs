@@ -688,28 +688,31 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
             "{name}: palettes must contain colors only"
         );
         let theme = load_bundled(&engine, name, source);
-        // Square is the default corner style and every role is zero in it, so
-        // choosing no corner style leaves the design pixel-identical.
-        for radius in ["xs", "sm", "md", "lg"] {
-            assert_eq!(
-                theme.resolve_length(Length::theme_radius(radius).unwrap()),
-                Some(Length::Pixels(0.0)),
-                "{name}: radius {radius}"
-            );
-        }
-        for (corners, expected) in [
-            ("subtle", [2.0, 2.0, 4.0, 4.0]),
-            ("round", [4.0, 999.0, 999.0, 8.0]),
-        ] {
-            for (radius, pixels) in ["xs", "sm", "md", "lg"].into_iter().zip(expected) {
-                assert_eq!(
-                    theme.resolve_length_in(
-                        Length::theme_radius(radius).unwrap(),
-                        &environment(&[("corners", corners)])
-                    ),
-                    Some(Length::Pixels(pixels)),
-                    "{name}: radius {radius} with {corners} corners"
-                );
+        // Radius follows the shape: md is a control's rounded rectangle by control height
+        // (4px up to 24px, 6px from 28px), xs a box inside it at half that, sm a marker's
+        // capsule and lg a floating surface. Layout takes no radius role at all.
+        for density in ["comfortable", "compact"] {
+            for size in ["xs", "sm", "md", "lg"] {
+                let pairs = environment(&[("density", density), ("size", size)]);
+                let resolve = |token: Length| match theme.resolve_length_in(token, &pairs) {
+                    Some(Length::Pixels(value)) => value,
+                    other => panic!("{name} {density} {size}: {other:?}"),
+                };
+                let height = resolve(Length::token("metrics.control").unwrap());
+                let control = if height <= 24.0 { 4.0 } else { 6.0 };
+                for (radius, pixels) in [
+                    ("xs", control / 2.0),
+                    ("sm", 999.0),
+                    ("md", control),
+                    ("lg", 8.0),
+                ] {
+                    let actual = resolve(Length::theme_radius(radius).unwrap());
+                    assert!(
+                        (actual - pixels).abs() < 0.01,
+                        "{name}: radius {radius} is {actual} in a {height}px {density} {size} \
+                         control, expected {pixels}"
+                    );
+                }
             }
         }
         for &(role, size, line_height, weight) in &typography {
@@ -738,6 +741,34 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
             Some(Length::Pixels(13.0))
         );
     }
+}
+
+/// D74 removed the `corners` axis: a Host still setting it as an environment default gets
+/// a preparation error rather than a silently ignored preference.
+#[test]
+fn the_token_base_no_longer_declares_a_corner_style() {
+    let engine = RuntimeEngine::new();
+    let base =
+        gpui_rhai::load_token_base(engine.engine(), "tokens.rhai", registry::TOKEN_BASE_SOURCE)
+            .unwrap();
+    let result = gpui_rhai::load_theme_with_layers(
+        engine.engine(),
+        Some(&base),
+        "default_light.rhai",
+        registry::DEFAULT_LIGHT_THEME,
+        &gpui_rhai::ThemeTokenOverrides {
+            environment_defaults: std::collections::BTreeMap::from([(
+                "corners".to_owned(),
+                "subtle".to_owned(),
+            )]),
+            ..gpui_rhai::ThemeTokenOverrides::default()
+        },
+    );
+    assert!(
+        matches!(result, Err(gpui_rhai::ThemeError::UndeclaredEnvironment { ref name, .. }) if name == "corners"),
+        "{:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -1023,10 +1054,10 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
     let token = |name: &str| Some(ColorValue::Token(name.to_owned()));
     let row = Length::token("metrics.row").unwrap();
 
-    // Tabs: one tonal track inset by xxs, rounded by its orientation's role; a raised
-    // thumb that carries the list focus; control type at one weight so widths never
-    // jitter.
-    for (strip, corner) in [(&children[0], "md"), (&children[1], "lg")] {
+    // Tabs: one tonal track inset by xxs with a control's corners in either orientation;
+    // a raised thumb, rounded like a box inside it, that carries the list focus; control
+    // type at one weight so widths never jitter.
+    for strip in [&children[0], &children[1]] {
         let tabs = tab_list(strip);
         assert_eq!(
             tabs.attributes().get("role"),
@@ -1040,7 +1071,7 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
         );
         assert_eq!(
             track.radii,
-            CornerLengths::all(Length::theme_radius(corner).unwrap())
+            CornerLengths::all(Length::theme_radius("md").unwrap())
         );
         let UiNodeKind::Box { children: slots } = tabs.kind() else {
             panic!("Tabs list must hold its tab slots");
@@ -1054,6 +1085,10 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
         };
         let thumb = selected[0].style();
         assert_eq!(thumb.base.background, token("surface_raised"));
+        assert_eq!(
+            thumb.base.radii,
+            CornerLengths::all(Length::theme_radius("xs").unwrap())
+        );
         assert_eq!(
             thumb.group_focus.as_ref().unwrap().border_color,
             token("focus_ring")

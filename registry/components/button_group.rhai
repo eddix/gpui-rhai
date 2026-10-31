@@ -6,8 +6,8 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["spacing.xxs", "radius.md", "radius.lg"],
-  "environment": ["size", "density", "corners"]
+  "tokens": ["spacing.xxs", "radius.md"],
+  "environment": ["size", "density"]
 }
 */
 // Visually joins related buttons into one horizontal or vertical control.
@@ -16,7 +16,7 @@
 define_component(#{
     metadata: #{ id: "components/button_group", "export": "ButtonGroup", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["spacing.xxs", "radius.md", "radius.lg"], environment: ["size", "density", "corners"] },
+        tokens: ["spacing.xxs", "radius.md"], environment: ["size", "density"] },
     schema: #{
         props: #{
             buttons: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
@@ -42,9 +42,8 @@ fn ButtonGroup(props) { render_component("components/button_group", props) }
 fn render_ButtonGroup(ctx, props) {
     if props.buttons.len == 0 { throw "button group requires at least one button"; }
     let vertical = "orientation" in props && props.orientation == "vertical";
-    // Only the group's outer corners round: a horizontal group is a capsule with round
-    // corners, a vertical one rounds like a panel.
-    let corner = theme_radius(if vertical { "lg" } else { "md" });
+    // Only the group's outer corners round, with a control's corners in either orientation.
+    let corner = theme_radius("md");
     let items = [];
     for index in 0..props.buttons.len {
         let first = index == 0;

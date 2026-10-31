@@ -8,10 +8,10 @@
   "capabilities": {},
   "tokens": [
     "surface_raised", "success", "warning", "danger", "text_primary", "text_muted",
-    "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm", "space.related", "radius.lg",
+    "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm", "space.related",
     "typography.body"
   ],
-  "environment": ["density", "corners"]
+  "environment": ["density"]
 }
 */
 // Persistent inline feedback with semantic variants and composable actions.
@@ -24,9 +24,9 @@ define_component(#{
         tokens: [
             "surface_raised", "success", "warning", "danger", "text_primary",
             "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm",
-            "space.related", "radius.lg", "typography.body"
+            "space.related", "typography.body"
         ],
-        environment: ["density", "corners"] },
+        environment: ["density"] },
     schema: #{
         props: #{
             title: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -101,7 +101,7 @@ fn render_Alert(ctx, props) {
     }
     row(children).with_style(ctx.component_style("root", style()
         .padding(theme_length("metrics.inset")).gap(theme_spacing("sm")).items_start()
-        .radius(theme_radius("lg")).background(theme_color("surface_raised"))))
+        .background(theme_color("surface_raised"))))
         .accessibility_role(alert_role(variant))
         .accessibility_label(props.title)
 }

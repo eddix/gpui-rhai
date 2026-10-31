@@ -21,8 +21,8 @@ mounted components, so an application that brings its own design (see
 names. Official registry components require the token base.
 
 Lengths can vary with an environment value: `by_env("density", #{ comfortable:
-px(32), compact: px(28) })`. The token base declares three axes, `density`,
-`size` and `corners`; values resolve during native rendering against the
+px(32), compact: px(28) })`. The token base declares two axes, `density` and
+`size`; values resolve during native rendering against the
 nearest `.env(#{ ... })` ancestor, so one subtree can be compact inside a
 comfortable window.
 

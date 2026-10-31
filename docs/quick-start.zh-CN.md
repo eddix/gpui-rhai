@@ -61,7 +61,7 @@ fn view(ctx) {
 ```
 
 配色写在 `ui/theme.rhai`（主题只含颜色）；尺寸、间距、圆角和字号体系在
-token 基础层 `ui/tokens.rhai`，由 density、size、corners 三个环境轴取值，详见
+token 基础层 `ui/tokens.rhai`，由 density、size 两个环境轴取值，详见
 [设计规范](design/)。针对 Button、Input 等正式组件及其公开 part 的统一覆盖写在
 `ui/styles.rhai`。样式表使用同一个
 类型安全的 `style()` builder，并由 `gpui-rhai check` 校验组件 ID 和 part；

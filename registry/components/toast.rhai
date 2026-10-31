@@ -10,10 +10,10 @@
   "tokens": [
     "surface_raised", "border", "surface_hover", "success", "warning", "danger",
     "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.xs",
-    "spacing.sm", "space.related", "radius.sm", "radius.lg", "typography.body",
+    "spacing.sm", "space.related", "radius.xs", "radius.sm", "radius.lg", "typography.body",
     "typography.caption", "focus_ring"
   ],
-  "environment": ["density", "corners"]
+  "environment": ["density"]
 }
 */
 // Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events.
@@ -33,10 +33,10 @@ define_component(#{
         tokens: [
             "surface_raised", "border", "surface_hover", "success", "warning", "danger",
             "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs",
-            "spacing.xs", "spacing.sm", "space.related", "radius.sm", "radius.lg",
+            "spacing.xs", "spacing.sm", "space.related", "radius.xs", "radius.sm", "radius.lg",
             "typography.body", "typography.caption", "focus_ring"
         ],
-        environment: ["density", "corners"],
+        environment: ["density"],
         assets: ["icons/close.svg"],
     },
     schema: #{
@@ -195,7 +195,7 @@ fn toast_node(ctx, item, dismiss_label, activatable, hover_pause) {
                 .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))])
             .with_key(`${item.id}-close`)
             .with_style(ctx.component_style("close", style()
-                .items_center().justify_center().radius(theme_radius("sm"))
+                .items_center().justify_center().radius(theme_radius("xs"))
                 .border(px(1)).border_color(rgba(0x00000000))
                 .text_color(theme_color("text_muted"))
                 .hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary")))
@@ -283,7 +283,7 @@ fn stack_layer(ctx, props, key, region, items) {
         let clear_label = prop_or(props, "clear_label", "Clear all");
         let clear = row([text(clear_label)]).with_key(`${key}-clear`)
             .with_style(ctx.component_style("stack_clear", style()
-                .items_center().padding_x(theme_spacing("xs")).radius(theme_radius("sm"))
+                .items_center().padding_x(theme_spacing("xs")).radius(theme_radius("xs"))
                 .border(px(1)).border_color(rgba(0x00000000))
                 .hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary")))
                 .focus(style().border_color(theme_color("focus_ring")))))

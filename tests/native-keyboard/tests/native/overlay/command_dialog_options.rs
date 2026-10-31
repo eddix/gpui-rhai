@@ -121,8 +121,9 @@ fn width_and_part_styles_reach_the_inner_parts(cx: &mut TestAppContext) {
         "default width {}",
         default.width
     );
-    // The command fills the panel: its search starts inside the 1px hairline.
-    assert!((flush - 1.0).abs() < 0.5, "search inset {flush}");
+    // The command fills the panel: its search starts inside the 1px hairline and the
+    // panel's padding, half of radius.lg.
+    assert!((flush - 5.0).abs() < 0.5, "search inset {flush}");
     let (wide, padded) = search_inset(
         cx,
         r#", width: px(560), dialog_part_styles: #{ panel: style().padding(px(16)) }"#,
@@ -132,9 +133,9 @@ fn width_and_part_styles_reach_the_inner_parts(cx: &mut TestAppContext) {
         "panel width {}",
         wide.width
     );
-    // A caller's panel padding still wins over the flush default.
+    // A caller's panel padding replaces the default: the hairline plus 16.
     assert!(
-        (padded - flush - 16.0).abs() < 0.5,
+        (padded - 17.0).abs() < 0.5,
         "search inset {padded} with a 16px panel padding, {flush} without"
     );
 }

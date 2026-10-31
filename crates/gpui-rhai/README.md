@@ -27,7 +27,7 @@ gpui-rhai check
   `Div`, or `AnyElement` to scripts;
 - native input/textarea, overlays, virtual collections, Canvas, motion,
   CodeViewer, DiffViewer, accessibility, themes and the token environment
-  (density, size, corners), locales, the composition audit, and Host
+  (density, size), locales, the composition audit, and Host
   extensions;
 - optional native composable charts with typed/streaming data, Geo2D,
   interaction, motion, Rust extensions, and SVG/PNG export;

@@ -12,7 +12,7 @@
     "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.xs",
     "typography.control"
   ],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // Controlled checkbox with checked, unchecked, and indeterminate states.
@@ -29,7 +29,7 @@ define_component(#{
             "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm",
             "radius.xs", "typography.control"
         ],
-        environment: ["size", "density", "corners"], assets: ["icons/check.svg", "icons/minus.svg"],
+        environment: ["size", "density"], assets: ["icons/check.svg", "icons/minus.svg"],
     },
     schema: #{
         props: #{

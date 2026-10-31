@@ -52,5 +52,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `item`, `root`.
 
 ## Theme
 
-- Tokens: `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `radius.lg`, `radius.md`, `selection`, `surface_hover`, `text_muted`, `text_primary`, `typography.control`
-- Environment: `corners`, `density`, `size`
+- Tokens: `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `radius.md`, `selection`, `surface_hover`, `text_muted`, `text_primary`, `typography.control`
+- Environment: `density`, `size`

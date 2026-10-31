@@ -1,7 +1,6 @@
 //! The panels of transient lists (Select and Combobox options, Menu, Command) pad every side
-//! by what their corner needs: half of `radius.lg`, so 0 in the square style, where rows
-//! bleed to the hairline, and 2px or 4px in the subtle and round styles, where the square row
-//! blocks clear the rounded corner. The padding is the same on all four sides.
+//! by what their corner needs: half of `radius.lg`, so the square row blocks clear the
+//! rounded corner. The padding is the same on all four sides.
 
 use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::{AccessibilityNode, GeometryBounds, MotionPreference, ScriptViewHandle};
@@ -20,13 +19,13 @@ fn mount(cx: &mut TestAppContext, main: &str) -> (VisualTestContext, ScriptViewH
     (visual, view)
 }
 
-fn script(corners: &str, body: &str) -> String {
+fn script(body: &str) -> String {
     format!(
         r#"import "components/select" as select;
 import "components/menu" as menu;
 import "components/command" as command;
 import "components/command_dialog" as command_dialog;
-fn view(ctx) {{ column([{body}]).env(#{{ corners: "{corners}" }})
+fn view(ctx) {{ column([{body}])
     .with_style(style().width(px(640)).height(px(560)).padding(px(16))) }}"#
     )
 }
@@ -76,72 +75,59 @@ fn insets(panel: GeometryBounds, first: GeometryBounds, last: GeometryBounds) ->
     ]
 }
 
-fn assert_insets(what: &str, corners: &str, actual: [f64; 4], expected: f64) {
+fn assert_insets(what: &str, actual: [f64; 4], expected: f64) {
     for (side, value) in ["start", "top", "end", "bottom"].iter().zip(actual) {
         assert!(
             (value - expected).abs() < 0.01,
-            "{what} in the {corners} style: {side} inset is {value}, expected {expected} \
+            "{what}: {side} inset is {value}, expected {expected} \
              (all four: {actual:?})"
         );
     }
 }
 
-/// The 1px hairline plus half of `radius.lg` (square 0, subtle 4, round 8).
-const CASES: [(&str, f64); 3] = [("square", 1.0), ("subtle", 3.0), ("round", 5.0)];
+/// The 1px hairline plus half of `radius.lg` (8).
+const EXPECTED: f64 = 5.0;
 
 #[gpui::test]
 fn select_options_pad_every_side_by_the_corner(cx: &mut TestAppContext) {
-    for (corners, expected) in CASES {
-        let (mut visual, view) = mount(cx, script(corners, SELECT).as_str());
-        let nodes = nodes(&mut visual, &view);
-        let panel = bounds(&nodes, "listbox", "Region");
-        let first = bounds(&nodes, "option", "i18n-tt");
-        let last = bounds(&nodes, "option", "us-ttp");
-        assert_insets("Select", corners, insets(panel, first, last), expected);
-    }
+    let (mut visual, view) = mount(cx, script(SELECT).as_str());
+    let nodes = nodes(&mut visual, &view);
+    let panel = bounds(&nodes, "listbox", "Region");
+    let first = bounds(&nodes, "option", "i18n-tt");
+    let last = bounds(&nodes, "option", "us-ttp");
+    assert_insets("Select", insets(panel, first, last), EXPECTED);
 }
 
 #[gpui::test]
 fn menu_items_pad_every_side_by_the_corner(cx: &mut TestAppContext) {
-    for (corners, expected) in CASES {
-        let (mut visual, view) = mount(cx, script(corners, MENU).as_str());
-        let nodes = nodes(&mut visual, &view);
-        let panel = bounds(&nodes, "menu", "File menu");
-        let first = bounds(&nodes, "menuitem", "Open");
-        let last = bounds(&nodes, "menuitem", "Close");
-        assert_insets("Menu", corners, insets(panel, first, last), expected);
-    }
+    let (mut visual, view) = mount(cx, script(MENU).as_str());
+    let nodes = nodes(&mut visual, &view);
+    let panel = bounds(&nodes, "menu", "File menu");
+    let first = bounds(&nodes, "menuitem", "Open");
+    let last = bounds(&nodes, "menuitem", "Close");
+    assert_insets("Menu", insets(panel, first, last), EXPECTED);
 }
 
 #[gpui::test]
 fn command_pads_its_search_and_rows_by_the_corner(cx: &mut TestAppContext) {
-    for (corners, expected) in CASES {
-        let (mut visual, view) = mount(cx, script(corners, COMMAND).as_str());
-        let nodes = nodes(&mut visual, &view);
-        let panel = bounds(&nodes, "listbox", "Commands");
-        let search = bounds(&nodes, "text_field", "Commands");
-        let last = bounds(&nodes, "option", "Roll back");
-        // The search line heads the panel, so it carries the top inset.
-        assert_insets("Command", corners, insets(panel, search, last), expected);
-    }
+    let (mut visual, view) = mount(cx, script(COMMAND).as_str());
+    let nodes = nodes(&mut visual, &view);
+    let panel = bounds(&nodes, "listbox", "Commands");
+    let search = bounds(&nodes, "text_field", "Commands");
+    let last = bounds(&nodes, "option", "Roll back");
+    // The search line heads the panel, so it carries the top inset.
+    assert_insets("Command", insets(panel, search, last), EXPECTED);
 }
 
 #[gpui::test]
 fn command_dialog_pads_its_panel_and_not_the_command_inside(cx: &mut TestAppContext) {
-    for (corners, expected) in CASES {
-        let (mut visual, view) = mount(cx, script(corners, COMMAND_DIALOG).as_str());
-        let nodes = nodes(&mut visual, &view);
-        let panel = bounds(&nodes, "dialog", "Go to");
-        let search = bounds(&nodes, "text_field", "Go to");
-        let last = bounds(&nodes, "option", "Roll back");
-        // The title heads the dialog; the sides and the bottom carry the corner padding once,
-        // on the dialog panel, not again on the Command inside it.
-        let [start, _, end, bottom] = insets(panel, search, last);
-        assert_insets(
-            "CommandDialog",
-            corners,
-            [start, expected, end, bottom],
-            expected,
-        );
-    }
+    let (mut visual, view) = mount(cx, script(COMMAND_DIALOG).as_str());
+    let nodes = nodes(&mut visual, &view);
+    let panel = bounds(&nodes, "dialog", "Go to");
+    let search = bounds(&nodes, "text_field", "Go to");
+    let last = bounds(&nodes, "option", "Roll back");
+    // The title heads the dialog; the sides and the bottom carry the corner padding once,
+    // on the dialog panel, not again on the Command inside it.
+    let [start, _, end, bottom] = insets(panel, search, last);
+    assert_insets("CommandDialog", [start, EXPECTED, end, bottom], EXPECTED);
 }

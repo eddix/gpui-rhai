@@ -8,9 +8,9 @@
   "capabilities": {},
   "tokens": [
     "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
-    "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "radius.lg", "typography.control"
+    "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
   ],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // ToggleGroup holds pressed tool state: equal-height segments joined inside one frame.
@@ -27,9 +27,9 @@ define_component(#{
         dependencies: [], capabilities: #{},
         tokens: [
             "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
-            "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "radius.lg", "typography.control"
+            "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
         ],
-        environment: ["size", "density", "corners"] },
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -170,10 +170,10 @@ fn render_ToggleGroup(ctx, props) {
     let can_change = "on_change" in props && props.on_change != ();
     let count = props.items.len;
 
-    // A horizontal group is a capsule with round corners; a vertical one rounds like a
-    // panel. The outer segments carry the frame's corners, so a pressed fill never
-    // pokes past them (clipping is rectangular).
-    let corner = theme_radius(if vertical { "lg" } else { "md" });
+    // The group is one control with a control's corners in either orientation. The outer
+    // segments carry the frame's corners, so a pressed fill never pokes past them
+    // (clipping is rectangular).
+    let corner = theme_radius("md");
     let segments = [];
     for index in 0..count {
         let item = props.items[index];

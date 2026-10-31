@@ -9,9 +9,6 @@ fn tokens() {
         environment: #{
             density: #{ values: ["comfortable", "compact"], "default": "comfortable" },
             size: #{ values: ["xs", "sm", "md", "lg"], "default": "md" },
-            // Corner style. Square is the design language; subtle and round are opt-in
-            // (`.env(#{ corners: "round" })`, or a Host environment default).
-            corners: #{ values: ["square", "subtle", "round"], "default": "square" },
         },
 
         // Density-aware spacing scale. Compact shrinks only the outer steps.
@@ -32,17 +29,24 @@ fn tokens() {
             section: by_env("density", #{ comfortable: px(24), compact: px(16) }),
         },
 
-        // Radius roles, all zero unless `corners` asks otherwise. xs: boxes that must
-        // stay boxes (Checkbox, Kbd); sm: markers (Tag, strong Badge, chips); md:
-        // single-line controls; lg: panels, multi-line fields and tooltips. Round makes
-        // markers and controls capsules (a square control a circle: radii clamp to half
-        // the shorter side) and keeps panels at 8px. List panels pad by half of radius.lg on
-        // every side, so their square rows clear the corner.
+        // Radius roles follow what a shape is, not a preference. Layout (containers, grids,
+        // rows, divider-built bars) takes no radius at all. md: controls, a rounded rectangle
+        // by control height, 4px up to 24px and 6px from 28px. xs: boxes inside or beside a
+        // control (Checkbox, Kbd, a field's clear target, the Tabs thumb), half of md. sm:
+        // markers (Tag, Badge, chips, Switch, counts), a capsule: radii clamp to half the
+        // shorter side. lg: floating surfaces (Menu, Popover, Dialog, Toast, field panels);
+        // list panels pad by half of it on every side, so their square rows clear the corner.
         radius: #{
-            xs: by_env("corners", #{ square: px(0), subtle: px(2), round: px(4) }),
-            sm: by_env("corners", #{ square: px(0), subtle: px(2), round: px(999) }),
-            md: by_env("corners", #{ square: px(0), subtle: px(4), round: px(999) }),
-            lg: by_env("corners", #{ square: px(0), subtle: px(4), round: px(8) }),
+            xs: by_env(["density", "size"], #{
+                comfortable: #{ xs: px(2), sm: px(3), md: px(3), lg: px(3) },
+                compact: #{ xs: px(2), sm: px(2), md: px(3), lg: px(3) },
+            }),
+            sm: px(999),
+            md: by_env(["density", "size"], #{
+                comfortable: #{ xs: px(4), sm: px(6), md: px(6), lg: px(6) },
+                compact: #{ xs: px(4), sm: px(4), md: px(6), lg: px(6) },
+            }),
+            lg: px(8),
         },
 
         metrics: #{

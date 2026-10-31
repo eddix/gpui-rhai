@@ -11,7 +11,7 @@
     "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
     "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
-  "environment": ["density", "corners"]
+  "environment": ["density"]
 }
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
@@ -31,7 +31,7 @@ define_component(#{
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
             "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
-        environment: ["density", "corners"] },
+        environment: ["density"] },
     schema: #{
         props: #{
             scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
@@ -379,7 +379,7 @@ fn render_Command(ctx, props) {
                 .height(theme_length("metrics.row") * visible_rows)))
     };
     // Every side pads by half of radius.lg so the square rows and the search line clear the
-    // corner: nothing in the square style, where they bleed to the hairline.
+    // rounded corner (clipping is rectangular).
     let root = column([search, body]).with_key(props.key)
         .with_style(ctx.component_style("root", style()
             .gap(theme_spacing("xs")).padding(theme_radius("lg") * 0.5).radius(theme_radius("lg"))

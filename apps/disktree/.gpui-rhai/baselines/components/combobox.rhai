@@ -11,10 +11,10 @@
     "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection", "accent",
     "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
     "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
-    "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
+    "spacing.sm", "radius.xs", "radius.md", "radius.lg", "typography.control",
     "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // Public Rhai choice composition over Overlay, Input, and virtual_collection.
@@ -31,10 +31,10 @@ define_component(#{
             "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection", "accent",
             "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
             "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
-            "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
+            "spacing.sm", "radius.xs", "radius.md", "radius.lg", "typography.control",
             "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
-        environment: ["size", "density", "corners"],
+        environment: ["size", "density"],
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
     schema: #{
         props: #{
@@ -147,9 +147,8 @@ define_component(#{
 
 fn Combobox(props) { render_component("components/combobox", props) }
 
-// Square option rows clear the panel's corner: every side pads by half of radius.lg, so
-// nothing in the square style, where rows bleed to the hairline, and 2px or 4px in the
-// subtle and round styles. Menu and Command pad their panels the same way.
+// Square option rows clear the panel's rounded corner: every side pads by half of
+// radius.lg (clipping is rectangular). Menu and Command pad their panels the same way.
 fn list_panel_padding() { theme_radius("lg") * 0.5 }
 
 // The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
@@ -450,7 +449,7 @@ fn render_Combobox(ctx, props) {
             let clear_style = ctx.component_style("clear", style()
                 .width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
                 .items_center().justify_center()
-                .text_color(theme_color("text_muted")).radius(theme_radius("sm"))
+                .text_color(theme_color("text_muted")).radius(theme_radius("xs"))
                 .hover(style().background(theme_color("surface_hover"))));
             let clear = image_source(asset("app/icons/close"))
                 .with_key(`${props.key}-clear`).with_style(clear_style)

@@ -1,7 +1,7 @@
 // gpui-rhai productivity profile.
 //
 // The reference policy for keyboard-first productivity tools: the design
-// language defaults (ui/tokens.rhai), comfortable density, square corners,
+// language defaults (ui/tokens.rhai), comfortable density, the radius roles,
 // and every composition rule. See docs/design/composition.md#10-profiles.
 fn profile() {
     #{

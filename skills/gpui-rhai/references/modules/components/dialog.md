@@ -50,4 +50,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `backdrop`, `
 ## Theme
 
 - Tokens: `border`, `focus_ring`, `radius.lg`, `space.group`, `space.related`, `spacing.xl`, `surface_raised`, `text_primary`, `typography.body`, `typography.title`
-- Environment: `corners`, `density`
+- Environment: `density`

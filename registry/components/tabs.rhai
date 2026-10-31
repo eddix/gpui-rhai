@@ -13,10 +13,10 @@
     "accent", "on_accent", "warning", "on_warning", "danger", "on_danger",
     "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.inset",
     "metrics.label_column", "metrics.counter", "spacing.xxs", "spacing.xs", "spacing.sm",
-    "space.related", "space.group", "radius.sm", "radius.md", "radius.lg",
+    "space.related", "space.group", "radius.xs", "radius.sm", "radius.md",
     "typography.control", "typography.counter", "typography.body"
   ],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // Controlled tabs with one tab stop; the arrow keys select. Three looks share every
@@ -52,10 +52,10 @@ define_component(#{
             "accent", "on_accent", "warning", "on_warning", "danger", "on_danger",
             "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.inset",
             "metrics.label_column", "metrics.counter", "spacing.xxs", "spacing.xs", "spacing.sm",
-            "space.related", "space.group", "radius.sm", "radius.md", "radius.lg",
+            "space.related", "space.group", "radius.xs", "radius.sm", "radius.md",
             "typography.control", "typography.counter", "typography.body"
         ],
-        environment: ["size", "density", "corners"],
+        environment: ["size", "density"],
         assets: ["icons/close.svg", "icons/plus.svg"],
     },
     schema: #{
@@ -291,7 +291,7 @@ fn tab_marker(ctx, tab) {
     let tone = tab_value_or(tab, "tone");
     if count != () {
         // A marker: metrics.counter is the control line height, so the capsule is as tall as
-        // the label, and its corners follow the corner style (square, subtle or capsule).
+        // the label.
         let fill = if tone == () { theme_color("tabs.counter") } else { theme_color(tone) };
         let ink = if tone == () { theme_color("text_primary") } else { theme_color(`on_${tone}`) };
         let capsule = style().height(theme_length("metrics.counter")).min_width(theme_length("metrics.counter"))
@@ -323,7 +323,7 @@ fn tab_slot(ctx, props, cfg, tab, selected, close) {
     if closable {
         let shown = selected && !dirty;
         let button = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
-            .items_center().justify_center().radius(theme_radius("md"))
+            .items_center().justify_center().radius(theme_radius("xs"))
             .opacity(if shown { 1.0 } else { 0.0 })
             .group_hover(style().opacity(1.0))
             // The track is surface_hover already, so its close button hovers a step darker.
@@ -383,7 +383,7 @@ fn tab_style(cfg, tab, selected, slotted, on_edge) {
     if cfg.variant == "bar" {
         // Side hairlines are reserved on every tab and drawn on the selected one, which also
         // takes the panel's surface and covers the strip's line. The strip is a rectangle
-        // with no margin, so the selected tab stays square in every corner style; a first tab
+        // with no margin, so the selected tab stays square like the panel under it; a first tab
         // on the strip's start edge draws no start hairline.
         return base.padding_start(theme_length("metrics.inset"))
             .padding_end(if slotted { theme_spacing("xs") } else { theme_length("metrics.inset") })
@@ -408,7 +408,7 @@ fn selection_marks(ctx, cfg) {
     let marks = [];
     if cfg.variant == "track" {
         let thumb = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
-            .radius(cfg.corner).background(theme_color("surface_raised"))
+            .radius(theme_radius("xs")).background(theme_color("surface_raised"))
             .border(px(2)).border_color(theme_color("surface_raised"))
             .group_focus(style().border_color(theme_color("focus_ring")));
         marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", thumb)));
@@ -595,8 +595,9 @@ fn render_Tabs(ctx, props) {
     let list_ref = element_ref("tab-list");
     let cfg = #{ variant: variant, vertical: vertical, layout: layout, motion_key: motion_key,
         key: key, scope: list_ref.scope, reorderable: reorderable, start_len: start.len,
-        // A horizontal track is a capsule with round corners; a vertical one rounds like a panel.
-        corner: theme_radius(if vertical { "lg" } else { "md" }),
+        // The track is a control in either orientation; the thumb sits 2px in and takes the
+        // inner box's smaller radius.
+        corner: theme_radius("md"),
         selects: "on_change" in props && props.on_change != (),
         context: "on_context_request" in props && props.on_context_request != () };
 

@@ -8,7 +8,7 @@
   "capabilities": {},
   "assets": ["icons/chevron_down.svg"],
   "tokens": ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon"],
-  "environment": ["size", "density", "corners"]
+  "environment": ["size", "density"]
 }
 */
 // A chevron button whose menu lists every tab of a strip; picking one reports its value. It
@@ -26,7 +26,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/menu"], capabilities: #{},
         tokens: ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon"],
-        environment: ["size", "density", "corners"],
+        environment: ["size", "density"],
         assets: ["icons/chevron_down.svg"],
     },
     schema: #{
