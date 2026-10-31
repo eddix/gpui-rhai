@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, DispatchPhase, Display, Element, ElementId,
     FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
@@ -594,6 +595,8 @@ pub(crate) struct ScriptOverlayElement {
     backdrop_style: Option<BackdropStyleHandler>,
     focus_ring: Rgba8,
     focus_surface: Rgba8,
+    /// Whether the trigger's focus ring paints (the view's focus indicators).
+    focus_indicators: bool,
     restore_focus_on_close: bool,
     /// The trigger content holds its own tab stop (a Button, a field), so the
     /// trigger wrapper must not add a second one.
@@ -626,6 +629,7 @@ impl ScriptOverlayElement {
             backdrop_style: None,
             focus_ring: Rgba8::from_rgb_hex(0x003b_82f6),
             focus_surface: Rgba8::from_rgb_hex(0x0018_181b),
+            focus_indicators: true,
             restore_focus_on_close,
             trigger_focusable: false,
             panel_focus: None,
@@ -662,6 +666,11 @@ impl ScriptOverlayElement {
 
     pub(crate) fn with_focus_ring(mut self, color: Rgba8) -> Self {
         self.focus_ring = color;
+        self
+    }
+
+    pub(crate) fn with_focus_indicators(mut self, shown: bool) -> Self {
+        self.focus_indicators = shown;
         self
     }
 
@@ -772,7 +781,9 @@ impl ScriptOverlayElement {
             .id(SharedString::from(format!("{}-trigger", self.id)))
             .track_focus(trigger_focus)
             .tab_stop(self.trigger_tab_stop())
-            .focus(move |style| overlay_focus_shadow(style, focus_ring, focus_surface))
+            .when(self.focus_indicators, |trigger| {
+                trigger.focus(move |style| overlay_focus_shadow(style, focus_ring, focus_surface))
+            })
             .child(self.trigger.take().expect("overlay trigger rendered once"))
             .on_click(move |event, window, cx| {
                 if !activate_on_trigger || !matches!(event, ClickEvent::Mouse(_)) {

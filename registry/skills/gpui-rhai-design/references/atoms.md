@@ -27,7 +27,7 @@ section 9 repeats them for reviews.
 | C7 | **Declared consumption** | Component metadata lists the tokens (`tokens`) and environment values (`environment`) it reads. Preparation validates the active theme against the union of mounted components. |
 | C8 | **Removable signatures** | Each structural signature is a declared part (`indicator_bar`, `lamp`, `facet`, `shortcut`, `label`, `cursor`, `focus_frame`), so `ui/styles.rhai` can restyle or hide it. |
 | C9 | **States without layout shift** | State priority is `active > focus > hover/cursor > selected > idle`; `disabled` suppresses interaction and wins over pointer states. Borders are reserved in idle geometry. Selection stays visible under focus. |
-| C10 | **Visible focus** | Focus is always a 2px `focus_ring` frame (the ink color by default) and never moves layout. A control frames itself with a reserved 2px border that idles in its fill or, for outline treatments, in `border`. A compound control frames its mark instead of the whole row (`group_focus`), a list frames its cursor row with an overlay, and a field group frames itself while its input has focus (`focus_within`). The one exception is the embedded search line that heads a panel and holds focus while it is open: its caret shows focus (section 7). See section 10. |
+| C10 | **Visible focus** | Focus is always a 2px `focus_ring` frame (the ink color by default) and never moves layout. A control frames itself with a reserved 2px border that idles in its fill or, for outline treatments, in `border`. A compound control frames its mark instead of the whole row (`group_focus`), a list frames its cursor row with an overlay, and a field group frames itself while its input has focus (`focus_within`). The one exception is the embedded search line that heads a panel and holds focus while it is open: its caret shows focus (section 7). By default the frame shows after a navigation key, not after a pointer press (`focus_indicators`); a focused text field always shows its frame. See section 10. |
 | C11 | **Inherited disabled** | A disabled container disables every descendant natively: input, focus, pseudo styles and accessibility semantics. Components do not need to forward `disabled` to children. |
 | C12 | **Action binding** | Components that trigger commands (Button, IconButton, Menu items, Command items, ContextMenu items, Tooltip hints) accept `action: "id"`. The displayed shortcut, enabled state and dispatch derive from that action. A free-text `shortcut` remains for commands without an action. |
 | C13 | **Data defaults** | When a component knows a value is numeric (a Table column with `numeric: true`, Stat, DescriptionList numeric values), it aligns to the end and enables tabular figures by default. |
@@ -542,6 +542,16 @@ DatePicker's focused day), the cursor shows where they act; a Menu opened from
 the keyboard shows its active item, not a frame. An overlay panel's own focus
 is visible to `group_focus` styles in its content, so the frame is an ordinary
 node.
+
+**When focus shows.** The Host decides with `ScriptViewConfig::focus_indicators`.
+By default (`Navigation`) the hooks above paint after a navigation key (Tab,
+Shift+Tab, an arrow, Home, End, Page Up, Page Down, F6) and stop at the next
+pointer press, as a browser's `:focus-visible`: a click on a row or a button
+shows no frame, and a key with Command, Control or Alt, a shortcut, does not
+bring one back. `Always` paints whenever a node holds focus; `Never` suits an
+application driven by shortcuts rather than focus movement. A text field that
+holds focus shows its frame, and the `focus_within` frame around it, in every
+mode, since typing goes there. Native handles and sliders follow the same rule.
 
 **One tab stop per control.** Tab reaches every interactive component exactly
 once (sets of independent targets such as Accordion headers, Pagination or a

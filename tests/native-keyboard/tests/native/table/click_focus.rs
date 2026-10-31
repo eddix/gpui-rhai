@@ -3,7 +3,9 @@
 //! arrows keep moving the selection and the frame follows it. A row is a pointer target
 //! only; were it to keep the focus the click gave it, the keys would still bubble to the
 //! collection, but the cursor's `group_focus` owner (the collection) would not be focused
-//! and no frame would show.
+//! and no frame would show. The view shows focus indicators always here, so the frame
+//! after a click is visible; by default a pointer press hides them until the next
+//! navigation key (`focus_indicators.rs`).
 
 use std::collections::BTreeMap;
 
@@ -52,6 +54,7 @@ fn mount(cx: &mut TestAppContext, source: String) -> (VisualTestContext, ScriptV
     let (mut visual, view) = Mount::components(source)
         .motion(MotionPreference::None)
         .with(move |view| view.theme_token_overrides(overrides))
+        .config(|config| config.focus_indicators(FocusIndicators::Always))
         .id("click-focus")
         .mount(cx);
     settle(&mut visual);

@@ -21,6 +21,8 @@ fn mount(
     let (mut visual, view) = Mount::components(main)
         .motion(MotionPreference::None)
         .with(move |view| view.theme_token_overrides(overrides))
+        // Paint order with the pointer over a focused node: focus shows without a key.
+        .config(|config| config.focus_indicators(FocusIndicators::Always))
         .id("pseudo")
         .mount(cx);
     settle(&mut visual);

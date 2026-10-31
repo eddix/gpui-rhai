@@ -119,10 +119,11 @@ pub use action::{
     KeyBindingSpec, KeyChord,
 };
 pub use app::{
-    EmbeddedScriptView, FileScriptView, NavigateBack, PreparedScriptView, ScriptApplication,
-    ScriptErrorDomain, ScriptErrorReport, ScriptViewConfig, ScriptViewError, ScriptViewExtension,
-    ScriptViewFrameDigest, ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot,
-    ScriptViewRenderStatistics, ScriptViewState, ThemeHandle, install,
+    EmbeddedScriptView, FileScriptView, FocusIndicators, NavigateBack, PreparedScriptView,
+    ScriptApplication, ScriptErrorDomain, ScriptErrorReport, ScriptViewConfig, ScriptViewError,
+    ScriptViewExtension, ScriptViewFrameDigest, ScriptViewHandle, ScriptViewHost,
+    ScriptViewPerformanceSnapshot, ScriptViewRenderStatistics, ScriptViewState, ThemeHandle,
+    install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,

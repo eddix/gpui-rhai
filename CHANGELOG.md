@@ -31,6 +31,13 @@ semantic versioning from this release.
   `metrics.multiline_pad` is `field_pad` less the half-leading of its text
   (comfortable 2 / 3 / 6 / 8, compact 0 / 0 / 2 / 6). D75.
 - The Gallery drops its Corners toggle, palette commands and status item.
+- Focus frames show after a navigation key and hide at the next pointer press
+  (`ScriptViewConfig::focus_indicators`, `FocusIndicators::Navigation` by
+  default; `Always` and `Never` override it). Keys with Command, Control or Alt
+  do not show them; a focused text field always shows its frame. This covers
+  `focus`, `group_focus` and `focus_within` styles, overlay triggers, and the
+  native SplitPane and Resizable handles and sliders (`PrimitiveContext::
+  focus_indicators` for custom primitives). D78.
 
 ## 0.3.3 - 2026-10-29
 

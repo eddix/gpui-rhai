@@ -286,11 +286,12 @@ impl Element for ResizableHandleElement {
             paint_handle(bounds, &self.config, color, dragging, window);
         }
         if let Some(signal) = &self.config.state_signal {
-            let focused = self
-                .config
-                .focus
-                .as_ref()
-                .is_some_and(|focus| focus.is_focused(window));
+            let focused = self.events.focus_indicators()
+                && self
+                    .config
+                    .focus
+                    .as_ref()
+                    .is_some_and(|focus| focus.is_focused(window));
             let state =
                 crate::handle_state::handle_state(self.config.disabled, dragging, hovered, focused);
             let mut inner = prepaint.state.0.borrow_mut();

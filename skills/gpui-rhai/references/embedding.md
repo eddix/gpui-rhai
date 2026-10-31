@@ -115,6 +115,14 @@ subtrees whose width follows the view's are then replayed too. A view the
 Host lays out by its content keeps the default. `render_islands(false)` turns
 replay off for one view, and `GPUI_RHAI_RENDER_ISLANDS=off` for every view.
 
+Focus frames show after a navigation key (Tab, an arrow, Home, End, Page Up,
+Page Down, F6) and hide at the next pointer press, so a click shows none and a
+shortcut with Command, Control or Alt brings none back. A Host whose users move
+focus by keyboard throughout can keep them visible with
+`ScriptViewConfig::focus_indicators(FocusIndicators::Always)`; one driven by
+shortcuts can turn them off with `FocusIndicators::Never`. A focused text field
+keeps its frame in every mode.
+
 Use `flex_item()` when the view is a direct child of a Rust flex row or column.
 It supplies a zero flex basis and `min-width/min-height: 0`, so wide scrollable
 script content cannot become the host item's automatic min-content size. Use

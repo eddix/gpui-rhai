@@ -52,12 +52,14 @@ fn framed_sizes(visual: &mut VisualTestContext) -> Vec<(f32, f32)> {
 
 /// Focus the first tab stop and return the sizes of focus-colored frames.
 fn focused_frames(cx: &mut TestAppContext, body: &str) -> Vec<(f32, f32)> {
-    let (mut visual, _view) = mount(cx, body);
+    let (mut visual, view) = mount(cx, body);
     assert!(
         framed_sizes(&mut visual).is_empty(),
         "no frame before focus"
     );
-    visual.update(|window, cx| window.focus_next(cx));
+    // Tab from the view, a navigation key, so the default focus indicators show.
+    visual.update(|window, cx| view.focus(window, cx).unwrap());
+    visual.simulate_keystrokes("tab");
     settle(&mut visual);
     framed_sizes(&mut visual)
 }

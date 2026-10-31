@@ -1651,6 +1651,10 @@ struct RenderEnvironment<'a, C> {
     focus_path: &'a [NodeId],
     /// Focus state seen by `group_focus` and `focus_within` styles.
     focus: NodeFocus,
+    /// Whether focus styles paint: off while the view's `FocusIndicators`
+    /// policy hides them, and `focus`, `group_focus` and `focus_within` then
+    /// paint nothing.
+    focus_indicators: bool,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
@@ -1786,13 +1790,15 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
     /// by `group_focus` styles in its subtree; `tab_stop(false)` children of a
     /// roving group leave ownership with the group. `focus_within` is per node.
     fn with_focus_scope(mut self, node: &UiNode, retained_id: Option<NodeId>) -> Self {
-        self.focus.within = retained_id.is_some_and(|id| self.focus_path.contains(&id));
+        // Hidden focus indicators leave both states off, so no focus style paints.
+        self.focus.within =
+            self.focus_indicators && retained_id.is_some_and(|id| self.focus_path.contains(&id));
         if let Some(id) = retained_id
             && node.style().focus.is_some()
             && node_tab_stop(node)
             && self.focus_handles.contains_key(&id)
         {
-            self.focus.owner = self.focus_path.first() == Some(&id);
+            self.focus.owner = self.focus_indicators && self.focus_path.first() == Some(&id);
         }
         self
     }
@@ -1839,6 +1845,8 @@ pub(crate) struct WindowRenderResources<'a> {
     pub environment: crate::Environment,
     pub inherited_disabled: bool,
     pub focus_path: &'a [NodeId],
+    /// Whether focus styles paint (`ScriptViewConfig::focus_indicators`).
+    pub focus_indicators: bool,
     pub owner_focused: bool,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -1927,6 +1935,7 @@ impl GpuiNodeRenderer {
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             focus_path: &[],
+            focus_indicators: true,
             focus: NodeFocus::default(),
             view_id: "standalone",
             retained: None,
@@ -2018,6 +2027,7 @@ impl GpuiNodeRenderer {
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             focus_path: &[],
+            focus_indicators: true,
             focus: NodeFocus::default(),
             view_id: "standalone",
             retained: Some(tree),
@@ -2102,6 +2112,7 @@ impl GpuiNodeRenderer {
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             focus_path: &[],
+            focus_indicators: true,
             focus: NodeFocus::default(),
             view_id: "standalone",
             retained: Some(tree),
@@ -2178,6 +2189,7 @@ impl GpuiNodeRenderer {
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             focus_path: &[],
+            focus_indicators: true,
             focus: NodeFocus::default(),
             view_id: "standalone",
             retained: None,
@@ -2245,6 +2257,7 @@ impl GpuiNodeRenderer {
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             focus_path: &[],
+            focus_indicators: true,
             owner_focused: false,
             root_path: "root",
             view_id: "standalone",
@@ -2312,6 +2325,7 @@ impl GpuiNodeRenderer {
             environment: resources.environment,
             inherited_disabled: resources.inherited_disabled,
             focus_path: resources.focus_path,
+            focus_indicators: resources.focus_indicators,
             focus: NodeFocus {
                 owner: resources.owner_focused,
                 within: false,
@@ -2393,6 +2407,7 @@ impl GpuiNodeRenderer {
             environment: resources.environment,
             inherited_disabled: resources.inherited_disabled,
             focus_path: resources.focus_path,
+            focus_indicators: resources.focus_indicators,
             focus: NodeFocus {
                 owner: resources.owner_focused,
                 within: false,
@@ -2455,6 +2470,7 @@ impl GpuiNodeRenderer {
             environment: resources.environment,
             inherited_disabled: resources.inherited_disabled,
             focus_path: resources.focus_path,
+            focus_indicators: resources.focus_indicators,
             focus: NodeFocus {
                 owner: resources.owner_focused,
                 within: false,
@@ -2521,6 +2537,7 @@ impl GpuiNodeRenderer {
             environment: inherited.environment,
             inherited_disabled: inherited.inherited_disabled,
             focus_path: resources.focus_path,
+            focus_indicators: resources.focus_indicators,
             // The root finds whether focus is within it from the focus path.
             focus: NodeFocus {
                 owner: inherited.focus_owner,
@@ -2878,7 +2895,13 @@ impl GpuiNodeRenderer {
         } else {
             let focused =
                 retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref();
-            apply_pseudo_backgrounds(element, node.style(), &environment.resolver(), focused)
+            apply_pseudo_backgrounds(
+                element,
+                node.style(),
+                &environment.resolver(),
+                focused,
+                environment.focus_indicators,
+            )
         };
         let element = apply_hover_group(element, node, retained_id, environment, disabled);
         let element = apply_native_semantics(element, semantic.as_ref());
@@ -3110,7 +3133,8 @@ impl GpuiNodeRenderer {
                         )
                         .with_wheel_parents(environment.wheel_parents.to_vec())
                         .with_assets(environment.assets.cloned())
-                        .with_intrinsic_size(environment.intrinsic_size.cloned()),
+                        .with_intrinsic_size(environment.intrinsic_size.cloned())
+                        .with_focus_indicators(environment.focus_indicators),
                         crate::PrimitiveTheme::capture_with_environment(
                             &environment.resolver(),
                             environment.direction,
@@ -3489,6 +3513,10 @@ fn render_island_boundary<C: ColorResolver>(
             environment: environment.environment,
             inherited_disabled: environment.inherited_disabled,
             focus_owner: environment.focus.owner && group_focus,
+            // Focus styles in the island paint by it only when focus is inside or
+            // its owner above holds focus.
+            focus_indicators: environment.focus_indicators
+                && (!focus.is_empty() || environment.focus.owner && group_focus),
             ambient_text_color: environment.ambient_text_color,
             stretch_parent: environment.stretch_parent,
             row_parent: environment.row_parent,
@@ -4844,6 +4872,7 @@ fn native_overlay_element<C: ColorResolver>(
             "surface",
             0x0018_181b,
         ))
+        .with_focus_indicators(environment.focus_indicators)
         .restore_focus_on_close(restore_focus_on_close)
         .with_trigger_focusable(trigger_focusable)
         .with_panel_focus(panel_focus)
@@ -5358,6 +5387,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         environment: environment.environment,
         inherited_disabled: environment.inherited_disabled,
         focus_path: environment.focus_path.to_vec(),
+        focus_indicators: environment.focus_indicators,
         owner_focused: environment.focus.owner,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -6459,12 +6489,14 @@ fn hover_group_name(id: NodeId) -> SharedString {
 
 /// GPUI refines `focus`, then `hover`, then `active`; while the node holds
 /// focus the hover paint carries the focus paint on top, so the order is
-/// `hover → focus → active`.
+/// `hover → focus → active`. While the view hides focus indicators the focus
+/// paint is left out.
 fn apply_pseudo_backgrounds(
     mut element: Stateful<Div>,
     style: &Style,
     colors: &impl ColorResolver,
     focused: bool,
+    focus_indicators: bool,
 ) -> Stateful<Div> {
     let mut hover = pseudo_paint(style.hover.as_ref(), colors);
     let active = pseudo_paint(style.active.as_ref(), colors);
@@ -6472,12 +6504,14 @@ fn apply_pseudo_backgrounds(
     if focus.border.is_none() {
         focus.border = Some(semantic_color(colors, "focus_ring", 0x003b_82f6));
     }
-    if focused {
+    if focused && focus_indicators {
         hover = hover.under(focus);
     }
     element = element.hover(move |style| apply_pseudo_paint(style, hover));
     element = element.active(move |style| apply_pseudo_paint(style, active));
-    element = element.focus(move |style| apply_pseudo_paint(style, focus));
+    if focus_indicators {
+        element = element.focus(move |style| apply_pseudo_paint(style, focus));
+    }
     element
 }
 

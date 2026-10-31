@@ -299,10 +299,12 @@ fn view(ctx) {
         widest_frame(visual).is_some_and(|(x, width)| x <= center && center <= x + width)
     };
     // A press in the inspector focuses it without F6; the shell still stores the sidebar.
+    // A pointer press shows no focus frame (the default focus indicators wait for a
+    // navigation key); F6 then shows where focus went.
     click(&mut visual, inspector);
     assert!(
-        framing(&mut visual, inspector),
-        "the press focuses the inspector"
+        !framing(&mut visual, inspector),
+        "a press shows no focus frame"
     );
     keys(&mut visual, "f6");
     assert!(
