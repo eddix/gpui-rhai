@@ -12,8 +12,10 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
   2026-10-08 `form_showcase/default-light.en.dialog` for the Dialog width fix
   and `gallery/table.comfortable.default-dark.zh-CN` for the TabBar entry in
   the Lists sidebar; on 2026-10-09 the 19 Gallery files and the Settings, Form,
-  Data Table and Embedded Views files for the field padding of decision D65
-- Environment of the current files: macOS 27.0, gpui-pre 0.3.7, Rust 1.95.0,
+  Data Table and Embedded Views files for the field padding of decision D65;
+  on 2026-10-31 all 57 files (19 Gallery, 38 examples) for the radius roles
+  and field padding of decisions D74 and D75
+- Environment of the current files: macOS 27.0, gpui-pre 0.3.9, Rust 1.95.0,
   rendered offscreen and read back from the GPU texture (no window chrome, no
   screen capture), stored in device pixels (2x)
 - Settings: 640 × 520 points / 1280 × 1040 pixels
