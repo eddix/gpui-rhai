@@ -82,7 +82,7 @@ dependencies = []
 
 [components."layouts/toolbar"]
 version = "0.2.0"
-content_hash = "3993407c1889f951"
+content_hash = "5451adc3df63c93b"
 dependencies = []
 
 [components."patterns/description_list"]

@@ -41,6 +41,9 @@ semantic versioning from this release.
   Table and Timeline; a stylesheet that names it now fails to load. D76.
 - The SplitPane grip is a capsule; hover darkens it and only a drag extends it
   (`grip_active_length` is its length while dragged).
+- Toolbar sets its `fill` field first, then `filters`, then `context`, with the
+  actions at the end, so control-height items hold both edges (D77). DataView's
+  toolbar follows.
 - Focus frames show after a navigation key and hide at the next pointer press
   (`ScriptViewConfig::focus_indicators`, `FocusIndicators::Navigation` by
   default; `Always` and `Never` override it). Keys with Command, Control or Alt

@@ -1,6 +1,7 @@
 //! Toolbar's `fill` slot takes the width the groups leave (#115): the field no
-//! longer collapses to its padding, it can sit first, between or last, and a
-//! long placeholder does not push the actions to a second line. DataView passes
+//! longer collapses to its padding, it leads the bar (fields first, then what the
+//! bar acts on, then the actions, D76), and a long placeholder does not push the
+//! actions to a second line. DataView passes
 //! `fill`, `size` and `inset` through. Region's body scrolls only on `scroll`
 //! and otherwise clips: it neither draws nor takes clicks outside the region.
 
@@ -70,27 +71,35 @@ const FILTER: &str =
     r#"button::Button(#{ text: "Filter", variant: "ghost", on_click: Fn("noop") })"#;
 const REFRESH: &str =
     r#"button::Button(#{ text: "Refresh", variant: "ghost", on_click: Fn("noop") })"#;
+const CONTEXT: &str = r#"text("Context").test_id("context")"#;
 
 fn toolbar(fields: &str) -> String {
     format!(r#"toolbar::Toolbar(#{{ label: "Hosts toolbar", {fields} }})"#)
 }
 
 #[gpui::test]
-fn a_fill_takes_the_width_between_the_groups(cx: &mut TestAppContext) {
+fn a_fill_leads_and_takes_the_width_the_groups_leave(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(
         cx,
         &toolbar(&format!(
-            "filters: [{FILTER}], fill: {SEARCH}, actions: [{REFRESH}]"
+            "context: [{CONTEXT}], filters: [{FILTER}], fill: {SEARCH}, actions: [{REFRESH}]"
         )),
         800,
         200,
     );
     let filter = bounds(&mut visual, &view, "Filter");
+    let context = bounds(&mut visual, &view, "context");
     let field = bounds(&mut visual, &view, "Search");
     let refresh = bounds(&mut visual, &view, "Refresh");
-    println!("filter {filter:?}\nfield {field:?}\nrefresh {refresh:?}");
-    assert!(field.width > 500.0, "the field is {}px wide", field.width);
-    assert!(filter.x + filter.width < field.x && field.x + field.width < refresh.x);
+    println!("field {field:?}\nfilter {filter:?}\ncontext {context:?}\nrefresh {refresh:?}");
+    assert!(field.width > 400.0, "the field is {}px wide", field.width);
+    // Fields first, then what the bar acts on, then the actions.
+    assert!(field.x.abs() < 0.5, "the field leads: {field:?}");
+    assert!(
+        field.x + field.width < filter.x
+            && filter.x + filter.width < context.x
+            && context.x + context.width < refresh.x
+    );
     assert!(
         (field.y - refresh.y).abs() < 8.0,
         "one line: {field:?} {refresh:?}"
@@ -99,7 +108,7 @@ fn a_fill_takes_the_width_between_the_groups(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_fill_sits_first_or_last_when_a_group_is_empty(cx: &mut TestAppContext) {
+fn a_fill_sits_first_when_a_group_is_empty(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(
         cx,
         &toolbar(&format!("fill: {SEARCH}, actions: [{REFRESH}]")),
@@ -111,6 +120,7 @@ fn a_fill_sits_first_or_last_when_a_group_is_empty(cx: &mut TestAppContext) {
     assert!(field.x.abs() < 0.5, "first: {field:?}");
     assert!(field.x + field.width < refresh.x);
 
+    // Without actions the filters close the bar.
     let (mut visual, view) = mount(
         cx,
         &toolbar(&format!("filters: [{FILTER}], fill: {SEARCH}")),
@@ -119,10 +129,11 @@ fn a_fill_sits_first_or_last_when_a_group_is_empty(cx: &mut TestAppContext) {
     );
     let field = bounds(&mut visual, &view, "Search");
     let filter = bounds(&mut visual, &view, "Filter");
-    assert!(filter.x + filter.width < field.x);
+    assert!(field.x.abs() < 0.5, "first: {field:?}");
+    assert!(field.x + field.width < filter.x);
     assert!(
-        (field.x + field.width - 800.0).abs() < 0.5,
-        "last: {field:?}"
+        (filter.x + filter.width - 800.0).abs() < 0.5,
+        "the filters last: {filter:?}"
     );
 
     let (mut visual, view) = mount(cx, &toolbar(&format!("fill: {SEARCH}")), 800, 200);

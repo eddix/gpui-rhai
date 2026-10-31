@@ -92,7 +92,7 @@ The functions, methods and native primitives a script calls are in the
 | [`layouts/inline`](layouts/inline.md) | `Inline` | Inline places children in a row with one spacing relationship and one control size. |
 | [`layouts/region`](layouts/region.md) | `Region` | Region is one working area: a header with the region's title and actions, an optional toolbar, a body that fills the remaining height, and a footer pinned to the bottom. |
 | [`layouts/stack`](layouts/stack.md) | `Stack` | Stack places children in a column with one spacing relationship between them. |
-| [`layouts/toolbar`](layouts/toolbar.md) | `Toolbar` | Toolbar arranges a region's controls by role: context and filters at the start, secondary actions and the one primary action at the end. |
+| [`layouts/toolbar`](layouts/toolbar.md) | `Toolbar` | Toolbar arranges a region's controls by role: fields at the start, then what the bar acts on, secondary actions and the one primary action at the end. |
 
 ## Patterns
 

@@ -55,9 +55,9 @@ data_view::DataView(#{ key: "hosts", label: "Hosts", title: "Hosts", body: table
 | Field | Type | Required or default | Description |
 |---|---|---|---|
 | `actions` | array of node (at most 16) | `[]` | Secondary actions in the end group, before `primary`. |
-| `context` | array of node (at most 16) | `[]` | What the bar acts on (tags, a breadcrumb), first in the start group. |
-| `fill` | node or `()` | — | One search or query field that takes the width between the groups. |
-| `filters` | array of node (at most 16) | `[]` | Controls that narrow the collection, after `context` in the start group. |
+| `context` | array of node (at most 16) | `[]` | What the bar acts on (tags, a breadcrumb), after `filters` in the start group. |
+| `fill` | node or `()` | — | One search or query field, first in the bar, that takes the width the groups leave. |
+| `filters` | array of node (at most 16) | `[]` | Controls that narrow the collection, first in the start group. |
 | `primary` | node or `()` | — | The one solid action of the bar, last in the end group. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size passed to every control in the bar. |
 
