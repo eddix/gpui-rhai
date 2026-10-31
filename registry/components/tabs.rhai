@@ -2,7 +2,7 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
   "capabilities": {},
@@ -42,7 +42,7 @@ import "components/sliding_panel" as sliding_panel;
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.3.1",
+        id: "components/tabs", "export": "Tabs", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
         capabilities: #{},

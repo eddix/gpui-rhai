@@ -2,7 +2,7 @@
 {
   "id": "components/button",
   "export": "Button",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -27,7 +27,7 @@ define_component(#{
     metadata: #{
         id: "components/button",
         "export": "Button",
-        version: "0.3.1",
+        version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},

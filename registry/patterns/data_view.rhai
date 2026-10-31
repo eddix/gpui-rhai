@@ -2,7 +2,7 @@
 {
   "id": "patterns/data_view",
   "export": "DataView",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["layouts/region", "layouts/toolbar", "patterns/inline_state"],
   "capabilities": {},
@@ -26,7 +26,7 @@ import "patterns/inline_state" as inline_state;
 
 define_component(#{
     metadata: #{
-        id: "patterns/data_view", "export": "DataView", version: "0.2.1",
+        id: "patterns/data_view", "export": "DataView", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["layouts/region", "layouts/toolbar", "patterns/inline_state"], capabilities: #{},
         tokens: ["text_primary", "text_muted", "space.related", "space.group"],

@@ -2,7 +2,7 @@
 {
   "id": "components/split_pane",
   "export": "SplitPane",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -44,7 +44,7 @@
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.2.0",
+    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.sm"],
         environment: ["density", "size"] },

@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/badge"],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.3.2",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
         tokens: ["surface_raised", "surface_hover", "border", "table.selection", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],

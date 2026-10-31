@@ -1,6 +1,6 @@
 # Tag
 
-`components/tag` · export `Tag` · version 0.2.0. Generated from
+`components/tag` · export `Tag` · version 0.4.0. Generated from
 [`registry/components/tag.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tag.rhai); do not edit.
 
 Tag labels a category: a flat tonal tape with an optional facet segment.

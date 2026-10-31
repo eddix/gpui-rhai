@@ -1,9 +1,9 @@
 /* gpui-rhai
-{"id":"components/timeline","export":"Timeline","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],"environment":["size","density"]}
+{"id":"components/timeline","export":"Timeline","version":"0.4.0","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],"environment":["size","density"]}
 */
 // A source-owned, controlled timeline. Application work and data loading stay outside it.
 // Example: Timeline(#{key:"runs",label:"Deployment",items:[#{key:"build",title:"Build",status:"success"}]})
-define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.2.2",
+define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.4.0",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
     tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],environment:["size","density"]},
     schema:#{props:#{

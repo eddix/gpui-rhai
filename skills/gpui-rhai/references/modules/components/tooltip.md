@@ -1,6 +1,6 @@
 # Tooltip
 
-`components/tooltip` · export `Tooltip` · version 0.2.0. Generated from
+`components/tooltip` · export `Tooltip` · version 0.4.0. Generated from
 [`registry/components/tooltip.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tooltip.rhai); do not edit.
 
 Native delayed tooltip using the per-window overlay scheduler.

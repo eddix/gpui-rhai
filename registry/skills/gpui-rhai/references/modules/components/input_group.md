@@ -1,6 +1,6 @@
 # InputGroup
 
-`components/input_group` · export `InputGroup` · version 0.2.0. Generated from
+`components/input_group` · export `InputGroup` · version 0.4.0. Generated from
 [`registry/components/input_group.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/input_group.rhai); do not edit.
 
 Composes an input-like control with integrated prefix and suffix content.

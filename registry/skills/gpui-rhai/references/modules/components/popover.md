@@ -1,6 +1,6 @@
 # Popover
 
-`components/popover` · export `Popover` · version 0.2.0. Generated from
+`components/popover` · export `Popover` · version 0.4.0. Generated from
 [`registry/components/popover.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/popover.rhai); do not edit.
 
 Popover renders controlled content through the native per-window overlay layer.

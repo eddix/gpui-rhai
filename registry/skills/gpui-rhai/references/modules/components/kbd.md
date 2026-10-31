@@ -1,6 +1,6 @@
 # Kbd
 
-`components/kbd` · export `Kbd` · version 0.2.0. Generated from
+`components/kbd` · export `Kbd` · version 0.4.0. Generated from
 [`registry/components/kbd.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/kbd.rhai); do not edit.
 
 Kbd presents a key legend: a framed keycap, or an inline legend inside menus and buttons.

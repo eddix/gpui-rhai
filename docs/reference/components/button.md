@@ -1,6 +1,6 @@
 # Button
 
-`components/button` · export `Button` · version 0.3.1. Generated from
+`components/button` · export `Button` · version 0.4.0. Generated from
 [`registry/components/button.rhai`](../../../registry/components/button.rhai); do not edit.
 
 Button presents a desktop action: a large block with a centered label.

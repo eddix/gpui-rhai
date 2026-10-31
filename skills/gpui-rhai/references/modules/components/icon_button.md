@@ -1,6 +1,6 @@
 # IconButton
 
-`components/icon_button` · export `IconButton` · version 0.3.1. Generated from
+`components/icon_button` · export `IconButton` · version 0.4.0. Generated from
 [`registry/components/icon_button.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/icon_button.rhai); do not edit.
 
 IconButton presents one icon in a square action target.

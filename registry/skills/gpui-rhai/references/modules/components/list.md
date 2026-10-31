@@ -1,6 +1,6 @@
 # List
 
-`components/list` · export `List` · version 0.2.1. Generated from
+`components/list` · export `List` · version 0.4.0. Generated from
 [`registry/components/list.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/list.rhai); do not edit.
 
 Controlled virtualized list of keyed rows: the rows Table draws, without columns.

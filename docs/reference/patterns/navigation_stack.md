@@ -1,6 +1,6 @@
 # NavigationStack
 
-`patterns/navigation_stack` · export `NavigationStack` · version 0.2.2. Generated from
+`patterns/navigation_stack` · export `NavigationStack` · version 0.4.0. Generated from
 [`registry/patterns/navigation_stack.rhai`](../../../registry/patterns/navigation_stack.rhai); do not edit.
 
 Controlled visit stack. Construction ownership stays with the caller (ADR 0019). Back proposes a retained depth; it neither loads data nor changes routes.

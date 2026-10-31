@@ -1,6 +1,6 @@
 # Alert
 
-`components/alert` · export `Alert` · version 0.2.0. Generated from
+`components/alert` · export `Alert` · version 0.4.0. Generated from
 [`registry/components/alert.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/alert.rhai); do not edit.
 
 Persistent inline feedback with semantic variants and composable actions.

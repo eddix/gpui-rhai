@@ -2,7 +2,7 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {},
@@ -23,7 +23,7 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.2.1",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{},
         tokens: [

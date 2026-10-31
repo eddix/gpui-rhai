@@ -1,6 +1,6 @@
 # DatePicker
 
-`components/date_picker` · export `DatePicker` · version 0.2.0. Generated from
+`components/date_picker` · export `DatePicker` · version 0.4.0. Generated from
 [`registry/components/date_picker.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/date_picker.rhai); do not edit.
 
 Controlled single-date field composed from public date data helpers, atoms, and Overlay. State: keyed overlay open; Calendar owns visible-month and focused-date transients.

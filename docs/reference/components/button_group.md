@@ -1,6 +1,6 @@
 # ButtonGroup
 
-`components/button_group` · export `ButtonGroup` · version 0.2.0. Generated from
+`components/button_group` · export `ButtonGroup` · version 0.4.0. Generated from
 [`registry/components/button_group.rhai`](../../../registry/components/button_group.rhai); do not edit.
 
 Visually joins related buttons into one horizontal or vertical control.

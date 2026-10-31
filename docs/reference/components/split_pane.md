@@ -1,6 +1,6 @@
 # SplitPane
 
-`components/split_pane` · export `SplitPane` · version 0.2.0. Generated from
+`components/split_pane` · export `SplitPane` · version 0.4.0. Generated from
 [`registry/components/split_pane.rhai`](../../../registry/components/split_pane.rhai); do not edit.
 
 Controlled, nestable two-panel split layout with a native drag hot lane.

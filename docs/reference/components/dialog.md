@@ -1,6 +1,6 @@
 # Dialog
 
-`components/dialog` · export `Dialog` · version 0.2.0. Generated from
+`components/dialog` · export `Dialog` · version 0.4.0. Generated from
 [`registry/components/dialog.rhai`](../../../registry/components/dialog.rhai); do not edit.
 
 Dialog presents controlled modal content through the native overlay layer.

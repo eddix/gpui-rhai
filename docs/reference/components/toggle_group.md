@@ -1,6 +1,6 @@
 # ToggleGroup
 
-`components/toggle_group` · export `ToggleGroup` · version 0.2.0. Generated from
+`components/toggle_group` · export `ToggleGroup` · version 0.4.0. Generated from
 [`registry/components/toggle_group.rhai`](../../../registry/components/toggle_group.rhai); do not edit.
 
 ToggleGroup holds pressed tool state: equal-height segments joined inside one frame.

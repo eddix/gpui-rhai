@@ -1,6 +1,6 @@
 # Input
 
-`components/input` · export `Input` · version 0.2.0. Generated from
+`components/input` · export `Input` · version 0.4.0. Generated from
 [`registry/components/input.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/input.rhai); do not edit.
 
 Input is a controlled single-line native text input.

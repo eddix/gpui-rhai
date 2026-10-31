@@ -1,23 +1,23 @@
 runtime_api = 3
 
 [components."components/badge"]
-version = "0.2.0"
-content_hash = "87b7f40a955ecb31"
+version = "0.4.0"
+content_hash = "e2483b2294f14bb1"
 dependencies = []
 
 [components."components/button"]
-version = "0.3.1"
-content_hash = "f93a5bbaec1f9638"
+version = "0.4.0"
+content_hash = "8a275f54992e49b4"
 dependencies = []
 
 [components."components/checkbox"]
-version = "0.2.0"
-content_hash = "b1622c64efd96b62"
+version = "0.4.0"
+content_hash = "d75c3d8da54e716e"
 dependencies = []
 
 [components."components/combobox"]
-version = "0.2.1"
-content_hash = "b39148f4f988000d"
+version = "0.4.0"
+content_hash = "9ff0ee4ed6a44141"
 dependencies = ["components/input"]
 
 [components."components/divider"]
@@ -26,18 +26,18 @@ content_hash = "3254ba37d53c17b6"
 dependencies = []
 
 [components."components/input"]
-version = "0.2.0"
-content_hash = "1138a3d3e5783fff"
+version = "0.4.0"
+content_hash = "241b74c403e27be3"
 dependencies = []
 
 [components."components/kbd"]
-version = "0.2.0"
-content_hash = "0979caec95158cbf"
+version = "0.4.0"
+content_hash = "e04c399591c14cdb"
 dependencies = []
 
 [components."components/popover"]
-version = "0.2.0"
-content_hash = "aee7dff7078a86b7"
+version = "0.4.0"
+content_hash = "bd9fc4fd7d260ac7"
 dependencies = []
 
 [components."components/progress"]
@@ -56,8 +56,8 @@ content_hash = "15e71a2986fabdfa"
 dependencies = []
 
 [components."components/split_pane"]
-version = "0.2.0"
-content_hash = "19a702fc17e4f5c3"
+version = "0.4.0"
+content_hash = "a2d86a04fb134457"
 dependencies = []
 
 [components."components/status_bar"]
@@ -71,8 +71,8 @@ content_hash = "0cc58ee30acdaba0"
 dependencies = []
 
 [components."components/toggle_group"]
-version = "0.2.0"
-content_hash = "00fca0ee3721fbf4"
+version = "0.4.0"
+content_hash = "daf8ba0863ecca80"
 dependencies = []
 
 [components."layouts/inline"]
@@ -81,8 +81,8 @@ content_hash = "2d56da733646e51b"
 dependencies = []
 
 [components."layouts/toolbar"]
-version = "0.2.0"
-content_hash = "5451adc3df63c93b"
+version = "0.4.0"
+content_hash = "9fbba52c827d9fe7"
 dependencies = []
 
 [components."patterns/description_list"]

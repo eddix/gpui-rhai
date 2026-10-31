@@ -2,7 +2,7 @@
 {
   "id": "components/tree",
   "export": "Tree",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@
 // Example: Tree(#{key:"files",label:"Files",items:items,expanded:[],selected_keys:[],height:320})
 
 define_component(#{
-    metadata:#{id:"components/tree","export":"Tree",version: "0.2.0",
+    metadata:#{id:"components/tree","export":"Tree",version: "0.4.0",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{},
         tokens: [
             "selection", "surface_hover", "focus_ring", "text_primary", "text_muted",

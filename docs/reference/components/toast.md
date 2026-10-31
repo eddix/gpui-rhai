@@ -1,6 +1,6 @@
 # Toast
 
-`components/toast` · export `Toast` · version 0.2.2. Generated from
+`components/toast` · export `Toast` · version 0.4.0. Generated from
 [`registry/components/toast.rhai`](../../../registry/components/toast.rhai); do not edit.
 
 Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events. State: caller owns items; runtime timers own one-shot deadline and pause/resume state; the stack layout keeps which corner the pointer and keyboard focus are in. `layout: "stack"` piles each corner's toasts behind its newest, the last of that corner's items: up to two 6px edges peek out and a count marks the pile. Hovering the pile or moving keyboard focus into it expands it into a list, newest nearest the corner, under a heading with a Clear all button, and holds every countdown in that corner until pointer and focus leave; Escape collapses it.

@@ -2,7 +2,7 @@
 {
   "id": "components/list",
   "export": "List",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/badge"],
   "capabilities": {},
@@ -30,7 +30,7 @@
 import "components/badge" as badge;
 
 define_component(#{
-    metadata: #{ id: "components/list", "export": "List", version: "0.2.1",
+    metadata: #{ id: "components/list", "export": "List", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
         tokens: [

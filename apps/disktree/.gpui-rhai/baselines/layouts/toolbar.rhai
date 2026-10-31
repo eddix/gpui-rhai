@@ -2,7 +2,7 @@
 {
   "id": "layouts/toolbar",
   "export": "Toolbar",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -25,7 +25,7 @@
 
 define_component(#{
     metadata: #{
-        id: "layouts/toolbar", "export": "Toolbar", version: "0.2.0",
+        id: "layouts/toolbar", "export": "Toolbar", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: ["space.related", "space.group", "metrics.control", "metrics.label_column"],

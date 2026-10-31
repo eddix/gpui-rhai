@@ -1,6 +1,6 @@
 # Tabs
 
-`components/tabs` · export `Tabs` · version 0.3.1. Generated from
+`components/tabs` · export `Tabs` · version 0.4.0. Generated from
 [`registry/components/tabs.rhai`](../../../registry/components/tabs.rhai); do not edit.
 
 Controlled tabs with one tab stop; the arrow keys select. Three looks share every capability: `track` is a tonal track with a raised thumb, for a compact switcher among other controls; `underline` puts the labels on a hairline with a 2px ink bar under the selected one, for the sections of a panel or a card; `bar` is a strip of document tabs whose selected tab takes the panel's surface (`tabbar.active`) and covers its line.

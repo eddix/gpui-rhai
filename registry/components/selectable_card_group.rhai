@@ -2,7 +2,7 @@
 {
   "id": "components/selectable_card_group",
   "export": "SelectableCardGroup",
-  "version": "0.2.2",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/toggle_group"],
   "assets": ["icons/check.svg"],
@@ -20,7 +20,7 @@
 import "components/toggle_group" as choices;
 
 define_component(#{
-    metadata: #{ id: "components/selectable_card_group", "export": "SelectableCardGroup", version: "0.2.2",
+    metadata: #{ id: "components/selectable_card_group", "export": "SelectableCardGroup", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: ["components/toggle_group"], capabilities: #{}, assets: ["icons/check.svg"],
         tokens: ["surface_raised", "surface_hover", "border", "accent", "on_accent", "focus_ring", "text_primary", "text_muted", "disabled", "metrics.inset", "metrics.mark", "space.unit", "space.related", "space.group", "radius.lg", "radius.xs", "typography.subtitle", "typography.caption"],
         environment: ["size", "density"] },

@@ -1,6 +1,6 @@
 # Timeline
 
-`components/timeline` · export `Timeline` · version 0.2.2. Generated from
+`components/timeline` · export `Timeline` · version 0.4.0. Generated from
 [`registry/components/timeline.rhai`](../../../registry/components/timeline.rhai); do not edit.
 
 A source-owned, controlled timeline. Application work and data loading stay outside it.
