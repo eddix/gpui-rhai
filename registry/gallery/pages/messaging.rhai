@@ -106,7 +106,8 @@ fn assistant_render(ctx, props) {
         overdraw_pixels:240,alignment:"bottom",follow_tail:true,
         on_follow_change:Fn("assistant_follow")},Fn("assistant_message").curry(ctx.get_state("messages").len))
         .accessibility_role("list").accessibility_label("Conversation history").tab_stop(true)
-        .with_style(style().border(px(1)).border_color(theme_color("border"))
+        .with_style(style().flex_grow().flex_basis(px(0)).min_height(px(0))
+            .border(px(1)).border_color(theme_color("border"))
             .focus(style().border_color(theme_color("focus_ring"))))
         .on_key_value("home",Fn("assistant_history"),()).on_key_value("end",Fn("assistant_latest"),())
         .on_key_value("pageup",Fn("assistant_page").curry(-240),())
@@ -127,9 +128,12 @@ fn assistant_render(ctx, props) {
         "Send, stop, keep drafting, scroll back and follow again. Replies stay in Rust."),
         actions:[badge::Badge(#{text:if busy {"Streaming"} else {"Ready"}}),
             badge::Badge(#{text:`Reply ${ctx.get_state("round")} · ${ctx.get_state("progress")}/24 chunks`})
-                .test_id("reply-progress").accessibility_role("status")],body:list,
-        toolbar:if tools.len == 0 {()}else{row(tools).with_style(style().gap(theme_length("space.related")).items_center().flex_wrap())},
-        footer:[editor]})
+                .test_id("reply-progress").accessibility_role("status")],
+        // The composer docks under the history in the body: Region's footer is a status bar
+        // with a rule above it, which a framed field does not need.
+        body:column([list, editor])
+            .with_style(style().height(relative(1.0)).min_height(px(0)).gap(theme_length("space.group"))),
+        toolbar:if tools.len == 0 {()}else{row(tools).with_style(style().gap(theme_length("space.related")).items_center().flex_wrap())}})
         .with_style(ctx.component_style("root",style().height(relative(1.0)).min_height(px(0))))
 }
 
