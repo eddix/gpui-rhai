@@ -52,9 +52,9 @@ tree::Tree(#{key:"files",label:"Files",items:items,expanded:[],selected_keys:[],
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `cursor`, `disclosure`, `indicator_bar`, `label`, `loading`, `root`, `row`, `row_active`, `row_selected`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `cursor`, `disclosure`, `label`, `loading`, `root`, `row`, `row_active`, `row_selected`.
 
 ## Theme
 
-- Tokens: `accent`, `disabled`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `selection`, `spacing.lg`, `spacing.xs`, `surface_hover`, `text_muted`, `text_primary`, `typography.body`
-- Environment: `density`
+- Tokens: `disabled`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.md`, `selection`, `spacing.lg`, `spacing.xs`, `surface_hover`, `text_muted`, `text_primary`, `typography.body`
+- Environment: `density`, `size`

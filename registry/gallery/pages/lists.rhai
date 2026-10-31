@@ -54,7 +54,7 @@ fn menu_page(h, v) {
     // The Button handles its own click, which stops there: it opens the menu itself.
     let trigger = button::Button(#{ key: "menu-trigger", text: "File", variant: "secondary",
         on_click: kit::put(h, "menu.open", true) });
-    kit::page(h, v, "menu", "Menu", "Transient list: the cursor is a selection block with the indicator bar. Enter runs.", [
+    kit::page(h, v, "menu", "Menu", "Transient list: the cursor is a rounded selection block. Enter runs.", [
         kit::sec("Open", column([menu::Menu(#{ key: "menu-file", label: "File", trigger: trigger,
             open: kit::val(v, "menu.open", false), active_value: kit::val(v, "menu.active", "open"), items: file_items(),
             on_open_change: kit::store(h, "menu.open"), on_active_change: kit::store(h, "menu.active"),
@@ -114,7 +114,7 @@ fn tree_items() {
 }
 
 fn tree_page(h, v) {
-    kit::page(h, v, "tree", "Tree", "Persistent list: selection carries the indicator bar; the focused cursor shows the ink frame.", [
+    kit::page(h, v, "tree", "Tree", "Persistent list: rows are rounded blocks and selection fills them; the cursor shows the ink frame after a navigation key.", [
         kit::sec("Outline", tree::Tree(#{ key: "tree-files", label: "Files", items: tree_items(), height: 224.0,
             expanded: kit::val(v, "tree.expanded", ["workspace", "src"]), selected_keys: kit::val(v, "tree.selected", ["app"]),
             active_key: kit::val(v, "tree.active", "app"), on_expanded_change: kit::store(h, "tree.expanded"),
@@ -136,7 +136,7 @@ fn ticket_items() {
 }
 
 fn list_page(h, v) {
-    kit::page(h, v, "list", "List", "Keyed rows on the row inset: selection carries the indicator bar; the focused list shows the ink frame on the selected row.", [
+    kit::page(h, v, "list", "List", "Keyed rows on the row inset: selection fills the row; after a navigation key the focused list frames the selected row.", [
         kit::sec("Single selection", list::List(#{ key: "list-tickets", label: "Tickets", items: ticket_items(),
             selection_mode: "single", selected_keys: kit::val(v, "list.selected", ["t2"]), height: 128.0,
             badge_width: 80.0,

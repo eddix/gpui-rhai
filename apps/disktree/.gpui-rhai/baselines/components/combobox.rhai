@@ -8,7 +8,7 @@
   "capabilities": {},
   "assets": ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"],
   "tokens": [
-    "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection", "accent",
+    "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection",
     "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
     "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
     "spacing.sm", "radius.xs", "radius.md", "radius.lg", "typography.control",
@@ -28,7 +28,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input"], capabilities: #{},
         tokens: [
-            "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection", "accent",
+            "surface_raised", "border", "control.border", "focus_ring", "surface_hover", "selection",
             "text.accent", "text_primary", "text_muted", "disabled", "metrics.control",
             "metrics.field_pad", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs",
             "spacing.sm", "radius.xs", "radius.md", "radius.lg", "typography.control",
@@ -139,7 +139,7 @@ define_component(#{
         },
         parts: ["root", "trigger", "value", "placeholder", "indicator", "clear",
             "panel", "search", "list", "group", "option", "option_selected",
-            "option_active", "option_disabled", "empty", "check", "indicator_bar",
+            "option_active", "option_disabled", "empty", "check",
             "focus_frame", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Combobox")
@@ -319,12 +319,7 @@ fn clear_action(ctx, payload) {
 }
 
 // List rows share one grammar: metrics.row high, text at metrics.inset, the cursor is
-// a selection block plus a 2px accent indicator bar drawn inside the inset.
-fn combobox_indicator(ctx) {
-    row([]).with_style(ctx.component_style("indicator_bar", style()
-        .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
-        .width(px(2)).background(theme_color("accent"))))
-}
+// a selection block with a control's corners, inside the panel's padding.
 
 fn render_combobox_row(total_rows, mode, selected, reset_query, ctx, payload) {
     let item = payload.item;
@@ -340,7 +335,7 @@ fn render_combobox_row(total_rows, mode, selected, reset_query, ctx, payload) {
     }
     let row_style = ctx.component_style("option",
         style().height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
-            .items_center().gap(theme_spacing("sm")).typography("body")
+            .radius(theme_radius("md")).items_center().gap(theme_spacing("sm")).typography("body")
             .text_color(theme_color("text_primary"))
             .hover(style().background(theme_color("surface_hover"))));
     let row_style = if item.selected {
@@ -362,7 +357,6 @@ fn render_combobox_row(total_rows, mode, selected, reset_query, ctx, payload) {
         text(item.label).with_style(style().flex_grow().min_width(px(0))
             .whitespace_nowrap().text_ellipsis())
     ];
-    if item.active && !item.disabled { children.push(combobox_indicator(ctx)); }
     let node = row(children)
         .with_key(payload.key).with_style(row_style)
         .disabled(item.disabled).tab_stop(false)

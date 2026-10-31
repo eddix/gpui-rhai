@@ -1,11 +1,11 @@
 /* gpui-rhai
-{"id":"components/timeline","export":"Timeline","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],"environment":["size","density"]}
+{"id":"components/timeline","export":"Timeline","version":"0.2.2","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],"environment":["size","density"]}
 */
 // A source-owned, controlled timeline. Application work and data loading stay outside it.
 // Example: Timeline(#{key:"runs",label:"Deployment",items:[#{key:"build",title:"Build",status:"success"}]})
 define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.2.2",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
-    tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label"],environment:["size","density"]},
+    tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],environment:["size","density"]},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Stable timeline identity."},
         label:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Accessible timeline name."},
@@ -34,7 +34,7 @@ define_component(#{metadata:#{id:"components/timeline","export":"Timeline",versi
         expanded_change:#{payload:#{type:"array",items:#{type:"string"},max_items:10000},doc:"Proposed expansion after group activation."},
         selection_change:#{payload:#{type:"array",items:#{type:"string"},max_items:1},doc:"Proposed single selection."},
         item_click:#{payload:#{type:"string"},doc:"Activated event key."},
-    },slots:#{},parts:["root","row","rail","lamp","time","title","description","detail","meta","disclosure","day_header","indicator_bar","cursor"],effects:["selection_cursor"]},render:Fn("render_Timeline")});
+    },slots:#{},parts:["root","row","rail","lamp","time","title","description","detail","meta","disclosure","day_header","cursor"],effects:["selection_cursor"]},render:Fn("render_Timeline")});
 fn Timeline(props){render_component("components/timeline",props)}
 fn field(item,name,fallback){if name in item&&item[name]!=(){item[name]}else{fallback}}
 fn timeline_records(items,expanded,order,depth,parent){
@@ -142,11 +142,12 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,foc
     let indent=row([]).with_style(style().width(theme_spacing("lg")*item.depth).flex_shrink(false));
     content.push(row([indent,rail,time_column,body_column,meta_column])
         .with_style(style().gap(theme_spacing("sm")).min_height(theme_length("metrics.row")).items_start()));
-    if chosen||current{content.push(row([]).with_style(ctx.component_style("indicator_bar",style().absolute().inset_start(px(0))
-        .top(px(0)).bottom(px(0)).width(px(2)).background(theme_color("accent")))));}
     if item.key==cursor{content.push(row([]).with_style(ctx.component_style("cursor",style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
-        .border(px(2)).border_color(rgba(0x00000000)).group_focus(style().border_color(theme_color("focus_ring"))))));}
+        .radius(theme_radius("md")).border(px(2)).border_color(rgba(0x00000000)).group_focus(style().border_color(theme_color("focus_ring"))))));}
+    // A row is a pressable block with a control's corners, spacing.xs in from the sides;
+    // the current step keeps its accent title.
     let node=column(content).with_key(payload.key).with_style(ctx.component_style("row",style().relative().min_height(theme_length("metrics.row"))
+        .margin_x(theme_spacing("xs")).radius(theme_radius("md"))
         .padding_start(theme_length("metrics.inset")).padding_end(theme_length("metrics.inset"))
         .background(if chosen{theme_color("selection")}else{rgba(0x00000000)})
         .hover(style().background(theme_color("surface_hover")))))

@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "surface_raised", "border", "text_primary", "metrics.inset", "space.group",
+    "surface_raised", "border", "text_primary", "metrics.inset", "space.group", "radius.lg",
     "typography.subtitle"
   ],
   "environment": ["density"]
@@ -22,7 +22,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "border", "text_primary", "metrics.inset", "space.group",
-            "typography.subtitle"
+            "radius.lg", "typography.subtitle"
         ],
         environment: ["density"] },
     schema: #{
@@ -61,8 +61,10 @@ fn render_Card(ctx, props) {
         children.push(props.footer.with_style(ctx.component_style("footer", style())));
     }
     // A card is a color block; the outline variant is for cards placed on a raised
-    // surface. Parts are separated by space, not rules.
-    let root = style().padding(theme_length("metrics.inset")).gap(theme_length("space.group"));
+    // surface. Parts are separated by space, not rules. It holds rounded controls, so it
+    // rounds like a floating surface.
+    let root = style().padding(theme_length("metrics.inset")).gap(theme_length("space.group"))
+        .radius(theme_radius("lg"));
     root = if variant == "outline" {
         root.border(px(1)).border_color(theme_color("border"))
     } else { root.background(theme_color("surface_raised")) };

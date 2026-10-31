@@ -80,12 +80,12 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empty`, `focus_frame`, `indicator_bar`, `loading`, `meta`, `root`, `row`, `row_selected`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `secondary`, `title`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empty`, `focus_frame`, `loading`, `meta`, `root`, `row`, `row_selected`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `secondary`, `title`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.row`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `spacing.sm`, `spacing.xs`, `surface_hover`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`
-- Environment: `density`
+- Tokens: `border`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.row`, `radius.md`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `spacing.sm`, `spacing.xs`, `surface_hover`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`
+- Environment: `density`, `size`
 
 ## Dependencies
 

@@ -57,12 +57,12 @@ command::Command(#{ key: "palette", label: "Commands", query: query, active_valu
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `empty`, `group`, `indicator_bar`, `item`, `item_active`, `label`, `list`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `shortcut`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `empty`, `group`, `item`, `item_active`, `label`, `list`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `shortcut`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `metrics.inset`, `metrics.row`, `radius.lg`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
-- Environment: `density`
+- Tokens: `border`, `disabled`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
+- Environment: `density`, `size`
 
 ## Dependencies
 

@@ -54,7 +54,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `card`, `card
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.mark`, `on_accent`, `radius.xs`, `space.group`, `space.related`, `space.unit`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.caption`, `typography.subtitle`
+- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.mark`, `on_accent`, `radius.lg`, `radius.xs`, `space.group`, `space.related`, `space.unit`, `surface_hover`, `surface_raised`, `text_muted`, `text_primary`, `typography.caption`, `typography.subtitle`
 - Environment: `density`, `size`
 
 ## Dependencies

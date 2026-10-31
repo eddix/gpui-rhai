@@ -74,12 +74,12 @@ menu::Menu(#{ key: "file", label: "File menu", trigger: text("File"), open: true
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `content`, `focus_frame`, `indicator_bar`, `item`, `label`, `root`, `separator`, `shortcut`, `submenu`, `trigger`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `content`, `focus_frame`, `item`, `label`, `root`, `separator`, `shortcut`, `submenu`, `trigger`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `disabled`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
-- Environment: `density`
+- Tokens: `border`, `disabled`, `focus_ring`, `metrics.icon`, `metrics.inset`, `metrics.row`, `radius.lg`, `radius.md`, `selection`, `spacing.sm`, `spacing.xs`, `surface_hover`, `surface_raised`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.label`
+- Environment: `density`, `size`
 
 ## Dependencies
 

@@ -7,11 +7,11 @@
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {},
   "tokens": [
-    "surface_raised", "border", "surface_hover", "selection", "accent", "text_primary",
+    "surface_raised", "border", "surface_hover", "selection", "text_primary",
     "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-    "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
+    "radius.md", "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
-  "environment": ["density"]
+  "environment": ["size", "density"]
 }
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
@@ -27,11 +27,11 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{},
         tokens: [
-            "surface_raised", "border", "surface_hover", "selection", "accent", "text_primary",
+            "surface_raised", "border", "surface_hover", "selection", "text_primary",
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-            "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
+            "radius.md", "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
-        environment: ["density"] },
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
@@ -102,7 +102,7 @@ define_component(#{
                 doc: "Emitted when a command is clicked or activated with Enter, after its bound action; the payload is its value." },
         },
         slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty",
-            "indicator_bar", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
+            "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Command")
 });
@@ -212,12 +212,7 @@ fn activation_handler(action) {
 }
 
 // List rows: metrics.row high, text at metrics.inset; the cursor is a selection block
-// plus the 2px indicator bar inside the inset.
-fn command_indicator(ctx) {
-    row([]).with_style(ctx.component_style("indicator_bar", style()
-        .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
-        .width(px(2)).background(theme_color("accent"))))
-}
+// with a control's corners, inside the panel's padding.
 
 fn render_command_row(content, total_rows, ctx, payload) {
     let item = payload.item;
@@ -246,10 +241,9 @@ fn render_command_row(content, total_rows, ctx, payload) {
     }
     let children = [row(words).with_style(style().flex_grow().min_width(px(0)).items_baseline()
         .gap(theme_spacing("xs")))];
-    if item.active && !disabled { children.push(command_indicator(ctx)); }
     let row_style = style()
         .height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
-        .gap(theme_spacing("sm")).items_center()
+        .radius(theme_radius("md")).gap(theme_spacing("sm")).items_center()
         .typography("body")
         .text_color(theme_color("text_primary"))
         .disabled(style().text_color(theme_color("disabled")));

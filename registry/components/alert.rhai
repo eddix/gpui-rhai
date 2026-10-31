@@ -8,7 +8,7 @@
   "capabilities": {},
   "tokens": [
     "surface_raised", "success", "warning", "danger", "text_primary", "text_muted",
-    "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm", "space.related",
+    "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm", "space.related", "radius.lg",
     "typography.body"
   ],
   "environment": ["density"]
@@ -24,7 +24,7 @@ define_component(#{
         tokens: [
             "surface_raised", "success", "warning", "danger", "text_primary",
             "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm",
-            "space.related", "typography.body"
+            "space.related", "radius.lg", "typography.body"
         ],
         environment: ["density"] },
     schema: #{
@@ -101,7 +101,7 @@ fn render_Alert(ctx, props) {
     }
     row(children).with_style(ctx.component_style("root", style()
         .padding(theme_length("metrics.inset")).gap(theme_spacing("sm")).items_start()
-        .background(theme_color("surface_raised"))))
+        .radius(theme_radius("lg")).background(theme_color("surface_raised"))))
         .accessibility_role(alert_role(variant))
         .accessibility_label(props.title)
 }

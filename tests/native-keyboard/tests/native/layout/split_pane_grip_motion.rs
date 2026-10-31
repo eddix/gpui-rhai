@@ -82,7 +82,16 @@ fn default_grip_grows_and_reverses_through_intermediate_native_frames(cx: &mut T
             .unwrap();
         assert!((length(&mut visual, horizontal) - 24.0).abs() < 0.5);
         let at = pointer_at_separator(&mut visual, &view);
+        // Hover only darkens the grip; a press extends it.
         visual.simulate_mouse_move(at, None, Modifiers::none());
+        settle(&mut visual, Step::Refresh, 3);
+        manual.advance(Duration::from_millis(50));
+        settle(&mut visual, Step::Refresh, 3);
+        assert!(
+            (length(&mut visual, horizontal) - 24.0).abs() < 0.5,
+            "hover does not extend the grip"
+        );
+        visual.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
         settle(&mut visual, Step::Refresh, 3);
         assert!(
             (length(&mut visual, horizontal) - 24.0).abs() < 0.5,
@@ -95,7 +104,7 @@ fn default_grip_grows_and_reverses_through_intermediate_native_frames(cx: &mut T
             middle > 24.5 && middle < 39.5,
             "must present an intermediate length, got {middle}"
         );
-        visual.simulate_mouse_move(point(px(20.0), px(20.0)), None, Modifiers::none());
+        visual.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
         settle(&mut visual, Step::Refresh, 3);
         assert!(
             (length(&mut visual, horizontal) - middle).abs() < 0.5,
@@ -128,8 +137,10 @@ fn reduced_and_none_grip_motion_snap_to_current_state(cx: &mut TestAppContext) {
         assert!((length(&mut visual, true) - 24.0).abs() < 0.5);
         let at = pointer_at_separator(&mut visual, &view);
         visual.simulate_mouse_move(at, None, Modifiers::none());
+        visual.simulate_mouse_down(at, MouseButton::Left, Modifiers::none());
         settle(&mut visual, Step::Refresh, 4);
         assert!((length(&mut visual, true) - 40.0).abs() < 0.5);
+        visual.simulate_mouse_up(at, MouseButton::Left, Modifiers::none());
         visual.simulate_mouse_move(point(px(20.0), px(20.0)), None, Modifiers::none());
         settle(&mut visual, Step::Refresh, 4);
         assert!((length(&mut visual, true) - 24.0).abs() < 0.5);

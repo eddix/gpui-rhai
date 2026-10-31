@@ -7,7 +7,7 @@
   "dependencies": ["components/badge"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"],
-  "tokens": ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
+  "tokens": ["surface_raised", "surface_hover", "border", "table.selection", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
   "environment": ["density"]
 }
 */
@@ -22,7 +22,7 @@ define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.3.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
-        tokens: ["surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
+        tokens: ["surface_raised", "surface_hover", "border", "table.selection", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
         environment: ["density"],
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{
@@ -222,7 +222,7 @@ define_component(#{
             empty: #{ required: false, multiple: false,
                 doc: "Node shown instead of `empty_text` when no row is left to show." },
         },
-        parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header", "indicator_bar", "cursor", "focus_frame",
+        parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header", "cursor", "focus_frame",
             "group_indicator", "group_label", "group_count", "row", "row_selected",
             "loading", "empty", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
@@ -440,12 +440,10 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, selecti
         cells.push(node);
         cell_index += 1;
     }
-    // Selection is the table selection tint plus the 2px indicator bar on the row start;
-    // while the table has keyboard focus the selected row also shows the focus frame.
+    // Selection is the table selection tint, filling the band between the row's dividers
+    // edge to edge; while the table has keyboard focus the selected row also shows the focus
+    // frame.
     if item.selected {
-        cells.push(row([]).with_style(ctx.component_style("indicator_bar", style()
-            .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
-            .width(px(2)).background(theme_color("accent")))));
         cells.push(row([]).with_style(ctx.component_style("cursor", style()
             .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
             .border(px(2)).border_color(rgba(0x00000000))

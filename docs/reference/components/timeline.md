@@ -45,9 +45,9 @@ timeline::Timeline(#{key:"runs",label:"Deployment",items:[#{key:"build",title:"B
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `cursor`, `day_header`, `description`, `detail`, `disclosure`, `indicator_bar`, `lamp`, `meta`, `rail`, `root`, `row`, `time`, `title`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `cursor`, `day_header`, `description`, `detail`, `disclosure`, `lamp`, `meta`, `rail`, `root`, `row`, `time`, `title`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `danger`, `focus_ring`, `metrics.control`, `metrics.inset`, `metrics.label_column`, `metrics.row`, `selection`, `spacing.lg`, `spacing.sm`, `spacing.xs`, `success`, `surface_hover`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`, `typography.label`, `warning`
+- Tokens: `accent`, `border`, `danger`, `focus_ring`, `metrics.control`, `metrics.inset`, `metrics.label_column`, `metrics.row`, `radius.md`, `selection`, `spacing.lg`, `spacing.sm`, `spacing.xs`, `success`, `surface_hover`, `text.accent`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`, `typography.label`, `warning`
 - Environment: `density`, `size`

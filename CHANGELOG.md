@@ -31,6 +31,16 @@ semantic versioning from this release.
   `metrics.multiline_pad` is `field_pad` less the half-leading of its text
   (comfortable 2 / 3 / 6 / 8, compact 0 / 0 / 2 / 6). D75.
 - The Gallery drops its Corners toggle, palette commands and status item.
+- **Breaking:** Card, Alert and SelectableCardGroup cards round at
+  `radius.lg` with floating surfaces. Pressable rows lose the accent bar at
+  their start and become `radius.md` blocks whose selection is a fill: Menu
+  items, Select and Combobox options, Command rows, Tree, Timeline and List rows
+  without dividers, which sit `spacing.xs` in from a bare container. Table rows
+  and List rows with `dividers: true` keep filling the band square. The
+  `indicator_bar` part is removed from Menu, Combobox, Command, Tree, List,
+  Table and Timeline; a stylesheet that names it now fails to load. D76.
+- The SplitPane grip is a capsule; hover darkens it and only a drag extends it
+  (`grip_active_length` is its length while dragged).
 - Focus frames show after a navigation key and hide at the next pointer press
   (`ScriptViewConfig::focus_indicators`, `FocusIndicators::Navigation` by
   default; `Always` and `Never` override it). Keys with Command, Control or Alt

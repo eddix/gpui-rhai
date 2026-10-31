@@ -1059,7 +1059,7 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
                             width: #{ kind: "fixed", value: 120 } }],
                         selection_mode: "single", selected_keys: ["a"],
                         part_styles: #{
-                            indicator_bar: style().background(theme_color("danger")),
+                            cursor: style().background(theme_color("danger")),
                             row_selected: style().text_color(theme_color("accent"))
                         }
                     })
@@ -1072,7 +1072,6 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
         panic!("state surface specimen must render a column");
     };
     let token = |name: &str| Some(ColorValue::Token(name.to_owned()));
-    let row = Length::token("metrics.row").unwrap();
 
     // Tabs: one tonal track inset by xxs with a control's corners in either orientation;
     // a raised thumb, rounded like a box inside it, that carries the list focus; control
@@ -1115,9 +1114,17 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
         );
     }
 
-    // Table: label-voice header, metrics.row rows, the selection tint and the
-    // indicator bar, each a part the caller can restyle.
-    let UiNodeKind::Box { children: table } = children[2].kind() else {
+    assert_table_state_surfaces(&children[2]);
+}
+
+/// The Table of the state-surface specimen: label-voice header, metrics.row rows, the
+/// selection tint filling the band with no indicator bar, and the cursor frame, each a
+/// part the caller can restyle.
+fn assert_table_state_surfaces(table_node: &gpui_rhai::UiNode) {
+    use gpui_rhai::Length;
+    let token = |name: &str| Some(ColorValue::Token(name.to_owned()));
+    let row = Length::token("metrics.row").unwrap();
+    let UiNodeKind::Box { children: table } = table_node.kind() else {
         panic!("Table must be a Box composition");
     };
     assert_eq!(table[0].style().base.height, Some(row.into()));
@@ -1139,9 +1146,18 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
     let UiNodeKind::Box { children: cells } = selected.kind() else {
         panic!("Table row must be a row");
     };
-    let bar = &cells[cells.len() - 2].style().base;
-    assert_eq!(bar.width, Some(Length::Pixels(2.0).into()));
-    assert_eq!(bar.background, token("danger"));
+    assert!(
+        cells
+            .iter()
+            .all(|cell| cell.style().base.width != Some(Length::Pixels(2.0).into())),
+        "a selected row draws no indicator bar"
+    );
+    let cursor = &cells[cells.len() - 1].style();
+    assert_eq!(cursor.base.background, token("danger"));
+    assert_eq!(
+        cursor.group_focus.as_ref().unwrap().border_color,
+        token("focus_ring")
+    );
 }
 
 #[test]
@@ -2397,18 +2413,14 @@ fn official_table_is_public_data_backed_rhai_composition() {
     else {
         panic!("table row must remain a public row composition");
     };
-    // A selected row carries the selection tint, then the indicator bar and the keyboard
-    // cursor frame after its cells.
+    // A selected row carries the selection tint across the band, then the keyboard cursor
+    // frame after its cells; no indicator bar.
     assert!(matches!(
         row.style().base.background.as_ref(),
         Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
     ));
-    assert_eq!(row_children.len(), 6);
-    assert!(row_children[5].style().group_focus.is_some());
-    assert_eq!(
-        row_children[4].style().base.background,
-        Some(gpui_rhai::ColorValue::Token("accent".to_owned()))
-    );
+    assert_eq!(row_children.len(), 5);
+    assert!(row_children[4].style().group_focus.is_some());
     let cells = &row_children[..4];
     assert_eq!(header_cells.len(), 4);
     assert!(official_source("components/table").contains(".with_table_track("));

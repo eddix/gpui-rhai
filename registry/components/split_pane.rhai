@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["border", "surface_hover", "focus_ring", "accent", "surface_raised", "spacing.xs", "spacing.md", "metrics.control"],
+  "tokens": ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.sm"],
   "environment": ["density", "size"]
 }
 */
@@ -17,8 +17,9 @@
 // requested. If the Host rejects that value, the preview returns to `size`.
 // State: only native pointer preview; application ratio and collapse remain controlled.
 //
-// The default grip is a square-ended short bar. Hover, focus and drag extend it with the
-// theme's fast feedback motion, sampled natively; reduced/no-motion policy snaps it.
+// The default grip is a short capsule, a marker's shape. Hover darkens it, focus takes the
+// focus color, and only a drag extends it, with the theme's fast feedback motion sampled
+// natively; reduced/no-motion policy snaps it.
 // `grip: false` removes the decoration without removing the separator's drag/key surface.
 // `handle` replaces the bar with a static Node. Alternatively, `handle_renderer` is a
 // render-time Fn(ctx, detail) -> Node, bound with ctx.node_factory(Fn("my_grip")):
@@ -45,7 +46,7 @@
 define_component(#{
     metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["border", "surface_hover", "focus_ring", "accent", "surface_raised", "spacing.xs", "spacing.md", "metrics.control"],
+        tokens: ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.sm"],
         environment: ["density", "size"] },
     schema: #{
         props: #{
@@ -101,7 +102,7 @@ define_component(#{
                 doc: "Resting logical-pixel length of the default grip's motion range; custom renderers own their dimensions." },
             grip_active_length: #{ schema: #{ type: "number", exclusive_min: 0.0, max: 512.0 }, required: false, sensitive: false,
                 "default": #{ type: "float", value: 40.0 },
-                doc: "Active logical-pixel length of the default grip's motion range. The stable hit area contains both endpoints." },
+                doc: "Logical-pixel length the default grip extends to while dragged. The stable hit area contains both endpoints." },
             line: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
                 doc: "Paints the native line down the separator; set `false` when `handle` draws its own." },
@@ -136,10 +137,16 @@ fn split_grip_content(ctx, props, horizontal, state) {
         ctx.render_node(props.handle_renderer, #{state:state, orientation:props.orientation,
             duration_ms:duration, easing:easing})
     } else if has_node { props.handle } else {
-        let shape = style().flex_shrink(false).background(theme_color("border"));
+        let shape = style().flex_shrink(false).background(theme_color("border")).radius(theme_radius("sm"));
         shape = if horizontal { shape.width(theme_spacing("xs")).height(px(props.grip_length)) }
             else { shape.width(px(props.grip_length)).height(theme_spacing("xs")) };
-        box([]).with_style(shape).progress_motion(motion_signal(state, ["hover", "drag", "focus"],
+        box([]).with_style(shape)
+            .signal_style(state, #{
+                hover: style().background(theme_color("text_muted")),
+                drag: style().background(theme_color("text_muted")),
+                focus: style().background(theme_color("focus_ring")),
+            })
+            .progress_motion(motion_signal(state, ["drag"],
             motion_transition(if horizontal { "height" } else { "width" }, props.grip_length, props.grip_active_length,
                 #{duration_ms:duration, easing:easing, intent:"feedback"})))
     };

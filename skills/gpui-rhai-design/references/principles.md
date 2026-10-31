@@ -146,15 +146,12 @@ can be turned off through parts or `ui/styles.rhai`.
    form group names, status-bar field names — use the monospace family at the
    caption size, uppercase for Latin text, in the muted color. A label voice
    replaces a heading; it never stacks on top of one.
-2. **Indicator bar.** The current item or keyboard cursor in any list-like
-   component is a tonal block plus a 2px accent bar on the start edge, drawn
-   inside the content inset so it never pushes text.
-3. **Square lamps.** Status indicators are 6px squares, like device LEDs.
+2. **Square lamps.** Status indicators are 6px squares, like device LEDs.
    Circles remain only where the circle is semantic: Radio, Avatar,
    presence. Slider caps are rectangular faders.
-4. **Visible shortcuts.** Menus, the command palette, tooltips and buttons can
+3. **Visible shortcuts.** Menus, the command palette, tooltips and buttons can
    show their action's shortcut in a lightweight key legend.
-5. **Faceted tags.** A Tag may carry a facet segment (`SITE│i18n`), resolving the
+4. **Faceted tags.** A Tag may carry a facet segment (`SITE│i18n`), resolving the
    ambiguity of bare context values.
 
 ### Default palette: paper, ink and one cobalt spot color
@@ -169,12 +166,12 @@ red, amber and green status roles. Exact values and constraints are in
 ### Geometry
 
 Radius tells kinds apart, so each component takes the one its kind needs and
-no application chooses a corner style. Layout (containers, grids, rows,
-divider-built bars) is square; controls are rounded rectangles (4px up to
-24px tall, 6px above); markers (Tag, Badge, Switch, counts) are capsules;
-floating surfaces are 8px. The signatures that do not depend on corners stay:
-square lamps, faders, label voice, indicator bars. See
-[atoms.md](atoms.md#radius-roles).
+no application chooses a corner style. Layout (regions, grids, divider-built
+bars, rows between dividers) is square; controls are rounded rectangles (4px
+up to 24px tall, 6px above), and so is any row you press, its selection a fill
+rather than a bar; markers (Tag, Badge, Switch, counts) are capsules; cards
+and floating surfaces are 8px. The signatures that do not depend on corners
+stay: square lamps, faders, label voice. See [atoms.md](atoms.md#radius-roles).
 Borders are 1px hairlines. Shadows, glass and gradients are not part of the
 default component language.
 
