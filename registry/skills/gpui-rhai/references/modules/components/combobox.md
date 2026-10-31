@@ -1,6 +1,6 @@
 # Combobox
 
-`components/combobox` · export `Combobox` · version 0.2.1. Generated from
+`components/combobox` · export `Combobox` · version 0.4.0. Generated from
 [`registry/components/combobox.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/combobox.rhai); do not edit.
 
 Public Rhai choice composition over Overlay, Input, and virtual_collection. State: caller owns selected/open/query; component owns only active-option navigation.

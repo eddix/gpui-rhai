@@ -2,7 +2,7 @@
 {
   "id": "components/menu",
   "export": "Menu",
-  "version": "0.2.1",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/divider", "components/kbd"],
   "capabilities": {},
@@ -26,7 +26,7 @@ import "components/kbd" as kbd;
 
 define_component(#{
     metadata: #{
-        id: "components/menu", "export": "Menu", version: "0.2.1",
+        id: "components/menu", "export": "Menu", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/divider", "components/kbd"], capabilities: #{},
         tokens: [

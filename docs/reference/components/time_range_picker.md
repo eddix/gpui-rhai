@@ -1,6 +1,6 @@
 # TimeRangePicker
 
-`components/time_range_picker` · export `TimeRangePicker` · version 0.2.2. Generated from
+`components/time_range_picker` · export `TimeRangePicker` · version 0.4.0. Generated from
 [`registry/components/time_range_picker.rhai`](../../../registry/components/time_range_picker.rhai); do not edit.
 
 Controlled relative windows and explicit date-time drafts, committed only on Apply.

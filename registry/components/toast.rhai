@@ -2,7 +2,7 @@
 {
   "id": "components/toast",
   "export": "Toast",
-  "version": "0.2.2",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -28,7 +28,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/toast", "export": "Toast", version: "0.2.2",
+        id: "components/toast", "export": "Toast", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "border", "surface_hover", "success", "warning", "danger",

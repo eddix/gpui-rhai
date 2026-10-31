@@ -1,6 +1,6 @@
 # Switch
 
-`components/switch` · export `Switch` · version 0.2.0. Generated from
+`components/switch` · export `Switch` · version 0.4.0. Generated from
 [`registry/components/switch.rhai`](../../../registry/components/switch.rhai); do not edit.
 
 Controlled binary switch with disabled and loading states. State: controlled by the checked prop.

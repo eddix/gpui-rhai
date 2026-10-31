@@ -2,7 +2,7 @@
 {
   "id": "components/toggle_group",
   "export": "ToggleGroup",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -22,7 +22,7 @@
 // segments; Enter or Space toggles the focused segment.
 
 define_component(#{
-    metadata: #{ id: "components/toggle_group", "export": "ToggleGroup", version: "0.2.0",
+    metadata: #{ id: "components/toggle_group", "export": "ToggleGroup", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [

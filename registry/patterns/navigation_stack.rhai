@@ -1,6 +1,6 @@
 /* gpui-rhai
 {
-  "id": "patterns/navigation_stack", "export": "NavigationStack", "version": "0.2.2",
+  "id": "patterns/navigation_stack", "export": "NavigationStack", "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/menu"], "capabilities": {},
   "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"],
@@ -18,7 +18,7 @@ import "components/button" as button;
 import "components/menu" as menu;
 
 define_component(#{
-    metadata: #{ id: "patterns/navigation_stack", "export": "NavigationStack", version: "0.2.2",
+    metadata: #{ id: "patterns/navigation_stack", "export": "NavigationStack", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/menu"], capabilities: #{},
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"],

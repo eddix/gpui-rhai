@@ -1,6 +1,6 @@
 # Card
 
-`components/card` · export `Card` · version 0.2.0. Generated from
+`components/card` · export `Card` · version 0.4.0. Generated from
 [`registry/components/card.rhai`](../../../registry/components/card.rhai); do not edit.
 
 General themed content surface with optional header and footer slots.

@@ -2,7 +2,7 @@
 {
   "id": "components/input_group",
   "export": "InputGroup",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -17,7 +17,7 @@
 // Example: InputGroup(#{ label: "Search", prefix: search_icon, control: input_node })
 
 define_component(#{
-    metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.2.0",
+    metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "control.border", "surface_raised", "focus_ring", "text_muted", "metrics.control",

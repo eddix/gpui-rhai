@@ -2,7 +2,7 @@
 {
   "id": "components/card",
   "export": "Card",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -18,7 +18,7 @@
 // Example: Card(#{ header: text("Account"), content: text("Ada") })
 
 define_component(#{
-    metadata: #{ id: "components/card", "export": "Card", version: "0.2.0",
+    metadata: #{ id: "components/card", "export": "Card", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "border", "text_primary", "metrics.inset", "space.group",

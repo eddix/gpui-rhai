@@ -2,7 +2,7 @@
 {
   "id": "components/tab_overflow_menu",
   "export": "TabOverflowMenu",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/menu"],
   "capabilities": {},
@@ -22,7 +22,7 @@ import "components/menu" as menu;
 
 define_component(#{
     metadata: #{
-        id: "components/tab_overflow_menu", "export": "TabOverflowMenu", version: "0.3.0",
+        id: "components/tab_overflow_menu", "export": "TabOverflowMenu", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/menu"], capabilities: #{},
         tokens: ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon"],

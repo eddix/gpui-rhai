@@ -2,7 +2,7 @@
 {
   "id": "components/date_picker",
   "export": "DatePicker",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/calendar"],
   "capabilities": {},
@@ -25,7 +25,7 @@ import "components/calendar" as calendar;
 
 define_component(#{
     metadata: #{
-        id: "components/date_picker", "export": "DatePicker", version: "0.2.0",
+        id: "components/date_picker", "export": "DatePicker", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/calendar"], capabilities: #{},
         tokens: [

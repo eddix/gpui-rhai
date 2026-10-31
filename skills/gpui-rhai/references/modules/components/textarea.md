@@ -1,6 +1,6 @@
 # Textarea
 
-`components/textarea` · export `Textarea` · version 0.2.0. Generated from
+`components/textarea` · export `Textarea` · version 0.4.0. Generated from
 [`registry/components/textarea.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/textarea.rhai); do not edit.
 
 Textarea is a controlled multiline field with native IME, selection, wrapping, and auto-grow.

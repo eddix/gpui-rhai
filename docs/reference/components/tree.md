@@ -1,6 +1,6 @@
 # Tree
 
-`components/tree` · export `Tree` · version 0.2.0. Generated from
+`components/tree` · export `Tree` · version 0.4.0. Generated from
 [`registry/components/tree.rhai`](../../../registry/components/tree.rhai); do not edit.
 
 Controlled virtualized hierarchical outline over the shared Rust projection.

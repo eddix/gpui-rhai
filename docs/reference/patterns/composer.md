@@ -1,6 +1,6 @@
 # Composer
 
-`patterns/composer` · export `Composer` · version 0.2.2. Generated from
+`patterns/composer` · export `Composer` · version 0.4.0. Generated from
 [`registry/patterns/composer.rhai`](../../../registry/patterns/composer.rhai); do not edit.
 
 Controlled drafting surface. Busy blocks sending, never drafting; the application owns sending, stopping and clearing the accepted value.

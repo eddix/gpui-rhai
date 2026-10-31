@@ -1,6 +1,6 @@
 # SelectableCardGroup
 
-`components/selectable_card_group` · export `SelectableCardGroup` · version 0.2.2. Generated from
+`components/selectable_card_group` · export `SelectableCardGroup` · version 0.4.0. Generated from
 [`registry/components/selectable_card_group.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/selectable_card_group.rhai); do not edit.
 
 Small controlled rich choices with one roving selection tab stop. `content` is presentational; independent interactive controls belong to `actions`, outside the radio/checkbox. Loading/error content does not disable selection.

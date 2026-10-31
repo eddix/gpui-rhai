@@ -1,6 +1,6 @@
 # Menu
 
-`components/menu` · export `Menu` · version 0.2.1. Generated from
+`components/menu` · export `Menu` · version 0.4.0. Generated from
 [`registry/components/menu.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/menu.rhai); do not edit.
 
 Controlled in-window menu with roving selection and nested submenu nodes.

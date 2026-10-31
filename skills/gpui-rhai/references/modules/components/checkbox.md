@@ -1,6 +1,6 @@
 # Checkbox
 
-`components/checkbox` · export `Checkbox` · version 0.2.0. Generated from
+`components/checkbox` · export `Checkbox` · version 0.4.0. Generated from
 [`registry/components/checkbox.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/checkbox.rhai); do not edit.
 
 Controlled checkbox with checked, unchecked, and indeterminate states. State: controlled by checked/indeterminate props.

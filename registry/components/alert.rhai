@@ -2,7 +2,7 @@
 {
   "id": "components/alert",
   "export": "Alert",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@
 // Example: Alert(#{ title: "Saved", description: "Changes are live.", variant: "success" })
 
 define_component(#{
-    metadata: #{ id: "components/alert", "export": "Alert", version: "0.2.0",
+    metadata: #{ id: "components/alert", "export": "Alert", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "success", "warning", "danger", "text_primary",

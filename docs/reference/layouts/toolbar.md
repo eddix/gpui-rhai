@@ -1,6 +1,6 @@
 # Toolbar
 
-`layouts/toolbar` · export `Toolbar` · version 0.2.0. Generated from
+`layouts/toolbar` · export `Toolbar` · version 0.4.0. Generated from
 [`registry/layouts/toolbar.rhai`](../../../registry/layouts/toolbar.rhai); do not edit.
 
 Toolbar arranges a region's controls by role: fields at the start, then what the bar acts on, secondary actions and the one primary action at the end. Control-height items take both edges and shorter markers (tags, a breadcrumb) sit inside them, so the bar reads level.

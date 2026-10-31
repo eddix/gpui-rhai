@@ -1,6 +1,6 @@
 # Badge
 
-`components/badge` · export `Badge` · version 0.2.0. Generated from
+`components/badge` · export `Badge` · version 0.4.0. Generated from
 [`registry/components/badge.rhai`](../../../registry/components/badge.rhai); do not edit.
 
 Badge marks a read-only status: a square lamp followed by its label.
