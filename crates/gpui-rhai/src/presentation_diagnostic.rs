@@ -8,8 +8,10 @@ use std::{
 
 use crate::{NodeId, ScriptGeneration};
 
-/// A recoverable native image presentation failure. No image bytes or script
-/// state are included. The normal last-good script transaction remains valid.
+/// A recoverable native presentation failure: an image that did not load, or a
+/// style the renderer had to adjust (an `auto_grid_columns` whose tokens
+/// resolved out of order). No image bytes or script state are included. The
+/// normal last-good script transaction remains valid.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PresentationDiagnostic {
     pub generation: ScriptGeneration,
@@ -88,12 +90,38 @@ impl PresentationSink {
         asset_id: Option<&str>,
         error: Option<String>,
     ) {
+        self.result(path, "image", node_id, asset_id, error);
+    }
+
+    /// A node's style failed to present as written, `topic` naming what
+    /// (`error` is `None` once it presents again).
+    pub(crate) fn style_result(
+        &self,
+        path: &str,
+        topic: &str,
+        node_id: Option<NodeId>,
+        error: Option<String>,
+    ) {
+        self.result(path, topic, node_id, None, error);
+    }
+
+    fn result(
+        &self,
+        path: &str,
+        topic: &str,
+        node_id: Option<NodeId>,
+        asset_id: Option<&str>,
+        error: Option<String>,
+    ) {
         let mut state = self.registry.0.borrow_mut();
         if state.generation != Some(self.generation) {
             return;
         }
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         path.hash(&mut hash);
+        if topic != "image" {
+            topic.hash(&mut hash);
+        }
         let key = (node_id, hash.finish());
         let Some(message) = error else {
             state.entries.remove(&key);

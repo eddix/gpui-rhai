@@ -4672,9 +4672,14 @@ fn populate_box<C: ColorResolver>(
             .resolver()
             .resolve_length(style.gap.unwrap_or(Length::Pixels(0.0)))
             .unwrap_or(Length::Pixels(0.0));
+        let resolver = environment.resolver();
         element.child(crate::auto_grid::AutoGridElement {
             id: SharedString::from(format!("{}:{path}:auto-grid", environment.view_id)),
-            columns,
+            columns: columns.resolved(|length| resolver.resolve_length(length)),
+            report: environment
+                .dispatcher
+                .and_then(|dispatcher| dispatcher.presentation.clone())
+                .map(|sink| (sink, path.to_owned(), retained_id)),
             gap,
             rtl: environment.direction == TextDirection::RightToLeft,
             children,
