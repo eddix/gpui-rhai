@@ -527,7 +527,9 @@ views and on for `ScriptApplication`, which turns it off with
 `ScriptApplication::mirror_errors_to_stderr(false)`. See
 [ADR 0025](https://github.com/eddix/gpui-rhai/blob/main/docs/adr/0025-host-error-reporting.md).
 
-The same observer also receives recoverable native image failures. Check
+The same observer also receives recoverable native presentation failures: an
+image that did not load, or an `auto_grid_columns` whose token bounds resolved
+out of order and laid out adjusted. Check
 `report.domain`: `Transaction` describes `last_error` / `last_diagnostic`;
 `Presentation` instead carries `report.presentation` (node ID/path, optional
 logical asset ID and bounded message). Presentation errors keep the placeholder

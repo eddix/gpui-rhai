@@ -36,6 +36,18 @@ use crate::{NodeId, RetainedUiTree, UiNode, UiNodeKindTag};
 /// costs less than the view's bookkeeping.
 pub(crate) const MIN_ISLAND_NODES: u32 = 16;
 
+thread_local! {
+    /// How many provisional layouts this thread has prepainted ([`mark_unsettled`]).
+    static UNSETTLED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// A native element laid out provisionally this frame and lays out again
+/// next frame, as an auto grid does once it measures its width: the island
+/// around it is not pinned to this frame's height.
+pub(crate) fn mark_unsettled() {
+    UNSETTLED.with(|count| count.set(count.get().wrapping_add(1)));
+}
+
 /// Whether a view embeds cache islands, from its config and the
 /// `GPUI_RHAI_RENDER_ISLANDS` environment variable (`off`, `on`, `verify`,
 /// `aggressive`).
@@ -471,7 +483,9 @@ impl Element for IslandHostElement {
             slot.cached
         };
         self.geometry.begin_island_record();
+        let provisional = UNSETTLED.with(std::cell::Cell::get);
         self.child.prepaint(window, cx);
+        let unsettled = UNSETTLED.with(std::cell::Cell::get) != provisional;
         let recorded = self.geometry.end_island_record();
         let mut slot = self.slot.borrow_mut();
         slot.render_bounds = None;
@@ -488,7 +502,8 @@ impl Element for IslandHostElement {
         }
         if !cached {
             counters.uncached += 1;
-            slot.measured = Some(bounds.size);
+            // A provisional layout is no height to pin to.
+            slot.measured = (!unsettled).then_some(bounds.size);
             return;
         }
         if !rendered {
@@ -501,6 +516,12 @@ impl Element for IslandHostElement {
             .and_then(|root| self.geometry.get(root))
             .map(|geometry| geometry.layout.height);
         let pin = f64::from(bounds.size.height);
+        if unsettled {
+            // A layout that settles next frame: measure it in place then.
+            slot.measured = None;
+            slot.demoted = true;
+            return;
+        }
         if height.is_some_and(|height| (height - pin).abs() > f64::EPSILON) {
             assert!(
                 !self.verify,

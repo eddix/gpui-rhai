@@ -118,3 +118,23 @@ fn both_panes_of_a_horizontal_split_pane_hold_islands(cx: &mut TestAppContext) {
     click(&mut sides, "widen");
     assert_replays(&mut sides, 2);
 }
+
+#[gpui::test]
+fn an_auto_grid_settles_its_tracks_before_its_island_is_pinned(cx: &mut TestAppContext) {
+    // A fixed 600px grid lays out at an estimated width (the viewport's) on
+    // its first frame and at its own the next: the island measures the second.
+    let source = script(
+        "",
+        r#"box(rows("Tile")).with_key("grid")
+            .with_style(style().width(px(600)).auto_grid_columns(128, 160, 224))"#,
+    );
+    let mut sides = sides(cx, || Mount::new(source.clone()));
+    sides.assert_same("mounted");
+    sides.act(|visual, view| {
+        let mounted = visual
+            .update(|_, cx| view.take_render_statistics(cx))
+            .unwrap();
+        assert_eq!(mounted.island_drift, 0, "mounted: {mounted:?}");
+    });
+    assert_replays(&mut sides, 1);
+}

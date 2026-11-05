@@ -518,9 +518,13 @@ selection when a controlled key disappears.
 
 For responsive equal-width tiles, use a Box with
 `style().width(relative(1.0)).auto_grid_columns(128, 160, 224).gap(theme_spacing("sm"))`.
-The arguments are minimum, preferred and maximum track widths in logical pixels.
-Minimum determines auto-fit breakpoints: tracks shrink to minimum before
-losing a column. Preferred supplies the native initial/natural width hint,
+The arguments are minimum, preferred and maximum track widths: logical pixels,
+or Lengths such as `theme_length("metrics.label_column")` so the grid and its
+cards share one token. Tokens resolve natively in the node's environment, so a
+theme or density change moves the tracks without running Rhai on resize; bounds
+that resolve out of order lay out with the minimum kept and the maximum raised
+to it, and the Host receives a presentation diagnostic. Minimum determines
+auto-fit breakpoints: tracks shrink to minimum before losing a column. Preferred supplies the native initial/natural width hint,
 not a second breakpoint or a history-dependent column-count policy. Maximum
 caps growth and can leave unused space after the start-aligned tracks.
 The last row uses the same tracks as preceding rows. Rows retain their

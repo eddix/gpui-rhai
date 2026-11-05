@@ -1896,16 +1896,38 @@ impl Style {
     ///
     /// Returns [`StyleValueError::InvalidAutoGrid`] for invalid width bounds.
     pub fn auto_grid_columns(
-        mut self,
+        self,
         minimum: f64,
         preferred: f64,
         maximum: f64,
     ) -> Result<Self, StyleValueError> {
-        self.base.constraints_mut().auto_grid_columns =
-            Some(crate::AutoGridColumns::new(minimum, preferred, maximum)?);
+        Ok(self.with_auto_grid(crate::AutoGridColumns::new(minimum, preferred, maximum)?))
+    }
+
+    /// [`Self::auto_grid_columns`] with bounds that may be rems or theme
+    /// tokens, resolved natively in the node's environment
+    /// ([`crate::AutoGridColumns::from_lengths`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidAutoGrid`] for a relative bound or
+    /// invalid pixel bounds.
+    pub fn auto_grid_column_lengths(
+        self,
+        minimum: Length,
+        preferred: Length,
+        maximum: Length,
+    ) -> Result<Self, StyleValueError> {
+        Ok(self.with_auto_grid(crate::AutoGridColumns::from_lengths(
+            minimum, preferred, maximum,
+        )?))
+    }
+
+    fn with_auto_grid(mut self, columns: crate::AutoGridColumns) -> Self {
+        self.base.constraints_mut().auto_grid_columns = Some(columns);
         self.base.grid_columns = None;
         self.base.display = Some(DisplayMode::Block);
-        Ok(self)
+        self
     }
 
     /// Set GPUI's width/height ratio, leaving one dimension automatic.
@@ -2709,10 +2731,10 @@ fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
             |style: &mut Style, minimum: Dynamic, preferred: Dynamic, maximum: Dynamic| {
                 style
                     .clone()
-                    .auto_grid_columns(
-                        style_number(minimum)?,
-                        style_number(preferred)?,
-                        style_number(maximum)?,
+                    .auto_grid_column_lengths(
+                        grid_bound(minimum)?,
+                        grid_bound(preferred)?,
+                        grid_bound(maximum)?,
                     )
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
@@ -3328,6 +3350,15 @@ fn optional_map_number(value: &mut Map, name: &str) -> Result<Option<f64>, Box<E
             }
         })
         .transpose()
+}
+
+/// An `auto_grid_columns` bound: a Length, or a number of logical pixels.
+fn grid_bound(value: Dynamic) -> Result<Length, Box<EvalAltResult>> {
+    if value.is::<Length>() {
+        Ok(value.cast::<Length>())
+    } else {
+        style_number(value).map(Length::Pixels)
+    }
 }
 
 fn style_number(value: Dynamic) -> Result<f64, Box<EvalAltResult>> {

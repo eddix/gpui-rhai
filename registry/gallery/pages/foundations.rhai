@@ -158,7 +158,9 @@ fn responsive_grid_page(h, v) {
         tiles.push(tile);
     }
     let grid = box(tiles).with_key("responsive-grid")
-        .with_style(style().width(relative(1.0)).auto_grid_columns(128, 160, 224).gap(theme_spacing("sm")));
+        .with_style(style().width(relative(1.0)).auto_grid_columns(theme_length("metrics.label_column"),
+            theme_length("metrics.label_column") * 1.25, theme_length("metrics.label_column") * 1.75)
+            .gap(theme_spacing("sm")));
     let choose_first = button::Button(#{key:"grid-select-first", text:"Select first item",
         on_click:Fn("select_grid_tile").curry(0)});
     kit::page(h, v, "foundations.responsive_grid", "Responsive grid",
