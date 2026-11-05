@@ -121,7 +121,9 @@ public part with `ctx.component_style("part_name", base_style)`. The merge order
 is base, size, variant/state, application component stylesheet, caller `style`,
 then caller `part_styles`. Named `virtual_collection` item renderers use the
 same context method; its retained Style-only snapshot cannot expose nodes,
-callbacks, or arbitrary Dynamic values to deferred rendering.
+callbacks, or arbitrary Dynamic values to deferred rendering. The one callback
+an item renderer may curry is a bound Node factory, which it calls with
+`ctx.render_node` for each item it realizes.
 
 An interactive component must receive an explicit, non-incidental accessible
 name. Declare a required textual `label` when visible content alone is not the
@@ -342,7 +344,11 @@ props contain internal ownership metadata and a retained module environment.
 The adapter preserves user curry/private helpers/imports and the current
 render's depth and operation budget. It passes the **receiving component's**
 `ctx` and `detail` and creates no new state scope. Curry business values or
-return a formal child component when the factory needs its own state. Node
+return a formal child component when the factory needs its own state. The
+callbacks the factory creates belong to the scope that bound it: a handler on a
+node it returns, and the callback props of a component it renders directly,
+update the application that wrote the factory, not the component that rendered
+it (0.4.1; before, they ran with the receiving component's `ctx`). Node
 factories run only during render; event handlers (including NativeHandlerRef)
 are not Node factories. SplitPane's `handle_renderer` is an executable example.
 

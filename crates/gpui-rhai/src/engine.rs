@@ -352,6 +352,17 @@ impl ScriptCallback {
         }
     }
 
+    /// The scope a bound Node factory calls back into: where it was bound.
+    fn factory_scope_binding(&self) -> Option<ComponentCallbackBinding> {
+        Some(ComponentCallbackBinding {
+            component: self.component.clone()?,
+            incarnation: self.incarnation?,
+            events: self.events.clone(),
+            context: self.native_context.clone(),
+            is_node_factory: false,
+        })
+    }
+
     pub(crate) fn bind_node_factory(
         mut function: FnPtr,
         context: &UiContext,
@@ -414,6 +425,19 @@ struct ActiveComponentRender {
     reuse: Option<ComponentReuseSnapshot>,
     reused: Vec<(String, usize)>,
     failed_component: Option<ComponentInstancePath>,
+    /// The Node factories rendering, innermost last ([`FactoryScope`]).
+    factory_scopes: Vec<FactoryScope>,
+}
+
+/// A Node factory while it renders for the component that received it. The
+/// factory runs with the receiving component's `ctx`, but the callbacks it
+/// creates belong to the scope that bound it: the nodes it returns and the
+/// components it renders directly call back into that scope.
+struct FactoryScope {
+    /// The receiving component's callback scope.
+    receiver: ComponentInstancePath,
+    /// The scope that bound the factory.
+    binding: ComponentCallbackBinding,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1056,6 +1080,7 @@ impl RuntimeEngine {
         result
     }
 
+    #[allow(clippy::too_many_lines)]
     fn begin_component_render(
         &self,
         context: UiContext,
@@ -1161,6 +1186,7 @@ impl RuntimeEngine {
             reuse,
             reused: Vec::new(),
             failed_component: None,
+            factory_scopes: Vec::new(),
         });
         Ok(())
     }
@@ -2843,6 +2869,7 @@ fn register_component_runtime_apis(
     register_signal_api(engine, &active);
     register_element_ref_api(engine, &active);
     register_virtual_collection_api(engine, &active, virtual_policy);
+    register_node_factory_api(engine, &active);
     (active, renderers)
 }
 
@@ -2956,7 +2983,8 @@ fn execute_component_render(
         return Ok(node);
     }
     let native_context = crate::invocation::ScriptInvocationContext::capture_retained(call);
-    let caller_binding = caller_component_binding(call, &caller_context);
+    let caller_binding = factory_binding(active, &caller_context)
+        .unwrap_or_else(|| caller_component_binding(call, &caller_context));
     bind_component_callback_props(
         &mut invocation.props,
         &component.schema.props,
@@ -3026,6 +3054,18 @@ fn execute_component_render(
         },
     )?;
     Ok(node)
+}
+
+/// The binding of the Node factory rendering for `caller`, when the caller is the
+/// component that received it: a component the factory renders directly calls back
+/// into the factory's scope, not into the component that rendered the factory.
+fn factory_binding(
+    active: &ActiveComponentRenderState,
+    caller: &UiContext,
+) -> Option<ComponentCallbackBinding> {
+    let guard = active.try_borrow().ok()?;
+    let scope = guard.as_ref()?.factory_scopes.last()?;
+    (scope.receiver == *caller.callback_component_path()).then(|| scope.binding.clone())
 }
 
 fn caller_component_binding(
@@ -4013,6 +4053,55 @@ fn decode_virtual_collection(
     })
 }
 
+/// `ctx.render_node(factory, detail)`: renders a Node factory with the receiving
+/// component's `ctx`. Callbacks in the nodes it returns, and in the components it
+/// renders directly, belong to the scope that bound the factory.
+fn register_node_factory_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
+    let active = Rc::clone(active);
+    engine.register_fn(
+        "render_node",
+        move |call: rhai::NativeCallContext<'_>,
+              context: &mut UiContext,
+              renderer: Dynamic,
+              detail: Dynamic|
+              -> Result<UiNode, Box<EvalAltResult>> {
+            let callback = context.node_factory_callback(renderer)?;
+            let binding = callback.factory_scope_binding();
+            let pushed = binding.as_ref().is_some_and(|binding| {
+                active
+                    .try_borrow_mut()
+                    .ok()
+                    .and_then(|mut guard| {
+                        guard.as_mut().map(|render| {
+                            render.factory_scopes.push(FactoryScope {
+                                receiver: context.callback_component_path().clone(),
+                                binding: binding.clone(),
+                            });
+                        })
+                    })
+                    .is_some()
+            });
+            let result = callback.render_node(&call, context.clone(), detail);
+            if pushed
+                && let Ok(mut guard) = active.try_borrow_mut()
+                && let Some(render) = guard.as_mut()
+            {
+                render.factory_scopes.pop();
+            }
+            let mut node = result?;
+            if let Some(binding) = &binding {
+                node.bind_component_scope(
+                    &binding.component,
+                    binding.incarnation,
+                    &binding.events,
+                    binding.context.as_ref(),
+                );
+            }
+            Ok(node)
+        },
+    );
+}
+
 fn register_virtual_collection_api(
     engine: &mut Engine,
     active: &ActiveComponentRenderState,
@@ -4153,7 +4242,7 @@ fn validate_virtual_renderer(renderer: &FnPtr) -> Result<(), Box<EvalAltResult>>
 }
 
 fn validate_virtual_renderer_curry(value: &Dynamic) -> Result<(), crate::UiValueError> {
-    if value.is::<UiNode>() || value.is::<crate::NativeSignal>() {
+    if value.is::<UiNode>() || value.is::<crate::NativeSignal>() || is_bound_node_factory(value) {
         return Ok(());
     }
     if value.is::<Array>() {
@@ -4169,6 +4258,19 @@ fn validate_virtual_renderer_curry(value: &Dynamic) -> Result<(), crate::UiValue
         return Ok(());
     }
     UiValue::from_dynamic(value.clone()).map(|_| ())
+}
+
+/// A Node factory bound with `ctx.node_factory`: an item renderer may carry one,
+/// since it keeps the environment and scope it was bound in, and call it with
+/// `ctx.render_node` whenever the collection realizes an item.
+fn is_bound_node_factory(value: &Dynamic) -> bool {
+    value.is::<FnPtr>()
+        && value.clone_cast::<FnPtr>().iter_curry().any(|value| {
+            value.is::<ComponentCallbackBinding>()
+                && value
+                    .clone_cast::<ComponentCallbackBinding>()
+                    .is_node_factory
+        })
 }
 
 /// The context an item renderer runs in: a structural `Item[<key>]` scope under
