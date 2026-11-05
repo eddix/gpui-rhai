@@ -310,12 +310,12 @@ pub use text_input::{
     TextBuffer, TextInputPrimitiveHandler, init_text_input, text_input_primitive_descriptor,
 };
 pub use theme::{
-    ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError, ThemeFamily, ThemeLength,
-    ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring, ThemePreference,
-    ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue, ThemeTokens,
-    ThemeTypography, ThemeTypographyOverrides, ThemeVariant, ThemeVariantInfo, TokenLayer,
-    TypographyRole, TypographyToken, contrast_ratio, load_theme_source, load_theme_with_layers,
-    load_token_base,
+    ResolvedTheme, ResolvedTypography, SCALE_ENVIRONMENT, SCALE_STEPS, SystemAppearance,
+    ThemeError, ThemeFamily, ThemeLength, ThemeManager, ThemeMode, ThemeMotion,
+    ThemeMotionOverrides, ThemeMotionSpring, ThemePreference, ThemeSelection, ThemeSnapshot,
+    ThemeTokenOverrides, ThemeTokenValue, ThemeTokens, ThemeTypography, ThemeTypographyOverrides,
+    ThemeVariant, ThemeVariantInfo, TokenLayer, TypographyRole, TypographyToken, contrast_ratio,
+    load_theme_source, load_theme_with_layers, load_token_base,
 };
 pub use theme_source::EnvTableSource;
 pub use time::{

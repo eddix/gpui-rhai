@@ -26,6 +26,19 @@ px(32), compact: px(28) })`. The token base declares two axes, `density` and
 nearest `.env(#{ ... })` ancestor, so one subtree can be compact inside a
 comfortable window.
 
+Every theme also has a third axis, the reading scale `scale`, which the token
+base need not declare: `"100"` (the default), `"110"`, `"125"`, `"150"`,
+`"175"` and `"200"`. It multiplies every pixel and rem length token (spacing,
+radius, metrics) and every typography size and line height, so type and the
+controls around it grow together and layouts reflow. Literal lengths stay as
+written: `px(320)` is the author's, `theme_length("metrics.label_column")` the
+theme's, and a component's default width written in pixels (Select's 280px, a
+Toast's 320px) does not grow; pass a token width where it should. A Host sets
+the scale for every view with `ThemeTokenOverrides::environment_defaults`
+(`"scale" => "125"`), a script for the whole application or a subtree with
+`.env(#{ scale: "125" })`. Density and the reading scale are independent:
+density changes space, the scale changes reading size (0.4.1, D80).
+
 Motion has semantic duration (`instant`, `fast`, `normal`, `slow`, `ambient`),
 easing (`standard`, `entrance`, `exit`, `emphasized`; a value is a named curve
 or `"cubic_bezier(x1, y1, x2, y2)"`), spring (`responsive`,

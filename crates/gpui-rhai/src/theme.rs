@@ -17,6 +17,16 @@ const REQUIRED_MOTION_DISTANCES: &[&str] = &["subtle", "moderate", "large"];
 const REQUIRED_MOTION_STAGGERS: &[&str] = &["tight", "normal", "relaxed"];
 const MAX_TYPOGRAPHY_ALIAS_DEPTH: usize = 8;
 
+/// The environment axis of the reading scale, which every theme has: its
+/// value is a percentage that multiplies every pixel and rem length token and
+/// every typography size and line height (literal lengths stay as written).
+/// A Host sets it through `environment_defaults`, a script with
+/// `.env(#{ scale: "125" })`.
+pub const SCALE_ENVIRONMENT: &str = "scale";
+
+/// The reading scale's values, the first its default.
+pub const SCALE_STEPS: [&str; 6] = ["100", "110", "125", "150", "175", "200"];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemeMode {
@@ -307,8 +317,29 @@ impl ThemeTokens {
         }
     }
 
+    /// The reading scale of `environment` ([`SCALE_ENVIRONMENT`]): 1.25 for
+    /// `scale: "125"`, 1 where the environment and its default set none.
+    #[must_use]
+    pub fn reading_scale(&self, environment: &Environment) -> f64 {
+        let name = Symbol::intern(SCALE_ENVIRONMENT);
+        let Some(declaration) = self.environment.get(&name) else {
+            return 1.0;
+        };
+        let value = environment
+            .get(name)
+            .filter(|value| declaration.allows(*value))
+            .unwrap_or(declaration.default);
+        value
+            .as_str()
+            .parse::<f64>()
+            .ok()
+            .filter(|percent| percent.is_finite() && *percent > 0.0)
+            .map_or(1.0, |percent| percent / 100.0)
+    }
+
     /// Resolve a length against the inherited environment. Literal lengths
-    /// pass through; scaled tokens multiply their resolved value.
+    /// pass through; scaled tokens multiply their resolved value, and a
+    /// pixel or rem token takes the environment's reading scale.
     #[must_use]
     pub fn resolve_length(&self, length: Length, environment: &Environment) -> Option<Length> {
         let Length::Token(token) = length else {
@@ -317,12 +348,23 @@ impl ThemeTokens {
         let value = *self
             .length_token(&token.path().as_str())?
             .resolve(environment, &self.environment)?;
+        let reading = self.reading_scale(environment);
         let scale = token.scale();
         match value {
-            Length::Pixels(value) => Some(Length::Pixels(value * scale)),
-            Length::Rems(value) => Some(Length::Rems(value * scale)),
+            Length::Pixels(value) => Some(Length::Pixels(value * scale * reading)),
+            Length::Rems(value) => Some(Length::Rems(value * scale * reading)),
             Length::Relative(value) => Some(Length::Relative((value * scale).min(1.0))),
             Length::Token(_) => None,
+        }
+    }
+
+    /// A theme length at the environment's reading scale.
+    fn read_scaled(&self, value: Length, environment: &Environment) -> Length {
+        let reading = self.reading_scale(environment);
+        match value {
+            Length::Pixels(value) => Length::Pixels(value * reading),
+            Length::Rems(value) => Length::Rems(value * reading),
+            length => length,
         }
     }
 
@@ -332,7 +374,7 @@ impl ThemeTokens {
         let mut lengths = BTreeMap::new();
         let mut insert = |path: String, value: &ThemeLength| {
             if let Some(value) = value.resolve(environment, &self.environment) {
-                lengths.insert(path, *value);
+                lengths.insert(path, self.read_scaled(*value, environment));
             }
         };
         for (name, value) in &self.spacing {
@@ -373,8 +415,8 @@ impl ThemeTokens {
                     return Some(ResolvedTypography {
                         family,
                         fallbacks,
-                        size: token.size,
-                        line_height: token.line_height,
+                        size: self.read_scaled(token.size, environment),
+                        line_height: self.read_scaled(token.line_height, environment),
                         weight: token.weight,
                     });
                 }
@@ -882,7 +924,18 @@ impl TokenLayer {
     }
 
     /// Evaluate color expressions and produce the final token set.
-    fn finalize(self) -> Result<ThemeTokens, ThemeError> {
+    fn finalize(mut self) -> Result<ThemeTokens, ThemeError> {
+        // Every token base reads at a reading scale, which it need not declare.
+        self.environment
+            .entry(SCALE_ENVIRONMENT.to_owned())
+            .or_insert_with(|| {
+                EnvironmentDeclaration::new(
+                    SCALE_ENVIRONMENT,
+                    &SCALE_STEPS.map(str::to_owned),
+                    SCALE_STEPS[0],
+                )
+                .expect("the reading scale steps are distinct")
+            });
         let mut environment = EnvironmentDeclarations::new();
         for (name, mut declaration) in self.environment {
             if !valid_token_segment(&name) {
@@ -1961,6 +2014,81 @@ mod tests {
             theme.resolve_length(Length::token("metrics.missing").unwrap()),
             None
         );
+    }
+
+    #[test]
+    fn the_reading_scale_multiplies_length_tokens_and_type_but_not_literals() {
+        let theme = layered();
+        let control = Length::token("metrics.control").unwrap();
+        let large = environment(&[("scale", "125")]);
+        assert_eq!(
+            theme.resolve_length_in(control, &large),
+            Some(Length::Pixels(40.0))
+        );
+        assert_eq!(
+            theme.resolve_length_in(control.scaled(0.5).unwrap(), &large),
+            Some(Length::Pixels(20.0))
+        );
+        // A literal length is the author's, not the theme's.
+        assert_eq!(
+            theme.resolve_length_in(Length::Pixels(320.0), &large),
+            Some(Length::Pixels(320.0))
+        );
+        let body = theme.resolve_typography_in("body", &large).unwrap();
+        assert_eq!(
+            (body.size, body.line_height),
+            (Length::Pixels(17.5), Length::Pixels(27.5))
+        );
+        // The scale combines with the other axes, and an undeclared step is 100.
+        assert_eq!(
+            theme.resolve_length_in(
+                control,
+                &environment(&[("scale", "150"), ("density", "compact"), ("size", "sm")])
+            ),
+            Some(Length::Pixels(36.0))
+        );
+        assert_eq!(
+            theme.resolve_length_in(control, &environment(&[("scale", "130")])),
+            Some(Length::Pixels(32.0))
+        );
+        assert_eq!(theme.resolve_length(control), Some(Length::Pixels(32.0)));
+        assert!(
+            theme.tokens.environment[&Symbol::intern(SCALE_ENVIRONMENT)]
+                .values
+                .iter()
+                .map(|value| value.as_str().to_string())
+                .eq(SCALE_STEPS.map(str::to_owned))
+        );
+    }
+
+    #[test]
+    fn a_host_sets_the_reading_scale_through_environment_defaults() {
+        let engine = engine();
+        let base = load_token_base(engine.engine(), "tokens.rhai", BASE).unwrap();
+        let load = |scale: &str| {
+            load_theme_with_layers(
+                engine.engine(),
+                Some(&base),
+                "theme.rhai",
+                PALETTE,
+                &ThemeTokenOverrides {
+                    environment_defaults: BTreeMap::from([(
+                        SCALE_ENVIRONMENT.to_owned(),
+                        scale.to_owned(),
+                    )]),
+                    ..ThemeTokenOverrides::default()
+                },
+            )
+        };
+        let theme = load("150").unwrap();
+        assert_eq!(
+            theme.resolve_length(Length::token("metrics.control").unwrap()),
+            Some(Length::Pixels(48.0))
+        );
+        assert!(matches!(
+            load("130"),
+            Err(ThemeError::UndeclaredEnvironmentValue { .. })
+        ));
     }
 
     #[test]

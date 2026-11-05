@@ -35,6 +35,8 @@ fn state_schema() {
         page: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "button" } },
         density: #{ schema: #{ type: "string", allowed: ["comfortable", "compact"] },
             "default": #{ type: "string", value: "comfortable" } },
+        scale: #{ schema: #{ type: "string", allowed: ["100", "110", "125", "150", "175", "200"] },
+            "default": #{ type: "string", value: "100" } },
         locale: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "en" } },
         audit: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } },
         palette_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
@@ -68,6 +70,7 @@ fn init(ctx) {
     ctx.register_action("gallery.toggle_mode", Fn("toggle_mode"));
     ctx.register_action("gallery.go", Fn("go_to"));
     ctx.register_action("gallery.set_density", Fn("set_density_action"));
+    ctx.register_action("gallery.set_scale", Fn("set_scale_action"));
     ctx.register_action("gallery.audit", Fn("set_audit"));
 }
 
@@ -123,6 +126,7 @@ fn palette_query(ctx, query) { ctx.set_state("palette_query", query); }
 fn palette_active(ctx, value) { ctx.set_state("palette_active", value); }
 fn palette_run(ctx, value) {
     if value.starts_with("page:") { ctx.set_state("page", value.sub_string(5)); }
+    if value.starts_with("scale:") { set_scale_action(ctx, value.sub_string(6)); }
     ctx.set_state("palette_open", false);
 }
 fn toggle_source(ctx, payload) { set_value("gallery.source_open", ctx, !source_open(ctx.get_state("values"))); }
@@ -133,6 +137,8 @@ fn toggle_density(ctx, payload) {
 }
 fn set_density_action(ctx, density) { if density == "compact" || density == "comfortable" { ctx.set_state("density", density); } }
 fn set_density(ctx, values) { if values.len > 0 { ctx.set_state("density", values[0]); } }
+fn scale_steps() { ["100", "110", "125", "150", "175", "200"] }
+fn set_scale_action(ctx, scale) { if scale in scale_steps() { ctx.set_state("scale", scale); } }
 // Light and dark are variants of one family; families with one mode stay as they are.
 fn toggle_mode(ctx, payload) {
     let current = ctx.theme_variant();
@@ -295,11 +301,12 @@ fn title_controls(ctx) {
     if class != "compact" {
         let current = ctx.theme_variant();
         controls.push(select::Select(#{ key: "gallery-theme", label: "Theme", value: `${current.family}|${current.name}`,
-            open: ctx.get_state("theme_open"), query: "", size: "sm", width: px(176), options: theme_options(ctx),
+            open: ctx.get_state("theme_open"), query: "", size: "sm", width: theme_length("metrics.label_column") * 1.375,
+            options: theme_options(ctx),
             on_change: Fn("choose_theme"), on_open_change: Fn("theme_open") }));
     }
     controls.push(select::Select(#{ key: "gallery-locale", label: "Locale", value: ctx.get_state("locale"),
-        open: ctx.get_state("locale_open"), query: "", size: "sm", width: px(120),
+        open: ctx.get_state("locale_open"), query: "", size: "sm", width: theme_length("metrics.label_column") * 0.9375,
         options: [#{ value: "en", label: "English" }, #{ value: "zh-CN", label: "简体中文" }, #{ value: "ar", label: "العربية" }],
         on_change: Fn("choose_locale"), on_open_change: Fn("locale_open") }));
     controls.push(button::Button(#{ key: "gallery-palette", text: "Commands", variant: "ghost", size: "sm",
@@ -328,6 +335,9 @@ fn palette_items() {
     }
     items.push(#{ value: "action:density", label: "Toggle density", group: "Gallery", action: "gallery.toggle_density" });
     items.push(#{ value: "action:mode", label: "Toggle light and dark", group: "Gallery", action: "gallery.toggle_mode" });
+    for step in scale_steps() {
+        items.push(#{ value: `scale:${step}`, label: `Reading scale ${step}%`, group: "Gallery" });
+    }
     items.push(#{ value: "action:source", label: "Toggle source", group: "Gallery", action: "gallery.toggle_source" });
     items
 }
@@ -377,9 +387,12 @@ fn theme_label(variant) { `${variant.family} ${variant.name}` }
 
 fn status_items(ctx) {
     let label = |name, value| text(`${name} ${value}`);
+    let start = [label.call("DENSITY", ctx.get_state("density")), label.call("THEME", theme_label(ctx.theme_variant())),
+        label.call("LOCALE", ctx.get_state("locale"))];
+    // The reading scale shows once it leaves 100%.
+    if ctx.get_state("scale") != "100" { start.push(label.call("SCALE", `${ctx.get_state("scale")}%`)); }
     #{
-        start: [label.call("DENSITY", ctx.get_state("density")), label.call("THEME", theme_label(ctx.theme_variant())),
-            label.call("LOCALE", ctx.get_state("locale"))],
+        start: start,
         end: [text(`AUDIT ${ctx.get_state("audit")}`).accessibility_role("status").accessibility_label("Audit findings"),
             text("⌘K")],
     }
@@ -410,5 +423,5 @@ fn view(ctx) {
         title_bar: title_bar(ctx, page),
         sidebar: navigation(ctx, v, page), main: main_view(ctx, h, v, page),
         status: status_items(ctx), overlays: [palette] };
-    app_shell::AppShell(shell).env(#{ density: ctx.get_state("density") })
+    app_shell::AppShell(shell).env(#{ density: ctx.get_state("density"), scale: ctx.get_state("scale") })
 }
