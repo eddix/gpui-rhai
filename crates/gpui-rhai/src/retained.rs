@@ -65,6 +65,9 @@ pub struct RetainedNode {
     handler_payloads: BTreeMap<String, crate::UiValue>,
     scrollable: bool,
     focus_styled: bool,
+    /// Whether the node's own style leaves its height to its content, so a
+    /// cache island can be pinned to the height it measures there.
+    sized_by_content: bool,
     canvas_commands: usize,
     canvas_scene: Option<crate::CanvasScene>,
     virtual_data_items: usize,
@@ -316,6 +319,11 @@ impl RetainedNode {
     #[must_use]
     pub const fn focus_styled(&self) -> bool {
         self.focus_styled
+    }
+
+    /// Whether the node's base style leaves its height to its content.
+    pub(crate) const fn sized_by_content(&self) -> bool {
+        self.sized_by_content
     }
 
     #[must_use]
@@ -767,6 +775,9 @@ impl ReconcileTransaction<'_> {
             handler_payloads: candidate.handler_payloads().clone(),
             scrollable: snapshot_scrollable(candidate),
             focus_styled: candidate.style().focus.is_some(),
+            sized_by_content: crate::renderer::island_root_sized_by_content(
+                &candidate.style().base,
+            ),
             canvas_commands: match candidate.kind() {
                 crate::UiNodeKind::Canvas { scene } => scene.complexity(),
                 _ => 0,

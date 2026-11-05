@@ -133,11 +133,18 @@ did not change instead (cache islands, 0.3.3):
   of the whole view) and what it inherits from its place are the same: theme,
   locale, environment, opacity, focus, and a width that does not depend on its
   content. Its parent must be a flex column, and its own height must follow
-  its content. A frame that changes it renders it once in place to measure it.
+  its content: a cold wrapper that sets its height (a `flex_grow` pane, a
+  clipped body) is no island itself, but the cold subtrees in it are. A frame
+  that changes it renders it once in place to measure it.
 - The width of a view that fills its window ([`ScriptApplication`], script
   windows) is known; a view a Host mounts says so with
-  `ScriptViewConfig::host_sets_width(true)`. A row's one growing child, as an
-  `AppShell`'s main area, takes the room its fixed siblings leave.
+  `ScriptViewConfig::host_sets_width(true)`, and may then be resized by the
+  Host without the window: when its root lays out at another width than it
+  last did, a frame that replayed a subtree measured at the old width builds
+  the view again at the new one before it paints (0.4.1). A row's one growing
+  child, as an `AppShell`'s main area, takes the room its fixed siblings leave,
+  and a child that keeps a share of the row's width, as a horizontal
+  `SplitPane`'s start pane, follows it.
 - GPUI itself renders every cached view again on some frames: a click
   (active state), a focus change, an inspector pick.
 
