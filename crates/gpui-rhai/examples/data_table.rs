@@ -10,6 +10,7 @@ const TOGGLE_GROUP: &str = include_str!("../../../registry/components/toggle_gro
 const TOGGLE: &str = include_str!("../../../registry/components/toggle.rhai");
 const SPINNER: &str = include_str!("../../../registry/components/spinner.rhai");
 const TABLE: &str = include_str!("../../../registry/components/table.rhai");
+const SELECTABLE_LIST: &str = include_str!("../../../registry/components/selectable_list.rhai");
 const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
 const PAGINATION: &str = include_str!("../../../registry/components/pagination.rhai");
 const SKELETON: &str = include_str!("../../../registry/components/skeleton.rhai");
@@ -294,6 +295,7 @@ pub fn view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScriptView
         module("patterns/inline_state", INLINE_STATE),
         module("patterns/data_view", DATA_VIEW),
         module("components/table", TABLE),
+        module("components/selectable_list", SELECTABLE_LIST),
         module("components/badge", BADGE),
         module("components/pagination", PAGINATION),
         module("components/skeleton", SKELETON),

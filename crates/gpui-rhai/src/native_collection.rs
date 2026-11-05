@@ -32,6 +32,9 @@ enum NativeCollectionEntry {
 enum CollectionProjection {
     Table(TableProjection),
     List(BTreeSet<String>),
+    /// Rows the application draws: each keeps its own fields and gains its
+    /// key, a `selected` flag and a `disabled` default.
+    Selection(BTreeSet<String>),
     Fuzzy(FuzzyProjection),
 }
 
@@ -57,6 +60,7 @@ struct NativeCollectionSource {
     table_orders: Mutex<BTreeMap<TableOrderSpec, TableOrder>>,
     fuzzy_orders: Mutex<BTreeMap<FuzzyOrderSpec, Arc<Vec<NativeCollectionEntry>>>>,
     list_validation: OnceLock<Result<(), NativeCollectionError>>,
+    selection_validation: OnceLock<Result<(), NativeCollectionError>>,
 }
 
 impl fmt::Debug for NativeCollectionSource {
@@ -155,6 +159,7 @@ impl NativeCollection {
                 table_orders: Mutex::new(BTreeMap::new()),
                 fuzzy_orders: Mutex::new(BTreeMap::new()),
                 list_validation: OnceLock::new(),
+                selection_validation: OnceLock::new(),
             }),
             order,
             sticky_headers: Arc::new(BTreeSet::new()),
@@ -226,6 +231,26 @@ impl NativeCollection {
             order: order.entries,
             sticky_headers: order.sticky_headers,
             projection: Some(Arc::new(CollectionProjection::Table(projection))),
+        })
+    }
+
+    /// The rows as a selectable collection the application draws itself: any
+    /// map with a key, its `disabled` a bool when present.
+    fn selection_view(&self, selected: BTreeSet<String>) -> Result<Self, NativeCollectionError> {
+        self.source
+            .selection_validation
+            .get_or_init(|| {
+                for row in &self.source.rows {
+                    selection_row(row, "", &BTreeSet::new())?;
+                }
+                Ok(())
+            })
+            .clone()?;
+        Ok(Self {
+            source: Arc::clone(&self.source),
+            order: Arc::clone(&self.order),
+            sticky_headers: Arc::new(BTreeSet::new()),
+            projection: Some(Arc::new(CollectionProjection::Selection(selected))),
         })
     }
 
@@ -361,7 +386,7 @@ impl NativeCollection {
                 NativeCollectionEntry::Row(index) => {
                     if matches!(
                         self.projection.as_deref(),
-                        Some(CollectionProjection::List(_))
+                        Some(CollectionProjection::List(_) | CollectionProjection::Selection(_))
                     ) && row_field(&self.source.rows[*index], "disabled")
                         == Some(&UiValue::Bool(true))
                     {
@@ -577,6 +602,7 @@ fn register_list_collection_api(engine: &mut rhai::Engine) {
 pub(crate) fn register_native_collection_api(engine: &mut rhai::Engine) {
     engine.build_type::<NativeCollection>();
     register_list_collection_api(engine);
+    register_selection_collection_api(engine);
     register_table_collection_api(engine);
     register_fuzzy_collection_api(engine);
     FuncRegistration::new("is_native_collection")
@@ -611,6 +637,68 @@ fn register_table_collection_api(engine: &mut rhai::Engine) {
                     .filter_map(|key| key.into_string().ok())
                     .collect::<BTreeSet<_>>();
                 collection.table_neighbors(&selected).into_map()
+            },
+        );
+}
+
+fn selected_keys(selected: rhai::Array) -> BTreeSet<String> {
+    selected
+        .into_iter()
+        .filter_map(|value| value.into_string().ok())
+        .collect()
+}
+
+/// `native_selection_view(items, selected)` and `native_selection_neighbors`:
+/// the rows of a `SelectableList`, an array of maps or a native collection, each
+/// keyed by `key`.
+fn register_selection_collection_api(engine: &mut rhai::Engine) {
+    fn rows(items: Dynamic) -> Result<NativeCollection, Box<EvalAltResult>> {
+        if items.is::<NativeCollection>() {
+            return Ok(items.cast::<NativeCollection>());
+        }
+        let rows = items
+            .try_cast::<rhai::Array>()
+            .ok_or_else(|| {
+                Box::new(EvalAltResult::ErrorRuntime(
+                    "selection items must be an array or a NativeCollection".into(),
+                    Position::NONE,
+                ))
+            })?
+            .into_iter()
+            .map(|value| {
+                UiValue::from_dynamic(value).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        NativeCollection::from_values("key", rows)
+            .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+    }
+    FuncRegistration::new("native_selection_view")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |items: Dynamic,
+             selected: rhai::Array|
+             -> Result<NativeCollection, Box<EvalAltResult>> {
+                rows(items)?
+                    .selection_view(selected_keys(selected))
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+            },
+        );
+    FuncRegistration::new("native_selection_neighbors")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |items: Dynamic, selected: rhai::Array| -> Result<Map, Box<EvalAltResult>> {
+                let selected = selected_keys(selected);
+                let view = rows(items)?
+                    .selection_view(selected.clone())
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))?;
+                Ok(view.table_neighbors(&selected).into_map())
             },
         );
 }
@@ -758,6 +846,28 @@ fn native_collection_runtime_error(error: &NativeCollectionError) -> EvalAltResu
 
 // Shared List/ColumnBrowser row normalization. Work remains native for large
 // Host collections; Rhai sees only the realized virtual rows and key targets.
+fn selection_row(
+    row: &UiValue,
+    key: &str,
+    selected: &BTreeSet<String>,
+) -> Result<UiValue, NativeCollectionError> {
+    let UiValue::Map(row) = row else {
+        return Err(NativeCollectionError::RowNotMap(0));
+    };
+    let mut item = row.clone();
+    item.insert("key".into(), UiValue::String(key.into()));
+    let disabled = item
+        .entry("disabled".into())
+        .or_insert(UiValue::Bool(false));
+    if !matches!(disabled, UiValue::Bool(_)) {
+        return Err(NativeCollectionError::InvalidTableConfig(
+            "SelectableList disabled must be a bool".into(),
+        ));
+    }
+    item.insert("selected".into(), UiValue::Bool(selected.contains(key)));
+    Ok(UiValue::Map(item))
+}
+
 fn list_row(
     row: &UiValue,
     key: &str,
@@ -831,6 +941,7 @@ impl CollectionProjection {
         match self {
             Self::Table(projection) => projection.project_row(row, index),
             Self::List(selected) => list_row(row, key.unwrap_or_default(), selected),
+            Self::Selection(selected) => selection_row(row, key.unwrap_or_default(), selected),
             Self::Fuzzy(projection) => projection.project_row(row, index, key),
         }
     }
@@ -838,7 +949,7 @@ impl CollectionProjection {
     fn project_group(&self, group: &GroupEntry) -> UiValue {
         match self {
             Self::Table(projection) => projection.project_group(group),
-            Self::List(_) => UiValue::Null,
+            Self::List(_) | Self::Selection(_) => UiValue::Null,
             Self::Fuzzy(projection) => projection.project_group(group),
         }
     }

@@ -305,6 +305,11 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   content edge, while the filled bar insets its slots like a toolbar. The "+"
   of `on_add` follows the last tab and is pinned at the strip's end when the
   tabs overflow.
+- **A head of the caller's own.** A tab's `head` node replaces its icon,
+  label and count with content the application draws, such as a title over a
+  muted count; the selection marks, close button, dirty mark and the keys stay
+  the tab's, and `label` still names it. Track and underline strips grow to a
+  taller head; a `bar` keeps the control height.
 - **Count capsule.** A marker after the label, exactly as tall as the label:
   `metrics.counter` is the control line height (16 at `xs`, 20 otherwise) and
   also its minimum width, so one digit is a circle. Its
@@ -398,6 +403,17 @@ navigation lists and Table rows share one row grammar:
   a tab stop for the keyboard request, framed while it holds focus
   (`focus_frame`). Roles are `listbox` / `option` with a selection mode and
   `list` / `listitem` without.
+
+### SelectableList
+
+- List's row grammar with content the application draws (a cover, two lines,
+  a control of its own): the selection tint, hover fill, cursor and focus
+  frame are the list's, drawn on a `radius.md` block `spacing.xs` in from the
+  list's sides with the content on `metrics.inset`, as an undivided List row.
+  Rows take their content's height. `row_chrome: false` hands the whole row
+  to the application, which then paints the selected state itself.
+- A control inside a row keeps its own tab stop; the list is still one tab
+  stop whose arrows move the selection.
 
 ### Table
 

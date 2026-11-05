@@ -60,6 +60,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/scroll_area`](components/scroll_area.md) | `ScrollArea` | Sized retained scroll viewport with themeable overlay scrollbars. |
 | [`components/select`](components/select.md) | `Select` | Scalar controlled Select composed from the public Rhai Combobox component. |
 | [`components/selectable_card_group`](components/selectable_card_group.md) | `SelectableCardGroup` | Small controlled rich choices with one roving selection tab stop. |
+| [`components/selectable_list`](components/selectable_list.md) | `SelectableList` | The behavior of List and Table rows with rows the application draws: selection, the one tab stop and its keys, the cursor and focus frame, row and context requests, accessibility and virtualization stay the list's, and a `row` Node factory draws each row's content. |
 | [`components/selection_area`](components/selection_area.md) | `SelectionArea` | Controlled Canvas click/range/marquee object selection. |
 | [`components/sheet`](components/sheet.md) | `Sheet` | Controlled temporary modal panel attached to a viewport edge. |
 | [`components/skeleton`](components/skeleton.md) | `Skeleton` | Content placeholder with optional Rust-side pulse animation. |

@@ -2,9 +2,9 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
-  "dependencies": ["components/badge"],
+  "dependencies": ["components/badge", "components/selectable_list"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"],
   "tokens": ["surface_raised", "surface_hover", "border", "table.selection", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
@@ -19,9 +19,9 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.4.0",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.4.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/badge"], capabilities: #{},
+        dependencies: ["components/badge", "components/selectable_list"], capabilities: #{},
         tokens: ["surface_raised", "surface_hover", "border", "table.selection", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
         environment: ["density"],
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
@@ -230,15 +230,11 @@ define_component(#{
 });
 
 import "components/badge" as badge;
+// Row selection, the keys and the context requests are SelectableList's behavior.
+import "components/selectable_list" as selectable_list;
 
 fn Table(props) { render_component("components/table", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
-fn collection_scrollbars(ctx, props, node) {
-    node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
-        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))))
-        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover", style().background(theme_color("scrollbar.thumb_hover"))))
-        .scrollbars("hidden", prop_or(props, "scrollbar", "auto"))
-}
 fn optional_or(props, name, fallback) {
     if name in props && props[name] != () { props[name] } else { fallback }
 }
@@ -286,52 +282,7 @@ fn next_sort(current, key) {
 }
 
 fn sort_action(ctx, payload) { ctx.emit("sort_change", payload); }
-// The selection a click on the row `key` leads to, or () without a selection mode.
-fn next_selection(mode, selected, key) {
-    let is_selected = key in selected;
-    if mode == "none" { () }
-    else if mode == "single" { if is_selected { [] } else { [key] } }
-    else {
-        let result = [];
-        for candidate in selected { if candidate != key { result.push(candidate); } }
-        if !is_selected { result.push(key); }
-        result
-    }
-}
-// A click builds the next selection for the clicked row alone, from the selection the table
-// was rendered with, so the row data carries only the selected flag. The press focused the
-// row; `focus` (the table's ref key, or `()` when the table takes no keys) hands the focus
-// back to the table, which owns the keys and shows the cursor frame.
-fn row_action(mode, selected, focus, ctx, key) {
-    ctx.emit("row_click", key);
-    let selection = next_selection(mode, selected, key);
-    if selection != () { ctx.emit("selection_change", selection); }
-    if focus != () { try { ctx.focus(focus); } catch { } }
-}
 fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
-// Keyboard row navigation moves the selection and keeps the row revealed.
-fn keyboard_select(ctx, key) { ctx.emit("selection_change", [key]); handled() }
-fn keyboard_activate(ctx, key) { ctx.emit("row_click", key); handled() }
-// A right press asks for a context menu for the cell's row; the row is selected first unless
-// the selection already holds it.
-fn cell_context(target, ctx, event) {
-    if event.button != "right" { return propagate(); }
-    if target.select != () { ctx.emit("selection_change", target.select); }
-    ctx.emit("context_request", #{ key: target.key, column: target.column, source: "pointer",
-        anchor: #{ x: event.window.x, y: event.window.y, width: 0.0, height: 0.0 } });
-    event_response().prevent_default().stop()
-}
-// Shift+F10 or the menu key: the current row's bounds are the anchor, the table's when the
-// row is not laid out or there is none.
-fn keyboard_context(ctx, target) {
-    let bounds = if target.index != () { ctx.virtual_item_bounds(target.collection, target.index) }
-        else { () };
-    if bounds == () { bounds = ctx.event_target_bounds(); }
-    let anchor = if bounds == () { #{ x: 0.0, y: 0.0, width: 0.0, height: 0.0 } }
-        else { #{ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } };
-    ctx.emit("context_request", #{ key: target.key, column: (), anchor: anchor, source: "keyboard" });
-    handled()
-}
 fn column_resize_action(ctx, payload) { ctx.emit("column_resize", payload); }
 
 fn intrinsic_column_measure(key, text_value, signal, extra_width) {
@@ -432,8 +383,8 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, selecti
             ctx.component_style(if item.selected { "row_selected" } else { "row" }, cell_style));
         if context {
             let select = if selection_mode == "none" || item.selected { () } else { [payload.key] };
-            node = node.on("pointer_down", Fn("cell_context")
-                .curry(#{ key: payload.key, column: cell.key, select: select }));
+            node = node.on("pointer_down", selectable_list::row_context_handler(
+                #{ key: payload.key, column: cell.key, select: select }));
         }
         node = node.with_table_column(cell_index - 1);
         node = node.accessibility_table_cell(cell_label, cell_index);
@@ -470,7 +421,7 @@ fn render_table_row(resize_signals, numeric, roles, context, total_rows, selecti
     if roles.len() > 0 { node = node.audit_allow(["mixed-type-in-row"]); }
     // A row is a pointer target only: the table is the one tab stop, and its keys move
     // the selection.
-    node.on_click_value(Fn("row_action").curry(selection_mode).curry(selected).curry(focus),
+    node.on_click_value(selectable_list::row_click_handler(selection_mode, selected, focus),
             payload.key)
         .tab_stop(false)
 }
@@ -643,12 +594,7 @@ fn table_focus_frame(ctx, framed) {
 
 fn with_row_keys(table, neighbors) {
     if neighbors == () || neighbors.first == () { return table; }
-    let node = table.tab_stop(true)
-        .on_key_value("up", Fn("keyboard_select"), neighbors.previous)
-        .on_key_value("down", Fn("keyboard_select"), neighbors.next)
-        .on_key_value("home", Fn("keyboard_select"), neighbors.first)
-        .on_key_value("end", Fn("keyboard_select"), neighbors.last);
-    if neighbors.current != () { node.on_key_value("enter", Fn("keyboard_activate"), neighbors.current) } else { node }
+    selectable_list::navigation_keys(table.tab_stop(true), neighbors)
 }
 
 fn table_state_body(ctx,props,part,content) {
@@ -756,7 +702,7 @@ fn render_Table(ctx, props) {
         else { () };
     // The selection reaches the row renderer once, not every row: a click builds the next
     // selection, so the row data stays linear in the rows.
-    let body = collection_scrollbars(ctx, props, virtual_collection(collection,
+    let body = selectable_list::collection_scrollbars(ctx, props, virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns))
             .curry(column_typography(columns)).curry(context).curry(data.len)
             .curry(selection_mode).curry(selected).curry(focus))
@@ -766,17 +712,14 @@ fn render_Table(ctx, props) {
     let table = with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1,framed), neighbors);
     if focus != () { table = table.with_ref(element_ref(focus)); }
     if context && neighbors != () && neighbors.first != () {
-        let target = #{ key: neighbors.current, collection: collection.key,
+        let target = #{ key: neighbors.current, column: (), collection: collection.key,
             index: neighbors.current_index };
-        table = table.on_key_value("shift+f10", Fn("keyboard_context"), target)
-            .on_key_value("menu", Fn("keyboard_context"), target);
+        table = selectable_list::context_keys(table, target);
     } else if context && selection_mode == "none" {
         // Without a selection mode there is no current row: the table is a tab stop for the
         // keyboard request alone, which is for the whole table.
-        let target = #{ key: (), collection: collection.key, index: () };
-        table = table.tab_stop(true)
-            .on_key_value("shift+f10", Fn("keyboard_context"), target)
-            .on_key_value("menu", Fn("keyboard_context"), target);
+        let target = #{ key: (), column: (), collection: collection.key, index: () };
+        table = selectable_list::context_keys(table.tab_stop(true), target);
     }
     table
 }

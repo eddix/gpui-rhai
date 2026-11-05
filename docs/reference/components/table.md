@@ -1,6 +1,6 @@
 # Table
 
-`components/table` · export `Table` · version 0.4.0. Generated from
+`components/table` · export `Table` · version 0.4.1. Generated from
 [`registry/components/table.rhai`](../../../registry/components/table.rhai); do not edit.
 
 Data-backed Table composed entirely from public Box/Text/virtual_collection APIs. Use either a positive logical-pixel height or fill_height for flex layouts.
@@ -124,4 +124,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `body`, `cursor`, `empty
 
 ## Dependencies
 
-[`components/badge`](../components/badge.md)
+[`components/badge`](../components/badge.md), [`components/selectable_list`](../components/selectable_list.md)

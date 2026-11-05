@@ -2,9 +2,9 @@
 {
   "id": "components/list",
   "export": "List",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
-  "dependencies": ["components/badge"],
+  "dependencies": ["components/badge", "components/selectable_list"],
   "capabilities": {},
   "tokens": [
     "table.selection", "surface_hover", "focus_ring", "border", "text_primary",
@@ -25,14 +25,16 @@
 // Shift+F10 and the menu key. Items are data, like Table cells: a leading status `badge`
 // (#{ text, variant, dot }), the `title`, a muted `secondary` line (beside the title or
 // below it) and trailing `meta` such as a time or a count. Badges of different widths push
-// the titles apart; `badge_width` reserves one slot on every row so the titles align.
+// the titles apart; `badge_width` reserves one slot on every row so the titles align. The
+// rows' behavior is SelectableList's (components/selectable_list), with rows of this content.
 
 import "components/badge" as badge;
+import "components/selectable_list" as selectable_list;
 
 define_component(#{
-    metadata: #{ id: "components/list", "export": "List", version: "0.4.0",
+    metadata: #{ id: "components/list", "export": "List", version: "0.4.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/badge"], capabilities: #{},
+        dependencies: ["components/badge", "components/selectable_list"], capabilities: #{},
         tokens: [
             "table.selection", "surface_hover", "focus_ring", "border", "text_primary",
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
@@ -160,70 +162,10 @@ define_component(#{
 
 fn List(props) { render_component("components/list", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
-fn collection_scrollbars(ctx, props, node) {
-    node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
-        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))))
-        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover", style().background(theme_color("scrollbar.thumb_hover"))))
-        .scrollbars("hidden", prop_or(props, "scrollbar", "auto"))
-}
 fn field_or(item, name, fallback) { if name in item && item[name] != () { item[name] } else { fallback } }
 fn is_rtl(ctx) { let rtl = false; try { rtl = ctx.text_direction() == "rtl"; } catch { } rtl }
 // `height` takes logical pixels or a Length.
 fn list_length(value) { if type_of(value) == "Length" { value } else { px(value) } }
-
-// A click builds the next selection for the clicked row alone, from the selection the list
-// was rendered with, so the rows carry only their selected flag. The press focused the row;
-// `focus` (the list's ref key, or `()` when the list takes no keys) hands the focus back to
-// the list, which owns the keys and shows the cursor frame.
-fn row_action(mode, selected, focus, ctx, key) {
-    ctx.emit("row_click", key);
-    let selection = next_selection(mode, selected, key);
-    if selection != () { ctx.emit("selection_change", selection); }
-    if focus != () { try { ctx.focus(focus); } catch { } }
-}
-fn row_pointer(mode, selected, focus, key, has_children, ctx, event) {
-    row_action(mode, selected, focus, ctx, key);
-    if type_of(event) == "map" && "click_count" in event && event.click_count >= 2 {
-        ctx.emit("row_activate", #{ key: key, has_children: has_children });
-    }
-    handled()
-}
-// Keyboard navigation moves the selection and keeps the row revealed, as in Table.
-fn keyboard_select(ctx, key) { ctx.emit("selection_change", [key]); handled() }
-fn keyboard_activate(ctx, key) { ctx.emit("row_click", key); handled() }
-// A right press asks for a context menu for the row; the row is selected first unless the
-// selection already holds it.
-fn row_context(target, ctx, event) {
-    if event.button != "right" { return propagate(); }
-    if target.select != () { ctx.emit("selection_change", target.select); }
-    ctx.emit("context_request", #{ key: target.key, source: "pointer",
-        anchor: #{ x: event.window.x, y: event.window.y, width: 0.0, height: 0.0 } });
-    event_response().prevent_default().stop()
-}
-// Shift+F10 or the menu key: the current row's bounds are the anchor, the list's when the row
-// is not laid out or there is none.
-fn keyboard_context(ctx, target) {
-    let bounds = if target.index != () { ctx.virtual_item_bounds(target.collection, target.index) }
-        else { () };
-    if bounds == () { bounds = ctx.event_target_bounds(); }
-    let anchor = if bounds == () { #{ x: 0.0, y: 0.0, width: 0.0, height: 0.0 } }
-        else { #{ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } };
-    ctx.emit("context_request", #{ key: target.key, anchor: anchor, source: "keyboard" });
-    handled()
-}
-
-// The selection a click on the row `key` leads to, or () without a selection mode.
-fn next_selection(mode, selected, key) {
-    let is_selected = key in selected;
-    if mode == "none" { () }
-    else if mode == "single" { if is_selected { [] } else { [key] } }
-    else {
-        let result = [];
-        for candidate in selected { if candidate != key { result.push(candidate); } }
-        if !is_selected { result.push(key); }
-        result
-    }
-}
 
 fn render_list_row(active, below, dividers, badge_slot, context, total, mode, selected, focus, ctx, payload) {
     let item = payload.item;
@@ -283,54 +225,8 @@ fn render_list_row(active, below, dividers, badge_slot, context, total, mode, se
         children.push(text(if is_rtl(ctx) { "‹" } else { "›" })
             .with_style(style().flex_shrink(false).text_color(theme_color("text_muted"))));
     }
-    // Selection is the table selection tint; while the list has keyboard focus the selected
-    // row also shows the focus frame. Rows between dividers fill the band edge to edge, like
-    // Table rows; without dividers a row is a pressable block with a control's corners,
-    // spacing.xs in from the list's sides so the corners stay clear of its edge.
-    let corner = if dividers { px(0) } else { theme_radius("md") };
-    if item.selected {
-        let cursor = style()
-            .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)).radius(corner)
-            .border(px(2)).border_color(rgba(0x00000000))
-            .group_focus(style().border_color(theme_color("focus_ring")));
-        if item.active { children.push(row([]).with_style(ctx.component_style("cursor", cursor))); }
-    }
-    let base = style().relative().items_center().gap(theme_spacing("sm"))
-        .padding_x(theme_length("metrics.inset")).radius(corner)
-        .background(if item.selected { theme_color("table.selection") } else { rgba(0x00000000) });
-    base = if dividers { base.width(relative(1.0)) } else { base.margin_x(theme_spacing("xs")) };
-    base = if below { base.padding_y(theme_spacing("xs")).min_height(theme_length("metrics.row")) }
-        else { base.height(theme_length("metrics.row")) };
-    if dividers { base = base.border_bottom(px(1)).border_color(theme_color("border")); }
-    if !item.selected && !item.disabled {
-        base = base.hover(style().background(theme_color("surface_hover")));
-    }
-    let node = row(children).with_key(payload.key);
-    node = node
-        .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
-        .disabled(item.disabled)
-        .accessibility_role(if mode != "none" { "option" } else { "listitem" })
-        .accessibility_label(label)
-        .accessibility_selected(item.selected)
-        .accessibility_position_in_set(payload.index + 1)
-        .accessibility_size_of_set(total);
-    if item.disabled { return node.tab_stop(false); }
-    if context {
-        let select = if mode == "none" || item.selected { () } else { [payload.key] };
-        node = node.on("pointer_down", Fn("row_context").curry(#{ key: payload.key, select: select }));
-    }
-    // A row is a pointer target only: the list is the one tab stop.
-    node.on("click", Fn("row_pointer").curry(mode).curry(selected).curry(focus).curry(payload.key).curry(item.has_children))
-        .tab_stop(false)
-}
-
-// The loading and empty states take the list's place and size, in muted body text.
-fn list_state(ctx, props, size, part, content) {
-    column([content]).with_key(props.key)
-        .with_style(ctx.component_style(part, size.min_width(px(0))
-            .padding_x(theme_length("metrics.inset")).padding_y(theme_spacing("sm"))
-            .typography("body").text_color(theme_color("text_muted"))))
-        .accessibility_role(if prop_or(props, "selection_mode", "none") == "none" { "list" } else { "listbox" }).accessibility_label(props.label)
+    selectable_list::row_frame(ctx, item, payload, children, label, #{ dividers: dividers, below: below,
+        chrome: true, context: context, mode: mode, selected: selected, focus: focus, total: total })
 }
 
 fn render_List(ctx, props) {
@@ -349,12 +245,12 @@ fn render_List(ctx, props) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
         } else { text("Loading…") };
-        return list_state(ctx, props, size, "loading", loading);
+        return selectable_list::list_state(ctx, props, size, "loading", loading);
     }
     if props.items.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No items")) };
-        return list_state(ctx, props, size, "empty", empty);
+        return selectable_list::list_state(ctx, props, size, "empty", empty);
     }
     // The rows stay linear in the items: each carries its selected flag, and the selection
     // reaches the row renderer once (a click builds the next selection then), so the data
@@ -381,51 +277,11 @@ fn render_List(ctx, props) {
     let focus = if keyboard && (mode == "none" && context || mode != "none" && neighbors.first != ()) {
         `${props.key}-focus`
     } else { () };
-    let rows = collection_scrollbars(ctx, props, virtual_collection(collection,
+    let rows = selectable_list::collection_scrollbars(ctx, props, virtual_collection(collection,
         Fn("render_list_row").curry(prop_or(props, "active", true)).curry(below).curry(prop_or(props, "dividers", false))
             .curry(badge_slot).curry(context).curry(data.len)
             .curry(mode).curry(selected).curry(focus)));
-    if keyboard && mode == "none" && context {
-        // Without a selection mode there is no current row: the list is a tab stop for the
-        // keyboard request alone, which is for the whole list. A wrapper holds that focus and
-        // draws the 2px container frame over the list's edge while it does.
-        let target = #{ key: (), collection: collection.key, index: () };
-        let frame = row([]).with_style(ctx.component_style("focus_frame", style().absolute()
-            .left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
-            .border(px(2)).border_color(rgba(0x00000000))
-            .group_focus(style().border_color(theme_color("focus_ring")))));
-        let fill = if fills { style().flex_grow().min_height(px(0)) }
-            else { style().height(px(props.height)) };
-        return column([rows.with_style(fill.min_width(px(0))), frame]).with_key(props.key)
-            .with_ref(element_ref(focus))
-            .with_style(ctx.component_style("root", size.min_width(px(0)).relative().focus(style())))
-            .accessibility_role("list").accessibility_label(props.label)
-            .tab_stop(true)
-            .on_key_value("shift+f10", Fn("keyboard_context"), target)
-            .on_key_value("menu", Fn("keyboard_context"), target);
-    }
-    let root = if length_height {
-        column([rows.with_style(style().flex_grow().min_height(px(0)).min_width(px(0)))])
-    } else { rows };
-    root = root.with_key(props.key)
-        .with_style(ctx.component_style("root", if keyboard { size.min_width(px(0)).focus(style()) } else { size.min_width(px(0)) }))
-        .accessibility_role(if mode == "none" { "list" } else { "listbox" })
-        .accessibility_label(props.label);
-    if mode == "none" || !keyboard { return root; }
-    if neighbors.first == () { return root; }
-    root = root.with_ref(element_ref(focus)).tab_stop(true)
-        .on_key_value("up", Fn("keyboard_select"), neighbors.previous)
-        .on_key_value("down", Fn("keyboard_select"), neighbors.next)
-        .on_key_value("home", Fn("keyboard_select"), neighbors.first)
-        .on_key_value("end", Fn("keyboard_select"), neighbors.last);
-    if neighbors.current != () {
-        root = root.on_key_value("enter", Fn("keyboard_activate"), neighbors.current);
-    }
-    if context {
-        let index = neighbors.current_index;
-        let target = #{ key: neighbors.current, collection: collection.key, index: index };
-        root = root.on_key_value("shift+f10", Fn("keyboard_context"), target)
-            .on_key_value("menu", Fn("keyboard_context"), target);
-    }
-    root
+    selectable_list::list_root(ctx, props, rows, #{ mode: mode, keyboard: keyboard, context: context,
+        fills: fills, length_height: length_height, size: size, focus: focus, neighbors: neighbors,
+        collection: collection.key })
 }

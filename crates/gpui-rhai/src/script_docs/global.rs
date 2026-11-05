@@ -460,6 +460,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Returns enabled List navigation targets first/last/previous/next/current/current_index and the current row's has_children flag; disabled and missing selections are skipped.",
     },
     ScriptFnDoc {
+        signature: "native_selection_view(_: types::dynamic::Dynamic, _: array) -> core::result::Result<gpui_rhai::native_collection::NativeCollection,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["items", "selected_keys"],
+        doc: "Normalizes SelectableList rows (an array of maps or a NativeCollection, keyed by `key`) natively: each row gains `selected` and a bool `disabled`, without enumerating rows in Rhai.",
+    },
+    ScriptFnDoc {
+        signature: "native_selection_neighbors(_: types::dynamic::Dynamic, _: array) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["items", "selected_keys"],
+        doc: "Returns SelectableList navigation targets first/last/previous/next/current/current_index; disabled rows and missing selections are skipped.",
+    },
+    ScriptFnDoc {
         signature: "native_table_view(_: array, _: map) -> core::result::Result<gpui_rhai::native_collection::NativeCollection,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["rows", "config"],
         doc: "Applies Table's native projection to array rows. Controlled sort names a declared column key; sort_key resolves its rank field. Null/missing values are last in both directions; ties preserve source order.",

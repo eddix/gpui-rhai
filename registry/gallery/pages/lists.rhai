@@ -7,6 +7,7 @@ import "components/command" as command;
 import "components/command_dialog" as command_dialog;
 import "components/tree" as tree;
 import "components/list" as list;
+import "components/selectable_list" as selectable_list;
 import "components/table" as table;
 import "components/accordion" as accordion;
 import "components/pagination" as pagination;
@@ -20,6 +21,7 @@ fn pages() {
         #{ id: "command_dialog", title: "CommandDialog", group: "Lists" },
         #{ id: "tree", title: "Tree", group: "Lists" },
         #{ id: "list", title: "List", group: "Lists" },
+        #{ id: "selectable_list", title: "SelectableList", group: "Lists" },
         #{ id: "table", title: "Table", group: "Lists" },
         #{ id: "accordion", title: "Accordion", group: "Lists" },
         #{ id: "pagination", title: "Pagination", group: "Navigation" },
@@ -33,6 +35,7 @@ fn view(ctx, h, v, id) {
     else if id == "command_dialog" { command_dialog_page(h, v) }
     else if id == "tree" { tree_page(h, v) }
     else if id == "list" { list_page(h, v) }
+    else if id == "selectable_list" { selectable_list_page(ctx, h, v) }
     else if id == "table" { table_page(h, v) }
     else if id == "accordion" { accordion_page(h, v) }
     else if id == "pagination" { pagination_page(h, v) }
@@ -135,6 +138,69 @@ fn ticket_items() {
     ]
 }
 
+fn albums() {
+    [
+        #{ key: "a1", label: "Kind of Blue, Miles Davis", title: "Kind of Blue", artist: "Miles Davis", year: "1959", tone: "accent" },
+        #{ key: "a2", label: "A Love Supreme, John Coltrane", title: "A Love Supreme", artist: "John Coltrane", year: "1965", tone: "success" },
+        #{ key: "a3", label: "Blue Train, John Coltrane", title: "Blue Train", artist: "John Coltrane", year: "1958", tone: "warning" },
+        #{ key: "a4", label: "Mingus Ah Um, Charles Mingus", title: "Mingus Ah Um", artist: "Charles Mingus", year: "1959", tone: "danger" },
+        #{ key: "a5", label: "Time Out, Dave Brubeck", title: "Time Out", artist: "Dave Brubeck Quartet", year: "1959", tone: "accent" },
+    ]
+}
+
+// Play in a media row: its callback belongs to the Gallery, which bound the row factory.
+fn play_album(key, ctx, payload) {
+    let values = ctx.get_state("values");
+    values["selectable_list.playing"] = key;
+    ctx.set_state("values", values);
+}
+
+// A media row drawn by the page: a cover, two lines and a control of its own. The list keeps
+// selection, the keys and the rows' accessibility; Play calls back into the Gallery.
+fn album_row(playing, ctx, row) {
+    let album = row.item;
+    let cover = column([text(album.title.sub_string(0, 1)).with_style(style().typography("title")
+        .text_color(theme_color(`on_${album.tone}`)))])
+        .with_style(style().width(px(40)).height(px(40)).flex_shrink(false).items_center().justify_center()
+            .radius(theme_radius("md")).background(theme_color(album.tone)));
+    let lines = column([
+        text(album.title).with_style(style().typography("body").whitespace_nowrap().text_ellipsis()),
+        text(`${album.artist} · ${album.year}`).with_style(style().typography("caption")
+            .text_color(if row.selected { theme_color("text_primary") } else { theme_color("text_muted") })
+            .whitespace_nowrap().text_ellipsis()),
+    ]).with_style(style().flex_col().flex_grow().min_width(px(0)));
+    row([cover, lines, button::Button(#{ key: `album-play-${row.key}`, size: "sm", variant: "ghost",
+        text: if playing == row.key { "Playing" } else { "Play" },
+        on_click: Fn("play_album").curry(row.key) })])
+        .with_style(style().items_center().gap(theme_spacing("sm")).flex_grow().min_width(px(0)))
+        // The cover's initial is artwork, not text set beside the title.
+        .audit_allow(["mixed-type-in-row"])
+}
+
+fn people() {
+    [
+        #{ key: "p1", label: "Ada Lovelace", name: "Ada Lovelace", role: "Analyst" },
+        #{ key: "p2", label: "Grace Hopper", name: "Grace Hopper", role: "Compiler" },
+        #{ key: "p3", label: "Linus Torvalds", name: "Linus Torvalds", role: "Kernel" },
+        #{ key: "p4", label: "Barbara Liskov", name: "Barbara Liskov", role: "Abstraction" },
+    ]
+}
+
+// A bare row paints its own selected state: an accent bar at the start and a heavier name.
+fn person_row(ctx, row) {
+    let person = row.item;
+    let mark = box([]).with_style(style().width(px(3)).self_stretch()
+        .background(if row.selected { theme_color("accent") } else { rgba(0x00000000) }));
+    let lines = row([
+        text(person.name).with_style(style().typography("body").flex_grow().min_width(px(0))
+            .font_weight(if row.selected { 600 } else { 400 }).whitespace_nowrap().text_ellipsis()),
+        text(person.role).with_style(style().typography("body").text_color(theme_color("text_muted"))),
+    ]).with_style(style().flex_grow().min_width(px(0)).gap(theme_spacing("sm")).items_center()
+        .padding_x(theme_length("metrics.inset")));
+    row([mark, lines]).with_style(style().flex_grow().min_width(px(0)).height(theme_length("metrics.row"))
+        .border_bottom(px(1)).border_color(theme_color("border")))
+}
+
 fn list_page(h, v) {
     kit::page(h, v, "list", "List", "Keyed rows on the row inset: selection fills the row; after a navigation key the focused list frames the selected row.", [
         kit::sec("Single selection", list::List(#{ key: "list-tickets", label: "Tickets", items: ticket_items(),
@@ -146,6 +212,23 @@ fn list_page(h, v) {
             items: ticket_items(), secondary_layout: "below", dividers: true, height: 196.0,
             badge_width: 80.0,
             on_row_click: h.noop }).with_style(style().width(px(440)))),
+    ])
+}
+
+fn selectable_list_page(ctx, h, v) {
+    kit::page(h, v, "selectable_list", "SelectableList", "Rows the page draws with List's selection, keys and focus frame: a click selects and opens, the arrows move, a control in a row is the page's.", [
+        kit::sec("Media rows", selectable_list::SelectableList(#{ key: "selectable-albums",
+            label: "Albums", items: albums(), selection_mode: "single",
+            selected_keys: kit::val(v, "selectable_list.album", ["a2"]), height: 280.0,
+            row: ctx.node_factory(Fn("album_row").curry(kit::val(v, "selectable_list.playing", ""))),
+            on_selection_change: kit::store(h, "selectable_list.album"), on_row_click: h.noop })
+            .with_style(style().width(px(440)))),
+        kit::sec("Bare rows (row_chrome: false)", selectable_list::SelectableList(#{ key: "selectable-people",
+            label: "People", items: people(), selection_mode: "multiple", row_chrome: false,
+            selected_keys: kit::val(v, "selectable_list.people", ["p1", "p3"]), height: 168.0,
+            row: ctx.node_factory(Fn("person_row")),
+            on_selection_change: kit::store(h, "selectable_list.people"), on_row_click: h.noop })
+            .with_style(style().width(px(440)))),
     ])
 }
 

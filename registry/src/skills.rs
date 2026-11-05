@@ -70,6 +70,7 @@ pub const BUNDLED_SKILL_FILES: &[(&str, &str)] = &[
     ("gpui-rhai/references/modules/components/scroll_area.md", include_str!("../skills/gpui-rhai/references/modules/components/scroll_area.md")),
     ("gpui-rhai/references/modules/components/select.md", include_str!("../skills/gpui-rhai/references/modules/components/select.md")),
     ("gpui-rhai/references/modules/components/selectable_card_group.md", include_str!("../skills/gpui-rhai/references/modules/components/selectable_card_group.md")),
+    ("gpui-rhai/references/modules/components/selectable_list.md", include_str!("../skills/gpui-rhai/references/modules/components/selectable_list.md")),
     ("gpui-rhai/references/modules/components/selection_area.md", include_str!("../skills/gpui-rhai/references/modules/components/selection_area.md")),
     ("gpui-rhai/references/modules/components/sheet.md", include_str!("../skills/gpui-rhai/references/modules/components/sheet.md")),
     ("gpui-rhai/references/modules/components/skeleton.md", include_str!("../skills/gpui-rhai/references/modules/components/skeleton.md")),

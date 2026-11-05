@@ -1091,6 +1091,8 @@ fn chart_end_to_end_baseline(cx: &mut TestAppContext) {
 
 const SCROLL_TABLE: &str = include_str!("../../../registry/components/table.rhai");
 const SCROLL_BADGE: &str = include_str!("../../../registry/components/badge.rhai");
+const SCROLL_SELECTABLE_LIST: &str =
+    include_str!("../../../registry/components/selectable_list.rhai");
 const SCROLL_THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const SCROLL_TOKENS: &str = include_str!("../../../registry/tokens.rhai");
 const SCROLL_WINDOW: [f32; 2] = [1_180.0, 820.0];
@@ -1202,6 +1204,7 @@ fn scroll_view(layout: ScrollLayout) -> gpui_rhai::EmbeddedScriptView {
         module("main", &scroll_source(layout)),
         module("components/table", SCROLL_TABLE),
         module("components/badge", SCROLL_BADGE),
+        module("components/selectable_list", SCROLL_SELECTABLE_LIST),
     ]));
     let assets: Vec<(String, gpui_rhai::AssetData)> = [
         (
