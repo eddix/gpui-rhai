@@ -554,6 +554,10 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
         include_str!("../gallery/tabs_demo.rhai"),
     ),
     (
+        "gallery/shell_demo",
+        include_str!("../gallery/shell_demo.rhai"),
+    ),
+    (
         "gallery/pages/temporal",
         include_str!("../gallery/pages/temporal.rhai"),
     ),

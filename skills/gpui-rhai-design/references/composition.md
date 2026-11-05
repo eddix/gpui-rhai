@@ -249,13 +249,28 @@ AppShell defines regions (sidebar, main, inspector, status bar).
 
 AppShell is the shell of a single-window tool: a title bar, one sidebar, the
 main area, one inspector, a status bar, the command palette and F6 regions,
-with fixed side widths (`sidebar_width`, `inspector_width`). It does not
-resize or collapse side bars, stack several panels on one side, or place
-floating tool windows. An application that needs those keeps its own shell
-and reuses the parts: Region and DataView for the panes, TitleBar and
-StatusBar for the bars, F6 through its own key handlers (a Host can mount a
-view per pane with `host_slot`). Its regions should still show the 2px ink
-frame while they hold focus themselves.
+with fixed side widths (`sidebar_width`, `inspector_width`). Each side region
+takes the place the application chooses (`sidebar_mode`, `inspector_mode`,
+0.4.1, D81):
+
+- `dock`, the default: beside the main area, an F6 stop.
+- `hidden`: out of view and out of F6, its content still mounted, so its state
+  survives.
+- `overlay`: a modal drawer from the window's edge (the sidebar's start, the
+  inspector's end) over a scrim. Escape or a press on the scrim asks to close
+  it (`sidebar_dismiss`, `inspector_dismiss`); the application sets the region
+  `hidden`, and focus returns to where it was when the drawer opened.
+
+The application chooses by the room it has, not the window: it measures its
+shell with `ctx.element_size` and keeps its own breakpoints. Measuring needs an
+element ref, which only a formal component declares, so the measuring shell
+lives in one (the Gallery's `gallery/shell_demo` docks the inspector from
+800px and the sidebar from 600px). AppShell does not resize side bars, stack
+several panels on one side, or place floating tool windows. An application
+that needs those keeps its own shell and reuses the parts: Region and DataView
+for the panes, TitleBar and StatusBar for the bars, F6 through its own key
+handlers (a Host can mount a view per pane with `host_slot`). Its regions
+should still show the 2px ink frame while they hold focus themselves.
 
 ## 9. Page patterns
 

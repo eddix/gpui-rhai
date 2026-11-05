@@ -2,11 +2,11 @@
 {
   "id": "patterns/app_shell",
   "export": "AppShell",
-  "version": "0.2.0",
+  "version": "0.4.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/title_bar", "components/status_bar"],
   "capabilities": {},
-  "tokens": ["surface", "surface_raised", "focus_ring", "metrics.label_column"],
+  "tokens": ["surface", "surface_raised", "border", "focus_ring", "metrics.label_column"],
   "environment": []
 }
 */
@@ -17,20 +17,29 @@
 //              sidebar: nav_node, main: region_node, status: #{ start: [text("Ready")] } })
 //
 // The sidebar and inspector are raised color blocks beside the main surface; no rules.
-// F6 and Shift+F6 move focus from the region that holds it to the next or previous present
+// F6 and Shift+F6 move focus from the region that holds it to the next or previous docked
 // region; a region shows the 2px ink frame while it holds focus itself, and Tab then enters
 // it. With focus outside every region they go on from the last region F6 moved to, which the
 // shell keeps as its only state.
+//
+// `sidebar_mode` and `inspector_mode` place each side region: `dock` beside the main area,
+// `hidden` out of view but still mounted (its state stays), or `overlay` as a modal drawer
+// from its edge of the window (the sidebar's start, the inspector's end) over a scrim.
+// Escape or a press on the scrim asks to close the drawer through `sidebar_dismiss` or
+// `inspector_dismiss`; the application then hides it, and focus returns where it was. The
+// application chooses the mode, from the width it measures for the shell
+// (`ctx.element_size`, in a formal component, which alone declares element refs), so its
+// breakpoints are its own.
 
 import "components/title_bar" as title_bar;
 import "components/status_bar" as status_bar;
 
 define_component(#{
     metadata: #{
-        id: "patterns/app_shell", "export": "AppShell", version: "0.2.0",
+        id: "patterns/app_shell", "export": "AppShell", version: "0.4.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/title_bar", "components/status_bar"], capabilities: #{},
-        tokens: ["surface", "surface_raised", "focus_ring", "metrics.label_column"],
+        tokens: ["surface", "surface_raised", "border", "focus_ring", "metrics.label_column"],
         environment: [],
     },
     schema: #{
@@ -88,22 +97,56 @@ define_component(#{
                 doc: "Width of the sidebar; omitted, twice `metrics.label_column`." },
             inspector_width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
                 doc: "Width of the inspector; omitted, 320 logical pixels." },
+            sidebar_mode: #{ schema: #{ type: "string", allowed: ["dock", "hidden", "overlay"] }, required: false,
+                sensitive: false, "default": #{ type: "string", value: "dock" },
+                doc: "Where the sidebar is: `dock` beside the main area, `hidden` mounted out of view, or `overlay`, a modal drawer from the window's start edge." },
+            inspector_mode: #{ schema: #{ type: "string", allowed: ["dock", "hidden", "overlay"] }, required: false,
+                sensitive: false, "default": #{ type: "string", value: "dock" },
+                doc: "Where the inspector is: `dock` beside the main area, `hidden` mounted out of view, or `overlay`, a modal drawer from the window's end edge." },
+            on_sidebar_dismiss: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called when Escape or a press on the scrim asks to close the sidebar drawer; set `sidebar_mode` to `hidden`." },
+            on_inspector_dismiss: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Called when Escape or a press on the scrim asks to close the inspector drawer; set `inspector_mode` to `hidden`." },
         },
         state: #{ fields: #{ region: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } } } },
-        events: #{},
+        events: #{
+            sidebar_dismiss: #{ payload: #{ type: "null" },
+                doc: "Escape or a press on the scrim asked to close the sidebar drawer." },
+            inspector_dismiss: #{ payload: #{ type: "null" },
+                doc: "Escape or a press on the scrim asked to close the inspector drawer." },
+        },
         slots: #{
             sidebar: #{ required: false, multiple: false, doc: "Raised region before the main area." },
             main: #{ required: true, multiple: false, doc: "The main working area." },
             inspector: #{ required: false, multiple: false, doc: "Raised region after the main area." },
             overlays: #{ required: false, multiple: true, doc: "Overlays such as dialogs, sheets and toasts." },
         },
-        parts: ["root", "sidebar", "main", "inspector", "region_frame"],
+        parts: ["root", "sidebar", "main", "inspector", "region_frame", "drawer"],
     },
     render: Fn("render_AppShell")
 });
 
 fn AppShell(props) { render_component("patterns/app_shell", props) }
 fn has(map, name) { name in map && map[name] != () }
+
+fn dismiss_sidebar(ctx, open) { if !open { ctx.emit("sidebar_dismiss", ()); } }
+fn dismiss_inspector(ctx, open) { if !open { ctx.emit("inspector_dismiss", ()); } }
+
+// A side region as a modal drawer from `side` of the window: the region's own surface,
+// with a hairline on the edge that faces the main area.
+fn drawer(ctx, props, key, part, side, content, width, open, dismiss) {
+    let surface = style().flex_col().relative().width(width).height(relative(1.0)).min_height(px(0))
+        .background(theme_color("surface_raised")).border_color(theme_color("border"));
+    surface = if side == "end" { surface.border_start(px(1)) } else { surface.border_end(px(1)) };
+    let panel = column([content]).with_key(key)
+        .with_style(ctx.component_style(part, ctx.component_style("drawer", surface)))
+        .accessibility_role("dialog").accessibility_label(`${props.label} ${part}`);
+    overlay(row([]), panel, #{
+        id: `${key}-drawer`, kind: "sheet", placement: side, open: open, gap: 0,
+        modal: true, activate_on_trigger: false,
+        dismiss_on_escape: true, dismiss_on_outside: true, initial_focus: "first",
+    }).with_key(`${key}-drawer`).on_open_change(dismiss)
+}
 
 fn move_region(ctx, target) {
     ctx.set_state("region", target.index);
@@ -126,16 +169,26 @@ fn region_pane(ctx, key, part, content, pane) {
 }
 
 fn render_AppShell(ctx, props) {
+    // The docked panes, each an F6 stop. A region that is not docked is a drawer, open as
+    // an overlay or closed while hidden: its content stays mounted, and a drawer that
+    // closes returns focus where it was.
     let panes = [];
     let keys = [];
+    let drawers = [];
     if has(props, "sidebar") {
         let key = `${props.key}-sidebar`;
         let width = if has(props, "sidebar_width") { props.sidebar_width }
             else { theme_length("metrics.label_column") * 2 };
-        panes.push(region_pane(ctx, key, "sidebar", props.sidebar, style()
-            .flex_col().relative().width(width).flex_shrink(false).min_height(px(0))
-            .background(theme_color("surface_raised"))));
-        keys.push(key);
+        let mode = props.sidebar_mode;
+        if mode == "dock" {
+            panes.push(region_pane(ctx, key, "sidebar", props.sidebar, style()
+                .flex_col().relative().width(width).flex_shrink(false).min_height(px(0))
+                .background(theme_color("surface_raised"))));
+            keys.push(key);
+        } else {
+            drawers.push(drawer(ctx, props, key, "sidebar", "start", props.sidebar, width,
+                mode == "overlay", Fn("dismiss_sidebar")));
+        }
     }
     let main_key = `${props.key}-main`;
     panes.push(region_pane(ctx, main_key, "main", props.main, style()
@@ -145,10 +198,16 @@ fn render_AppShell(ctx, props) {
     if has(props, "inspector") {
         let key = `${props.key}-inspector`;
         let width = if has(props, "inspector_width") { props.inspector_width } else { px(320) };
-        panes.push(region_pane(ctx, key, "inspector", props.inspector, style()
-            .flex_col().relative().width(width).flex_shrink(false).min_height(px(0))
-            .background(theme_color("surface_raised"))));
-        keys.push(key);
+        let mode = props.inspector_mode;
+        if mode == "dock" {
+            panes.push(region_pane(ctx, key, "inspector", props.inspector, style()
+                .flex_col().relative().width(width).flex_shrink(false).min_height(px(0))
+                .background(theme_color("surface_raised"))));
+            keys.push(key);
+        } else {
+            drawers.push(drawer(ctx, props, key, "inspector", "end", props.inspector, width,
+                mode == "overlay", Fn("dismiss_inspector")));
+        }
     }
     let count = keys.len;
     for index in 0..count {
@@ -170,6 +229,7 @@ fn render_AppShell(ctx, props) {
         bar.label = `${props.label} status`;
         children.push(status_bar::StatusBar(bar));
     }
+    for drawer in drawers { children.push(drawer); }
     for overlay in if "overlays" in props { props.overlays } else { [] } { children.push(overlay); }
     // Focus outside the regions: the title bar, the status bar or an overlay.
     let current = ctx.get_state("region") % count;
