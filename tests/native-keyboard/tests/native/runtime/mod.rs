@@ -6,3 +6,4 @@ mod interaction_contracts;
 mod retained_pages;
 mod retained_virtual_collections;
 mod script_api;
+mod node_factories;

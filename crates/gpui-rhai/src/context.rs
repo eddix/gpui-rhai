@@ -1678,6 +1678,38 @@ impl UiContext {
         base
     }
 
+    /// The Node factory `renderer` names, scoped as a callback created here.
+    /// `render_node` (registered with the component render API) calls it.
+    pub(crate) fn node_factory_callback(
+        &self,
+        renderer: Dynamic,
+    ) -> Result<ScriptCallback, Box<EvalAltResult>> {
+        if self.phase != ExecutionPhase::Render {
+            return Err(Box::new(EvalAltResult::ErrorRuntime(
+                "render_node is only available during component rendering".into(),
+                Position::NONE,
+            )));
+        }
+        let renderer = renderer.try_cast::<FnPtr>().ok_or_else(|| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                "render_node requires a named Rhai Fn; native event handlers are not Node factories"
+                    .into(),
+                Position::NONE,
+            ))
+        })?;
+        let callback = self
+            .scoped_callback(renderer)
+            .map_err(|error| Box::new(context_runtime_error(&error)))?;
+        if !callback.is_node_factory() {
+            return Err(Box::new(EvalAltResult::ErrorRuntime(
+                "bind the Node factory with ctx.node_factory(Fn(...)) at its declaration site"
+                    .into(),
+                Position::NONE,
+            )));
+        }
+        Ok(callback)
+    }
+
     fn scoped_callback(&self, function: FnPtr) -> Result<ScriptCallback, UiContextError> {
         let mut callback = ScriptCallback::try_from_fn_ptr(function, self.generation)?;
         callback.bind_component_scope_if_unset(
@@ -4202,28 +4234,21 @@ impl CustomType for UiContext {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
             .with_name("UiContext")
-            .with_fn("node_factory",|call:NativeCallContext<'_>,context:&mut Self,renderer:FnPtr| {
-                if context.phase != ExecutionPhase::Render {
-                    return Err(Box::new(EvalAltResult::ErrorRuntime(
-                        "node_factory is only available during component rendering".into(),Position::NONE)));
-                }
-                context.scoped_callback(renderer.clone()).map_err(|error|Box::new(context_runtime_error(&error)))?;
-                Ok(ScriptCallback::bind_node_factory(renderer,context,&call))
-            })
-            .with_fn("render_node", |call:NativeCallContext<'_>,context:&mut Self,renderer:Dynamic,detail:Dynamic| {
-                if context.phase != ExecutionPhase::Render {
-                    return Err(Box::new(EvalAltResult::ErrorRuntime(
-                        "render_node is only available during component rendering".into(),Position::NONE)));
-                }
-                let renderer=renderer.try_cast::<FnPtr>().ok_or_else(||Box::new(EvalAltResult::ErrorRuntime(
-                    "render_node requires a named Rhai Fn; native event handlers are not Node factories".into(),Position::NONE)))?;
-                let callback=context.scoped_callback(renderer).map_err(|error|Box::new(context_runtime_error(&error)))?;
-                if !callback.is_node_factory() {
-                    return Err(Box::new(EvalAltResult::ErrorRuntime(
-                        "bind the Node factory with ctx.node_factory(Fn(...)) at its declaration site".into(),Position::NONE)));
-                }
-                callback.render_node(&call,context.clone(),detail)
-            })
+            .with_fn(
+                "node_factory",
+                |call: NativeCallContext<'_>, context: &mut Self, renderer: FnPtr| {
+                    if context.phase != ExecutionPhase::Render {
+                        return Err(Box::new(EvalAltResult::ErrorRuntime(
+                            "node_factory is only available during component rendering".into(),
+                            Position::NONE,
+                        )));
+                    }
+                    context
+                        .scoped_callback(renderer.clone())
+                        .map_err(|error| Box::new(context_runtime_error(&error)))?;
+                    Ok(ScriptCallback::bind_node_factory(renderer, context, &call))
+                },
+            )
             .with_fn(
                 "emit",
                 |context: &mut Self, event: ImmutableString, payload: Dynamic| {

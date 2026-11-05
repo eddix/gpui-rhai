@@ -12,7 +12,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "render_node(_: &mut UiContext, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["renderer", "detail"],
-        doc: "Calls a Node factory bound with ctx.node_factory during render, preserving its module environment and user curry. Passes this receiving component's ctx and detail; does not create a component scope or reset depth/operation limits. Rejects unbound functions, native event handlers and calls outside render.",
+        doc: "Calls a Node factory bound with ctx.node_factory during render, preserving its module environment and user curry. Passes this receiving component's ctx and detail; does not create a component scope or reset depth/operation limits. Callbacks in the nodes it returns, and in the components it renders directly, belong to the scope that bound the factory. A virtual_collection item renderer may curry a bound factory. Rejects unbound functions, native event handlers and calls outside render.",
     },
     ScriptFnDoc {
         signature: "copy_text(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
