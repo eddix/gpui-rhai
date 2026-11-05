@@ -2722,7 +2722,7 @@ impl GpuiNodeRenderer {
             root_width: None,
             block_parent: false,
             row_room: content_width_anchor(&resolved_style, environment)
-                .and_then(|anchor| row_room(node, &resolved_style, anchor)),
+                .and_then(|anchor| row_room(node, &resolved_style, anchor, environment.signals)),
             room: None,
         };
         let mut element = apply_style(
@@ -3598,9 +3598,11 @@ fn render_island_boundary<C: ColorResolver>(
         .decide(capture, eligible, tree, frame.policy.verify);
     let view = entry.view.clone();
     let child = match pin {
-        Some(height) => view
-            .cached(island_view_style(&style, environment, height))
-            .into_any_element(),
+        Some(height) => {
+            frame.pinned.set(true);
+            view.cached(island_view_style(&style, environment, height))
+                .into_any_element()
+        }
         None => view.into_any_element(),
     };
     crate::island::IslandHostElement {
@@ -3640,7 +3642,7 @@ fn island_root_style<C: ColorResolver>(
 /// Whether a root in a flex column is exactly as tall as its content: in
 /// flow, unmoved, unclipped, with no height, basis, growth or aspect of its
 /// own, and no percentage padding, margin or border.
-fn island_root_sized_by_content(style: &StyleProperties) -> bool {
+pub(crate) fn island_root_sized_by_content(style: &StyleProperties) -> bool {
     let relative = |length: Option<Length>| matches!(length, Some(Length::Relative(_)));
     let relative_layout = |length: Option<crate::LayoutLength>| {
         matches!(
@@ -5036,7 +5038,9 @@ fn node_width_anchor<C>(
         Some(crate::LayoutLength::Definite(
             Length::Pixels(_) | Length::Rems(_) | Length::Token(_),
         )) if !flexible_in_row => 0x5f37_59df,
-        Some(crate::LayoutLength::Definite(Length::Relative(_))) if !environment.row_parent => {
+        // A share of the parent's content width, which a row child keeps
+        // when it neither grows nor shrinks (a horizontal SplitPane's start).
+        Some(crate::LayoutLength::Definite(Length::Relative(_))) if !flexible_in_row => {
             environment.island.width_anchor?
         }
         None | Some(crate::LayoutLength::Auto) if environment.island.block_parent => {
@@ -5104,12 +5108,18 @@ const ROW_ROOM_CHILDREN: usize = 8;
 
 /// In a flex row that does not wrap and whose content width is `anchor`,
 /// the one child that grows into the room the others leave, and an anchor
-/// of that room: every other child has a definite width it neither grows
-/// nor shrinks from, or takes no room, and the growing one has an auto width
-/// and basis, a definite minimum (an automatic one is its content's) and no
-/// maximum. No child's width may move with a signal, a motion or an
-/// interaction state.
-fn row_room(node: &UiNode, style: &StyleProperties, anchor: u64) -> Option<(usize, u64)> {
+/// of that room: every other child has a definite width, or a share of the
+/// row's, that it neither grows nor shrinks from, or takes no room, and the
+/// growing one has an auto width and basis, a definite minimum (an automatic
+/// one is its content's) and no maximum. A child's width signals count at
+/// their current values, which the row reads again whenever they change; no
+/// child's width may move with a motion or an interaction state.
+fn row_room(
+    node: &UiNode,
+    style: &StyleProperties,
+    anchor: u64,
+    signals: &crate::SignalRegistry,
+) -> Option<(usize, u64)> {
     if style.direction != Some(FlexDirection::Row)
         || !matches!(style.display, None | Some(DisplayMode::Flex))
         || style.grid_columns.is_some()
@@ -5137,7 +5147,9 @@ fn row_room(node: &UiNode, style: &StyleProperties, anchor: u64) -> Option<(usiz
     let mut grows = None;
     let mut hash = mix_bits(anchor, length_bits(style.gap));
     for (index, child) in children.iter().enumerate() {
-        let base = &child.style().base;
+        let mut base = child.style().base.clone();
+        apply_signal_style(&mut base, &node_signals(signals, child));
+        let base = &base;
         let moves = width_may_move(child);
         if matches!(child.kind(), UiNodeKind::Fragment { .. }) || moves {
             return None;
@@ -5161,7 +5173,7 @@ fn row_room(node: &UiNode, style: &StyleProperties, anchor: u64) -> Option<(usiz
         let fixed = matches!(
             base.width,
             Some(crate::LayoutLength::Definite(
-                Length::Pixels(_) | Length::Rems(_) | Length::Token(_)
+                Length::Pixels(_) | Length::Rems(_) | Length::Token(_) | Length::Relative(_)
             ))
         ) && base.flex_shrink == Some(false)
             && !growing
@@ -5194,14 +5206,32 @@ fn row_room(node: &UiNode, style: &StyleProperties, anchor: u64) -> Option<(usiz
 }
 
 /// Whether a node's width may change without its node changing: through a
-/// signal, a motion or an interaction state that sets a width property.
+/// motion, or an interaction state or signal style that sets a width
+/// property. (A width signal binding is read at its current value.)
 fn width_may_move(node: &UiNode) -> bool {
     let style = node.style();
     !node.motions().is_empty()
         || !node.progress_motions().is_empty()
         || !node.timelines().is_empty()
-        || node.signal_bindings().next().is_some()
-        || node.signal_style().is_some()
+        || node.signal_style().is_some_and(|signal| {
+            signal.states.values().any(|state| {
+                std::iter::once(&state.base)
+                    .chain(
+                        [
+                            &state.hover,
+                            &state.active,
+                            &state.focus,
+                            &state.group_focus,
+                            &state.group_hover,
+                            &state.focus_within,
+                            &state.disabled,
+                        ]
+                        .into_iter()
+                        .flatten(),
+                    )
+                    .any(sets_width)
+            })
+        })
         || node
             .attributes()
             .keys()
@@ -5217,19 +5247,22 @@ fn width_may_move(node: &UiNode) -> bool {
         ]
         .into_iter()
         .flatten()
-        .any(|state| {
-            state.width.is_some()
-                || state.min_width.is_some()
-                || state.max_width.is_some()
-                || state.flex_grow.is_some()
-                || state.flex_grow_weight.is_some()
-                || state.flex_shrink.is_some()
-                || state.flex_basis.is_some()
-                || state.display.is_some()
-                || state.position.is_some()
-                || state.layout_constraints.is_some()
-                || state.margin != crate::style::LayoutEdgeLengths::default()
-        })
+        .any(sets_width)
+}
+
+/// Whether a style sets a property a node's width follows.
+fn sets_width(state: &StyleProperties) -> bool {
+    state.width.is_some()
+        || state.min_width.is_some()
+        || state.max_width.is_some()
+        || state.flex_grow.is_some()
+        || state.flex_grow_weight.is_some()
+        || state.flex_shrink.is_some()
+        || state.flex_basis.is_some()
+        || state.display.is_some()
+        || state.position.is_some()
+        || state.layout_constraints.is_some()
+        || state.margin != crate::style::LayoutEdgeLengths::default()
 }
 
 /// A stretched child takes its stretched width as a definite width.

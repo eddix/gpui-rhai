@@ -104,10 +104,10 @@ pub struct ScriptViewConfig {
     window_drag_areas: bool,
     error_reporting: ErrorReporting,
     render_islands: Option<bool>,
-    /// The view's width does not depend on its content: it fills its window,
-    /// as [`ScriptApplication`] and script windows lay it out, or the Host
-    /// says so ([`Self::host_sets_width`]).
-    fills_window: bool,
+    /// What the width of the view's root follows: its content (by default),
+    /// its window, as [`ScriptApplication`] and script windows lay it out, or
+    /// the Host ([`Self::host_sets_width`]).
+    root_width: RootWidth,
     focus_indicators: FocusIndicators,
 }
 
@@ -178,7 +178,7 @@ impl ScriptViewConfig {
             window_drag_areas: false,
             error_reporting: ErrorReporting::default(),
             render_islands: None,
-            fills_window: false,
+            root_width: RootWidth::Content,
             focus_indicators: FocusIndicators::Navigation,
         }
     }
@@ -251,12 +251,17 @@ impl ScriptViewConfig {
     /// [`ScriptApplication`] windows are laid out so.
     #[must_use]
     pub const fn host_sets_width(mut self, fixed: bool) -> Self {
-        self.fills_window = fixed;
+        self.root_width = if fixed {
+            RootWidth::Host
+        } else {
+            RootWidth::Content
+        };
         self
     }
 
-    const fn fills_window(self) -> Self {
-        self.host_sets_width(true)
+    const fn fills_window(mut self) -> Self {
+        self.root_width = RootWidth::Window;
+        self
     }
 
     /// When the view shows focus indicators; [`FocusIndicators::Navigation`]
@@ -2072,6 +2077,100 @@ impl Element for MeasuredScriptViewElement {
     }
 }
 
+/// The root width (`f32` bits) a build of a view's content anchored its
+/// islands on, and whether it pinned one of them to a measured height.
+struct ContentAnchor {
+    width: u32,
+    pinned: Rc<Cell<bool>>,
+}
+
+/// The content of a view a Host sizes, built with its islands anchored on the
+/// width its root laid out at last frame. A Host that resizes the view without
+/// resizing the window changes that width only in layout: when the root lays
+/// out at another width and an island was pinned to a height measured at the
+/// old one, the content is built again for the new width and laid out in place
+/// of the first build, so no frame shows the old heights.
+struct ReanchoredContent {
+    child: AnyElement,
+    /// The root width (`f32` bits) the build anchored on.
+    width: u32,
+    pinned: Rc<Cell<bool>>,
+    laid_out_width: Rc<Cell<Option<u32>>>,
+    view: gpui::WeakEntity<ScriptHostView>,
+    frame: Rc<HostFrame>,
+}
+
+impl Element for ReanchoredContent {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        (self.child.request_layout(window, cx), ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let width = f32::from(bounds.size.width).to_bits();
+        self.laid_out_width.set(Some(width));
+        if width != self.width
+            && self.pinned.get()
+            && let Some(view) = self.view.upgrade()
+        {
+            let frame = Rc::clone(&self.frame);
+            let (mut content, _) = view.update(cx, |view, cx| {
+                view.build_content(&frame, Some(width), window, cx)
+            });
+            content.layout_as_root(bounds.size.into(), window, cx);
+            content.prepaint_at(bounds.origin, window, cx);
+            self.child = content;
+            return;
+        }
+        self.child.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.child.paint(window, cx);
+    }
+}
+
+impl IntoElement for ReanchoredContent {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
 impl IntoElement for MeasuredScriptViewElement {
     type Element = Self;
 
@@ -3669,7 +3768,7 @@ impl PreparedScriptView {
                 timings,
                 render_statistics: ScriptViewRenderStatistics::default(),
                 derived_key: None,
-                islands: IslandTable::new(config.render_islands, config.fills_window),
+                islands: IslandTable::new(config.render_islands, config.root_width),
                 frame: None,
                 overlays,
                 host: view_host,
@@ -4083,7 +4182,7 @@ fn open_secondary_window(
                 timings,
                 render_statistics: ScriptViewRenderStatistics::default(),
                 derived_key: None,
-                islands: IslandTable::new(view_factory.render_islands.get(), true),
+                islands: IslandTable::new(view_factory.render_islands.get(), RootWidth::Window),
                 frame: None,
                 overlays: view_host.overlays(),
                 host: view_host.clone(),
@@ -5121,23 +5220,21 @@ impl ScriptHostView {
             focus_owners: BTreeMap::new(),
         });
         self.frame = Some(Rc::clone(&frame));
-        let islands = self.island_frame(&frame, window, cx);
-        let build_started = Instant::now();
-        let content = self.lifecycle.retained().root().map_or_else(
-            || div().child("Script view has no root").into_any_element(),
-            |_| {
-                let mut resources = frame.resources(self);
-                resources.islands = islands.as_ref();
-                GpuiNodeRenderer::render_retained_with_window_runtime(
-                    self.lifecycle.retained(),
-                    &frame.snapshot.theme,
-                    &InteractionState::default(),
-                    &self.primitives,
-                    &resources,
-                )
-            },
-        );
-        self.render_statistics.build_time += build_started.elapsed();
+        let (content, anchored) = self.build_content(&frame, None, window, cx);
+        let content = match anchored {
+            Some(ContentAnchor { width, pinned }) if self.islands.root_width == RootWidth::Host => {
+                ReanchoredContent {
+                    child: content,
+                    width,
+                    pinned,
+                    laid_out_width: Rc::clone(&self.islands.laid_out_width),
+                    view: cx.entity().downgrade(),
+                    frame: Rc::clone(&frame),
+                }
+                .into_any_element()
+            }
+            _ => content,
+        };
         self.report_presentation_diagnostics(cx);
         let snapshot = &frame.snapshot;
         let content = match (&self.last_failure, self.show_error_banner) {
@@ -5233,12 +5330,50 @@ impl ScriptHostView {
         )
     }
 
+    /// The retained tree's elements for `frame`, with the root width its islands
+    /// anchor on (`laid_out_width`, else the last one) and whether one of them
+    /// was pinned, when the root anchors them.
+    fn build_content(
+        &mut self,
+        frame: &Rc<HostFrame>,
+        laid_out_width: Option<u32>,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> (AnyElement, Option<ContentAnchor>) {
+        let islands = self.island_frame(frame, laid_out_width, window, cx);
+        let build_started = Instant::now();
+        let content = self.lifecycle.retained().root().map_or_else(
+            || div().child("Script view has no root").into_any_element(),
+            |_| {
+                let mut resources = frame.resources(self);
+                resources.islands = islands.as_ref();
+                GpuiNodeRenderer::render_retained_with_window_runtime(
+                    self.lifecycle.retained(),
+                    &frame.snapshot.theme,
+                    &InteractionState::default(),
+                    &self.primitives,
+                    &resources,
+                )
+            },
+        );
+        self.render_statistics.build_time += build_started.elapsed();
+        #[allow(clippy::cast_possible_truncation)]
+        let anchored = islands.and_then(|islands| {
+            islands.root_anchor.map(|anchor| ContentAnchor {
+                width: anchor as u32,
+                pinned: Rc::clone(&islands.pinned),
+            })
+        });
+        (content, anchored)
+    }
+
     /// This frame's cache islands: the plan of the committed tree, made again
     /// after a commit, and what every island's render depends on beyond its
     /// subtree. `None` when the view embeds none.
     fn island_frame(
         &mut self,
         frame: &HostFrame,
+        laid_out_width: Option<u32>,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<crate::island::IslandFrame> {
@@ -5307,11 +5442,25 @@ impl ScriptHostView {
             _ => Rc::new(fingerprint),
         };
         self.islands.fingerprint = Some(Rc::clone(&fingerprint));
-        // The viewport is the width of a view that fills its window, unless
-        // the error banner lays the content out.
-        let root_anchor = ((self.islands.fills_window || policy.anchor_hosted_root)
-            && !(self.last_failure.is_some() && self.show_error_banner))
-            .then(|| u64::from(f32::from(window.viewport_size().width).to_bits()));
+        // The viewport is the width of a view that fills its window. A Host
+        // that sizes the view can resize it within one viewport, so its anchor
+        // also holds the width the root last laid out at; the error banner lays
+        // the content out itself.
+        let viewport = f32::from(window.viewport_size().width).to_bits();
+        let root_anchor = if self.last_failure.is_some() && self.show_error_banner {
+            None
+        } else {
+            match self.islands.root_width {
+                RootWidth::Content => None,
+                RootWidth::Window => Some(u64::from(viewport)),
+                RootWidth::Host => {
+                    let width = laid_out_width
+                        .or_else(|| self.islands.laid_out_width.get())
+                        .unwrap_or(viewport);
+                    Some((u64::from(viewport) << 32) | u64::from(width))
+                }
+            }
+        };
         let mut islands = crate::island::IslandFrame {
             frame: frame.number,
             policy,
@@ -5325,6 +5474,7 @@ impl ScriptHostView {
                 .collect(),
             counters: Rc::clone(&self.islands.counters),
             root_anchor,
+            pinned: Rc::default(),
             motions: BTreeMap::new(),
             motion_unknown: false,
         };
@@ -5398,12 +5548,26 @@ impl HostFrame {
     }
 }
 
+/// What the width of a view's root follows, which decides the width anchor
+/// of the islands under it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RootWidth {
+    /// Its content: only explicit widths anchor islands.
+    Content,
+    /// Its window: the viewport's width anchors the root.
+    Window,
+    /// The Host, which may resize it without resizing the window: the width
+    /// the root last laid out at anchors it, checked again in the frame
+    /// ([`ReanchoredContent`]).
+    Host,
+}
+
 /// A view's cache islands ([`crate::island`]) across frames.
 struct IslandTable {
     policy: crate::island::IslandPolicy,
-    /// Whether the view fills its window, whose width then anchors the
-    /// widths in it.
-    fills_window: bool,
+    root_width: RootWidth,
+    /// The width (`f32` bits) a Host-sized root last laid out at.
+    laid_out_width: Rc<Cell<Option<u32>>>,
     /// The committed tree (generation and revision) the plan was made from.
     planned: Option<(crate::ScriptGeneration, u64)>,
     entries: BTreeMap<crate::NodeId, (Entity<RetainedIsland>, crate::island::IslandEntry)>,
@@ -5415,10 +5579,18 @@ struct IslandTable {
 }
 
 impl IslandTable {
-    fn new(config: Option<bool>, fills_window: bool) -> Self {
+    fn new(config: Option<bool>, root_width: RootWidth) -> Self {
+        let policy = crate::island::IslandPolicy::resolve(config);
+        // Aggressive mode takes a view that a Host lays out as sized by it.
+        let root_width = if root_width == RootWidth::Content && policy.anchor_hosted_root {
+            RootWidth::Host
+        } else {
+            root_width
+        };
         Self {
-            policy: crate::island::IslandPolicy::resolve(config),
-            fills_window,
+            policy,
+            root_width,
+            laid_out_width: Rc::default(),
             planned: None,
             entries: BTreeMap::new(),
             fingerprint: None,

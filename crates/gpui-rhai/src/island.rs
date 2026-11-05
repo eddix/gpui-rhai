@@ -70,12 +70,15 @@ impl IslandPolicy {
 }
 
 /// The roots of a committed tree's islands: maximal cold subtrees of at
-/// least `min_nodes` nodes whose parent lays them out as a Box child. The walk
-/// visits only the nodes above them, through Box and Fragment children of
-/// subtrees that hold a hot node; it stops at scroll containers, Table layout
-/// and hidden pages, and never makes the view root an island. A root of
-/// `kept` stays one down to half the size, so a subtree near the limit does
-/// not move in and out of its island from one commit to the next.
+/// least `min_nodes` nodes whose parent lays them out as a Box child and whose
+/// own style leaves their height to their content. The walk visits only the
+/// nodes above them, through Box and Fragment children of subtrees that hold a
+/// hot node, and into a cold subtree whose root sets its own height (a
+/// `flex_grow` pane, a clipped body) to the subtrees in it; it stops at scroll
+/// containers, Table layout and hidden pages, and never makes the view root an
+/// island. A root of `kept` stays one down to half the size, so a subtree near
+/// the limit does not move in and out of its island from one commit to the
+/// next.
 pub(crate) fn plan(
     tree: &RetainedUiTree,
     min_nodes: u32,
@@ -127,13 +130,15 @@ fn visit(
         } else {
             min_nodes
         };
-        if summary.hot == 0
+        let candidate = summary.hot == 0
             && is_box
             && child.kind() != UiNodeKindTag::Fragment
-            && summary.nodes >= threshold
-        {
+            && summary.nodes >= threshold;
+        if candidate && child.sized_by_content() {
             roots.insert(link.node());
-        } else if summary.hot > 0 {
+        } else if summary.hot > 0 || candidate {
+            // A cold root that sets its own height cannot be pinned to a
+            // measured one; the subtrees in it can.
             visit(tree, link.node(), is_box, min_nodes, kept, roots);
         }
     }
@@ -354,8 +359,11 @@ pub(crate) struct IslandFrame {
     pub entries: BTreeMap<NodeId, IslandEntry>,
     pub counters: Rc<RefCell<IslandCounters>>,
     /// The width anchor of the view root's parent: the viewport's width for a
-    /// view that fills its window, `None` where a Host lays the view out.
+    /// view that fills its window, with the width its root last laid out at
+    /// for one a Host sizes, `None` where the view's content sizes it.
     pub root_anchor: Option<u64>,
+    /// Whether an island was embedded cached, pinned to a measured height.
+    pub pinned: Rc<std::cell::Cell<bool>>,
     /// The sampled motion values of each island's nodes.
     pub motions: BTreeMap<NodeId, Rc<[(crate::MotionKey, u64)]>>,
     /// A sampled value in the view's node namespace names no node, so it may

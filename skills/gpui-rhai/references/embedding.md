@@ -111,8 +111,10 @@ A frame replays the parts of a view that did not change instead of building
 them again ([frame replay](https://github.com/eddix/gpui-rhai/blob/main/docs/performance.md#frame-replay)). When the Host gives a
 view a width its content cannot change, as when the view fills the window or a
 pane the Host sizes, say so with `ScriptViewConfig::host_sets_width(true)`:
-subtrees whose width follows the view's are then replayed too. A view the
-Host lays out by its content keeps the default. `render_islands(false)` turns
+subtrees whose width follows the view's are then replayed too. The Host may
+resize such a pane without resizing the window, as a split does; the frame
+that sees the new width lays the replayed subtrees out at it. A view the Host
+lays out by its content keeps the default. `render_islands(false)` turns
 replay off for one view, and `GPUI_RHAI_RENDER_ISLANDS=off` for every view.
 
 Focus frames show after a navigation key (Tab, an arrow, Home, End, Page Up,

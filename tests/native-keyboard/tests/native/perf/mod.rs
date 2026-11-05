@@ -5,3 +5,5 @@
 mod invariants;
 mod islands;
 mod lockstep;
+mod host_width;
+mod coverage;
