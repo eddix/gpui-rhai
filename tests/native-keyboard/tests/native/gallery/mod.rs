@@ -13,6 +13,7 @@ mod inputs_and_choices;
 mod navigation_workflow;
 mod overlay_triggers;
 mod responsive_grid;
+mod shell_demo;
 mod stories;
 mod title_bar;
 

@@ -16,3 +16,4 @@ mod split_pane_hover_style;
 mod stretch;
 mod tabs_panels;
 mod toolbar_tabs_overflow;
+mod app_shell_modes;

@@ -14,6 +14,7 @@ import "patterns/data_view" as data_view;
 import "patterns/list_detail" as list_detail;
 import "patterns/app_shell" as app_shell;
 import "components/button" as button;
+import "gallery/shell_demo" as shell_demo;
 import "components/input" as input;
 import "components/select" as select;
 import "components/tag" as tag;
@@ -217,6 +218,7 @@ fn list_detail_page(h, v) {
 fn app_shell_page(h, v) {
     kit::page(h, v, "app_shell", "AppShell", "This Gallery is an AppShell: title bar, sidebar, main, inspector, status bar.", [
         kit::sec("Regions", kit::note("F6 and Shift+F6 move focus between the sidebar, the main area and the source inspector.")),
+        kit::sec("Responsive shell", shell_demo::ShellDemo(#{ key: "shell-demo" })),
         kit::sec("Keyboard", description_list::DescriptionList(#{ label: "Shell keys", items: [
             #{ label: "F6", value: "Next region" }, #{ label: "Shift+F6", value: "Previous region" },
             #{ label: "⌘K", value: "Command palette" }, #{ label: "Tab", value: "Next control in a region" },
