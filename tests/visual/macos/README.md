@@ -17,7 +17,10 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
   and field padding of decisions D74 and D75, and then the 19 Gallery files,
   Data Table's selected rows and Embedded Views for the rounded rows, Toolbar
   order and baseline legends of D76, D77 and D79 (the other 36 rendered
-  byte-identical)
+  byte-identical); on 2026-11-05, for 0.4.1, the 15 Gallery files whose
+  sidebar scrollbar thumb moved when the Lists group gained the SelectableList
+  page (the other 4 Gallery files and all 38 example files rendered identical
+  in RGB)
 - Environment of the current files: macOS 27.0, gpui-pre 0.3.9, Rust 1.95.0,
   rendered offscreen and read back from the GPU texture (no window chrome, no
   screen capture), stored in device pixels (2x)
