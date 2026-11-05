@@ -5,6 +5,48 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.4.1 - 2026-11-05
+
+- A view mounted with `host_sets_width(true)` anchors its cache islands on the
+  width it last laid out at, not the window's: a Host that resizes a pane
+  without the window no longer replays heights measured at the old width, and
+  a frame that lays the root out at a new width builds the content again at
+  that width before it paints (#215). Islands also reach the content of a cold
+  wrapper that sets its own height (a `flex_grow` pane, a clipped body) and
+  both panes of a horizontal SplitPane. An auto grid inside an island no
+  longer pins it to the height of its provisional first layout (present in
+  0.4.0).
+- **Fix:** the callbacks in the nodes a Node factory returns, and the callback
+  props of the components it renders directly, belong to the scope that bound
+  the factory; they ran with the receiving component's `ctx` and failed on the
+  application's state. A `virtual_collection` item renderer may curry a bound
+  factory.
+- `components/selectable_list` (new): `SelectableList` keeps List's selection,
+  tab stop, keys, cursor, focus frame, row and context requests, roles and
+  virtualization, and a `row` Node factory draws each row; `row_chrome: false`
+  leaves rows bare. List and Table call the same behavior functions and now
+  depend on it. `native_selection_view` and `native_selection_neighbors`
+  normalize and navigate its rows in Rust (#217).
+- Tabs items take an optional `head` node drawn in place of the icon, label
+  and count. D82.
+- AppShell's `sidebar_mode` and `inspector_mode` dock a side region (default),
+  hide it (mounted, out of layout and F6) or show it as a modal drawer over a
+  scrim; Escape or the scrim emits `sidebar_dismiss` / `inspector_dismiss` and
+  focus returns where it was (#218). D81.
+- Every theme has the environment axis `scale` (100, 110, 125, 150, 175, 200;
+  default 100): it multiplies pixel and rem length tokens and typography sizes
+  and line heights; literal lengths, borders and focus frames stay as written.
+  Rust gains `SCALE_ENVIRONMENT`, `SCALE_STEPS` and
+  `ThemeTokens::reading_scale` (#219). D80.
+- `auto_grid_columns` bounds may be Lengths (pixels, rems or a theme token),
+  resolved natively on every frame; bounds out of order keep the minimum,
+  raise the maximum and report a presentation diagnostic. Rust gains
+  `AutoGridColumns::from_lengths` and `Style::auto_grid_column_lengths` (#220).
+- The Gallery adds a SelectableList page, Tabs heads, a responsive AppShell,
+  the reading scale in its command palette and on the Density page, and runs
+  every page through the composition audit and a reach check at 100, 125 and
+  150 percent.
+
 ## 0.4.0 - 2026-10-31
 
 - **Breaking:** the token base drops the `corners` environment axis (`square`,
