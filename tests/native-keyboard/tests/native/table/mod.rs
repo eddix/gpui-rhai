@@ -32,6 +32,7 @@ use crate::support::{Host, Mount};
 fn table(main: impl Into<String>) -> Mount {
     Mount::new(main)
         .registry("components/table")
+        .registry("components/selectable_list")
         .registry("components/badge")
         .bundled_assets()
 }

@@ -2,7 +2,7 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
   "capabilities": {},
@@ -27,8 +27,9 @@
 //
 // Example: Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("changed") })
 //
-// A tab carries only what the component draws: an icon, the label, a count capsule or a
-// tone lamp, a dirty mark and a close button. None of them is a tab stop; the list reaches
+// A tab carries what the component draws: an icon, the label, a count capsule or a tone lamp,
+// a dirty mark and a close button; a `head` node replaces the icon, label and count with the
+// caller's own content, and the tab keeps everything else. None of them is a tab stop; the list reaches
 // each one: Left/Right (Up/Down when vertical), Home and End select, Delete or Backspace
 // closes the selected tab, Alt+Arrow moves it when the tabs are reorderable, and Shift+F10
 // or the menu key asks for a context menu. Actions that are not about one tab go in `start`
@@ -42,7 +43,7 @@ import "components/sliding_panel" as sliding_panel;
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.4.0",
+        id: "components/tabs", "export": "Tabs", version: "0.4.1",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
         capabilities: #{},
@@ -83,7 +84,9 @@ define_component(#{
                     value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                         doc: "Unique business identity of the tab, including the empty string; matched against `value` and reported unchanged by every callback." },
                     label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                        doc: "Tab text and accessible name; past twice `metrics.label_column` the label truncates." },
+                        doc: "Tab text and accessible name; past twice `metrics.label_column` the label truncates. With a `head` it names the tab and its overflow menu entry only." },
+                    head: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                        doc: "Caller-owned content drawn in place of the icon, label and count, such as a cover and two lines; the selection marks, the close button, the dirty mark, reordering, the keys and the overflow menu stay the tab's. Track and underline strips grow to a taller head; a `bar` keeps the control height." },
                     icon: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                         doc: "Node drawn at icon size before the label." },
                     label_visible: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -448,24 +451,29 @@ fn tab_node(ctx, props, cfg, tabs, index) {
     let slotted = closable || tab_flag(tab, "dirty");
     let label_visible = if "label_visible" in tab { tab.label_visible } else { true };
     let has_icon = "icon" in tab && tab.icon != ();
-    if !label_visible && !has_icon { throw `Tabs item ${tab.value} hides its label without an icon`; }
+    let has_head = "head" in tab && tab.head != ();
+    if !has_head && !label_visible && !has_icon { throw `Tabs item ${tab.value} hides its label without an icon`; }
     let close = if closable { #{ value: tab.value, next: close_successor(tabs, tab.value) } } else { () };
 
     let children = if selected { selection_marks(ctx, cfg) } else { [] };
     let content = [];
-    if has_icon {
-        content.push(tab.icon.with_style(ctx.component_style("icon",
-            style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
-                .flex_shrink(false))));
-    }
-    if label_visible {
-        content.push(text(tab.label).with_key("label").with_style(ctx.component_style("label",
-            style().min_width(px(0)).whitespace_nowrap().text_ellipsis())));
+    if has_head {
+        content.push(tab.head);
     } else {
-        content.push(text(" ").with_style(style().width(px(0)).overflow_hidden()));
+        if has_icon {
+            content.push(tab.icon.with_style(ctx.component_style("icon",
+                style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
+                    .flex_shrink(false))));
+        }
+        if label_visible {
+            content.push(text(tab.label).with_key("label").with_style(ctx.component_style("label",
+                style().min_width(px(0)).whitespace_nowrap().text_ellipsis())));
+        } else {
+            content.push(text(" ").with_style(style().width(px(0)).overflow_hidden()));
+        }
+        let marker = tab_marker(ctx, tab);
+        if marker != () { content.push(marker); }
     }
-    let marker = tab_marker(ctx, tab);
-    if marker != () { content.push(marker); }
     // Above the thumb, and shrinking with the slot so a long label truncates.
     children.push(row(content).with_key("content").with_style(style().relative().items_center()
         .justify_center().gap(theme_spacing("xs")).min_width(px(0))));

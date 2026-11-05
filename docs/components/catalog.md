@@ -242,6 +242,54 @@ the arrows continue from the clicked row and its focus frame shows.
 Source: [list.rhai](../../registry/components/list.rhai).
 Runnable story: `gpui-rhai gallery --story components/list`.
 
+## SelectableList
+
+`SelectableList` is List's behavior with rows the application draws: a media
+library row with a cover and a play button, a contact with an avatar and two
+lines. Selection, the one tab stop and its keys, the cursor and focus frame,
+`row_click`, `row_activate` and `context_request`, the `listbox` / `option`
+roles and virtualization stay the list's, and a `row` Node factory draws each
+row's content:
+
+```rhai
+import "components/selectable_list" as selectable_list;
+
+fn track_row(ctx, row) {
+    row([cover(row.item), column([text(row.item.title), text(row.item.artist)])])
+}
+
+selectable_list::SelectableList(#{ key: "tracks", label: "Tracks", items: tracks,
+    selection_mode: "single", selected_keys: ctx.get_state("selected"),
+    row: ctx.node_factory(Fn("track_row")), height: 320.0,
+    on_selection_change: Fn("selected"), on_row_click: Fn("open") })
+```
+
+Items are maps with a unique `key` and the application's own fields;
+`disabled: true` mutes a row and the arrows skip it, and `label_field`
+(`label` by default) names the item field that names the row for assistive
+technology. The factory receives `#{ key, item, index, selected, current }`,
+`current` being the row the keys act on, and the callbacks in what it returns
+reach the scope that bound it, so a play button in a row calls the
+application. Rows take their own heights; `estimated_row_height` (48 by
+default) is what the collection assumes for rows it has not measured.
+
+By default a row is a pressable block like an undivided List row: the
+selection tint, the hover fill and a control's corners, `spacing.xs` in from
+the list's sides, its content on `metrics.inset`. `row_chrome: false` leaves
+the row bare and as wide as the list; the factory paints the selected state
+from `row.selected`. The remaining props and events are List's: `selection_mode`,
+`selected_keys`, `height` or `fill_height`, `loading` / `loading_content`,
+`empty_text` / `empty`, `active`, `keyboard_navigation`.
+
+List and Table use the same module's behavior functions (`next_selection`,
+`row_frame`, `navigation_keys`, `context_keys` and the handlers they bind), so
+the three agree on clicks, keys and context requests. A Host that lists the
+modules it loads by hand adds `components/selectable_list` with List or
+Table; `gpui-rhai update` does it for vendored registries.
+
+Source: [selectable_list.rhai](../../registry/components/selectable_list.rhai).
+Runnable story: `gpui-rhai gallery --story components/selectable_list`.
+
 ## TabOverflowMenu
 
 `TabOverflowMenu` is a chevron button whose menu lists every tab of a strip;
@@ -391,6 +439,7 @@ Each item requires `value: string` and `label: string`. Optional fields:
 | `tone`, `tone_label` | `accent`, `warning` or `danger`: fills the capsule (with the matching `on_*` text), or without a `count` shows a 6px lamp after the label. `tone_label` joins the accessible name, since a lamp has no text; the component invents no copy |
 | `closable` | A close button in a reserved square, shown while the tab is selected or hovered |
 | `dirty` | The 6px unsaved mark in the same square; on a closable tab it turns into the close button under the pointer |
+| `head` | A node drawn in place of the icon, label and count, such as two lines or a cover; the selection marks, close button, dirty mark, reordering, keys and overflow menu stay the tab's, and `label` still names the tab. Track and underline strips grow to a taller head; a `bar` keeps the control height |
 | `content` | The page panel, never an alternate header slot |
 | `disabled` | Ignores the pointer; the arrows skip it |
 

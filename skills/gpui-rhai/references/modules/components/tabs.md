@@ -1,11 +1,11 @@
 # Tabs
 
-`components/tabs` · export `Tabs` · version 0.4.0. Generated from
+`components/tabs` · export `Tabs` · version 0.4.1. Generated from
 [`registry/components/tabs.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tabs.rhai); do not edit.
 
 Controlled tabs with one tab stop; the arrow keys select. Three looks share every capability: `track` is a tonal track with a raised thumb, for a compact switcher among other controls; `underline` puts the labels on a hairline with a 2px ink bar under the selected one, for the sections of a panel or a card; `bar` is a strip of document tabs whose selected tab takes the panel's surface (`tabbar.active`) and covers its line.
 
-A tab carries only what the component draws: an icon, the label, a count capsule or a tone lamp, a dirty mark and a close button. None of them is a tab stop; the list reaches each one: Left/Right (Up/Down when vertical), Home and End select, Delete or Backspace closes the selected tab, Alt+Arrow moves it when the tabs are reorderable, and Shift+F10 or the menu key asks for a context menu. Actions that are not about one tab go in `start` and `end`, outside the list; `on_add` draws a "+" after the last tab. Tabs keep their width and the strip scrolls when they do not fit, keeping the selected tab revealed. With `panel_motion: "slide"` a newly selected panel slides in from the side of the tab it replaces.
+A tab carries what the component draws: an icon, the label, a count capsule or a tone lamp, a dirty mark and a close button; a `head` node replaces the icon, label and count with the caller's own content, and the tab keeps everything else. None of them is a tab stop; the list reaches each one: Left/Right (Up/Down when vertical), Home and End select, Delete or Backspace closes the selected tab, Alt+Arrow moves it when the tabs are reorderable, and Shift+F10 or the menu key asks for a context menu. Actions that are not about one tab go in `start` and `end`, outside the list; `on_add` draws a "+" after the last tab. Tabs keep their width and the strip scrolls when they do not fit, keeping the selected tab revealed. With `panel_motion: "slide"` a newly selected panel slides in from the side of the tab it replaces.
 
 ```rhai
 import "components/tabs" as tabs;
@@ -53,8 +53,9 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 | `count` | integer ≥ 0 or `()` | — | Number shown in a capsule after the label, `99+` past 99; zero shows too. The full number joins the accessible name. |
 | `dirty` | bool | `false` | Marks unsaved changes with a square; on a closable tab it turns into the close button under the pointer. |
 | `disabled` | bool | `false` | Whether the tab ignores the pointer; the arrow keys skip it. |
+| `head` | node or `()` | — | Caller-owned content drawn in place of the icon, label and count, such as a cover and two lines; the selection marks, the close button, the dirty mark, reordering, the keys and the overflow menu stay the tab's. Track and underline strips grow to a taller head; a `bar` keeps the control height. |
 | `icon` | node or `()` | — | Node drawn at icon size before the label. |
-| `label` | string | required | Tab text and accessible name; past twice `metrics.label_column` the label truncates. |
+| `label` | string | required | Tab text and accessible name; past twice `metrics.label_column` the label truncates. With a `head` it names the tab and its overflow menu entry only. |
 | `label_visible` | bool | `true` | Whether the label text shows; a tab that hides it needs an `icon` and keeps the label as its name. |
 | `tone` | `"accent"` or `"warning"` or `"danger"` or `()` | — | Fills the count capsule with the tone; without a `count` it shows a 6px lamp after the label. |
 | `tone_label` | string or `()` | — | Accessible text for the tone, such as `Has updates`; it joins the accessible name, since a lamp has no text. |

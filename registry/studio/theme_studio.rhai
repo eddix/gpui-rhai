@@ -38,6 +38,7 @@ import "components/rotatable" as rotatable;
 import "components/selection_area" as selection_area;
 import "components/tree" as tree;
 import "components/list" as list;
+import "components/selectable_list" as selectable_list;
 import "components/column_browser" as column_browser;
 import "components/selectable_card_group" as selectable_card_group;
 import "components/tabs" as tabs;
@@ -71,6 +72,13 @@ import "components/title_bar" as title_bar;
 import "components/status_bar" as status_bar;
 import "components/code_viewer" as code_viewer;
 import "components/diff_viewer" as diff_viewer;
+
+// A specimen row the Studio draws in a SelectableList: a name and a muted count.
+fn specimen_author_row(ctx, row) {
+    row([text(row.item.name).with_style(style().flex_grow()),
+        text(row.item.themes).with_style(style().text_color(theme_color("text_muted")))])
+        .with_style(style().flex_grow().items_center().gap(theme_spacing("sm")))
+}
 
 fn color_field(name, value) {
     row([
@@ -686,6 +694,9 @@ fn specimen_navigation(ctx) {
         list::List(#{key:"specimen-list",label:"Theme releases",height:96.0,items:[
             #{key:"r2",title:"Paper 2.1",meta:"Today",badge:#{text:"Draft",variant:"accent"}},
             #{key:"r1",title:"Paper 2.0",secondary:"published",meta:"Mon"}]}),
+        selectable_list::SelectableList(#{key:"specimen-selectable-list",label:"Theme authors",height:88.0,
+            selection_mode:"single",selected_keys:["a1"],row:ctx.node_factory(Fn("specimen_author_row")),items:[
+            #{key:"a1",label:"Ada",name:"Ada",themes:"4 themes"},#{key:"a2",label:"Grace",name:"Grace",themes:"2 themes"}]}),
         row([
             tabs::Tabs(#{key:"specimen-tab-bar",label:"Theme files",value:"dark",variant:"bar",panel:false,tabs:[
                 #{value:"dark",label:"dark.rhai",closable:true,count:12},

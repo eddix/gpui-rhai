@@ -1,11 +1,11 @@
 # List
 
-`components/list` · export `List` · version 0.4.0. Generated from
+`components/list` · export `List` · version 0.4.1. Generated from
 [`registry/components/list.rhai`](../../../registry/components/list.rhai); do not edit.
 
 Controlled virtualized list of keyed rows: the rows Table draws, without columns.
 
-Rows carry metrics.inset, so their text starts on the edge of a bled DataView or Region body. With a selection mode the list is one tab stop: Up/Down/Home/End move the selection and keep it revealed, Enter emits row_click, and the selected row shows the focus frame while the list has focus. Without one, on_context_request alone makes it a tab stop for Shift+F10 and the menu key. Items are data, like Table cells: a leading status `badge` (#{ text, variant, dot }), the `title`, a muted `secondary` line (beside the title or below it) and trailing `meta` such as a time or a count. Badges of different widths push the titles apart; `badge_width` reserves one slot on every row so the titles align.
+Rows carry metrics.inset, so their text starts on the edge of a bled DataView or Region body. With a selection mode the list is one tab stop: Up/Down/Home/End move the selection and keep it revealed, Enter emits row_click, and the selected row shows the focus frame while the list has focus. Without one, on_context_request alone makes it a tab stop for Shift+F10 and the menu key. Items are data, like Table cells: a leading status `badge` (#{ text, variant, dot }), the `title`, a muted `secondary` line (beside the title or below it) and trailing `meta` such as a time or a count. Badges of different widths push the titles apart; `badge_width` reserves one slot on every row so the titles align. The rows' behavior is SelectableList's (components/selectable_list), with rows of this content.
 
 ```rhai
 import "components/list" as list;
@@ -89,4 +89,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empt
 
 ## Dependencies
 
-[`components/badge`](../components/badge.md)
+[`components/badge`](../components/badge.md), [`components/selectable_list`](../components/selectable_list.md)

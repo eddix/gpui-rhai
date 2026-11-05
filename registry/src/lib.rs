@@ -155,6 +155,11 @@ bundled_components!(
         "../components/selection_area.rhai"
     ),
     (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
+    (
+        SELECTABLE_LIST_SOURCE,
+        "components/selectable_list",
+        "../components/selectable_list.rhai"
+    ),
     (LIST_SOURCE, "components/list", "../components/list.rhai"),
     (
         COLUMN_BROWSER_SOURCE,
@@ -692,6 +697,8 @@ pub const SELECTION_AREA_STORY_SOURCE: &str =
     include_str!("../stories/components/selection_area.rhai");
 pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
 pub const LIST_STORY_SOURCE: &str = include_str!("../stories/components/list.rhai");
+pub const SELECTABLE_LIST_STORY_SOURCE: &str =
+    include_str!("../stories/components/selectable_list.rhai");
 pub const TABS_COLLECTION_STORY_SOURCE: &str =
     include_str!("../stories/components/tabs_collection.rhai");
 pub const INTERACTION_LAB_STORY_SOURCE: &str =
@@ -1133,6 +1140,30 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         platforms: DESKTOP_PLATFORMS,
         test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/components/catalog.md#list",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/selectable_list",
+        title: "SelectableList",
+        purpose: "Select and open rows the application draws, each with a control of its own.",
+        category: "navigation",
+        keywords: &[
+            "list",
+            "rows",
+            "selection",
+            "custom rows",
+            "node factory",
+            "media",
+        ],
+        module_ids: &["components/selectable_list", "components/button"],
+        source_module: "stories/components/selectable_list",
+        source: SELECTABLE_LIST_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#selectablelist",
         theme_studio: true,
     },
     StoryDefinition {
@@ -1610,15 +1641,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 73);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 73);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 74);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 74);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 19);
-        assert_eq!(BUNDLED_STORIES.len(), 24);
+        assert_eq!(BUNDLED_STORIES.len(), 25);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

@@ -26,6 +26,7 @@ fn view(ctx){
 fn table_mount() -> Mount {
     Mount::new(TABLE_AND_FILLER)
         .registry("components/table")
+        .registry("components/selectable_list")
         .registry("components/badge")
         .bundled_assets()
 }

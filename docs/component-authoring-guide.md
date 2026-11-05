@@ -350,7 +350,8 @@ node it returns, and the callback props of a component it renders directly,
 update the application that wrote the factory, not the component that rendered
 it (0.4.1; before, they ran with the receiving component's `ctx`). Node
 factories run only during render; event handlers (including NativeHandlerRef)
-are not Node factories. SplitPane's `handle_renderer` is an executable example.
+are not Node factories. SplitPane's `handle_renderer` is an executable example;
+SelectableList's `row` draws whole rows with one (0.4.1).
 
 ## Styling
 

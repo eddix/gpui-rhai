@@ -108,6 +108,14 @@ fn settings_tabs() {
     ]
 }
 
+// A tab head in two lines: the tab keeps its label as its name, its selection and its keys.
+fn library_head(title, detail) {
+    column([
+        text(title),
+        text(detail).with_style(style().typography("caption").text_color(theme_color("text_muted"))),
+    ]).with_style(style().flex_col().items_start().padding_y(theme_spacing("xs")))
+}
+
 fn tabs_page(h, v) {
     let value = kit::val(v, "tabs.value", "overview");
     kit::page(h, v, "tabs", "Tabs", "One component, three looks: a track for a switcher among controls, underlined labels for the sections of a panel or a card, a bar of document tabs. Every look can count, close, add and reorder.", [
@@ -129,6 +137,14 @@ fn tabs_page(h, v) {
                 variant: "underline", panel_motion: kit::val(v, "tabs.motion", "slide"), tabs: tab_list(),
                 on_change: kit::store(h, "tabs.sliding") }),
         ])),
+        kit::sec("Heads the page draws", tabs::Tabs(#{ key: "tabs-heads", label: "Library",
+            value: kit::val(v, "tabs.library", "albums"), variant: "underline", panel: false,
+            tabs: [
+                #{ value: "albums", label: "Albums, 128", head: library_head("Albums", "128 records") },
+                #{ value: "artists", label: "Artists, 42", head: library_head("Artists", "42 people") },
+                #{ value: "playlists", label: "Playlists, 9", head: library_head("Playlists", "9 lists") },
+            ],
+            on_change: kit::store(h, "tabs.library") })),
         kit::sec("Watched repositories", tabs_demo::TabsDemo(#{ key: "tabs-repos", mode: "repos" })),
         kit::sec("Bar of open files", tabs_demo::TabsDemo(#{ key: "tabs-files", mode: "files" })),
         kit::sec("Vertical", tabs_demo::TabsDemo(#{ key: "tabs-vertical", mode: "vertical" })),

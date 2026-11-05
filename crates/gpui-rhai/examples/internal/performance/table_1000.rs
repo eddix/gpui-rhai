@@ -9,6 +9,8 @@ use gpui_rhai::{
 
 const ROW_COUNT: usize = 1_000;
 const TABLE: &str = include_str!("../../../../../registry/components/table.rhai");
+const SELECTABLE_LIST: &str =
+    include_str!("../../../../../registry/components/selectable_list.rhai");
 const BADGE: &str = include_str!("../../../../../registry/components/badge.rhai");
 const BUTTON: &str = include_str!("../../../../../registry/components/button.rhai");
 const THEME: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
@@ -136,6 +138,7 @@ fn table_1000_view_with_resizable(resizable: bool) -> EmbeddedScriptView {
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         module("main", &main),
         module("components/table", TABLE),
+        module("components/selectable_list", SELECTABLE_LIST),
         module("components/badge", BADGE),
         module("components/button", BUTTON),
     ]));
