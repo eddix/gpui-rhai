@@ -68,6 +68,22 @@ fn densities(comfortable, compact) {
         .with_style(style().flex_row().flex_wrap().items_start().gap(theme_length("space.section")))
         .audit_allow(["row-height-mismatch", "mixed-type-in-row"])
 }
+// Specimens at the reading scales 100%, 125% and 150%, each a subtree with its own `scale`.
+fn scales(specimens) {
+    let columns = [];
+    let steps = ["100", "125", "150"];
+    for index in 0..steps.len {
+        let step = steps[index];
+        columns.push(column([
+            text(`${step}%`).with_style(style().typography("label").text_color(theme_color("text_muted")))
+                .accessibility_role("heading").accessibility_level(3),
+            specimens[index],
+        ]).with_key(`scale-${step}`).with_style(style().flex_col().gap(theme_spacing("sm")).min_width(px(0)))
+            .env(#{ scale: step }));
+    }
+    row(columns).with_style(style().flex_row().flex_wrap().items_start().gap(theme_length("space.section")))
+        .audit_allow(["row-height-mismatch", "mixed-type-in-row"])
+}
 fn density_column(density, content) {
     column([
         text(density.to_upper()).with_style(style().typography("label").text_color(theme_color("text_muted")))

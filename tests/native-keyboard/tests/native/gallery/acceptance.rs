@@ -99,6 +99,53 @@ fn every_gallery_page_passes_the_audit_in_both_densities(cx: &mut TestAppContext
     );
 }
 
+/// At every reading scale the Gallery offers, each page passes the audit and
+/// keeps every control whole and apart: none cut off where nothing scrolls,
+/// none laid over another.
+#[gpui::test]
+fn every_gallery_page_reads_at_each_scale(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount(cx, &AcceptanceLaunch::default());
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let rules = rules();
+    let mut failures = Vec::new();
+    for scale in ["100", "125", "150"] {
+        action(
+            &mut visual,
+            &view,
+            "gallery.set_scale",
+            UiValue::String(scale.to_owned()),
+        );
+        for page in acceptance::page_ids() {
+            if let Err(error) = try_action(
+                &mut visual,
+                &view,
+                "gallery.go",
+                UiValue::String(page.clone()),
+            ) {
+                failures.push(format!("{scale}/{page}: {error}"));
+                continue;
+            }
+            if let Some(error) = visual.update(|_, cx| view.last_error(cx).unwrap()) {
+                failures.push(format!("{scale}/{page}: render error: {error}"));
+                continue;
+            }
+            for finding in visual.update(|_, cx| view.composition_audit_with(&rules, cx).unwrap()) {
+                failures.push(format!("{scale}/{page}: {finding}"));
+            }
+            for finding in visual.update(|_, cx| view.debug_unreachable_controls(cx).unwrap()) {
+                failures.push(format!("{scale}/{page}: {finding}"));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} findings:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
 fn keyboard_mount(cx: &mut TestAppContext, page: &str) -> (VisualTestContext, ScriptViewHandle) {
     cx.update(gpui_rhai::install);
     let launch = AcceptanceLaunch {

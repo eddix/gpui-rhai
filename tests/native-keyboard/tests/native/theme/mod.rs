@@ -5,3 +5,4 @@ mod derived_color_contrast;
 mod focus_indicators;
 mod pseudo_paint_order;
 mod resolved;
+mod reading_scale;

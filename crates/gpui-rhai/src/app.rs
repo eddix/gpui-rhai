@@ -1793,6 +1793,28 @@ impl ScriptViewHandle {
         self.composition_audit_with(&rules, cx)
     }
 
+    /// Controls the committed layout cuts off where nothing scrolls, or lays
+    /// over one another: a check for reading scales and narrow windows, not
+    /// yet a composition rule. Hidden and unstable.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal.
+    #[doc(hidden)]
+    pub fn debug_unreachable_controls(&self, cx: &App) -> Result<Vec<String>, ScriptViewError> {
+        self.require_active()?;
+        let view = self.0.entity.read(cx);
+        let geometry = view
+            .lifecycle
+            .runtime()
+            .borrow()
+            .geometry_for(Some(&view.view_id));
+        Ok(crate::composition_audit::unreachable_controls(
+            view.lifecycle.retained(),
+            &geometry,
+        ))
+    }
+
     /// Audit the committed composition with an explicit rule set.
     ///
     /// # Errors

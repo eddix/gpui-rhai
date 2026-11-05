@@ -132,6 +132,14 @@ reading leading, and the reserved 2px focus border must fit every compact height
 (20 = 16 + 2 × 2). Density still never changes font size. Multi-line fields
 (Textarea) keep `body`.
 
+The reading scale (`scale` environment: 100, 110, 125, 150, 175 or 200 percent)
+is the one thing that changes font size. It multiplies every role's size and
+line height together with every length token, so a control keeps its
+proportions around larger text: at 150% a 32px md control holds 21 / 30 body
+text in 48px. Borders, focus frames and literal widths do not scale. A Host
+sets it for every view, a script for a subtree; components neither declare nor
+read it (D80).
+
 Only weights 400 and 600 are used. 600 marks titles and the label of a filled
 Button; data in lists is never bold. The UI family is the platform font; the
 mono family defaults to `Menlo`, then `DejaVu Sans Mono`. Identifiers and

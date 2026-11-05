@@ -128,8 +128,10 @@ fn density_specimen(h, v, suffix) {
 
 fn density_page(h, v) {
     kit::page(h, v, "foundations.density", "Density",
-        "Comfortable for large displays, compact for laptops. Density changes space, never font size.", [
+        "Comfortable for large displays, compact for laptops. Density changes space, never font size; the reading scale enlarges type and the controls around it together.", [
         kit::sec("Side by side", kit::densities(density_specimen(h, v, "c"), density_specimen(h, v, "k"))),
+        kit::sec("Reading scale", kit::scales([density_specimen(h, v, "s100"),
+            density_specimen(h, v, "s125"), density_specimen(h, v, "s150")])),
     ])
 }
 

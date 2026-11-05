@@ -1230,6 +1230,12 @@ Values come from three layers, and components name roles rather than numbers:
 The token base resolves through two environment axes: `density`
 (`comfortable`, `compact`) and `size` (`xs` to `lg`). A subtree selects them
 with `.env(#{ density: "compact" })`; most controls also take a `size` prop.
+A third axis, the reading scale `scale` (`"100"`, `"110"`, `"125"`, `"150"`,
+`"175"`, `"200"`), enlarges every length token and typography role together:
+an application offers it as a reading-size setting with
+`.env(#{ scale: state.scale })` on its root, and a Host sets the default for
+every view through `ThemeTokenOverrides::environment_defaults`. Literal
+lengths such as `px(320)` keep their size.
 Radius roles follow a component's kind (layout square, controls `md`, markers
 `sm` capsules, floating surfaces `lg`), not an environment value. Write roles,
 not pixels:

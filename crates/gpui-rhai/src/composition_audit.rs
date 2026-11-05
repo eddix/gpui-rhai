@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     Align, ColorResolver, Environment, FlexDirection, GeometryBounds, GeometryRegistry,
-    InteractionState, Justify, Length, NodeId, PositionMode, RetainedUiTree, Rgba8,
+    InteractionState, Justify, Length, NodeId, OverflowMode, PositionMode, RetainedUiTree, Rgba8,
     StyleProperties, Symbol, UiNode, UiNodeKind, UiValue,
 };
 
@@ -230,6 +230,234 @@ pub(crate) fn audit<C: ColorResolver>(inputs: &AuditInputs<'_, C>) -> Vec<AuditF
     };
     walker.visit(root, Some(root_id), scope, "root");
     findings
+}
+
+/// Controls a reader cannot reach or tell apart, which the reading scale can
+/// produce where literal widths meet scaled text: a control cut off by an
+/// ancestor that clips without scrolling, and controls laid over one another.
+/// A scroll container's own clip is no cut (scrolling reaches what it hides),
+/// though a clip inside its content is; a control wholly outside the clip is
+/// hidden on purpose (a carousel's other slides). Controls inside another
+/// control or a hidden page are left alone, and overlay content, which floats
+/// above the page, is checked for cuts only. Not yet an [`AuditRule`], so it
+/// is not part of a profile.
+pub(crate) fn unreachable_controls(
+    tree: &RetainedUiTree,
+    geometry: &GeometryRegistry,
+) -> Vec<String> {
+    let mut reach = Reach {
+        tree,
+        geometry,
+        controls: Vec::new(),
+        findings: Vec::new(),
+    };
+    if let (Some(root), Some(root_id)) = (tree.root(), root_node_id(tree)) {
+        reach.visit(root, Some(root_id), Clips::default(), Placement::InFlow);
+    }
+    let Reach {
+        controls,
+        mut findings,
+        ..
+    } = reach;
+    for (index, (name, a)) in controls.iter().enumerate() {
+        for (other, b) in &controls[index + 1..] {
+            let width = (a.x + a.width).min(b.x + b.width) - a.x.max(b.x);
+            let height = (a.y + a.height).min(b.y + b.height) - a.y.max(b.y);
+            if width > REACH_SLACK && height > REACH_SLACK {
+                findings.push(format!(
+                    "controls {name} and {other} overlap by {width:.1}x{height:.1}px"
+                ));
+            }
+        }
+    }
+    findings
+}
+
+/// Pixels a control may pass its clip or overlap another by: borders that
+/// collapse into a neighbour's.
+const REACH_SLACK: f64 = 1.0;
+
+struct Reach<'a> {
+    tree: &'a RetainedUiTree,
+    geometry: &'a GeometryRegistry,
+    controls: Vec<(String, GeometryBounds)>,
+    findings: Vec<String>,
+}
+
+/// The clips above a node for [`unreachable_controls`], in window coordinates.
+#[derive(Clone, Copy, Default)]
+struct Clips {
+    /// Clips that do not scroll, since the nearest scroll container: what
+    /// they hide cannot be reached.
+    cut: Option<GeometryBounds>,
+    /// Every clip, scroll viewports included: what can be seen.
+    view: Option<GeometryBounds>,
+}
+
+impl Clips {
+    /// `bounds` within `clip`, empty where they do not meet.
+    fn within(clip: Option<GeometryBounds>, bounds: GeometryBounds) -> GeometryBounds {
+        clip.map_or(Some(bounds), |clip| intersection(clip, bounds))
+            .unwrap_or(GeometryBounds {
+                x: bounds.x,
+                y: bounds.y,
+                width: 0.0,
+                height: 0.0,
+            })
+    }
+}
+
+/// Where a node sits for [`unreachable_controls`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Placement {
+    InFlow,
+    /// Overlay or layer content: checked for cuts, not for overlap with the
+    /// page it floats above.
+    Floating,
+    /// Inside a control or a hidden page: not checked.
+    Exempt,
+}
+
+impl Reach<'_> {
+    fn visit(&mut self, node: &UiNode, id: Option<NodeId>, clips: Clips, placement: Placement) {
+        let style = node.style().resolve(&InteractionState::default());
+        // A node the last frame did not draw (a virtual row released from the
+        // window) may keep the geometry of an earlier frame.
+        let bounds = id
+            .filter(|id| self.geometry.is_presented(*id))
+            .and_then(|id| self.geometry.get(id))
+            .map(|geometry| geometry.visual);
+        let attribute = |name: &str| {
+            id.and_then(|id| self.tree.node(id)).and_then(|node| {
+                match node.attributes().get(name) {
+                    Some(UiValue::String(value)) => Some(value.clone()),
+                    _ => None,
+                }
+            })
+        };
+        let is_control =
+            attribute("role").is_some_and(|role| CONTROL_ROLES.contains(&role.as_str()));
+        if is_control
+            && placement != Placement::Exempt
+            && let Some(visual) = bounds
+        {
+            let name = attribute("label").unwrap_or_else(|| format!("{id:?}"));
+            self.check_cut(&name, visual, clips.cut);
+            let seen = clips
+                .view
+                .map_or(Some(visual), |view| intersection(visual, view));
+            if placement == Placement::InFlow
+                && let Some(seen) = seen
+            {
+                self.controls.push((name, seen));
+            }
+        }
+        let hidden_page = node.attributes().get(crate::retained_page::PAGE_VISIBLE)
+            == Some(&UiValue::Bool(false));
+        let placement = if is_control || hidden_page {
+            Placement::Exempt
+        } else {
+            placement
+        };
+        let clips = match bounds {
+            // Scrolling reaches what its viewport hides.
+            Some(bounds)
+                if crate::renderer::node_scrollable(node)
+                    || matches!(node.kind(), UiNodeKind::VirtualCollection { .. }) =>
+            {
+                Clips {
+                    cut: None,
+                    view: Some(Clips::within(clips.view, bounds)),
+                }
+            }
+            Some(bounds) if clips_children(&style) => Clips {
+                cut: Some(Clips::within(clips.cut, bounds)),
+                view: Some(Clips::within(clips.view, bounds)),
+            },
+            _ => clips,
+        };
+        let floating = if placement == Placement::Exempt {
+            Placement::Exempt
+        } else {
+            Placement::Floating
+        };
+        match node.kind() {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                for (index, child) in children.iter().enumerate() {
+                    let child_id = child_link(self.tree, id, "children", index);
+                    self.visit(child, child_id, clips, placement);
+                }
+            }
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            } => {
+                let trigger_id = child_link(self.tree, id, "trigger", 0);
+                self.visit(trigger, trigger_id, clips, placement);
+                let content_id = child_link(self.tree, id, "content", 0);
+                self.visit(content, content_id, Clips::default(), floating);
+            }
+            UiNodeKind::Layer { content, .. } => {
+                let content_id = child_link(self.tree, id, "content", 0);
+                self.visit(content, content_id, Clips::default(), floating);
+            }
+            UiNodeKind::ErrorBoundary { child, fallback } => {
+                let child_id = child_link(self.tree, id, "child", 0);
+                self.visit(child, child_id, clips, placement);
+                let fallback_id = child_link(self.tree, id, "fallback", 0);
+                self.visit(fallback, fallback_id, clips, placement);
+            }
+            UiNodeKind::VirtualCollection { spec } => {
+                for (index, item) in spec.realized.values().enumerate() {
+                    let item_id = child_link(self.tree, id, "items", index);
+                    self.visit(item, item_id, clips, placement);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A control that meets `clip` but passes it: part of it cannot be seen
+    /// or pressed. Wholly outside, it is hidden on purpose.
+    fn check_cut(&mut self, name: &str, visual: GeometryBounds, clip: Option<GeometryBounds>) {
+        let Some(clip) = clip else {
+            return;
+        };
+        let outside = (clip.x - visual.x)
+            .max(visual.x + visual.width - clip.x - clip.width)
+            .max(clip.y - visual.y)
+            .max(visual.y + visual.height - clip.y - clip.height);
+        if intersection(visual, clip).is_some() && outside > REACH_SLACK {
+            self.findings.push(format!(
+                "control {name} is cut off by {outside:.1}px where nothing scrolls"
+            ));
+        }
+    }
+}
+
+/// Whether a style clips its children.
+fn clips_children(style: &StyleProperties) -> bool {
+    style.clip == Some(true)
+        || matches!(
+            style.overflow_x,
+            Some(OverflowMode::Hidden | OverflowMode::Scroll)
+        )
+        || matches!(
+            style.overflow_y,
+            Some(OverflowMode::Hidden | OverflowMode::Scroll)
+        )
+}
+
+fn intersection(a: GeometryBounds, b: GeometryBounds) -> Option<GeometryBounds> {
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    let right = (a.x + a.width).min(b.x + b.width);
+    let bottom = (a.y + a.height).min(b.y + b.height);
+    (right > x && bottom > y).then_some(GeometryBounds {
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+    })
 }
 
 fn root_node_id(tree: &RetainedUiTree) -> Option<NodeId> {
