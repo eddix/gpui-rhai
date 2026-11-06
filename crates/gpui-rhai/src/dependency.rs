@@ -79,9 +79,20 @@ impl ModuleDependencyGraph {
 /// Returns [`DependencyError`] for invalid Rhai syntax, a dynamic import, or an
 /// invalid module ID.
 pub fn extract_imports(source: &str) -> Result<BTreeSet<ModuleId>, DependencyError> {
+    let (global, functions) = crate::engine::EXPRESSION_DEPTHS;
+    extract_imports_with_depths(source, global, functions)
+}
+
+/// [`extract_imports`] with the expression depths of the engine that will
+/// compile the source, so a Host that raises them can import deeper modules.
+pub(crate) fn extract_imports_with_depths(
+    source: &str,
+    global: usize,
+    functions: usize,
+) -> Result<BTreeSet<ModuleId>, DependencyError> {
     let mut parser = Engine::new_raw();
     parser.set_optimization_level(OptimizationLevel::None);
-    parser.set_max_expr_depths(64, 32);
+    parser.set_max_expr_depths(global, functions);
     let ast = parser
         .compile(source)
         .map_err(|error| DependencyError::Parse {

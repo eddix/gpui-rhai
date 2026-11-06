@@ -235,7 +235,7 @@ The runtime sets these limits for every script:
 | Limit | Value |
 |---|---|
 | operations per script run (a render, a callback, an effect) | 1,000,000 |
-| expression depth | 64 at the top level, 32 inside a function |
+| expression depth | 64 at the top level and inside a function |
 | call depth | 64 |
 | array items | 10,000 |
 | map entries | 100,000 |
@@ -256,21 +256,23 @@ per-row data small and compute anything derived (the next selection, say) in
 the callback that needs it.
 
 A call, an array and a method chain each cost depth, so a function body nests
-only a few containers: five `column([...])` levels pass, six do not, and five
-with a style on each do not either. Build a screen from small functions, one
-per region or section, each returning a node; it reads better too.
+a bounded number of containers: eleven `column([...])` levels pass, twelve do
+not, with or without a style on each. (Before 0.4.2 a function allowed 32, and
+a long style chain on a row built in a closure already failed.) Build a screen
+from small functions, one per region or section, each returning a node; it
+reads better too.
 
 <!-- check: pass -->
 ```rhai
 fn view(ctx) {
-    column([column([column([column([column([text("five levels")])])])])])
+    column([column([column([column([column([column([column([column([column([column([column([text("eleven levels")])])])])])])])])])])])
 }
 ```
 
 <!-- check: error "Expression exceeds maximum complexity" -->
 ```rhai
 fn view(ctx) {
-    column([column([column([column([column([column([text("six levels")])])])])])])
+    column([column([column([column([column([column([column([column([column([column([column([column([text("twelve levels")])])])])])])])])])])])])
 }
 ```
 
