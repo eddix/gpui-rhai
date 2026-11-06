@@ -1,7 +1,7 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
-use gpui::{
+use gpui_rhai::gpui::{
     App, AppContext, Bounds, Context, IntoElement, Render, Task, WeakEntity, Window, WindowBounds,
     WindowOptions, px, size,
 };
@@ -25,7 +25,7 @@ enum HostEvent {
 }
 
 struct HostOwnedTree {
-    view: gpui::Entity<StaticUiView>,
+    view: gpui_rhai::gpui::Entity<StaticUiView>,
     frame: HostFrame,
     frames: Receiver<HostFrame>,
     events: Sender<HostEvent>,
@@ -241,7 +241,7 @@ fn build_tree(
 }
 
 fn main() {
-    gpui_platform::application().run(|cx: &mut App| {
+    gpui_rhai::gpui_platform::application().run(|cx: &mut App| {
         init_text_input(cx);
         let bounds = Bounds::centered(None, size(px(568.0), px(440.0)), cx);
         cx.open_window(

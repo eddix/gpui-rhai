@@ -925,6 +925,7 @@ fn marked_runs(base: &TextRun, marked: Option<&Range<usize>>, len: usize) -> Vec
 
 impl Render for TextAreaEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         let viewport_rows = self.config.viewport_rows(self.measured_rows);
         let viewport_height = self.config.typography.line_height * viewport_rows;
         let key_context = match (

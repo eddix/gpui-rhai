@@ -65,6 +65,7 @@ fn only_frames_after_a_commit_walk_the_committed_tree(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+#[cfg_attr(feature = "gpui-fast", ignore = "cache islands are off on gpui-fast")]
 fn quiet_scroll_frames_replay_the_cold_filler(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let (mut visual, view) = Mount::new(TABLE_AND_FILLER)

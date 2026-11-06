@@ -6,6 +6,12 @@
 //! The examples are compiled in as modules, so the capture uses exactly the
 //! view each example's `main` runs.
 
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast as gpui;
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast_platform as gpui_platform;
+
+
 #[cfg(not(target_os = "macos"))]
 fn main() {
     eprintln!("example baselines require macOS");

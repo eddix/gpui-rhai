@@ -50,6 +50,7 @@ fn island_hits(sides: &mut Lockstep) -> u64 {
 }
 
 #[gpui::test]
+#[cfg_attr(feature = "gpui-fast", ignore = "cache islands are off on gpui-fast")]
 fn scrolling_and_selecting_a_table_keeps_the_windows_identical(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let mut sides = Lockstep::mount(
@@ -164,6 +165,7 @@ fn view(ctx){
 }"#;
 
 #[gpui::test]
+#[cfg_attr(feature = "gpui-fast", ignore = "cache islands are off on gpui-fast")]
 fn hover_and_focus_inside_an_island_keep_the_windows_identical(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let mut sides = Lockstep::mount(
@@ -239,6 +241,7 @@ fn view(ctx){
 }"#;
 
 #[gpui::test]
+#[cfg_attr(feature = "gpui-fast", ignore = "cache islands are off on gpui-fast")]
 fn scrolling_a_container_replays_the_islands_beside_it(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let mut sides = Lockstep::mount(
@@ -297,6 +300,7 @@ fn view(ctx){
 }"#;
 
 #[gpui::test]
+#[cfg_attr(feature = "gpui-fast", ignore = "cache islands are off on gpui-fast")]
 fn a_shell_main_area_holds_islands_and_keeps_the_windows_identical(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let mut sides = Lockstep::mount(

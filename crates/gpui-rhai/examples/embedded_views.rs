@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui::{
+use gpui_rhai::gpui::{
     App, AppContext, Bounds, Context, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, Window, WindowBounds, WindowOptions, div, px, size,
 };
@@ -209,7 +209,7 @@ impl Render for EmbeddedViewsDemo {
         // Host chrome follows the views' theme instead of hard-coding colors.
         let theme = self.first.theme_snapshot(cx).expect("first view is live");
         let color = |token: &str| {
-            gpui::rgba(
+            gpui_rhai::gpui::rgba(
                 theme
                     .variant
                     .tokens
@@ -268,7 +268,7 @@ impl Render for EmbeddedViewsDemo {
 
 #[allow(dead_code)]
 fn main() {
-    gpui_platform::application().run(|cx: &mut App| {
+    gpui_rhai::gpui_platform::application().run(|cx: &mut App| {
         install(cx);
         let bounds = Bounds::centered(None, size(px(WINDOW.0), px(WINDOW.1)), cx);
         cx.on_window_closed(|cx, _| {

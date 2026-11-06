@@ -342,6 +342,7 @@ impl PanZoomEntity {
 
 impl Render for PanZoomEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         self.context
             .present_interaction(self.context.interaction_owner(&self.config.id));
         div()

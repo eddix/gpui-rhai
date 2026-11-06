@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px, rgba};
+use gpui_rhai::gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px, rgba};
 use gpui_rhai::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityHandler, CapabilityId,
     CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView,

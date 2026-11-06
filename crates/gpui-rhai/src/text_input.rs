@@ -733,6 +733,7 @@ impl Element for TextElement {
 
 impl Render for TextInputEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         let tab = self.callbacks.tab.clone();
         let submit_enabled = self.callbacks.submit.is_some();
         let mut root = div().flex().size_full().items_center();

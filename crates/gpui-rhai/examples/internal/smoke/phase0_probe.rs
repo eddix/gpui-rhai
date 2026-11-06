@@ -1,6 +1,6 @@
 //! Internal raw phase-zero renderer launch probe.
 
-use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use gpui_rhai::gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use gpui_rhai::{RuntimeEngine, StaticUiView};
 
 fn main() {
@@ -21,7 +21,7 @@ fn main() {
         .render(&compiled)
         .expect("phase-0 view should evaluate");
 
-    gpui_platform::application().run(move |cx: &mut App| {
+    gpui_rhai::gpui_platform::application().run(move |cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(520.0), px(240.0)), cx);
         cx.open_window(
             WindowOptions {

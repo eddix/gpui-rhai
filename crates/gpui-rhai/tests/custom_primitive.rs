@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui::{AnyElement, App, IntoElement, Window, div};
+use gpui_rhai::gpui::{AnyElement, App, IntoElement, Window, div};
 use gpui_rhai::{
     ComponentStateSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor, PrimitiveHandler,
     PrimitiveId, PrimitiveInstance, PrimitiveValue, RuntimeEngine, UiNodeKind, UiValue,

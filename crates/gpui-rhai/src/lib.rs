@@ -1,5 +1,14 @@
 //! Runtime foundations for building GPUI applications from Rhai source.
 
+#[cfg(all(feature = "gpui-pre", feature = "gpui-fast"))]
+compile_error!("features `gpui-pre` and `gpui-fast` are mutually exclusive");
+#[cfg(not(any(feature = "gpui-pre", feature = "gpui-fast")))]
+compile_error!("enable exactly one GPUI backend feature: `gpui-pre` or `gpui-fast`");
+#[cfg(feature = "gpui-fast")]
+pub extern crate gpui_fast as gpui;
+#[cfg(feature = "gpui-fast")]
+pub extern crate gpui_fast_platform as gpui_platform;
+
 pub mod column_resize;
 pub mod component;
 pub mod component_styles;
@@ -105,7 +114,9 @@ mod collection_projection;
 mod island;
 pub mod motion;
 
+#[cfg(feature = "gpui-pre")]
 pub use gpui;
+#[cfg(feature = "gpui-pre")]
 pub use gpui_platform;
 pub use retained_page::NavigationStackInfo;
 /// The Rhai crate the runtime is built on, for `RuntimeEngine::engine` and

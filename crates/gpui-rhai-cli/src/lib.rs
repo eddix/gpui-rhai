@@ -340,6 +340,21 @@ impl Project {
         &self,
         profile: Option<&str>,
     ) -> Result<ProjectPlan, ProjectError> {
+        self.plan_init_for(profile, GpuiBackend::Pre)
+    }
+
+    /// Plan project initialization on a GPUI backend: on gpui-fast the
+    /// gpui-rhai dependency turns off its default `gpui-pre` feature.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError`] for missing/invalid Cargo metadata, an unknown
+    /// profile, or conflicting generated files.
+    pub fn plan_init_for(
+        &self,
+        profile: Option<&str>,
+        backend: GpuiBackend,
+    ) -> Result<ProjectPlan, ProjectError> {
         let profile_source = profile
             .map(|name| {
                 BUNDLED_PROFILES
@@ -364,9 +379,13 @@ impl Project {
             .is_none()
         {
             let mut features = Array::new();
-            features.push("dev-reload");
             let mut dependency = InlineTable::new();
             dependency.insert("version", Value::from(runtime_requirement()));
+            if backend == GpuiBackend::Fast {
+                dependency.insert("default-features", Value::from(false));
+                features.push("gpui-fast");
+            }
+            features.push("dev-reload");
             dependency.insert("features", Value::Array(features));
             cargo["dependencies"]["gpui-rhai"] = Item::Value(Value::InlineTable(dependency));
         }
@@ -574,7 +593,7 @@ impl Project {
     ///
     /// Returns [`ProjectError`] for any invalid artifact.
     pub fn check(&self) -> Result<CheckReport, ProjectError> {
-        validate_gpui_dependency_family(&self.root.join("Cargo.toml"))?;
+        let family_warnings = validate_gpui_dependency_family(&self.root.join("Cargo.toml"))?;
         let manifest_path = self.root.join(".gpui-rhai/manifest.toml");
         let manifest: LocalManifest = toml::from_str(&read(&manifest_path)?)?;
         if manifest.runtime_api != RUNTIME_API_VERSION {
@@ -651,7 +670,8 @@ impl Project {
         validate_locales(&self.root)?;
         validate_embedded_assets(&self.root)?;
         validate_fonts(&self.root)?;
-        let mut warnings = shadow_warnings(&self.root)?;
+        let mut warnings = family_warnings;
+        warnings.extend(shadow_warnings(&self.root)?);
         warnings.extend(profile_warnings(&self.root, &manifest)?);
         Ok(CheckReport {
             components: manifest.components.len(),
@@ -1035,10 +1055,101 @@ impl Project {
     }
 }
 
-fn validate_gpui_dependency_family(path: &Path) -> Result<(), ProjectError> {
+/// The GPUI fork an application builds on: gpui-rhai's `gpui-pre` (default)
+/// or `gpui-fast` feature. The two cannot share a binary: both register the
+/// same Objective-C classes at load time, so a binary linking both aborts at
+/// launch.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum GpuiBackend {
+    #[default]
+    Pre,
+    Fast,
+}
+
+/// One dependency entry of a manifest, with workspace inheritance resolved.
+struct DependencySpec {
+    alias: String,
+    package: String,
+    version: Option<String>,
+    default_features: bool,
+    features: Vec<String>,
+}
+
+/// Checks the GPUI packages of the application manifest at `path` against the
+/// backend its gpui-rhai dependency selects, and returns warnings for the
+/// lockfile beside it.
+fn validate_gpui_dependency_family(path: &Path) -> Result<Vec<String>, ProjectError> {
     const GPUI_PRE_VERSION: &str = "=0.3.9";
-    let source = read(path)?;
-    let manifest: toml::Value = toml::from_str(&source)?;
+    const GPUI_FAST_VERSION: &str = "=0.1.9";
+    // `check` run inside a workspace member sees `./Cargo.toml`; the walks up
+    // to the workspace manifest and lockfile need the real directories.
+    let path = fs::canonicalize(path).map_err(|source| ProjectError::Io {
+        path: path.to_owned(),
+        source,
+    })?;
+    let dependencies = manifest_dependencies(&path)?;
+    let backend = match dependencies.iter().find(|spec| spec.package == "gpui-rhai") {
+        Some(spec) if spec.features.iter().any(|feature| feature == "gpui-fast") => {
+            if spec.default_features {
+                return Err(ProjectError::GpuiDependency(format!(
+                    "`{}` enables `gpui-fast` with the default `gpui-pre` backend still on; add `default-features = false`",
+                    spec.alias
+                )));
+            }
+            GpuiBackend::Fast
+        }
+        _ => GpuiBackend::Pre,
+    };
+    for spec in &dependencies {
+        let DependencySpec {
+            alias,
+            package,
+            version,
+            ..
+        } = spec;
+        let pre = match package.as_str() {
+            "gpui" | "gpui-pre" => Some(("gpui", "gpui-pre")),
+            "gpui-pre-platform" => Some(("gpui_platform", "gpui-pre-platform")),
+            _ => None,
+        };
+        let fast = package.starts_with("gpui-fast");
+        match (backend, pre, fast) {
+            (GpuiBackend::Pre, Some((expected_alias, expected_package)), _) => {
+                if alias != expected_alias
+                    || package != expected_package
+                    || version.as_deref() != Some(GPUI_PRE_VERSION)
+                {
+                    return Err(ProjectError::GpuiDependency(format!(
+                        "`{alias}` resolves to `{package}` at {version:?}; use `{expected_alias} = {{ package = \"{expected_package}\", version = \"{GPUI_PRE_VERSION}\", default-features = false }}`"
+                    )));
+                }
+            }
+            (GpuiBackend::Pre, None, true) => {
+                return Err(ProjectError::GpuiDependency(format!(
+                    "`{alias}` is `{package}`, but gpui-rhai builds on gpui-pre, and a binary linking both aborts at launch; enable gpui-rhai's `gpui-fast` feature with `default-features = false`"
+                )));
+            }
+            (GpuiBackend::Fast, Some(_), _) => {
+                return Err(ProjectError::GpuiDependency(format!(
+                    "`{alias}` is `{package}`, but gpui-rhai builds on gpui-fast here, and a binary linking both aborts at launch; remove it and use `gpui_rhai::gpui`"
+                )));
+            }
+            (GpuiBackend::Fast, None, true) if version.as_deref() != Some(GPUI_FAST_VERSION) => {
+                return Err(ProjectError::GpuiDependency(format!(
+                    "`{alias}` resolves to `{package}` at {version:?}; gpui-rhai builds on `{package}` {GPUI_FAST_VERSION}, and a binary holds one version of it"
+                )));
+            }
+            _ => {}
+        }
+    }
+    Ok(lockfile_warnings(&path)?.into_iter().collect())
+}
+
+/// Every dependency entry of the manifest at `path`, including target tables.
+/// An entry that inherits from a workspace declaration that cannot be found
+/// fails only for a GPUI package; Cargo reports the others itself.
+fn manifest_dependencies(path: &Path) -> Result<Vec<DependencySpec>, ProjectError> {
+    let manifest: toml::Value = toml::from_str(&read(path)?)?;
     let mut tables = Vec::new();
     for name in ["dependencies", "dev-dependencies", "build-dependencies"] {
         if let Some(table) = manifest.get(name).and_then(toml::Value::as_table) {
@@ -1054,55 +1165,84 @@ fn validate_gpui_dependency_family(path: &Path) -> Result<(), ProjectError> {
             }
         }
     }
+    let mut specs = Vec::new();
     for table in tables {
         for (alias, dependency) in table {
-            let (package, version) = match dependency {
-                toml::Value::String(version) => (alias.clone(), Some(version.clone())),
-                toml::Value::Table(spec)
-                    if spec.get("workspace").and_then(toml::Value::as_bool) == Some(true) =>
+            let spec = match dependency {
+                toml::Value::Table(member)
+                    if member.get("workspace").and_then(toml::Value::as_bool) == Some(true) =>
                 {
-                    workspace_dependency(path, alias)?.ok_or_else(|| {
-                        ProjectError::GpuiDependency(format!(
-                            "`{alias}` inherits from workspace dependencies, but no workspace declaration was found"
-                        ))
-                    })?
+                    let Some(mut spec) = workspace_dependency(path, alias)? else {
+                        if alias.starts_with("gpui") {
+                            return Err(ProjectError::GpuiDependency(format!(
+                                "`{alias}` inherits from workspace dependencies, but no workspace declaration was found"
+                            )));
+                        }
+                        continue;
+                    };
+                    spec.features.extend(string_array(member.get("features")));
+                    spec
                 }
-                toml::Value::Table(spec) => (
-                    spec.get("package")
-                        .and_then(toml::Value::as_str)
-                        .unwrap_or(alias)
-                        .to_owned(),
-                    spec.get("version")
-                        .and_then(toml::Value::as_str)
-                        .map(ToOwned::to_owned),
-                ),
-                _ => continue,
+                other => match dependency_spec(alias, other) {
+                    Some(spec) => spec,
+                    None => continue,
+                },
             };
-            let expected = match package.as_str() {
-                "gpui" | "gpui-pre" => Some(("gpui", "gpui-pre")),
-                "gpui-pre-platform" => Some(("gpui_platform", "gpui-pre-platform")),
-                _ => None,
-            };
-            let Some((expected_alias, expected_package)) = expected else {
-                continue;
-            };
-            if alias != expected_alias
-                || package != expected_package
-                || version.as_deref() != Some(GPUI_PRE_VERSION)
-            {
-                return Err(ProjectError::GpuiDependency(format!(
-                    "`{alias}` resolves to `{package}` at {version:?}; use `{expected_alias} = {{ package = \"{expected_package}\", version = \"{GPUI_PRE_VERSION}\", default-features = false }}`"
-                )));
-            }
+            specs.push(spec);
         }
     }
-    Ok(())
+    Ok(specs)
 }
 
+fn dependency_spec(alias: &str, value: &toml::Value) -> Option<DependencySpec> {
+    match value {
+        toml::Value::String(version) => Some(DependencySpec {
+            alias: alias.to_owned(),
+            package: alias.to_owned(),
+            version: Some(version.clone()),
+            default_features: true,
+            features: Vec::new(),
+        }),
+        toml::Value::Table(spec) => Some(DependencySpec {
+            alias: alias.to_owned(),
+            package: spec
+                .get("package")
+                .and_then(toml::Value::as_str)
+                .unwrap_or(alias)
+                .to_owned(),
+            version: spec
+                .get("version")
+                .and_then(toml::Value::as_str)
+                .map(ToOwned::to_owned),
+            default_features: spec
+                .get("default-features")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(true),
+            features: string_array(spec.get("features")),
+        }),
+        _ => None,
+    }
+}
+
+fn string_array(value: Option<&toml::Value>) -> Vec<String> {
+    value
+        .and_then(toml::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The `[workspace.dependencies]` entry `alias` of the nearest workspace above
+/// the absolute member manifest path.
 fn workspace_dependency(
     member_manifest: &Path,
     alias: &str,
-) -> Result<Option<(String, Option<String>)>, ProjectError> {
+) -> Result<Option<DependencySpec>, ProjectError> {
     let Some(directory) = member_manifest.parent() else {
         return Ok(None);
     };
@@ -1119,21 +1259,32 @@ fn workspace_dependency(
         else {
             continue;
         };
-        return Ok(match spec {
-            toml::Value::String(version) => Some((alias.to_owned(), Some(version.clone()))),
-            toml::Value::Table(spec) => Some((
-                spec.get("package")
-                    .and_then(toml::Value::as_str)
-                    .unwrap_or(alias)
-                    .to_owned(),
-                spec.get("version")
-                    .and_then(toml::Value::as_str)
-                    .map(ToOwned::to_owned),
-            )),
-            _ => None,
-        });
+        return Ok(dependency_spec(alias, spec));
     }
     Ok(None)
+}
+
+/// A warning when the lockfile of the workspace around `manifest` resolves
+/// both GPUI forks: separate binaries may each link one, a single binary must
+/// not link both.
+fn lockfile_warnings(manifest: &Path) -> Result<Option<String>, ProjectError> {
+    let Some(lockfile) = manifest
+        .parent()
+        .into_iter()
+        .flat_map(Path::ancestors)
+        .map(|directory| directory.join("Cargo.lock"))
+        .find(|candidate| candidate.exists())
+    else {
+        return Ok(None);
+    };
+    let source = read(&lockfile)?;
+    let resolves = |package: &str| source.contains(&format!("name = \"{package}\"\n"));
+    Ok((resolves("gpui-pre") && resolves("gpui-fast")).then(|| {
+        format!(
+            "gpui-family {}: resolves both gpui-pre and gpui-fast; a binary that links both aborts at launch, so keep them in separate binaries or select one backend",
+            lockfile.display()
+        )
+    }))
 }
 
 fn validate_component_documentation(source: &str, id: &ModuleId) -> Result<(), ProjectError> {
@@ -2876,6 +3027,111 @@ mod tests {
         )
         .unwrap();
         validate_gpui_dependency_family(&cargo).unwrap();
+    }
+
+    #[test]
+    fn check_accepts_one_gpui_backend_and_rejects_the_other_fork() {
+        let directory = fixture();
+        let cargo = directory.path().join("Cargo.toml");
+        let package = "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n";
+        let write =
+            |dependencies: &str| fs::write(&cargo, format!("{package}{dependencies}")).unwrap();
+        let fast = "gpui-rhai = { version = \"0.4\", default-features = false, features = [\"gpui-fast\"] }\n";
+
+        // gpui-fast, with a renamed pin of the same version (as nsh needs), passes.
+        write(&format!(
+            "{fast}gpui-fast-pin = {{ package = \"gpui-fast\", version = \"=0.1.9\", default-features = false }}\n"
+        ));
+        assert_eq!(
+            validate_gpui_dependency_family(&cargo).unwrap(),
+            Vec::<String>::new()
+        );
+        for (dependencies, message) in [
+            (
+                "gpui-rhai = { version = \"0.4\", features = [\"gpui-fast\"] }\n".to_owned(),
+                "default-features = false",
+            ),
+            (
+                format!("{fast}gpui = {{ package = \"gpui-pre\", version = \"=0.3.9\" }}\n"),
+                "use `gpui_rhai::gpui`",
+            ),
+            (
+                format!("{fast}gpui-fast = \"0.1.13\"\n"),
+                "a binary holds one version",
+            ),
+            (
+                "gpui-rhai = \"0.4\"\ngpui-fast = \"=0.1.9\"\n".to_owned(),
+                "enable gpui-rhai's `gpui-fast` feature",
+            ),
+        ] {
+            write(&dependencies);
+            let Err(ProjectError::GpuiDependency(error)) = validate_gpui_dependency_family(&cargo)
+            else {
+                panic!("{dependencies} must fail");
+            };
+            assert!(error.contains(message), "{error}");
+        }
+
+        // A lockfile that resolves both forks is a warning: binaries may each link one.
+        write(fast);
+        fs::write(
+            directory.path().join("Cargo.lock"),
+            "[[package]]\nname = \"gpui-pre\"\nversion = \"0.3.9\"\n\n[[package]]\nname = \"gpui-fast\"\nversion = \"0.1.9\"\n",
+        )
+        .unwrap();
+        let warnings = validate_gpui_dependency_family(&cargo).unwrap();
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("aborts at launch"), "{warnings:?}");
+    }
+
+    #[test]
+    fn init_on_gpui_fast_turns_off_the_default_backend() {
+        let directory = fixture();
+        Project::new(directory.path())
+            .plan_init_for(None, GpuiBackend::Fast)
+            .unwrap()
+            .apply()
+            .unwrap();
+        let cargo = directory.path().join("Cargo.toml");
+        let source = fs::read_to_string(&cargo).unwrap();
+        assert!(
+            source.contains("default-features = false, features = [\"gpui-fast\", \"dev-reload\"]"),
+            "{source}"
+        );
+        assert_eq!(
+            validate_gpui_dependency_family(&cargo).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn check_resolves_workspace_dependencies_from_a_relative_member_path() {
+        let directory = fixture();
+        fs::write(
+            directory.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"app\"]\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.9\", default-features = false }\n",
+        )
+        .unwrap();
+        let member = directory.path().join("app");
+        fs::create_dir_all(&member).unwrap();
+        // `async-channel` is declared nowhere: Cargo reports that, not the GPUI check.
+        fs::write(
+            member.join("Cargo.toml"),
+            "[package]\nname = \"app\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\nasync-channel.workspace = true\n",
+        )
+        .unwrap();
+        // The path `gpui-rhai check` sees when run inside the member, relative to here.
+        let current = std::env::current_dir().unwrap();
+        let mut relative = PathBuf::new();
+        for _ in current.components().skip(1) {
+            relative.push("..");
+        }
+        relative.push(member.join("Cargo.toml").strip_prefix("/").unwrap());
+        assert!(relative.is_relative());
+        assert_eq!(
+            validate_gpui_dependency_family(&relative).unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

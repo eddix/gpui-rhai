@@ -222,6 +222,7 @@ impl SelectionAreaEntity {
 
 impl Render for SelectionAreaEntity {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         let owner = self.context.interaction_owner(&self.config.id);
         self.context.present_interaction(owner.clone());
         if self.config.disabled {
