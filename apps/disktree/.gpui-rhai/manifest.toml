@@ -1,8 +1,8 @@
 runtime_api = 3
 
 [components."components/badge"]
-version = "0.4.0"
-content_hash = "e2483b2294f14bb1"
+version = "0.4.2"
+content_hash = "6fff1db8fa33eb9a"
 dependencies = []
 
 [components."components/button"]
@@ -56,8 +56,8 @@ content_hash = "15e71a2986fabdfa"
 dependencies = []
 
 [components."components/split_pane"]
-version = "0.4.0"
-content_hash = "a2d86a04fb134457"
+version = "0.4.2"
+content_hash = "2db3c8393f13c7a0"
 dependencies = []
 
 [components."components/status_bar"]

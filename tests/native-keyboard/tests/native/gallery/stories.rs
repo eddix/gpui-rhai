@@ -625,7 +625,7 @@ fn host_theme_overrides_survive_live_theme_switches(cx: &mut TestAppContext) {
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
     let assert_radii = |snapshot: gpui_rhai::ThemeSnapshot| {
         assert_eq!(
-            snapshot.variant.tokens.radii["sm"],
+            snapshot.variant.tokens.radii["pill"],
             gpui_rhai::Variable::Fixed(gpui_rhai::Length::Pixels(4.0))
         );
         assert_eq!(

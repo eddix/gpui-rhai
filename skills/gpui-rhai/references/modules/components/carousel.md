@@ -1,6 +1,6 @@
 # Carousel
 
-`components/carousel` · export `Carousel` · version 0.4.0. Generated from
+`components/carousel` · export `Carousel` · version 0.4.2. Generated from
 [`registry/components/carousel.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/carousel.rhai); do not edit.
 
 A controlled pager that shows one item at a time, for a compact place that steps through items of one kind: alerts, cards, previews. The caller owns `index`; the arrows, the dots and the keys propose another one. It never turns by itself.
@@ -55,7 +55,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `arrows`, `controls`, `c
 
 ## Theme
 
-- Tokens: `control.border`, `focus_ring`, `metrics.control`, `metrics.icon`, `radius.md`, `radius.sm`, `space.related`, `spacing.xs`, `spacing.xxs`, `surface_raised`, `text_muted`, `text_primary`, `typography.control`
+- Tokens: `control.border`, `focus_ring`, `metrics.control`, `metrics.icon`, `radius.md`, `radius.pill`, `space.related`, `spacing.xs`, `spacing.xxs`, `surface_raised`, `text_muted`, `text_primary`, `typography.control`
 - Environment: `density`, `size`
 
 ## Dependencies

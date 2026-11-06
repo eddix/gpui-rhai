@@ -81,7 +81,7 @@ let view = EmbeddedScriptView::new(entry, scripts, default_theme)
     .theme_sources(additional_themes)
     .theme_token_overrides(ThemeTokenOverrides {
         radii: BTreeMap::from([
-            ("sm".into(), Length::Pixels(4.0)),
+            ("pill".into(), Length::Pixels(4.0)),
             ("md".into(), Length::Pixels(7.0)),
             ("lg".into(), Length::Pixels(10.0)),
         ]),

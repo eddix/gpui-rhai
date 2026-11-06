@@ -689,8 +689,9 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
         );
         let theme = load_bundled(&engine, name, source);
         // Radius follows the shape: md is a control's rounded rectangle by control height
-        // (4px up to 24px, 6px from 28px), xs a box inside it at half that, sm a marker's
-        // capsule and lg a floating surface. Layout takes no radius role at all.
+        // (4px up to 24px, 6px from 28px), xs a box inside it at half that, pill a marker's
+        // capsule, lg a floating surface and sm a fixed small box. Layout takes no radius
+        // role at all.
         for density in ["comfortable", "compact"] {
             for size in ["xs", "sm", "md", "lg"] {
                 let pairs = environment(&[("density", density), ("size", size)]);
@@ -702,7 +703,8 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
                 let control = if height <= 24.0 { 4.0 } else { 6.0 };
                 for (radius, pixels) in [
                     ("xs", control / 2.0),
-                    ("sm", 999.0),
+                    ("sm", 4.0),
+                    ("pill", 999.0),
                     ("md", control),
                     ("lg", 8.0),
                 ] {

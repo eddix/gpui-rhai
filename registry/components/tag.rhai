@@ -2,7 +2,7 @@
 {
   "id": "components/tag",
   "export": "Tag",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -11,7 +11,7 @@
     "surface_hover", "text_primary", "disabled", "focus_ring", "tag.facet", "control.hover",
     "text.accent", "text.success", "text.warning", "text.danger", "accent", "on_accent",
     "success", "on_success", "warning", "on_warning", "danger", "on_danger",
-    "metrics.marker", "spacing.xs", "spacing.sm", "radius.sm",
+    "metrics.marker", "spacing.xs", "spacing.sm", "radius.pill",
     "typography.caption", "typography.label"
   ],
   "environment": []
@@ -27,14 +27,14 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tag", "export": "Tag", version: "0.4.0",
+        id: "components/tag", "export": "Tag", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{}, assets: ["icons/close.svg"],
         tokens: [
             "surface_hover", "text_primary", "disabled", "focus_ring", "tag.facet", "control.hover",
             "text.accent", "text.success", "text.warning", "text.danger", "accent", "on_accent",
             "success", "on_success", "warning", "on_warning", "danger", "on_danger",
-            "metrics.marker", "spacing.xs", "spacing.sm", "radius.sm",
+            "metrics.marker", "spacing.xs", "spacing.sm", "radius.pill",
             "typography.caption", "typography.label"
         ],
         environment: [],
@@ -96,7 +96,7 @@ fn render_Tag(ctx, props) {
             else { theme_color(`on_${variant}`) };
         // The facet carries the tag's start corners: clipping is rectangular.
         children.push(row([text(facet.to_upper())]).with_style(ctx.component_style("facet", style()
-            .flex_row().items_center().self_stretch().radius_start(theme_radius("sm"))
+            .flex_row().items_center().self_stretch().radius_start(theme_radius("pill"))
             .padding_x(theme_spacing("sm"))
             .background(if disabled { theme_color("surface_hover") } else { facet_fill })
             .text_color(if disabled { theme_color("disabled") } else { facet_text })
@@ -113,7 +113,7 @@ fn render_Tag(ctx, props) {
         let close = row([image_source(asset("app/icons/close"))
                 .with_style(style().width(px(12)).height(px(12)))])
             .with_style(ctx.component_style("close", style()
-                .items_center().justify_center().radius(theme_radius("sm"))
+                .items_center().justify_center().radius(theme_radius("pill"))
                 .border(px(1)).border_color(rgba(0x00000000))
                 .text_color(value_color)
                 .hover(style().background(theme_color("control.hover")))
@@ -131,7 +131,7 @@ fn render_Tag(ctx, props) {
         .with_style(ctx.component_style("root", style()
             .flex_row().items_center()
             .min_height(theme_length("metrics.marker"))
-            .radius(theme_radius("sm"))
+            .radius(theme_radius("pill"))
             .background(theme_color("surface_hover"))
             .text_color(value_color)
             .typography("caption")))

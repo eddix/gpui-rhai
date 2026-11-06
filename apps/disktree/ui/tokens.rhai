@@ -32,16 +32,19 @@ fn tokens() {
         // Radius roles follow what a shape is, not a preference. Layout (containers, grids,
         // rows, divider-built bars) takes no radius at all. md: controls, a rounded rectangle
         // by control height, 4px up to 24px and 6px from 28px. xs: boxes inside or beside a
-        // control (Checkbox, Kbd, a field's clear target, the Tabs thumb), half of md. sm:
+        // control (Checkbox, Kbd, a field's clear target, the Tabs thumb), half of md. pill:
         // markers (Tag, Badge, chips, Switch, counts), a capsule: radii clamp to half the
         // shorter side. lg: floating surfaces (Menu, Popover, Dialog, Toast, field panels);
         // list panels pad by half of it on every side, so their square rows clear the corner.
+        // sm: a small rounded rectangle outside any control (a thumbnail, a swatch), a fixed
+        // 4px; no built-in component takes it.
         radius: #{
             xs: by_env(["density", "size"], #{
                 comfortable: #{ xs: px(2), sm: px(3), md: px(3), lg: px(3) },
                 compact: #{ xs: px(2), sm: px(2), md: px(3), lg: px(3) },
             }),
-            sm: px(999),
+            sm: px(4),
+            pill: px(999),
             md: by_env(["density", "size"], #{
                 comfortable: #{ xs: px(4), sm: px(6), md: px(6), lg: px(6) },
                 compact: #{ xs: px(4), sm: px(4), md: px(6), lg: px(6) },

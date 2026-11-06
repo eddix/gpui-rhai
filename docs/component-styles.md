@@ -18,7 +18,7 @@ fn component_styles() {
         "components/input": #{
             root: style()
                 .height(px(36))
-                .radius(theme_radius("sm")),
+                .radius(theme_radius("pill")),
         },
     }
 }

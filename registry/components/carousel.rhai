@@ -2,7 +2,7 @@
 {
   "id": "components/carousel",
   "export": "Carousel",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/sliding_panel", "components/icon_button", "components/icon"],
   "capabilities": {},
@@ -10,7 +10,7 @@
   "tokens": [
     "text_primary", "text_muted", "control.border", "surface_raised", "focus_ring",
     "metrics.control", "metrics.icon", "spacing.xxs", "spacing.xs", "space.related",
-    "radius.sm", "radius.md", "typography.control"
+    "radius.pill", "radius.md", "typography.control"
   ],
   "environment": ["size", "density"]
 }
@@ -38,14 +38,14 @@ import "components/icon" as icon;
 
 define_component(#{
     metadata: #{
-        id: "components/carousel", "export": "Carousel", version: "0.4.0",
+        id: "components/carousel", "export": "Carousel", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/sliding_panel", "components/icon_button", "components/icon"],
         capabilities: #{},
         tokens: [
             "text_primary", "text_muted", "control.border", "surface_raised", "focus_ring",
             "metrics.control", "metrics.icon", "spacing.xxs", "spacing.xs", "space.related",
-            "radius.sm", "radius.md", "typography.control"
+            "radius.pill", "radius.md", "typography.control"
         ],
         environment: ["size", "density"],
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"],
@@ -170,7 +170,7 @@ fn dots_node(ctx, props, cfg) {
         // The 6px square is the status-lamp constant; the selected dot stretches to an icon's
         // width, so the position does not rest on color alone.
         let mark = style().width(if selected { theme_length("metrics.icon") } else { px(6) }).height(px(6))
-            .radius(theme_radius("sm"))
+            .radius(theme_radius("pill"))
             .background(if selected { theme_color("text_primary") } else { theme_color("control.border") });
         if !selected { mark = mark.group_hover(style().background(theme_color("text_muted"))); }
         let resolved = ctx.component_style("dot", mark);

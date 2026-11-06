@@ -8896,7 +8896,7 @@ mod tests {
                 crate::Rgba8::from_rgb_hex(0x00aa_55cc),
             )]),
             radii: BTreeMap::from([
-                ("sm".to_owned(), crate::Length::Pixels(4.0)),
+                ("pill".to_owned(), crate::Length::Pixels(4.0)),
                 ("md".to_owned(), crate::Length::Pixels(7.0)),
                 ("lg".to_owned(), crate::Length::Pixels(10.0)),
             ]),

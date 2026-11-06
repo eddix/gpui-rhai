@@ -362,7 +362,7 @@ fn pane_fill(node) {
 // longer); at rest and under keyboard focus the line and the ink bar are enough.
 fn source_grip_parts() {
     #{
-        grip: style().width(px(4)).height(px(24)).border(px(0)).radius(theme_radius("sm"))
+        grip: style().width(px(4)).height(px(24)).border(px(0)).radius(theme_radius("pill"))
             .background(theme_color("text_muted")).opacity(0.0),
         grip_hover: style().opacity(1.0),
         grip_drag: style().height(px(40)).background(theme_color("accent")).opacity(1.0),
