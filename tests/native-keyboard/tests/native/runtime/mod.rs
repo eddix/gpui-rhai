@@ -4,6 +4,7 @@ mod effect_reactivity;
 mod element_ref_subscriptions;
 mod executor_clock;
 mod interaction_contracts;
+mod interval;
 mod retained_pages;
 mod retained_virtual_collections;
 mod script_api;

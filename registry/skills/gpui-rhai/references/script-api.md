@@ -110,6 +110,7 @@ Components, references, collections, timers, motion and canvas commands.
 | `event_response() -> EventResponse` | Returns a blank event response that lets the event continue, to refine with `prevent_default()`, `stop()` or `capture_pointer()`. |
 | `grapheme_count(text: String) -> int` | Returns the number of extended grapheme clusters, the user-perceived characters, in `text`. |
 | `handled() -> EventResponse` | Returns an event response that stops the event from reaching ancestor handlers. |
+| `interval(key: String, period_ms: int, paused: bool, callback: FnPtr, payload: ?)` | Declares repeating timer `key` during formal render that calls `callback(ctx, payload)` every `period_ms` (16 ms to 24 h) while not `paused`; a late tick is one call, not several. Shares keys with `timeout`. |
 | `is_native_collection(value: ?) -> bool` | Returns whether `value` is a Host-owned `NativeCollection`. |
 | `is_native_text_document(value: ?) -> bool` | Returns whether `value` is a Host-owned `NativeTextDocument`. |
 | `key_shortcut(text: String) -> ?` | Formats `text` such as `"cmd-p"` as `#{ label, keystrokes, chords }` with platform key names; text that is not keystrokes stays a plain label. |
@@ -185,7 +186,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.cancel_motion(handle: MotionHandle)` | Cancels the timeline behind `handle`; raises an error for a stale handle and is not allowed during render. |
 | `ctx.cancel_subscription(handle: SubscriptionHandle) -> bool` | Cancels a subscription; returns `false` when it already closed, raises for another component's handle. The producer is told on commit. |
 | `ctx.cancel_task(handle: TaskHandle) -> bool` | Cancels a task so its callbacks never run and signals its work on commit; returns `false` when it already finished, raises for another component's handle. |
-| `ctx.cancel_timeout(key: String) -> bool` | Cancels this component's declared `timeout` `key` until its declaration changes; returns `false` when no such timer is active. |
+| `ctx.cancel_timeout(key: String) -> bool` | Cancels this component's declared `timeout` or `interval` `key` until its declaration changes; returns `false` when no such timer is active. |
 | `ctx.clear_close_handler()` | Removes the current window's close handler, so a native close request closes the window again; not allowed during render. |
 | `ctx.close_window(id: String)` | Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render. |
 | `ctx.collection_follow_status(key: String) -> ?` | Reads this component's presented collection status as `#{ following, unseen }`, or `()` while absent. An event-time query, not a render dependency; use `on_follow_change` for reactive state. |
@@ -236,13 +237,13 @@ Methods of the context a view, callback or effect receives.
 | `ctx.open_window(id: String, title: String, width: int, height: int, focus: bool)` | Queues a new window `id` that runs the same entry, sides 200 to 4096 pixels; needs window-command authority, not during render. |
 | `ctx.parse_time(value: String, precision: String) -> ?` | Parses localized minute/second clock text to HH:MM:SS, or returns () for incomplete or invalid text. |
 | `ctx.pause_motion(handle: MotionHandle)` | Pauses the timeline behind `handle` at its current position; raises an error for a stale handle and is not allowed during render. |
-| `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` `key`; returns `false` when no such timer is active. Not allowed during render. |
+| `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` or `interval` `key`; returns `false` when no such timer is active. Not allowed during render. |
 | `ctx.play_motion(handle: MotionHandle)` | Plays the timeline behind `handle`, resuming a paused position; idempotent while playing and not allowed during render. |
 | `ctx.register_action(action: String, callback: FnPtr)` | Registers the app-wide action `action` (`namespace.name`), enabled, running `callback`; again replaces the callback and keeps the enabled state. Removed on unmount. |
 | `ctx.render_node(renderer: ?, detail: ?) -> UiNode` | Calls a Node factory bound with ctx.node_factory during render, preserving its module environment and user curry. Passes this receiving component's ctx and detail; does not create a component scope or reset depth/operation limits. Callbacks in the nodes it returns, and in the components it renders directly, belong to the scope that bound the factory. A virtual_collection item renderer may curry a bound factory. Rejects unbound functions, native event handlers and calls outside render. |
 | `ctx.restart_motion(handle: MotionHandle)` | Restarts the timeline behind `handle` from zero, the only way to rewind; not allowed during render. |
 | `ctx.resume_motion(handle: MotionHandle)` | Resumes the timeline behind `handle`, the same as `play_motion`; not allowed during render. |
-| `ctx.resume_timeout(key: String) -> bool` | Clears an explicit pause of this component's declared `timeout` `key`; returns `false` when no such timer is active. |
+| `ctx.resume_timeout(key: String) -> bool` | Clears an explicit pause of this component's declared `timeout` or `interval` `key`; returns `false` when no such timer is active. |
 | `ctx.scroll_collection_by(key: String, distance: ?)` | Queues native pixel scrolling for this component's collection; positive distance moves toward the end, upward input pauses tail following. Integers and floats must be finite. Runs after accepted data/anchor synchronization; forbidden during render. |
 | `ctx.scroll_collection_to_end(key: String)` | Queues a jump to this component's collection tail, resuming native following when enabled. Applies to newly committed data after anchor synchronization, never to another component's equal key; forbidden during render. |
 | `ctx.scroll_collection_to_start(key: String)` | Queues a jump to this component's collection start and pauses native following. Applies after newly committed data/anchor synchronization; an absent collection is ignored. Forbidden during render. |

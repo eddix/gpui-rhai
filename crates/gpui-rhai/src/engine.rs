@@ -3694,83 +3694,94 @@ fn register_effect_api(engine: &mut Engine, active: &ActiveComponentRenderState)
 }
 
 fn register_timer_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
-    let active = Rc::clone(active);
-    FuncRegistration::new("timeout")
-        .in_global_namespace()
-        .register_into_engine(
-            engine,
-            move |call: rhai::NativeCallContext<'_>,
-                  key: ImmutableString,
-                  delay_ms: rhai::INT,
-                  paused: bool,
-                  callback: FnPtr,
-                  payload: Dynamic|
-                  -> Result<(), Box<EvalAltResult>> {
-                let (component, context, generation) = {
-                    let guard = active.try_borrow().map_err(|_| {
+    // `timeout` fires once; `interval` fires every period until removed,
+    // changed or cancelled. Both share one key space per component.
+    for (name, repeat) in [("timeout", false), ("interval", true)] {
+        let active = Rc::clone(active);
+        FuncRegistration::new(name)
+            .in_global_namespace()
+            .register_into_engine(
+                engine,
+                move |call: rhai::NativeCallContext<'_>,
+                      key: ImmutableString,
+                      delay_ms: rhai::INT,
+                      paused: bool,
+                      callback: FnPtr,
+                      payload: Dynamic|
+                      -> Result<(), Box<EvalAltResult>> {
+                    let (component, context, generation) = {
+                        let guard = active.try_borrow().map_err(|_| {
+                            Box::new(component_render_error(
+                                "component render stack is already borrowed",
+                            ))
+                        })?;
+                        let render = guard.as_ref().ok_or_else(|| {
+                            Box::new(component_render_error(format!(
+                                "{name} may run only during formal component render"
+                            )))
+                        })?;
+                        let context = render.contexts.last().cloned().ok_or_else(|| {
+                            Box::new(component_render_error(
+                                "component render context stack is empty",
+                            ))
+                        })?;
+                        (context.component_path().clone(), context, render.generation)
+                    };
+                    let delay_ms = u64::try_from(delay_ms).map_err(|_| {
+                        Box::new(component_render_error(format!(
+                            "{name} delay must be a positive integer"
+                        )))
+                    })?;
+                    let id = crate::TimerId::new(component.clone(), key.to_string())
+                        .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                    let payload = UiValue::from_dynamic(payload)
+                        .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                    let native_context =
+                        crate::invocation::ScriptInvocationContext::capture_retained(&call);
+                    let mut callback = ScriptCallback::try_from_fn_ptr(callback, generation)
+                        .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                    callback.bind_component_scope_if_unset(
+                        &component,
+                        context.component_incarnation(),
+                        context.event_schemas().clone(),
+                    );
+                    callback.bind_native_context_if_unset(native_context);
+                    let descriptor = crate::TimerDescriptor::new(
+                        id.clone(),
+                        Duration::from_millis(delay_ms),
+                        paused,
+                        callback,
+                        payload,
+                    )
+                    .and_then(|descriptor| {
+                        if repeat {
+                            descriptor.repeating()
+                        } else {
+                            Ok(descriptor)
+                        }
+                    })
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                    let mut guard = active.try_borrow_mut().map_err(|_| {
                         Box::new(component_render_error(
                             "component render stack is already borrowed",
                         ))
                     })?;
-                    let render = guard.as_ref().ok_or_else(|| {
-                        Box::new(component_render_error(
-                            "timeout may run only during formal component render",
-                        ))
+                    let render = guard.as_mut().ok_or_else(|| {
+                        Box::new(component_render_error(format!(
+                            "{name} may run only during formal component render"
+                        )))
                     })?;
-                    let context = render.contexts.last().cloned().ok_or_else(|| {
-                        Box::new(component_render_error(
-                            "component render context stack is empty",
-                        ))
-                    })?;
-                    (context.component_path().clone(), context, render.generation)
-                };
-                let delay_ms = u64::try_from(delay_ms).map_err(|_| {
-                    Box::new(component_render_error(
-                        "timeout delay must be a positive integer",
-                    ))
-                })?;
-                let id = crate::TimerId::new(component.clone(), key.to_string())
-                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                let payload = UiValue::from_dynamic(payload)
-                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                let native_context =
-                    crate::invocation::ScriptInvocationContext::capture_retained(&call);
-                let mut callback = ScriptCallback::try_from_fn_ptr(callback, generation)
-                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                callback.bind_component_scope_if_unset(
-                    &component,
-                    context.component_incarnation(),
-                    context.event_schemas().clone(),
-                );
-                callback.bind_native_context_if_unset(native_context);
-                let descriptor = crate::TimerDescriptor::new(
-                    id.clone(),
-                    Duration::from_millis(delay_ms),
-                    paused,
-                    callback,
-                    payload,
-                )
-                .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                let mut guard = active.try_borrow_mut().map_err(|_| {
-                    Box::new(component_render_error(
-                        "component render stack is already borrowed",
-                    ))
-                })?;
-                let render = guard.as_mut().ok_or_else(|| {
-                    Box::new(component_render_error(
-                        "timeout may run only during formal component render",
-                    ))
-                })?;
-                if render.timers.insert(id.clone(), descriptor).is_some() {
-                    return Err(Box::new(component_render_error(format!(
-                        "timeout `{}` is declared more than once in `{}`",
-                        id.key(),
-                        id.component()
-                    ))));
-                }
-                Ok(())
-            },
-        );
+                    if render.timers.insert(id.clone(), descriptor).is_some() {
+                        return Err(Box::new(component_render_error(format!(
+                            "{name} `{}` is declared more than once in `{}`",
+                            id.key(),
+                            id.component()
+                        ))));
+                    }
+                    Ok(())
+                },
+            );
+    }
 }
 
 fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState) {

@@ -270,6 +270,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Creates an image node from `source`, an `AssetId` or an image handle; other values are rejected.",
     },
     ScriptFnDoc {
+        signature: "interval(_: string, _: i64, _: bool, _: Fn, _: types::dynamic::Dynamic) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "period_ms", "paused", "callback", "payload"],
+        doc: "Declares repeating timer `key` during formal render that calls `callback(ctx, payload)` every `period_ms` (16 ms to 24 h) while not `paused`; a late tick is one call, not several. Shares keys with `timeout`.",
+    },
+    ScriptFnDoc {
         signature: "is_native_collection(_: types::dynamic::Dynamic) -> bool",
         params: &["value"],
         doc: "Returns whether `value` is a Host-owned `NativeCollection`.",
