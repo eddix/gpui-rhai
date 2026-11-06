@@ -2499,7 +2499,7 @@ impl RuntimeEngine {
     }
 
     /// Configure parser depth independently of execution/recursion/data limits.
-    /// Defaults are global=64/function=32 in both debug and release. Zero
+    /// Defaults are global=64/function=64 in both debug and release. Zero
     /// normalizes to one rather than adopting Rhai's unlimited convention.
     pub fn set_expression_depth_limits(&mut self, global: usize, functions: usize) {
         self.engine
@@ -2750,13 +2750,19 @@ pub(crate) const RHAI_MAX_MAP_SIZE: usize = 100_000;
 pub(crate) const RHAI_MAX_STRING_SIZE: usize = 1_048_576;
 pub(crate) const RHAI_MAX_DATA_DEPTH: usize = 64;
 
+/// The parser's expression depth at the top level and inside a function. A
+/// builder-style style chain in a node in a closure costs a level per call, so
+/// 32 in a function rejected ordinary view code; 64 still stays clear of the
+/// main thread's stack, where scripts compile and run.
+pub(crate) const EXPRESSION_DEPTHS: (usize, usize) = (64, 64);
+
 fn configure_engine_limits(engine: &mut Engine) {
     crate::invocation::register_named_functions(engine);
     engine.set_max_call_levels(64);
     // Explicit defaults avoid Rhai's profile-dependent parser defaults. A
     // trusted Host may configure these separately; ordinary applications do
     // not inherit another application's deeper expression policy.
-    engine.set_max_expr_depths(64, 32);
+    engine.set_max_expr_depths(EXPRESSION_DEPTHS.0, EXPRESSION_DEPTHS.1);
     // Rhai's counter is evaluator-local and cloned into stored callback
     // contexts. The runtime's progress adapter enforces one cumulative budget
     // across nested evaluators and starts delayed callbacks with fresh quota.
@@ -6032,7 +6038,7 @@ mod tests {
     #[test]
     fn host_policies_are_independent_and_reload_candidates_do_not_share_mutable_quota() {
         let mut engine = RuntimeEngine::new();
-        assert_eq!(engine.expression_depth_limits(), (64, 32));
+        assert_eq!(engine.expression_depth_limits(), (64, 64));
         engine.set_operation_limit(2_000_000);
         engine.set_expression_depth_limits(80, 64);
         assert_eq!(engine.engine().max_call_levels(), 64);

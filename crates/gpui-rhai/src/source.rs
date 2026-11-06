@@ -220,7 +220,12 @@ impl ModuleResolver for RestrictedModuleResolver {
 
         self.begin_resolution(&id, position)?;
         let result = (|| {
-            crate::extract_imports(source).map_err(|error| {
+            crate::dependency::extract_imports_with_depths(
+                source,
+                engine.max_expr_depth(),
+                engine.max_function_expr_depth(),
+            )
+            .map_err(|error| {
                 Box::new(EvalAltResult::ErrorInModule(
                     path.to_owned(),
                     Box::new(runtime_error(error.to_string(), position)),

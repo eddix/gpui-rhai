@@ -335,7 +335,7 @@ fn parser_depth_defaults_and_independent_host_configuration_cover_all_constructo
     let source = deep_source();
     for functions in [32, 48, 64] {
         let mut engine = RuntimeEngine::new();
-        assert_eq!(engine.expression_depth_limits(), (64, 32));
+        assert_eq!(engine.expression_depth_limits(), (64, 64));
         let data_limits = (
             engine.engine().max_call_levels(),
             engine.engine().max_array_size(),
@@ -394,9 +394,10 @@ fn parser_depth_defaults_and_independent_host_configuration_cover_all_constructo
             functions == 64
         );
     }
-    assert!(embedded(&source).prepare().is_err());
+    // The default function depth admits what 48 rejects.
+    assert!(embedded(&source).prepare().is_ok());
     let (_dir, builder) = file(&source);
-    assert!(builder.prepare().is_err());
+    assert!(builder.prepare().is_ok());
 
     // Global expression depth is a distinct parser setting, not a function
     // call/data/operation budget. The parser counts more than one level per
