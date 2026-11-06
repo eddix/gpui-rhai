@@ -440,6 +440,27 @@ Drag areas move the window on macOS and Linux. GPUI's Windows platform
 implements neither the window move nor the title-bar double press, so on
 Windows they do nothing; keep the platform title bar there.
 
+## System notifications and the Dock badge
+
+GPUI posts system notifications (`cx.show_system_notification`, with
+`cx.on_system_notification_response` for clicks and action buttons; one
+response handler per application) and rings the bell
+(`window.play_system_bell()`, `window.request_attention()`). `gpui_rhai::system`
+adds what GPUI lacks (0.4.2):
+
+- `system::notifications_available()`: macOS posts notifications only for an
+  application bundle with a bundle identifier, so a binary started by
+  `cargo run` shows none and GPUI drops them without an error. Run the binary
+  from inside a bundle while developing notifications.
+- `system::set_badge_label(Some("3"))` / `set_badge_label(None)`: the macOS
+  Dock badge, set from the main thread (where GPUI runs callbacks); other
+  platforms return `SystemServiceError::Unsupported`.
+- `ScriptApplication::app_identity(identifier, name)`: the identity Linux and
+  Windows show on notifications; macOS reads it from `Info.plist`.
+
+macOS banners from GPUI carry no sound; ring the bell beside the notification
+when it should be heard.
+
 ## Key bindings
 
 Mounting never modifies the App keymap. Inspect `PreparedScriptView::key_bindings`

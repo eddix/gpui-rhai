@@ -45,6 +45,12 @@ syntect.workspace = true
 regex.workspace = true
 pulldown-cmark.workspace = true
 
+# The Dock badge and the bundle check in `system`; the calls used are safe.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSDockTile", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString"] }
+
 [dev-dependencies]
 # Path-only on purpose: `cargo publish` drops a versionless dev-dependency, so the
 # registry snapshot the tests read never becomes a published dependency of this crate.
