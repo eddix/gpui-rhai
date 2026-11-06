@@ -122,7 +122,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "cancel_timeout(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key"],
-        doc: "Cancels this component's declared `timeout` `key` until its declaration changes; returns `false` when no such timer is active.",
+        doc: "Cancels this component's declared `timeout` or `interval` `key` until its declaration changes; returns `false` when no such timer is active.",
     },
     ScriptFnDoc {
         signature: "clear_close_handler(_: &mut UiContext) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -327,7 +327,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "pause_timeout(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key"],
-        doc: "Pauses this component's declared `timeout` `key`; returns `false` when no such timer is active. Not allowed during render.",
+        doc: "Pauses this component's declared `timeout` or `interval` `key`; returns `false` when no such timer is active. Not allowed during render.",
     },
     ScriptFnDoc {
         signature: "play_motion(_: &mut UiContext, _: gpui_rhai::motion::MotionHandle) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -352,7 +352,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "resume_timeout(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key"],
-        doc: "Clears an explicit pause of this component's declared `timeout` `key`; returns `false` when no such timer is active.",
+        doc: "Clears an explicit pause of this component's declared `timeout` or `interval` `key`; returns `false` when no such timer is active.",
     },
     ScriptFnDoc {
         signature: "scroll_into_view(_: &mut UiContext, _: ElementRef) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

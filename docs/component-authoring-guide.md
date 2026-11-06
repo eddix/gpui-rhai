@@ -565,6 +565,13 @@ repeat until removed or changed, and unreachable scopes cancel. Event handlers
 may call `ctx.pause_timeout(key)`, `ctx.resume_timeout(key)`, or
 `ctx.cancel_timeout(key)`. Only named non-capturing callbacks and UiValue
 payloads cross the retained boundary.
+`interval(key, period_ms, paused, Fn("callback"), payload)` (0.4.2) declares
+the repeating form in the same key space, so the same `ctx` calls pause,
+resume and cancel it. It calls back every period, at least 16ms, while it is
+declared and not paused; a render that declares it again keeps its schedule.
+A tick that comes late, because the main thread was busy, is one call and the
+next is a period after it; missed ticks are not made up, so a count of ticks
+is not a measure of elapsed time.
 The signature includes callback curry/provenance, not only its function name.
 Declaration pause, explicit interaction pause, and temporary view suspension
 are independent reasons; resuming a view never clears an explicit pause.
