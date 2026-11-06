@@ -418,6 +418,11 @@ impl ScriptViewHost {
         self.inner.borrow().window_id.clone()
     }
 
+    /// The native window this Host's views are mounted in, once one is.
+    pub(crate) fn native_window(&self) -> Option<AnyWindowHandle> {
+        self.inner.borrow().native_window
+    }
+
     /// Restrict this Host's overlays to an explicit absolute rectangle.
     ///
     /// # Errors
@@ -2287,6 +2292,12 @@ pub trait ScriptViewExtension {
     ) -> Result<(), String> {
         Ok(())
     }
+
+    /// Runs with the application at each delivery poll of a mounted view
+    /// (within a frame while it is active), for platform work a capability
+    /// handler queued: handlers get no `App`. `window` is the view's native
+    /// window. [`crate::system::SystemServices`] posts notifications here.
+    fn poll(&self, _window: Option<AnyWindowHandle>, _cx: &mut App) {}
 }
 
 /// Every extension's [`ScriptViewExtension::configure_engine`], then every
@@ -7842,6 +7853,10 @@ impl ScriptHostView {
         }
         if self.state.get() == ScriptViewState::Disposed {
             return;
+        }
+        let window = self.host.native_window();
+        for extension in self.factory.extensions.iter() {
+            extension.poll(window, cx);
         }
         self.report_presentation_diagnostics(cx);
         self.process_window_commands(cx);

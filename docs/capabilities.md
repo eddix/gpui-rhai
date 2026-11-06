@@ -175,6 +175,41 @@ Startup and `gpui-rhai check` also cross-check every installed component header:
 its capability requirement must appear explicitly and identically in the app
 manifest before any handler can activate.
 
+## System services
+
+`gpui_rhai::system::SystemServices` (0.4.2) gives scripts the operating
+system's notifications, Dock badge and attention calls. The Host mounts it as
+an extension, and the app manifest and the calling components declare the
+capabilities they use:
+
+```rust
+let view = FileScriptView::new("ui/main.rhai")
+    .extension(gpui_rhai::system::SystemServices::default());
+```
+
+| Capability | Methods |
+|---|---|
+| `system.notification@1` | `show(#{ tag, title, body?, actions? })`, `dismiss(#{ tag })`, `available()`; subscription `responses` |
+| `system.badge@1` | `set(#{ label })`, `clear()` (macOS Dock badge) |
+| `system.attention@1` | `bell()`, `request()`, on the view's window |
+
+```rhai
+fn approve_needed(ctx, payload) {
+    ctx.call_capability("system.notification", "show", #{ tag: "approve", title: "A session needs you",
+        body: "Approve the command", actions: [#{ id: "approve", label: "Approve" }] });
+    ctx.call_capability("system.badge", "set", #{ label: "1" });
+}
+// In an effect: `response` is #{ tag, action_id }, `action_id` () for a click on the body.
+ctx.start_subscription("system.notification", "responses", (), Fn("responded"), Fn("failed"), #{ delivery: "all" });
+```
+
+The calls queue and run at the view's next delivery poll, within a frame,
+because a capability handler gets no `App`. `available()` is false where the
+platform would drop the notification: on macOS, a binary not running from a
+bundle with an identifier (see [embedding.md](embedding.md#system-notifications-and-the-dock-badge)).
+GPUI keeps one notification response handler per application; with these
+services mounted it is theirs.
+
 ## Host extensions in `check`
 
 `gpui-rhai check` lints every call against the functions its own engine
