@@ -40,6 +40,7 @@ pub mod locale;
 mod markdown;
 mod markdown_preparation;
 pub mod markdown_view;
+pub mod system;
 pub use markdown_preparation::{
     MarkdownPreparation, MarkdownPreparationCache, MarkdownPreparationKey, PreparedMarkdown,
 };

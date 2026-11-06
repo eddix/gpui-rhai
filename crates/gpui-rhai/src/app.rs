@@ -3944,6 +3944,7 @@ pub struct ScriptApplication {
     show_error_banner: bool,
     mirror_errors_to_stderr: bool,
     window_drag_areas: bool,
+    app_identity: Option<(String, String)>,
 }
 
 impl ScriptApplication {
@@ -3956,6 +3957,7 @@ impl ScriptApplication {
             show_error_banner: true,
             mirror_errors_to_stderr: true,
             window_drag_areas: false,
+            app_identity: None,
         }
     }
 
@@ -4005,6 +4007,15 @@ impl ScriptApplication {
         self
     }
 
+    /// The application's identifier (reverse DNS, `com.example.app`) and
+    /// name, which Linux and Windows show on system notifications. macOS takes
+    /// both from the bundle's `Info.plist` instead (see [`crate::system`]).
+    #[must_use]
+    pub fn app_identity(mut self, identifier: impl Into<String>, name: impl Into<String>) -> Self {
+        self.app_identity = Some((identifier.into(), name.into()));
+        self
+    }
+
     /// Run this prepared view as a standalone GPUI application.
     ///
     /// # Errors
@@ -4020,9 +4031,13 @@ impl ScriptApplication {
         let show_error_banner = self.show_error_banner;
         let mirror_errors_to_stderr = self.mirror_errors_to_stderr;
         let window_drag_areas = self.window_drag_areas;
+        let app_identity = self.app_identity;
         prepared.factory.show_error_banner.set(show_error_banner);
         gpui_platform::application().run(move |cx: &mut App| {
             install(cx);
+            if let Some((identifier, name)) = &app_identity {
+                cx.set_app_identity(identifier, name);
+            }
             let host = match ScriptViewHost::new("main", cx) {
                 Ok(host) => host,
                 Err(error) => {
