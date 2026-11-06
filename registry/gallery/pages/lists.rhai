@@ -58,7 +58,7 @@ fn menu_page(h, v) {
     let trigger = button::Button(#{ key: "menu-trigger", text: "File", variant: "secondary",
         on_click: kit::put(h, "menu.open", true) });
     kit::page(h, v, "menu", "Menu", "Transient list: the cursor is a rounded selection block. Enter runs.", [
-        kit::sec("Open", column([menu::Menu(#{ key: "menu-file", label: "File", trigger: trigger,
+        kit::sec("Open", kit::pile([menu::Menu(#{ key: "menu-file", label: "File", trigger: trigger,
             open: kit::val(v, "menu.open", false), active_value: kit::val(v, "menu.active", "open"), items: file_items(),
             on_open_change: kit::store(h, "menu.open"), on_active_change: kit::store(h, "menu.active"),
             on_action: h.noop })])),

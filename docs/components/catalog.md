@@ -635,6 +635,13 @@ Overlay open values are controlled. Portal order, outside/Escape dismissal,
 focus containment/restoration, pointer coordinates, and viewport placement are
 generic Host behavior.
 
+The trigger lays out as it would without the overlay around it (0.4.2): in a
+column it stretches across the column's width, and it can shrink below its
+content, so a sidebar row wrapped in a ContextMenu still fills the sidebar and
+truncates its title. A trigger that should keep its own width, such as a menu
+button above other content, goes in a row or a start-aligned Stack, as the same
+Button would without the overlay.
+
 ## Optional Chart source pack
 
 The chart pack is versioned separately from the frozen 51-component foundation

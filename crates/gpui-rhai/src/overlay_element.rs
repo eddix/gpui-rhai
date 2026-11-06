@@ -6,10 +6,10 @@ use std::time::{Duration, Instant};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, DispatchPhase, Display, Element, ElementId,
-    FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    KeyDownEvent, LayoutId, MouseDownEvent, ParentElement, Pixels, Point, SharedString,
-    StatefulInteractiveElement, Style as GpuiStyle, Styled, WeakFocusHandle, Window, deferred, div,
-    point, px, relative, rgba, size,
+    FlexDirection, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement,
+    IntoElement, KeyDownEvent, LayoutId, MouseDownEvent, ParentElement, Pixels, Point,
+    SharedString, StatefulInteractiveElement, Style as GpuiStyle, Styled, WeakFocusHandle, Window,
+    deferred, div, point, px, relative, rgba, size,
 };
 
 use crate::{
@@ -779,6 +779,7 @@ impl ScriptOverlayElement {
         let focus_surface = self.focus_surface;
         let mut trigger = div()
             .id(SharedString::from(format!("{}-trigger", self.id)))
+            .min_w_0()
             .track_focus(trigger_focus)
             .tab_stop(self.trigger_tab_stop())
             .when(self.focus_indicators, |trigger| {
@@ -1104,8 +1105,12 @@ impl Element for ScriptOverlayElement {
                     .as_mut()
                     .map(|overlay| overlay.request_layout(window, cx));
                 let children = std::iter::once(trigger_layout).chain(overlay_layout);
+                // A column, so the trigger stretches across the overlay node as it
+                // would without the overlay around it: a row inside a ContextMenu
+                // still fills its sidebar and truncates its title.
                 let mut style = GpuiStyle {
                     display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
                     ..GpuiStyle::default()
                 };
                 if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
