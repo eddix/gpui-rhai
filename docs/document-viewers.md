@@ -308,3 +308,22 @@ code_viewer::CodeViewer(#{
 
 The selected family must be installed or registered by the Host through
 `FontSource`.
+
+The viewers draw on `surface`, and Markdown code takes `surface_raised`. On a
+raised card that is the card's own color, so restyle the parts where the viewer
+sits rather than for every viewer in `ui/styles.rhai`:
+
+```rhai
+markdown::MarkdownViewer(#{
+    key: "reply",
+    source: reply,
+    height: "content",
+    part_styles: #{
+        root: style().background(rgba(0x00000000)),
+        code_block: style().background(theme_color("surface")),
+        inline_code: style().background(theme_color("surface")),
+    },
+})
+```
+
+CodeViewer and DiffViewer take `part_styles.root` the same way.
