@@ -232,6 +232,7 @@ impl RangeInputEntity {
 
 impl Render for RangeInputEntity {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         let owner = self.events.interaction_owner(&self.interaction_key);
         self.events.present_interaction(owner.clone());
         if self.disabled {

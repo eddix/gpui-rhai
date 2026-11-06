@@ -1147,6 +1147,7 @@ impl CodeViewerEntity {
 
 impl Render for CodeViewerEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         let root = div()
             .relative()
             .flex()
@@ -3488,6 +3489,7 @@ impl DiffViewerEntity {
 
 impl Render for DiffViewerEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         let status = self.prepared.as_ref().map_or_else(
             || "Preparing".to_owned(),
             |diff| {

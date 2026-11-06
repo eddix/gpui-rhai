@@ -1,5 +1,11 @@
 //! Bounded, app-only real MacPlatform appearance/lifecycle matrix.
 //! Does not modify OS preferences or fake the private TestPlatform appearance API.
+
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast as gpui;
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast_platform as gpui_platform;
+
 #[cfg(not(target_os = "macos"))]
 fn main() {
     eprintln!("actual macOS appearance lifecycle probe requires macOS");

@@ -5,6 +5,12 @@
 //! Run with `cargo test --features dev-reload --test token_reload`.
 #![cfg(feature = "dev-reload")]
 
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast as gpui;
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast_platform as gpui_platform;
+
+
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

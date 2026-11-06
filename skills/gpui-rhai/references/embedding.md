@@ -50,6 +50,45 @@ Official `gpui 0.2.2` and `gpui-pre` expose similarly named but incompatible
 Rust types. `gpui-rhai check` rejects a project manifest that mixes them; it
 reports the required declaration but never rewrites `Cargo.toml` automatically.
 
+### The gpui-fast backend
+
+gpui-rhai also builds on [gpui-fast](https://github.com/longbridge/gpui-fast)
+0.1.9, for an application that links another gpui-fast UI into the same
+binary (nsh's `nsh-platform-gpui` 0.4 builds on that version). Turn off the
+default `gpui-pre` feature and reach GPUI through the re-exports, which then
+name gpui-fast's crates:
+
+```toml
+[dependencies]
+gpui-rhai = { version = "0.4", default-features = false, features = ["gpui-fast"] }
+```
+
+`gpui-rhai init --backend fast` writes this dependency. The two forks cannot
+share a binary: both register the same Objective-C classes when they load, so
+a process that links both aborts at launch, before `main`. `gpui-rhai check`
+rejects a direct dependency on the fork the application does not build on and
+a gpui-fast version other than 0.1.9 (a binary holds one), and warns when the
+workspace's `Cargo.lock` resolves both forks; separate binaries may each link
+one.
+
+On gpui-fast:
+
+- **Cache islands are off.** gpui-fast replays a cached view only while no
+  entity it read was notified, and an island reads its host, which every
+  commit notifies.
+- **The runtime's views render with every host frame**, as on gpui-pre:
+  gpui-fast's view retention would skip their prepaint, which fills the
+  window's overlay, interaction and geometry registries each frame.
+- **Scroll layers must be off.** gpui-fast composites the rows of a scrolled
+  list from a layer without rendering them, so virtual collections realize the
+  wrong rows. Start the process with `GPUI_SCROLL_LAYERS=0`; gpui-fast reads it
+  when it creates a window, and Rust 2024 makes `std::env::set_var` unsafe, so
+  set it before the process starts: `LSEnvironment` in a macOS bundle's
+  `Info.plist`, the launcher that starts the binary, or `[env]` in
+  `.cargo/config.toml` for `cargo run`. The variable applies to every window of
+  the process, so an application that runs another gpui-fast UI in the same
+  process loses its scroll layers too.
+
 ## Mounting
 
 Install App-level input actions once, create one Host for the window, then mount

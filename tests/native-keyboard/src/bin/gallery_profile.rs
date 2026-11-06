@@ -7,6 +7,12 @@
 //! prepaint and paint), and the composition audit the Gallery Host runs after
 //! frames. Numbers are wall time on this machine; compare runs, not machines.
 
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast as gpui;
+#[cfg(feature = "gpui-fast")]
+extern crate gpui_fast_platform as gpui_platform;
+
+
 #[cfg(not(target_os = "macos"))]
 fn main() {
     eprintln!("the Gallery profile requires macOS");

@@ -13,6 +13,9 @@ keywords = ["gpui", "rhai", "cli", "components", "themes"]
 categories = ["gui", "development-tools"]
 
 [features]
+default = ["gpui-pre"]
+gpui-pre = ["gpui-rhai/gpui-pre"]
+gpui-fast = ["gpui-rhai/gpui-fast"]
 # Gates nothing since 0.2.0 (the Rust Gallery shell was removed); kept so that
 # dependents enabling it keep building.
 test-support = []
@@ -24,7 +27,7 @@ doc = false
 
 [dependencies]
 clap.workspace = true
-gpui-rhai = { version = "0.4.1", path = "../gpui-rhai", features = ["charts"] }
+gpui-rhai = { version = "0.4.1", path = "../gpui-rhai", default-features = false, features = ["charts"] }
 gpui-rhai-registry.workspace = true
 semver.workspace = true
 serde.workspace = true

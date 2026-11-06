@@ -24,6 +24,10 @@ enum Command {
         /// Install a bundled application profile, such as `productivity`.
         #[arg(long)]
         profile: Option<String>,
+        /// The GPUI fork to build on: `pre` (gpui-pre, the default) or `fast`
+        /// (gpui-fast, for a binary that also links a gpui-fast UI).
+        #[arg(long, default_value = "pre", value_parser = ["pre", "fast"])]
+        backend: String,
     },
     /// Add source components and their dependencies.
     Add {
@@ -90,8 +94,13 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
     let root = cli.root.clone();
     let project = Project::new(cli.root);
     match cli.command {
-        Command::Init { profile } => {
-            let plan = project.plan_init_with_profile(profile.as_deref())?;
+        Command::Init { profile, backend } => {
+            let backend = if backend == "fast" {
+                gpui_rhai_cli::GpuiBackend::Fast
+            } else {
+                gpui_rhai_cli::GpuiBackend::Pre
+            };
+            let plan = project.plan_init_for(profile.as_deref(), backend)?;
             println!("{}", plan.summary());
             if !cli.dry_run {
                 plan.apply()?;

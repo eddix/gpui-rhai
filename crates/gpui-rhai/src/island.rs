@@ -50,7 +50,9 @@ pub(crate) fn mark_unsettled() {
 
 /// Whether a view embeds cache islands, from its config and the
 /// `GPUI_RHAI_RENDER_ISLANDS` environment variable (`off`, `on`, `verify`,
-/// `aggressive`).
+/// `aggressive`). Islands are off on the gpui-fast backend: it replays a
+/// cached view only while no entity the view read was notified, and an island
+/// reads its host, which every commit notifies, so no island would ever replay.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct IslandPolicy {
     pub enabled: bool,
@@ -67,7 +69,7 @@ impl IslandPolicy {
     pub(crate) fn resolve(config: Option<bool>) -> Self {
         let variable = std::env::var("GPUI_RHAI_RENDER_ISLANDS").ok();
         let mode = variable.as_deref().unwrap_or("on");
-        let enabled = config.unwrap_or(true) && mode != "off";
+        let enabled = !cfg!(feature = "gpui-fast") && config.unwrap_or(true) && mode != "off";
         Self {
             enabled,
             verify: matches!(mode, "verify" | "aggressive"),

@@ -449,6 +449,7 @@ impl DragSourceEntity {
 
 impl Render for DragSourceEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         div()
             .size_full()
             .track_focus(&self.focus.clone().tab_stop(!self.config.disabled))

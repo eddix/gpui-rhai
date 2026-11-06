@@ -7443,7 +7443,8 @@ impl StaticUiView {
 }
 
 impl Render for StaticUiView {
-    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         if let Err(error) = self.primitives.retain_tree(&self.tree) {
             return div()
                 .child(format!("Custom primitive lifecycle error: {error}"))

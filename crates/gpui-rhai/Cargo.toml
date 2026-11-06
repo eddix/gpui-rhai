@@ -14,14 +14,18 @@ categories = ["gui"]
 include = ["src/**/*.rs", "README.md", "LICENSE-*", "Cargo.toml"]
 
 [features]
-default = []
+default = ["gpui-pre"]
+gpui-pre = ["dep:gpui", "dep:gpui_platform"]
+gpui-fast = ["dep:gpui-fast", "dep:gpui-fast-platform"]
 charts = []
 dev-reload = ["dep:notify"]
 grain-backend = ["rhai/grain"]
 
 [dependencies]
-gpui.workspace = true
-gpui_platform.workspace = true
+gpui = { workspace = true, optional = true }
+gpui_platform = { workspace = true, optional = true }
+gpui-fast = { workspace = true, optional = true }
+gpui-fast-platform = { workspace = true, optional = true }
 notify = { workspace = true, optional = true }
 rhai.workspace = true
 serde.workspace = true

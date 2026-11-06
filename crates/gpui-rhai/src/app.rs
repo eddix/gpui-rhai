@@ -759,6 +759,20 @@ struct ScriptViewHostFrame {
     child: Option<AnyElement>,
 }
 
+/// Bumped each time a host frame lays out and read by every runtime view's
+/// render. gpui-fast draws a view again from its last frame while nothing it
+/// read changed; a view that reads this is never drawn from a frame older than
+/// the host frame around it, whose layout clears the window registries the
+/// view's prepaint fills. Under gpui-pre it is an unobserved global.
+#[derive(Default)]
+pub(crate) struct HostFrameEpoch(u64);
+
+impl gpui::Global for HostFrameEpoch {}
+
+pub(crate) fn read_host_frame_epoch(cx: &App) {
+    let _ = cx.try_global::<HostFrameEpoch>();
+}
+
 impl Element for ScriptViewHostFrame {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();
@@ -809,6 +823,8 @@ impl Element for ScriptViewHostFrame {
                 std::mem::take(&mut state.pending_focus_recovery),
             )
         };
+        let epoch = cx.default_global::<HostFrameEpoch>();
+        epoch.0 = epoch.0.wrapping_add(1);
         overlays.begin_host_frame(viewport);
         self.host.interactions().begin_frame();
         if pending
@@ -5180,6 +5196,7 @@ fn resolve_root_theme_from_runtime(
 
 impl Render for ScriptHostView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::app::read_host_frame_epoch(cx);
         if self.state.get() != ScriptViewState::Active {
             return div().into_any_element();
         }

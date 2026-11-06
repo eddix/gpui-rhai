@@ -154,7 +154,8 @@ replayed subtree would lay out at another height or under other ids;
 `aggressive` also makes every subtree of one node an island and assumes every
 view's width is set by its Host, which CI runs over the native suite.
 `ScriptViewHandle::take_render_statistics` (hidden, unstable) counts island
-hits, misses, in-place renders and height mismatches.
+hits, misses, in-place renders and height mismatches. On the gpui-fast backend
+islands are off ([embedding.md](embedding.md#the-gpui-fast-backend)).
 
 Commits do work proportional to what changed where they can: a subtree the
 candidate shares with the last commit keeps its retained nodes; motion, exit
