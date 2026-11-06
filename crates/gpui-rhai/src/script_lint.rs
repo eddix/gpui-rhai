@@ -588,7 +588,7 @@ fn parse_source(
         .compile(source)
         .map_err(|error| KnownCallLintError::Parse {
             source_name: name.to_owned(),
-            message: error.to_string(),
+            message: crate::engine::explain_keyword_name(source, error).to_string(),
         })?;
     ast.set_source(name);
     Ok(ParsedSource {

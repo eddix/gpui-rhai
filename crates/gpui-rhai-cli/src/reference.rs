@@ -371,7 +371,13 @@ fn primitives_section(page: &mut String, api: &ScriptApi, descriptors: &[Primiti
 fn module_page(id: &ModuleId, definition: &ComponentDefinition, notes: &HeaderNotes) -> String {
     let metadata = &definition.metadata;
     let schema = &definition.schema;
-    let alias = id.as_str().rsplit('/').next().unwrap_or(id.as_str());
+    let name = id.as_str().rsplit('/').next().unwrap_or(id.as_str());
+    // `switch` is a Rhai keyword and cannot alias an import.
+    let alias = if gpui_rhai::rhai::is_valid_function_name(name) {
+        name.to_owned()
+    } else {
+        format!("{name}_component")
+    };
     let mut page = format!(
         "# {export}\n\n`{id}` · export `{export}` · version {version}. Generated from\n\
          [`registry/{id}.rhai`](../../../registry/{id}.rhai); do not edit.\n",

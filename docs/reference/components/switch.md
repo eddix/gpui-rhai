@@ -6,9 +6,9 @@
 Controlled binary switch with disabled and loading states. State: controlled by the checked prop.
 
 ```rhai
-import "components/switch" as switch;
+import "components/switch" as switch_component;
 
-switch::Switch(#{ checked: true, label: "Updates", on_change: Fn("changed") })
+switch_component::Switch(#{ checked: true, label: "Updates", on_change: Fn("changed") })
 ```
 
 ## Props

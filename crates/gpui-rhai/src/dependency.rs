@@ -97,7 +97,7 @@ pub(crate) fn extract_imports_with_depths(
         .compile(source)
         .map_err(|error| DependencyError::Parse {
             position: error.position(),
-            message: error.to_string(),
+            message: crate::engine::explain_keyword_name(source, error).to_string(),
         })?;
     extract_imports_from_ast(&ast)
 }
