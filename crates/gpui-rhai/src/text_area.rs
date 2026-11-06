@@ -212,7 +212,22 @@ impl TextAreaEntity {
         self.scroll.set_offset(point(px(0.0), -top));
     }
 
-    fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
+    /// Whether a script capture handler above the editor takes the key that
+    /// triggered the binding being run; then the binding does nothing. Not
+    /// while an input method composes text: its keys are the composition's.
+    fn script_takes_key(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.buffer.marked.is_none()
+            && self
+                .callbacks
+                .key_capture
+                .as_ref()
+                .is_some_and(|take| take(window, cx))
+    }
+
+    fn left(&mut self, _: &Left, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = if self.buffer.selected.is_empty() {
             self.buffer.previous_boundary(self.buffer.cursor_offset())
         } else {
@@ -224,7 +239,10 @@ impl TextAreaEntity {
         cx.notify();
     }
 
-    fn right(&mut self, _: &Right, _: &mut Window, cx: &mut Context<Self>) {
+    fn right(&mut self, _: &Right, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = if self.buffer.selected.is_empty() {
             self.buffer.next_boundary(self.buffer.selected.end)
         } else {
@@ -236,7 +254,10 @@ impl TextAreaEntity {
         cx.notify();
     }
 
-    fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_left(&mut self, _: &SelectLeft, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = self.buffer.previous_boundary(self.buffer.cursor_offset());
         self.buffer.select_to(offset);
         self.reset_preferred_x();
@@ -244,7 +265,10 @@ impl TextAreaEntity {
         cx.notify();
     }
 
-    fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_right(&mut self, _: &SelectRight, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = self.buffer.next_boundary(self.buffer.cursor_offset());
         self.buffer.select_to(offset);
         self.reset_preferred_x();
@@ -252,22 +276,34 @@ impl TextAreaEntity {
         cx.notify();
     }
 
-    fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
+    fn up(&mut self, _: &Up, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.move_vertical(-1, false);
         cx.notify();
     }
 
-    fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
+    fn down(&mut self, _: &Down, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.move_vertical(1, false);
         cx.notify();
     }
 
-    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.move_vertical(-1, true);
         cx.notify();
     }
 
-    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_down(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.move_vertical(1, true);
         cx.notify();
     }
@@ -296,7 +332,10 @@ impl TextAreaEntity {
         self.ensure_cursor_visible();
     }
 
-    fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.buffer.move_to(0);
         self.buffer.select_to(self.buffer.content.len());
         self.reset_preferred_x();
@@ -304,7 +343,10 @@ impl TextAreaEntity {
         cx.notify();
     }
 
-    fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
+    fn home(&mut self, _: &Home, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.buffer
             .move_to(self.buffer.line_start(self.buffer.cursor_offset()));
         self.reset_preferred_x();
@@ -312,7 +354,10 @@ impl TextAreaEntity {
         cx.notify();
     }
 
-    fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
+    fn end(&mut self, _: &End, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.buffer
             .move_to(self.buffer.line_end(self.buffer.cursor_offset()));
         self.reset_preferred_x();
@@ -321,6 +366,9 @@ impl TextAreaEntity {
     }
 
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.config.disabled || self.config.read_only {
             return;
         }
@@ -336,6 +384,9 @@ impl TextAreaEntity {
     }
 
     fn delete(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.config.disabled || self.config.read_only {
             return;
         }
@@ -351,6 +402,9 @@ impl TextAreaEntity {
     }
 
     fn newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.config.disabled || self.config.read_only {
             return;
         }
@@ -362,6 +416,9 @@ impl TextAreaEntity {
     }
 
     fn submit(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         // Platform IME normally consumes confirmation before key dispatch. Keep
         // this guard as well for hosts which deliver a key while text is marked.
         if !self
@@ -376,7 +433,10 @@ impl TextAreaEntity {
         }
     }
 
-    fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
+    fn copy(&mut self, _: &Copy, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if !self.buffer.selected.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.buffer.content[self.buffer.selected.clone()].to_owned(),
@@ -385,6 +445,9 @@ impl TextAreaEntity {
     }
 
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.config.disabled || self.config.read_only || self.buffer.selected.is_empty() {
             return;
         }
@@ -396,6 +459,9 @@ impl TextAreaEntity {
     }
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.config.disabled || self.config.read_only {
             return;
         }
@@ -408,6 +474,9 @@ impl TextAreaEntity {
     }
 
     fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if !self.config.disabled && !self.config.read_only && self.buffer.undo() {
             self.reset_preferred_x();
             self.ensure_cursor_visible();
@@ -417,6 +486,9 @@ impl TextAreaEntity {
     }
 
     fn redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if !self.config.disabled && !self.config.read_only && self.buffer.redo() {
             self.reset_preferred_x();
             self.ensure_cursor_visible();
@@ -1196,6 +1268,7 @@ fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {
 }
 
 fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
+    let key_events = events.clone();
     let change_events = events.clone();
     let focus_events = events.clone();
     let blur_events = events.clone();
@@ -1216,6 +1289,9 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
             let _ = blur_events.emit("blur", UiValue::Null, window, cx);
         })),
         tab: None,
+        key_capture: Some(Rc::new(move |window, cx| {
+            key_events.script_takes_key(window, cx)
+        })),
     }
 }
 

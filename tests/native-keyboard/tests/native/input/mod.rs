@@ -2,6 +2,7 @@
 //! embedded input.
 
 mod composer;
+mod editor_capture;
 mod embedded_input;
 mod focus_order;
 mod focus_within;

@@ -71,6 +71,9 @@ pub fn init_text_input(cx: &mut App) {
 pub(crate) type TextValueHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 pub(crate) type TextSignalHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 pub(crate) type TextTabHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
+/// Whether a script capture handler above the editor takes the key being
+/// dispatched (see [`crate::PrimitiveContext`]).
+pub(crate) type TextKeyCaptureHandler = Rc<dyn Fn(&mut Window, &mut App) -> bool>;
 
 #[derive(Clone, Default)]
 pub(crate) struct TextInputCallbacks {
@@ -79,6 +82,7 @@ pub(crate) struct TextInputCallbacks {
     pub focus: Option<TextSignalHandler>,
     pub blur: Option<TextSignalHandler>,
     pub tab: Option<TextTabHandler>,
+    pub key_capture: Option<TextKeyCaptureHandler>,
 }
 
 pub(crate) struct TextInputEntity {
@@ -232,7 +236,10 @@ impl TextInputEntity {
         }
     }
 
-    fn left(&mut self, _: &Left, _: &mut Window, cx: &mut Context<Self>) {
+    fn left(&mut self, _: &Left, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = if self.buffer.selected.is_empty() {
             self.buffer.previous_boundary(self.buffer.cursor_offset())
         } else {
@@ -242,7 +249,10 @@ impl TextInputEntity {
         cx.notify();
     }
 
-    fn right(&mut self, _: &Right, _: &mut Window, cx: &mut Context<Self>) {
+    fn right(&mut self, _: &Right, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = if self.buffer.selected.is_empty() {
             self.buffer.next_boundary(self.buffer.selected.end)
         } else {
@@ -252,35 +262,65 @@ impl TextInputEntity {
         cx.notify();
     }
 
-    fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_left(&mut self, _: &SelectLeft, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = self.buffer.previous_boundary(self.buffer.cursor_offset());
         self.buffer.select_to(offset);
         cx.notify();
     }
 
-    fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_right(&mut self, _: &SelectRight, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         let offset = self.buffer.next_boundary(self.buffer.cursor_offset());
         self.buffer.select_to(offset);
         cx.notify();
     }
 
-    fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_all(&mut self, _: &SelectAll, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.buffer.move_to(0);
         self.buffer.select_to(self.buffer.content.len());
         cx.notify();
     }
 
-    fn home(&mut self, _: &Home, _: &mut Window, cx: &mut Context<Self>) {
+    fn home(&mut self, _: &Home, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.buffer.move_to(0);
         cx.notify();
     }
 
-    fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
+    fn end(&mut self, _: &End, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         self.buffer.move_to(self.buffer.content.len());
         cx.notify();
     }
 
+    /// Whether a script capture handler above the editor takes the key that
+    /// triggered the binding being run; then the binding does nothing. Not
+    /// while an input method composes text: its keys are the composition's.
+    fn script_takes_key(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.buffer.marked.is_none()
+            && self
+                .callbacks
+                .key_capture
+                .as_ref()
+                .is_some_and(|take| take(window, cx))
+    }
+
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.disabled || self.read_only {
             return;
         }
@@ -294,6 +334,9 @@ impl TextInputEntity {
     }
 
     fn delete(&mut self, _: &Delete, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.disabled || self.read_only {
             return;
         }
@@ -306,7 +349,10 @@ impl TextInputEntity {
         cx.notify();
     }
 
-    fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
+    fn copy(&mut self, _: &Copy, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if !self.buffer.selected.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
                 self.buffer.content[self.buffer.selected.clone()].to_owned(),
@@ -315,6 +361,9 @@ impl TextInputEntity {
     }
 
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.disabled || self.read_only || self.buffer.selected.is_empty() {
             return;
         }
@@ -325,6 +374,9 @@ impl TextInputEntity {
     }
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.disabled || self.read_only {
             return;
         }
@@ -338,6 +390,9 @@ impl TextInputEntity {
     }
 
     fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if !self.disabled && !self.read_only && self.buffer.undo() {
             self.emit_change(window, cx);
             cx.notify();
@@ -345,6 +400,9 @@ impl TextInputEntity {
     }
 
     fn redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if !self.disabled && !self.read_only && self.buffer.redo() {
             self.emit_change(window, cx);
             cx.notify();
@@ -352,6 +410,9 @@ impl TextInputEntity {
     }
 
     fn submit(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
+        if self.script_takes_key(window, cx) {
+            return;
+        }
         if self.buffer.permits_submit(self.disabled, self.read_only)
             && let Some(submit) = self.callbacks.submit.clone()
         {
@@ -988,6 +1049,7 @@ fn single_line(text: &str) -> Option<std::borrow::Cow<'_, str>> {
 }
 
 fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
+    let key_events = events.clone();
     let change_events = events.clone();
     let submit_events = events.clone();
     let focus_events = events.clone();
@@ -1009,6 +1071,9 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
             let _ = blur_events.emit("blur", UiValue::Null, window, cx);
         })),
         tab: None,
+        key_capture: Some(Rc::new(move |window, cx| {
+            key_events.script_takes_key(window, cx)
+        })),
     }
 }
 
