@@ -2693,7 +2693,7 @@ impl GpuiNodeRenderer {
             &mut resolved_style,
             !environment.row_parent && environment.direction == TextDirection::RightToLeft,
         );
-        normalize_text_content_layout(node, &mut resolved_style);
+        normalize_aligned_content_layout(node, &mut resolved_style);
         // A cache island's root rendered into a cached view takes the width the
         // view was laid out at; its place's outer box is the view's.
         if let Some((root, width)) = environment.island.root_width
@@ -3433,10 +3433,16 @@ fn scrollbar_context<C: ColorResolver>(
     )
 }
 
-fn normalize_text_content_layout(node: &UiNode, style: &mut StyleProperties) {
+/// A text or primitive node that aligns its content lays it out as a flex
+/// box: its one child is text or a native element, and alignment means
+/// nothing to a block. A field (`min_height` and `items_center` around a
+/// native editor) centers the editor by the flex cross axis, not by how its
+/// GPUI fork's Taffy resolves a percentage height under a min-height parent:
+/// Taffy 0.13 (gpui-pre) resolves it, Taffy 0.14 (gpui-fast) leaves it auto.
+fn normalize_aligned_content_layout(node: &UiNode, style: &mut StyleProperties) {
     if matches!(
         node.kind(),
-        UiNodeKind::Text { .. } | UiNodeKind::RichText { .. }
+        UiNodeKind::Text { .. } | UiNodeKind::RichText { .. } | UiNodeKind::Custom { .. }
     ) && style.display.is_none()
         && (style.align.is_some() || style.justify.is_some())
     {
@@ -3635,7 +3641,7 @@ fn island_root_style<C: ColorResolver>(
         &mut resolved,
         !environment.row_parent && environment.direction == TextDirection::RightToLeft,
     );
-    normalize_text_content_layout(node, &mut resolved);
+    normalize_aligned_content_layout(node, &mut resolved);
     resolved
 }
 
@@ -7702,11 +7708,39 @@ mod tests {
         );
         let mut resolved = node.style().resolve(&InteractionState::default());
 
-        normalize_text_content_layout(&node, &mut resolved);
+        normalize_aligned_content_layout(&node, &mut resolved);
 
         assert_eq!(resolved.display, Some(DisplayMode::Flex));
         assert_eq!(resolved.align, Some(Align::Center));
         assert_eq!(resolved.justify, Some(Justify::Center));
+    }
+
+    #[test]
+    fn aligned_primitive_nodes_become_flex_content_boxes() {
+        // A field: a native editor centered in a box that only sets a minimum height.
+        let field = UiNode::custom(crate::PrimitiveNode {
+            primitive: crate::PrimitiveId::parse("test.editor").unwrap(),
+            key: None,
+            props: crate::PrimitiveProps::new(),
+        })
+        .with_style(
+            &Style::new()
+                .items_center()
+                .min_height(Length::pixels(32.0).unwrap()),
+        );
+        let mut resolved = field.style().resolve(&InteractionState::default());
+        normalize_aligned_content_layout(&field, &mut resolved);
+        assert_eq!(resolved.display, Some(DisplayMode::Flex));
+
+        // Without alignment the native element keeps the block a box is by default.
+        let plain = UiNode::custom(crate::PrimitiveNode {
+            primitive: crate::PrimitiveId::parse("test.editor").unwrap(),
+            key: None,
+            props: crate::PrimitiveProps::new(),
+        });
+        let mut resolved = plain.style().resolve(&InteractionState::default());
+        normalize_aligned_content_layout(&plain, &mut resolved);
+        assert_eq!(resolved.display, None);
     }
 
     #[test]
