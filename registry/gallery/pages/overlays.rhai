@@ -77,9 +77,9 @@ fn sheet_page(h, v) {
 fn popover_page(h, v) {
     let trigger = button::Button(#{ key: "popover-trigger", text: "Filters", on_click: kit::put(h, "popover.open", true) });
     kit::page(h, v, "popover", "Popover", "Anchored content aligned to the trigger's start edge.", [
-        kit::sec("Open", popover::Popover(#{ key: "popover-filters", label: "Filters", trigger: trigger,
+        kit::sec("Open", kit::pile([popover::Popover(#{ key: "popover-filters", label: "Filters", trigger: trigger,
             open: kit::val(v, "popover.open", false), content: kit::note("Only hosts with alerts in the last hour."),
-            on_open_change: kit::store(h, "popover.open") })),
+            on_open_change: kit::store(h, "popover.open") })])),
     ])
 }
 
