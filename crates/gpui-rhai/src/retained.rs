@@ -396,14 +396,93 @@ pub enum ReconcileError {
     MissingNode(NodeId),
     #[error("retained child structure for node {0} is inconsistent with its snapshot")]
     InconsistentSnapshot(NodeId),
-    #[error("duplicate key `{key}` in child group `{group}` below node {parent}")]
+    #[error(
+        "duplicate key `{key}` in child group `{group}` of {}{}",
+        key_path(path),
+        created_at(sources)
+    )]
     DuplicateKey {
         parent: NodeId,
         group: String,
         key: String,
+        /// The keys from the root to the parent, skipping unkeyed nodes.
+        path: Vec<String>,
+        /// Where the script created the first child with the key and the
+        /// second, boxed to keep the error small.
+        sources: Box<[Option<crate::SourceLocation>; 2]>,
     },
     #[error("fragment nodes may contain only children, source, and an optional key")]
     FragmentDecoration,
+}
+
+fn key_path(path: &[String]) -> String {
+    if path.is_empty() {
+        "an unkeyed node".to_owned()
+    } else {
+        path.join(" > ")
+    }
+}
+
+fn created_at(sources: &[Option<crate::SourceLocation>; 2]) -> String {
+    match sources {
+        [Some(first), Some(second)] => format!(", created at {first} and {second}"),
+        [Some(only), None] | [None, Some(only)] => format!(", one created at {only}"),
+        [None, None] => String::new(),
+    }
+}
+
+/// A reconcile error on its way to the root, with the steps it came by, so
+/// the error boundary around it can take the failing subtree's place.
+struct Failure {
+    /// Boxed to keep the result of every reconcile step small.
+    error: Box<ReconcileError>,
+    /// The `(group, index)` steps from each parent to the child that failed,
+    /// innermost first.
+    route: Vec<(String, usize)>,
+    /// The number of `route` steps up to the innermost error boundary whose
+    /// child holds a script mistake: `route[depth..]` leads from the root to it.
+    boundary: Option<usize>,
+}
+
+impl From<ReconcileError> for Failure {
+    fn from(error: ReconcileError) -> Self {
+        Self {
+            error: Box::new(error),
+            route: Vec::new(),
+            boundary: None,
+        }
+    }
+}
+
+impl Failure {
+    /// The failure seen from `parent`, whose child `index` in `group` failed.
+    fn within(mut self, parent: &UiNode, group: &str, index: usize) -> Self {
+        self.route.push((group.to_owned(), index));
+        if let ReconcileError::DuplicateKey { path, .. } = &mut *self.error
+            && let Some(key) = parent.key()
+        {
+            path.insert(0, key.as_str().to_owned());
+        }
+        if self.boundary.is_none()
+            && group == "child"
+            && matches!(parent.kind(), crate::UiNodeKind::ErrorBoundary { .. })
+            && matches!(
+                *self.error,
+                ReconcileError::DuplicateKey { .. } | ReconcileError::FragmentDecoration
+            )
+        {
+            self.boundary = Some(self.route.len());
+        }
+        self
+    }
+}
+
+/// A reconciled candidate, ready to replace the committed tree.
+struct Prepared {
+    root_id: NodeId,
+    nodes: NodeTable,
+    next_id: u64,
+    report: ReconcileReport,
 }
 
 /// A committed tree's nodes by id.
@@ -565,6 +644,61 @@ impl RetainedUiTree {
     /// Returns a structural error without changing the current snapshot, IDs,
     /// or allocation cursor.
     pub fn reconcile(&mut self, candidate: UiNode) -> Result<ReconcileReport, ReconcileError> {
+        let prepared = self.prepare(&candidate).map_err(|failure| *failure.error)?;
+        Ok(self.accept(candidate, prepared))
+    }
+
+    /// [`Self::reconcile`], except that a script mistake in the child of an
+    /// error boundary (a duplicate key, a decorated fragment) replaces that
+    /// boundary in `candidate` with its fallback, which carries the error as
+    /// its `boundary_error` attribute, as `error_boundary_lazy` contains a
+    /// throw. The rest of the tree commits as usual.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structural error no boundary contains, without changing the
+    /// current snapshot, IDs, or allocation cursor.
+    pub fn reconcile_contained(
+        &mut self,
+        candidate: &mut UiNode,
+    ) -> Result<ReconcileReport, ReconcileError> {
+        loop {
+            match self.prepare(candidate) {
+                Ok(prepared) => return Ok(self.accept(candidate.clone(), prepared)),
+                Err(Failure {
+                    error,
+                    route,
+                    boundary: Some(depth),
+                }) => {
+                    let mut node = &mut *candidate;
+                    for (group, index) in route[depth..].iter().rev() {
+                        node = node
+                            .retained_child_mut(group, *index)
+                            .ok_or_else(|| (*error).clone())?;
+                    }
+                    let crate::UiNodeKind::ErrorBoundary { fallback, .. } = node.kind() else {
+                        return Err(*error);
+                    };
+                    *node = (**fallback).clone().with_attribute(
+                        "boundary_error",
+                        crate::UiValue::String(error.to_string()),
+                    );
+                }
+                Err(failure) => return Err(*failure.error),
+            }
+        }
+    }
+
+    fn accept(&mut self, candidate: UiNode, prepared: Prepared) -> ReconcileReport {
+        self.root = Some(candidate);
+        self.root_id = Some(prepared.root_id);
+        self.nodes = Rc::new(prepared.nodes);
+        self.next_id = prepared.next_id;
+        self.last_report = prepared.report.clone();
+        prepared.report
+    }
+
+    fn prepare(&self, candidate: &UiNode) -> Result<Prepared, Failure> {
         // The new table starts as the old one: a subtree kept as it is costs
         // nothing, and reconciled, mounted and unmounted nodes change it.
         let mut transaction = ReconcileTransaction {
@@ -575,15 +709,15 @@ impl RetainedUiTree {
             unmounted: BTreeSet::new(),
         };
         let root_id = match (self.root.as_ref(), self.root_id) {
-            (Some(old), Some(old_id)) if reusable(old, &candidate) => {
-                transaction.reconcile_node(Some(old), Some(old_id), &candidate, None, false)?
+            (Some(old), Some(old_id)) if reusable(old, candidate) => {
+                transaction.reconcile_node(Some(old), Some(old_id), candidate, None, false)?
             }
             (Some(_), Some(old_id)) => {
                 transaction.collect_unmounted(old_id)?;
-                transaction.reconcile_node(None, None, &candidate, None, false)?
+                transaction.reconcile_node(None, None, candidate, None, false)?
             }
-            (None, None) => transaction.reconcile_node(None, None, &candidate, None, false)?,
-            _ => return Err(ReconcileError::RootStateMismatch),
+            (None, None) => transaction.reconcile_node(None, None, candidate, None, false)?,
+            _ => return Err(ReconcileError::RootStateMismatch.into()),
         };
         // Every old node is reused or unmounted, so the table holds the new
         // tree, which its root's summary counts; any other node is unmounted.
@@ -622,13 +756,12 @@ impl RetainedUiTree {
             report,
             ..
         } = transaction;
-
-        self.root = Some(candidate);
-        self.root_id = Some(root_id);
-        self.nodes = Rc::new(new_nodes);
-        self.next_id = next_id;
-        self.last_report = report.clone();
-        Ok(report)
+        Ok(Prepared {
+            root_id,
+            nodes: new_nodes,
+            next_id,
+            report,
+        })
     }
 }
 
@@ -649,7 +782,7 @@ impl ReconcileTransaction<'_> {
         candidate: &UiNode,
         parent: Option<NodeId>,
         moved: bool,
-    ) -> Result<NodeId, ReconcileError> {
+    ) -> Result<NodeId, Failure> {
         // The same snapshot accepted again keeps its subtree: reconciling it
         // would match every node to its old id and rebuild what it holds.
         if let (Some(old_snapshot), Some(old_id)) = (old_snapshot, old_id)
@@ -677,15 +810,15 @@ impl ReconcileTransaction<'_> {
         let old_groups = match (old_snapshot, old_node) {
             (Some(snapshot), Some(node)) => group_old_children(snapshot, node)?,
             (None, None) => BTreeMap::new(),
-            _ => return Err(ReconcileError::InconsistentSnapshot(id)),
+            _ => return Err(ReconcileError::InconsistentSnapshot(id).into()),
         };
         let mut child_links = Vec::new();
         let mut seen_groups = BTreeSet::new();
         for (group, candidates) in candidate.retained_child_groups() {
             if !seen_groups.insert(group.clone()) {
-                return Err(ReconcileError::InconsistentSnapshot(id));
+                return Err(ReconcileError::InconsistentSnapshot(id).into());
             }
-            validate_unique_keys(id, &group, &candidates)?;
+            validate_unique_keys(id, candidate, &group, &candidates)?;
             let old = old_groups.get(group.as_str()).cloned().unwrap_or_default();
             let mut used_old = BTreeSet::new();
             let keyed = old
@@ -721,8 +854,9 @@ impl ReconcileTransaction<'_> {
                             selected.index != index,
                         )
                     });
-                let child_id =
-                    self.reconcile_node(old_snapshot, old_child_id, child, Some(id), was_moved)?;
+                let child_id = self
+                    .reconcile_node(old_snapshot, old_child_id, child, Some(id), was_moved)
+                    .map_err(|failure| failure.within(candidate, &group, index))?;
                 child_links.push(RetainedChildLink {
                     group: group.clone(),
                     node: child_id,
@@ -925,20 +1059,28 @@ fn group_old_children<'a>(
 
 fn validate_unique_keys(
     parent: NodeId,
+    candidate: &UiNode,
     group: &str,
     children: &[&UiNode],
 ) -> Result<(), ReconcileError> {
-    let mut keys = BTreeSet::new();
-    if let Some(key) = children
-        .iter()
-        .filter_map(|node| node.key().map(NodeKey::as_str))
-        .find(|key| !keys.insert((*key).to_owned()))
-    {
-        return Err(ReconcileError::DuplicateKey {
-            parent,
-            group: group.to_owned(),
-            key: key.to_owned(),
-        });
+    let mut first = BTreeMap::new();
+    for child in children {
+        let Some(key) = child.key().map(NodeKey::as_str) else {
+            continue;
+        };
+        if let Some(earlier) = first.insert(key, *child) {
+            return Err(ReconcileError::DuplicateKey {
+                parent,
+                group: group.to_owned(),
+                key: key.to_owned(),
+                path: candidate
+                    .key()
+                    .map(|key| key.as_str().to_owned())
+                    .into_iter()
+                    .collect(),
+                sources: Box::new([earlier.source().cloned(), child.source().cloned()]),
+            });
+        }
     }
     Ok(())
 }
@@ -1189,6 +1331,113 @@ mod tests {
         assert_eq!(report.mounted, vec![new_child]);
         assert_eq!(report.unmounted, vec![old_child]);
         assert!(report.preserved.contains(&root));
+    }
+
+    fn at(line: u32) -> crate::SourceLocation {
+        crate::SourceLocation {
+            module: "ui/main.rhai".to_owned(),
+            line,
+            column: 9,
+        }
+    }
+
+    #[test]
+    fn a_duplicate_key_names_the_key_path_and_where_both_children_were_made() {
+        let mut tree = RetainedUiTree::new();
+        let error = tree
+            .reconcile(
+                UiNode::column(vec![UiNode::row(vec![
+                    UiNode::column(vec![
+                        keyed_text("goal", "A").with_source(at(3)),
+                        keyed_text("goal", "B").with_source(at(4)),
+                    ])
+                    .with_key("completion-panel"),
+                ])])
+                .with_key("work"),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "duplicate key `goal` in child group `children` of work > completion-panel, \
+             created at ui/main.rhai:3:9 and ui/main.rhai:4:9"
+        );
+        let error = RetainedUiTree::new()
+            .reconcile(UiNode::column(vec![
+                keyed_text("goal", "A"),
+                keyed_text("goal", "B"),
+            ]))
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "duplicate key `goal` in child group `children` of an unkeyed node"
+        );
+    }
+
+    #[test]
+    fn an_error_boundary_contains_a_script_mistake_in_its_child() {
+        let duplicate = || {
+            UiNode::column(vec![keyed_text("same", "A"), keyed_text("same", "B")]).with_key("list")
+        };
+        let mut candidate = UiNode::column(vec![
+            UiNode::error_boundary(duplicate(), UiNode::text("fallback")),
+            keyed_text("kept", "Kept"),
+        ])
+        .with_key("page");
+        let mut tree = RetainedUiTree::new();
+        assert!(tree.reconcile(candidate.clone()).is_err());
+        tree.reconcile_contained(&mut candidate).unwrap();
+        assert_eq!(tree.root(), Some(&candidate));
+        let crate::UiNodeKind::Box { children } = candidate.kind() else {
+            panic!("the page stays a column");
+        };
+        assert!(
+            matches!(children[0].kind(), crate::UiNodeKind::Text { text } if text == "fallback")
+        );
+        let Some(crate::UiValue::String(error)) = children[0].attributes().get("boundary_error")
+        else {
+            panic!("the fallback carries the error");
+        };
+        assert!(
+            error.starts_with("duplicate key `same` in child group `children` of page > list"),
+            "{error}"
+        );
+        assert!(matches!(children[1].kind(), crate::UiNodeKind::Text { text } if text == "Kept"));
+
+        // The innermost boundary takes the place of its own child; a mistake
+        // in a fallback belongs to the boundary around it.
+        let mut nested = UiNode::error_boundary(
+            UiNode::column(vec![UiNode::error_boundary(
+                duplicate(),
+                UiNode::text("inner"),
+            )]),
+            UiNode::text("outer"),
+        );
+        RetainedUiTree::new()
+            .reconcile_contained(&mut nested)
+            .unwrap();
+        let crate::UiNodeKind::ErrorBoundary { child, .. } = nested.kind() else {
+            panic!("the outer boundary stays");
+        };
+        let crate::UiNodeKind::Box { children } = child.kind() else {
+            panic!("the outer child stays");
+        };
+        assert!(matches!(children[0].kind(), crate::UiNodeKind::Text { text } if text == "inner"));
+        let mut broken_fallback = UiNode::error_boundary(
+            UiNode::error_boundary(UiNode::text("child"), duplicate()),
+            UiNode::text("outer"),
+        );
+        RetainedUiTree::new()
+            .reconcile_contained(&mut broken_fallback)
+            .unwrap();
+        assert!(
+            matches!(broken_fallback.kind(), crate::UiNodeKind::Text { text } if text == "outer")
+        );
+        let mut uncontained = duplicate();
+        assert!(
+            RetainedUiTree::new()
+                .reconcile_contained(&mut uncontained)
+                .is_err()
+        );
     }
 
     #[test]

@@ -202,9 +202,15 @@ preview and keyboard steps. Pointer motion remains inside its GPUI Entity and
 one schema-checked value is delivered to Rhai on pointer commit; official
 Slider supplies only source-owned presentation and controlled value policy.
 
-`error_boundary(child, fallback)` catches native subtree rendering failures.
-Use `error_boundary_lazy(Fn("child"), Fn("fallback"))` when Rhai construction
-itself may fail; the fallback retains a redacted `boundary_error` diagnostic.
+`error_boundary(child, fallback)` catches native subtree rendering failures,
+and a mistake in the tree its child declares: two siblings with one key, or a
+decorated fragment. Such a mistake would fail the whole commit; instead the
+boundary's place takes its fallback and the rest of the view commits. A
+duplicate key names the keys from the root to the parent and where the script
+created both children (`... of page > list, created at ui/main.rhai:2:13 and
+ui/main.rhai:3:13`). Use `error_boundary_lazy(Fn("child"), Fn("fallback"))`
+when Rhai construction itself may fail. Either way the fallback retains a
+redacted `boundary_error` diagnostic.
 Custom primitive lifecycle/render panics are caught and converted to
 `PrimitiveError` rather than unwinding through the runtime.
 Keyed lifecycle primitives retain their prior normalized instance snapshot and
