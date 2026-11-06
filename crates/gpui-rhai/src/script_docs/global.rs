@@ -227,7 +227,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "error_boundary(_: UiNode, _: UiNode) -> UiNode",
         params: &["child", "fallback"],
-        doc: "Wraps `child` so that a native rendering failure in its subtree shows `fallback` instead.",
+        doc: "Wraps `child` so that a native rendering failure in its subtree, or a mistake in the tree it declares (two siblings with one key), shows `fallback` instead.",
     },
     ScriptFnDoc {
         signature: "error_boundary_lazy(_: Fn, _: Fn) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

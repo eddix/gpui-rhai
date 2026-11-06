@@ -126,6 +126,12 @@ pub struct SourceLocation {
     pub column: u32,
 }
 
+impl fmt::Display for SourceLocation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}:{}:{}", self.module, self.line, self.column)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Span {
     text: ImmutableString,
@@ -1573,6 +1579,29 @@ impl UiNode {
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => None,
         }
+    }
+
+    /// The child `index` of the retained child group `group`, as
+    /// [`Self::retained_child_groups`] names them, reached mutably.
+    pub(crate) fn retained_child_mut(&mut self, group: &str, index: usize) -> Option<&mut UiNode> {
+        let slot = match (group, &self.kind) {
+            ("children", _) => HeldSlot::Child(index),
+            ("items", UiNodeKind::VirtualCollection { spec }) => {
+                HeldSlot::Realized(*spec.realized.keys().nth(index)?)
+            }
+            ("trigger" | "child", _) => HeldSlot::First,
+            ("content" | "fallback", _) => HeldSlot::Second,
+            (group, UiNodeKind::Custom { primitive }) => {
+                let name = group.strip_prefix("prop:")?;
+                match primitive.props.get(name)? {
+                    crate::PrimitiveValue::Node(_) => HeldSlot::PropNode(name.to_owned()),
+                    crate::PrimitiveValue::Nodes(_) => HeldSlot::PropNodes(name.to_owned(), index),
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+        self.held_child_mut(&slot)
     }
 
     fn held_child_mut(&mut self, slot: &HeldSlot) -> Option<&mut UiNode> {

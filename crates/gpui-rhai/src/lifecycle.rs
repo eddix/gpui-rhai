@@ -300,7 +300,7 @@ impl ScriptLifecycle {
         let previous_root = reuse_dirty.and_then(|_| self.root.clone());
         let result = (|| {
             let context = self.context(ExecutionPhase::Render);
-            let root = match (previous_root.as_ref(), reuse_dirty) {
+            let mut root = match (previous_root.as_ref(), reuse_dirty) {
                 (Some(previous_root), Some(dirty)) => engine.render_with_context_staged_reusing(
                     &self.compiled,
                     context,
@@ -312,8 +312,13 @@ impl ScriptLifecycle {
             clock.lap("render");
             let mut retained = self.retained.clone();
             clock.lap("clone");
-            let semantics =
-                self.commit_phases(engine, &runtime_snapshot, &mut retained, &root, &mut clock)?;
+            let semantics = self.commit_phases(
+                engine,
+                &runtime_snapshot,
+                &mut retained,
+                &mut root,
+                &mut clock,
+            )?;
             Ok((root, retained, semantics))
         })();
         self.commit_statistics.merge(clock.laps);
@@ -401,7 +406,13 @@ impl ScriptLifecycle {
                 }
             }
             clock.lap("render");
-            self.commit_phases(engine, &runtime_snapshot, &mut retained, &root, &mut clock)
+            self.commit_phases(
+                engine,
+                &runtime_snapshot,
+                &mut retained,
+                &mut root,
+                &mut clock,
+            )
         })();
         self.commit_statistics.merge(clock.laps);
         match result {
@@ -549,8 +560,13 @@ impl ScriptLifecycle {
             if !changed {
                 return Ok((false, self.semantics.clone()));
             }
-            let semantics =
-                self.commit_phases(engine, &runtime_snapshot, &mut retained, &root, &mut clock)?;
+            let semantics = self.commit_phases(
+                engine,
+                &runtime_snapshot,
+                &mut retained,
+                &mut root,
+                &mut clock,
+            )?;
             Ok((true, semantics))
         })();
         self.commit_statistics.merge(clock.laps);
@@ -579,18 +595,19 @@ impl ScriptLifecycle {
 
     /// The phases every commit runs over its candidate root, in order:
     /// reconcile `retained` (the working copy that becomes the committed tree
-    /// on success) against `root`, then budgets, motion, exit ghosts,
+    /// on success) against `root`, where an error boundary that contains a
+    /// script mistake becomes its fallback, then budgets, motion, exit ghosts,
     /// effects, geometry, signal bindings and the semantic frame.
     fn commit_phases(
         &self,
         engine: &mut RuntimeEngine,
         runtime_snapshot: &crate::UiStateSnapshot,
         retained: &mut crate::RetainedUiTree,
-        root: &UiNode,
+        root: &mut UiNode,
         clock: &mut PhaseClock,
     ) -> Result<crate::CommittedSemanticFrame, LifecycleError> {
         clock.laps.commits += 1;
-        let motion_reconcile_report = retained.reconcile(root.clone())?;
+        let motion_reconcile_report = retained.reconcile_contained(root)?;
         clock.lap("reconcile");
         self.validate_resource_budgets(engine, retained, root)?;
         clock.lap("budgets");
@@ -1149,12 +1166,12 @@ impl ScriptLifecycle {
                 "init",
                 self.context_for(ExecutionPhase::Init, candidate.generation()),
             )?;
-            let root = engine.render_with_context_staged(
+            let mut root = engine.render_with_context_staged(
                 &candidate,
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
             let mut retained = self.retained.clone();
-            let motion_reconcile_report = retained.reconcile(root.clone())?;
+            let motion_reconcile_report = retained.reconcile_contained(&mut root)?;
             self.validate_resource_budgets(engine, &retained, &root)?;
             self.reconcile_motion(&root, &retained, candidate.generation())?;
             self.reconcile_exit_ghosts(&motion_reconcile_report)?;
@@ -1255,12 +1272,12 @@ impl ScriptLifecycle {
                     .map_err(|_| LifecycleError::Borrowed)?;
                 runtime.motion_values = runtime.motions.snapshot(now);
             }
-            let root = engine.render_with_context_staged(
+            let mut root = engine.render_with_context_staged(
                 &candidate,
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
             let mut retained = self.retained.clone();
-            let motion_reconcile_report = retained.reconcile(root.clone())?;
+            let motion_reconcile_report = retained.reconcile_contained(&mut root)?;
             self.validate_resource_budgets(engine, &retained, &root)?;
             self.reconcile_motion(&root, &retained, candidate.generation())?;
             self.reconcile_exit_ghosts(&motion_reconcile_report)?;
@@ -2375,6 +2392,54 @@ mod tests {
         }
         fn view(ctx) { render_component("test/stream", #{ key: "stream" }) }
     "#;
+
+    #[test]
+    fn a_duplicate_key_reports_script_positions_and_an_error_boundary_contains_it() {
+        let mount = |source: &str| {
+            let mut engine = RuntimeEngine::new();
+            let compiled = engine.compile(source).unwrap();
+            let mut lifecycle = ScriptLifecycle::new(
+                compiled,
+                Rc::new(RefCell::new(UiRuntimeState::new())),
+                ComponentInstancePath::root("App", "root"),
+                Some("main".to_owned()),
+                BTreeMap::new(),
+                &state_schema(),
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).cloned()
+        };
+        let rows = r#"column([
+            text("a").with_key("same"),
+            text("b").with_key("same"),
+        ]).with_key("list")"#;
+        let error = mount(&format!(
+            "fn view(ctx) {{ column([{rows}]).with_key(\"page\") }}"
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains(
+                "duplicate key `same` in child group `children` of page > list, \
+                 created at ui/main.rhai:2:13 and ui/main.rhai:3:13"
+            ),
+            "{error}"
+        );
+
+        let root = mount(&format!(
+            "fn view(ctx) {{ column([error_boundary({rows}, text(\"fallback\")), \
+             text(\"kept\")]).with_key(\"page\") }}"
+        ))
+        .unwrap();
+        let crate::UiNodeKind::Box { children } = root.kind() else {
+            panic!("the page renders");
+        };
+        assert!(
+            matches!(children[0].kind(), crate::UiNodeKind::Text { text } if text == "fallback")
+        );
+        assert!(children[0].attributes().contains_key("boundary_error"));
+        assert!(matches!(children[1].kind(), crate::UiNodeKind::Text { text } if text == "kept"));
+    }
 
     #[test]
     fn lifecycle_order_and_optional_functions_are_enforced() {

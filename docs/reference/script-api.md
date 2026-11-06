@@ -19,7 +19,7 @@ Functions that build `UiNode` values.
 | `directional_image(left_to_right: AssetId, right_to_left: AssetId) -> UiNode` | Creates an image node that shows the first asset in left-to-right layout and the second in right-to-left layout. |
 | `directional_image(left_to_right: OpaqueHandle, right_to_left: OpaqueHandle) -> UiNode` | Creates an image node that shows the first image handle in left-to-right layout and the second in right-to-left layout; a handle of another kind raises an error. |
 | `directional_image_source(left_to_right: ?, right_to_left: ?) -> UiNode` | Creates an image node chosen by layout direction; each source is an `AssetId` or an image handle, and other values are rejected. |
-| `error_boundary(child: UiNode, fallback: UiNode) -> UiNode` | Wraps `child` so that a native rendering failure in its subtree shows `fallback` instead. |
+| `error_boundary(child: UiNode, fallback: UiNode) -> UiNode` | Wraps `child` so that a native rendering failure in its subtree, or a mistake in the tree it declares (two siblings with one key), shows `fallback` instead. |
 | `error_boundary_lazy(child: FnPtr, fallback: FnPtr) -> UiNode` | Builds `fallback()` then `child()` into an error boundary; when `child()` throws, returns the fallback with a `boundary_error` attribute. |
 | `fragment(children: Array) -> UiNode` | Groups children without a layout box; a fragment carries only children, a key and its source, so style, handlers and refs are rejected. |
 | `image(asset: AssetId) -> UiNode` | Creates an image node for a component-declared, preloaded asset; an undeclared asset renders an image error. |
