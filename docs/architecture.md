@@ -397,8 +397,9 @@ Locale selection retains app/window/subtree precedence and additionally
 resolves immutable calendar and number metadata. `YYYY-MM-DD` is the strict
 date wire format; locale formatters produce presentation strings. A
 `CalendarClock` supplies the current civil date and may be fixed by the Host.
-The separate monotonic `RuntimeClock` drives timers and animation and may be
-replaced with `ManualRuntimeClock` for deterministic automation. Neither clock
+The separate monotonic `RuntimeClock` drives timers and animation. By default
+it is GPUI's executor clock, which a GPUI test advances with the scheduler; it
+may be replaced with `ManualRuntimeClock` for deterministic automation. Neither clock
 is readable by Rhai. Inspector snapshots report monotonic elapsed milliseconds
 plus active and settled animation sampling details without exposing platform
 `Instant` values.

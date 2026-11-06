@@ -61,7 +61,8 @@ the Host render the next frame before taking a geometry-backed snapshot.
 
 `AdvanceTime` advances an injected controllable `RuntimeClock`, then polls the
 mounted view so timers and animation observe one deterministic timeline. It
-fails against the production system clock.
+fails against the default executor clock, which the GPUI test scheduler
+advances instead (`cx.executor().advance_clock`).
 
 ## JSON-lines protocol
 
