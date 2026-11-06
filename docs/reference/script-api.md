@@ -278,6 +278,8 @@ Methods of the context a view, callback or effect receives.
 | `ctx.start_task(capability: String, method: String, input: ?, on_success: FnPtr, on_error: FnPtr) -> TaskHandle` | Runs a capability `method` in the background, then calls `on_success` or `on_error`; from `init`, callbacks, effects or `resume`. |
 | `ctx.t(key: String) -> String` | Returns the message `key` in the current locale, falling back to the default locale; records a locale dependency in render. |
 | `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render. |
+| `ctx.theme_colors(family: String, name: String) -> Map` | Returns every color of the theme variant `family`/`name`, as the token base, color expressions and Host overrides resolve them, keyed by token name (`namespace.name` for namespaced colors). Values are literal colors for any color style, so a theme picker draws swatches of variants other than the one shown; throws for an unknown variant. |
+| `ctx.theme_colors(family: String, name: String, keys: Array) -> Map` | Returns the named colors of the theme variant `family`/`name`, such as `["surface", "text_primary", "accent"]`; throws for an unknown variant or color. |
 | `ctx.theme_variant() -> ?` | Returns the resolved theme variant as `#{ family, name, mode }`, or `()` without a theme; records a theme dependency in render. |
 | `ctx.theme_variants() -> Array` | Lists every loaded theme variant as `#{ family, name, mode }`, ordered by family and name, for a theme picker. |
 | `ctx.time() -> Map` | Returns detached selected-locale time patterns, hour cycle, periods, compact units and relative phrases. |

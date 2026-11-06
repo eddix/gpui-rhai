@@ -118,7 +118,28 @@ fn render_Palette(ctx, props) {
 
 `ctx.theme_variants()` lists every loaded variant as the same maps, ordered by
 family and name, for a theme picker; the Gallery's title bar builds its theme
-Select from it and calls `set_theme` on change.
+Select from it and calls `set_theme` on change. `mode` sorts them into dark and
+light lists.
+
+`ctx.theme_colors(family, name)` returns a variant's colors as the token base,
+color expressions and Host overrides resolve them, keyed by token name
+(`namespace.name` for namespaced colors), and `ctx.theme_colors(family, name,
+keys)` returns the named ones. The values are literal colors for any color
+style, so a picker paints a swatch of each variant while the window shows
+another (0.4.2):
+
+```rhai
+fn swatch(ctx, variant) {
+    let colors = ctx.theme_colors(variant.family, variant.name, ["surface", "text_primary", "accent"]);
+    row([box([]).with_style(style().width(px(12)).height(px(12)).background(colors.accent))])
+        .with_style(style().background(colors.surface).padding(theme_spacing("xs")))
+}
+```
+
+An unknown variant or color throws. `set_local_theme` changes what
+`ctx.theme_variant()` reports in its scope, but painting still resolves
+`theme_color(...)` against the window's theme; read the colors with
+`theme_colors` where a subtree must show another theme.
 
 Declare that effect in the formal component schema. Its start callback receives
 the same metadata as deps and restarts only when they change. Event-time reads

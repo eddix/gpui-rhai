@@ -3655,6 +3655,21 @@ impl UiContext {
             .unwrap_or_default()
     }
 
+    /// Every color of the theme variant `family`/`name` (as the token base,
+    /// color expressions and Host overrides resolve them), keyed by token name,
+    /// namespaced colors as `namespace.name`; `None` when no variant has that
+    /// name. A theme picker draws its swatches from these without the Host.
+    #[must_use]
+    pub fn theme_colors(&self, family: &str, name: &str) -> Option<BTreeMap<String, crate::Rgba8>> {
+        let runtime = self.runtime.try_borrow().ok()?;
+        runtime
+            .theme
+            .as_ref()?
+            .variants()
+            .find(|variant| variant.family == family && variant.name == name)
+            .map(|variant| variant.tokens.color_snapshot())
+    }
+
     fn with_resolved_theme<R>(&self, project: impl FnOnce(&crate::ThemeVariant) -> R) -> Option<R> {
         let Ok(mut runtime) = self.runtime.try_borrow_mut() else {
             return None;
@@ -5164,6 +5179,40 @@ fn theme_variant_map(variant: &crate::ThemeVariantInfo) -> Dynamic {
     Dynamic::from(map)
 }
 
+/// `ctx.theme_colors(family, name[, keys])`: the variant's colors as literal
+/// colors, every one or the named ones. An unknown variant or key throws.
+fn theme_color_map(
+    context: &UiContext,
+    family: &str,
+    name: &str,
+    keys: Option<rhai::Array>,
+) -> Result<rhai::Map, Box<EvalAltResult>> {
+    let error =
+        |message: String| Box::new(EvalAltResult::ErrorRuntime(message.into(), Position::NONE));
+    let colors = context
+        .theme_colors(family, name)
+        .ok_or_else(|| error(format!("no theme variant {family}/{name}")))?;
+    let color = |value: crate::Rgba8| Dynamic::from(crate::ColorValue::Literal(value));
+    match keys {
+        None => Ok(colors
+            .into_iter()
+            .map(|(key, value)| (key.into(), color(value)))
+            .collect()),
+        Some(keys) => keys
+            .into_iter()
+            .map(|key| {
+                let key = key
+                    .into_immutable_string()
+                    .map_err(|_| error("theme_colors keys are strings".to_owned()))?;
+                let value = colors.get(key.as_str()).copied().ok_or_else(|| {
+                    error(format!("theme variant {family}/{name} has no color {key}"))
+                })?;
+                Ok((key.as_str().into(), color(value)))
+            })
+            .collect(),
+    }
+}
+
 fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn(
@@ -5181,6 +5230,25 @@ fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
                 .map(theme_variant_map)
                 .collect()
         })
+        .with_fn(
+            "theme_colors",
+            |context: &mut UiContext,
+             family: ImmutableString,
+             name: ImmutableString|
+             -> Result<rhai::Map, Box<EvalAltResult>> {
+                theme_color_map(context, family.as_str(), name.as_str(), None)
+            },
+        )
+        .with_fn(
+            "theme_colors",
+            |context: &mut UiContext,
+             family: ImmutableString,
+             name: ImmutableString,
+             keys: rhai::Array|
+             -> Result<rhai::Map, Box<EvalAltResult>> {
+                theme_color_map(context, family.as_str(), name.as_str(), Some(keys))
+            },
+        )
         .with_fn(
             "set_theme",
             |context: &mut UiContext, family: ImmutableString, variant: ImmutableString| {

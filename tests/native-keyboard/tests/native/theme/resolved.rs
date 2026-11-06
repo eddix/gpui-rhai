@@ -386,3 +386,51 @@ fn secondary_initial_theme_and_failed_startup_keep_native_authority_closed(
         cx.run_until_parked();
     }
 }
+
+#[gpui::test]
+fn theme_colors_paints_another_variants_palette(cx: &mut TestAppContext) {
+    // The window shows Default Dark; the swatch takes Default Light's surface.
+    let source = r#"fn view(ctx){
+        let light=ctx.theme_colors("Default","Light",["surface","text_primary"]);
+        let all=ctx.theme_colors("Default","Light");
+        column([
+            box([]).with_style(style().width(px(30)).height(px(30)).background(light.surface)),
+            text(`${light.len()} of ${all.len()}: ${"accent" in all}`).accessibility_role("status"),
+        ])
+    }"#;
+    let (mut visual, view) = mount(cx, builder(source, false, false).prepare().unwrap(), "colors", false);
+    settle(&mut visual);
+    assert_eq!(view.state(), ScriptViewState::Active);
+    let label = labels(&mut visual, &view);
+    assert!(label[0].starts_with("2 of ") && label[0].ends_with(": true"), "{label:?}");
+    assert_eq!(crate::support::filled(&mut visual, 0xf3f1eaff).len(), 1);
+}
+
+#[gpui::test]
+fn theme_colors_throws_for_an_unknown_variant_or_color(cx: &mut TestAppContext) {
+    for source in [
+        r#"fn view(ctx){ let c=ctx.theme_colors("Default","Sepia"); text("drawn") }"#,
+        r#"fn view(ctx){ let c=ctx.theme_colors("Default","Light",["chartreuse"]); text("drawn") }"#,
+    ] {
+        let prepared = builder(source, false, false).prepare().unwrap();
+        cx.update(gpui_rhai::install);
+        let mounted = cx.add_window(move |window, cx| {
+            let host = ScriptViewHost::new("unknown", cx).unwrap();
+            let result = prepared.mount(ScriptViewConfig::new("unknown"), host, window, cx);
+            Outcome(result.err().map(|error| error.to_string()))
+        });
+        let error = mounted
+            .update(cx, |outcome, _, _| outcome.0.clone())
+            .unwrap()
+            .expect("an unknown variant or color fails the first render");
+        assert!(error.contains("no theme variant") || error.contains("has no color"), "{error}");
+    }
+}
+
+struct Outcome(Option<String>);
+
+impl gpui::Render for Outcome {
+    fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+        gpui::Empty
+    }
+}
