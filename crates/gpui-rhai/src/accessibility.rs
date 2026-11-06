@@ -250,6 +250,56 @@ fn semantic_labels(tree: &RetainedUiTree) -> Result<BTreeMap<String, String>, Ac
     Ok(labels)
 }
 
+/// Roles that take their name from their content when they have no label, as
+/// ARIA's "name from content" does: a row drawn as a button reads as its text.
+const NAMED_FROM_CONTENT: &[&str] = &[
+    "button",
+    "checkbox",
+    "columnheader",
+    "gridcell",
+    "heading",
+    "menuitem",
+    "option",
+    "radio",
+    "row",
+    "rowheader",
+    "switch",
+    "tab",
+    "tooltip",
+    "treeitem",
+];
+
+/// The text `node`'s subtree shows, in order: a labelled descendant gives its
+/// label instead of its own content. Overlay and layer content and an error
+/// boundary's fallback are not drawn in place, so they do not count.
+fn content_name(tree: &RetainedUiTree, node: &RetainedNode) -> String {
+    let mut parts = Vec::new();
+    let mut pending = node.children().collect::<Vec<_>>();
+    pending.reverse();
+    while let Some(link) = pending.pop() {
+        if matches!(link.group(), "content" | "fallback") {
+            continue;
+        }
+        let Some(child) = tree.node(link.node()) else {
+            continue;
+        };
+        if let Some(label) = string_attribute(child, "label") {
+            parts.push(label);
+        } else if let Some(text) = child.text() {
+            parts.push(text.to_owned());
+        } else {
+            let start = pending.len();
+            pending.extend(child.children());
+            pending[start..].reverse();
+        }
+    }
+    parts
+        .iter()
+        .flat_map(|part| part.split_whitespace())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// `disabled_above`: a retained ancestor of `id` is disabled.
 fn visit_retained(
     tree: &RetainedUiTree,
@@ -264,7 +314,12 @@ fn visit_retained(
         .ok_or(AccessibilityError::MissingRetainedNode(id))?;
     // A node is disabled when it or any retained ancestor is disabled.
     let disabled = disabled_above || bool_attribute(retained, "disabled");
-    let semantic = semantic_node(retained, semantic_parent, disabled, labels)?;
+    let semantic = semantic_node(retained, semantic_parent, disabled, labels)?.map(|mut node| {
+        if node.name.is_empty() && NAMED_FROM_CONTENT.contains(&node.role.as_str()) {
+            node.name = content_name(tree, retained);
+        }
+        node
+    });
     let next_parent = if let Some(node) = semantic {
         if semantic_parent.is_none() {
             output.roots.push(id);
@@ -619,6 +674,50 @@ mod tests {
             tree.find_by_semantic_id("project-label").unwrap().name,
             "Project name"
         );
+    }
+
+    #[test]
+    fn a_button_without_a_label_is_named_by_its_content() {
+        let role = |node: crate::UiNode, role: &str| {
+            node.with_attribute("role", UiValue::String(role.to_owned()))
+        };
+        let icon = crate::UiNode::box_node(vec![])
+            .with_attribute("role", UiValue::String("image".to_owned()))
+            .with_attribute("label", UiValue::String("Archived".to_owned()));
+        let row = role(
+            crate::UiNode::row(vec![
+                icon,
+                crate::UiNode::column(vec![
+                    crate::UiNode::text("Release  notes"),
+                    crate::UiNode::text("2 days ago"),
+                ]),
+            ]),
+            "button",
+        )
+        .with_key("row");
+        let labelled = role(
+            crate::UiNode::row(vec![crate::UiNode::text("ignored")]),
+            "button",
+        )
+        .with_attribute("label", UiValue::String("Explicit".to_owned()))
+        .with_key("labelled");
+        let group = role(
+            crate::UiNode::row(vec![crate::UiNode::text("not named")]),
+            "group",
+        )
+        .with_key("group");
+        let mut retained = RetainedUiTree::new();
+        retained
+            .reconcile(crate::UiNode::column(vec![row, labelled, group]))
+            .unwrap();
+        let tree = AccessibilityTree::from_retained(&retained, &GeometryRegistry::new()).unwrap();
+        assert_eq!(
+            tree.find_by_role_and_name("button", "Archived Release notes 2 days ago")
+                .count(),
+            1
+        );
+        assert_eq!(tree.find_by_role_and_name("button", "Explicit").count(), 1);
+        assert_eq!(tree.find_by_role_and_name("group", "").count(), 1);
     }
 
     #[test]
