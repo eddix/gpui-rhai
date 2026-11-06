@@ -570,11 +570,14 @@ Declaration pause, explicit interaction pause, and temporary view suspension
 are independent reasons; resuming a view never clears an explicit pause.
 
 Timer deadlines and animation sampling share the Host's monotonic
-`RuntimeClock`. Production applications use the system clock. Tests and
-automation should inject a `ManualRuntimeClock` through
-`FileScriptView::runtime_clock` or `EmbeddedScriptView::runtime_clock`, advance
-it explicitly, and then request/poll a frame; scripts never read the clock
-directly.
+`RuntimeClock`. Unless the Host sets one, a mounted view uses GPUI's executor
+clock (0.4.2): the system clock in an application, and in a GPUI test the test
+scheduler's, so `cx.executor().advance_clock(..)` followed by
+`run_until_parked()` fires due timers and moves animation without waiting on
+real time. Automation that drives time by command instead injects a
+`ManualRuntimeClock` through `FileScriptView::runtime_clock` or
+`EmbeddedScriptView::runtime_clock`, advances it explicitly, and then
+requests/polls a frame; scripts never read the clock directly.
 
 Use `layer(content, #{ id, placement, inset?, priority? })` for arbitrary
 window-level content. Placements are the four corners, `center`, and `fill`;

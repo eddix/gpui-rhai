@@ -2330,7 +2330,7 @@ pub struct FileScriptView {
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
     wall_clock: crate::WallClock,
-    runtime_clock: crate::RuntimeClock,
+    runtime_clock: Option<crate::RuntimeClock>,
     fonts: Vec<crate::FontSource>,
     token_base: Option<String>,
     theme_token_overrides: ThemeTokenOverrides,
@@ -2350,7 +2350,7 @@ impl FileScriptView {
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
             wall_clock: crate::WallClock::default(),
-            runtime_clock: crate::RuntimeClock::default(),
+            runtime_clock: None,
             fonts: Vec::new(),
             token_base: None,
             theme_token_overrides: ThemeTokenOverrides::default(),
@@ -2416,7 +2416,7 @@ impl FileScriptView {
 
     #[must_use]
     pub fn runtime_clock(mut self, clock: crate::RuntimeClock) -> Self {
-        self.runtime_clock = clock;
+        self.runtime_clock = Some(clock);
         self
     }
 
@@ -2511,7 +2511,7 @@ impl FileScriptView {
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.wall_clock = self.wall_clock;
-        runtime_state.clock = self.runtime_clock;
+        runtime_state.clock = self.runtime_clock.clone().unwrap_or_default();
         runtime_state.key_bindings.clone_from(&self.key_bindings);
         runtime_state.locale = load_locale_directory(engine.engine(), &ui_root.join("locales"))?;
         let themes = load_theme_directory(
@@ -2563,6 +2563,7 @@ impl FileScriptView {
             style_path,
             development: self.development,
             factory,
+            executor_clock: self.runtime_clock.is_none(),
             key_bindings: self.key_bindings,
             fonts,
             #[cfg(feature = "dev-reload")]
@@ -2588,7 +2589,7 @@ pub struct EmbeddedScriptView {
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
     wall_clock: crate::WallClock,
-    runtime_clock: crate::RuntimeClock,
+    runtime_clock: Option<crate::RuntimeClock>,
     fonts: Vec<crate::FontSource>,
     token_base: Option<String>,
     profile_source: Option<String>,
@@ -2621,7 +2622,7 @@ impl EmbeddedScriptView {
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
             wall_clock: crate::WallClock::default(),
-            runtime_clock: crate::RuntimeClock::default(),
+            runtime_clock: None,
             fonts: Vec::new(),
             token_base: None,
             profile_source: None,
@@ -2727,7 +2728,7 @@ impl EmbeddedScriptView {
 
     #[must_use]
     pub fn runtime_clock(mut self, clock: crate::RuntimeClock) -> Self {
-        self.runtime_clock = clock;
+        self.runtime_clock = Some(clock);
         self
     }
 
@@ -2824,7 +2825,7 @@ impl EmbeddedScriptView {
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.wall_clock = self.wall_clock;
-        runtime_state.clock = self.runtime_clock;
+        runtime_state.clock = self.runtime_clock.clone().unwrap_or_default();
         runtime_state.key_bindings.clone_from(&self.key_bindings);
         runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;
         runtime_state.theme = Some(validated_themes(
@@ -2881,6 +2882,7 @@ impl EmbeddedScriptView {
             style_path: PathBuf::new(),
             development: self.development,
             factory,
+            executor_clock: self.runtime_clock.is_none(),
             key_bindings: self.key_bindings,
             fonts: self.fonts,
             #[cfg(feature = "dev-reload")]
@@ -3633,6 +3635,18 @@ fn window_command_is_current(
             }))
 }
 
+/// The runtime clock a mounted view uses unless its Host sets one: GPUI's
+/// executor clock, which is the system clock in an application and the test
+/// scheduler's in a test, where `advance_clock` moves timers and motion along
+/// with GPUI's own timers instead of waiting on real time.
+struct ExecutorRuntimeClock(gpui::BackgroundExecutor);
+
+impl crate::RuntimeClockSource for ExecutorRuntimeClock {
+    fn now(&self) -> Instant {
+        self.0.now()
+    }
+}
+
 pub struct PreparedScriptView {
     engine: RuntimeEngine,
     theme: ThemeVariant,
@@ -3642,6 +3656,8 @@ pub struct PreparedScriptView {
     style_path: PathBuf,
     development: bool,
     factory: Rc<ScriptWindowFactory>,
+    /// The Host set no runtime clock: mounting installs GPUI's.
+    executor_clock: bool,
     key_bindings: Vec<KeyBindingSpec>,
     fonts: Vec<crate::FontSource>,
     #[cfg(feature = "dev-reload")]
@@ -3733,6 +3749,11 @@ impl PreparedScriptView {
                 host.unregister_view(&config.view_id, &mount_lease);
             })?;
         let window_id = host.window_id();
+        if self.executor_clock {
+            self.factory.runtime.borrow_mut().clock = crate::RuntimeClock::from_source(
+                ExecutorRuntimeClock(cx.background_executor().clone()),
+            );
+        }
         self.factory
             .runtime
             .borrow_mut()
@@ -3830,6 +3851,7 @@ impl PreparedScriptView {
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
                 last_motion_sample: None,
+                motion_waits_for_clock: false,
                 state: entity_view_state,
                 direct_signal_access: Rc::new(Cell::new(false)),
                 pending_interaction_cancels: BTreeSet::new(),
@@ -4244,6 +4266,7 @@ fn open_secondary_window(
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
                 last_motion_sample: None,
+                motion_waits_for_clock: false,
                 state: entity_view_state,
                 direct_signal_access: Rc::new(Cell::new(false)),
                 pending_interaction_cancels: BTreeSet::new(),
@@ -4576,6 +4599,10 @@ struct ScriptHostView {
     scroll_anchors: BTreeMap<crate::NodeId, ScrollAnchor>,
     text_selection: crate::renderer::TextSelectionRegistry,
     last_motion_sample: Option<Instant>,
+    /// Motion still runs but the last sample saw the runtime clock where the
+    /// one before saw it, so no animation frame was asked for; the next poll
+    /// that finds the clock moved repaints instead.
+    motion_waits_for_clock: bool,
     state: Rc<Cell<ScriptViewState>>,
     direct_signal_access: Rc<Cell<bool>>,
     pending_interaction_cancels: BTreeSet<crate::interaction::InteractionOwner>,
@@ -5732,6 +5759,7 @@ impl ScriptHostView {
         let clock_advanced = self.last_motion_sample != Some(now);
         self.last_motion_sample = Some(now);
         let (frame, events) = sample_motion_domain(&mut runtime, domain, now);
+        self.motion_waits_for_clock = frame.needs_frame && !clock_advanced;
         (clock_advanced && frame.needs_frame, events)
     }
 
@@ -7810,6 +7838,12 @@ impl ScriptHostView {
         };
         let has_script_work =
             !deliveries.is_empty() || dirty || pending_dispatch || virtual_requests;
+        if self.motion_waits_for_clock
+            && self.last_motion_sample != Some(runtime.borrow().clock.now())
+        {
+            self.motion_waits_for_clock = false;
+            cx.notify();
+        }
         if !has_script_work && !repaint {
             return;
         }

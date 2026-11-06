@@ -158,6 +158,25 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
 - Open/focus/confirm-close a secondary window; verify app-store propagation and
   per-window theme/locale/state cleanup.
 
+## Offscreen contexts
+
+An offscreen `VisualTestAppContext` (screenshots, scripted captures) runs on
+GPUI's test scheduler, whose clock moves only when the test moves it. A mounted
+view's timers, animation and its 16ms delivery poll all follow that clock
+(0.4.2), so between captures advance it and let the work run:
+
+```rust
+visual.executor().advance_clock(std::time::Duration::from_millis(1000));
+visual.run_until_parked();
+visual.update(|window, cx| window.simulate_next_frame(cx));
+```
+
+A `timeout` fires once the advanced time reaches its deadline, and a capture
+taken right after an interaction shows an animation at its start. Waiting on real
+time does nothing here. Before 0.4.2 timers read the system clock while the
+poll waited on the test clock, so timeouts fired only when some other delivery
+woke the view.
+
 ## Automation split
 
 `scripts/release-smoke.sh` is the unattended local macOS gate: it verifies that
