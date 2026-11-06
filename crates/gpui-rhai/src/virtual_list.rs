@@ -828,7 +828,7 @@ impl FenwickTree {
         let mut cursor = index + 1;
         while cursor < self.tree.len() {
             self.tree[cursor] += delta;
-            cursor += cursor & cursor.wrapping_neg();
+            cursor += cursor.isolate_lowest_one();
         }
     }
 

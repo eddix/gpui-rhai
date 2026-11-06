@@ -2,7 +2,7 @@
 name = "disktree-rhai"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.99"
 license = "MIT"
 publish = false
 description = "A disk space treemap explorer built on gpui-rhai, a faithful port of tobi/disktree with user-reshapable skins"
