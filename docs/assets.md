@@ -43,6 +43,20 @@ last script transaction error. Use the existing stderr mirroring option or the
 Host observer instead of polling the frame or adding per-frame image logs.
 This does not make dynamic Host namespaces statically knowable to the CLI.
 
+## Application images
+
+The images under `ui/assets` form the `app` namespace: `ui/assets/icons/star.svg`
+is `asset("app/icons/star")`. `gpui-rhai check` validates them and
+`gpui-rhai embed` compiles them into the binary. Any other file there, such as
+an icon set's license, is no asset: check warns about it and skips it, and
+embed leaves it out. Hidden files such as `.DS_Store` are skipped silently.
+
+A third-party icon set goes in the same way. Copy the SVGs the application uses
+into `ui/assets/icons/`, keep the set's license beside them, and list each icon
+in the metadata `assets` of the component that draws it, or load it with
+`ctx.load_image` as below. An SVG drawn with `currentColor` follows the text
+color.
+
 ## Dynamic loading
 
 Application lifecycle code may still load or decode dynamic assets:

@@ -668,9 +668,10 @@ impl Project {
         ThemeManager::from_variants(variants, ThemeSelection::new(primary.family, primary.name))
             .map_err(|error| ProjectError::Theme(error.to_string()))?;
         validate_locales(&self.root)?;
-        validate_embedded_assets(&self.root)?;
+        let asset_warnings = validate_embedded_assets(&self.root)?;
         validate_fonts(&self.root)?;
         let mut warnings = family_warnings;
+        warnings.extend(asset_warnings);
         warnings.extend(shadow_warnings(&self.root)?);
         warnings.extend(profile_warnings(&self.root, &manifest)?);
         Ok(CheckReport {
@@ -1013,7 +1014,10 @@ impl Project {
 
         let locales = collect_relative_files(&self.root.join("ui/locales"), "../ui/locales")?;
         let themes = collect_relative_files(&self.root.join("ui/themes"), "../ui/themes")?;
-        let assets = collect_relative_files(&self.root.join("ui/assets"), "../ui/assets")?;
+        let assets = collect_relative_files(&self.root.join("ui/assets"), "../ui/assets")?
+            .into_iter()
+            .filter(|(name, _)| matches!(asset_file(name), AssetFile::Image))
+            .collect::<Vec<_>>();
         let fonts = collect_relative_files(&self.root.join("ui/fonts"), "../ui/fonts")?;
         let generated = generated_embed_module(
             &app,
@@ -1344,11 +1348,42 @@ fn validate_locales(root: &Path) -> Result<(), ProjectError> {
         .map_err(|error| ProjectError::Locale(error.to_string()))
 }
 
-fn validate_embedded_assets(root: &Path) -> Result<(), ProjectError> {
+/// What a file under `ui/assets` is to the runtime: an image it serves, a
+/// hidden file such as Finder's `.DS_Store`, or another file kept beside the
+/// images (a license, notes), which nothing loads.
+enum AssetFile {
+    Image,
+    Hidden,
+    Other,
+}
+
+fn asset_file(path: &str) -> AssetFile {
+    if path.rsplit('/').next().unwrap_or(path).starts_with('.') {
+        AssetFile::Hidden
+    } else if embedded_asset_mime(path).is_ok() {
+        AssetFile::Image
+    } else {
+        AssetFile::Other
+    }
+}
+
+/// Checks the images under `ui/assets` and returns a warning for each other
+/// file, which check skips and embed leaves out; hidden files pass silently.
+fn validate_embedded_assets(root: &Path) -> Result<Vec<String>, ProjectError> {
     let assets = collect_relative_files(&root.join("ui/assets"), "../ui/assets")?;
     let mut logical = BTreeSet::new();
+    let mut warnings = Vec::new();
     for (name, _) in assets {
-        embedded_asset_mime(&name)?;
+        match asset_file(&name) {
+            AssetFile::Image => {}
+            AssetFile::Hidden => continue,
+            AssetFile::Other => {
+                warnings.push(format!(
+                    "asset ui/assets/{name} is not an image: check skips it and embed leaves it out"
+                ));
+                continue;
+            }
+        }
         let name = name
             .rsplit_once('.')
             .map_or(name.as_str(), |(stem, _)| stem);
@@ -1356,7 +1391,7 @@ fn validate_embedded_assets(root: &Path) -> Result<(), ProjectError> {
             return Err(ProjectError::DuplicateAssetLogical(name.to_owned()));
         }
     }
-    Ok(())
+    Ok(warnings)
 }
 
 fn validate_fonts(root: &Path) -> Result<(), ProjectError> {
@@ -3614,6 +3649,13 @@ mod tests {
         fs::create_dir_all(directory.path().join("ui/fonts")).unwrap();
         fs::write(directory.path().join("ui/locales/en.rhai"), "#{}\n").unwrap();
         fs::write(directory.path().join("ui/assets/check.svg"), "<svg/>\n").unwrap();
+        // A license beside the icons and Finder's folder file are no assets.
+        fs::write(
+            directory.path().join("ui/assets/LICENSE-icons.txt"),
+            "ISC\n",
+        )
+        .unwrap();
+        fs::write(directory.path().join("ui/assets/.DS_Store"), [0u8; 4]).unwrap();
         fs::write(
             directory.path().join("ui/fonts/art.otf"),
             [b"OTTO".as_slice(), &[0, 1, 2]].concat(),
@@ -3632,6 +3674,10 @@ mod tests {
         assert!(generated.contains("COMPONENT_STYLES_SOURCE"));
         assert!(generated.contains("locales/en.rhai"));
         assert!(generated.contains("assets/check.svg"));
+        assert!(!generated.contains("LICENSE-icons") && !generated.contains("DS_Store"));
+        let warnings = validate_embedded_assets(directory.path()).unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("LICENSE-icons.txt is not an image"));
         assert!(generated.contains("fonts/art.otf"));
     }
 
