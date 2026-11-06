@@ -238,7 +238,7 @@ impl ModuleResolver for RestrictedModuleResolver {
                 let mut ast = engine.compile(source).map_err(|error| {
                     Box::new(EvalAltResult::ErrorInModule(
                         path.to_owned(),
-                        error.into(),
+                        crate::engine::explain_keyword_name(source, error).into(),
                         position,
                     ))
                 })?;

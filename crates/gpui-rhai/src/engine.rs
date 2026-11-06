@@ -1019,7 +1019,8 @@ impl RuntimeEngine {
             started,
             result.is_ok(),
         );
-        let mut ast = result.map_err(|error| RuntimeError::Compile(error.into()))?;
+        let mut ast = result
+            .map_err(|error| RuntimeError::Compile(explain_keyword_name(source, error).into()))?;
         validate_runtime_ast(&ast)?;
         ast.set_source(source_name);
         Ok(CompiledUi { ast, generation })
@@ -1048,7 +1049,12 @@ impl RuntimeEngine {
             started,
             result.is_ok(),
         );
-        let mut ast = result.map_err(RuntimeError::Compile)?;
+        let mut ast = result.map_err(|error| match *error {
+            EvalAltResult::ErrorParsing(kind, position) => RuntimeError::Compile(
+                explain_keyword_name(source, rhai::ParseError(Box::new(kind), position)).into(),
+            ),
+            error => RuntimeError::Compile(Box::new(error)),
+        })?;
         validate_literal_imports(&ast)?;
         validate_runtime_ast(&ast)?;
         ast.set_source(source_name);
@@ -2755,6 +2761,48 @@ pub(crate) const RHAI_MAX_DATA_DEPTH: usize = 64;
 /// 32 in a function rejected ordinary view code; 64 still stays clear of the
 /// main thread's stack, where scripts compile and run.
 pub(crate) const EXPRESSION_DEPTHS: (usize, usize) = (64, 64);
+
+/// Rhai reports a keyword where a name belongs as a missing name: `import
+/// "components/switch" as switch;` fails with "Expecting name of a variable".
+/// Say which keyword it was instead.
+pub(crate) fn explain_keyword_name(source: &str, error: rhai::ParseError) -> rhai::ParseError {
+    let rhai::ParseError(kind, position) = &error;
+    let (Some(line), Some(column)) = (position.line(), position.position()) else {
+        return error;
+    };
+    let word: String = source
+        .lines()
+        .nth(line - 1)
+        .unwrap_or_default()
+        .chars()
+        .skip(column - 1)
+        .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+        .collect();
+    // `word` holds only identifier characters, so any token it spells is a keyword.
+    if rhai::Token::lookup_symbol_from_syntax(&word).is_none() {
+        return error;
+    }
+    let misuse = match &**kind {
+        rhai::ParseErrorType::VariableExpected => "name a variable or an import alias".to_owned(),
+        rhai::ParseErrorType::FnMissingName => "name a function".to_owned(),
+        rhai::ParseErrorType::PropertyExpected => {
+            format!("name a property; index it as `[\"{word}\"]`")
+        }
+        rhai::ParseErrorType::MissingToken(token, description)
+            if token == "}" && description.contains("object map literal") =>
+        {
+            format!("be a bare map key; quote it as `\"{word}\"`")
+        }
+        _ => return error,
+    };
+    let message = format!("`{word}` is a Rhai keyword and cannot {misuse}");
+    rhai::ParseError(
+        Box::new(rhai::ParseErrorType::BadInput(
+            rhai::LexError::ImproperSymbol(word, message),
+        )),
+        *position,
+    )
+}
 
 fn configure_engine_limits(engine: &mut Engine) {
     crate::invocation::register_named_functions(engine);
@@ -6033,6 +6081,46 @@ mod tests {
             runtime.render(&compiled).is_ok(),
             "a raised budget admits heavier one-shot work"
         );
+    }
+
+    #[test]
+    fn a_keyword_used_as_a_name_is_named_in_the_parse_error() {
+        let mut runtime = RuntimeEngine::new();
+        for (source, expected) in [
+            (
+                "import \"components/switch\" as switch;\nfn view(ctx) { text(\"\") }",
+                "`switch` is a Rhai keyword and cannot name a variable or an import alias",
+            ),
+            (
+                "fn view(ctx) { let loop = 1; text(\"\") }",
+                "`loop` is a Rhai keyword and cannot name a variable or an import alias",
+            ),
+            (
+                "fn switch() { 1 }\nfn view(ctx) { text(\"\") }",
+                "`switch` is a Rhai keyword and cannot name a function",
+            ),
+            (
+                "fn view(ctx) { let options = #{ switch: 1 }; text(\"\") }",
+                "`switch` is a Rhai keyword and cannot be a bare map key; quote it as `\"switch\"`",
+            ),
+            (
+                "fn view(ctx) { let options = #{}; text(`${options.switch}`) }",
+                "`switch` is a Rhai keyword and cannot name a property; index it as `[\"switch\"]`",
+            ),
+        ] {
+            let error = runtime
+                .compile_named("ui/main.rhai", source)
+                .err()
+                .unwrap()
+                .to_string();
+            assert!(error.contains(expected), "{source}: {error}");
+        }
+        let error = runtime
+            .compile_named("ui/main.rhai", "fn view(ctx) { let a = 1 else 2; a }")
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(!error.contains("keyword"), "{error}");
     }
 
     #[test]

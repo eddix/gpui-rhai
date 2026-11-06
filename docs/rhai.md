@@ -106,6 +106,20 @@ function or an unquoted map key: `async`, `await`, `case`, `default`, `go`,
 `print`, `type_of`, `is_def_var`, `this`. Quote such a key in a map: component
 schemas write `"default": #{ ... }` and metadata writes `"export"`.
 
+The language keywords cannot name anything either: `as`, `break`, `catch`,
+`const`, `continue`, `do`, `else`, `export`, `false`, `fn`, `for`, `if`,
+`import`, `in`, `let`, `loop`, `private`, `return`, `switch`, `throw`, `true`,
+`try`, `until`, `while`. One registry module is named after one:
+import `components/switch` under another alias, as the reference does with
+`switch_component`. The parse error names the keyword.
+
+<!-- check: error "`switch` is a Rhai keyword and cannot name a variable or an import alias" -->
+```rhai
+import "components/switch" as switch;
+
+fn view(ctx) { text("never rendered") }
+```
+
 <!-- check: error "'default' is a reserved keyword" -->
 ```rhai
 fn view(ctx) {
