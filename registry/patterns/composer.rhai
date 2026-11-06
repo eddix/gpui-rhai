@@ -2,7 +2,7 @@
 {
   "id": "patterns/composer",
   "export": "Composer",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/textarea", "components/button"],
   "capabilities": {},
@@ -19,7 +19,7 @@ import "components/textarea" as textarea;
 import "components/button" as button;
 
 define_component(#{
-    metadata: #{ id: "patterns/composer", "export": "Composer", version: "0.4.0",
+    metadata: #{ id: "patterns/composer", "export": "Composer", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/textarea", "components/button"], capabilities: #{},
         tokens: ["surface_raised", "border", "focus_ring", "text_muted", "text.danger", "metrics.inset", "space.related", "radius.md", "typography.caption"],
@@ -84,7 +84,9 @@ fn render_Composer(ctx, props) {
         min_rows: props.min_rows, max_rows: props.max_rows, max_length: optional(props, "max_length"),
         disabled: props.disabled, read_only: props.read_only, autofocus: props.autofocus,
         submit_key: props.submit_key, on_change: Fn("draft_changed"), on_submit: Fn("send_draft").curry(enabled),
-        part_styles: #{ editor: ctx.component_style("editor", style().border(px(0)).padding(px(0))) } });
+        // The editor shows the Composer's surface, so a `root` background covers it too.
+        part_styles: #{ editor: ctx.component_style("editor", style().border(px(0)).padding(px(0))
+            .background(rgba(0x00000000))) } });
     let actions = [];
     if optional(props, "leading") != () {
         actions.push(props.leading.with_style(ctx.component_style("leading", style())));

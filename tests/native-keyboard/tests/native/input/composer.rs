@@ -1,9 +1,13 @@
 //! Submit keys run through the real focused native editor, not script key capture.
-use gpui::TestAppContext;
-use gpui_rhai::UiValue;
+use std::collections::BTreeMap;
+
+use gpui::{Background, TestAppContext, rgba};
+use gpui_rhai::{Rgba8, ThemeTokenOverrides, UiValue};
 use gpui_rhai_registry::{DEFAULT_LIGHT_THEME, DEFAULT_THEME};
 
-use crate::support::{Mount, ReplaceOnce, bounds, click_center, last_error, nodes, text_of};
+use crate::support::{
+    Mount, ReplaceOnce, bounds, click_center, last_error, nodes, painted_quads, text_of,
+};
 
 const SOURCE: &str = r#"
 import "patterns/composer" as composer;
@@ -71,6 +75,38 @@ fn composer_enter_shift_enter_busy_stop_and_native_undo(cx: &mut TestAppContext)
         "Send restores editor focus"
     );
     assert_eq!(last_error(&mut visual, &view), None);
+}
+
+/// The editor shows the Composer's surface (feedback #9): a `root` background covers the
+/// field, with no band of the editor's own color.
+#[gpui::test]
+fn a_root_background_covers_the_editor(cx: &mut TestAppContext) {
+    const RAISED: u32 = 0x1234_56ff;
+    const ROOT: u32 = 0x00ff_00ff;
+    let field = r#"composer::Composer(#{ key: "prompt", label: "Prompt", value: "",
+        on_change: Fn("changed"), part_styles: #{ root: style().background(rgba(0x00ff00ff)) } })"#;
+    let overrides = ThemeTokenOverrides {
+        colors: BTreeMap::from([(
+            "surface_raised".to_owned(),
+            Rgba8::from_rgba_hex(RAISED),
+        )]),
+        ..Default::default()
+    };
+    let (mut visual, view) = Mount::components(SOURCE.replace_once("FIELD", field))
+        .registry("patterns/composer")
+        .with(move |view| view.theme_token_overrides(overrides))
+        .mount(cx);
+    visual.run_until_parked();
+    assert_eq!(last_error(&mut visual, &view), None);
+    let mut fills = |color: u32| {
+        let fill: Background = rgba(color).into();
+        painted_quads(&mut visual)
+            .into_iter()
+            .filter(|quad| quad.background == fill)
+            .count()
+    };
+    assert!(fills(ROOT) > 0, "the root paints its background");
+    assert_eq!(fills(RAISED), 0, "nothing paints the editor's own surface");
 }
 
 #[gpui::test]
