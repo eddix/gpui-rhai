@@ -122,7 +122,18 @@ runs outer-to-inner during capture; normal `on`/`on_key_value` and `on_bubble`
 run inner-to-outer during native bubbling, with target handlers before bubble
 handlers on each node. Returning `event_response().stop()` from capture
 prevents the later target/bubble route. This makes previously inert key-phase
-registrations functional; non-key event routing is unchanged. The Host's
+registrations functional; non-key event routing is unchanged.
+
+Native editors (Input, Textarea and the fields built on them) bind their keys
+as GPUI actions, which run before any raw key listener, so an ancestor's
+capture listener alone would never see Up, Down, Enter or the other keys an
+editor acts on. Since 0.4.2 an editor runs its ancestors' capture handlers
+for the key first; when one returns `event_response().prevent_default()` or
+`.stop()`, the editor does nothing with that key. A completion list above a
+Composer takes Up, Down and Enter this way while it is open and returns a
+plain `event_response()` when closed. Keys the editor does not bind (Tab,
+Escape) reach the capture handlers once, through the ordinary route, and an
+input method that is composing text keeps its keys. The Host's
 active-interaction Escape interceptor still precedes script capture and owns
 gesture cancellation. After that owner releases Escape, ordinary script
 handlers may receive it again.

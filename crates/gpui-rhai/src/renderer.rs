@@ -454,11 +454,11 @@ fn apply_pointer_response(
 /// held.
 fn key_handler_for<'a, V>(
     handlers: &'a BTreeMap<String, V>,
-    event: &gpui::KeyDownEvent,
+    keystroke: &gpui::Keystroke,
     direction: TextDirection,
 ) -> Option<&'a V> {
-    let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
-    let modifiers = &event.keystroke.modifiers;
+    let key = logical_keyboard_key(keystroke.key.as_str(), direction);
+    let modifiers = &keystroke.modifiers;
     let qualified = crate::node::canonical_key_name(
         [
             modifiers.control,
@@ -595,6 +595,53 @@ impl EventTargetContext {
         self.node
             .and_then(|node| self.geometry.get(node))
             .map(|geometry| geometry.visual)
+    }
+}
+
+/// The capture-phase key handlers (`on_capture("key:…")`) of one ancestor of
+/// a native element. A native editor binds its keys as GPUI actions, which run
+/// before any raw key listener and consume the key, so the ancestors' capture
+/// listeners would never see it; the editor runs these first instead.
+#[derive(Clone)]
+pub(crate) struct KeyCaptureScope {
+    handlers: Rc<KeyHandlers>,
+    target: EventTargetContext,
+    dispatcher: Option<NodeEventDispatcher>,
+    direction: TextDirection,
+}
+
+type KeyHandlers = BTreeMap<String, (Vec<crate::UiEventBinding>, UiValue)>;
+
+impl KeyCaptureScope {
+    /// Runs the capture-phase handlers of `scopes`, outermost first, for
+    /// `keystroke`; true when one prevented the default or stopped the key,
+    /// and then the editor does nothing with it.
+    pub(crate) fn take(
+        scopes: &[Self],
+        keystroke: &gpui::Keystroke,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        for scope in scopes {
+            let Some((bindings, payload)) =
+                key_handler_for(&scope.handlers, keystroke, scope.direction)
+            else {
+                continue;
+            };
+            let response = dispatch_ui_handler_phases(
+                bindings,
+                "key",
+                &[crate::EventPhase::Capture],
+                payload,
+                EventRoute::new(scope.target.snapshot(), scope.dispatcher.as_ref()),
+                window,
+                cx,
+            );
+            if response.default_prevented() || response.stops_propagation() {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -1634,6 +1681,8 @@ struct RenderEnvironment<'a, C> {
     scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     wheel_parents: &'a [crate::scrollbar::ScrollWheelSource],
+    /// The ancestors with capture-phase key handlers, outermost first.
+    key_captures: &'a [KeyCaptureScope],
     intrinsic_size: Option<&'a crate::intrinsic::IntrinsicSizeInvalidator>,
     virtual_requests: &'a crate::VirtualRequestRegistry,
     text_selection: &'a TextSelectionRegistry,
@@ -1843,6 +1892,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     pub scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     pub wheel_parents: &'a [crate::scrollbar::ScrollWheelSource],
+    pub key_captures: &'a [KeyCaptureScope],
     pub intrinsic_size: Option<&'a crate::intrinsic::IntrinsicSizeInvalidator>,
     pub virtual_requests: &'a crate::VirtualRequestRegistry,
     pub text_selection: &'a TextSelectionRegistry,
@@ -1933,6 +1983,7 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             wheel_parents: &[],
+            key_captures: &[],
             intrinsic_size: None,
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
@@ -2027,6 +2078,7 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             wheel_parents: &[],
+            key_captures: &[],
             intrinsic_size: None,
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
@@ -2114,6 +2166,7 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             wheel_parents: &[],
+            key_captures: &[],
             intrinsic_size: None,
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
@@ -2193,6 +2246,7 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             wheel_parents: &[],
+            key_captures: &[],
             intrinsic_size: None,
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
@@ -2263,6 +2317,7 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             wheel_parents: &[],
+            key_captures: &[],
             intrinsic_size: None,
             virtual_requests: &virtual_requests,
             text_selection: &text_selection,
@@ -2331,6 +2386,7 @@ impl GpuiNodeRenderer {
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             wheel_parents: resources.wheel_parents,
+            key_captures: resources.key_captures,
             intrinsic_size: resources.intrinsic_size,
             virtual_requests: resources.virtual_requests,
             text_selection: resources.text_selection,
@@ -2415,6 +2471,7 @@ impl GpuiNodeRenderer {
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             wheel_parents: resources.wheel_parents,
+            key_captures: resources.key_captures,
             intrinsic_size: resources.intrinsic_size,
             virtual_requests: resources.virtual_requests,
             text_selection: resources.text_selection,
@@ -2480,6 +2537,7 @@ impl GpuiNodeRenderer {
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             wheel_parents: resources.wheel_parents,
+            key_captures: resources.key_captures,
             intrinsic_size: resources.intrinsic_size,
             virtual_requests: resources.virtual_requests,
             text_selection: resources.text_selection,
@@ -2549,6 +2607,7 @@ impl GpuiNodeRenderer {
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             wheel_parents: &[],
+            key_captures: &[],
             intrinsic_size: None,
             virtual_requests: resources.virtual_requests,
             text_selection: resources.text_selection,
@@ -2637,8 +2696,26 @@ impl GpuiNodeRenderer {
                 ),
             );
         }
+        // A node with capture-phase key handlers joins the route its native
+        // descendants run before their own key bindings.
+        let mut key_captures = std::borrow::Cow::Borrowed(node_environment.key_captures);
+        let disabled = node_environment.inherited_disabled;
+        let handlers = key_handler_bindings(node, disabled);
+        if handlers.values().any(|(bindings, _)| {
+            bindings
+                .iter()
+                .any(|binding| binding.phase() == crate::EventPhase::Capture)
+        }) {
+            key_captures.to_mut().push(KeyCaptureScope {
+                handlers: Rc::new(handlers),
+                target: EventTargetContext::new(retained_id, environment.geometry.clone()),
+                dispatcher: environment.dispatcher.cloned(),
+                direction: node_environment.direction,
+            });
+        }
         let node_environment = RenderEnvironment {
             wheel_parents: &wheel_parents,
+            key_captures: &key_captures,
             ..node_environment
         };
         let environment = &node_environment;
@@ -3014,7 +3091,8 @@ impl GpuiNodeRenderer {
             let dispatcher = keyboard_dispatcher.clone();
             let target = keyboard_target.clone();
             element.capture_key_down(move |event, window, cx| {
-                if let Some((bindings, payload)) = key_handler_for(&handlers, event, text_direction)
+                if let Some((bindings, payload)) =
+                    key_handler_for(&handlers, &event.keystroke, text_direction)
                 {
                     let response = dispatch_ui_handler_phases(
                         bindings,
@@ -3032,7 +3110,7 @@ impl GpuiNodeRenderer {
             element
         };
         let element = element.on_key_down(move |event, window, cx| {
-            let explicit = key_handler_for(&key_handlers, event, text_direction);
+            let explicit = key_handler_for(&key_handlers, &event.keystroke, text_direction);
             let semantic = explicit.or_else(|| {
                 matches!(event.keystroke.key.as_str(), "enter" | "space")
                     .then_some(())
@@ -3164,6 +3242,7 @@ impl GpuiNodeRenderer {
                             environment.view_id,
                         )
                         .with_wheel_parents(environment.wheel_parents.to_vec())
+                        .with_key_captures(environment.key_captures.to_vec())
                         .with_assets(environment.assets.cloned())
                         .with_intrinsic_size(environment.intrinsic_size.cloned())
                         .with_focus_indicators(environment.focus_indicators),
@@ -5478,6 +5557,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         scroll_handles: environment.scroll_handles.clone(),
         scroll_anchors: environment.scroll_anchors.clone(),
         wheel_parents: environment.wheel_parents.to_vec(),
+        key_captures: environment.key_captures.to_vec(),
         intrinsic_size: environment.intrinsic_size.cloned(),
         virtual_requests: environment.virtual_requests.native_access(),
         text_selection: environment.text_selection.clone(),

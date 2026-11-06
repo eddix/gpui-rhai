@@ -298,6 +298,8 @@ struct ScriptViewHostState {
     container_bounds: Option<Bounds<Pixels>>,
     #[allow(dead_code)]
     escape_interceptor: Option<Subscription>,
+    #[allow(dead_code)]
+    keystroke_observer: Option<Subscription>,
 }
 
 struct HostInteractionLifecycle {
@@ -387,9 +389,11 @@ impl ScriptViewHost {
             frame_active: false,
             container_bounds: None,
             escape_interceptor: None,
+            keystroke_observer: None,
         }));
         let weak = Rc::downgrade(&inner);
         let interceptor = cx.intercept_keystrokes(move |event, window, cx| {
+            DISPATCHING_KEYSTROKE.with(|current| current.replace(Some(event.keystroke.clone())));
             if event.keystroke.key.as_str() != "escape" {
                 return;
             }
@@ -402,6 +406,10 @@ impl ScriptViewHost {
             }
         });
         inner.borrow_mut().escape_interceptor = Some(interceptor);
+        // Observers run once the keystroke's dispatch has ended.
+        inner.borrow_mut().keystroke_observer = Some(cx.observe_keystrokes(|_, _, _| {
+            DISPATCHING_KEYSTROKE.with(|current| current.replace(None));
+        }));
         Ok(Self { inner })
     }
 
@@ -757,6 +765,17 @@ fn validate_view_id(id: &str) -> Result<(), ScriptViewError> {
 struct ScriptViewHostFrame {
     host: ScriptViewHost,
     child: Option<AnyElement>,
+}
+
+thread_local! {
+    /// The keystroke GPUI is dispatching, from the Host's interceptor (which
+    /// runs before key bindings) until its keystroke observers run.
+    static DISPATCHING_KEYSTROKE: RefCell<Option<gpui::Keystroke>> = const { RefCell::new(None) };
+}
+
+/// The keystroke being dispatched, if a key dispatch is under way.
+pub(crate) fn dispatching_keystroke() -> Option<gpui::Keystroke> {
+    DISPATCHING_KEYSTROKE.with(|current| current.borrow().clone())
 }
 
 /// Bumped each time a host frame lays out and read by every runtime view's
@@ -5591,6 +5610,7 @@ impl HostFrame {
             scroll_handles: &view.scroll_handles,
             scroll_anchors: &view.scroll_anchors,
             wheel_parents: &[],
+            key_captures: &[],
             intrinsic_size: None,
             virtual_requests: &snapshot.virtual_requests,
             text_selection: &view.text_selection,

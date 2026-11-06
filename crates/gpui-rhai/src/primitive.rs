@@ -842,6 +842,7 @@ pub struct PrimitiveContext {
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
     wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
+    key_captures: Vec<crate::renderer::KeyCaptureScope>,
     intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     intrinsic_generation: ScriptGeneration,
     intrinsic_lease: Option<Weak<RefCell<PrimitiveResourceState>>>,
@@ -905,6 +906,19 @@ impl PrimitiveContext {
                     })
             })
         });
+    }
+
+    /// Whether a script capture-phase key handler above the primitive
+    /// (`on_capture("key:…")`) takes the key being dispatched: one ran and
+    /// prevented the default or stopped it. A native editor asks before its
+    /// own key binding acts; outside a key dispatch there is no key to take.
+    pub(crate) fn script_takes_key(&self, window: &mut Window, cx: &mut App) -> bool {
+        if self.key_captures.is_empty() {
+            return false;
+        }
+        crate::app::dispatching_keystroke().is_some_and(|keystroke| {
+            crate::renderer::KeyCaptureScope::take(&self.key_captures, &keystroke, window, cx)
+        })
     }
 
     /// Create a themed scrollbar factory owned by this retained primitive.
@@ -2043,6 +2057,7 @@ pub(crate) struct PrimitiveWindowContext {
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
     wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
+    key_captures: Vec<crate::renderer::KeyCaptureScope>,
     intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     view_id: String,
     focus_indicators: bool,
@@ -2065,6 +2080,7 @@ impl PrimitiveWindowContext {
             interactions,
             scroll_handles,
             wheel_parents: Vec::new(),
+            key_captures: Vec::new(),
             intrinsic_size: None,
             view_id: view_id.into(),
             focus_indicators: true,
@@ -2081,6 +2097,14 @@ impl PrimitiveWindowContext {
         parents: Vec<crate::scrollbar::ScrollWheelSource>,
     ) -> Self {
         self.wheel_parents = parents;
+        self
+    }
+
+    pub(crate) fn with_key_captures(
+        mut self,
+        scopes: Vec<crate::renderer::KeyCaptureScope>,
+    ) -> Self {
+        self.key_captures = scopes;
         self
     }
 
@@ -2131,6 +2155,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             interactions: self.runtime.interactions,
             scroll_handles: self.runtime.scroll_handles,
             wheel_parents: self.runtime.wheel_parents,
+            key_captures: self.runtime.key_captures,
             intrinsic_size: self.runtime.intrinsic_size,
             intrinsic_generation: ScriptGeneration::default(),
             intrinsic_lease: None,
@@ -2784,6 +2809,7 @@ mod tests {
             interactions: crate::interaction::WindowInteractionCoordinator::default(),
             scroll_handles: Vec::new(),
             wheel_parents: Vec::new(),
+            key_captures: Vec::new(),
             intrinsic_size: None,
             intrinsic_generation: ScriptGeneration::default(),
             intrinsic_lease: None,
