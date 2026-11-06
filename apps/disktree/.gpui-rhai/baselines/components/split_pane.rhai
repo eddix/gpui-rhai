@@ -2,11 +2,11 @@
 {
   "id": "components/split_pane",
   "export": "SplitPane",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.sm"],
+  "tokens": ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.pill"],
   "environment": ["density", "size"]
 }
 */
@@ -44,9 +44,9 @@
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.4.0",
+    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.sm"],
+        tokens: ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.pill"],
         environment: ["density", "size"] },
     schema: #{
         props: #{
@@ -137,7 +137,7 @@ fn split_grip_content(ctx, props, horizontal, state) {
         ctx.render_node(props.handle_renderer, #{state:state, orientation:props.orientation,
             duration_ms:duration, easing:easing})
     } else if has_node { props.handle } else {
-        let shape = style().flex_shrink(false).background(theme_color("border")).radius(theme_radius("sm"));
+        let shape = style().flex_shrink(false).background(theme_color("border")).radius(theme_radius("pill"));
         shape = if horizontal { shape.width(theme_spacing("xs")).height(px(props.grip_length)) }
             else { shape.width(px(props.grip_length)).height(theme_spacing("xs")) };
         box([]).with_style(shape)

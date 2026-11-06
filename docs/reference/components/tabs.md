@@ -1,6 +1,6 @@
 # Tabs
 
-`components/tabs` · export `Tabs` · version 0.4.1. Generated from
+`components/tabs` · export `Tabs` · version 0.4.2. Generated from
 [`registry/components/tabs.rhai`](../../../registry/components/tabs.rhai); do not edit.
 
 Controlled tabs with one tab stop; the arrow keys select. Three looks share every capability: `track` is a tonal track with a raised thumb, for a compact switcher among other controls; `underline` puts the labels on a hairline with a 2px ink bar under the selected one, for the sections of a panel or a card; `bar` is a strip of document tabs whose selected tab takes the panel's surface (`tabbar.active`) and covers its line.
@@ -84,7 +84,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `add`, `close`, `counter
 
 ## Theme
 
-- Tokens: `accent`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.counter`, `metrics.icon`, `metrics.inset`, `metrics.label_column`, `on_accent`, `on_danger`, `on_warning`, `radius.md`, `radius.sm`, `radius.xs`, `space.group`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabbar.active`, `tabbar.background`, `tabs.counter`, `tabs.foreground`, `text_primary`, `typography.body`, `typography.control`, `typography.counter`, `warning`
+- Tokens: `accent`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.counter`, `metrics.icon`, `metrics.inset`, `metrics.label_column`, `on_accent`, `on_danger`, `on_warning`, `radius.md`, `radius.pill`, `radius.xs`, `space.group`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabbar.active`, `tabbar.background`, `tabs.counter`, `tabs.foreground`, `text_primary`, `typography.body`, `typography.control`, `typography.counter`, `warning`
 - Environment: `density`, `size`
 
 ## Dependencies

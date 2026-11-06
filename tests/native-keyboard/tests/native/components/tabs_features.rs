@@ -76,7 +76,7 @@ fn a_count_capsule_is_as_tall_as_the_label_and_joins_the_name(cx: &mut TestAppCo
     bounds(&mut visual, &view, "text", "99+");
 
     // A neutral capsule in tabs.counter: metrics.counter (20, the control line height) tall,
-    // at least as wide, centred in the 32px tab like the label, a capsule: radius.sm clamps
+    // at least as wide, centred in the 32px tab like the label, a capsule: radius.pill clamps
     // to half the height.
     let neutral = fills(&mut visual, COUNTER);
     assert_eq!(neutral.len(), 1, "{neutral:?}");

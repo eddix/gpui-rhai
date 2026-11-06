@@ -71,8 +71,9 @@ Each component takes the role of its kind:
 | Layout | none | 0 | Region, Table rows and List rows between dividers, Tabs `underline` and `bar`, Sheet, SplitPane, TitleBar, StatusBar |
 | Control | `radius.md` | 4 / 6 | Button, IconButton, Input, Textarea, Select, Combobox and DatePicker triggers, InputGroup, ToggleGroup, ButtonGroup and the Tabs `track` in either orientation, calendar day cells, Composer, DatePicker presets; rows that float: Menu items, Select and Combobox options, Command rows, Tree, Timeline and undivided List rows |
 | Box in a control | `radius.xs` | half of md | Checkbox box, Kbd keycap, the Tabs thumb and close button, a field's clear button, Toast close and Clear all |
-| Marker | `radius.sm` | capsule | Tag (and its facet and close target), Badge, Combobox chips, Switch track and thumb, the Tabs count, the Toast count, Carousel dots, the SplitPane grip |
+| Marker | `radius.pill` | capsule | Tag (and its facet and close target), Badge, Combobox chips, Switch track and thumb, the Tabs count, the Toast count, Carousel dots, the SplitPane grip |
 | Surface | `radius.lg` | 8 | Card, Alert, SelectableCardGroup cards; floating: Menu, Popover, Dialog, Toast, Command, CommandDialog and field panels |
+| Small box | `radius.sm` | 4 | No built-in component; an application's small rounded rectangle outside a control, such as a thumbnail or a color swatch |
 
 A control's radius follows its height: 4px at 24px or less (comfortable xs,
 compact xs and sm) and 6px from 28px. Its 2px frame leaves 2px or 4px inside,
@@ -221,7 +222,7 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 ### Tag
 
 - Tonal `surface_hover` block, horizontal padding `spacing.sm` in both
-  densities (markers do not change with density), `radius.sm`: a capsule, so
+  densities (markers do not change with density), `radius.pill`: a capsule, so
   a tag never reads as a button beside one.
 - Color variants (`accent`, `success`, `warning`, `danger`) mark a
   **category**, not a status: without a facet they color the text with the
@@ -315,7 +316,7 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   also its minimum width, so one digit is a circle. Its
   figures are the `counter` type (11/14 at `xs`, 12/16 otherwise: digits are
   about 0.72em tall, leaving about 4px and 5.7px above and below them) with
-  tabular figures, `99+` past 99. Its corners are `radius.sm`, the markers'
+  tabular figures, `99+` past 99. Its corners are `radius.pill`, the markers'
   role: a capsule. The neutral
   fill is `tabs.counter`, a step from the track toward ink that holds
   `text_primary` at 5.2:1 and shows on the track, the thumb, the page and the
@@ -349,7 +350,7 @@ turns by itself.
   Dots are the 6px lamp squares in `control.border` (`text_muted` under the
   pointer), the selected one stretched to `metrics.icon` wide in
   `text_primary`, so the position never rests on color alone; their corners
-  are `radius.sm`, so they are circles and the selected one a pill. Each dot
+  are `radius.pill`, so they are circles and the selected one a pill. Each dot
   sits in a touching `metrics.icon` square target.
 - **Focus.** The controls are one tab stop beside the item, framed by the 2px
   `focus_ring` frame (`radius.md`) when focused; the arrows and dots inside are

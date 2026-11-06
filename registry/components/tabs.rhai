@@ -2,7 +2,7 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
   "capabilities": {},
@@ -13,7 +13,7 @@
     "accent", "on_accent", "warning", "on_warning", "danger", "on_danger",
     "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.inset",
     "metrics.label_column", "metrics.counter", "spacing.xxs", "spacing.xs", "spacing.sm",
-    "space.related", "space.group", "radius.xs", "radius.sm", "radius.md",
+    "space.related", "space.group", "radius.xs", "radius.pill", "radius.md",
     "typography.control", "typography.counter", "typography.body"
   ],
   "environment": ["size", "density"]
@@ -43,7 +43,7 @@ import "components/sliding_panel" as sliding_panel;
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.4.1",
+        id: "components/tabs", "export": "Tabs", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
         capabilities: #{},
@@ -53,7 +53,7 @@ define_component(#{
             "accent", "on_accent", "warning", "on_warning", "danger", "on_danger",
             "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.inset",
             "metrics.label_column", "metrics.counter", "spacing.xxs", "spacing.xs", "spacing.sm",
-            "space.related", "space.group", "radius.xs", "radius.sm", "radius.md",
+            "space.related", "space.group", "radius.xs", "radius.pill", "radius.md",
             "typography.control", "typography.counter", "typography.body"
         ],
         environment: ["size", "density"],
@@ -299,7 +299,7 @@ fn tab_marker(ctx, tab) {
         let ink = if tone == () { theme_color("text_primary") } else { theme_color(`on_${tone}`) };
         let capsule = style().height(theme_length("metrics.counter")).min_width(theme_length("metrics.counter"))
             .padding_x(theme_spacing("xs")).flex_shrink(false).items_center().justify_center()
-            .radius(theme_radius("sm")).background(fill)
+            .radius(theme_radius("pill")).background(fill)
             .typography("counter").font_feature("tnum", 1).text_color(ink);
         return row([text(count_text(count)).with_style(style().whitespace_nowrap())])
             .with_key("counter").with_style(ctx.component_style("counter", capsule));

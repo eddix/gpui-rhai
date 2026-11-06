@@ -2,13 +2,13 @@
 {
   "id": "components/switch",
   "export": "Switch",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "tokens": [
     "accent", "on_accent", "surface_hover", "surface", "focus_ring", "text_primary",
-    "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.sm",
+    "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.pill",
     "typography.control", "typography.caption"
   ],
   "environment": ["size", "density"]
@@ -20,12 +20,12 @@
 
 define_component(#{
     metadata: #{
-        id: "components/switch", "export": "Switch", version: "0.4.0",
+        id: "components/switch", "export": "Switch", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
             "accent", "on_accent", "surface_hover", "surface", "focus_ring", "text_primary",
-            "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.sm",
+            "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.pill",
             "typography.control", "typography.caption"
         ],
         environment: ["size", "density"],
@@ -74,13 +74,13 @@ fn render_Switch(ctx, props) {
     // button. The 2px track border is reserved and takes the fill until focus turns it ink.
     let thumb = text(if loading { "·" } else { "" }).with_style(ctx.component_style("thumb", style()
         .width(theme_length("metrics.mark") * 0.75).height(theme_length("metrics.mark") * 0.75)
-        .radius(theme_radius("sm")).items_center().justify_center().typography("caption")
+        .radius(theme_radius("pill")).items_center().justify_center().typography("caption")
         .background(if props.checked { theme_color("on_accent") } else { theme_color("text_primary") })
         .text_color(if props.checked { theme_color("accent") } else { theme_color("surface") })
         .disabled(style().background(theme_color("disabled")))));
     let track_style = style()
         .width(theme_length("metrics.mark") * 2).height(theme_length("metrics.mark"))
-        .items_center().radius(theme_radius("sm"))
+        .items_center().radius(theme_radius("pill"))
         .border(px(2)).border_color(fill).background(fill)
         .group_focus(style().border_color(theme_color("focus_ring")))
         .disabled(style().border_color(theme_color("surface_hover")).background(theme_color("surface_hover")));

@@ -1,6 +1,6 @@
 # Switch
 
-`components/switch` · export `Switch` · version 0.4.0. Generated from
+`components/switch` · export `Switch` · version 0.4.2. Generated from
 [`registry/components/switch.rhai`](../../../registry/components/switch.rhai); do not edit.
 
 Controlled binary switch with disabled and loading states. State: controlled by the checked prop.
@@ -36,5 +36,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `label`, `root`, `thumb`
 
 ## Theme
 
-- Tokens: `accent`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `on_accent`, `radius.sm`, `spacing.sm`, `surface`, `surface_hover`, `text_primary`, `typography.caption`, `typography.control`
+- Tokens: `accent`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `on_accent`, `radius.pill`, `spacing.sm`, `surface`, `surface_hover`, `text_primary`, `typography.caption`, `typography.control`
 - Environment: `density`, `size`

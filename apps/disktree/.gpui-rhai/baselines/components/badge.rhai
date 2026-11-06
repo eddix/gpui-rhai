@@ -2,14 +2,14 @@
 {
   "id": "components/badge",
   "export": "Badge",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "tokens": [
     "text_primary", "text_muted", "surface", "accent", "on_accent", "success", "on_success",
     "warning", "on_warning", "danger", "on_danger", "metrics.marker", "metrics.marker_small",
-    "spacing.xs", "spacing.sm", "radius.sm", "typography.caption"
+    "spacing.xs", "spacing.sm", "radius.pill", "typography.caption"
   ],
   "environment": []
 }
@@ -23,13 +23,13 @@
 
 define_component(#{
     metadata: #{
-        id: "components/badge", "export": "Badge", version: "0.4.0",
+        id: "components/badge", "export": "Badge", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
             "text_primary", "text_muted", "surface", "accent", "on_accent", "success", "on_success",
             "warning", "on_warning", "danger", "on_danger", "metrics.marker", "metrics.marker_small",
-            "spacing.xs", "spacing.sm", "radius.sm", "typography.caption"
+            "spacing.xs", "spacing.sm", "radius.pill", "typography.caption"
         ],
         environment: [],
     },
@@ -91,7 +91,7 @@ fn render_Badge(ctx, props) {
         let fill = if variant == "neutral" { theme_color("text_primary") } else { badge_color(variant) };
         root = root
             .padding_x(theme_spacing("sm"))
-            .radius(theme_radius("sm"))
+            .radius(theme_radius("pill"))
             .background(fill)
             .text_color(badge_on_color(variant))
             .font_weight(600);

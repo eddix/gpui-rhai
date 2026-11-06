@@ -1,6 +1,6 @@
 # SplitPane
 
-`components/split_pane` · export `SplitPane` · version 0.4.0. Generated from
+`components/split_pane` · export `SplitPane` · version 0.4.2. Generated from
 [`registry/components/split_pane.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/split_pane.rhai); do not edit.
 
 Controlled, nestable two-panel split layout with a native drag hot lane.
@@ -58,5 +58,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `end`, `grip`, `grip_con
 
 ## Theme
 
-- Tokens: `accent`, `border`, `focus_ring`, `metrics.control`, `radius.sm`, `spacing.md`, `spacing.xs`, `surface_hover`, `surface_raised`, `text_muted`
+- Tokens: `accent`, `border`, `focus_ring`, `metrics.control`, `radius.pill`, `spacing.md`, `spacing.xs`, `surface_hover`, `surface_raised`, `text_muted`
 - Environment: `density`, `size`

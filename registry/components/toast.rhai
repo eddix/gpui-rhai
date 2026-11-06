@@ -2,7 +2,7 @@
 {
   "id": "components/toast",
   "export": "Toast",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -10,7 +10,7 @@
   "tokens": [
     "surface_raised", "border", "surface_hover", "success", "warning", "danger",
     "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.xs",
-    "spacing.sm", "space.related", "radius.xs", "radius.sm", "radius.lg", "typography.body",
+    "spacing.sm", "space.related", "radius.xs", "radius.pill", "radius.lg", "typography.body",
     "typography.caption", "focus_ring"
   ],
   "environment": ["density"]
@@ -28,12 +28,12 @@
 
 define_component(#{
     metadata: #{
-        id: "components/toast", "export": "Toast", version: "0.4.0",
+        id: "components/toast", "export": "Toast", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "border", "surface_hover", "success", "warning", "danger",
             "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs",
-            "spacing.xs", "spacing.sm", "space.related", "radius.xs", "radius.sm", "radius.lg",
+            "spacing.xs", "spacing.sm", "space.related", "radius.xs", "radius.pill", "radius.lg",
             "typography.body", "typography.caption", "focus_ring"
         ],
         environment: ["density"],
@@ -307,7 +307,7 @@ fn stack_layer(ctx, props, key, region, items) {
     // The count marks the newest toast's top end corner.
     if !expanded && count > 1 {
         let count_style = style().absolute().inset_end(px(8)).padding_x(theme_spacing("xs"))
-            .radius(theme_radius("sm")).background(theme_color("border"))
+            .radius(theme_radius("pill")).background(theme_color("border"))
             .text_color(theme_color("text_muted")).typography("caption");
         count_style = count_style.top(offset_px(if bottom { 6 * peek - 8 } else { -8 }));
         children.push(row([text(`${count}`)]).with_key(`${key}-count`)

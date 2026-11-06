@@ -1,6 +1,6 @@
 # Tag
 
-`components/tag` · export `Tag` · version 0.4.0. Generated from
+`components/tag` · export `Tag` · version 0.4.2. Generated from
 [`registry/components/tag.rhai`](../../../registry/components/tag.rhai); do not edit.
 
 Tag labels a category: a flat tonal tape with an optional facet segment.
@@ -42,4 +42,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `close`, `facet`, `label
 
 ## Theme
 
-- Tokens: `accent`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.marker`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.sm`, `spacing.sm`, `spacing.xs`, `success`, `surface_hover`, `tag.facet`, `text.accent`, `text.danger`, `text.success`, `text.warning`, `text_primary`, `typography.caption`, `typography.label`, `warning`
+- Tokens: `accent`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.marker`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.pill`, `spacing.sm`, `spacing.xs`, `success`, `surface_hover`, `tag.facet`, `text.accent`, `text.danger`, `text.success`, `text.warning`, `text_primary`, `typography.caption`, `typography.label`, `warning`

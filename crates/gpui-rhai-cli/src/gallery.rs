@@ -823,7 +823,7 @@ fn build_view(
     if story.id == "apps/operations" && launch.case == "theme-overrides" {
         view = view.theme_token_overrides(ThemeTokenOverrides {
             radii: BTreeMap::from([
-                ("sm".to_owned(), gpui_rhai::Length::Pixels(4.0)),
+                ("pill".to_owned(), gpui_rhai::Length::Pixels(4.0)),
                 ("md".to_owned(), gpui_rhai::Length::Pixels(7.0)),
                 ("lg".to_owned(), gpui_rhai::Length::Pixels(10.0)),
             ]),
