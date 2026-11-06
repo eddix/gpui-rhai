@@ -49,6 +49,14 @@ Accessibility and keyboard operation are release requirements.
   labelled-by/described-by text, rejects duplicate semantic IDs, attaches last
   committed geometry, and supports role/name or semantic-ID lookup through
   `ScriptViewHandle::accessibility_snapshot`.
+- A node's name is its `accessibility_label`, else the text of its
+  `accessibility_labelled_by` targets, else its own text. Since 0.4.2 a
+  button, tab, option, menu item, checkbox, radio, switch, tree item, row,
+  cell, column or row header, heading or tooltip that still has no name takes
+  the text its subtree shows, in order, as ARIA's name from content does: a
+  descendant with a label gives its label, and overlay or layer content is
+  left out. A row drawn as a button with `accessibility_role("button")` reads
+  as its text without a separate label.
 - The gpui-pre adapter projects role, localized name/description, author ID,
   selected/expanded/toggled/current state, scalar and numeric values, ranges,
   orientation, required/invalid/disabled/read-only state, placeholders,
