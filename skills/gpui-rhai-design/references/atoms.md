@@ -173,8 +173,11 @@ Derived roles from the token base: `text.accent`, `text.danger`,
 `text.warning`, `text.success` (the status color adjusted to reach 4.5:1 on
 tonal blocks, used whenever a status or accent color is text), `control.hover`
 (tonal block hover step), `tag.facet` (the darker tonal step of a Tag facet),
-`table.selection`, `tabs.foreground`, `scrollbar.thumb` and
-`scrollbar.thumb_hover`. `tag.facet` and `table.selection` carry
+`table.selection`, `tabs.foreground`, `scrollbar.thumb`,
+`scrollbar.thumb_hover`, and `surface.chrome` (halfway from `surface` to
+`surface_raised`: a third surface for an application's sidebars and title
+bars, between the window canvas and raised cards; no built-in component takes
+it, and a palette may set it outright). `tag.facet` and `table.selection` carry
 `text_primary`, so each backs off toward its base just enough to keep 4.5:1.
 See [themes.md](themes.md).
 

@@ -717,6 +717,13 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
                 }
             }
         }
+        // A third surface halfway between the canvas and raised cards.
+        let colors = &theme.tokens.colors;
+        assert_eq!(
+            theme.tokens.color("surface.chrome"),
+            Some(colors["surface"].mix(colors["surface_raised"], 0.5)),
+            "{name}: surface.chrome"
+        );
         for &(role, size, line_height, weight) in &typography {
             let token = theme.resolve_typography(role).unwrap();
             assert_eq!(token.size, Length::Pixels(size), "{name}:{role}");

@@ -175,6 +175,9 @@ fn tokens() {
             // takes the panel's surface so it joins the panel under it.
             "tabbar.background": mix(theme_color("surface"), theme_color("surface_hover"), 0.5),
             "tabbar.active": theme_color("surface"),
+            // A third surface between the window canvas and raised cards, for an
+            // application's sidebars and title bars; no built-in component takes it.
+            "surface.chrome": mix(theme_color("surface"), theme_color("surface_raised"), 0.5),
 
             "syntax.comment": theme_color("text_muted"),
             "syntax.string": readable(theme_color("success"), theme_color("text_primary"), theme_color("surface_hover"), 4.5),
