@@ -1,6 +1,7 @@
 //! Collapsible's panel height follows density (#127): omitted, the panel fits its content
 //! (measured after layout); a Length such as `theme_length("metrics.row") * 3` resolves in
-//! the subtree's density. An explicit integer stays as given (the control).
+//! the subtree's density. An explicit integer stays as given (the control). Without content
+//! it is the header row alone (feedback #5).
 
 use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::{GeometryBounds, MotionPreference, ScriptViewHandle};
@@ -133,5 +134,31 @@ fn a_closed_panel_without_a_height_opens_to_its_content(cx: &mut TestAppContext)
     assert!(
         (after - (content.1 + content.3)).abs() < 0.5,
         "open: the panel fits the content measured while closed: content {content:?}, after {after}"
+    );
+}
+
+#[gpui::test]
+fn without_content_it_is_the_header_row_alone(cx: &mut TestAppContext) {
+    let body = r#"column([collapsible::Collapsible(#{ key: "details", open: ctx.get_state("open"),
+            trigger: text("Details"), on_open_change: Fn("toggle") }),
+        text("after")]).with_style(style().width(px(300)))"#;
+    let (mut visual, view) = mount(cx, body);
+    let header = |visual: &mut VisualTestContext| {
+        snapshot(visual, &view)
+            .nodes()
+            .find(|node| node.role == "button")
+            .cloned()
+            .unwrap()
+    };
+    let closed = header(&mut visual);
+    assert_eq!(closed.expanded, Some(false));
+    let trigger = closed.geometry.unwrap().layout;
+    click_center(&mut visual, trigger);
+    settle(&mut visual, Step::Frame, 3);
+    assert_eq!(header(&mut visual).expanded, Some(true));
+    let after = layout_of(&mut visual, &view, "text", "after").1;
+    assert!(
+        (after - (trigger.y + trigger.height)).abs() < 0.5,
+        "open, nothing grows under the header ({after})"
     );
 }

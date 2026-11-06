@@ -2,7 +2,7 @@
 {
   "id": "components/collapsible",
   "export": "Collapsible",
-  "version": "0.2.0",
+  "version": "0.4.2",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -15,12 +15,13 @@
 }
 */
 // Controlled disclosure with trigger/content slots and Rust clip animation.
+// Without content it is a disclosure row alone, for content the caller lays out elsewhere.
 // State: controlled open state.
 // Example: Collapsible(#{ key: "details", open: true, trigger: text("Details"), content: text("Body") })
 
 define_component(#{
     metadata: #{
-        id: "components/collapsible", "export": "Collapsible", version: "0.2.0",
+        id: "components/collapsible", "export": "Collapsible", version: "0.4.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         assets: ["icons/chevron_down.svg", "icons/chevron_right.svg"],
         tokens: [
@@ -36,8 +37,8 @@ define_component(#{
                 doc: "Whether the content is shown; the caller stores the `open_change` payload and passes it back." },
             trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false,
                 doc: "Header content after the chevron; the whole header row toggles the panel." },
-            content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
-                doc: "Body shown under the header while open." },
+            content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                doc: "Body shown under the header while open; omitted, the component is the header row alone, and the caller shows its content elsewhere, such as rows of a virtual collection." },
             content_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
                 #{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false, sensitive: false,
                 doc: "Open panel height: logical pixels, or a Length resolved in this subtree's density; omitted, the panel fits its content." },
@@ -51,7 +52,7 @@ define_component(#{
             doc: "Emitted when the header is pressed; the payload is the requested open state." } },
         slots: #{
             trigger: #{ required: true, multiple: false, doc: "Header content after the chevron." },
-            content: #{ required: true, multiple: false, doc: "Body shown under the header while open." },
+            content: #{ required: false, multiple: false, doc: "Body shown under the header while open." },
         },
         parts: ["root", "trigger", "content", "indicator", "focus_frame"],
     },
@@ -122,11 +123,14 @@ fn render_Collapsible(ctx, props) {
     if !disabled && "on_open_change" in props && props.on_open_change != () {
         trigger = trigger.on_click_value(props.on_open_change, !props.open);
     }
-    let height = if "content_height" in props { props.content_height } else { () };
-    let panel_content = props.content.with_style(ctx.component_style("content", style()
-            .padding_x(theme_length("metrics.inset")).padding_bottom(theme_length("metrics.inset"))
-            .typography("body")));
-    let panel = disclosure_panel(ctx, props.key, props.open, height, panel_content);
-    column([trigger, panel]).with_key(props.key)
+    let children = [trigger];
+    if "content" in props && props.content != () {
+        let height = if "content_height" in props { props.content_height } else { () };
+        let panel_content = props.content.with_style(ctx.component_style("content", style()
+                .padding_x(theme_length("metrics.inset")).padding_bottom(theme_length("metrics.inset"))
+                .typography("body")));
+        children.push(disclosure_panel(ctx, props.key, props.open, height, panel_content));
+    }
+    column(children).with_key(props.key)
         .with_style(ctx.component_style("root", style()))
 }

@@ -1,9 +1,9 @@
 # Collapsible
 
-`components/collapsible` · export `Collapsible` · version 0.2.0. Generated from
+`components/collapsible` · export `Collapsible` · version 0.4.2. Generated from
 [`registry/components/collapsible.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/collapsible.rhai); do not edit.
 
-Controlled disclosure with trigger/content slots and Rust clip animation. State: controlled open state.
+Controlled disclosure with trigger/content slots and Rust clip animation. Without content it is a disclosure row alone, for content the caller lays out elsewhere. State: controlled open state.
 
 ```rhai
 import "components/collapsible" as collapsible;
@@ -15,7 +15,7 @@ collapsible::Collapsible(#{ key: "details", open: true, trigger: text("Details")
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `content` | node | required | Body shown under the header while open. |
+| `content` | node or `()` | — | Body shown under the header while open; omitted, the component is the header row alone, and the caller shows its content elsewhere, such as rows of a virtual collection. |
 | `content_height` | integer ≥ 0 or length or `()` | — | Open panel height: logical pixels, or a Length resolved in this subtree's density; omitted, the panel fits its content. |
 | `disabled` | bool | `false` | Whether the header ignores presses. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
@@ -35,7 +35,7 @@ collapsible::Collapsible(#{ key: "details", open: true, trigger: text("Details")
 
 | Slot | Required | Multiple | Description |
 |---|---|---|---|
-| `content` | yes | no | Body shown under the header while open. |
+| `content` | no | no | Body shown under the header while open. |
 | `trigger` | yes | no | Header content after the chevron. |
 
 ## Parts
