@@ -139,7 +139,9 @@ fn swatch(ctx, variant) {
 An unknown variant or color throws. `set_local_theme` changes what
 `ctx.theme_variant()` reports in its scope, but painting still resolves
 `theme_color(...)` against the window's theme; read the colors with
-`theme_colors` where a subtree must show another theme.
+`theme_colors` where a subtree must show another theme. A theme file is not a
+module: `import "themes/dracula"` fails, and `gpui-rhai check` points to
+`theme_colors` instead.
 
 Declare that effect in the formal component schema. Its start callback receives
 the same metadata as deps and restarts only when they change. Event-time reads
