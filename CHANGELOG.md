@@ -5,6 +5,86 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.4.2 - 2026-11-06
+
+This release follows oh-my-traex's feedback on 0.4.0. It changes some
+defaults and the Rust API without a minor bump, by the maintainer's choice:
+the breaking items are marked below.
+
+- gpui-rhai runs on gpui-fast as well as gpui-pre: the `gpui-fast` feature
+  (with `default-features = false`) selects it, the two exclude each other,
+  and `gpui_rhai::gpui` / `gpui_rhai::gpui_platform` name the selected fork.
+  An application that links a gpui-fast UI such as nsh can now link
+  gpui-rhai into the same binary. gpui-fast is pinned at 0.1.9; cache
+  islands are off on it, and a Host runs the process with
+  `GPUI_SCROLL_LAYERS=0`. `gpui-rhai check` reads the backend from the
+  dependency, rejects the other fork and warns when the lockfile resolves
+  both; `gpui-rhai init --backend fast` writes the dependency. Check now
+  resolves workspace-inherited dependencies from a member directory too.
+- **Breaking:** the toolchain and MSRV are Rust 1.99.
+- **Breaking:** an editor (Input, Textarea and the fields and Composer built
+  on them) runs its ancestors' `on_capture("key:…")` handlers before it acts
+  on a key; one that returns `prevent_default()` or `stop()` keeps the editor
+  from acting, so a completion list above a Composer takes Up, Down and
+  Enter while it is open.
+- **Breaking:** an overlay no longer changes how its trigger lays out: the
+  box between them is a column and may shrink, so a ContextMenu around a
+  sidebar row keeps the row's width and a long title truncates. A Tooltip or
+  Menu around a Button in a column now stretches as the Button alone does.
+- **Breaking:** without a Host clock, timers and motion follow GPUI's
+  executor clock: the system clock in an application, the scheduler's in a
+  GPUI test, so `advance_clock` and `run_until_parked` fire due timers and
+  move animation in tests and offscreen captures.
+- `ctx.theme_colors(family, name[, keys])` returns any variant's resolved
+  colors, for a theme picker's swatches.
+- `gpui_rhai::system`: `notifications_available`, `set_badge_label` (the
+  macOS Dock badge) and `ScriptApplication::app_identity`; the
+  `SystemServices` extension gives scripts `system.notification@1` (show,
+  dismiss, available, and the `responses` subscription), `system.badge@1`
+  and `system.attention@1`. `ScriptViewExtension::poll` (new) runs on each
+  view's delivery poll with the application and its window.
+- `interval(key, period_ms, paused, Fn("callback"), payload)` calls back
+  every period (16ms at least) in the timeout key space; a late tick is one
+  call.
+- **Breaking:** the markers' capsule is `radius.pill`; `radius.sm` is now a
+  fixed 4px rounded rectangle for an application's own shapes, which no
+  built-in component takes. A script or Host override that meant the capsule
+  by `sm` uses `pill`. D83.
+- The token base adds `surface.chrome`, halfway from `surface` to
+  `surface_raised`, a third surface for an application's sidebars and title
+  bars.
+- **Breaking:** a button, tab, option, menu item, checkbox, radio, switch,
+  tree item, row, cell, header, heading or tooltip without a label takes its
+  accessible name from the text its subtree shows, so automation that found
+  one by an empty name finds it by its text.
+- A duplicate key names the keys from the root to the parent and where the
+  script created both children, instead of a runtime node number; inside an
+  `error_boundary`'s child, a duplicate key or a decorated fragment makes
+  that boundary show its fallback and the rest of the view commits.
+  **Breaking** for Rust code that matches `ReconcileError::DuplicateKey`
+  field by field: it gains `path` and `sources`. `RetainedUiTree` gains
+  `reconcile_contained`.
+- A function allows an expression depth of 64, like the top level, so an
+  ordinary node with a style chain in a closure compiles; check and the
+  import scan use the engine's depths.
+- A Rhai keyword where a name belongs (`import "components/switch" as
+  switch;`) fails with an error that names the keyword; the generated
+  references import such a module as `switch_component`.
+- `import "themes/…"` fails check and the module resolver with a message
+  that points to `ctx.theme_colors`, rather than an unknown function call or
+  a missing module.
+- Files beside the images in `ui/assets` (a license, `.DS_Store`) no longer
+  fail check: check warns about non-image files and skips them, and embed
+  compiles only the images. `KnownCallDiagnostic` gains `module`.
+- Collapsible's `content` is optional: without it the component is the
+  disclosure row alone. Composer's editor shows the Composer's surface, so a
+  `root` background covers it.
+- Aligned primitive nodes lay out as flex boxes, so field text centers on
+  either backend (gpui-fast's Taffy resolves a percentage height under a
+  min-height as CSS does).
+- Docs: placing a document viewer on a raised card, adding a third-party icon
+  set, and offscreen captures.
+
 ## 0.4.1 - 2026-11-05
 
 - A view mounted with `host_sets_width(true)` anchors its cache islands on the
