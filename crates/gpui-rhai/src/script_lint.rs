@@ -18,6 +18,8 @@ pub struct KnownCallDiagnostic {
     pub column: Option<usize>,
     /// Qualified call namespace, or `None` for direct and method calls.
     pub namespace: Option<String>,
+    /// The module id the namespace's import names, when it names one.
+    pub module: Option<String>,
     /// Called function or method name.
     pub function: String,
     /// Number of explicit arguments at the call site.
@@ -39,6 +41,13 @@ impl fmt::Display for KnownCallDiagnostic {
             || self.function.clone(),
             |namespace| format!("{namespace}::{}", self.function),
         );
+        // A theme file is no module, so every call into one is unknown; say why.
+        if let Some(module) = self.module.as_deref().filter(|id| is_theme_id(id)) {
+            return write!(
+                formatter,
+                ": `{qualified}` calls into `{module}`, {THEME_IMPORT}"
+            );
+        }
         if self.expected_arities.is_empty() {
             write!(
                 formatter,
@@ -59,6 +68,16 @@ impl fmt::Display for KnownCallDiagnostic {
             )
         }
     }
+}
+
+/// Why an import of a theme file cannot work.
+pub(crate) const THEME_IMPORT: &str =
+    "a theme, not a module: read another theme's colors with ctx.theme_colors(family, name)";
+
+/// Whether `id` names a theme file: themes live under `themes/` and load as
+/// themes, never as script modules.
+pub(crate) fn is_theme_id(id: &str) -> bool {
+    id.starts_with("themes/")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -644,11 +663,15 @@ fn lint_source(
                     }
                     _ => {}
                 }
+                let module = namespace
+                    .as_deref()
+                    .and_then(|namespace| imports.get(namespace.split("::").next()?))
+                    .cloned();
                 push_if_invalid(
                     diagnostics,
                     source,
                     *position,
-                    namespace,
+                    (namespace, module),
                     &call.name,
                     call.args.len(),
                     expected,
@@ -669,7 +692,7 @@ fn lint_source(
                     diagnostics,
                     source,
                     *position,
-                    None,
+                    (None, None),
                     &call.name,
                     call.args.len(),
                     expected,
@@ -765,7 +788,7 @@ fn push_if_invalid(
     diagnostics: &mut Vec<KnownCallDiagnostic>,
     source: &ParsedSource,
     position: rhai::Position,
-    namespace: Option<String>,
+    (namespace, module): (Option<String>, Option<String>),
     function: &str,
     arity: usize,
     expected: BTreeSet<usize>,
@@ -778,6 +801,7 @@ fn push_if_invalid(
         line: position.line(),
         column: position.position(),
         namespace,
+        module,
         function: function.to_owned(),
         arity,
         expected_arities: expected.into_iter().collect(),
@@ -808,6 +832,31 @@ mod tests {
             )
             .unwrap();
         assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    }
+
+    #[test]
+    fn a_call_into_an_imported_theme_says_themes_are_not_modules() {
+        let mut runtime = RuntimeEngine::new();
+        let diagnostics = runtime
+            .lint_known_calls(
+                "ui/main.rhai",
+                r#"
+                    import "themes/dracula" as dracula;
+                    fn view(ctx) { let theme = dracula::theme(); text("") }
+                "#,
+                &BTreeMap::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            [
+                "ui/main.rhai:3:57: `dracula::theme` calls into `themes/dracula`, a theme, not \
+                 a module: read another theme's colors with ctx.theme_colors(family, name)"
+            ]
+        );
     }
 
     #[test]
