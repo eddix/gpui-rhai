@@ -532,6 +532,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Lists every loaded theme variant as `#{ family, name, mode }`, ordered by family and name, for a theme picker.",
     },
     ScriptFnDoc {
+        signature: "theme_colors(_: &mut UiContext, _: string, _: string) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["family", "name"],
+        doc: "Returns every color of the theme variant `family`/`name`, as the token base, color expressions and Host overrides resolve them, keyed by token name (`namespace.name` for namespaced colors). Values are literal colors for any color style, so a theme picker draws swatches of variants other than the one shown; throws for an unknown variant.",
+    },
+    ScriptFnDoc {
+        signature: "theme_colors(_: &mut UiContext, _: string, _: string, _: array) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["family", "name", "keys"],
+        doc: "Returns the named colors of the theme variant `family`/`name`, such as `[\"surface\", \"text_primary\", \"accent\"]`; throws for an unknown variant or color.",
+    },
+    ScriptFnDoc {
         signature: "today(_: &mut UiContext) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &[],
         doc: "Returns today's date as an ISO `YYYY-MM-DD` string from the Host calendar clock; available during render.",
