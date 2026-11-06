@@ -314,7 +314,7 @@ fn assert_pixels(pixels: &[u8], bgra: [u8; 4]) {
         8 * 8 * 4,
         "fixture must decode all 8x8 pixels"
     );
-    assert!(pixels.chunks_exact(4).all(|pixel| pixel == bgra));
+    assert!(pixels.as_chunks::<4>().0.iter().all(|pixel| *pixel == bgra));
 }
 fn assert_cover_geometry(v: &mut VisualTestContext, view: &ScriptViewHandle) {
     let geometry = bounds(v, view, "image", "Cover");

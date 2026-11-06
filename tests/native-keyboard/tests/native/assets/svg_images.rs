@@ -165,7 +165,7 @@ fn svg_raster_adapter_uses_the_gpui_system_font_environment(cx: &mut TestAppCont
         .unwrap();
     let pixels = render_image_source(cx, registry.image_source(handle.opaque()).unwrap());
     assert!(
-        pixels.chunks_exact(4).filter(|pixel| pixel[3] > 0).count() > 100,
+        pixels.as_chunks::<4>().0.iter().filter(|pixel| pixel[3] > 0).count() > 100,
         "system font glyphs must survive the SVG raster adapter"
     );
 }
