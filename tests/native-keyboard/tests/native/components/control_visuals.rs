@@ -419,6 +419,134 @@ fn view(ctx){column([tabs::Tabs(#{label:"Sections",value:"two",variant:"underlin
     );
 }
 
+/// The chip look (feedback #6): separate chips with a control's corners, the selected one on
+/// a raised thumb with a 1px border, which takes the list's focus; an idle chip is
+/// transparent and a hovered one fills with `surface_hover`.
+#[gpui::test]
+fn tabs_chip_raises_the_selected_chip_on_a_bordered_thumb(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/tabs" as tabs;
+fn changed(ctx,value){}
+fn view(ctx){column([tabs::Tabs(#{label:"Workspace",value:"two",variant:"chip",panel:false,tabs:[
+    #{value:"one",label:"One"},#{value:"two",label:"Much longer"},#{value:"three",label:"中文项目"}
+],on_change:Fn("changed")})]).with_style(style().padding(px(12)).items_start())}
+"#;
+    let overrides = ThemeTokenOverrides {
+        colors: BTreeMap::from([
+            (
+                "surface_raised".to_owned(),
+                Rgba8::from_rgba_hex(0xff00_00ff),
+            ),
+            ("border".to_owned(), Rgba8::from_rgba_hex(0x0000_ffff)),
+            (
+                "surface_hover".to_owned(),
+                Rgba8::from_rgba_hex(0xffff_00ff),
+            ),
+            ("focus_ring".to_owned(), Rgba8::from_rgba_hex(0x00ff_00ff)),
+        ]),
+        ..Default::default()
+    };
+    let (window, view) = mount_with_overrides(cx, script, "tabs-chip", overrides);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert_eq!(last_error(&mut visual, &view), None);
+    let tree = snapshot(&mut visual, &view);
+    let tabs = tab_slots(&tree);
+    assert_eq!(tabs.len(), 3);
+    assert!(tabs.iter().all(|tab| near(32.0, tab.height)), "{tabs:?}");
+    assert!(
+        tabs[1].x > tabs[0].x + tabs[0].width,
+        "separate chips: {tabs:?}"
+    );
+
+    // One thumb, under the selected chip, rounded and framed by a 1px border; no track.
+    let thumbs = filled(&mut visual, 0xff00_00ff);
+    assert_eq!(thumbs.len(), 1, "{thumbs:?}");
+    let thumb = thumbs[0];
+    assert!(
+        near(thumb.bounds.x, tabs[1].x) && near(thumb.bounds.width, tabs[1].width),
+        "thumb={thumb:?}, tab={:?}",
+        tabs[1]
+    );
+    assert!(
+        thumb.corner_radii.iter().all(|radius| *radius > 0.0),
+        "{thumb:?}"
+    );
+    // The border paints as its own quad, over the content, on the thumb's bounds.
+    let border: gpui::Hsla = rgba(0x0000_ffff).into();
+    let frames: Vec<_> = painted_quads(&mut visual)
+        .into_iter()
+        .filter(|quad| quad.border_color == border)
+        .collect();
+    assert!(
+        frames.iter().any(|quad| quad.bounds == thumb.bounds
+            && quad.border_widths == [1.0; 4]
+            && quad.corner_radii == thumb.corner_radii),
+        "{frames:?}"
+    );
+    assert!(
+        filled(&mut visual, 0xffff_00ff).is_empty(),
+        "idle chips are transparent"
+    );
+
+    // A hovered chip fills with surface_hover on a control's corners.
+    let center = point(
+        px((tabs[0].x + tabs[0].width / 2.0) as f32),
+        px((tabs[0].y + tabs[0].height / 2.0) as f32),
+    );
+    visual.simulate_mouse_move(center, None, Modifiers::none());
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let hovered = filled(&mut visual, 0xffff_00ff);
+    assert!(
+        hovered.len() == 1
+            && near(hovered[0].bounds.width, tabs[0].width)
+            && hovered[0].corner_radii.iter().all(|radius| *radius > 0.0),
+        "{hovered:?}"
+    );
+
+    // The list's focus turns the thumb's frame focus_ring.
+    assert!(bordered_quads(&mut visual, 0x00ff_00ff).is_empty());
+    visual.update(|window, cx| view.focus(window, cx)).unwrap();
+    visual.simulate_keystrokes("tab");
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let frames = bordered_quads(&mut visual, 0x00ff_00ff);
+    assert!(
+        frames.iter().any(|(width, _)| near(*width, tabs[1].width)),
+        "frames={frames:?}, tab={:?}",
+        tabs[1]
+    );
+}
+
+#[gpui::test]
+fn tabs_chip_is_horizontal_only(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/tabs" as tabs;
+fn view(ctx){tabs::Tabs(#{label:"Workspace",value:"one",variant:"chip",orientation:"vertical",
+    panel:false,tabs:[#{value:"one",label:"One"}]})}
+"#;
+    let prepared = MODULES
+        .iter()
+        .fold(Mount::new(script), |mount, id| mount.registry(id))
+        .bundled_assets()
+        .id("tabs-chip-vertical")
+        .prepare()
+        .unwrap();
+    let host = cx.update(|cx| ScriptViewHost::new("chip-host", cx).unwrap());
+    let mut error = None;
+    cx.add_window(|window, cx| {
+        error = prepared
+            .mount(ScriptViewConfig::new("chip"), host.clone(), window, cx)
+            .err()
+            .map(|error| error.to_string());
+        gpui::Empty
+    });
+    let error = error.expect("a vertical chip strip fails to mount");
+    assert!(error.contains("horizontal orientation only"), "{error}");
+}
+
 #[gpui::test]
 fn tabs_underline_equal_layout_shares_the_strip(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);

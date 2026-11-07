@@ -1,9 +1,9 @@
 # Tabs
 
-`components/tabs` · export `Tabs` · version 0.4.2. Generated from
+`components/tabs` · export `Tabs` · version 0.4.3. Generated from
 [`registry/components/tabs.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tabs.rhai); do not edit.
 
-Controlled tabs with one tab stop; the arrow keys select. Three looks share every capability: `track` is a tonal track with a raised thumb, for a compact switcher among other controls; `underline` puts the labels on a hairline with a 2px ink bar under the selected one, for the sections of a panel or a card; `bar` is a strip of document tabs whose selected tab takes the panel's surface (`tabbar.active`) and covers its line.
+Controlled tabs with one tab stop; the arrow keys select. Four looks share every capability: `track` is a tonal track with a raised thumb, for a compact switcher among other controls; `chip` is the same thumb without the track, each tab a separate chip, for a title bar or toolbar; `underline` puts the labels on a hairline with a 2px ink bar under the selected one, for the sections of a panel or a card; `bar` is a strip of document tabs whose selected tab takes the panel's surface (`tabbar.active`) and covers its line.
 
 A tab carries what the component draws: an icon, the label, a count capsule or a tone lamp, a dirty mark and a close button; a `head` node replaces the icon, label and count with the caller's own content, and the tab keeps everything else. None of them is a tab stop; the list reaches each one: Left/Right (Up/Down when vertical), Home and End select, Delete or Backspace closes the selected tab, Alt+Arrow moves it when the tabs are reorderable, and Shift+F10 or the menu key asks for a context menu. Actions that are not about one tab go in `start` and `end`, outside the list; `on_add` draws a "+" after the last tab. Tabs keep their width and the strip scrolls when they do not fit, keeping the selected tab revealed. With `panel_motion: "slide"` a newly selected panel slides in from the side of the tab it replaces.
 
@@ -42,7 +42,7 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 | `style` | style | — | Style merged over the root part. |
 | `tabs` | array of object (at most 256) | required | The tabs in list order; empty is a strip with no tabs. |
 | `value` | string | required | The `value` of the selected tab, or one no tab has (such as `""`) for none; the caller stores the `change` payload and passes it back. |
-| `variant` | `"track"` or `"underline"` or `"bar"` | `"track"` | `track` is a tonal track with a raised thumb; `underline` puts the labels on a hairline and marks the selected one with a 2px ink bar; `bar` is a strip of document tabs whose selected tab joins the panel under it. `underline` and `bar` are horizontal only. |
+| `variant` | `"track"` or `"chip"` or `"underline"` or `"bar"` | `"track"` | `track` is a tonal track with a raised thumb; `chip` makes each tab a separate chip with a control's corners, transparent until hovered, the selected one raised (`surface_raised`) with a 1px `border`; `underline` puts the labels on a hairline and marks the selected one with a 2px ink bar; `bar` is a strip of document tabs whose selected tab joins the panel under it. `chip`, `underline` and `bar` are horizontal only. |
 
 ### `tabs[]` fields
 
