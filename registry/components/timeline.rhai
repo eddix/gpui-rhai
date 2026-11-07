@@ -1,9 +1,9 @@
 /* gpui-rhai
-{"id":"components/timeline","export":"Timeline","version":"0.4.0","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],"environment":["size","density"]}
+{"id":"components/timeline","export":"Timeline","version":"0.4.3","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],"environment":["size","density"]}
 */
 // A source-owned, controlled timeline. Application work and data loading stay outside it.
 // Example: Timeline(#{key:"runs",label:"Deployment",items:[#{key:"build",title:"Build",status:"success"}]})
-define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.4.0",
+define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.4.3",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
     tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],environment:["size","density"]},
     schema:#{props:#{
@@ -92,7 +92,7 @@ fn timeline_time(ctx,item,mode,zone,now){
 }
 fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,focus,ctx,payload){
     let item=payload.item;let current=field(item,"current",false);let chosen=item.key in selected;
-    let content=[];let status=ctx.t(`timeline.${item.status}`);let start=field(item,"start",());
+    let content=[];let status=ctx.t_or(`timeline.${item.status}`,item.status);let start=field(item,"start",());
     let absolute=if start==(){"—"}else{ctx.format_time(start,"long",zone)};
     if "day_header" in item{content.push(text(item.day_header).with_style(ctx.component_style("day_header",style()
         .typography("label").text_color(theme_color("text_muted")))));}
@@ -124,7 +124,7 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,foc
     if item.has_children{disclosure=row([text(if item.expanded{"−"}else{"+"})]).with_key("disclosure")
         .with_style(ctx.component_style("disclosure",style().width(theme_length("metrics.control")).min_height(theme_length("metrics.control"))
             .flex_shrink(false).items_center().justify_center().border(px(2)).border_color(rgba(0x00000000)).focus(style().border_color(theme_color("focus_ring")))))
-        .accessibility_role("button").accessibility_label(`${ctx.t(if item.expanded{"timeline.collapse"}else{"timeline.expand"})} ${item.title}`)
+        .accessibility_role("button").accessibility_label(`${if item.expanded{ctx.t_or("timeline.collapse","Collapse")}else{ctx.t_or("timeline.expand","Expand")}} ${item.title}`)
         .on_click_value(Fn("timeline_toggle").curry(expanded),item.key).tab_stop(mode=="none");}
     let body=[row([title]).with_key("title-line").with_style(style().min_height(theme_length("metrics.control")).items_center())];
     if field(item,"description","")!=""{body.push(text(item.description).with_style(ctx.component_style("description",style()
@@ -162,8 +162,8 @@ fn render_Timeline(ctx,props){
     let cursor=ctx.get_state("cursor");let index=0;let first_current=();let previous_day="";let visible_keys=#{};
     for i in 0..records.len{let item=records[i];visible_keys[item.key]=true;if item.key==cursor{index=i;}if field(item,"current",false)&&first_current==(){first_current=item.key;}
         if props.day_headers&&field(item,"start",())!=(){let day=time_parts(item.start,props.time_zone).date;
-            if day!=previous_day{let today=time_parts(now,props.time_zone).date;item.day_header=if day==today{ctx.t("time.today")}
-                else if day==date_checked_add_days(today,-1){ctx.t("time.yesterday")}else{ctx.format_date(day,"medium")};previous_day=day;records[i]=item;}}
+            if day!=previous_day{let today=time_parts(now,props.time_zone).date;item.day_header=if day==today{ctx.t_or("time.today", "Today")}
+                else if day==date_checked_add_days(today,-1){ctx.t_or("time.yesterday", "Yesterday")}else{ctx.format_date(day,"medium")};previous_day=day;records[i]=item;}}
     }
     let initialized=ctx.get_state("initialized");let external_selection=initialized&&ctx.get_state("observed_selection")!=props.selected_keys;
     if (!initialized||external_selection||!(cursor in visible_keys))&&records.len>0{cursor=if props.selected_keys.len>0&&props.selected_keys[0] in visible_keys{props.selected_keys[0]}else if first_current!=(){first_current}else{records[0].key};

@@ -117,13 +117,14 @@ fn rtl_handles_follow_the_owned_columns_logical_end(cx: &mut TestAppContext) {
     let (window, view) = mount(cx, script(true, false, false), "pr101-rtl-geometry");
     let mut v = VisualTestContext::from_window(*window, cx);
     let mut errors = Vec::new();
+    // The Arabic locale names the handles.
     for title in ["A", "B"] {
         let h = bounds(&mut v, &view, "columnheader", title);
         let s = bounds(
             &mut v,
             &view,
             "separator",
-            &format!("Resize {title} column"),
+            &format!("تغيير حجم العمود {title}"),
         );
         let center = s.x + s.width / 2.0;
         println!(
@@ -135,7 +136,7 @@ fn rtl_handles_follow_the_owned_columns_logical_end(cx: &mut TestAppContext) {
         }
     }
     let h = bounds(&mut v, &view, "columnheader", "C");
-    let s = bounds(&mut v, &view, "separator", "Resize C column");
+    let s = bounds(&mut v, &view, "separator", "تغيير حجم العمود C");
     println!("RTL last C: header left={},handle left={}", h.x, s.x);
     assert!(
         errors.is_empty() && (s.x - h.x).abs() < 0.5,

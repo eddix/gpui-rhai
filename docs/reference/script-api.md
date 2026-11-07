@@ -279,6 +279,8 @@ Methods of the context a view, callback or effect receives.
 | `ctx.start_subscription(capability: String, method: String, input: ?, on_value: FnPtr, on_error: FnPtr, options: Map) -> SubscriptionHandle` | Starts a capability stream calling `on_value` per item, only from an effect start; `options` takes `delivery`, `capacity`, `throttle_ms`. |
 | `ctx.start_task(capability: String, method: String, input: ?, on_success: FnPtr, on_error: FnPtr) -> TaskHandle` | Runs a capability `method` in the background, then calls `on_success` or `on_error`; from `init`, callbacks, effects or `resume`. |
 | `ctx.t(key: String) -> String` | Returns the message `key` in the current locale, falling back to the default locale; records a locale dependency in render. |
+| `ctx.t_or(key: String, fallback: String) -> String` | Returns the message `key` as `ctx.t` does, or `fallback` when the application has no locale or no bundle defines `key`; what official components use for their built-in text. Records a locale dependency in render. |
+| `ctx.t_or(key: String, fallback: String, values: Map) -> String` | `ctx.t_or(key, fallback)` with each `{name}` in the text replaced by `values[name]`: `ctx.t_or("tag.remove", "Remove {name}", #{ name: label })`. |
 | `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render. |
 | `ctx.theme_colors(family: String, name: String) -> Map` | Returns every color of the theme variant `family`/`name`, as the token base, color expressions and Host overrides resolve them, keyed by token name (`namespace.name` for namespaced colors). Values are literal colors for any color style, so a theme picker draws swatches of variants other than the one shown; throws for an unknown variant. |
 | `ctx.theme_colors(family: String, name: String, keys: Array) -> Map` | Returns the named colors of the theme variant `family`/`name`, such as `["surface", "text_primary", "accent"]`; throws for an unknown variant or color. |
@@ -666,6 +668,7 @@ Official components wrap them; application components may too.
 | `line_style` | style | required | Style of each whole row, gutter and text together. |
 | `loading_style` | style | required | Style of the placeholder shown while the document is first prepared in the background. |
 | `max_height` | length or `()` | — | Most a `content` viewer grows, in pixels, rems or a length token; taller documents scroll inside. Ignored with `fill`. |
+| `messages` | map of string | — | Localized text by name, in English: `find` ("Find in document"), `no_matches` ("No matches"), `invalid_regex` ("Invalid regex: {error}"), `loading` ("Loading document…"), `updating` ("Updating document…"), `highlight_unavailable` ("Syntax highlighting unavailable: {error}"). A name left out reads in English. |
 | `on_location_activate` | callback or `()` | — | Called with the 1-based `#{ line, column }` when the text is double-clicked or Enter is pressed. |
 | `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared overlay scrollbar visibility; keyboard scrolling remains owned by the document. |
 | `scrollbar_thumb_hover_style` | style | — | Background override for the corresponding shared scrollbar part. |
@@ -719,6 +722,7 @@ Official components wrap them; application components may too.
 | `left_source` | string or native document | required | The left document: an inline string or a `NativeTextDocument`; left and right are neutral, not old and new. |
 | `line_style` | style | required | Style of each whole diff row, gutters and text together. |
 | `loading_style` | style | required | Style of the placeholder shown while the comparison is first calculated in the background. |
+| `messages` | map of string | — | Localized text by name, in English: `find` ("Find on both sides"), `no_matches` ("No matches"), `invalid_regex` ("Invalid regex: {error}"), `calculating` ("Calculating comparison…"), `no_differences` ("No differences"), `preparing` ("Preparing"), `change` ("Change {current} of {count}"), `syntax_fallback` ("syntax fallback: {error}"), `updating` ("Updating comparison…"). A name left out reads in English. |
 | `mode` | `"unified"` or `"split"` | `"unified"` | `unified` interleaves both sides in one column; `split` shows left and right side by side on aligned rows. |
 | `on_location_activate` | callback or `()` | — | Called with the 1-based `#{ side, line, column }` when the text is double-clicked or Enter is pressed. |
 | `right_file_name` | string or `()` | — | File name whose extension picks the right side's syntax when `right_language` does not. |
@@ -833,6 +837,7 @@ Official components wrap them; application components may too.
 | `link_style` | style | required | Style of the Markdown link part. |
 | `loading_style` | style | required | Style of the Markdown loading part. |
 | `max_height` | length or `()` | — | Maximum content height as an absolute-resolvable Length (px/rem); relative lengths are not supported. Longer content scrolls natively. |
+| `messages` | map of string | — | Localized text by name, in English: `preparing` ("Preparing Markdown…"), `updating` ("Updating…"), `copy` ("Copy"), `copy_code` ("Copy code"), `code_block` ("{language} code block"), `plain_text` ("Plain text"). A name left out reads in English. |
 | `on_link` | callback or `()` | — | Emits href and visible text. Does not open a browser. |
 | `paragraph_style` | style | required | Style of the Markdown paragraph part. |
 | `quote_style` | style | required | Style of the Markdown quote part. |

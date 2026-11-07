@@ -1,6 +1,6 @@
 # Sortable
 
-`components/sortable` · export `Sortable` · version 0.2.0. Generated from
+`components/sortable` · export `Sortable` · version 0.4.3. Generated from
 [`registry/components/sortable.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/sortable.rhai); do not edit.
 
 Controlled keyed ordering with native pointer targets and keyboard moves. State: order is caller-owned; native state contains only one transient drag. Keyboard: focus a handle, then press Option/Alt with an arrow, Home or End (all three need Option/Alt). A horizontal row follows the reading direction, so in RTL Option/Alt+Left moves a row towards the end.
@@ -39,7 +39,7 @@ sortable::Sortable(#{ key:"queue", label:"Queue", items:items, on_reorder:Fn("re
 | `content` | node | required | Node shown beside the drag handle. |
 | `disabled` | bool | `false` | Keeps the row from being dragged or moved by key; rows can still drop beside it. |
 | `key` | string | required | Identity of the row, unique in the list; `reorder` reports it. |
-| `label` | string | required | Accessible name of the row; its handle reads `Reorder <label>`. |
+| `label` | string | required | Accessible name of the row; its handle reads the localized `sortable.reorder` message, `Reorder <label>` in English. |
 
 ## Events
 

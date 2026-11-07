@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.4.1",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/badge", "components/selectable_list"],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.4.1",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge", "components/selectable_list"], capabilities: #{},
         tokens: ["surface_raised", "surface_hover", "border", "table.selection", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring", "scrollbar.thumb", "scrollbar.thumb_hover"],
@@ -126,12 +126,12 @@ define_component(#{
                 "default": #{ type: "bool", value: false },
                 doc: "Shows `loading_content` below the header instead of the rows." },
             loading_content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
-                doc: "Node shown while `loading`; `()` shows a muted \"Loading…\" line." },
+                doc: "Node shown while `loading`; `()` shows a muted line with the localized `collection.loading` message (\"Loading…\")." },
             empty: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Node shown instead of `empty_text` when no row is left to show." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "No results" },
-                doc: "Muted text shown when no row is left after filtering and paging, unless `empty` is given." },
+                "default": #{ type: "string", value: "" },
+                doc: "Muted text shown when no row is left after filtering and paging, unless `empty` is given. Empty, the localized `common.no_results` message, `No results` without one." },
             striped: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Tints every second displayed row with `surface_raised`." },
@@ -232,6 +232,13 @@ define_component(#{
 import "components/badge" as badge;
 // Row selection, the keys and the context requests are SelectableList's behavior.
 import "components/selectable_list" as selectable_list;
+
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
 
 fn Table(props) { render_component("components/table", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
@@ -493,7 +500,7 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_r
         .with_ref(element_ref(`${table_key}-column-resize-${index}-handle`))
         .with_style(ctx.component_style("resize_handle", base))
         .tab_stop(true).accessibility_role("separator")
-        .accessibility_label(`Resize ${column.title} column`)
+        .accessibility_label(ctx.t_or("table.resize_column", "Resize {name} column", #{ name: column.title }))
         .accessibility_orientation("vertical")
         .on_key_value("left", Fn("column_resize_key"), key_payload);
     key_payload.delta = 8.0;
@@ -622,12 +629,12 @@ fn render_Table(ctx, props) {
     if prop_or(props, "loading", false) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
-        } else { text("Loading…") };
+        } else { text(ctx.t_or("collection.loading", "Loading…")) };
         return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"loading",loading),1,false);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
-            else { text(prop_or(props, "empty_text", "No results")) };
+            else { text(localized_prop(ctx, props, "empty_text", "common.no_results", "No results")) };
         return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1,false);
     }
 
@@ -670,7 +677,7 @@ fn render_Table(ctx, props) {
         });
     if data.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
-            else { text(prop_or(props, "empty_text", "No results")) };
+            else { text(localized_prop(ctx, props, "empty_text", "common.no_results", "No results")) };
         return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1,false);
     }
     let collection = #{

@@ -2996,6 +2996,24 @@ impl UiContext {
         self.read_locale(|locale, window, component| locale.text(window, Some(component), key))
     }
 
+    /// Resolve one localized message, or `fallback` when the application has no
+    /// locale or no bundle defines `key`: what a component's built-in text uses, so
+    /// it reads in the application's language and still renders without locales.
+    ///
+    /// # Errors
+    ///
+    /// Returns borrow errors.
+    pub fn text_or(&self, key: &str, fallback: &str) -> Result<String, UiContextError> {
+        match self.text(key) {
+            Ok(text) => Ok(text),
+            Err(
+                UiContextError::LocaleUnavailable
+                | UiContextError::Locale(crate::LocaleError::UnknownMessage(_)),
+            ) => Ok(fallback.to_owned()),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Resolve the logical text direction for this component scope.
     /// Defaults to left-to-right without a locale manager, like native rendering.
     ///
@@ -5074,14 +5092,42 @@ fn register_time_context_methods(builder: &mut TypeBuilder<UiContext>) {
         });
 }
 
-fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
-    register_time_context_methods(builder);
+fn register_message_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn("t", |context: &mut UiContext, key: ImmutableString| {
             context
                 .text(key.as_str())
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         })
+        .with_fn(
+            "t_or",
+            |context: &mut UiContext, key: ImmutableString, fallback: ImmutableString| {
+                context
+                    .text_or(key.as_str(), fallback.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "t_or",
+            |context: &mut UiContext,
+             key: ImmutableString,
+             fallback: ImmutableString,
+             values: rhai::Map| {
+                let mut text = context
+                    .text_or(key.as_str(), fallback.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))?;
+                for (name, value) in values {
+                    text = text.replace(&format!("{{{name}}}"), &value.to_string());
+                }
+                Ok::<_, Box<EvalAltResult>>(text)
+            },
+        );
+}
+
+fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    register_time_context_methods(builder);
+    register_message_context_methods(builder);
+    builder
         .with_fn(
             "set_locale",
             |context: &mut UiContext, locale: ImmutableString| {

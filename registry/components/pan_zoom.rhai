@@ -2,7 +2,7 @@
 {
   "id": "components/pan_zoom",
   "export": "PanZoom",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -15,7 +15,7 @@
 // Example: PanZoom(#{ key:"map", label:"Map", transform:viewport, content:canvas_node, on_transform_change:Fn("changed") })
 
 define_component(#{
-    metadata: #{ id:"components/pan_zoom", "export":"PanZoom", version: "0.2.0",
+    metadata: #{ id:"components/pan_zoom", "export":"PanZoom", version: "0.4.3",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
         tokens: ["border", "surface", "focus_ring"],
         environment: [] },
@@ -124,7 +124,8 @@ fn render_PanZoom(ctx, props) {
             .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("region").accessibility_label(props.label)
-        .accessibility_value(`x ${props.transform.x}, y ${props.transform.y}, scale ${props.transform.scale}`);
+        .accessibility_value(ctx.t_or("pan_zoom.value", "x {x}, y {y}, scale {scale}",
+            #{ x: props.transform.x, y: props.transform.y, scale: props.transform.scale }));
     box([content, interaction]).with_key(viewport_key).with_ref(viewport_ref)
         .with_style(ctx.component_style("root", style().relative().clip()
             .min_width(px(0)).min_height(px(0)).border(px(1)).border_color(theme_color("border"))

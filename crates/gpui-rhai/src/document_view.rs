@@ -86,6 +86,93 @@ fn document_scrollbar_props() -> Vec<(String, ObjectField)> {
     props
 }
 
+/// Text a native view shows, localized by the Rhai component that renders it: the
+/// `messages` prop maps a name to its text, and a name it leaves out reads in English.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ViewMessages {
+    english: &'static [(&'static str, &'static str)],
+    localized: BTreeMap<String, String>,
+}
+
+impl ViewMessages {
+    pub(crate) fn parse(
+        props: &PrimitiveProps,
+        english: &'static [(&'static str, &'static str)],
+    ) -> Self {
+        let localized = match props.data("messages") {
+            Some(UiValue::Map(messages)) => messages
+                .iter()
+                .filter_map(|(name, text)| match text {
+                    UiValue::String(text) => Some((name.clone(), text.clone())),
+                    _ => None,
+                })
+                .collect(),
+            _ => BTreeMap::new(),
+        };
+        Self { english, localized }
+    }
+
+    pub(crate) fn get(&self, name: &str) -> String {
+        self.localized.get(name).cloned().unwrap_or_else(|| {
+            self.english
+                .iter()
+                .find(|(english, _)| *english == name)
+                .map_or(name, |(_, text)| text)
+                .to_owned()
+        })
+    }
+
+    /// The text for `name` with each `{placeholder}` replaced.
+    pub(crate) fn format(&self, name: &str, values: &[(&str, &str)]) -> String {
+        values
+            .iter()
+            .fold(self.get(name), |text, (placeholder, value)| {
+                text.replace(&format!("{{{placeholder}}}"), value)
+            })
+    }
+}
+
+pub(crate) fn view_messages_prop(english: &[(&str, &str)]) -> (String, ObjectField) {
+    let names = english
+        .iter()
+        .map(|(name, text)| format!("`{name}` ({text:?})"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    (
+        "messages".to_owned(),
+        ObjectField::optional(ValueSchema::Map {
+            values: Box::new(ValueSchema::string()),
+        })
+        .with_doc(format!(
+            "Localized text by name, in English: {names}. A name left out reads in English."
+        )),
+    )
+}
+
+const CODE_MESSAGES: &[(&str, &str)] = &[
+    ("find", "Find in document"),
+    ("no_matches", "No matches"),
+    ("invalid_regex", "Invalid regex: {error}"),
+    ("loading", "Loading document…"),
+    ("updating", "Updating document…"),
+    (
+        "highlight_unavailable",
+        "Syntax highlighting unavailable: {error}",
+    ),
+];
+
+const DIFF_MESSAGES: &[(&str, &str)] = &[
+    ("find", "Find on both sides"),
+    ("no_matches", "No matches"),
+    ("invalid_regex", "Invalid regex: {error}"),
+    ("calculating", "Calculating comparison…"),
+    ("no_differences", "No differences"),
+    ("preparing", "Preparing"),
+    ("change", "Change {current} of {count}"),
+    ("syntax_fallback", "syntax fallback: {error}"),
+    ("updating", "Updating comparison…"),
+];
+
 /// Split panes share the list's vertical viewport and retain only their own
 /// native horizontal `ScrollHandle`. This adapts geometry, never position.
 struct DocumentPaneScrollSource {
@@ -328,6 +415,7 @@ struct CodeViewerConfig {
     loading_style: Style,
     error_style: Style,
     search_style: Style,
+    messages: ViewMessages,
 }
 
 impl CodeViewerConfig {
@@ -555,7 +643,7 @@ impl CodeViewerEntity {
             TextInputEntity::new(
                 TextInputConfig {
                     value: String::new(),
-                    placeholder: "Find in document".to_owned(),
+                    placeholder: config.messages.get("find"),
                     placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
@@ -621,7 +709,7 @@ impl CodeViewerEntity {
             input.update_props(
                 &TextInputConfig {
                     value: self.search.query.clone(),
-                    placeholder: "Find in document".to_owned(),
+                    placeholder: self.config.messages.get("find"),
                     placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
@@ -944,7 +1032,7 @@ impl CodeViewerEntity {
         let status = self.search.error.as_ref().map_or_else(
             || {
                 if self.search.matches.is_empty() {
-                    "No matches".to_owned()
+                    self.config.messages.get("no_matches")
                 } else {
                     format!(
                         "{} / {}",
@@ -953,7 +1041,11 @@ impl CodeViewerEntity {
                     )
                 }
             },
-            |error| format!("Invalid regex: {error}"),
+            |error| {
+                self.config
+                    .messages
+                    .format("invalid_regex", &[("error", error)])
+            },
         );
         let bar = div()
             .absolute()
@@ -1025,7 +1117,7 @@ impl CodeViewerEntity {
                     .text_color(rgba(
                         theme_color(&self.theme, "text_muted", 0x929a_a8ff).as_rgba_hex(),
                     ))
-                    .child("Loading document…"),
+                    .child(self.config.messages.get("loading")),
                 &self.config.loading_style,
                 &self.theme,
                 self.theme.direction(),
@@ -1200,7 +1292,7 @@ impl Render for CodeViewerEntity {
                         theme_color(&self.theme, "surface_raised", 0x1a1d_24ee).as_rgba_hex(),
                     ))
                     .text_size(px(10.0))
-                    .child("Updating document…"),
+                    .child(self.config.messages.get("updating")),
             );
         } else if let Some(error) = self
             .prepared
@@ -1224,7 +1316,11 @@ impl Render for CodeViewerEntity {
                     .text_color(rgba(
                         theme_color(&self.theme, "warning", 0xe0af_68ff).as_rgba_hex(),
                     ))
-                    .child(format!("Syntax highlighting unavailable: {error}")),
+                    .child(
+                        self.config
+                            .messages
+                            .format("highlight_unavailable", &[("error", error)]),
+                    ),
             );
         }
         root
@@ -1974,6 +2070,7 @@ fn parse_code_config(
         loading_style: props.style("loading_style").cloned().unwrap_or_default(),
         error_style: props.style("error_style").cloned().unwrap_or_default(),
         search_style: props.style("search_style").cloned().unwrap_or_default(),
+        messages: ViewMessages::parse(props, CODE_MESSAGES),
     })
 }
 
@@ -2405,7 +2502,7 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                     "Called with the 1-based `#{ line, column }` when the text is double-clicked or Enter is pressed.",
                 ),
             ),
-        ]).into_iter().chain(document_scrollbar_props()).collect(),
+        ]).into_iter().chain(document_scrollbar_props()).chain([view_messages_prop(CODE_MESSAGES)]).collect(),
         events: BTreeMap::from([(
             "location_activate".to_owned(),
             EventSchema {
@@ -2443,6 +2540,7 @@ struct DiffViewerConfig {
     error_style: Style,
     search_style: Style,
     status_style: Style,
+    messages: ViewMessages,
 }
 
 impl DiffViewerConfig {
@@ -2584,7 +2682,7 @@ impl DiffViewerEntity {
             TextInputEntity::new(
                 TextInputConfig {
                     value: String::new(),
-                    placeholder: "Find on both sides".to_owned(),
+                    placeholder: config.messages.get("find"),
                     placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
@@ -2668,7 +2766,7 @@ impl DiffViewerEntity {
             input.update_props(
                 &TextInputConfig {
                     value: self.search.query.clone(),
-                    placeholder: "Find on both sides".to_owned(),
+                    placeholder: self.config.messages.get("find"),
                     placeholder_color: theme.color("text_muted"),
                     disabled: false,
                     read_only: false,
@@ -3235,7 +3333,7 @@ impl DiffViewerEntity {
         let status = self.search.error.as_ref().map_or_else(
             || {
                 if self.search.matches.is_empty() {
-                    "No matches".to_owned()
+                    self.config.messages.get("no_matches")
                 } else {
                     format!(
                         "{} / {}",
@@ -3244,7 +3342,11 @@ impl DiffViewerEntity {
                     )
                 }
             },
-            |error| format!("Invalid regex: {error}"),
+            |error| {
+                self.config
+                    .messages
+                    .format("invalid_regex", &[("error", error)])
+            },
         );
         let bar = div()
             .absolute()
@@ -3365,7 +3467,7 @@ impl DiffViewerEntity {
                     .text_color(rgba(
                         theme_color(&self.theme, "text_muted", 0x929a_a8ff).as_rgba_hex(),
                     ))
-                    .child("Calculating comparison…"),
+                    .child(self.config.messages.get("calculating")),
                 &self.config.loading_style,
                 &self.theme,
                 self.theme.direction(),
@@ -3382,7 +3484,7 @@ impl DiffViewerEntity {
                 .text_color(rgba(
                     theme_color(&self.theme, "text_muted", 0x929a_a8ff).as_rgba_hex(),
                 ))
-                .child("No differences")
+                .child(self.config.messages.get("no_differences"))
                 .into_any_element();
         }
         let display = Arc::clone(&self.display);
@@ -3491,15 +3593,17 @@ impl Render for DiffViewerEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::app::read_host_frame_epoch(cx);
         let status = self.prepared.as_ref().map_or_else(
-            || "Preparing".to_owned(),
+            || self.config.messages.get("preparing"),
             |diff| {
                 if diff.hunk_count == 0 {
-                    "No differences".to_owned()
+                    self.config.messages.get("no_differences")
                 } else {
-                    format!(
-                        "Change {} of {}",
-                        self.current_hunk.unwrap_or(0) + 1,
-                        diff.hunk_count
+                    self.config.messages.format(
+                        "change",
+                        &[
+                            ("current", &(self.current_hunk.unwrap_or(0) + 1).to_string()),
+                            ("count", &diff.hunk_count.to_string()),
+                        ],
                     )
                 }
             },
@@ -3529,14 +3633,19 @@ impl Render for DiffViewerEntity {
                     theme_color(&self.theme, "text_muted", 0x929a_a8ff).as_rgba_hex(),
                 ))
                 .child(if let Some(error) = syntax_warning {
-                    format!("{status} · syntax fallback: {error}")
+                    format!(
+                        "{status} · {}",
+                        self.config
+                            .messages
+                            .format("syntax_fallback", &[("error", error)])
+                    )
                 } else {
                     status
                 })
                 .child(if self.loading {
-                    "Updating comparison…"
+                    self.config.messages.get("updating")
                 } else {
-                    "⌥↑ / ⌥↓"
+                    "⌥↑ / ⌥↓".to_owned()
                 }),
             &self.config.status_style,
             &self.theme,
@@ -4380,6 +4489,7 @@ fn parse_diff_config(
         error_style: props.style("error_style").cloned().unwrap_or_default(),
         search_style: props.style("search_style").cloned().unwrap_or_default(),
         status_style: props.style("status_style").cloned().unwrap_or_default(),
+        messages: ViewMessages::parse(props, DIFF_MESSAGES),
     })
 }
 
@@ -4428,6 +4538,7 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
     props.extend(optional_document_fields("left"));
     props.extend(optional_document_fields("right"));
     props.extend(document_scrollbar_props());
+    props.extend([view_messages_prop(DIFF_MESSAGES)]);
     props.extend([
         (
             "mode".to_owned(),
@@ -4567,6 +4678,28 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn view_messages_take_the_localized_text_and_read_in_english_otherwise() {
+        let props = PrimitiveProps::new().with(
+            "messages",
+            PrimitiveValue::Data(UiValue::Map(BTreeMap::from([(
+                "change".to_owned(),
+                UiValue::String("第 {current} 处更改，共 {count} 处".to_owned()),
+            )]))),
+        );
+        let messages = ViewMessages::parse(&props, DIFF_MESSAGES);
+        assert_eq!(
+            messages.format("change", &[("current", "2"), ("count", "5")]),
+            "第 2 处更改，共 5 处"
+        );
+        assert_eq!(messages.get("no_differences"), "No differences");
+        let english = ViewMessages::parse(&PrimitiveProps::new(), DIFF_MESSAGES);
+        assert_eq!(
+            english.format("change", &[("current", "2"), ("count", "5")]),
+            "Change 2 of 5"
+        );
+    }
 
     #[test]
     fn document_selection_copies_original_cross_line_text() {

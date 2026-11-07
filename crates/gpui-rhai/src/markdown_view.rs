@@ -16,9 +16,9 @@ use gpui::{
 };
 
 use crate::document_view::{
-    DocumentSelection, DocumentSide, InteractiveDocumentText, compose_highlights,
+    DocumentSelection, DocumentSide, InteractiveDocumentText, ViewMessages, compose_highlights,
     document_source_prop, document_text_metrics, resolve_document_monospace_family,
-    resolved_pixels, theme_color,
+    resolved_pixels, theme_color, view_messages_prop,
 };
 use crate::markdown::{BlockKind, Mark, MarkdownText, PreparedMarkdown, TableCell};
 use crate::{
@@ -71,7 +71,17 @@ struct Config {
     parts: BTreeMap<String, Style>,
     images: BTreeMap<String, String>,
     heading_roles: Vec<String>,
+    messages: ViewMessages,
 }
+
+const MESSAGES: &[(&str, &str)] = &[
+    ("preparing", "Preparing Markdown…"),
+    ("updating", "Updating…"),
+    ("copy", "Copy"),
+    ("copy_code", "Copy code"),
+    ("code_block", "{language} code block"),
+    ("plain_text", "Plain text"),
+];
 
 impl Config {
     fn part(&self, name: &str) -> Style {
@@ -372,7 +382,7 @@ impl Render for MarkdownViewerEntity {
         }
         let Some(prepared) = self.prepared.clone() else {
             return root.child(crate::renderer::apply_style_override(
-                div().child("Preparing Markdown…"),
+                div().child(self.config.messages.get("preparing")),
                 &self.config.part("loading"),
                 &self.theme,
                 self.theme.direction(),
@@ -439,7 +449,7 @@ impl Render for MarkdownViewerEntity {
                     .absolute()
                     .right(px(0.0))
                     .top(px(0.0))
-                    .child("Updating…"),
+                    .child(self.config.messages.get("updating")),
                 &self.config.part("loading"),
                 &self.theme,
                 self.theme.direction(),
@@ -640,13 +650,13 @@ impl Paint {
                             div()
                                 .id(SharedString::from(format!("markdown-copy-{index}")))
                                 .role(Role::Button)
-                                .aria_label("Copy code")
+                                .aria_label(self.config.messages.get("copy_code"))
                                 .tab_index(0)
                                 .focus_visible(move |style| {
                                     style.border_1().border_color(focus_color)
                                 })
                                 .cursor_pointer()
-                                .child("Copy")
+                                .child(self.config.messages.get("copy"))
                                 .on_click(move |_, _, cx| {
                                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
                                         code.to_string(),
@@ -677,14 +687,16 @@ impl Paint {
                     }
                     row = row.child(header);
                 }
-                row = row.role(Role::Group).aria_label(format!(
-                    "{} code block",
-                    if language.is_empty() {
-                        "Plain text"
-                    } else {
-                        language
-                    }
-                ));
+                let language = if language.is_empty() {
+                    self.config.messages.get("plain_text")
+                } else {
+                    language.clone()
+                };
+                row = row.role(Role::Group).aria_label(
+                    self.config
+                        .messages
+                        .format("code_block", &[("language", &language)]),
+                );
             }
             BlockKind::Rule => {
                 return crate::renderer::apply_style_override(
@@ -1540,6 +1552,7 @@ impl PrimitiveHandler for MarkdownViewerPrimitiveHandler {
             } else {
                 Vec::new()
             },
+            messages: ViewMessages::parse(props, MESSAGES),
         };
         let entity = self
             .instances
@@ -1644,6 +1657,7 @@ pub fn markdown_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         ("image_assets".to_owned(), ObjectField::optional(ValueSchema::Map { values: Box::new(ValueSchema::string()) }).with_doc("Explicit destination-to-Host-asset-ID map. Missing images show alt text; URLs are never fetched.")),
         ("heading_roles".to_owned(), ObjectField::required(ValueSchema::Array { items: Box::new(ValueSchema::string()), max_items: Some(6) }).with_doc("Typography roles for heading levels 1 through 6; an explicit heading part typography overrides these.")),
         ("on_link".to_owned(), ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc("Emits href and visible text. Does not open a browser.")),
+        view_messages_prop(MESSAGES),
     ]);
     for part in PARTS {
         props.insert(

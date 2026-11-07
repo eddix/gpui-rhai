@@ -1,6 +1,6 @@
 # PanZoom
 
-`components/pan_zoom` · export `PanZoom` · version 0.2.0. Generated from
+`components/pan_zoom` · export `PanZoom` · version 0.4.3. Generated from
 [`registry/components/pan_zoom.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/pan_zoom.rhai); do not edit.
 
 Controlled Canvas viewport transform with native pan and pointer-anchored zoom. State: transform is caller-owned; native signals contain only current preview.

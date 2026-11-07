@@ -2,7 +2,7 @@
 {
   "id": "components/selection_area",
   "export": "SelectionArea",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -14,7 +14,7 @@
 // Example: SelectionArea(#{key:"nodes",label:"Nodes",targets:targets,selected_keys:[],content:canvas_node,on_selection_change:Fn("changed")})
 
 define_component(#{
-    metadata:#{id:"components/selection_area","export":"SelectionArea",version: "0.2.0",
+    metadata:#{id:"components/selection_area","export":"SelectionArea",version: "0.4.3",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{},
         tokens: ["border", "surface", "focus_ring", "accent"],
         environment: []},
@@ -77,7 +77,7 @@ fn render_SelectionArea(ctx,props){
             .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("grid").accessibility_label(props.label)
-        .accessibility_value(`${props.selected_keys.len} selected`);
+        .accessibility_value(ctx.t_or("selection.count", "{count} selected", #{ count: props.selected_keys.len }));
     box([content,interaction]).with_key(props.key)
         .with_style(ctx.component_style("root",style().relative().clip().min_width(px(0)).min_height(px(0))
             .border(px(1)).border_color(theme_color("border")).background(theme_color("surface"))))

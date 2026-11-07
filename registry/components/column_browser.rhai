@@ -2,7 +2,7 @@
 {
   "id": "components/column_browser",
   "export": "ColumnBrowser",
-  "version": "0.2.2",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/list", "components/button"],
   "capabilities": {},
@@ -20,7 +20,7 @@ import "components/list" as list;
 import "components/button" as button;
 
 define_component(#{
-    metadata: #{ id: "components/column_browser", "export": "ColumnBrowser", version: "0.2.2",
+    metadata: #{ id: "components/column_browser", "export": "ColumnBrowser", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/list", "components/button"], capabilities: #{},
         tokens: ["border", "text_primary", "text_muted", "focus_ring", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm", "typography.label", "typography.body"],
@@ -40,7 +40,7 @@ define_component(#{
                 width: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [#{ type: "number", exclusive_min: 0.0 }, #{ type: "length" }] } }, required: false, sensitive: false,
                     doc: "Column width in pixels or Length, overriding column_width; columns never shrink to fit." },
                 loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false, "default": #{ type: "bool", value: false }, doc: "Caller-owned loading state for this column alone." },
-                empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "No items" }, doc: "Text for a loaded empty column." },
+                empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "" }, doc: "Text for a loaded empty column. Empty, the localized `common.no_items` message, `No items` without one." },
                 error: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false, doc: "Caller-owned error; loading takes precedence, then error, then items." },
             } } }, required: true, sensitive: false, doc: "Controlled column chain. After selection the caller replaces descendants and guards late loading results by path/request revision." },
             path: #{ schema: #{ type: "optional", value: #{ type: "array", max_items: 128, items: #{ type: "string" } } }, required: false, sensitive: false,
@@ -158,16 +158,17 @@ fn render_ColumnBrowser(ctx, props) {
         if value_or(column, "error", ()) != () && !value_or(column, "loading", false) {
             let status = [text(column.error).selectable(true)];
             if value_or(props, "on_retry", ()) != () {
-                status.push(button::Button(#{ key: `retry-${index}`, text: "Retry", variant: "ghost", on_click: Fn("retry").curry(column.key) }).tab_stop(false));
+                status.push(button::Button(#{ key: `retry-${index}`, text: ctx.t_or("common.retry", "Retry"), variant: "ghost", on_click: Fn("retry").curry(column.key) }).tab_stop(false));
             }
             body = column(status).with_style(ctx.component_style("status", style().flex_grow().min_height(px(0))
                 .padding_x(theme_length("metrics.inset")).padding_y(theme_spacing("sm"))
                 .gap(theme_spacing("sm")).text_color(theme_color("text_muted"))));
         } else {
-            body = list::List(#{ key: `list-${column.key}`, label: `${column.title}, level ${index + 1} of ${props.columns.len}`,
+            body = list::List(#{ key: `list-${column.key}`, label: ctx.t_or("column_browser.level", "{name}, level {level} of {count}",
+                    #{ name: column.title, level: index + 1, count: props.columns.len }),
                 items: column.items, fill_height: true, selection_mode: "single",
                 selected_keys: if selected == () { [] } else { [selected] }, keyboard_navigation: false, active: index == active,
-                loading: value_or(column, "loading", false), empty_text: value_or(column, "empty_text", "No items"),
+                loading: value_or(column, "loading", false), empty_text: if value_or(column, "empty_text", "") == "" { ctx.t_or("common.no_items", "No items") } else { column.empty_text },
                 on_row_click: Fn("select_row").curry(target),
                 on_row_activate: Fn("activate_row").curry(target) });
         }
@@ -197,7 +198,7 @@ fn render_ColumnBrowser(ctx, props) {
         }
         crumbs.push(text(joined).selectable(true).with_style(ctx.component_style("path_text", style()
             .min_width(px(0)).whitespace_nowrap().text_ellipsis().typography("body"))));
-        crumbs.push(button::Button(#{ key: "copy-path", text: "Copy path", variant: "ghost", disabled: path.len == 0,
+        crumbs.push(button::Button(#{ key: "copy-path", text: ctx.t_or("column_browser.copy_path", "Copy path"), variant: "ghost", disabled: path.len == 0,
             on_click: Fn("copy_path").curry(joined) }).tab_stop(false));
         children.push(row(crumbs).with_key("path").with_style(ctx.component_style("path", style()
             .flex_shrink(false).min_width(px(0)).items_center().gap(theme_spacing("xs")).overflow_x_scroll())));

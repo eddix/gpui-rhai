@@ -19,7 +19,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `clearable` | bool | `false` | Shows a clear button in the default trigger while something is selected; it emits `change` with `[]`. |
 | `disabled` | bool | `false` | Disables the trigger so the panel cannot open. |
 | `empty` | node or `()` | — | Content shown instead of `empty_text` when no option matches. |
-| `empty_text` | string | `"No results"` | Text shown when no option matches; the `empty` slot replaces it. |
+| `empty_text` | string | `""` | Text shown when no option matches; the `empty` slot replaces it. Empty, the localized `common.no_results` message, `No results` without one. |
 | `footer` | node or `()` | — | Content at the bottom of the panel, below the options. |
 | `header` | node or `()` | — | Content at the top of the panel, above the search field. |
 | `key` | string | required | Identity of the combobox; also its overlay id and the prefix of its inner keys (`<key>-trigger`, `<key>-panel`). |
@@ -41,7 +41,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `query` | string | required | Filters options by label or keyword, case-insensitively; the caller stores the `query_change` payload and passes it back. |
 | `reset_query_on_close` | bool | `false` | Emits `query_change` with `""` whenever the panel closes or the selection is cleared. |
 | `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared option-list scrollbar visibility; the combobox keeps keyboard ownership. |
-| `search_placeholder` | string | `"Search"` | Placeholder of the search field. |
+| `search_placeholder` | string | `""` | Placeholder of the search field. Empty, the localized `common.search` message, `Search` without one. |
 | `searchable` | bool | `false` | Shows a search field bound to `query` in the panel; without it, letter keys jump to matching options. |
 | `selected` | array of string (at most 100000) | required | Selected option values, at most one in `single` mode, kept when no option has them (the trigger then shows the value itself); the caller stores the `change` payload and passes it back. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; leave unset to inherit the environment size. |

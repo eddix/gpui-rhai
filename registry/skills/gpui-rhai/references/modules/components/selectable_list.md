@@ -1,6 +1,6 @@
 # SelectableList
 
-`components/selectable_list` · export `SelectableList` · version 0.4.1. Generated from
+`components/selectable_list` · export `SelectableList` · version 0.4.3. Generated from
 [`registry/components/selectable_list.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/selectable_list.rhai); do not edit.
 
 The behavior of List and Table rows with rows the application draws: selection, the one tab stop and its keys, the cursor and focus frame, row and context requests, accessibility and virtualization stay the list's, and a `row` Node factory draws each row's content.
@@ -24,7 +24,7 @@ selectable_list::SelectableList(#{ key: "tracks", label: "Tracks", items: tracks
 |---|---|---|---|
 | `active` | bool | `true` | Draws the selected cursor as active; false keeps the selection visible without its focus frame. |
 | `empty` | node or `()` | — | Node shown instead of `empty_text` when `items` is empty. |
-| `empty_text` | string | `"No items"` | Muted text shown when `items` is empty, unless `empty` is given. |
+| `empty_text` | string | `""` | Muted text shown when `items` is empty, unless `empty` is given. Empty, the localized `common.no_items` message, `No items` without one. |
 | `estimated_row_height` | number > 0 | `48.0` | Height the virtual collection assumes for rows it has not measured, in logical pixels. |
 | `fill_height` | bool | `false` | Grows into the free height of a flex parent instead of a fixed `height`; give exactly one of the two. |
 | `height` | number > 0 or length or `()` | — | Viewport height: logical pixels, or a Length; give exactly one of `height` or `fill_height`. |
@@ -34,7 +34,7 @@ selectable_list::SelectableList(#{ key: "tracks", label: "Tracks", items: tracks
 | `label` | string | required | Accessible name of the list. |
 | `label_field` | string | `"label"` | Item field that names each row for assistive technology; a row without it is named by its key. |
 | `loading` | bool | `false` | Shows `loading_content` in the list's place instead of the rows. |
-| `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted "Loading…" line. |
+| `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted line with the localized `collection.loading` message ("Loading…"). |
 | `on_context_request` | callback or `()` | — | Called with `#{ key, anchor, source }` when a row is right-pressed or Shift+F10 or the menu key is pressed; without a selection mode it makes the list a tab stop for those keys. |
 | `on_row_activate` | callback or `()` | — | Called with #{ key, has_children } on a double click. |
 | `on_row_click` | callback or `()` | — | Called with the row key when an enabled row is clicked, or Enter is pressed on the selected row. |

@@ -2,7 +2,7 @@
 {
   "id": "components/alert_dialog",
   "export": "AlertDialog",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/dialog"],
   "capabilities": {},
@@ -19,7 +19,7 @@ import "components/button" as button;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/alert_dialog", "export": "AlertDialog", version: "0.2.0",
+    metadata: #{ id: "components/alert_dialog", "export": "AlertDialog", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/dialog"], capabilities: #{},
         tokens: ["text_muted", "space.related", "typography.body"],
@@ -37,11 +37,11 @@ define_component(#{
             content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Extra content after the description." },
             cancel_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Cancel" },
-                doc: "Text of the cancel button." },
+                "default": #{ type: "string", value: "" },
+                doc: "Text of the cancel button. Empty, the localized `common.cancel` message, `Cancel` without one." },
             confirm_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Continue" },
-                doc: "Text of the confirm button." },
+                "default": #{ type: "string", value: "" },
+                doc: "Text of the confirm button. Empty, the localized `common.continue` message, `Continue` without one." },
             confirm_variant: #{ schema: #{ type: "string", allowed: ["primary", "danger", "warning"] },
                 required: false, sensitive: false, "default": #{ type: "string", value: "danger" },
                 doc: "Button variant of the confirm button." },
@@ -74,6 +74,13 @@ fn open_action(ctx, open) {
     ctx.emit("open_change", open);
 }
 
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
+
 fn render_AlertDialog(ctx, props) {
     let body = [];
     if "description" in props && props.description != () {
@@ -83,10 +90,10 @@ fn render_AlertDialog(ctx, props) {
     if "content" in props && props.content != () {
         body.push(props.content.with_style(ctx.component_style("content", style())));
     }
-    let cancel = button::Button(#{ text: if "cancel_label" in props { props.cancel_label } else { "Cancel" },
+    let cancel = button::Button(#{ text: localized_prop(ctx, props, "cancel_label", "common.cancel", "Cancel"),
         variant: "secondary", on_click: Fn("cancel_action") })
         .with_style(ctx.component_style("cancel", style()));
-    let confirm = button::Button(#{ text: if "confirm_label" in props { props.confirm_label } else { "Continue" },
+    let confirm = button::Button(#{ text: localized_prop(ctx, props, "confirm_label", "common.continue", "Continue"),
         variant: if "confirm_variant" in props { props.confirm_variant } else { "danger" },
         on_click: Fn("confirm_action") })
         .with_style(ctx.component_style("confirm", style()));

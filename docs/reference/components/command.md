@@ -1,6 +1,6 @@
 # Command
 
-`components/command` · export `Command` · version 0.4.0. Generated from
+`components/command` · export `Command` · version 0.4.3. Generated from
 [`registry/components/command.rhai`](../../../registry/components/command.rhai); do not edit.
 
 Embeddable keyboard-first command search with deterministic fuzzy ranking.
@@ -20,7 +20,7 @@ command::Command(#{ key: "palette", label: "Commands", query: query, active_valu
 | `active_value` | string | required | Highlighted command value; the caller stores the `active_change` payload. Other values show the first enabled match. |
 | `autofocus` | bool | `false` | Focuses the search field when the command first mounts. |
 | `disabled` | bool | `false` | Disables the whole command: the search field, the rows and the list's keys. |
-| `empty_text` | string | `"No commands found"` | Message shown in place of the list when no command matches. |
+| `empty_text` | string | `""` | Message shown in place of the list when no command matches. Empty, the localized `command.empty` message, `No commands found` without one. |
 | `items` | array of object (at most 4096) or native collection | required | Commands to rank: item maps, or a native collection keyed by value with the same fields but no `content` or `action`. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name of the search field and the command list. |
@@ -29,7 +29,7 @@ command::Command(#{ key: "palette", label: "Commands", query: query, active_valu
 | `on_active_change` | callback or `()` | — | Called with the command value to highlight on Up, Down, Home, End or hover; store it as `active_value`. |
 | `on_query_change` | callback or `()` | — | Called with the new search text on each edit; store it as `query`. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
-| `placeholder` | string | `"Type a command"` | Hint shown in the empty search field. |
+| `placeholder` | string | `""` | Hint shown in the empty search field. Empty, the localized `command.placeholder` message, `Type a command` without one. |
 | `query` | string | required | Search text; the caller stores the `query_change` payload and passes it back. |
 | `scrollbar` | `"auto"` or `"always"` or `"hidden"` | `"auto"` | Shared command-list scrollbar visibility; the search field keeps keyboard focus. |
 | `style` | style | — | Style merged over the root part. |

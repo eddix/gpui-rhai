@@ -1,6 +1,6 @@
 # Table
 
-`components/table` · export `Table` · version 0.4.1. Generated from
+`components/table` · export `Table` · version 0.4.3. Generated from
 [`registry/components/table.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/table.rhai); do not edit.
 
 Data-backed Table composed entirely from public Box/Text/virtual_collection APIs. Use either a positive logical-pixel height or fill_height for flex layouts.
@@ -22,7 +22,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `collapsed_groups` | array of string (at most 100000) | `[]` | Group values whose rows are hidden; needs `group_by`, and the caller toggles the `group_toggle` payload in it. |
 | `columns` | array of object (at most 256) | required | Columns in display order; 1 to 256 with unique keys. |
 | `empty` | node or `()` | — | Node shown instead of `empty_text` when no row is left to show. |
-| `empty_text` | string | `"No results"` | Muted text shown when no row is left after filtering and paging, unless `empty` is given. |
+| `empty_text` | string | `""` | Muted text shown when no row is left after filtering and paging, unless `empty` is given. Empty, the localized `common.no_results` message, `No results` without one. |
 | `estimated_row_height` | number > 0 | `32.0` | Row height in logical pixels the virtual body assumes before rows are measured; rows draw at `metrics.row`. |
 | `fill_height` | bool | `false` | Grows into the free height of a flex parent instead of a fixed `height`; give exactly one of the two. |
 | `group_by` | string or `()` | — | Column key whose values, non-empty strings, group the rows under headers in first-seen order; a header shows the value as the rows carry it. |
@@ -30,7 +30,7 @@ table::Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name of the table; rows are announced as `<label> row <n>`. |
 | `loading` | bool | `false` | Shows `loading_content` below the header instead of the rows. |
-| `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted "Loading…" line. |
+| `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted line with the localized `collection.loading` message ("Loading…"). |
 | `on_column_resize` | callback or `()` | — | Called with `#{ key, width }` when a resize ends; with it the caller owns widths and writes `width` into the column. |
 | `on_context_request` | callback or `()` | — | Called with `#{ key, column, anchor, source }` on a context request; open a Menu at `anchor`, in window coordinates. Without a selection mode it makes the table a tab stop for Shift+F10 and the menu key. |
 | `on_group_toggle` | callback or `()` | — | Called with the group value when a group header is clicked; without it group headers are not clickable. |

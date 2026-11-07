@@ -1,6 +1,6 @@
 # CommandDialog
 
-`components/command_dialog` · export `CommandDialog` · version 0.2.1. Generated from
+`components/command_dialog` · export `CommandDialog` · version 0.4.3. Generated from
 [`registry/components/command_dialog.rhai`](../../../registry/components/command_dialog.rhai); do not edit.
 
 Controlled modal presentation of Command without registering a global shortcut.
@@ -24,7 +24,7 @@ command_dialog::CommandDialog(#{ key: "palette", open: open, query: query, activ
 | `command_part_styles` | map of style | `#{}` | Part styles for the inner Command, such as `search`, `item` and `item_active`. |
 | `dialog_part_styles` | map of style | `#{}` | Part styles for the inner Dialog, such as `panel` and `title`, merged over the edge-to-edge layout. |
 | `disabled` | bool | `false` | Disables the search field and the list's arrow, Home, End and Enter keys. |
-| `empty_text` | string | `"No commands found"` | Message shown in place of the list when no command matches. |
+| `empty_text` | string | `""` | Message shown in place of the list when no command matches. Empty, the localized `command.empty` message, `No commands found` without one. |
 | `items` | array of object (at most 4096) or native collection | required | Commands to rank: item maps, or a native collection keyed by value with the same fields but no `action`. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Dialog title, also the accessible name of the dialog, the search field and the list. |
@@ -36,7 +36,7 @@ command_dialog::CommandDialog(#{ key: "palette", open: open, query: query, activ
 | `on_query_change` | callback or `()` | — | Called with the new search text on each edit; store it as `query`. |
 | `open` | bool | required | Whether the dialog is shown; the caller stores the `open_change` payload and passes it back. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
-| `placeholder` | string | `"Type a command"` | Hint shown in the empty search field. |
+| `placeholder` | string | `""` | Hint shown in the empty search field. Empty, the localized `command.placeholder` message, `Type a command` without one. |
 | `query` | string | required | Search text; the caller stores the `query_change` payload and passes it back. |
 | `style` | style | — | Style merged over the root part. |
 | `title_visible` | bool | `true` | Shows `label` as a title above the search; when hidden, the label still names the dialog. |

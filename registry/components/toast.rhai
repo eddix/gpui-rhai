@@ -2,7 +2,7 @@
 {
   "id": "components/toast",
   "export": "Toast",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -28,7 +28,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/toast", "export": "Toast", version: "0.4.2",
+        id: "components/toast", "export": "Toast", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "border", "surface_hover", "success", "warning", "danger",
@@ -47,8 +47,8 @@ define_component(#{
                 "default": #{ type: "integer", value: 3 },
                 doc: "How many items, counted from the start of `items` across all regions, show at once; the rest wait without a countdown." },
             dismiss_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Dismiss notification" },
-                doc: "Accessible name of each toast's close button." },
+                "default": #{ type: "string", value: "" },
+                doc: "Accessible name of each toast's close button. Empty, the localized `toast.dismiss` message, `Dismiss notification` without one." },
             items: #{ schema: #{ type: "array", max_items: 100, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     id: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -84,11 +84,11 @@ define_component(#{
                 "default": #{ type: "string", value: "flat" },
                 doc: "`flat` lists each corner's toasts in a column; `stack` piles them behind the newest and expands the pile while it is hovered or holds keyboard focus. In `stack` every item joins its corner's pile and counts down: `max_visible` applies to `flat` only." },
             heading: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Notifications" },
-                doc: "Heading of an expanded stack, followed by the number of toasts in it; also names the pile." },
+                "default": #{ type: "string", value: "" },
+                doc: "Heading of an expanded stack, followed by the number of toasts in it; also names the pile. Empty, the localized `toast.heading` message, `Notifications` without one." },
             clear_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Clear all" },
-                doc: "Label of an expanded stack's button that dismisses every toast in its corner." },
+                "default": #{ type: "string", value: "" },
+                doc: "Label of an expanded stack's button that dismisses every toast in its corner. Empty, the localized `toast.clear_all` message, `Clear all` without one." },
         },
         state: #{ fields: #{
             hovered: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
@@ -108,6 +108,13 @@ define_component(#{
     },
     render: Fn("render_Toast")
 });
+
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
 
 fn Toast(props) { render_component("components/toast", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
@@ -238,9 +245,9 @@ fn stack_layer(ctx, props, key, region, items) {
     let expanded = stack_expanded(ctx, region);
     let count = items.len;
     let newest = count - 1;
-    let dismiss_label = prop_or(props, "dismiss_label", "Dismiss notification");
+    let dismiss_label = localized_prop(ctx, props, "dismiss_label", "toast.dismiss", "Dismiss notification");
     let activatable = "on_activate" in props && props.on_activate != ();
-    let heading = prop_or(props, "heading", "Notifications");
+    let heading = localized_prop(ctx, props, "heading", "toast.heading", "Notifications");
     // Nearest the corner: a bottom corner lists oldest to newest, a top corner the reverse.
     let ordered = [];
     let ids = [];
@@ -280,7 +287,7 @@ fn stack_layer(ctx, props, key, region, items) {
     }
     let header = ();
     if expanded {
-        let clear_label = prop_or(props, "clear_label", "Clear all");
+        let clear_label = localized_prop(ctx, props, "clear_label", "toast.clear_all", "Clear all");
         let clear = row([text(clear_label)]).with_key(`${key}-clear`)
             .with_style(ctx.component_style("stack_clear", style()
                 .items_center().padding_x(theme_spacing("xs")).radius(theme_radius("xs"))
@@ -353,7 +360,7 @@ fn render_Toast(ctx, props) {
             regions[region].push(item);
         } else {
             regions[region].push(toast_node(ctx, item,
-                prop_or(props, "dismiss_label", "Dismiss notification"), activatable, true));
+                localized_prop(ctx, props, "dismiss_label", "toast.dismiss", "Dismiss notification"), activatable, true));
         }
     }
     let layers = [];

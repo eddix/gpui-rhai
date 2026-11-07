@@ -1,6 +1,6 @@
 # ColumnBrowser
 
-`components/column_browser` · export `ColumnBrowser` · version 0.2.2. Generated from
+`components/column_browser` · export `ColumnBrowser` · version 0.4.3. Generated from
 [`registry/components/column_browser.rhai`](../../../registry/components/column_browser.rhai); do not edit.
 
 Controlled Miller columns. Data loading, cancellation, request revisions and dropping descendants belong to the caller, not this presentational component.
@@ -37,7 +37,7 @@ column_browser::ColumnBrowser(#{ key: "files", label: "Files", columns: [
 
 | Field | Type | Required or default | Description |
 |---|---|---|---|
-| `empty_text` | string | `"No items"` | Text for a loaded empty column. |
+| `empty_text` | string | `""` | Text for a loaded empty column. Empty, the localized `common.no_items` message, `No items` without one. |
 | `error` | string or `()` | — | Caller-owned error; loading takes precedence, then error, then items. |
 | `items` | native collection or array of object (at most 10000) | required | List row grammar plus has_children; a NativeCollection stays native, including keyboard target lookup. |
 | `key` | string | required | Stable unique column identity; every event names this key. |

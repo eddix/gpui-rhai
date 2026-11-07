@@ -2,7 +2,7 @@
 {
   "id": "components/tree",
   "export": "Tree",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@
 // Example: Tree(#{key:"files",label:"Files",items:items,expanded:[],selected_keys:[],height:320})
 
 define_component(#{
-    metadata:#{id:"components/tree","export":"Tree",version: "0.4.0",
+    metadata:#{id:"components/tree","export":"Tree",version: "0.4.3",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{},
         tokens: [
             "selection", "surface_hover", "focus_ring", "text_primary", "text_muted",
@@ -112,7 +112,8 @@ fn tree_row(expanded,selected,active,mode,disabled,ctx,payload){
                 .height(theme_length("metrics.icon")).text_color(theme_color("text_muted"))));
         let trigger=box([disclosure]).with_key(`${item.key}-disclosure`).with_style(style()
             .items_center().justify_center()).disabled(disabled||item.disabled).accessibility_role("button")
-            .accessibility_label(if item.expanded{`Collapse ${item.label}`}else{`Expand ${item.label}`});
+            .accessibility_label(if item.expanded{ctx.t_or("tree.collapse","Collapse {name}",#{name:item.label})}
+                else{ctx.t_or("tree.expand","Expand {name}",#{name:item.label})});
         if !disabled&&!item.disabled{trigger=trigger.on_click_value(Fn("tree_toggle").curry(expanded),item.key);}
         children.push(trigger);
     }else{children.push(row([]).with_style(style().width(theme_length("metrics.icon"))));}

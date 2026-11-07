@@ -1,6 +1,6 @@
 # Toast
 
-`components/toast` · export `Toast` · version 0.4.2. Generated from
+`components/toast` · export `Toast` · version 0.4.3. Generated from
 [`registry/components/toast.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/toast.rhai); do not edit.
 
 Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events. State: caller owns items; runtime timers own one-shot deadline and pause/resume state; the stack layout keeps which corner the pointer and keyboard focus are in. `layout: "stack"` piles each corner's toasts behind its newest, the last of that corner's items: up to two 6px edges peek out and a count marks the pile. Hovering the pile or moving keyboard focus into it expands it into a list, newest nearest the corner, under a heading with a Clear all button, and holds every countdown in that corner until pointer and focus leave; Escape collapses it.
@@ -15,9 +15,9 @@ toast::Toast(#{ key: "toasts", items: items, on_dismiss: Fn("dismissed") })
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `clear_label` | string | `"Clear all"` | Label of an expanded stack's button that dismisses every toast in its corner. |
-| `dismiss_label` | string | `"Dismiss notification"` | Accessible name of each toast's close button. |
-| `heading` | string | `"Notifications"` | Heading of an expanded stack, followed by the number of toasts in it; also names the pile. |
+| `clear_label` | string | `""` | Label of an expanded stack's button that dismisses every toast in its corner. Empty, the localized `toast.clear_all` message, `Clear all` without one. |
+| `dismiss_label` | string | `""` | Accessible name of each toast's close button. Empty, the localized `toast.dismiss` message, `Dismiss notification` without one. |
+| `heading` | string | `""` | Heading of an expanded stack, followed by the number of toasts in it; also names the pile. Empty, the localized `toast.heading` message, `Notifications` without one. |
 | `items` | array of object (at most 100) | required | The notifications in display order; the caller removes an item when it is dismissed. |
 | `key` | string | required | Identity of the toast stack; the ids of its four corner layers derive from it. |
 | `layout` | `"flat"` or `"stack"` | `"flat"` | `flat` lists each corner's toasts in a column; `stack` piles them behind the newest and expands the pile while it is hovered or holds keyboard focus. In `stack` every item joins its corner's pile and counts down: `max_visible` applies to `flat` only. |
