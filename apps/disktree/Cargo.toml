@@ -21,6 +21,9 @@ rayon = "1"
 rustix = { version = "1", features = ["fs"] }
 rustc-hash = "2"
 
+[build-dependencies]
+gpui-rhai-build = { path = "../../crates/gpui-rhai-build" }
+
 [dev-dependencies]
 rhai = { version = "=1.26.0", features = ["internals", "metadata", "serde"] }
 tempfile = "3"

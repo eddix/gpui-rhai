@@ -91,6 +91,12 @@ On gpui-fast:
 
 ## Mounting
 
+A view's source is a `ScriptView`: `gpui_rhai::script_view!()` for the crate's
+own `ui/` (files in a debug build, the tree `build.rs` embedded in a release
+build), `ScriptView::files(path)` for a directory or entry script elsewhere,
+such as a plugin, or `ScriptView::sources(..)` for sources the Host holds in
+memory ([production](hot-reload-and-production.md#production)).
+
 Install App-level input actions once, create one Host for the window, then mount
 single-use prepared views:
 

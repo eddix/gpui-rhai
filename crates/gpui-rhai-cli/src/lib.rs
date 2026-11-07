@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Write as _;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write as _;
@@ -373,22 +372,7 @@ impl Project {
                     path: cargo_path.clone(),
                     source,
                 })?;
-        if cargo
-            .get("dependencies")
-            .and_then(|dependencies| dependencies.get("gpui-rhai"))
-            .is_none()
-        {
-            let mut features = Array::new();
-            let mut dependency = InlineTable::new();
-            dependency.insert("version", Value::from(runtime_requirement()));
-            if backend == GpuiBackend::Fast {
-                dependency.insert("default-features", Value::from(false));
-                features.push("gpui-fast");
-            }
-            features.push("dev-reload");
-            dependency.insert("features", Value::Array(features));
-            cargo["dependencies"]["gpui-rhai"] = Item::Value(Value::InlineTable(dependency));
-        }
+        add_init_dependencies(&mut cargo, backend);
 
         let mut plan = ProjectPlan::new(self.root.clone());
         plan.update(cargo_path, cargo.to_string(), cargo_source);
@@ -408,6 +392,12 @@ impl Project {
                     source,
                 });
             }
+        }
+        let build_path = self.root.join("build.rs");
+        if build_path.exists() {
+            plan.create(self.root.join("gpui-rhai-build-snippet.rs"), build_source())?;
+        } else {
+            plan.create(build_path, build_source())?;
         }
         plan.create(self.root.join("ui/main.rhai"), starter_ui())?;
         plan.create(self.root.join("ui/theme.rhai"), DEFAULT_THEME.to_owned())?;
@@ -984,60 +974,6 @@ impl Project {
             _ => return Err(ProjectError::IncompleteAssetBaseline(asset.path.to_owned())),
         }
         Ok(false)
-    }
-
-    /// Generate a deterministic Rust module for production embedding.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ProjectError`] when manifests or referenced resources cannot
-    /// be read.
-    pub fn plan_embed(&self) -> Result<ProjectPlan, ProjectError> {
-        let manifest: LocalManifest =
-            toml::from_str(&read(&self.root.join(".gpui-rhai/manifest.toml"))?)?;
-        let app: AppManifest = toml::from_str(&read(&self.root.join("ui/app.toml"))?)?;
-        if app.entry.as_str() != "main" {
-            return Err(ProjectError::ManifestEntry(app.entry));
-        }
-        let mut modules = vec![(app.entry.to_string(), "../ui/main.rhai".to_owned())];
-        for raw_id in manifest.components.keys() {
-            let id = ModuleId::parse(raw_id.clone())?;
-            let relative = component_relative_path(&id)?;
-            modules.push((id.to_string(), format!("../ui/{}", slash_path(&relative))));
-        }
-        // The application's own modules, which its entry imports (#184).
-        for (id, path) in application_modules(&self.root, &manifest)? {
-            let relative = path.strip_prefix(self.root.join("ui")).unwrap_or(&path);
-            modules.push((id.to_string(), format!("../ui/{}", slash_path(relative))));
-        }
-        modules.sort();
-
-        let locales = collect_relative_files(&self.root.join("ui/locales"), "../ui/locales")?;
-        let themes = collect_relative_files(&self.root.join("ui/themes"), "../ui/themes")?;
-        let assets = collect_relative_files(&self.root.join("ui/assets"), "../ui/assets")?
-            .into_iter()
-            .filter(|(name, _)| matches!(asset_file(name), AssetFile::Image))
-            .collect::<Vec<_>>();
-        let fonts = collect_relative_files(&self.root.join("ui/fonts"), "../ui/fonts")?;
-        let generated = generated_embed_module(
-            &app,
-            &modules,
-            &locales,
-            &themes,
-            &assets,
-            &fonts,
-            self.root.join("ui/tokens.rhai").exists(),
-        )?;
-        let path = self.root.join("src/gpui_rhai_embedded.rs");
-        let mut plan = ProjectPlan::new(self.root.clone());
-        match fs::read_to_string(&path) {
-            Ok(existing) => plan.update(path, generated, existing),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                plan.create(path, generated)?;
-            }
-            Err(source) => return Err(ProjectError::Io { path, source }),
-        }
-        Ok(plan)
     }
 
     /// Run the Cargo application in the project root.
@@ -2041,98 +1977,6 @@ fn collect_paths(directory: &Path) -> Result<Vec<PathBuf>, ProjectError> {
     Ok(paths)
 }
 
-fn generated_embed_module(
-    manifest: &AppManifest,
-    modules: &[(String, String)],
-    locales: &[(String, String)],
-    themes: &[(String, String)],
-    assets: &[(String, String)],
-    fonts: &[(String, String)],
-    has_token_base: bool,
-) -> Result<String, ProjectError> {
-    let mut output =
-        String::from("// @generated by `gpui-rhai embed`; edit files under `ui/` instead.\n\n");
-    let _ = writeln!(
-        output,
-        "pub fn app_manifest() -> gpui_rhai::AppManifest {{\n    let manifest = gpui_rhai::AppManifest::new(gpui_rhai::ModuleId::parse({:?}).expect(\"generated entry id\"));",
-        manifest.entry.as_str()
-    );
-    for (id, requirement) in &manifest.capabilities {
-        let _ = writeln!(
-            output,
-            "    let manifest = manifest.with_capability({:?}, {:?}).expect(\"generated capability requirement\");",
-            id.as_str(),
-            requirement.to_string()
-        );
-    }
-    output.push_str("    manifest\n}\n\n");
-    output.push_str("pub fn script_source() -> gpui_rhai::EmbeddedScriptSource {\n");
-    output
-        .push_str("    gpui_rhai::EmbeddedScriptSource::new(std::collections::BTreeMap::from([\n");
-    for (id, path) in modules {
-        let _ = writeln!(
-            output,
-            "        (gpui_rhai::ModuleId::parse({id:?}).expect(\"generated module id\"), include_str!({path:?}).to_owned()),"
-        );
-    }
-    output.push_str("    ]))\n}\n\n");
-    output.push_str("pub const THEME_SOURCE: &str = include_str!(\"../ui/theme.rhai\");\n\n");
-    if has_token_base {
-        output.push_str(
-            "/// Pass to `ScriptView::token_base`.\npub const TOKEN_BASE_SOURCE: &str = include_str!(\"../ui/tokens.rhai\");\n\n",
-        );
-    }
-    output.push_str(
-        "pub const COMPONENT_STYLES_SOURCE: &str = include_str!(\"../ui/styles.rhai\");\n\n",
-    );
-    output.push_str("pub const LOCALES: &[(&str, &str)] = &[\n");
-    for (name, path) in locales {
-        let _ = writeln!(output, "    ({name:?}, include_str!({path:?})),");
-    }
-    output.push_str("];\n\n");
-    output.push_str("pub const THEMES: &[(&str, &str)] = &[\n");
-    for (name, path) in themes {
-        let _ = writeln!(output, "    ({name:?}, include_str!({path:?})),");
-    }
-    output.push_str("];\n\n");
-    output.push_str("pub const ASSETS: &[(&str, &[u8])] = &[\n");
-    for (name, path) in assets {
-        let _ = writeln!(output, "    ({name:?}, include_bytes!({path:?})),");
-    }
-    output.push_str("];\n\n");
-    output.push_str("pub fn asset_sources() -> Vec<(String, gpui_rhai::AssetData)> {\n    vec![\n");
-    let mut logical_assets = BTreeSet::new();
-    for (name, path) in assets {
-        let mime_type = embedded_asset_mime(name)?;
-        let logical_name = name
-            .rsplit_once('.')
-            .map_or(name.as_str(), |(stem, _)| stem);
-        if !logical_assets.insert(logical_name) {
-            return Err(ProjectError::DuplicateAssetLogical(logical_name.to_owned()));
-        }
-        let _ = writeln!(
-            output,
-            "        ({logical_name:?}.to_owned(), gpui_rhai::AssetData {{ mime_type: {mime_type:?}.to_owned(), bytes: include_bytes!({path:?}).to_vec() }}),"
-        );
-    }
-    output.push_str("    ]\n}\n");
-    output.push_str("\npub const FONTS: &[(&str, &[u8])] = &[\n");
-    for (name, path) in fonts {
-        validate_font_extension(name)?;
-        let _ = writeln!(output, "    ({name:?}, include_bytes!({path:?})),");
-    }
-    output.push_str("];\n\n");
-    output.push_str("pub fn font_sources() -> Vec<gpui_rhai::FontSource> {\n    vec![\n");
-    for (name, path) in fonts {
-        let _ = writeln!(
-            output,
-            "        gpui_rhai::FontSource::new({name:?}, include_bytes!({path:?}).to_vec()).expect(\"generated font source\"),"
-        );
-    }
-    output.push_str("    ]\n}\n");
-    Ok(output)
-}
-
 fn validate_font_extension(path: &str) -> Result<(), ProjectError> {
     match path.rsplit('.').next().unwrap_or_default() {
         "ttf" | "otf" | "ttc" => Ok(()),
@@ -2156,14 +2000,57 @@ fn embedded_asset_mime(path: &str) -> Result<&'static str, ProjectError> {
 /// The `src/main.rs` that `cargo new` writes, which `init` may replace.
 const CARGO_NEW_MAIN: &str = "fn main() {\n    println!(\"Hello, world!\");\n}\n";
 
+/// The runtime and, for a release build of `script_view!()`, the build
+/// script's `gpui-rhai-build`, unless the manifest already has them.
+fn add_init_dependencies(cargo: &mut DocumentMut, backend: GpuiBackend) {
+    if cargo
+        .get("dependencies")
+        .and_then(|dependencies| dependencies.get("gpui-rhai"))
+        .is_none()
+    {
+        let mut features = Array::new();
+        let mut dependency = InlineTable::new();
+        dependency.insert("version", Value::from(runtime_requirement()));
+        if backend == GpuiBackend::Fast {
+            dependency.insert("default-features", Value::from(false));
+            features.push("gpui-fast");
+        }
+        features.push("dev-reload");
+        dependency.insert("features", Value::Array(features));
+        cargo["dependencies"]["gpui-rhai"] = Item::Value(Value::InlineTable(dependency));
+    }
+    // A release build of `script_view!()` reads the ui/ tree build.rs embeds.
+    if cargo
+        .get("build-dependencies")
+        .and_then(|dependencies| dependencies.get("gpui-rhai-build"))
+        .is_none()
+    {
+        if cargo.get("build-dependencies").is_none() {
+            cargo["build-dependencies"] = toml_edit::table();
+        }
+        cargo["build-dependencies"]["gpui-rhai-build"] =
+            Item::Value(Value::from(runtime_requirement()));
+    }
+}
+
 fn host_source() -> String {
     r#"fn main() {
-    let view = gpui_rhai::ScriptView::files("ui/main.rhai")
+    // ui/'s files in a debug build, the copy build.rs embedded in a release build.
+    let view = gpui_rhai::script_view!()
         .prepare()
         .expect("GPUI Rhai view preparation failed");
     gpui_rhai::ScriptApplication::new(view)
         .run()
         .expect("GPUI Rhai application failed");
+}
+"#
+    .to_owned()
+}
+
+fn build_source() -> String {
+    r#"// Embeds ui/ into the binary for a release build of `script_view!()`.
+fn main() {
+    gpui_rhai_build::embed_ui("ui").expect("embed ui/");
 }
 "#
     .to_owned()
@@ -2821,6 +2708,12 @@ pub enum ProjectError {
     Spawn(std::io::Error),
     #[error("Cargo application exited unsuccessfully with code {0:?}")]
     DevFailed(Option<i32>),
+    #[error(
+        "`gpui-rhai embed` was removed in 0.4.3: add `gpui-rhai-build` to [build-dependencies], \
+         call `gpui_rhai_build::embed_ui(\"ui\")` from build.rs and mount with \
+         `gpui_rhai::script_view!()`; then delete src/gpui_rhai_embedded.rs"
+    )]
+    EmbedRemoved,
     #[error(transparent)]
     ModuleId(#[from] gpui_rhai::ModuleIdError),
     #[error(transparent)]
@@ -2960,6 +2853,20 @@ mod tests {
             cargo["dependencies"]["gpui-rhai"]["version"].as_str(),
             Some(minor)
         );
+        // A release build of script_view!() reads what build.rs embeds.
+        assert_eq!(
+            cargo["build-dependencies"]["gpui-rhai-build"].as_str(),
+            Some(minor)
+        );
+        let manifest = std::fs::read_to_string(directory.path().join("Cargo.toml")).unwrap();
+        assert!(manifest.contains("\n[build-dependencies]\n"), "{manifest}");
+        let build = std::fs::read_to_string(directory.path().join("build.rs")).unwrap();
+        assert!(
+            build.contains("gpui_rhai_build::embed_ui(\"ui\")"),
+            "{build}"
+        );
+        let main = std::fs::read_to_string(directory.path().join("src/main.rs")).unwrap();
+        assert!(main.contains("gpui_rhai::script_view!()"), "{main}");
     }
 
     #[test]
@@ -3528,25 +3435,6 @@ mod tests {
     }
 
     #[test]
-    fn embed_includes_the_applications_own_modules() {
-        let directory = project_with_application_modules("helpers::greeting()");
-        let plan = Project::new(directory.path()).plan_embed().unwrap();
-        let generated = &plan.writes[0].content;
-        for (id, path) in [
-            ("helpers", "../ui/helpers.rhai"),
-            ("lib/format", "../ui/lib/format.rhai"),
-        ] {
-            assert!(generated.contains(&format!("\"{id}\"")), "{generated}");
-            assert!(generated.contains(path), "{generated}");
-        }
-        // The token base is the TOKEN_BASE_SOURCE constant, not a module.
-        assert!(
-            !generated.contains("include_str!(\"../ui/tokens.rhai\").to_owned()"),
-            "{generated}"
-        );
-    }
-
-    #[test]
     fn check_lints_known_calls_in_unexecuted_branches() {
         let directory = fixture();
         let project = Project::new(directory.path());
@@ -3635,19 +3523,9 @@ mod tests {
     }
 
     #[test]
-    fn embed_plan_contains_entry_components_theme_locale_and_assets() {
+    fn check_skips_the_files_beside_the_images() {
         let directory = fixture();
-        let project = Project::new(directory.path());
-        project.plan_init().unwrap().apply().unwrap();
-        project
-            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
-            .unwrap()
-            .apply()
-            .unwrap();
-        fs::create_dir_all(directory.path().join("ui/locales")).unwrap();
         fs::create_dir_all(directory.path().join("ui/assets")).unwrap();
-        fs::create_dir_all(directory.path().join("ui/fonts")).unwrap();
-        fs::write(directory.path().join("ui/locales/en.rhai"), "#{}\n").unwrap();
         fs::write(directory.path().join("ui/assets/check.svg"), "<svg/>\n").unwrap();
         // A license beside the icons and Finder's folder file are no assets.
         fs::write(
@@ -3656,62 +3534,9 @@ mod tests {
         )
         .unwrap();
         fs::write(directory.path().join("ui/assets/.DS_Store"), [0u8; 4]).unwrap();
-        fs::write(
-            directory.path().join("ui/fonts/art.otf"),
-            [b"OTTO".as_slice(), &[0, 1, 2]].concat(),
-        )
-        .unwrap();
-
-        project.plan_embed().unwrap().apply().unwrap();
-        let generated = read(&directory.path().join("src/gpui_rhai_embedded.rs")).unwrap();
-        assert!(generated.contains("pub fn app_manifest()"));
-        assert!(generated.contains("AppManifest::new"));
-        assert!(generated.contains("pub fn asset_sources()"));
-        assert!(generated.contains("pub fn font_sources()"));
-        assert!(generated.contains("image/svg+xml"));
-        assert!(generated.contains("components/button"));
-        assert!(generated.contains("THEME_SOURCE"));
-        assert!(generated.contains("COMPONENT_STYLES_SOURCE"));
-        assert!(generated.contains("locales/en.rhai"));
-        assert!(generated.contains("assets/check.svg"));
-        assert!(!generated.contains("LICENSE-icons") && !generated.contains("DS_Store"));
         let warnings = validate_embedded_assets(directory.path()).unwrap();
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].contains("LICENSE-icons.txt is not an image"));
-        assert!(generated.contains("fonts/art.otf"));
-    }
-
-    #[test]
-    fn embedded_manifest_uses_immutable_bindings_with_or_without_capabilities() {
-        for with_capabilities in [false, true] {
-            let mut manifest = AppManifest::new(ModuleId::parse("main").unwrap());
-            if with_capabilities {
-                manifest = manifest
-                    .with_capability("app.alpha", "^1.0")
-                    .unwrap()
-                    .with_capability("app.beta", "*")
-                    .unwrap();
-            }
-            let generated =
-                generated_embed_module(&manifest, &[], &[], &[], &[], &[], false).unwrap();
-            assert!(generated.contains("let manifest = gpui_rhai::AppManifest::new("));
-            assert!(!generated.contains("let mut manifest"));
-            assert!(!generated.contains("#[allow(unused_mut)]"));
-            assert_eq!(
-                generated
-                    .matches("let manifest = manifest.with_capability(")
-                    .count(),
-                usize::from(with_capabilities) * 2
-            );
-            if with_capabilities {
-                assert!(generated.contains(
-                    "let manifest = manifest.with_capability(\"app.alpha\", \"^1.0\").expect(\"generated capability requirement\");"
-                ));
-                assert!(generated.contains(
-                    "let manifest = manifest.with_capability(\"app.beta\", \"*\").expect(\"generated capability requirement\");"
-                ));
-            }
-        }
     }
 
     #[test]

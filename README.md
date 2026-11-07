@@ -85,9 +85,13 @@ A standalone application adapts a prepared view into a window-owning
 application:
 
 ```rust
-let view = gpui_rhai::ScriptView::files("ui/main.rhai").prepare()?;
+let view = gpui_rhai::script_view!().prepare()?;
 gpui_rhai::ScriptApplication::new(view).run()?;
 ```
+
+`script_view!()` reads the crate's `ui/` files in a debug build and the copy
+its `build.rs` embedded through `gpui-rhai-build` in a release build
+([production](docs/hot-reload-and-production.md#production)).
 
 An existing GPUI application mounts one or more isolated views through a shared
 `ScriptViewHost`, and can suspend inactive views and resume them later; see

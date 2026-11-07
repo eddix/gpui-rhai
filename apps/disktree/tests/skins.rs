@@ -39,13 +39,11 @@ fn the_minimal_skin_prepares_from_files() {
     prepare_file_skin("skins/minimal/main.rhai");
 }
 
-/// The embedded packaging path: frozen sources + token base + assets, the
-/// exact assembly src/main.rs ships.
+/// The embedded packaging path: the ui/ tree build.rs embedded, the exact
+/// assembly src/main.rs ships.
 #[test]
 fn the_embedded_skin_prepares() {
-    if let Err(error) = ScriptView::sources(embedded::entry(), embedded::sources(), embedded::THEME)
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .asset_sources(embedded::assets())
+    if let Err(error) = ScriptView::embedded(&embedded::UI)
         .extension(extension())
         .expression_depth_limits(EXPRESSION_DEPTH_LIMITS.0, EXPRESSION_DEPTH_LIMITS.1)
         .prepare()

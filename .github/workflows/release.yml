@@ -1,14 +1,14 @@
 name: Release
 
-# Publishes gpui-rhai, gpui-rhai-registry and gpui-rhai-cli to crates.io with
-# Trusted Publishing: each crate's crates.io settings name this repository, this
-# file (release.yml) and the `crates-io` environment, and the job exchanges its
-# GitHub OIDC identity for a crates.io token that lives 30 minutes. No token is
-# stored anywhere. See docs/release-checklist.md.
+# Publishes gpui-rhai-build, gpui-rhai, gpui-rhai-registry and gpui-rhai-cli to
+# crates.io with Trusted Publishing: each crate's crates.io settings name this
+# repository, this file (release.yml) and the `crates-io` environment, and the
+# job exchanges its GitHub OIDC identity for a crates.io token that lives 30
+# minutes. No token is stored anywhere. See docs/release-checklist.md.
 #
 # A `v*` tag on main runs both jobs. A manual run (workflow_dispatch), or a pull
 # request that changes this file, runs only `verify`: it packages and builds the
-# three crates and publishes nothing.
+# four crates and publishes nothing.
 
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
             libxkbcommon-x11-dev
       # Builds each package from its packaged sources; the CLI resolves the core
       # and registry from the local packages, before either is on crates.io.
-      - name: Package and verify the three crates
+      - name: Package and verify the four crates
         run: cargo package --workspace --locked
 
   publish:
@@ -93,7 +93,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           version="${GITHUB_REF_NAME#v}"
-          for crate in gpui-rhai gpui-rhai-registry gpui-rhai-cli; do
+          for crate in gpui-rhai-build gpui-rhai gpui-rhai-registry gpui-rhai-cli; do
             status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
               --user-agent "gpui-rhai release workflow (github.com/eddix/gpui-rhai)" \
               "https://crates.io/api/v1/crates/${crate}/${version}")

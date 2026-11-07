@@ -140,7 +140,8 @@ macro_rules! script_view {
             .ui_override_env("GPUI_RHAI_UI");
         #[cfg(not(debug_assertions))]
         let view = {
-            static UI: $crate::EmbeddedUi = include!(concat!(env!("OUT_DIR"), "/gpui_rhai_ui.rs"));
+            static UI: $crate::EmbeddedUi =
+                $crate::EmbeddedUi::new(include!(concat!(env!("OUT_DIR"), "/gpui_rhai_ui.rs")));
             $crate::ScriptView::embedded(&UI)
         };
         view

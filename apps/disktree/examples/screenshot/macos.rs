@@ -81,15 +81,6 @@ pub fn main() {
         "size",
         &theme_mode,
     );
-    let mut theme_sources = vec![(
-        "themes/flexoki_light.rhai".to_owned(),
-        disktree_rhai::embedded::FLEXOKI_LIGHT.to_owned(),
-    )];
-    theme_sources.extend(
-        disktree_rhai::embedded::bundled_palette_sources()
-            .into_iter()
-            .map(|(name, source)| (name, source.to_owned())),
-    );
     let skin = std::env::var("SHOT_SKIN").unwrap_or_else(|_| "ui/main.rhai".to_owned());
     let builder: Box<dyn FnOnce() -> Result<PreparedScriptView, gpui_rhai::ScriptViewError>> =
         if std::env::var_os("SHOT_FILE").is_some() || std::env::var_os("SHOT_SKIN").is_some() {
@@ -102,23 +93,11 @@ pub fn main() {
             })
         } else {
             Box::new(move || {
-                gpui_rhai::ScriptView::sources(
-                    disktree_rhai::embedded::entry(),
-                    disktree_rhai::embedded::sources(),
-                    disktree_rhai::embedded::THEME,
-                )
-                .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-                .locale_sources([(
-                    "en".to_owned(),
-                    disktree_rhai::embedded::EN_LOCALE.to_owned(),
-                )])
-                .theme_sources(theme_sources)
-                .asset_sources(disktree_rhai::embedded::assets())
-                .manifest(disktree_rhai::embedded::manifest())
-                .extension(extension)
-                .operation_limit(10_000_000)
-                .expression_depth_limits(64, 128)
-                .prepare()
+                gpui_rhai::ScriptView::embedded(&disktree_rhai::embedded::UI)
+                    .extension(extension)
+                    .operation_limit(10_000_000)
+                    .expression_depth_limits(64, 128)
+                    .prepare()
             })
         };
     let prepared = builder().expect("the skin prepares");

@@ -211,7 +211,7 @@ fn export_skin(name: &str) -> Result<(), String> {
     }
     std::fs::create_dir_all(&target)
         .map_err(|error| format!("create {}: {error}", target.display()))?;
-    for (file, contents) in embedded::SKIN_FILES {
+    for (file, contents) in embedded::UI.files() {
         let path = target.join(file);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
@@ -225,7 +225,7 @@ fn export_skin(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The runtime's expression-depth defaults (64 global / 32 per function) are
+/// The runtime's expression-depth defaults (64 global / 64 per function) are
 /// below what this skin's deeply nested view functions need; 128 per function
 /// covers the deepest chrome paths with headroom.
 const EXPRESSION_DEPTH_LIMITS: (usize, usize) = (64, 128);
@@ -315,24 +315,10 @@ fn prepare_view(args: &Args) -> Result<PreparedScriptView, gpui_rhai::ScriptView
             .key_binding(history_bindings[1].clone())
             .prepare();
     }
-    let mut theme_sources = vec![(
-        "themes/flexoki_light.rhai".to_owned(),
-        embedded::FLEXOKI_LIGHT.to_owned(),
-    )];
-    theme_sources.extend(
-        embedded::bundled_palette_sources()
-            .into_iter()
-            .map(|(name, source)| (name, source.to_owned())),
-    );
-    ScriptView::sources(embedded::entry(), embedded::sources(), embedded::THEME)
+    ScriptView::embedded(&embedded::UI)
         .viewport_breakpoints(
             gpui_rhai::ViewportBreakpoints::new(832.0, 1280.0).expect("valid breakpoints"),
         )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-        .locale_sources([("en".to_owned(), embedded::EN_LOCALE.to_owned())])
-        .theme_sources(theme_sources)
-        .asset_sources(embedded::assets())
-        .manifest(embedded::manifest())
         .extension(extension())
         .operation_limit(SCRIPT_OPERATION_BUDGET)
         .expression_depth_limits(EXPRESSION_DEPTH_LIMITS.0, EXPRESSION_DEPTH_LIMITS.1)
