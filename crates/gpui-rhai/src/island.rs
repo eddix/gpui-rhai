@@ -164,6 +164,7 @@ fn visit(
 pub(crate) struct FrameFingerprint {
     pub generation: crate::ScriptGeneration,
     pub theme: crate::ThemeVariant,
+    pub local_themes: crate::theme::LocalThemes,
     pub locale: String,
     pub number: Option<crate::NumberMetadata>,
     pub motion_preference: crate::MotionPreference,
@@ -199,6 +200,9 @@ pub(crate) struct IslandInherited {
     pub hover_group: Option<NodeId>,
     /// The room a row leaves the root, when the root grows into it.
     pub room: Option<u64>,
+    /// The local theme the root renders in, by its position in the frame's
+    /// table of local themes (part of the fingerprint).
+    pub local_theme: Option<usize>,
 }
 
 /// Everything an island's render reads: when two frames capture the same,

@@ -1479,6 +1479,25 @@ impl ThemeManager {
 }
 
 impl ThemeManager {
+    /// The variant each component subtree with a local theme resolves to under
+    /// `system`: what rendering swaps in below that component.
+    pub(crate) fn local_themes(&self, system: SystemAppearance) -> LocalThemes {
+        LocalThemes(std::rc::Rc::new(
+            self.scopes
+                .iter()
+                .filter_map(|(path, preference)| {
+                    let selection = self.selection_for(preference, system).ok()?;
+                    let variant = self
+                        .families
+                        .get(&selection.family)?
+                        .variants
+                        .get(&selection.variant)?;
+                    Some((path.clone(), variant.clone()))
+                })
+                .collect(),
+        ))
+    }
+
     fn existing(&self, selection: &ThemeSelection) -> Result<ThemeSelection, ThemeError> {
         let exists = self
             .families
@@ -1489,6 +1508,34 @@ impl ThemeManager {
         } else {
             Err(ThemeError::UnknownSelection(selection.clone()))
         }
+    }
+}
+
+/// The local themes of one frame (`ctx.set_local_theme`), by the component
+/// whose subtree each covers. Cheap to clone.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct LocalThemes(std::rc::Rc<BTreeMap<ComponentInstancePath, ThemeVariant>>);
+
+impl LocalThemes {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The local theme a component starts, by its instance path.
+    pub(crate) fn get(&self, component: &ComponentInstancePath) -> Option<&ThemeVariant> {
+        self.0.get(component)
+    }
+
+    /// The position of one of these themes, which a cache island records in
+    /// place of the theme itself.
+    pub(crate) fn index_of(&self, theme: &ThemeVariant) -> Option<usize> {
+        self.0
+            .values()
+            .position(|candidate| std::ptr::eq(candidate, theme))
+    }
+
+    pub(crate) fn by_index(&self, index: usize) -> Option<(&ComponentInstancePath, &ThemeVariant)> {
+        self.0.iter().nth(index)
     }
 }
 
