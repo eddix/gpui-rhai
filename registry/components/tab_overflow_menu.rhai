@@ -2,12 +2,12 @@
 {
   "id": "components/tab_overflow_menu",
   "export": "TabOverflowMenu",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/menu"],
   "capabilities": {},
   "assets": ["icons/chevron_down.svg"],
-  "tokens": ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon"],
+  "tokens": ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon", "radius.md"],
   "environment": ["size", "density"]
 }
 */
@@ -22,10 +22,10 @@ import "components/menu" as menu;
 
 define_component(#{
     metadata: #{
-        id: "components/tab_overflow_menu", "export": "TabOverflowMenu", version: "0.4.0",
+        id: "components/tab_overflow_menu", "export": "TabOverflowMenu", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/menu"], capabilities: #{},
-        tokens: ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon"],
+        tokens: ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon", "radius.md"],
         environment: ["size", "density"],
         assets: ["icons/chevron_down.svg"],
     },
@@ -80,7 +80,8 @@ fn render_TabOverflowMenu(ctx, props) {
         // A definite height: the Menu root around the trigger has none to fill (#128).
         .with_style(ctx.component_style("trigger", style().width(theme_length("metrics.control"))
             .height(theme_length("metrics.control")).items_center().justify_center()
-            .text_color(theme_color("tabs.foreground"))
+            // A control's corners, as IconButton's, so the hover fill is not a square (#37).
+            .radius(theme_radius("md")).text_color(theme_color("tabs.foreground"))
             .hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary")))))
         .accessibility_role("button").accessibility_label(props.label);
     let active = ctx.get_state("active");
