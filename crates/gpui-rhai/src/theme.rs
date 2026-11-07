@@ -1164,9 +1164,18 @@ impl ThemeSelection {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "preference", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ThemePreference {
+    /// One variant whatever the system appearance.
     Fixed { selection: ThemeSelection },
+    /// The family's default light or dark variant, following the system appearance.
     System { family: String },
+    /// `light` while the system appearance is light and `dark` while it is dark; the two
+    /// may come from different families.
+    SystemPair {
+        light: ThemeSelection,
+        dark: ThemeSelection,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1447,17 +1456,11 @@ impl ThemeManager {
         system: SystemAppearance,
     ) -> Result<ThemeSelection, ThemeError> {
         match preference {
-            ThemePreference::Fixed { selection } => {
-                let exists = self
-                    .families
-                    .get(&selection.family)
-                    .is_some_and(|family| family.variants.contains_key(&selection.variant));
-                if exists {
-                    Ok(selection.clone())
-                } else {
-                    Err(ThemeError::UnknownSelection(selection.clone()))
-                }
-            }
+            ThemePreference::Fixed { selection } => self.existing(selection),
+            ThemePreference::SystemPair { light, dark } => self.existing(match system {
+                SystemAppearance::Light => light,
+                SystemAppearance::Dark => dark,
+            }),
             ThemePreference::System { family } => {
                 let family = self
                     .families
@@ -1471,6 +1474,20 @@ impl ThemeManager {
                     },
                 ))
             }
+        }
+    }
+}
+
+impl ThemeManager {
+    fn existing(&self, selection: &ThemeSelection) -> Result<ThemeSelection, ThemeError> {
+        let exists = self
+            .families
+            .get(&selection.family)
+            .is_some_and(|family| family.variants.contains_key(&selection.variant));
+        if exists {
+            Ok(selection.clone())
+        } else {
+            Err(ThemeError::UnknownSelection(selection.clone()))
         }
     }
 }
@@ -1837,6 +1854,37 @@ mod tests {
             "Dark"
         );
         assert_eq!(manager.variants().count(), 2);
+    }
+
+    #[test]
+    fn a_system_pair_follows_the_appearance_across_families() {
+        let mut other = family();
+        other.name = "Other".to_owned();
+        for variant in other.variants.values_mut() {
+            variant.family = "Other".to_owned();
+        }
+        let pair = |light: &str| ThemePreference::SystemPair {
+            light: ThemeSelection::new(light, "Light"),
+            dark: ThemeSelection::new("Default", "Dark"),
+        };
+        let mut manager = ThemeManager::new([family(), other], pair("Other")).unwrap();
+        let resolved = |manager: &ThemeManager, system| {
+            let resolved = manager.resolve(None, None, system).unwrap();
+            let variant = resolved.variant();
+            (variant.family.clone(), variant.name.clone())
+        };
+        assert_eq!(
+            resolved(&manager, SystemAppearance::Light),
+            ("Other".to_owned(), "Light".to_owned())
+        );
+        assert_eq!(
+            resolved(&manager, SystemAppearance::Dark),
+            ("Default".to_owned(), "Dark".to_owned())
+        );
+        assert!(matches!(
+            manager.set_app(pair("Missing")),
+            Err(ThemeError::UnknownSelection(selection)) if selection.family == "Missing"
+        ));
     }
 
     #[test]
