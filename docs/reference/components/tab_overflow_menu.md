@@ -1,6 +1,6 @@
 # TabOverflowMenu
 
-`components/tab_overflow_menu` · export `TabOverflowMenu` · version 0.4.0. Generated from
+`components/tab_overflow_menu` · export `TabOverflowMenu` · version 0.4.3. Generated from
 [`registry/components/tab_overflow_menu.rhai`](../../../registry/components/tab_overflow_menu.rhai); do not edit.
 
 A chevron button whose menu lists every tab of a strip; picking one reports its value. It owns the menu's open state and active row, so the tabs beside it can stay stateless: Tabs uses it for `overflow_menu`, and a caller may put it beside any strip of tabs.
@@ -44,7 +44,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `trigger`.
 
 ## Theme
 
-- Tokens: `metrics.control`, `metrics.icon`, `surface_hover`, `tabs.foreground`, `text_primary`
+- Tokens: `metrics.control`, `metrics.icon`, `radius.md`, `surface_hover`, `tabs.foreground`, `text_primary`
 - Environment: `density`, `size`
 
 ## Dependencies
