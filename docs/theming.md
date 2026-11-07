@@ -99,8 +99,18 @@ theme hot reload reapplies the Host layer automatically.
 
 Rhai may select fixed variants with `set_theme`, `set_window_theme`, and
 `set_local_theme`, or follow the actual GPUI `WindowAppearance` with the
-corresponding `*_theme_system(family)` methods. App-level changes invalidate all
-windows; window and subtree changes remain local.
+corresponding `*_theme_system(family)` methods. To follow it across families,
+the `*_theme_system_pair(light, dark)` methods take one variant for each
+appearance, as the `#{ family, name }` maps `ctx.theme_variant()` returns:
+
+```rhai
+ctx.set_theme_system_pair(#{ family: "Default", name: "Light" },
+    #{ family: "Catppuccin", name: "Mocha" });
+```
+
+The Rust API is `ThemePreference::SystemPair { light, dark }`. The enum is
+`#[non_exhaustive]`, so a `match` outside the crate needs a wildcard arm. App-level
+changes invalidate all windows; window and subtree changes remain local.
 
 Scripts may also read what resolved: `ctx.theme_variant()` returns
 `#{ family, name, mode }` for the context's window and component scope (or

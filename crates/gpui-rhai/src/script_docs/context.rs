@@ -430,6 +430,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Makes the current component subtree follow the system light or dark appearance within theme `family`; not allowed during render.",
     },
     ScriptFnDoc {
+        signature: "set_local_theme_system_pair(_: &mut UiContext, _: map, _: map) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["light", "dark"],
+        doc: "Makes the current component subtree follow the system appearance with variant `light` or `dark`, each `#{ family, name }` as `ctx.theme_variant()` returns; the two may come from different families. Not allowed during render.",
+    },
+    ScriptFnDoc {
         signature: "set_locale(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["locale"],
         doc: "Selects the app-wide `locale` and rerenders locale readers, keeping state; not allowed during render.",
@@ -470,6 +475,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Makes the app follow the system light or dark appearance within theme `family`; not allowed during render.",
     },
     ScriptFnDoc {
+        signature: "set_theme_system_pair(_: &mut UiContext, _: map, _: map) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["light", "dark"],
+        doc: "Makes the app follow the system appearance with variant `light` or `dark`, each `#{ family, name }` as `ctx.theme_variant()` returns; the two may come from different families. Not allowed during render.",
+    },
+    ScriptFnDoc {
         signature: "set_window_locale(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["locale"],
         doc: "Selects `locale` for the current window and rerenders its locale readers; not allowed during render.",
@@ -493,6 +503,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "set_window_theme_system(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["family"],
         doc: "Makes the current window follow the system light or dark appearance within theme `family`; not allowed during render.",
+    },
+    ScriptFnDoc {
+        signature: "set_window_theme_system_pair(_: &mut UiContext, _: map, _: map) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["light", "dark"],
+        doc: "Makes the current window follow the system appearance with variant `light` or `dark`, each `#{ family, name }` as `ctx.theme_variant()` returns; the two may come from different families. Not allowed during render.",
     },
     ScriptFnDoc {
         signature: "start_image_decode(_: &mut UiContext, _: AssetId, _: Fn, _: Fn) -> core::result::Result<gpui_rhai::asset::ImageDecodeHandle,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

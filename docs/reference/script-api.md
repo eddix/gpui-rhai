@@ -262,6 +262,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.set_local_locale(locale: String)` | Selects `locale` for the current component subtree and rerenders its locale readers; not allowed during render. |
 | `ctx.set_local_theme(family: String, variant: String)` | Selects the theme variant `variant` of `family` for the current component subtree; not allowed during render. |
 | `ctx.set_local_theme_system(family: String)` | Makes the current component subtree follow the system light or dark appearance within theme `family`; not allowed during render. |
+| `ctx.set_local_theme_system_pair(light: Map, dark: Map)` | Makes the current component subtree follow the system appearance with variant `light` or `dark`, each `#{ family, name }` as `ctx.theme_variant()` returns; the two may come from different families. Not allowed during render. |
 | `ctx.set_locale(locale: String)` | Selects the app-wide `locale` and rerenders locale readers, keeping state; not allowed during render. |
 | `ctx.set_reduced_motion(reduced: bool)` | Requests reduced or normal motion; reduced settles active animation at once. A stricter Host preference still wins. |
 | `ctx.set_signal(signal: NativeSignal, value: ?)` | Writes a native signal's value, which must match its type; bound properties update without rerunning Rhai. Not allowed during render. |
@@ -270,11 +271,13 @@ Methods of the context a view, callback or effect receives.
 | `ctx.set_state_path(field: String, path: Array, value: ?)` | Replaces one existing nested path of a state field, schema-checking the whole field, and rerenders the component; not allowed during render. |
 | `ctx.set_theme(family: String, variant: String)` | Selects the app-wide theme variant `variant` of `family` without recompiling or resetting state; not allowed during render. |
 | `ctx.set_theme_system(family: String)` | Makes the app follow the system light or dark appearance within theme `family`; not allowed during render. |
+| `ctx.set_theme_system_pair(light: Map, dark: Map)` | Makes the app follow the system appearance with variant `light` or `dark`, each `#{ family, name }` as `ctx.theme_variant()` returns; the two may come from different families. Not allowed during render. |
 | `ctx.set_window_locale(locale: String)` | Selects `locale` for the current window and rerenders its locale readers; not allowed during render. |
 | `ctx.set_window_store(store: String, field: String, value: ?)` | Writes a schema-checked `value` to `field` of the current window's store and rerenders its readers; not allowed during render. |
 | `ctx.set_window_store_path(store: String, field: String, path: Array, value: ?)` | Replaces one existing nested path of a field of the current window's store; rerenders only readers of that path. |
 | `ctx.set_window_theme(family: String, variant: String)` | Selects the theme variant `variant` of `family` for the current window; not allowed during render. |
 | `ctx.set_window_theme_system(family: String)` | Makes the current window follow the system light or dark appearance within theme `family`; not allowed during render. |
+| `ctx.set_window_theme_system_pair(light: Map, dark: Map)` | Makes the current window follow the system appearance with variant `light` or `dark`, each `#{ family, name }` as `ctx.theme_variant()` returns; the two may come from different families. Not allowed during render. |
 | `ctx.start_image_decode(asset: AssetId, on_success: FnPtr, on_error: FnPtr) -> ImageDecodeHandle` | Decodes the image `asset` in the background, then calls `on_success` or `on_error`, and returns a handle; from `init`, callbacks, effects or `resume`. |
 | `ctx.start_subscription(capability: String, method: String, input: ?, on_value: FnPtr, on_error: FnPtr, options: Map) -> SubscriptionHandle` | Starts a capability stream calling `on_value` per item, only from an effect start; `options` takes `delivery`, `capacity`, `throttle_ms`. |
 | `ctx.start_task(capability: String, method: String, input: ?, on_success: FnPtr, on_error: FnPtr) -> TaskHandle` | Runs a capability `method` in the background, then calls `on_success` or `on_error`; from `init`, callbacks, effects or `resume`. |

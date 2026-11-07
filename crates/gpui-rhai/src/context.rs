@@ -3574,6 +3574,71 @@ impl UiContext {
         )
     }
 
+    /// Follow system appearance with one variant for light and one for dark, which may
+    /// come from different families, for the application.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, theme, or borrow errors.
+    pub fn set_theme_system_pair(
+        &self,
+        light: ThemeSelection,
+        dark: ThemeSelection,
+    ) -> Result<(), UiContextError> {
+        let message = format!(
+            "follow system pair {}/{} and {}/{}",
+            light.family, light.variant, dark.family, dark.variant
+        );
+        self.set_theme_preference(
+            ThemeTarget::App,
+            ThemePreference::SystemPair { light, dark },
+            message,
+        )
+    }
+
+    /// [`Self::set_theme_system_pair`] for the current window.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, missing-window, theme, or borrow errors.
+    pub fn set_window_theme_system_pair(
+        &self,
+        light: ThemeSelection,
+        dark: ThemeSelection,
+    ) -> Result<(), UiContextError> {
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        let message = format!(
+            "follow window system pair {}/{} and {}/{}",
+            light.family, light.variant, dark.family, dark.variant
+        );
+        self.set_theme_preference(
+            ThemeTarget::Window(window),
+            ThemePreference::SystemPair { light, dark },
+            message,
+        )
+    }
+
+    /// [`Self::set_theme_system_pair`] for the current component subtree.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, theme, or borrow errors.
+    pub fn set_local_theme_system_pair(
+        &self,
+        light: ThemeSelection,
+        dark: ThemeSelection,
+    ) -> Result<(), UiContextError> {
+        let message = format!(
+            "follow subtree system pair {}/{} and {}/{}",
+            light.family, light.variant, dark.family, dark.variant
+        );
+        self.set_theme_preference(
+            ThemeTarget::Local,
+            ThemePreference::SystemPair { light, dark },
+            message,
+        )
+    }
+
     fn set_theme_preference(
         &self,
         target: ThemeTarget,
@@ -5393,6 +5458,65 @@ fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         );
+    register_theme_pair_context_methods(builder);
+}
+
+/// A `#{ family, name }` map, the shape `ctx.theme_variant()` returns, as a selection.
+fn theme_selection_map(map: &rhai::Map, which: &str) -> Result<ThemeSelection, Box<EvalAltResult>> {
+    let field = |name: &str| {
+        map.get(name)
+            .and_then(|value| value.clone().into_immutable_string().ok())
+            .ok_or_else(|| {
+                Box::new(EvalAltResult::ErrorRuntime(
+                    format!(
+                        "`{which}` needs string `family` and `name`, as ctx.theme_variant() returns"
+                    )
+                    .into(),
+                    Position::NONE,
+                ))
+            })
+    };
+    Ok(ThemeSelection::new(
+        field("family")?.as_str(),
+        field("name")?.as_str(),
+    ))
+}
+
+fn register_theme_pair_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn(
+            "set_theme_system_pair",
+            |context: &mut UiContext, light: rhai::Map, dark: rhai::Map| {
+                context
+                    .set_theme_system_pair(
+                        theme_selection_map(&light, "light")?,
+                        theme_selection_map(&dark, "dark")?,
+                    )
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_window_theme_system_pair",
+            |context: &mut UiContext, light: rhai::Map, dark: rhai::Map| {
+                context
+                    .set_window_theme_system_pair(
+                        theme_selection_map(&light, "light")?,
+                        theme_selection_map(&dark, "dark")?,
+                    )
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_local_theme_system_pair",
+            |context: &mut UiContext, light: rhai::Map, dark: rhai::Map| {
+                context
+                    .set_local_theme_system_pair(
+                        theme_selection_map(&light, "light")?,
+                        theme_selection_map(&dark, "dark")?,
+                    )
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
 }
 
 #[allow(clippy::too_many_lines)]
@@ -6675,6 +6799,60 @@ mod tests {
             state.theme.as_ref().unwrap().app_preference(),
             ThemePreference::System { family } if family == "Default"
         ));
+    }
+
+    #[test]
+    fn a_system_pair_takes_the_maps_theme_variant_returns() {
+        let context = mounted_context(ExecutionPhase::Event);
+        let runtime = RuntimeEngine::new();
+        let light = crate::load_theme_source(
+            runtime.engine(),
+            "default_light.rhai",
+            include_str!("../../../registry/themes/default_light.rhai"),
+        )
+        .unwrap();
+        let mocha = crate::load_theme_source(
+            runtime.engine(),
+            "catppuccin_mocha.rhai",
+            include_str!("../../../registry/themes/catppuccin_mocha.rhai"),
+        )
+        .unwrap();
+        context.runtime().borrow_mut().theme = Some(
+            ThemeManager::from_variants([light, mocha], ThemeSelection::new("Default", "Light"))
+                .unwrap(),
+        );
+        let mut engine = Engine::new();
+        register_ui_context_api(&mut engine);
+        let mut scope = rhai::Scope::new();
+        scope.push("ctx", context.clone());
+        engine
+            .eval_with_scope::<()>(
+                &mut scope,
+                r#"ctx.set_theme_system_pair(#{ family: "Default", name: "Light" },
+                    #{ family: "Catppuccin", name: "Mocha", mode: "dark" })"#,
+            )
+            .unwrap();
+        let resolved = |system| {
+            let state = context.runtime().borrow();
+            let theme = state.theme.as_ref().unwrap();
+            let resolved = theme.resolve(Some("main"), None, system).unwrap();
+            let variant = resolved.variant();
+            format!("{}/{}", variant.family, variant.name)
+        };
+        assert_eq!(resolved(crate::SystemAppearance::Light), "Default/Light");
+        assert_eq!(resolved(crate::SystemAppearance::Dark), "Catppuccin/Mocha");
+        let error = engine
+            .eval_with_scope::<()>(
+                &mut scope,
+                r#"ctx.set_theme_system_pair(#{ family: "Default" }, #{ family: "Catppuccin", name: "Mocha" })"#,
+            )
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("`light` needs string `family` and `name`"),
+            "{error}"
+        );
     }
 
     #[test]
