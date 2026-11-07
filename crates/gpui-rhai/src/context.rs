@@ -363,6 +363,24 @@ impl UiRuntimeState {
         Ok(changed)
     }
 
+    /// Append text to one Host-owned document as its next revision and invalidate
+    /// exact readers.
+    ///
+    /// # Errors
+    ///
+    /// Returns when the document name is not registered or its revision cannot
+    /// advance.
+    pub fn append_native_text_document_from_host(
+        &mut self,
+        name: &str,
+        text: &str,
+    ) -> Result<bool, crate::DocumentError> {
+        let invalidated = self.native_documents.append(name, text)?;
+        let changed = !invalidated.is_empty();
+        self.mark_dirty_from_host(invalidated);
+        Ok(changed)
+    }
+
     /// Register or replace one Host-owned streaming chart data handle.
     ///
     /// # Errors

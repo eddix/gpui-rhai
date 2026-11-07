@@ -714,6 +714,75 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{ key: "message", label: "Reply", sou
     assert_eq!(raw.as_deref(), Some(source));
 }
 
+/// A Host streams a reply chunk by chunk with `append_native_text_document` (#23): each
+/// chunk is the next revision, and the viewer shows and copies the whole reply.
+#[gpui::test]
+fn an_appended_reply_streams_into_the_viewer(cx: &mut TestAppContext) {
+    let (window, view) = Mount::new(
+        r#"
+import "components/markdown_viewer" as markdown;
+fn view(ctx) {
+    let doc = ();
+    try { doc = ctx.get_native_text_document("reply"); } catch (error) { () }
+    if !is_native_text_document(doc) { return text("pending"); }
+    column([
+        text(`revision:${doc.revision}`),
+        markdown::MarkdownViewer(#{ key: "reply", label: "Streamed reply", source: doc })
+    ]).with_style(style().width(relative(1.0)).height(relative(1.0)))
+}
+"#,
+    )
+    .module("components/markdown_viewer", COMPONENT)
+    .id("markdown-append")
+    .mount_root(cx, |host, view| ActiveHost { host, view });
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual
+        .update(|_, cx| {
+            view.register_native_text_document(
+                "reply",
+                NativeTextDocument::new("reply/1", 1, "# Reply\n\n").unwrap(),
+                cx,
+            )
+        })
+        .unwrap();
+    settle(&mut visual, Step::Frame, 2);
+    let chunks = [
+        "The deploy ",
+        "finished.\n\n",
+        "```rust\nfn main() {\n",
+        "    run();\n}\n```\n\n",
+        "- first\n",
+        "- second\n\n",
+        "Done with **all** steps.",
+    ];
+    for chunk in chunks {
+        visual
+            .update(|_, cx| view.append_native_text_document("reply", chunk, cx))
+            .unwrap();
+        settle(&mut visual, Step::Tick, 2);
+    }
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert!(palette_texts(&mut visual, &view).contains(&format!("revision:{}", 1 + chunks.len())));
+    let rect = bounds(&mut visual, &view, "document", "Streamed reply");
+    let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
+    visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
+    visual.simulate_keystrokes("cmd-a cmd-c");
+    let copied = visual
+        .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
+        .unwrap();
+    for part in [
+        "Reply",
+        "The deploy finished.",
+        "fn main() {",
+        "first",
+        "second",
+        "Done with all steps.",
+    ] {
+        assert!(copied.contains(part), "{part:?} in {copied:?}");
+    }
+}
+
 #[gpui::test]
 fn mounted_documents_register_stream_release_and_reject_disposed_owners(cx: &mut TestAppContext) {
     let (window, view) = Mount::new(

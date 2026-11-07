@@ -1703,6 +1703,35 @@ impl ScriptViewHandle {
         })
     }
 
+    /// Append `text` to one registered Host-owned document as its next revision
+    /// (the same identity, the following revision): a streamed reply sends each
+    /// chunk instead of the whole text so far. A `MarkdownViewer` reading it then
+    /// prepares only the last block and the new text, not the whole reply.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal, when the document name is unknown, or when its
+    /// revision cannot advance.
+    pub fn append_native_text_document(
+        &self,
+        name: &str,
+        text: &str,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .append_native_text_document_from_host(name, text)?;
+            if changed {
+                cx.notify();
+            }
+            Ok::<_, ScriptViewError>(changed)
+        })
+    }
+
     /// Return the measured embedding element.
     ///
     /// # Errors

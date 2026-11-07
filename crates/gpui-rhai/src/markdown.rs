@@ -81,11 +81,21 @@ pub(crate) struct PreparedMarkdown {
     pub source: Arc<str>,
     pub plain: Arc<str>,
     pub blocks: Vec<MarkdownBlock>,
+    /// For each block, where its top-level container starts in `source`: the start
+    /// of that container's first line.
+    pub tops: Vec<usize>,
+    /// For each block, where its text ends in `plain`.
+    pub plain_ends: Vec<usize>,
+    /// Whether `source` defines a link reference, which any block may use.
+    pub references: bool,
 }
 
 #[derive(Default)]
 struct Builder {
     blocks: Vec<MarkdownBlock>,
+    /// Where the current top-level container starts, and each block's.
+    top: usize,
+    tops: Vec<usize>,
     current: MarkdownText,
     kind: Option<BlockKind>,
     marks: Vec<Mark>,
@@ -142,6 +152,7 @@ impl Builder {
                 continuation: range.start > 0,
                 list_item: !self.lists.is_empty(),
             });
+            self.tops.push(self.top);
         }
     }
 }
@@ -192,21 +203,14 @@ fn slice_text(text: &MarkdownText, range: Range<usize>) -> MarkdownText {
     }
 }
 
-/// Parse complete semantics rather than assuming an append changes only the
-/// final block: reference definitions, setext headings and list tightness can
-/// alter earlier blocks. The native consumer reuses equal presentation blocks.
-#[allow(clippy::too_many_lines)] // Exhaustive parser event-to-native-model translation.
-pub(crate) fn prepare_markdown(
-    source: &DocumentSource,
-    syntaxes: &SyntaxRegistry,
-    limits: DocumentLimits,
-    canceled: &AtomicBool,
-    alive: &AtomicBool,
-) -> Result<PreparedMarkdown, String> {
-    if canceled.load(Ordering::Acquire) || !alive.load(Ordering::Acquire) {
-        return Err("Markdown preparation canceled".to_owned());
-    }
-    let source = source.text();
+/// The blocks of one parse, before their plain text is laid out.
+struct ParsedBlocks {
+    blocks: Vec<MarkdownBlock>,
+    tops: Vec<usize>,
+    references: bool,
+}
+
+fn check_limits(source: &str, limits: DocumentLimits) -> Result<(), String> {
     if source.len() > limits.max_document_bytes {
         return Err(format!(
             "Markdown exceeds {} byte limit",
@@ -219,14 +223,119 @@ pub(crate) fn prepare_markdown(
             limits.max_document_lines
         ));
     }
+    Ok(())
+}
+
+/// Parse complete semantics rather than assuming an append changes only the
+/// final block: reference definitions, setext headings and list tightness can
+/// alter earlier blocks. The native consumer reuses equal presentation blocks.
+pub(crate) fn prepare_markdown(
+    source: &DocumentSource,
+    syntaxes: &SyntaxRegistry,
+    limits: DocumentLimits,
+    canceled: &AtomicBool,
+    alive: &AtomicBool,
+) -> Result<PreparedMarkdown, String> {
+    if canceled.load(Ordering::Acquire) || !alive.load(Ordering::Acquire) {
+        return Err("Markdown preparation canceled".to_owned());
+    }
+    let source = source.text();
+    check_limits(&source, limits)?;
+    let parsed = parse_blocks(&source, 0, syntaxes, limits, canceled, alive)?;
+    Ok(assemble(source, PreparedMarkdownPrefix::default(), parsed))
+}
+
+/// [`prepare_markdown`] for a source that may extend `previous`'s, as a streamed
+/// reply does: the blocks before `previous`'s last top-level container stay, and
+/// only that container and what follows parse again. That is the same model a full
+/// parse gives, since a complete container cannot change once the next one starts;
+/// a link reference definition, which reaches every block, takes the full parse.
+pub(crate) fn prepare_markdown_after(
+    previous: &PreparedMarkdown,
+    source: &DocumentSource,
+    syntaxes: &SyntaxRegistry,
+    limits: DocumentLimits,
+    canceled: &AtomicBool,
+    alive: &AtomicBool,
+) -> Result<PreparedMarkdown, String> {
+    let text = source.text();
+    let Some(&boundary) = previous.tops.last() else {
+        return prepare_markdown(source, syntaxes, limits, canceled, alive);
+    };
+    if previous.references || !text.starts_with(&*previous.source) {
+        return prepare_markdown(source, syntaxes, limits, canceled, alive);
+    }
+    if canceled.load(Ordering::Acquire) || !alive.load(Ordering::Acquire) {
+        return Err("Markdown preparation canceled".to_owned());
+    }
+    check_limits(&text, limits)?;
+    let parsed = parse_blocks(
+        &text[boundary..],
+        boundary,
+        syntaxes,
+        limits,
+        canceled,
+        alive,
+    )?;
+    if parsed.references {
+        return prepare_markdown(source, syntaxes, limits, canceled, alive);
+    }
+    let reused = previous.tops.partition_point(|top| *top < boundary);
+    let plain = reused
+        .checked_sub(1)
+        .map_or(0, |last| previous.plain_ends[last]);
+    let prefix = PreparedMarkdownPrefix {
+        plain: previous.plain[..plain].to_owned(),
+        blocks: previous.blocks[..reused].to_vec(),
+        tops: previous.tops[..reused].to_vec(),
+        plain_ends: previous.plain_ends[..reused].to_vec(),
+    };
+    Ok(assemble(text, prefix, parsed))
+}
+
+/// The laid-out blocks a new parse continues from.
+#[derive(Default)]
+struct PreparedMarkdownPrefix {
+    plain: String,
+    blocks: Vec<MarkdownBlock>,
+    tops: Vec<usize>,
+    plain_ends: Vec<usize>,
+}
+
+/// Parse `source`, a whole document or its tail from a line start at `offset`
+/// in the document, into blocks whose `tops` are document offsets.
+#[allow(clippy::too_many_lines)] // Exhaustive parser event-to-native-model translation.
+fn parse_blocks(
+    source: &str,
+    offset: usize,
+    syntaxes: &SyntaxRegistry,
+    limits: DocumentLimits,
+    canceled: &AtomicBool,
+    alive: &AtomicBool,
+) -> Result<ParsedBlocks, String> {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_GFM;
+    let parser = Parser::new_ext(source, options);
+    // Reference definitions are collected before the events.
+    let references = parser.reference_definitions().iter().next().is_some();
     let mut b = Builder::default();
-    for event in Parser::new_ext(&source, options) {
+    let mut depth = 0_usize;
+    for (event, range) in parser.into_offset_iter() {
         if canceled.load(Ordering::Acquire) || !alive.load(Ordering::Acquire) {
             return Err("Markdown preparation canceled".to_owned());
+        }
+        // A top-level container starts: what came before is complete, and the
+        // container's blocks note where its first line starts.
+        if depth == 0 && matches!(event, Event::Start(_) | Event::Rule) {
+            b.flush();
+            b.top = offset + source[..range.start].rfind('\n').map_or(0, |at| at + 1);
+        }
+        match &event {
+            Event::Start(_) => depth += 1,
+            Event::End(_) => depth = depth.saturating_sub(1),
+            _ => {}
         }
         match event {
             Event::Start(tag) => match tag {
@@ -407,6 +516,7 @@ pub(crate) fn prepare_markdown(
                             continuation: false,
                             list_item: !b.lists.is_empty(),
                         });
+                        b.tops.push(b.top);
                     }
                 }
                 _ => {}
@@ -429,6 +539,7 @@ pub(crate) fn prepare_markdown(
                     continuation: false,
                     list_item: !b.lists.is_empty(),
                 });
+                b.tops.push(b.top);
             }
             Event::TaskListMarker(checked) => {
                 // Replace the list marker with the visible read-only task marker.
@@ -441,8 +552,28 @@ pub(crate) fn prepare_markdown(
         }
     }
     b.flush();
-    let mut plain = String::new();
-    for block in &mut b.blocks {
+    debug_assert_eq!(b.blocks.len(), b.tops.len());
+    Ok(ParsedBlocks {
+        blocks: b.blocks,
+        tops: b.tops,
+        references,
+    })
+}
+
+/// Lay `parsed`'s blocks out after `prefix`: their plain text, autolinks and table
+/// cell fragments.
+fn assemble(
+    source: Arc<str>,
+    prefix: PreparedMarkdownPrefix,
+    parsed: ParsedBlocks,
+) -> PreparedMarkdown {
+    let PreparedMarkdownPrefix {
+        mut plain,
+        mut blocks,
+        mut tops,
+        mut plain_ends,
+    } = prefix;
+    for mut block in parsed.blocks {
         if !block.continuation && !plain.is_empty() {
             if !plain.ends_with('\n') {
                 plain.push('\n');
@@ -477,12 +608,18 @@ pub(crate) fn prepare_markdown(
             }
             append_plain(&mut block.text, &mut plain);
         }
+        blocks.push(block);
+        plain_ends.push(plain.len());
     }
-    Ok(PreparedMarkdown {
+    tops.extend(parsed.tops);
+    PreparedMarkdown {
         source,
         plain: Arc::from(plain),
-        blocks: b.blocks,
-    })
+        blocks,
+        tops,
+        plain_ends,
+        references: parsed.references,
+    }
 }
 
 fn append_plain(text: &mut MarkdownText, plain: &mut String) {
@@ -703,6 +840,93 @@ mod tests {
                 &AtomicBool::new(false)
             )
             .is_err()
+        );
+    }
+
+    /// Documents whose block structure depends on what follows, for the incremental
+    /// preparation's equivalence with a full parse.
+    pub(crate) fn tricky_corpus() -> Vec<String> {
+        vec![
+            "para one\nstill one\n\npara two\n===\n\n- a\n- b\n\n  continued in b\n\n1. one\n2. two\n\n> quote\nlazy\n\n```rust\nfn main() {}\n```\n\n    indented code\n\n---\n\n| a | b |\n| --- | ---: |\n| 1 | 2 |\n| 3 | 4 |\n\n<div>\nhtml\n</div>\n\n- [x] done\n- [ ] todo\n\nSee https://example.com and **bold _nested_** `code`.\n".to_owned(),
+            "[ref]: https://example.com\n\nUse [ref] and [missing].\n\n[missing]: https://example.org\n".to_owned(),
+            "Heading\n-------\n\n* outer\n  * inner\n    * deeper\n\n```\nunterminated fence\nmore code\n".to_owned(),
+            "a\n\n> b\n> > c\n\n![alt](img.png) text\n\n2. two\n3. three\n\nfinal paragraph that is long ".repeat(3),
+        ]
+    }
+
+    fn prepare_after(previous: &PreparedMarkdown, text: &str) -> PreparedMarkdown {
+        prepare_markdown_after(
+            previous,
+            &text.to_owned().into(),
+            &SyntaxRegistry::new(),
+            DocumentLimits::default(),
+            &AtomicBool::new(false),
+            &AtomicBool::new(true),
+        )
+        .unwrap()
+    }
+
+    fn assert_same_model(incremental: &PreparedMarkdown, full: &PreparedMarkdown, at: &str) {
+        assert_eq!(incremental.blocks, full.blocks, "blocks at {at}");
+        assert_eq!(incremental.plain, full.plain, "plain at {at}");
+        assert_eq!(incremental.tops, full.tops, "tops at {at}");
+        assert_eq!(
+            incremental.plain_ends, full.plain_ends,
+            "plain ends at {at}"
+        );
+        assert_eq!(
+            incremental.references, full.references,
+            "references at {at}"
+        );
+    }
+
+    /// Streamed a few bytes at a time, every revision's incremental model equals a
+    /// full parse of it: setext headings, list continuations, lazy quotes, an open
+    /// fence, tables, HTML and late reference definitions included (#23).
+    #[test]
+    fn an_append_prepares_the_same_model_as_a_full_parse() {
+        let reply = crate::markdown_preparation::tests::streamed_reply();
+        let mut reply_head = 24 * 1024;
+        while !reply.is_char_boundary(reply_head) {
+            reply_head += 1;
+        }
+        let documents = tricky_corpus()
+            .into_iter()
+            .map(|source| (source, 7))
+            .chain([(reply[..reply_head].to_owned(), 257)]);
+        for (source, step) in documents {
+            let mut previous = parse("");
+            let mut end = 0;
+            while end < source.len() {
+                end = (end + step).min(source.len());
+                while !source.is_char_boundary(end) {
+                    end += 1;
+                }
+                let next = prepare_after(&previous, &source[..end]);
+                assert_same_model(
+                    &next,
+                    &parse(&source[..end]),
+                    &format!("{end} of {:?}", &source[..source.len().min(40)]),
+                );
+                previous = next;
+            }
+        }
+    }
+
+    #[test]
+    fn a_source_that_does_not_extend_the_previous_one_parses_in_full() {
+        let previous = parse("# One\n\nfirst paragraph\n");
+        let replaced = "# Two\n\nsecond paragraph\n";
+        assert_same_model(
+            &prepare_after(&previous, replaced),
+            &parse(replaced),
+            "a replacement",
+        );
+        let shorter = "# One\n";
+        assert_same_model(
+            &prepare_after(&previous, shorter),
+            &parse(shorter),
+            "a truncation",
         );
     }
 }
