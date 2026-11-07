@@ -191,13 +191,13 @@ parser depths global=64/function=32 in both debug and release. A trusted Host
 can opt into different policies for its known workload:
 
 ```rust,ignore
-let prepared = gpui_rhai::FileScriptView::new("ui/main.rhai")
+let prepared = gpui_rhai::ScriptView::files("ui/main.rhai")
     .operation_limit(4_000_000)
     .expression_depth_limits(64, 64)
     .prepare()?;
 ```
 
-`EmbeddedScriptView` has the same builders. Direct `RuntimeEngine` users call
+Every `ScriptView` source takes these builders. Direct `RuntimeEngine` users call
 `set_operation_limit` and `set_expression_depth_limits`. Each zero value
 normalizes to one, never unlimited. These are Rust-only settings: scripts cannot
 raise their own quota. Builder policy is applied before trusted

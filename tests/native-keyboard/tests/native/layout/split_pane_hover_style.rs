@@ -1,6 +1,6 @@
 //! SplitPane's separator lane takes its hover and drag fill from the `handle_hover` and
 //! `handle_drag` parts (#132), so the instance's `part_styles` and the application stylesheet
-//! (`ui/styles.rhai`, `EmbeddedScriptView::component_styles` here) can change or remove the
+//! (`ui/styles.rhai`, `ScriptView::component_styles` here) can change or remove the
 //! default `surface_hover` band. Before, the band was a plain `signal_style` merged after the
 //! node's base style, so it always won over the `handle` part.
 //!

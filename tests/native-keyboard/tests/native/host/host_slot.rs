@@ -10,7 +10,7 @@ use gpui::{
     TestAppContext, VisualTestContext, div, point, px,
 };
 use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, HostSlotRegistry, ModuleId, ScriptViewConfig,
+    EmbeddedScriptSource, ScriptView, HostSlotRegistry, ModuleId, ScriptViewConfig,
     ScriptViewHost,
 };
 
@@ -89,7 +89,7 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
     cx.update(gpui_rhai::install);
     let resident_entry = ModuleId::parse("resident").unwrap();
     let input_module = ModuleId::parse("components/input").unwrap();
-    let resident = EmbeddedScriptView::new(
+    let resident = ScriptView::sources(
         resident_entry.clone(),
         EmbeddedScriptSource::new(std::collections::BTreeMap::from([
             (
@@ -134,7 +134,7 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
         let slots = HostSlotRegistry::new()
             .with_script_view("content", resident.clone())
             .unwrap();
-        let shell = EmbeddedScriptView::new(
+        let shell = ScriptView::sources(
             shell_entry.clone(),
             EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
                 shell_entry,
@@ -182,7 +182,7 @@ fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppCon
 fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let resident_entry = ModuleId::parse("resident").unwrap();
-    let resident = EmbeddedScriptView::new(
+    let resident = ScriptView::sources(
         resident_entry.clone(),
         EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
             resident_entry,
@@ -222,7 +222,7 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
             .with_script_view("content", resident.clone())
             .unwrap();
         let shell =
-            EmbeddedScriptView::new(shell_entry, shell_source, gpui_rhai_registry::DEFAULT_THEME)
+            ScriptView::sources(shell_entry, shell_source, gpui_rhai_registry::DEFAULT_THEME)
                 .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
                 .extension(slots)
                 .prepare()

@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
-    AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, NativeCollection,
-    ScriptApplication, ScriptViewExtension, UiRuntimeState, UiValue,
+    AssetData, EmbeddedScriptSource, ModuleId, NativeCollection, ScriptApplication, ScriptView,
+    ScriptViewExtension, UiRuntimeState, UiValue,
 };
 
 const ROW_COUNT: usize = 1_000;
@@ -122,16 +122,16 @@ fn module(id: &str, source: &str) -> (ModuleId, String) {
     )
 }
 
-pub(crate) fn table_1000_view() -> EmbeddedScriptView {
+pub(crate) fn table_1000_view() -> ScriptView {
     table_1000_view_with_resizable(false)
 }
 
 #[allow(dead_code)] // Used when this example is imported by the independent GPUI test workspace.
-pub(crate) fn table_1000_resizable_view() -> EmbeddedScriptView {
+pub(crate) fn table_1000_resizable_view() -> ScriptView {
     table_1000_view_with_resizable(true)
 }
 
-fn table_1000_view_with_resizable(resizable: bool) -> EmbeddedScriptView {
+fn table_1000_view_with_resizable(resizable: bool) -> ScriptView {
     let main = MAIN
         .replace("__ROW_COUNT__", &ROW_COUNT.to_string())
         .replace("__RESIZABLE__", if resizable { "true" } else { "false" });
@@ -142,7 +142,7 @@ fn table_1000_view_with_resizable(resizable: bool) -> EmbeddedScriptView {
         module("components/badge", BADGE),
         module("components/button", BUTTON),
     ]));
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME)
+    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, THEME)
         .token_base(include_str!("../../../../../registry/tokens.rhai"))
         .asset_sources(table_assets())
         .extension(TableDataExtension {

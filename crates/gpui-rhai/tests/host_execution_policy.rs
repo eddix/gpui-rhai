@@ -307,9 +307,9 @@ impl ScriptViewExtension for PolicyProbe {
     }
 }
 
-fn embedded(source: &str) -> EmbeddedScriptView {
+fn embedded(source: &str) -> ScriptView {
     let entry = ModuleId::parse("main").unwrap();
-    EmbeddedScriptView::new(
+    ScriptView::sources(
         entry.clone(),
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         THEME,
@@ -317,7 +317,7 @@ fn embedded(source: &str) -> EmbeddedScriptView {
     .token_base(include_str!("../../../registry/tokens.rhai"))
 }
 
-fn file(source: &str) -> (tempfile::TempDir, FileScriptView) {
+fn file(source: &str) -> (tempfile::TempDir, ScriptView) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("main.rhai"), source).unwrap();
     std::fs::write(dir.path().join("theme.rhai"), THEME).unwrap();
@@ -326,7 +326,7 @@ fn file(source: &str) -> (tempfile::TempDir, FileScriptView) {
         "entry = \"main\"\nruntime_api = 3\n",
     )
     .unwrap();
-    let builder = FileScriptView::new(dir.path().join("main.rhai")).development(false);
+    let builder = ScriptView::files(dir.path().join("main.rhai")).development(false);
     (dir, builder)
 }
 

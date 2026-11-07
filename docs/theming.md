@@ -75,9 +75,9 @@ source:
 
 ```rust
 use std::collections::BTreeMap;
-use gpui_rhai::{EmbeddedScriptView, Length, ThemeTokenOverrides};
+use gpui_rhai::{ScriptView, Length, ThemeTokenOverrides};
 
-let view = EmbeddedScriptView::new(entry, scripts, default_theme)
+let view = ScriptView::sources(entry, scripts, default_theme)
     .theme_sources(additional_themes)
     .theme_token_overrides(ThemeTokenOverrides {
         radii: BTreeMap::from([
@@ -89,7 +89,7 @@ let view = EmbeddedScriptView::new(entry, scripts, default_theme)
     });
 ```
 
-`FileScriptView` exposes the same builder. Overrides merge colors, spacing,
+A file-backed `ScriptView` takes the same builder. Overrides merge colors, spacing,
 radii, individual typography roles, motion roles, and individual namespaced
 tokens. Typography family and fallback entries replace their respective theme
 values when supplied. Theme identity and mode are deliberately not

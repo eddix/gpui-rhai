@@ -157,7 +157,7 @@ impl AssetProvider for DirectoryAssetProvider {
     }
 }
 
-fn mime_for_path(path: &Path) -> Option<&'static str> {
+pub(crate) fn mime_for_path(path: &Path) -> Option<&'static str> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "png" => Some("image/png"),
         "jpg" | "jpeg" => Some("image/jpeg"),

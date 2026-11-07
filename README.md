@@ -85,7 +85,7 @@ A standalone application adapts a prepared view into a window-owning
 application:
 
 ```rust
-let view = gpui_rhai::FileScriptView::new("ui/main.rhai").prepare()?;
+let view = gpui_rhai::ScriptView::files("ui/main.rhai").prepare()?;
 gpui_rhai::ScriptApplication::new(view).run()?;
 ```
 

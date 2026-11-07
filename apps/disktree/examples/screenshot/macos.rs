@@ -94,7 +94,7 @@ pub fn main() {
     let builder: Box<dyn FnOnce() -> Result<PreparedScriptView, gpui_rhai::ScriptViewError>> =
         if std::env::var_os("SHOT_FILE").is_some() || std::env::var_os("SHOT_SKIN").is_some() {
             Box::new(move || {
-                gpui_rhai::FileScriptView::new(std::path::PathBuf::from(skin))
+                gpui_rhai::ScriptView::files(std::path::PathBuf::from(skin))
                     .extension(extension)
                     .operation_limit(10_000_000)
                     .expression_depth_limits(64, 128)
@@ -102,7 +102,7 @@ pub fn main() {
             })
         } else {
             Box::new(move || {
-                gpui_rhai::EmbeddedScriptView::new(
+                gpui_rhai::ScriptView::sources(
                     disktree_rhai::embedded::entry(),
                     disktree_rhai::embedded::sources(),
                     disktree_rhai::embedded::THEME,

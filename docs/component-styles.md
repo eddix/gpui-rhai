@@ -56,7 +56,7 @@ File-backed applications discover `ui/styles.rhai` automatically. An embedded
 application installs the generated source explicitly:
 
 ```rust
-let view = gpui_rhai::EmbeddedScriptView::new(
+let view = gpui_rhai::ScriptView::sources(
     generated::app_manifest().entry.clone(),
     generated::script_source(),
     generated::THEME_SOURCE,

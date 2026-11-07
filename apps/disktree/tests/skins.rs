@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use disktree_rhai::{capability::DisktreeExtension, embedded};
-use gpui_rhai::{EmbeddedScriptView, FileScriptView};
+use gpui_rhai::ScriptView;
 
 /// The skin's deep view functions exceed the runtime's 32-deep function
 /// default; this mirrors src/main.rs.
@@ -18,7 +18,7 @@ fn extension() -> DisktreeExtension {
 
 fn prepare_file_skin(entry: &str) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(entry);
-    if let Err(error) = FileScriptView::new(path)
+    if let Err(error) = ScriptView::files(path)
         .extension(extension())
         .expression_depth_limits(EXPRESSION_DEPTH_LIMITS.0, EXPRESSION_DEPTH_LIMITS.1)
         .prepare()
@@ -43,13 +43,12 @@ fn the_minimal_skin_prepares_from_files() {
 /// exact assembly src/main.rs ships.
 #[test]
 fn the_embedded_skin_prepares() {
-    if let Err(error) =
-        EmbeddedScriptView::new(embedded::entry(), embedded::sources(), embedded::THEME)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .asset_sources(embedded::assets())
-            .extension(extension())
-            .expression_depth_limits(EXPRESSION_DEPTH_LIMITS.0, EXPRESSION_DEPTH_LIMITS.1)
-            .prepare()
+    if let Err(error) = ScriptView::sources(embedded::entry(), embedded::sources(), embedded::THEME)
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
+        .asset_sources(embedded::assets())
+        .extension(extension())
+        .expression_depth_limits(EXPRESSION_DEPTH_LIMITS.0, EXPRESSION_DEPTH_LIMITS.1)
+        .prepare()
     {
         panic!("embedded: {error}");
     }

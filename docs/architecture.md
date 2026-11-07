@@ -264,7 +264,7 @@ foreground thread and stale script generations are rejected.
 
 ## View and window mechanisms
 
-`FileScriptView` and `EmbeddedScriptView` prepare the core unit of execution.
+`ScriptView` prepares the core unit of execution.
 Each mounted view owns an independent Engine, Runtime, Lifecycle, component
 root, task/subscription scopes, and diagnostics. `ScriptApplication` is an
 optional adapter that owns `Application` and native windows; existing GPUI

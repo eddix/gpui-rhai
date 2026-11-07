@@ -199,7 +199,7 @@ fn prepared(root: &std::path::Path) -> PreparedScriptView {
             .into_iter()
             .map(|(name, source)| (name, source.to_owned())),
     );
-    gpui_rhai::EmbeddedScriptView::new(
+    gpui_rhai::ScriptView::sources(
         disktree_rhai::embedded::entry(),
         disktree_rhai::embedded::sources(),
         disktree_rhai::embedded::THEME,

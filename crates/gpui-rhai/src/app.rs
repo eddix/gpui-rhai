@@ -1814,7 +1814,7 @@ impl ScriptViewHandle {
     }
 
     /// Audit the committed composition with the rules of this view's profile
-    /// (`ui/profile.rhai` or [`EmbeddedScriptView::profile_source`]). With no
+    /// (`ui/profile.rhai` or [`ScriptView::profile_source`]). With no
     /// profile the result is empty.
     ///
     /// # Errors
@@ -2350,8 +2350,60 @@ impl ScriptExecutionPolicy {
     }
 }
 
-pub struct FileScriptView {
-    entry: PathBuf,
+/// Where a [`ScriptView`] reads its `ui/` tree.
+enum UiSource {
+    /// An entry script, or a `ui` directory whose `app.toml` names the entry.
+    Files(PathBuf),
+    /// A tree `gpui-rhai-build` compiled into the binary.
+    Embedded(&'static crate::EmbeddedUi),
+    /// Sources the Host supplies in memory.
+    Sources(Box<UiSources>),
+}
+
+/// In-memory sources: the parts of a `ui/` directory.
+pub(crate) struct UiSources {
+    pub(crate) entry: ModuleId,
+    pub(crate) scripts: EmbeddedScriptSource,
+    pub(crate) theme_source: String,
+    pub(crate) component_style_source: Option<String>,
+    pub(crate) locales: Vec<(String, String)>,
+    pub(crate) themes: Vec<(String, String)>,
+    pub(crate) manifest: AppManifest,
+    pub(crate) assets: BTreeMap<String, AssetData>,
+    pub(crate) profile_source: Option<String>,
+}
+
+impl UiSources {
+    pub(crate) fn new(
+        entry: ModuleId,
+        scripts: EmbeddedScriptSource,
+        theme_source: String,
+    ) -> Self {
+        Self {
+            manifest: AppManifest::new(entry.clone()),
+            entry,
+            scripts,
+            theme_source,
+            component_style_source: None,
+            locales: Vec::new(),
+            themes: Vec::new(),
+            assets: BTreeMap::new(),
+            profile_source: None,
+        }
+    }
+}
+
+/// A script view: its `ui/` tree and the Host's configuration.
+///
+/// [`script_view!`](crate::script_view) reads the files of the crate's `ui/`
+/// directory in a debug build and the copy `gpui-rhai-build` embedded in a
+/// release build, so a Host writes one mount. [`ScriptView::files`],
+/// [`ScriptView::embedded`] and [`ScriptView::sources`] choose explicitly.
+pub struct ScriptView {
+    source: UiSource,
+    /// An option that supplies in-memory sources, used on another source.
+    misplaced_source_option: Option<&'static str>,
+    ui_override_env: Option<String>,
     development: bool,
     motion_preference: MotionPreference,
     motion_quality: crate::MotionQuality,
@@ -2367,12 +2419,13 @@ pub struct FileScriptView {
     execution_policy: ScriptExecutionPolicy,
 }
 
-impl FileScriptView {
-    #[must_use]
-    pub fn new(entry: impl Into<PathBuf>) -> Self {
+impl ScriptView {
+    fn with_source(source: UiSource, development: bool) -> Self {
         Self {
-            entry: entry.into(),
-            development: cfg!(feature = "dev-reload") && cfg!(debug_assertions),
+            source,
+            misplaced_source_option: None,
+            ui_override_env: None,
+            development,
             motion_preference: motion_preference_from_env(),
             motion_quality: crate::MotionQuality::High,
             extensions: Vec::new(),
@@ -2388,19 +2441,126 @@ impl FileScriptView {
         }
     }
 
-    /// Use this token base source instead of discovering `ui/tokens.rhai`.
+    /// Read the `ui/` tree from disk: `path` is the entry script, or a `ui`
+    /// directory whose `app.toml` names it. Development (hot reload) is on in
+    /// a debug build with the `dev-reload` feature.
+    #[must_use]
+    pub fn files(path: impl Into<PathBuf>) -> Self {
+        Self::with_source(
+            UiSource::Files(path.into()),
+            cfg!(feature = "dev-reload") && cfg!(debug_assertions),
+        )
+    }
+
+    /// Read the tree `gpui-rhai-build` compiled into the binary.
+    #[must_use]
+    pub fn embedded(ui: &'static crate::EmbeddedUi) -> Self {
+        Self::with_source(UiSource::Embedded(ui), false)
+    }
+
+    /// Run sources the Host supplies in memory: the entry module, the modules
+    /// it may import and the primary theme. [`Self::theme_sources`],
+    /// [`Self::locale_sources`], [`Self::asset_sources`],
+    /// [`Self::component_styles`], [`Self::profile_source`] and
+    /// [`Self::manifest`] add the other parts of a `ui/` directory.
+    #[must_use]
+    pub fn sources(
+        entry: ModuleId,
+        scripts: EmbeddedScriptSource,
+        theme_source: impl Into<String>,
+    ) -> Self {
+        Self::with_source(
+            UiSource::Sources(Box::new(UiSources::new(
+                entry,
+                scripts,
+                theme_source.into(),
+            ))),
+            false,
+        )
+    }
+
+    /// Read the `ui/` tree from the files at the path in environment variable
+    /// `name` when it is set, whatever the source. [`script_view!`](crate::script_view)
+    /// honors `GPUI_RHAI_UI` in a debug build; a release build honors a
+    /// variable only when the Host names one here, since swapping the scripts
+    /// of a signed application is a way to inject code into it.
+    #[must_use]
+    pub fn ui_override_env(mut self, name: impl Into<String>) -> Self {
+        self.ui_override_env = Some(name.into());
+        self
+    }
+
+    fn sources_option(mut self, option: &'static str, apply: impl FnOnce(&mut UiSources)) -> Self {
+        match &mut self.source {
+            UiSource::Sources(sources) => apply(sources),
+            UiSource::Files(_) | UiSource::Embedded(_) => {
+                self.misplaced_source_option.get_or_insert(option);
+            }
+        }
+        self
+    }
+
+    /// Install an application profile (`profile() -> map`) whose audit rules
+    /// [`ScriptViewHandle::composition_audit`] applies. In-memory sources only.
+    #[must_use]
+    pub fn profile_source(self, source: impl Into<String>) -> Self {
+        let source = source.into();
+        self.sources_option("profile_source", |sources| {
+            sources.profile_source = Some(source);
+        })
+    }
+
+    /// The locales (name, source) of in-memory sources.
+    #[must_use]
+    pub fn locale_sources(self, locales: impl IntoIterator<Item = (String, String)>) -> Self {
+        let locales = locales.into_iter().collect();
+        self.sources_option("locale_sources", |sources| sources.locales = locales)
+    }
+
+    /// The additional themes (name, source) of in-memory sources.
+    #[must_use]
+    pub fn theme_sources(self, themes: impl IntoIterator<Item = (String, String)>) -> Self {
+        let themes = themes.into_iter().collect();
+        self.sources_option("theme_sources", |sources| sources.themes = themes)
+    }
+
+    /// Install one application-wide typed component stylesheet. In-memory
+    /// sources only.
+    #[must_use]
+    pub fn component_styles(self, source: impl Into<String>) -> Self {
+        let source = source.into();
+        self.sources_option("component_styles", |sources| {
+            sources.component_style_source = Some(source);
+        })
+    }
+
+    /// The application manifest of in-memory sources.
+    #[must_use]
+    pub fn manifest(self, manifest: AppManifest) -> Self {
+        self.sources_option("manifest", |sources| sources.manifest = manifest)
+    }
+
+    /// The `app` asset namespace of in-memory sources.
+    #[must_use]
+    pub fn asset_sources(self, assets: impl IntoIterator<Item = (String, AssetData)>) -> Self {
+        let assets = assets.into_iter().collect();
+        self.sources_option("asset_sources", |sources| sources.assets = assets)
+    }
+
+    /// Use this token base source instead of the tree's `tokens.rhai`.
     #[must_use]
     pub fn token_base(mut self, source: impl Into<String>) -> Self {
         self.token_base = Some(source.into());
         self
     }
 
+    /// Reload changed sources while the view runs (with the `dev-reload`
+    /// feature). Files only.
     #[must_use]
-    pub fn development(mut self, enabled: bool) -> Self {
+    pub const fn development(mut self, enabled: bool) -> Self {
         self.development = enabled;
         self
     }
-
     #[must_use]
     pub const fn motion_preference(mut self, preference: MotionPreference) -> Self {
         self.motion_preference = preference;
@@ -2483,7 +2643,7 @@ impl FileScriptView {
         self
     }
 
-    /// Set trusted parser depth limits; default global=64/function=32.
+    /// Set trusted parser depth limits; default global=64/function=64.
     /// Zero normalizes to one. Builder policy is applied before trusted
     /// extensions, which may override it; the same ordering applies to children.
     #[must_use]
@@ -2497,34 +2657,106 @@ impl FileScriptView {
     /// # Errors
     ///
     /// Returns [`ScriptViewError`] for source I/O, compilation, lifecycle, or
-    /// initial rendering failures.
-    pub fn prepare(self) -> Result<PreparedScriptView, ScriptViewError> {
-        let source = fs::read_to_string(&self.entry).map_err(|source| ScriptViewError::Io {
-            path: self.entry.clone(),
+    /// initial rendering failures, or an in-memory source option used on
+    /// another source.
+    pub fn prepare(mut self) -> Result<PreparedScriptView, ScriptViewError> {
+        if let Some(option) = self.misplaced_source_option {
+            return Err(ScriptViewError::SourceOption(option));
+        }
+        if let Some(path) = self
+            .ui_override_env
+            .as_deref()
+            .and_then(std::env::var_os)
+            .filter(|path| !path.is_empty())
+        {
+            self.source = UiSource::Files(PathBuf::from(path));
+        }
+        match std::mem::replace(&mut self.source, UiSource::Files(PathBuf::new())) {
+            UiSource::Files(path) => {
+                let entry = file_entry(path)?;
+                self.prepare_files(entry)
+            }
+            UiSource::Embedded(ui) => {
+                let tree = ui.tree()?;
+                if self.token_base.is_none() {
+                    self.token_base = tree.token_base;
+                }
+                self.fonts.extend(tree.fonts);
+                self.prepare_sources(tree.sources)
+            }
+            UiSource::Sources(sources) => self.prepare_sources(*sources),
+        }
+    }
+
+    /// The runtime state every source starts from: motion, breakpoints,
+    /// clocks and key bindings from the builder.
+    fn base_runtime_state(&self) -> UiRuntimeState {
+        let mut runtime_state = UiRuntimeState::new();
+        runtime_state.motions = MotionRuntime::new(self.motion_preference);
+        runtime_state.motions.set_quality(self.motion_quality);
+        runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
+        runtime_state.calendar_clock = self.calendar_clock.clone();
+        runtime_state.wall_clock = self.wall_clock.clone();
+        runtime_state.clock = self.runtime_clock.clone().unwrap_or_default();
+        runtime_state.key_bindings.clone_from(&self.key_bindings);
+        runtime_state
+    }
+
+    // Only hot reload keeps the theme layers, to rebuild themes from them.
+    #[cfg_attr(not(feature = "dev-reload"), allow(clippy::needless_pass_by_value))]
+    fn window_factory(
+        &self,
+        program: WindowProgram,
+        runtime: Rc<RefCell<UiRuntimeState>>,
+        extensions: Rc<Vec<Box<dyn ScriptViewExtension>>>,
+        theme: &ThemeVariant,
+        theme_layers: ThemeLayers,
+    ) -> Rc<ScriptWindowFactory> {
+        #[cfg(not(feature = "dev-reload"))]
+        let _ = &theme_layers;
+        Rc::new(ScriptWindowFactory {
+            program: RefCell::new(program),
+            runtime,
+            extensions,
+            theme: theme.clone(),
+            #[cfg(feature = "dev-reload")]
+            theme_layers: RefCell::new(theme_layers),
+            show_error_banner: Cell::new(true),
+            error_reporting: RefCell::new(ErrorReporting::default()),
+            render_islands: Cell::new(None),
+            focus_indicators: Cell::new(FocusIndicators::Navigation),
+            execution_policy: self.execution_policy,
+            #[cfg(feature = "dev-reload")]
+            development: self.development,
+        })
+    }
+
+    fn prepare_files(mut self, entry: PathBuf) -> Result<PreparedScriptView, ScriptViewError> {
+        let source = fs::read_to_string(&entry).map_err(|source| ScriptViewError::Io {
+            path: entry.clone(),
             source,
         })?;
-        let extensions = Rc::new(self.extensions);
+        let extensions = Rc::new(std::mem::take(&mut self.extensions));
         let mut engine = RuntimeEngine::new();
         self.execution_policy.apply(&mut engine);
         configure_extension_engine(&extensions, &mut engine).map_err(ScriptViewError::Extension)?;
         let theme_layers = file_theme_layers(
             engine.engine(),
-            &self.entry,
+            &entry,
             self.token_base.as_deref(),
             &self.theme_token_overrides,
         )?;
-        let (ui_root, theme_path, theme) =
-            load_primary_file_theme(&engine, &self.entry, &theme_layers)?;
+        let (ui_root, theme_path, theme) = load_primary_file_theme(&engine, &entry, &theme_layers)?;
         let style_path = ui_root.join("styles.rhai");
-        let mut fonts = self.fonts;
+        let mut fonts = std::mem::take(&mut self.fonts);
         fonts.extend(load_file_fonts(&ui_root.join("fonts"))?);
         crate::validate_font_sources(&fonts)?;
-        let manifest = load_file_manifest(&ui_root, &self.entry)?;
+        let manifest = load_file_manifest(&ui_root, &entry)?;
         let (module_cache, compiled) = engine.with_program_preparation(|engine| {
             let module_cache =
-                configure_file_modules(engine, &ui_root, &self.entry, &theme_path, &style_path)?;
+                configure_file_modules(engine, &ui_root, &entry, &theme_path, &style_path)?;
             let compiled =
-                engine.compile_self_contained_named(&self.entry.to_string_lossy(), &source)?;
+                engine.compile_self_contained_named(&entry.to_string_lossy(), &source)?;
             Ok::<_, ScriptViewError>((module_cache, compiled))
         })?;
         #[cfg(not(feature = "dev-reload"))]
@@ -2535,14 +2767,7 @@ impl FileScriptView {
         let component_styles =
             load_file_component_styles(engine.engine(), &style_path, &component_exports)?;
         let state_schema = engine.root_state_schema(&compiled)?;
-        let mut runtime_state = UiRuntimeState::new();
-        runtime_state.motions = MotionRuntime::new(self.motion_preference);
-        runtime_state.motions.set_quality(self.motion_quality);
-        runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
-        runtime_state.calendar_clock = self.calendar_clock;
-        runtime_state.wall_clock = self.wall_clock;
-        runtime_state.clock = self.runtime_clock.clone().unwrap_or_default();
-        runtime_state.key_bindings.clone_from(&self.key_bindings);
+        let mut runtime_state = self.base_runtime_state();
         runtime_state.locale = load_locale_directory(engine.engine(), &ui_root.join("locales"))?;
         let themes = load_theme_directory(
             engine.engine(),
@@ -2569,25 +2794,11 @@ impl FileScriptView {
             component_exports,
             component_renderers,
         };
-        let factory = Rc::new(ScriptWindowFactory {
-            program: RefCell::new(program),
-            runtime,
-            extensions,
-            theme: theme.clone(),
-            #[cfg(feature = "dev-reload")]
-            theme_layers: RefCell::new(theme_layers),
-            show_error_banner: Cell::new(true),
-            error_reporting: RefCell::new(ErrorReporting::default()),
-            render_islands: Cell::new(None),
-            focus_indicators: Cell::new(FocusIndicators::Navigation),
-            execution_policy: self.execution_policy,
-            #[cfg(feature = "dev-reload")]
-            development: self.development,
-        });
+        let factory = self.window_factory(program, runtime, extensions, &theme, theme_layers);
         Ok(PreparedScriptView {
             engine,
             theme,
-            entry: self.entry,
+            entry,
             ui_root,
             theme_path,
             style_path,
@@ -2600,219 +2811,15 @@ impl FileScriptView {
             module_cache,
         })
     }
-}
 
-pub struct EmbeddedScriptView {
-    entry: ModuleId,
-    scripts: EmbeddedScriptSource,
-    theme_source: String,
-    component_style_source: Option<String>,
-    locales: Vec<(String, String)>,
-    themes: Vec<(String, String)>,
-    development: bool,
-    motion_preference: MotionPreference,
-    motion_quality: crate::MotionQuality,
-    extensions: Vec<Box<dyn ScriptViewExtension>>,
-    manifest: AppManifest,
-    key_bindings: Vec<KeyBindingSpec>,
-    assets: BTreeMap<String, AssetData>,
-    viewport_breakpoints: ViewportBreakpoints,
-    calendar_clock: crate::CalendarClock,
-    wall_clock: crate::WallClock,
-    runtime_clock: Option<crate::RuntimeClock>,
-    fonts: Vec<crate::FontSource>,
-    token_base: Option<String>,
-    profile_source: Option<String>,
-    theme_token_overrides: ThemeTokenOverrides,
-    execution_policy: ScriptExecutionPolicy,
-}
-
-impl EmbeddedScriptView {
-    #[must_use]
-    pub fn new(
-        entry: ModuleId,
-        scripts: EmbeddedScriptSource,
-        theme_source: impl Into<String>,
-    ) -> Self {
-        let manifest = AppManifest::new(entry.clone());
-        Self {
-            entry,
-            scripts,
-            theme_source: theme_source.into(),
-            component_style_source: None,
-            locales: Vec::new(),
-            themes: Vec::new(),
-            development: false,
-            motion_preference: motion_preference_from_env(),
-            motion_quality: crate::MotionQuality::High,
-            extensions: Vec::new(),
-            manifest,
-            key_bindings: Vec::new(),
-            assets: BTreeMap::new(),
-            viewport_breakpoints: ViewportBreakpoints::default(),
-            calendar_clock: crate::CalendarClock::default(),
-            wall_clock: crate::WallClock::default(),
-            runtime_clock: None,
-            fonts: Vec::new(),
-            token_base: None,
-            profile_source: None,
-            theme_token_overrides: ThemeTokenOverrides::default(),
-            execution_policy: ScriptExecutionPolicy::default(),
-        }
-    }
-
-    /// Install an application profile (`profile() -> map`) whose audit rules
-    /// [`ScriptViewHandle::composition_audit`] applies.
-    #[must_use]
-    pub fn profile_source(mut self, source: impl Into<String>) -> Self {
-        self.profile_source = Some(source.into());
-        self
-    }
-
-    /// Install a token base (`tokens() -> map`) beneath every embedded theme.
-    #[must_use]
-    pub fn token_base(mut self, source: impl Into<String>) -> Self {
-        self.token_base = Some(source.into());
-        self
-    }
-
-    #[must_use]
-    pub fn locale_sources(mut self, locales: impl IntoIterator<Item = (String, String)>) -> Self {
-        self.locales = locales.into_iter().collect();
-        self
-    }
-
-    #[must_use]
-    pub fn theme_sources(mut self, themes: impl IntoIterator<Item = (String, String)>) -> Self {
-        self.themes = themes.into_iter().collect();
-        self
-    }
-
-    /// Install one application-wide typed component stylesheet.
-    #[must_use]
-    pub fn component_styles(mut self, source: impl Into<String>) -> Self {
-        self.component_style_source = Some(source.into());
-        self
-    }
-
-    #[must_use]
-    pub const fn development(mut self, enabled: bool) -> Self {
-        self.development = enabled;
-        self
-    }
-
-    #[must_use]
-    pub const fn motion_preference(mut self, preference: MotionPreference) -> Self {
-        self.motion_preference = preference;
-        self
-    }
-
-    #[must_use]
-    pub const fn motion_quality(mut self, quality: crate::MotionQuality) -> Self {
-        self.motion_quality = quality;
-        self
-    }
-
-    #[must_use]
-    pub fn extension(mut self, extension: impl ScriptViewExtension + 'static) -> Self {
-        self.extensions.push(Box::new(extension));
-        self
-    }
-
-    #[must_use]
-    pub fn manifest(mut self, manifest: AppManifest) -> Self {
-        self.manifest = manifest;
-        self
-    }
-
-    #[must_use]
-    pub fn key_binding(mut self, binding: KeyBindingSpec) -> Self {
-        self.key_bindings.push(binding);
-        self
-    }
-
-    #[must_use]
-    pub fn asset_sources(mut self, assets: impl IntoIterator<Item = (String, AssetData)>) -> Self {
-        self.assets = assets.into_iter().collect();
-        self
-    }
-
-    #[must_use]
-    pub const fn viewport_breakpoints(mut self, breakpoints: ViewportBreakpoints) -> Self {
-        self.viewport_breakpoints = breakpoints;
-        self
-    }
-
-    #[must_use]
-    pub fn calendar_clock(mut self, clock: crate::CalendarClock) -> Self {
-        self.calendar_clock = clock;
-        self
-    }
-
-    /// Inject a presentation wall clock, independent from animation and calendar clocks.
-    #[must_use]
-    pub fn wall_clock(mut self, clock: crate::WallClock) -> Self {
-        self.wall_clock = clock;
-        self
-    }
-
-    #[must_use]
-    pub fn runtime_clock(mut self, clock: crate::RuntimeClock) -> Self {
-        self.runtime_clock = Some(clock);
-        self
-    }
-
-    #[must_use]
-    pub fn font_source(mut self, font: crate::FontSource) -> Self {
-        self.fonts.push(font);
-        self
-    }
-
-    #[must_use]
-    pub fn font_sources(mut self, fonts: impl IntoIterator<Item = crate::FontSource>) -> Self {
-        self.fonts.extend(fonts);
-        self
-    }
-
-    /// Apply host-owned user preferences to every embedded theme.
-    #[must_use]
-    pub fn theme_token_overrides(mut self, overrides: ThemeTokenOverrides) -> Self {
-        self.theme_token_overrides = overrides;
-        self
-    }
-
-    /// Raise or lower the per-execution script operation budget for this
-    /// view's scripts. Omitting this builder keeps the runtime's built-in
-    /// 1,000,000-operation budget; hosts that run known one-shot cacheable
-    /// script phases may raise it. The limit is applied to every engine
-    /// instantiated for this view, including additional windows.
-    /// Zero normalizes to one. Trusted extensions run after builder policy;
-    /// operation quotas are cooperative and are not wall-clock deadlines.
-    #[must_use]
-    pub fn operation_limit(mut self, limit: u64) -> Self {
-        self.execution_policy.operation_limit = Some(limit);
-        self
-    }
-
-    /// Set trusted parser depth limits; default global=64/function=32.
-    /// Zero normalizes to one; trusted extensions run after this policy.
-    #[must_use]
-    pub fn expression_depth_limits(mut self, global: usize, functions: usize) -> Self {
-        self.execution_policy.expression_depth_limits = Some((global, functions));
-        self
-    }
-
-    /// Compile and initialize a fully embedded application.
-    ///
-    /// # Errors
-    ///
-    /// Returns source, theme, compile, or lifecycle errors.
-    #[allow(clippy::too_many_lines)] // One ordered preparation pipeline, mirroring FileScriptView.
-    pub fn prepare(self) -> Result<PreparedScriptView, ScriptViewError> {
+    fn prepare_sources(
+        mut self,
+        sources: UiSources,
+    ) -> Result<PreparedScriptView, ScriptViewError> {
         crate::validate_font_sources(&self.fonts)?;
-        let entry = self.scripts.load(&self.entry)?;
-        validate_manifest_entry(&self.manifest, &self.entry)?;
-        let extensions = Rc::new(self.extensions);
+        let entry = sources.scripts.load(&sources.entry)?;
+        validate_manifest_entry(&sources.manifest, &sources.entry)?;
+        let extensions = Rc::new(std::mem::take(&mut self.extensions));
         let mut engine = RuntimeEngine::new();
         self.execution_policy.apply(&mut engine);
         configure_extension_engine(&extensions, &mut engine).map_err(ScriptViewError::Extension)?;
@@ -2824,20 +2831,20 @@ impl EmbeddedScriptView {
         let theme = load_theme_with_overrides(
             engine.engine(),
             "<embedded-theme>",
-            &self.theme_source,
+            &sources.theme_source,
             &theme_layers,
         )?;
-        engine.set_module_resolver(RestrictedModuleResolver::from_source(&self.scripts)?);
+        engine.set_module_resolver(RestrictedModuleResolver::from_source(&sources.scripts)?);
         let compiled = engine.with_program_preparation(|engine| {
-            preload_component_modules(engine, self.scripts.module_ids())?;
+            preload_component_modules(engine, sources.scripts.module_ids())?;
             engine
-                .compile_self_contained_named(self.entry.as_str(), &entry.source)
+                .compile_self_contained_named(sources.entry.as_str(), &entry.source)
                 .map_err(ScriptViewError::from)
         })?;
         let component_exports = engine.component_exports()?;
         let component_renderers = engine.component_renderer_snapshot()?;
-        self.manifest.validate_components(&component_exports)?;
-        let component_styles = self.component_style_source.map_or_else(
+        sources.manifest.validate_components(&component_exports)?;
+        let component_styles = sources.component_style_source.map_or_else(
             || Ok(ComponentStyleSheet::default()),
             |source| {
                 load_component_styles(
@@ -2849,30 +2856,23 @@ impl EmbeddedScriptView {
             },
         )?;
         let state_schema = engine.root_state_schema(&compiled)?;
-        let mut runtime_state = UiRuntimeState::new();
-        runtime_state.motions = MotionRuntime::new(self.motion_preference);
-        runtime_state.motions.set_quality(self.motion_quality);
-        runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
-        runtime_state.calendar_clock = self.calendar_clock;
-        runtime_state.wall_clock = self.wall_clock;
-        runtime_state.clock = self.runtime_clock.clone().unwrap_or_default();
-        runtime_state.key_bindings.clone_from(&self.key_bindings);
-        runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;
+        let mut runtime_state = self.base_runtime_state();
+        runtime_state.locale = load_embedded_locales(engine.engine(), sources.locales)?;
         runtime_state.theme = Some(validated_themes(
-            load_embedded_themes(engine.engine(), self.themes, &theme, &theme_layers)?,
+            load_embedded_themes(engine.engine(), sources.themes, &theme, &theme_layers)?,
             &component_exports,
         )?);
         runtime_state.replace_component_styles_from_host(component_styles);
-        if let Some(source) = &self.profile_source {
+        if let Some(source) = &sources.profile_source {
             runtime_state.audit_rules =
                 crate::load_profile_source(engine.engine(), "<embedded-profile>", source)
                     .map_err(ScriptViewError::Extension)?
                     .audit;
         }
-        if !self.assets.is_empty() {
+        if !sources.assets.is_empty() {
             runtime_state
                 .assets
-                .register("app", InMemoryAssetProvider::new(self.assets))?;
+                .register("app", InMemoryAssetProvider::new(sources.assets))?;
         }
         preload_component_assets(&runtime_state, &component_exports)?;
         for extension in extensions.iter() {
@@ -2880,7 +2880,7 @@ impl EmbeddedScriptView {
                 .configure_runtime(&mut runtime_state)
                 .map_err(ScriptViewError::Extension)?;
         }
-        self.manifest.activate(&mut runtime_state.capabilities)?;
+        sources.manifest.activate(&mut runtime_state.capabilities)?;
         let runtime = Rc::new(RefCell::new(runtime_state));
         let program = WindowProgram {
             compiled: compiled.clone(),
@@ -2888,21 +2888,7 @@ impl EmbeddedScriptView {
             component_exports,
             component_renderers,
         };
-        let factory = Rc::new(ScriptWindowFactory {
-            program: RefCell::new(program),
-            runtime,
-            extensions,
-            theme: theme.clone(),
-            #[cfg(feature = "dev-reload")]
-            theme_layers: RefCell::new(theme_layers),
-            show_error_banner: Cell::new(true),
-            error_reporting: RefCell::new(ErrorReporting::default()),
-            render_islands: Cell::new(None),
-            focus_indicators: Cell::new(FocusIndicators::Navigation),
-            execution_policy: self.execution_policy,
-            #[cfg(feature = "dev-reload")]
-            development: self.development,
-        });
+        let factory = self.window_factory(program, runtime, extensions, &theme, theme_layers);
         Ok(PreparedScriptView {
             engine,
             theme,
@@ -2919,6 +2905,22 @@ impl EmbeddedScriptView {
             module_cache: ModuleCompileCache::new(),
         })
     }
+}
+
+/// The entry script at `path`: the file itself, or in a directory the module
+/// its `app.toml` names.
+fn file_entry(path: PathBuf) -> Result<PathBuf, ScriptViewError> {
+    if !path.is_dir() {
+        return Ok(path);
+    }
+    let manifest_path = path.join("app.toml");
+    let source = fs::read_to_string(&manifest_path).map_err(|source| ScriptViewError::Io {
+        path: manifest_path,
+        source,
+    })?;
+    let manifest: AppManifest =
+        toml::from_str(&source).map_err(|error| ScriptViewError::Manifest(error.to_string()))?;
+    Ok(path.join(format!("{}.rhai", manifest.entry)))
 }
 
 fn load_embedded_locales(
@@ -8545,6 +8547,8 @@ pub enum ScriptViewError {
     Extension(String),
     #[error("failed to decode application manifest: {0}")]
     Manifest(String),
+    #[error("`{0}` supplies an in-memory source; it applies only to `ScriptView::sources`")]
+    SourceOption(&'static str),
     #[error("application manifest entry `{manifest}` does not match host entry `{host}`")]
     ManifestEntry { manifest: ModuleId, host: ModuleId },
     #[error(transparent)]
@@ -8739,7 +8743,7 @@ mod tests {
     #[test]
     fn initial_mount_failure_returns_a_structured_root_diagnostic() {
         let entry = ModuleId::parse("main").unwrap();
-        let mut prepared = EmbeddedScriptView::new(
+        let mut prepared = ScriptView::sources(
             entry.clone(),
             EmbeddedScriptSource::new(BTreeMap::from([(
                 entry,
@@ -8877,10 +8881,119 @@ mod tests {
         )
         .unwrap();
         write_manifest(directory.path());
-        let prepared = FileScriptView::new(&entry).prepare().unwrap();
+        let prepared = ScriptView::files(&entry).prepare().unwrap();
         let (engine, lifecycle) = start_prepared(prepared, "widget", "main");
         assert!(engine.is_current(lifecycle.generation()));
         assert!(lifecycle.root().is_some());
+    }
+
+    static EMBEDDED_UI: crate::EmbeddedUi = crate::EmbeddedUi::new(&[
+        ("app.toml", b"entry = \"main\"\nruntime_api = 3\n"),
+        (
+            "theme.rhai",
+            include_bytes!("../../../registry/themes/default_dark.rhai"),
+        ),
+        (
+            "main.rhai",
+            b"import \"helpers/text\" as words;\nfn view(ctx) { text(words::label()) }",
+        ),
+        ("helpers/text.rhai", b"fn label() { \"embedded\" }"),
+        (
+            "themes/nord.rhai",
+            include_bytes!("../../../registry/themes/nord.rhai"),
+        ),
+        (
+            "locales/en.rhai",
+            include_bytes!("../../../registry/locales/en.rhai"),
+        ),
+        (
+            "assets/icons/check.svg",
+            include_bytes!("../../../registry/assets/icons/check.svg"),
+        ),
+        ("assets/LICENSE.txt", b"ISC"),
+        (".DS_Store", b"\0"),
+    ]);
+
+    #[test]
+    fn an_embedded_tree_prepares_as_its_directory_would() {
+        let prepared = ScriptView::embedded(&EMBEDDED_UI).prepare().unwrap();
+        {
+            let runtime = prepared.factory.runtime.borrow();
+            assert_eq!(runtime.theme.as_ref().unwrap().variants().count(), 2);
+            assert!(runtime.locale.is_some());
+            assert!(
+                runtime
+                    .assets
+                    .load_image(&crate::AssetId::parse("app/icons/check").unwrap())
+                    .is_ok()
+            );
+            assert!(
+                runtime
+                    .assets
+                    .load_image(&crate::AssetId::parse("app/LICENSE").unwrap())
+                    .is_err()
+            );
+        }
+        let (_engine, lifecycle) = start_prepared(prepared, "embedded", "main");
+        assert!(matches!(
+            lifecycle.root().unwrap().kind(),
+            crate::UiNodeKind::Text { text } if text == "embedded"
+        ));
+    }
+
+    #[test]
+    fn a_ui_directory_names_its_entry_in_app_toml() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("app.toml"),
+            "entry = \"start\"\nruntime_api = 3\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("theme.rhai"),
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("start.rhai"),
+            "fn view(ctx) { text(\"from start\") }",
+        )
+        .unwrap();
+        let prepared = ScriptView::files(directory.path()).prepare().unwrap();
+        let (_engine, lifecycle) = start_prepared(prepared, "directory", "start");
+        assert!(matches!(
+            lifecycle.root().unwrap().kind(),
+            crate::UiNodeKind::Text { text } if text == "from start"
+        ));
+    }
+
+    #[test]
+    fn source_options_and_the_ui_override_follow_the_source() {
+        let Err(error) = ScriptView::embedded(&EMBEDDED_UI)
+            .theme_sources([("x.rhai".to_owned(), String::new())])
+            .prepare()
+        else {
+            panic!("theme_sources applies to in-memory sources only");
+        };
+        assert!(matches!(
+            error,
+            ScriptViewError::SourceOption("theme_sources")
+        ));
+        // Cargo sets CARGO_MANIFEST_DIR for test binaries: the override reads
+        // that directory, which has no app.toml, instead of the embedded tree.
+        let Err(ScriptViewError::Io { path, .. }) = ScriptView::embedded(&EMBEDDED_UI)
+            .ui_override_env("CARGO_MANIFEST_DIR")
+            .prepare()
+        else {
+            panic!("the override reads files");
+        };
+        assert_eq!(path, Path::new(env!("CARGO_MANIFEST_DIR")).join("app.toml"));
+        assert!(
+            ScriptView::embedded(&EMBEDDED_UI)
+                .ui_override_env("GPUI_RHAI_TEST_UNSET_VARIABLE")
+                .prepare()
+                .is_ok()
+        );
     }
 
     #[test]
@@ -8902,7 +9015,7 @@ mod tests {
             ]),
             ..ThemeTokenOverrides::default()
         };
-        let prepared = EmbeddedScriptView::new(
+        let prepared = ScriptView::sources(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -8963,7 +9076,7 @@ mod tests {
         .unwrap();
         write_manifest(directory.path());
 
-        let prepared = FileScriptView::new(directory.path().join("main.rhai"))
+        let prepared = ScriptView::files(directory.path().join("main.rhai"))
             .prepare()
             .unwrap();
         let (_, lifecycle) = start_prepared(prepared, "widget", "main");
@@ -9015,7 +9128,7 @@ mod tests {
         .unwrap();
         write_manifest(directory.path());
 
-        let prepared = FileScriptView::new(directory.path().join("main.rhai"))
+        let prepared = ScriptView::files(directory.path().join("main.rhai"))
             .prepare()
             .unwrap();
         let (_, lifecycle) = start_prepared(prepared, "widget", "main");
@@ -9045,7 +9158,7 @@ mod tests {
                 include_str!("../../../registry/components/button.rhai").to_owned(),
             ),
         ]));
-        let prepared = EmbeddedScriptView::new(
+        let prepared = ScriptView::sources(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -9094,7 +9207,7 @@ mod tests {
         .unwrap();
 
         assert!(matches!(
-            FileScriptView::new(directory.path().join("main.rhai")).prepare(),
+            ScriptView::files(directory.path().join("main.rhai")).prepare(),
             Err(ScriptViewError::Capability(CapabilityError::Missing(_)))
         ));
     }
@@ -9114,7 +9227,7 @@ mod tests {
             "#
             .to_owned(),
         )]));
-        let prepared = EmbeddedScriptView::new(
+        let prepared = ScriptView::sources(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -9147,7 +9260,7 @@ mod tests {
         let font =
             crate::FontSource::new("Art Display", [b"OTTO".as_slice(), &[0, 1, 2, 3]].concat())
                 .unwrap();
-        let prepared = EmbeddedScriptView::new(
+        let prepared = ScriptView::sources(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -9168,7 +9281,7 @@ mod tests {
         )]));
         let start = std::time::Instant::now();
         let manual = crate::ManualRuntimeClock::new(start);
-        let prepared = EmbeddedScriptView::new(
+        let prepared = ScriptView::sources(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -9223,7 +9336,7 @@ fn render_DeclarativeIcon(ctx, props) { image(asset("app/icons/check")) }
                 .to_owned(),
             ),
         ]));
-        let prepared = EmbeddedScriptView::new(
+        let prepared = ScriptView::sources(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -9285,7 +9398,7 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
                 .to_owned(),
             ),
         ]));
-        let result = EmbeddedScriptView::new(
+        let result = ScriptView::sources(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -9319,12 +9432,12 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         .unwrap();
         fs::write(directory.path().join("locales/en.rhai"), locale).unwrap();
         fs::write(directory.path().join("assets/check.svg"), svg).unwrap();
-        let file = FileScriptView::new(directory.path().join("main.rhai"))
+        let file = ScriptView::files(directory.path().join("main.rhai"))
             .prepare()
             .unwrap();
 
         let entry = ModuleId::parse("main").unwrap();
-        let embedded = EmbeddedScriptView::new(
+        let embedded = ScriptView::sources(
             entry.clone(),
             EmbeddedScriptSource::new(BTreeMap::from([(entry, script.to_owned())])),
             theme,
@@ -9362,7 +9475,7 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
     #[test]
     fn missing_entry_has_path_aware_error() {
         let path = Path::new("definitely-missing-ui/main.rhai");
-        let Err(error) = FileScriptView::new(path).prepare() else {
+        let Err(error) = ScriptView::files(path).prepare() else {
             panic!("missing script unexpectedly prepared");
         };
         assert!(

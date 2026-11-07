@@ -65,7 +65,7 @@ fn view(ctx){text("token-only").accessibility_role("status").with_style(style().
         } else {
             READER.replace("TAG", tag)
         };
-        EmbeddedScriptView::new(
+        ScriptView::sources(
             entry.clone(),
             EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), source)])),
             DARK,

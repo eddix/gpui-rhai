@@ -183,7 +183,7 @@ an extension, and the app manifest and the calling components declare the
 capabilities they use:
 
 ```rust
-let view = FileScriptView::new("ui/main.rhai")
+let view = ScriptView::files("ui/main.rhai")
     .extension(gpui_rhai::system::SystemServices::default());
 ```
 

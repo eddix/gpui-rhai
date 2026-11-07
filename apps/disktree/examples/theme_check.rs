@@ -1,6 +1,6 @@
 //! Load ui/theme.rhai through gpui-rhai's theme loader and print the
-//! decoded variant, or the exact error. Mirrors what EmbeddedScriptView and
-//! FileScriptView do at prepare() time.
+//! decoded variant, or the exact error. Mirrors what ScriptView and
+//! ScriptView do at prepare() time.
 
 fn main() {
     let source = std::fs::read_to_string("ui/theme.rhai").expect("read ui/theme.rhai");

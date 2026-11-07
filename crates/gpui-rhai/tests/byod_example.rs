@@ -14,7 +14,7 @@ const THEME: &str = include_str!("../../../examples/byod_treemap/ui/theme.rhai")
 fn byod_treemap_prepares_without_the_token_base() {
     let entry = ModuleId::parse("main").unwrap();
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), MAIN.to_owned())]));
-    EmbeddedScriptView::new(entry, scripts, THEME)
+    ScriptView::sources(entry, scripts, THEME)
         .prepare()
         .expect("a theme with its own vocabulary needs no token base");
 }

@@ -17,10 +17,10 @@ use gpui_rhai::gpui::{
     App, Bounds, Context, TitlebarOptions, Window, WindowBounds, WindowOptions, point, px, size,
 };
 use gpui_rhai::{
-    ActionId, AssetData, AutomationCommand, EmbeddedScriptSource, EmbeddedScriptView,
-    KeyBindingSpec, ModuleId, MotionPreference, NativeCollection, NativeTextDocument,
-    PreparedScriptView, ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
-    UiRuntimeState, UiValue, install,
+    ActionId, AssetData, AutomationCommand, EmbeddedScriptSource, KeyBindingSpec, ModuleId,
+    MotionPreference, NativeCollection, NativeTextDocument, PreparedScriptView, ScriptView,
+    ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost, UiRuntimeState,
+    UiValue, install,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -407,7 +407,7 @@ fn key_bindings() -> Result<Vec<KeyBindingSpec>, String> {
 /// # Errors
 ///
 /// Returns a launch selection or source assembly error.
-pub fn view(launch: &AcceptanceLaunch) -> Result<EmbeddedScriptView, String> {
+pub fn view(launch: &AcceptanceLaunch) -> Result<ScriptView, String> {
     view_with_titlebar(launch, 0)
 }
 
@@ -416,7 +416,7 @@ pub fn view(launch: &AcceptanceLaunch) -> Result<EmbeddedScriptView, String> {
 fn view_with_titlebar(
     launch: &AcceptanceLaunch,
     titlebar_inset: u32,
-) -> Result<EmbeddedScriptView, String> {
+) -> Result<ScriptView, String> {
     validate(launch)?;
     let (primary, primary_source) = theme_file(&launch.theme)?;
     let profile = BUNDLED_PROFILES
@@ -425,7 +425,7 @@ fn view_with_titlebar(
         .map(|(_, source)| *source)
         .ok_or_else(|| "the productivity profile is not bundled".to_owned())?;
     let entry = ModuleId::parse("main").map_err(|error| error.to_string())?;
-    let mut view = EmbeddedScriptView::new(
+    let mut view = ScriptView::sources(
         entry,
         EmbeddedScriptSource::new(modules(launch, titlebar_inset)?),
         primary_source,

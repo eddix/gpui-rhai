@@ -2,9 +2,8 @@
 
 Time is a core service, available without `charts`. `WallClock` is independent
 from the monotonic animation/timer clock. Inject `WallClock::fixed(epoch_ms)`
-or a `WallClockSource` with `FileScriptView::wall_clock` or
-`EmbeddedScriptView::wall_clock` before preparation. `ctx.now()` returns epoch
-milliseconds. By default `ctx.today()` derives the local date from this same
+or a `WallClockSource` with `ScriptView::wall_clock` before preparation.
+`ctx.now()` returns epoch milliseconds. By default `ctx.today()` derives the local date from this same
 wall clock. An explicitly injected `CalendarClock::fixed/from_source` overrides
 only legacy date-only `today()` behavior. Temporal range controls always derive
 their calendar's today from the wall instant in their presentation zone.

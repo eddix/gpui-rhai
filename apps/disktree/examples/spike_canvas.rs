@@ -7,9 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use gpui_rhai::{
-    AppManifest, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication,
-};
+use gpui_rhai::{AppManifest, EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
 const THEME: &str = include_str!("../ui/theme.rhai");
 
@@ -85,7 +83,7 @@ fn main() {
     let entry = ModuleId::parse("main").expect("static module ID");
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), MAIN.to_owned())]));
     let manifest = AppManifest::new(entry.clone());
-    EmbeddedScriptView::new(entry, scripts, THEME)
+    ScriptView::sources(entry, scripts, THEME)
         .manifest(manifest)
         .prepare()
         .and_then(|prepared| {

@@ -5,8 +5,8 @@ use gpui_rhai::gpui::{
     StatefulInteractiveElement, Styled, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHandle,
-    ScriptViewHost, install,
+    EmbeddedScriptSource, ModuleId, ScriptView, ScriptViewConfig, ScriptViewHandle, ScriptViewHost,
+    install,
 };
 
 const STACK: &str = include_str!("../../../registry/layouts/stack.rhai");
@@ -126,7 +126,7 @@ pub fn prepared_widget(open: bool, toast: bool) -> gpui_rhai::PreparedScriptView
             TOAST.to_owned(),
         ),
     ]));
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME)
+    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, THEME)
         .token_base(include_str!("../../../registry/tokens.rhai"))
         .asset_sources(registry_icons())
         .prepare()

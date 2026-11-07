@@ -24,6 +24,7 @@ pub mod drag_drop;
 pub mod draggable;
 pub mod effect;
 pub mod element_ref;
+mod embedded_ui;
 pub mod engine;
 mod environment_dependency;
 pub mod event;
@@ -124,6 +125,28 @@ pub use retained_page::NavigationStackInfo;
 /// `ScriptViewExtension::configure_rhai_engine`.
 pub use rhai;
 
+pub use embedded_ui::EmbeddedUi;
+
+/// The crate's `ui/` directory as a [`ScriptView`], so a Host writes one
+/// mount for every build: a debug build reads the files (with hot reload
+/// under the `dev-reload` feature, and `GPUI_RHAI_UI=<dir>` reads another
+/// tree); a release build reads the copy that `gpui-rhai-build` embedded from
+/// the crate's `build.rs`.
+#[macro_export]
+macro_rules! script_view {
+    () => {{
+        #[cfg(debug_assertions)]
+        let view = $crate::ScriptView::files(concat!(env!("CARGO_MANIFEST_DIR"), "/ui"))
+            .ui_override_env("GPUI_RHAI_UI");
+        #[cfg(not(debug_assertions))]
+        let view = {
+            static UI: $crate::EmbeddedUi = include!(concat!(env!("OUT_DIR"), "/gpui_rhai_ui.rs"));
+            $crate::ScriptView::embedded(&UI)
+        };
+        view
+    }};
+}
+
 pub use accessibility::{
     AccessibilityError, AccessibilityNode, AccessibilityTree, CommittedSemanticFrame,
 };
@@ -132,11 +155,10 @@ pub use action::{
     KeyBindingSpec, KeyChord,
 };
 pub use app::{
-    EmbeddedScriptView, FileScriptView, FocusIndicators, NavigateBack, PreparedScriptView,
-    ScriptApplication, ScriptErrorDomain, ScriptErrorReport, ScriptViewConfig, ScriptViewError,
-    ScriptViewExtension, ScriptViewFrameDigest, ScriptViewHandle, ScriptViewHost,
-    ScriptViewPerformanceSnapshot, ScriptViewRenderStatistics, ScriptViewState, ThemeHandle,
-    install,
+    FocusIndicators, NavigateBack, PreparedScriptView, ScriptApplication, ScriptErrorDomain,
+    ScriptErrorReport, ScriptView, ScriptViewConfig, ScriptViewError, ScriptViewExtension,
+    ScriptViewFrameDigest, ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot,
+    ScriptViewRenderStatistics, ScriptViewState, ThemeHandle, install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,

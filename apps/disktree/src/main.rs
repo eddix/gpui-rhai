@@ -10,7 +10,7 @@ use disktree_rhai::embedded;
 use std::path::{Path, PathBuf};
 
 use gpui::{AppContext, IntoElement, ParentElement};
-use gpui_rhai::{EmbeddedScriptView, FileScriptView, PreparedScriptView};
+use gpui_rhai::{PreparedScriptView, ScriptView};
 
 /// Script operation budget for this app's engine. The gpui-rhai default
 /// (1M) fits UI callbacks but not the skin's cached one-shot layout pass:
@@ -283,7 +283,7 @@ fn prepare_view(args: &Args) -> Result<PreparedScriptView, gpui_rhai::ScriptView
 
     if args.dev {
         let entry = Path::new("ui").join("main.rhai");
-        return FileScriptView::new(entry)
+        return ScriptView::files(entry)
             .development(true)
             .viewport_breakpoints(
                 gpui_rhai::ViewportBreakpoints::new(832.0, 1280.0).expect("valid breakpoints"),
@@ -303,7 +303,7 @@ fn prepare_view(args: &Args) -> Result<PreparedScriptView, gpui_rhai::ScriptView
         let hot = args.skin_dev.is_some();
         // A file skin brings its own tokens.rhai and assets/ beside main.rhai;
         // the host picks both up automatically.
-        return FileScriptView::new(skin_dir.join("main.rhai"))
+        return ScriptView::files(skin_dir.join("main.rhai"))
             .development(hot)
             .viewport_breakpoints(
                 gpui_rhai::ViewportBreakpoints::new(832.0, 1280.0).expect("valid breakpoints"),
@@ -324,7 +324,7 @@ fn prepare_view(args: &Args) -> Result<PreparedScriptView, gpui_rhai::ScriptView
             .into_iter()
             .map(|(name, source)| (name, source.to_owned())),
     );
-    EmbeddedScriptView::new(embedded::entry(), embedded::sources(), embedded::THEME)
+    ScriptView::sources(embedded::entry(), embedded::sources(), embedded::THEME)
         .viewport_breakpoints(
             gpui_rhai::ViewportBreakpoints::new(832.0, 1280.0).expect("valid breakpoints"),
         )
