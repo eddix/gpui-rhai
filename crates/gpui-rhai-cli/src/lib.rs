@@ -634,6 +634,7 @@ impl Project {
         let components = validate_component_exports(&modules, &headers)?;
         app.validate_components(&components)?;
         let capabilities_declared = !app.capabilities.is_empty();
+        let deferred = app.capabilities.keys().cloned().collect::<Vec<_>>();
         // The entry resolves the application's own modules as well as the
         // installed components (#184).
         let mut entry_modules = modules.clone();
@@ -645,7 +646,7 @@ impl Project {
             &entry_modules,
             &components,
             &declarations.host.functions(),
-            !capabilities_declared,
+            deferred,
         )?;
         let host_validation_required = capabilities_declared || !host_extensions.is_empty();
         let styles_path = self.root.join("ui/styles.rhai");
@@ -1500,13 +1501,16 @@ fn validate_component_exports(
 /// Lint, compile and, unless it needs the Host, run the first frame of the
 /// entry. Returns whether the initial view ran and the host extensions the
 /// scripts call: `HostSlot` and the `[host]` declarations of `ui/app.toml`.
+/// The declared `capabilities` are deferred: a task or subscription started on
+/// one, as by a component effect, gets work that delivers nothing.
 fn validate_entry(
     root: &Path,
     modules: &BTreeMap<ModuleId, String>,
     components: &ComponentRegistry,
     declared: &BTreeSet<HostFunction>,
-    run_hostless_lifecycle: bool,
+    capabilities: Vec<gpui_rhai::CapabilityId>,
 ) -> Result<(bool, BTreeSet<HostFunction>), ProjectError> {
+    let run_hostless_lifecycle = capabilities.is_empty();
     let entry_path = root.join("ui/main.rhai");
     let entry = read(&entry_path)?;
     let source = EmbeddedScriptSource::new(modules.clone());
@@ -1558,6 +1562,7 @@ fn validate_entry(
         .map_err(|error| ProjectError::Theme(error.to_string()))?,
     );
     state.locale = load_check_locales(root)?;
+    state.capabilities.defer(capabilities);
     let asset_root = root.join("ui/assets");
     if asset_root.exists() {
         state
@@ -3326,6 +3331,50 @@ mod tests {
             project.check(),
             Err(ProjectError::Lifecycle(_) | ProjectError::Runtime(_))
         ));
+    }
+
+    #[test]
+    fn check_defers_declared_capabilities_a_component_effect_starts() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        fs::write(
+            directory.path().join("ui/app.toml"),
+            "entry = \"main\"\nruntime_api = 3\n\n[capabilities]\n\"app.ticker\" = \"*\"\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"
+            define_component(#{
+                metadata: #{ id: "app/ticker", "export": "Ticker", version: "0.1.0",
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
+                    dependencies: [], capabilities: #{ "app.ticker": "*" } },
+                schema: #{
+                    props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                    state: #{ fields: #{ tick: #{ schema: #{ type: "integer" }, "default": 0 } } },
+                    events: #{}, slots: #{}, parts: [], effects: ["watch"],
+                },
+                render: Fn("render_Ticker"),
+            });
+            fn ticked(ctx, value) { ctx.set_state("tick", value); }
+            fn failed(ctx, error) { ctx.set_state("tick", -1); }
+            fn start_ticker(ctx, deps) {
+                ctx.start_subscription("app.ticker", "watch", (), Fn("ticked"), Fn("failed"), #{});
+                ctx.start_task("app.ticker", "once", (), Fn("ticked"), Fn("failed"));
+            }
+            fn stop_ticker(ctx, deps) { () }
+            fn render_Ticker(ctx, props) {
+                effect("watch", (), Fn("start_ticker"), Fn("stop_ticker"));
+                text(`tick: ${ctx.get_state("tick")}`)
+            }
+            fn view(ctx) { column([render_component("app/ticker", #{ key: "ticker" })]) }
+            "#,
+        )
+        .unwrap();
+        let report = project.check().unwrap();
+        assert!(report.host_validation_required);
+        assert!(report.initial_view_validated, "{}", report.summary());
     }
 
     #[test]

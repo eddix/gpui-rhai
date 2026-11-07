@@ -314,6 +314,7 @@ struct CapabilityEntry {
 pub struct CapabilityRegistry {
     entries: BTreeMap<CapabilityId, CapabilityEntry>,
     active: BTreeSet<CapabilityId>,
+    deferred: BTreeSet<CapabilityId>,
 }
 
 impl fmt::Debug for CapabilityRegistry {
@@ -322,6 +323,7 @@ impl fmt::Debug for CapabilityRegistry {
             .debug_struct("CapabilityRegistry")
             .field("registered", &self.entries.keys().collect::<Vec<_>>())
             .field("active", &self.active)
+            .field("deferred", &self.deferred)
             .finish()
     }
 }
@@ -441,6 +443,18 @@ impl CapabilityRegistry {
         Ok(())
     }
 
+    /// Capabilities the application declares but no Host provides in this
+    /// process, as in the headless first frame of `gpui-rhai check`. A task or
+    /// subscription started on one gets work that ends at once and delivers no
+    /// value; a synchronous call fails, since it needs the Host's answer.
+    pub fn defer(&mut self, ids: impl IntoIterator<Item = CapabilityId>) {
+        self.deferred.extend(ids);
+    }
+
+    fn is_deferred(&self, id: &CapabilityId) -> bool {
+        !self.active.contains(id) && self.deferred.contains(id)
+    }
+
     /// Invoke an activated method through schema validation on both sides.
     ///
     /// # Errors
@@ -468,6 +482,13 @@ impl CapabilityRegistry {
         method: &str,
         input: UiValue,
     ) -> Result<UiValue, CapabilityError> {
+        if self.is_deferred(id) {
+            return Err(CapabilityError::Handler {
+                id: id.clone(),
+                method: method.to_owned(),
+                message: "no Host provides it here; the call runs with the Host".to_owned(),
+            });
+        }
         if !self.active.contains(id) {
             return Err(CapabilityError::NotDeclared(id.clone()));
         }
@@ -539,6 +560,10 @@ impl CapabilityRegistry {
         method: &str,
         input: UiValue,
     ) -> Result<(TaskWork, ValueSchema), CapabilityError> {
+        if self.is_deferred(id) {
+            let message = format!("capability `{id}` has no Host here");
+            return Ok((TaskWork::new(move || Err(message)), ValueSchema::UiValue));
+        }
         let (entry, schema) = self.entry_and_method(id, method, &input)?;
         let handler = entry
             .task
@@ -580,6 +605,9 @@ impl CapabilityRegistry {
         method: &str,
         input: UiValue,
     ) -> Result<(SubscriptionWork, ValueSchema), CapabilityError> {
+        if self.is_deferred(id) {
+            return Ok((SubscriptionWork::new(|_| {}), ValueSchema::UiValue));
+        }
         let (entry, schema) = self.entry_and_method(id, method, &input)?;
         let handler = entry
             .subscription
@@ -802,6 +830,31 @@ mod tests {
     use crate::{
         ComponentDefinition, ComponentMetadata, ComponentRegistry, ComponentSchema, RuntimeApiRange,
     };
+
+    #[test]
+    fn a_deferred_capability_starts_work_that_delivers_nothing() {
+        let mut registry = CapabilityRegistry::new();
+        let id = CapabilityId::parse("app.ticker").unwrap();
+        assert!(matches!(
+            registry.start_task(&id, "once", UiValue::Null),
+            Err(CapabilityError::NotDeclared(_))
+        ));
+        registry.defer([id.clone()]);
+        let (work, _) = registry.start_task(&id, "once", UiValue::Null).unwrap();
+        assert_eq!(
+            work.run(crate::TaskCancellation::default()),
+            Err("capability `app.ticker` has no Host here".to_owned())
+        );
+        assert!(
+            registry
+                .start_subscription(&id, "watch", UiValue::Null)
+                .is_ok()
+        );
+        assert!(matches!(
+            registry.call(&id, "ping", UiValue::Null),
+            Err(CapabilityError::Handler { message, .. }) if message.contains("no Host")
+        ));
+    }
 
     struct Echo;
 

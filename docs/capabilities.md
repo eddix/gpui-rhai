@@ -175,6 +175,13 @@ Startup and `gpui-rhai check` also cross-check every installed component header:
 its capability requirement must appear explicitly and identically in the app
 manifest before any handler can activate.
 
+`gpui-rhai check` runs without the Host, so it defers the capabilities the app
+manifest declares (`CapabilityRegistry::defer`). A task or subscription started
+on one, as by a component effect in the first frame, gets work that ends at
+once and delivers nothing; a synchronous `call_capability` still fails, since
+only the Host has its answer. An `init` is not run when capabilities are
+declared, as before.
+
 ## System services
 
 `gpui_rhai::system::SystemServices` (0.4.2) gives scripts the operating
