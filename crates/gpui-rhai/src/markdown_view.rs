@@ -66,6 +66,7 @@ struct Config {
     label: String,
     content: bool,
     max_height: Option<f32>,
+    table_max_height: f32,
     copy_code: bool,
     parts: BTreeMap<String, Style>,
     images: BTreeMap<String, String>,
@@ -489,8 +490,25 @@ struct Paint {
     document_source: crate::ScrollbarSourceHandle,
 }
 
+/// A table of at most this many cells lays out in full and grows with the
+/// document; a larger one keeps a bounded, virtualized viewport of measured rows.
+const FULL_TABLE_CELLS: usize = 1000;
+/// That viewport's height unless `table_max_height` sets it.
+const DEFAULT_TABLE_MAX_HEIGHT: f32 = 400.0;
+/// A column fits its widest cell on one line, within these bounds; a longer cell wraps.
+const MIN_COLUMN: f32 = 64.0;
+const MAX_COLUMN: f32 = 360.0;
+/// A cell's inline padding, on each side.
+const CELL_PADDING: f32 = 8.0;
+/// The rows a virtualized table measures its columns from.
+const MEASURED_ROWS: usize = 200;
+/// Longer cell text is not shaped to measure it: it fills the widest column.
+const MEASURED_TEXT: usize = 2048;
+
 #[derive(Clone)]
 struct TableState {
+    /// The measured column widths and what they were measured for.
+    columns: Rc<RefCell<Option<ColumnWidths>>>,
     rows: ListState,
     // Retained with each actual source: a table replacement or cell-cache
     // eviction must retire captured drags under the same visual element id.
@@ -498,6 +516,13 @@ struct TableState {
     horizontal: ScrollHandle,
     horizontal_source: crate::ScrollbarSourceHandle,
     cells: Rc<RefCell<BTreeMap<(usize, usize), CellState>>>,
+}
+
+#[derive(Clone)]
+struct ColumnWidths {
+    /// The rows' identity, the font size and family, and whether every row counts.
+    key: (usize, u32, SharedString, bool),
+    widths: Rc<Vec<f32>>,
 }
 
 #[derive(Clone)]
@@ -552,12 +577,12 @@ impl crate::ScrollbarSource for TableRowsSource {
 
 impl Paint {
     #[allow(clippy::too_many_lines)] // One bounded native block's presentation by semantic kind.
-    fn block(&self, index: usize, _: &mut Window, cx: &mut App) -> AnyElement {
+    fn block(&self, index: usize, window: &mut Window, cx: &mut App) -> AnyElement {
         let Some(block) = self.prepared.blocks.get(index) else {
             return div().into_any_element();
         };
         if let BlockKind::Table { alignments, rows } = &block.kind {
-            return self.table(index, alignments, rows, cx);
+            return self.table(index, alignments, rows, window, cx);
         }
         let part = match block.kind {
             BlockKind::Heading(_) => "heading",
@@ -930,31 +955,106 @@ impl Paint {
         .into_any_element()
     }
 
+    /// The text style a table's cells lay out in: the inherited one, with the
+    /// `table` part's typography, size and family.
+    fn table_text_style(&self, window: &Window) -> gpui::TextStyle {
+        let part = self.config.part("table");
+        let mut style = window.text_style();
+        if part.base.typography.is_some() || part.base.font_size.is_some() {
+            let (size, _) = document_text_metrics(&part, &self.theme);
+            style.font_size = px(size).into();
+        }
+        if let Some(family) = &part.base.font_family {
+            style.font_family = SharedString::from(family.clone());
+        }
+        style
+    }
+
+    /// Each column's width: its widest cell on one line plus the padding, within
+    /// [`MIN_COLUMN`] and [`MAX_COLUMN`]. A full table measures every row, a
+    /// virtualized one its first [`MEASURED_ROWS`]; kept until the rows or the font
+    /// change.
+    fn column_widths(
+        &self,
+        window: &mut Window,
+        state: &TableState,
+        rows: &Arc<Vec<Vec<TableCell>>>,
+        columns: usize,
+        full: bool,
+    ) -> Rc<Vec<f32>> {
+        let style = self.table_text_style(window);
+        let size = style.font_size.to_pixels(window.rem_size());
+        let key = (
+            Arc::as_ptr(rows) as usize,
+            f32::from(size).to_bits(),
+            style.font_family.clone(),
+            full,
+        );
+        if let Some(cached) = state.columns.borrow().as_ref()
+            && cached.key == key
+        {
+            return cached.widths.clone();
+        }
+        let measured = if full {
+            rows.len()
+        } else {
+            rows.len().min(MEASURED_ROWS)
+        };
+        let mut widths = vec![0.0_f32; columns];
+        for (row_index, row) in rows.iter().take(measured).enumerate() {
+            for (column, cell) in row.iter().enumerate().take(columns) {
+                let width = if cell.fragments.len() > 1 || cell.text.text.len() > MEASURED_TEXT {
+                    MAX_COLUMN
+                } else {
+                    measure_text(window, &style, size, &cell.text, &self.mono, row_index == 0)
+                };
+                widths[column] = widths[column].max(width);
+            }
+        }
+        // A pixel of slack keeps a measured line from wrapping on rounding.
+        let widths = Rc::new(
+            widths
+                .into_iter()
+                .map(|width| (width + 2.0 * CELL_PADDING + 1.0).clamp(MIN_COLUMN, MAX_COLUMN))
+                .collect::<Vec<_>>(),
+        );
+        *state.columns.borrow_mut() = Some(ColumnWidths {
+            key,
+            widths: widths.clone(),
+        });
+        widths
+    }
+
     #[allow(clippy::too_many_lines)] // Bounded native logical rows, cell fragment viewports and shared scrollbars.
     fn table(
         &self,
         index: usize,
         alignments: &[pulldown_cmark::Alignment],
         rows: &Arc<Vec<Vec<TableCell>>>,
+        window: &mut Window,
         _: &mut App,
     ) -> AnyElement {
-        // Each table is a bounded nested measured list. Neither thousands of rows
-        // nor a single huge cell is materialized in one GPUI layout operation.
-        let rows = rows.clone();
+        // A table of at most FULL_TABLE_CELLS cells lays out in full, each row as tall
+        // as its wrapped cells, and grows with the document. A larger one is a bounded
+        // nested list of measured rows: neither thousands of rows nor a single huge
+        // cell is materialized in one GPUI layout operation.
         let columns = alignments.len();
-        let width = number_f32(columns) * 200.0;
+        let count = rows.len();
+        let full = count.saturating_mul(columns) <= FULL_TABLE_CELLS;
         let paint = self.clone();
         let alignments = alignments.to_vec();
-        let count = rows.len();
         let state = self
             .tables
             .borrow_mut()
             .entry(index)
             .or_insert_with(|| {
+                // A virtualized table's rows count 32px for its scrollbar until they are
+                // laid out; a laid-out row takes its measured height, taller when it wraps.
                 let rows = ListState::new(count, ListAlignment::Top, px(160.0))
                     .with_uniform_item_height(px(32.0));
                 let horizontal = ScrollHandle::new();
                 TableState {
+                    columns: Rc::new(RefCell::new(None)),
                     rows_source: crate::ScrollbarSourceHandle::new(TableRowsSource {
                         rows: rows.clone(),
                         horizontal: horizontal.clone(),
@@ -967,20 +1067,27 @@ impl Paint {
                 }
             })
             .clone();
+        let widths = self.column_widths(window, &state, rows, columns, full);
+        let width: f32 = widths.iter().sum();
+        let rows = rows.clone();
         let cell_states = state.cells.clone();
         // with_scroll_parent installs the newest/nearest parent first. Add
         // from outside in so the native chain precedes inherited Rhai owners.
-        let cell_scrollbars = self
+        let mut cell_scrollbars = self
             .context
             .scrollbars(&self.theme)
             .with_scroll_axis(Some(gpui::Axis::Vertical))
-            .with_scroll_parent(self.document_source.clone(), Some(gpui::Axis::Vertical))
-            .with_scroll_parent(state.rows_source.clone(), Some(gpui::Axis::Vertical))
-            .with_scroll_parent(
-                state.horizontal_source.clone(),
-                Some(gpui::Axis::Horizontal),
-            );
-        let table = list(state.rows.clone(), move |row_index, _, _| {
+            .with_scroll_parent(self.document_source.clone(), Some(gpui::Axis::Vertical));
+        if !full {
+            cell_scrollbars = cell_scrollbars
+                .with_scroll_parent(state.rows_source.clone(), Some(gpui::Axis::Vertical));
+        }
+        let cell_scrollbars = cell_scrollbars.with_scroll_parent(
+            state.horizontal_source.clone(),
+            Some(gpui::Axis::Horizontal),
+        );
+        let row_widths = widths.clone();
+        let row = Rc::new(move |row_index: usize| -> AnyElement {
             let mut row = div()
                 .id(SharedString::from(format!(
                     "markdown-table-{index}-row-{row_index}"
@@ -999,9 +1106,9 @@ impl Paint {
                         .debug_selector(move || {
                             format!("markdown-cell:{index}:{row_index}:{column}")
                         })
-                        .w(px(200.0))
+                        .w(px(row_widths.get(column).copied().unwrap_or(MIN_COLUMN)))
                         .flex_none()
-                        .px(px(8.0))
+                        .px(px(CELL_PADDING))
                         .py(px(5.0))
                         .role(if row_index == 0 {
                             Role::ColumnHeader
@@ -1097,9 +1204,31 @@ impl Paint {
                     theme_color(&paint.theme, "border", 0x5555_55ff).as_rgba_hex(),
                 ))
                 .into_any_element()
-        })
-        .w(px(width))
-        .h(px((number_f32(count) * 32.0).min(320.0)));
+        });
+        let table = if full {
+            div()
+                .flex()
+                .flex_col()
+                .w(px(width))
+                .children((0..count).map(|row_index| row(row_index)))
+                .into_any_element()
+        } else {
+            // A lane past the last column for the always-shown bar, so it never
+            // covers a cell; a second track where the bar keeps clear of the
+            // document's own (`TableRowsSource`).
+            let lane = if self.table_viewport_policy.get().0 {
+                crate::SCROLLBAR_TRACK_WIDTH * 2.0
+            } else {
+                crate::SCROLLBAR_TRACK_WIDTH
+            };
+            let row = row.clone();
+            list(state.rows.clone(), move |row_index, _, _| row(row_index))
+                .w(px(width) + lane)
+                .h(px(
+                    (number_f32(count) * 32.0).min(self.config.table_max_height)
+                ))
+                .into_any_element()
+        };
         let wrapper = div()
             .id(SharedString::from(format!("markdown-table-{index}")))
             .debug_selector(move || format!("markdown-table:{index}"))
@@ -1116,40 +1245,103 @@ impl Paint {
             .context
             .scrollbars(&self.theme)
             .with_scroll_parent(self.document_source.clone(), Some(gpui::Axis::Vertical));
+        let mut horizontal = scrollbars
+            .clone()
+            .with_scroll_axis(Some(gpui::Axis::Horizontal));
+        if !full {
+            horizontal = horizontal
+                .with_scroll_parent(state.rows_source.clone(), Some(gpui::Axis::Vertical));
+        }
+        let mut frame = div()
+            .w_full()
+            .relative()
+            .overflow_hidden()
+            .child(wrapper)
+            .child(horizontal.element_with_wheel_routing(
+                SharedString::from(format!("markdown-table-x-{index}")),
+                state.horizontal_source,
+                crate::ScrollbarSpec::new("auto", "hidden").expect("static scrollbar mode"),
+            ));
+        if !full {
+            // A virtualized table scrolls on its own: its bar stays in view so the
+            // table reads as scrollable.
+            frame = frame.child(
+                scrollbars
+                    .with_scroll_axis(Some(gpui::Axis::Vertical))
+                    .element_with_wheel_routing(
+                        SharedString::from(format!("markdown-table-y-{index}")),
+                        state.rows_source,
+                        crate::ScrollbarSpec::new("hidden", "always")
+                            .expect("static scrollbar mode"),
+                    ),
+            );
+        }
         crate::renderer::apply_style_override(
-            div()
-                .w_full()
-                .relative()
-                .overflow_hidden()
-                .child(wrapper)
-                .child(
-                    scrollbars
-                        .clone()
-                        .with_scroll_axis(Some(gpui::Axis::Horizontal))
-                        .with_scroll_parent(state.rows_source.clone(), Some(gpui::Axis::Vertical))
-                        .element_with_wheel_routing(
-                            SharedString::from(format!("markdown-table-x-{index}")),
-                            state.horizontal_source,
-                            crate::ScrollbarSpec::new("auto", "hidden")
-                                .expect("static scrollbar mode"),
-                        ),
-                )
-                .child(
-                    scrollbars
-                        .with_scroll_axis(Some(gpui::Axis::Vertical))
-                        .element_with_wheel_routing(
-                            SharedString::from(format!("markdown-table-y-{index}")),
-                            state.rows_source,
-                            crate::ScrollbarSpec::new("hidden", "auto")
-                                .expect("static scrollbar mode"),
-                        ),
-                ),
+            frame,
             &self.config.part("table"),
             &self.theme,
             self.theme.direction(),
         )
         .into_any_element()
     }
+}
+
+/// The width of `text` on one line in `base` at `size`, its strong, emphasis and
+/// code marks set as they paint; a header cell is semibold.
+fn measure_text(
+    window: &mut Window,
+    base: &gpui::TextStyle,
+    size: gpui::Pixels,
+    text: &MarkdownText,
+    mono: &SharedString,
+    header: bool,
+) -> f32 {
+    if text.text.is_empty() {
+        return 0.0;
+    }
+    // A cell is one line; a stray break shapes as a space of the same length.
+    let line = text.text.replace(['\n', '\r'], " ");
+    let mut cuts = vec![0, line.len()];
+    for mark in &text.marks {
+        if matches!(mark.mark, Mark::Strong | Mark::Emphasis | Mark::Code) {
+            cuts.push(mark.range.start.min(line.len()));
+            cuts.push(mark.range.end.min(line.len()));
+        }
+    }
+    cuts.sort_unstable();
+    cuts.dedup();
+    let mut runs = Vec::new();
+    for pair in cuts.windows(2) {
+        let (start, end) = (pair[0], pair[1]);
+        if start >= end || !line.is_char_boundary(start) || !line.is_char_boundary(end) {
+            continue;
+        }
+        let mut run = base.to_run(end - start);
+        if header {
+            run.font.weight = FontWeight::SEMIBOLD;
+        }
+        for mark in &text.marks {
+            if mark.range.start <= start && end <= mark.range.end {
+                match mark.mark {
+                    Mark::Strong => run.font.weight = FontWeight::BOLD,
+                    Mark::Emphasis => run.font.style = FontStyle::Italic,
+                    Mark::Code => run.font.family = mono.clone(),
+                    _ => {}
+                }
+            }
+        }
+        runs.push(run);
+    }
+    if runs.iter().map(|run| run.len).sum::<usize>() != line.len() {
+        // Marks that do not fall on character boundaries: measure plain.
+        runs = vec![base.to_run(line.len())];
+    }
+    f32::from(
+        window
+            .text_system()
+            .shape_line(SharedString::from(line), size, &runs, None)
+            .width,
+    )
 }
 
 fn link_payload(href: String, text: String) -> UiValue {
@@ -1295,6 +1487,13 @@ impl PrimitiveHandler for MarkdownViewerPrimitiveHandler {
                 ),
                 _ => None,
             },
+            table_max_height: match props.get("table_max_height") {
+                Some(PrimitiveValue::Length(value)) => theme
+                    .resolve_length(*value)
+                    .and_then(resolved_pixels)
+                    .ok_or("table_max_height must resolve to pixels")?,
+                _ => DEFAULT_TABLE_MAX_HEIGHT,
+            },
             copy_code: matches!(props.data("code_block_actions"), Some(UiValue::Array(actions)) if actions.contains(&UiValue::String("copy".to_owned()))),
             parts: PARTS
                 .iter()
@@ -1434,6 +1633,7 @@ pub fn markdown_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         ("label".to_owned(), ObjectField::required(ValueSchema::string()).with_doc("Accessible document name.")),
         ("height".to_owned(), ObjectField::optional(ValueSchema::enumeration(["fill", "content"])).with_doc("Fill the box or grow to the measured content height.")),
         ("max_height".to_owned(), ObjectField::optional(ValueSchema::optional(ValueSchema::Length)).with_doc("Maximum content height as an absolute-resolvable Length (px/rem); relative lengths are not supported. Longer content scrolls natively.")),
+        ("table_max_height".to_owned(), ObjectField::optional(ValueSchema::optional(ValueSchema::Length)).with_doc("Viewport height of a table over 1,000 cells, which scrolls with an always-shown scrollbar; smaller tables lay out in full. Absolute-resolvable (px/rem); 400 logical pixels unset.")),
         ("code_block_actions".to_owned(), ObjectField::optional(ValueSchema::Array { items: Box::new(ValueSchema::enumeration(["copy"])), max_items: Some(1) }).with_doc("Code block actions; copy writes code without Markdown fences.")),
         ("image_assets".to_owned(), ObjectField::optional(ValueSchema::Map { values: Box::new(ValueSchema::string()) }).with_doc("Explicit destination-to-Host-asset-ID map. Missing images show alt text; URLs are never fetched.")),
         ("heading_roles".to_owned(), ObjectField::required(ValueSchema::Array { items: Box::new(ValueSchema::string()), max_items: Some(6) }).with_doc("Typography roles for heading levels 1 through 6; an explicit heading part typography overrides these.")),

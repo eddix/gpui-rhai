@@ -58,8 +58,18 @@ compares the full native block model and invalidates from the first changed
 block instead of assuming only the final block can change. This intentionally
 uses a complete semantic parse rather than an unsafe tail-only optimization.
 GPUI measures and virtualizes block heights. Long paragraphs/code/cells are
-split at UTF-8 boundaries into at most 4 KiB text segments; large tables use a
-bounded nested measured list and retain horizontal scrolling.
+split at UTF-8 boundaries into at most 4 KiB text segments.
+
+Tables lay out by their content (0.4.3, #3, #222). Each column fits its widest
+cell on one line, measured with the table's text style (bold, italic and code
+spans as they paint), plus the cell padding, within 64 to 360 logical pixels; a
+longer cell wraps and its row grows. The table is as wide as its columns, not
+the reader, and scrolls horizontally when it is wider. A table of at most 1,000
+cells lays out in full and grows with the document, so every row is in the
+document's own scroll. A larger one is a bounded nested list, `table_max_height`
+high (400 logical pixels unset), of rows measured as they lay out, with an
+always-shown vertical bar in a lane past the last column; its columns are
+measured from its first 200 rows.
 Nested table/cell viewports share the native scrollbar's residual wheel policy;
 unsupported axes are not converted. Fill and clamped-content viewers reserve
 a stable logical scrollbar gutter so document and table thumbs cannot overlap.

@@ -1,6 +1,6 @@
 # MarkdownViewer
 
-`components/markdown_viewer` · export `MarkdownViewer` · version 0.2.2. Generated from
+`components/markdown_viewer` · export `MarkdownViewer` · version 0.4.3. Generated from
 [`registry/components/markdown_viewer.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/markdown_viewer.rhai); do not edit.
 
 Native CommonMark/GFM, not an editor or a WebView. Host documents keep source and parse models out of Rhai. Links emit; images require explicit Host assets.
@@ -25,6 +25,7 @@ markdown_viewer::MarkdownViewer(#{key:"article",label:"Article",source:ctx.get_n
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `source` | string or native document | required | Markdown string or Host-owned NativeTextDocument from ctx.get_native_text_document. |
 | `style` | style | — | Style merged over the root part. |
+| `table_max_height` | integer ≥ 0 or length or `()` | — | Viewport height of a table over 1,000 cells, which scrolls inside it with an always-shown scrollbar; unset is 400 logical pixels. A smaller table lays out in full and grows with the document. Columns fit their widest cell on one line, 64 to 360 logical pixels, and longer cells wrap. |
 
 ## Events
 
