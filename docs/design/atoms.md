@@ -269,7 +269,7 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   edge and the group is exactly `metrics.control` high. Unpressed labels are
   `text_muted`. Keyboard: roving focus, one tab stop on the active segment,
   arrows move focus, Enter or Space toggles.
-- **Tabs** is one component in three looks that share every capability.
+- **Tabs** is one component in four looks that share every capability.
   Every look is `metrics.control` high with labels in `tabs.foreground` /
   `text_primary`, `control` type, weight 400 in both states so widths do not
   jitter. The strip is one tab stop and the arrows select; content-width tabs
@@ -282,6 +282,12 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
     (`group_focus`). Without a panel (`panel: false`) it is a view switcher;
     the panel itself is unframed. A vertical track is a column beside its
     panel.
+  - **chip**, tabs that stand apart (a title bar, a toolbar of workspaces):
+    no track; each tab is a separate chip, `metrics.control` high with
+    `radius.md`, `spacing.xxs` apart, transparent until hovered
+    (`surface_hover`). The selected chip sits on a `surface_raised` thumb with
+    a 1px `border`, which the list's focus turns into a 2px `focus_ring` frame
+    (0.4.3, feedback #6). Horizontal only.
   - **underline**, the sections a panel or a card is divided into: no track;
     the labels sit on a 1px `border` hairline that spans the panel, and the
     selected one has a 2px `text_primary` bar under it that covers the

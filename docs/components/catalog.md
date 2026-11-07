@@ -407,7 +407,7 @@ non-virtual content.
 ### Tabs
 
 `components/tabs` exports controlled `Tabs(props)`: one component for every
-strip of tabs, in three looks that share every capability. `value` selects a
+strip of tabs, in four looks that share every capability. `value` selects a
 tab; `on_change` receives a `change(string)` proposal. The caller owns the
 accepted value. Clicking or keyboard navigation does not independently commit
 a different panel or thumb position.
@@ -415,6 +415,7 @@ a different panel or thumb position.
 | Variant | Look | Choose it for |
 |---|---|---|
 | `track` (default) | a tonal track with a raised thumb | a compact switcher among other controls: a toolbar, a header |
+| `chip` | separate chips with a control's corners, transparent until hovered; the selected one is raised (`surface_raised`) with a 1px `border` | tabs that stand apart from each other: a title bar, a toolbar of workspaces |
 | `underline` | labels on a `border` hairline, a 2px `text_primary` bar under the selected one | the sections a panel or a card is divided into |
 | `bar` | document tabs on `tabbar.background`; the selected tab takes `tabbar.active` and covers the strip's line | the region itself: open documents, a workspace's panels, a collection the user manages |
 
@@ -423,7 +424,7 @@ a different panel or thumb position.
 | `value` | Required selected string value; a value no tab has (`""`) selects none |
 | `label` | Required accessible name for the tab group |
 | `tabs` | Required array, at most 256 items; may be empty |
-| `variant` | `track` (default), `underline` or `bar`; `underline` and `bar` are horizontal only and throw with `orientation: "vertical"` |
+| `variant` | `track` (default), `chip`, `underline` or `bar`; `chip`, `underline` and `bar` are horizontal only and throw with `orientation: "vertical"` |
 | `orientation` | `horizontal` (default) or `vertical` |
 | `layout` | `content` (default): tabs keep their width, up to two label columns, and the strip scrolls; `equal`: horizontal tabs share the width |
 | `panel`, `keep_mounted` | Render the selected tab's `content` (default); keep every supplied panel mounted |

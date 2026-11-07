@@ -118,11 +118,13 @@ fn library_head(title, detail) {
 
 fn tabs_page(h, v) {
     let value = kit::val(v, "tabs.value", "overview");
-    kit::page(h, v, "tabs", "Tabs", "One component, three looks: a track for a switcher among controls, underlined labels for the sections of a panel or a card, a bar of document tabs. Every look can count, close, add and reorder.", [
+    kit::page(h, v, "tabs", "Tabs", "One component, four looks: a track for a switcher among controls, separate chips for a title bar or a toolbar, underlined labels for the sections of a panel or a card, a bar of document tabs. Every look can count, close, add and reorder.", [
         kit::sec("Track with panel", tabs::Tabs(#{ label: "Service", value: value, tabs: tab_list(),
             on_change: kit::store(h, "tabs.value") })),
         kit::sec("Track switcher", tabs::Tabs(#{ label: "View", value: value, tabs: tab_list(), panel: false, size: "sm",
             on_change: kit::store(h, "tabs.value") })),
+        kit::sec("Chips", tabs::Tabs(#{ label: "Workspace", value: value, variant: "chip", panel: false,
+            tabs: tab_list(), on_change: kit::store(h, "tabs.value") })),
         kit::sec("Underline", tabs::Tabs(#{ label: "Service sections", value: value, variant: "underline",
             tabs: tab_list(), on_change: kit::store(h, "tabs.value") })),
         kit::sec("Underline in a card", card::Card(#{ header: text("Checkout service"),

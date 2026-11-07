@@ -2,7 +2,7 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
   "capabilities": {},
@@ -19,9 +19,10 @@
   "environment": ["size", "density"]
 }
 */
-// Controlled tabs with one tab stop; the arrow keys select. Three looks share every
+// Controlled tabs with one tab stop; the arrow keys select. Four looks share every
 // capability: `track` is a tonal track with a raised thumb, for a compact switcher among
-// other controls; `underline` puts the labels on a hairline with a 2px ink bar under the
+// other controls; `chip` is the same thumb without the track, each tab a separate chip, for a
+// title bar or toolbar; `underline` puts the labels on a hairline with a 2px ink bar under the
 // selected one, for the sections of a panel or a card; `bar` is a strip of document tabs
 // whose selected tab takes the panel's surface (`tabbar.active`) and covers its line.
 //
@@ -43,7 +44,7 @@ import "components/sliding_panel" as sliding_panel;
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.4.2",
+        id: "components/tabs", "export": "Tabs", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
         capabilities: #{},
@@ -67,9 +68,9 @@ define_component(#{
                 doc: "The `value` of the selected tab, or one no tab has (such as `\"\"`) for none; the caller stores the `change` payload and passes it back." },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Accessible name of the tab list, and of the group that holds the list and the panel." },
-            variant: #{ schema: #{ type: "string", allowed: ["track", "underline", "bar"] }, required: false, sensitive: false,
+            variant: #{ schema: #{ type: "string", allowed: ["track", "chip", "underline", "bar"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "track" },
-                doc: "`track` is a tonal track with a raised thumb; `underline` puts the labels on a hairline and marks the selected one with a 2px ink bar; `bar` is a strip of document tabs whose selected tab joins the panel under it. `underline` and `bar` are horizontal only." },
+                doc: "`track` is a tonal track with a raised thumb; `chip` makes each tab a separate chip with a control's corners, transparent until hovered, the selected one raised (`surface_raised`) with a 1px `border`; `underline` puts the labels on a hairline and marks the selected one with a 2px ink bar; `bar` is a strip of document tabs whose selected tab joins the panel under it. `chip`, `underline` and `bar` are horizontal only." },
             orientation: #{ schema: #{ type: "string", allowed: ["horizontal", "vertical"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "horizontal" },
                 doc: "Direction of the list: `horizontal` is a row moved with Left/Right, `vertical` a column beside the panel moved with Up/Down." },
@@ -329,8 +330,10 @@ fn tab_slot(ctx, props, cfg, tab, selected, close) {
             .items_center().justify_center().radius(theme_radius("xs"))
             .opacity(if shown { 1.0 } else { 0.0 })
             .group_hover(style().opacity(1.0))
-            // The track is surface_hover already, so its close button hovers a step darker.
-            .hover(style().background(theme_color(if cfg.variant == "track" { "control.hover" } else { "surface_hover" })))
+            // A track or a hovered chip is surface_hover already, so the close button hovers a
+            // step darker.
+            .hover(style().background(theme_color(if cfg.variant == "track" || cfg.variant == "chip" {
+                "control.hover" } else { "surface_hover" })))
             // Above a reorderable tab's drag source, so a press here closes the tab.
             .occlude();
         children.push(row([image_source(asset("app/icons/close"))
@@ -399,14 +402,25 @@ fn tab_style(cfg, tab, selected, slotted, on_edge) {
         // spacing.xs off the content edge of the panel or card under it.
         return base.self_stretch().justify_center().padding_x(theme_spacing("xs"));
     }
+    if cfg.variant == "chip" {
+        // A chip is a control: its height, corners and inset; the raised thumb under the
+        // selected one, a surface_hover fill under a hovered one.
+        base = base.min_height(theme_length("metrics.control")).justify_center()
+            .radius(theme_radius("md"))
+            .padding_x(if label_visible || cfg.layout == "equal" { theme_length("metrics.control_pad") }
+                else { theme_spacing("sm") });
+        return if selected { base } else {
+            base.hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary")))
+        };
+    }
     // Track slots fill the track's inner height.
     base = base.self_stretch().justify_center();
     if !label_visible && cfg.layout != "equal" { base.padding_x(theme_spacing("sm")) }
     else { base.padding_x(theme_length("metrics.control_pad")) }
 }
 
-// The selected tab's decoration, painted under its content: the track's raised thumb, which
-// carries the list's focus, or the underline's bar.
+// The selected tab's decoration, painted under its content: the raised thumb of a track or a
+// chip, which carries the list's focus, or the underline's bar.
 fn selection_marks(ctx, cfg) {
     let marks = [];
     if cfg.variant == "track" {
@@ -414,6 +428,13 @@ fn selection_marks(ctx, cfg) {
             .radius(theme_radius("xs")).background(theme_color("surface_raised"))
             .border(px(2)).border_color(theme_color("surface_raised"))
             .group_focus(style().border_color(theme_color("focus_ring")));
+        marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", thumb)));
+    } else if cfg.variant == "chip" {
+        // The chip's thumb: raised, with a hairline, taking the list's focus on its frame.
+        let thumb = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .radius(theme_radius("md")).background(theme_color("surface_raised"))
+            .border(px(1)).border_color(theme_color("border"))
+            .group_focus(style().border(px(2)).border_color(theme_color("focus_ring")));
         marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", thumb)));
     } else if cfg.variant == "underline" {
         let bar = style().absolute().left(theme_spacing("xs")).right(theme_spacing("xs"))
@@ -429,8 +450,8 @@ fn selection_marks(ctx, cfg) {
     marks
 }
 
-// The focus frame over the selected underline or bar tab, painted last: the track's thumb
-// carries its own.
+// The focus frame over the selected underline or bar tab, painted last: the thumb of a track
+// or a chip carries its own.
 fn focus_frame(ctx, cfg) {
     let frame = row([]).with_key("focus_frame").with_style(ctx.component_style("focus_frame", style()
         .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
@@ -480,7 +501,7 @@ fn tab_node(ctx, props, cfg, tabs, index) {
     let item_ref = if cfg.reorderable && !disabled { element_ref(`tab-${tab.value}`) } else { () };
     if item_ref != () { children.push(drag_overlay(cfg, tabs, index, item_ref)); }
     if slotted { children.push(tab_slot(ctx, props, cfg, tab, selected, close)); }
-    if selected && cfg.variant != "track" { children.push(focus_frame(ctx, cfg)); }
+    if selected && cfg.variant != "track" && cfg.variant != "chip" { children.push(focus_frame(ctx, cfg)); }
 
     let name = tab.label;
     if "count" in tab && tab.count != () { name = `${name}, ${tab.count}`; }
@@ -636,6 +657,9 @@ fn render_Tabs(ctx, props) {
         // One continuous tonal track holding the slots 2px in.
         list_style = list_style.padding(theme_spacing("xxs")).gap(theme_spacing("xxs"))
             .background(theme_color("surface_hover")).radius(cfg.corner);
+    } else if variant == "chip" {
+        // Separate chips, a hairline apart.
+        list_style = list_style.gap(theme_spacing("xxs"));
     } else if variant == "underline" {
         // Underlined labels sit about control_pad apart.
         list_style = list_style.gap(theme_length("metrics.control_pad") * 0.5);
@@ -713,7 +737,9 @@ fn render_Tabs(ctx, props) {
     // underline or bar strip spans the panel, so its line rules the width. A vertical strip
     // spans the panel's height, and its track fits the tabs and scrolls when they overflow.
     let strip_layout = style().flex_shrink(false);
-    if variant == "track" && !vertical && layout == "content" { strip_layout = strip_layout.self_start(); }
+    if (variant == "track" || variant == "chip") && !vertical && layout == "content" {
+        strip_layout = strip_layout.self_start();
+    }
     strip = strip.with_style(strip_layout);
     // The bar's selected tab joins the panel: no gap, and the panel takes its surface. The
     // underline's hairline already separates the panel, so it sits only `related` below.
