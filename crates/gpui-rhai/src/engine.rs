@@ -2023,8 +2023,8 @@ impl RuntimeEngine {
                 .engine
                 .call_fn(&mut Scope::new(), &compiled.ast, "state_schema", ())
                 .map_err(RuntimeError::Evaluate)?;
-            validate_state_default_encoding(&raw, "state_schema")
-                .map_err(RuntimeError::Evaluate)?;
+            let raw =
+                normalize_state_defaults(raw, "state_schema").map_err(RuntimeError::Evaluate)?;
             rhai::serde::from_dynamic(&raw).map_err(RuntimeError::Evaluate)
         })();
         self.record_timing(
@@ -2851,11 +2851,17 @@ fn register_define_component_api(
                         "formal component render must be an uncurried named function",
                     )));
                 }
-                if let Some(schema) = raw.get("schema")
+                if let Some(schema) = raw.get_mut("schema")
                     && schema.is::<Map>()
-                    && let Some(state) = schema.clone_cast::<Map>().get("state")
                 {
-                    validate_state_default_encoding(state, "component.schema.state")?;
+                    let mut map = schema.clone_cast::<Map>();
+                    if let Some(state) = map.remove("state") {
+                        map.insert(
+                            "state".into(),
+                            normalize_state_defaults(state, "component.schema.state")?,
+                        );
+                        *schema = Dynamic::from_map(map);
+                    }
                 }
                 let decoded: crate::ComponentDefinition =
                     rhai::serde::from_dynamic(&Dynamic::from_map(raw))?;
@@ -2884,28 +2890,72 @@ fn register_define_component_api(
         );
 }
 
-fn validate_state_default_encoding(raw: &Dynamic, path: &str) -> Result<(), Box<EvalAltResult>> {
+/// State field defaults are plain Rhai values the field schema types, or tagged
+/// `UiValue`s (`#{ type: "integer", value: 0 }`, tagged at every level). A map of only
+/// `type` (a `UiValue` tag) and `value` is a tagged one; anything else is plain.
+fn normalize_state_defaults(raw: Dynamic, path: &str) -> Result<Dynamic, Box<EvalAltResult>> {
     if !raw.is::<Map>() {
-        return Ok(());
+        return Ok(raw);
     }
-    let raw = raw.clone_cast::<Map>();
-    let Some(fields) = raw.get("fields").filter(|fields| fields.is::<Map>()) else {
-        return Ok(());
+    let mut raw = raw.cast::<Map>();
+    let Some(fields) = raw.get_mut("fields").filter(|fields| fields.is::<Map>()) else {
+        return Ok(Dynamic::from_map(raw));
     };
-    for (name, field) in fields.clone_cast::<Map>() {
+    let mut entries = fields.clone_cast::<Map>();
+    for (name, field) in &mut entries {
         if !field.is::<Map>() {
             continue;
         }
-        let field = field.cast::<Map>();
-        if let Some(value) = field.get("default") {
+        let mut field_map = field.clone_cast::<Map>();
+        let Some(value) = field_map.get("default") else {
+            continue;
+        };
+        if is_tagged_ui_value(value) {
             rhai::serde::from_dynamic::<UiValue>(value).map_err(|source| {
                 Box::new(component_render_error(format!(
-                    "{path}.fields.{name}.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors ({source})"
+                    "{path}.fields.{name}.default: expected recursively tagged UiValue; a `#{{ type, value }}` default needs type/value descriptors at every level, or write the plain value ({source})"
                 )))
             })?;
+            continue;
         }
+        let Some(schema) = field_map
+            .get("schema")
+            .and_then(|schema| rhai::serde::from_dynamic::<crate::ValueSchema>(schema).ok())
+        else {
+            continue;
+        };
+        let plain = UiValue::from_dynamic(value.clone())
+            .map(|plain| schema.infer(plain))
+            .map_err(|error| error.to_string())
+            .and_then(|plain| {
+                schema
+                    .validate_ui_value(&plain)
+                    .map(|()| plain)
+                    .map_err(|error| error.to_string())
+            })
+            .map_err(|issue| {
+                Box::new(component_render_error(format!(
+                    "{path}.fields.{name}.default: {issue}"
+                )))
+            })?;
+        field_map.insert("default".into(), rhai::serde::to_dynamic(&plain)?);
+        *field = Dynamic::from_map(field_map);
     }
-    Ok(())
+    *fields = Dynamic::from_map(entries);
+    Ok(Dynamic::from_map(raw))
+}
+
+fn is_tagged_ui_value(value: &Dynamic) -> bool {
+    const TAGS: [&str; 8] = [
+        "null", "bool", "integer", "float", "string", "array", "map", "handle",
+    ];
+    value.clone().try_cast::<Map>().is_some_and(|map| {
+        map.keys().all(|key| key == "type" || key == "value")
+            && map
+                .get("type")
+                .and_then(|tag| tag.clone().into_immutable_string().ok())
+                .is_some_and(|tag| TAGS.contains(&tag.as_str()))
+    })
 }
 
 fn register_component_runtime_apis(
@@ -6512,6 +6562,116 @@ mod tests {
         assert_eq!(
             runtime.borrow().component_state.get(&root_path, "count"),
             Some(&UiValue::Integer(2))
+        );
+    }
+
+    #[test]
+    fn plain_state_defaults_take_their_types_from_the_schema() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+            fn state_schema() { #{ fields: #{
+                count: #{ schema: #{ type: "integer" }, "default": 0 },
+                ratio: #{ schema: #{ type: "float" }, "default": 1 },
+                tags: #{ schema: #{ type: "array", items: #{ type: "string" } }, "default": ["a", "b"] },
+                theme: #{ schema: #{ type: "object", fields: #{
+                    family: #{ schema: #{ type: "string" }, required: true },
+                    scale: #{ schema: #{ type: "float" }, required: true } } },
+                    "default": #{ family: "Default", scale: 2 } },
+                picked: #{ schema: #{ type: "optional", value: #{ type: "string" } }, "default": () },
+                tagged: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 7 } },
+            } } }
+            fn view(ctx) { text("view") }
+        "#,
+            )
+            .unwrap();
+        let schema = engine.root_state_schema(&compiled).unwrap();
+        let default = |name: &str| schema.field(name).unwrap().default.clone();
+        assert_eq!(default("count"), UiValue::Integer(0));
+        assert_eq!(default("ratio"), UiValue::Float(1.0));
+        assert_eq!(
+            default("tags"),
+            UiValue::Array(vec![
+                UiValue::String("a".to_owned()),
+                UiValue::String("b".to_owned())
+            ])
+        );
+        assert_eq!(
+            default("theme"),
+            UiValue::Map(BTreeMap::from([
+                ("family".to_owned(), UiValue::String("Default".to_owned())),
+                ("scale".to_owned(), UiValue::Float(2.0)),
+            ]))
+        );
+        assert_eq!(default("picked"), UiValue::Null);
+        assert_eq!(default("tagged"), UiValue::Integer(7));
+
+        let compiled = engine
+            .compile(
+                r#"
+            fn state_schema() { #{ fields: #{ count: #{ schema: #{ type: "integer" }, "default": "zero" } } } }
+            fn view(ctx) { text("view") }
+        "#,
+            )
+            .unwrap();
+        let error = engine.root_state_schema(&compiled).unwrap_err().to_string();
+        assert!(
+            error.contains("state_schema.fields.count.default")
+                && error.contains("expected integer"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_component_takes_plain_state_defaults() {
+        let module = r#"
+            define_component(#{
+                metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+                schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                    state: #{ fields: #{ widths: #{ schema: #{ type: "map", values: #{ type: "float" } },
+                        "default": #{ name: 120, size: 80.5 } } } },
+                    events: #{}, slots: #{}, parts: ["root"] },
+                render: Fn("render_Probe")
+            });
+            fn Probe(props) { render_component("components/probe", props) }
+            fn render_Probe(ctx, props) { text(`${ctx.get_state("widths").name}`) }
+        "#;
+        let mut resolver = crate::RestrictedModuleResolver::new();
+        resolver.insert("components/probe", module).unwrap();
+        let mut engine = RuntimeEngine::new();
+        engine.set_module_resolver(resolver);
+        let compiled = engine
+            .compile_self_contained_named(
+                "plain-defaults",
+                r#"import "components/probe" as probe;
+                    fn view(ctx) { probe::Probe(#{ key: "probe" }) }"#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(crate::UiRuntimeState::new()));
+        let mut lifecycle = crate::ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "plain"),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let owner = engine
+            .component_invocations()
+            .next()
+            .unwrap()
+            .path()
+            .clone();
+        assert_eq!(
+            runtime.borrow().component_state.get(&owner, "widths"),
+            Some(&UiValue::Map(BTreeMap::from([
+                ("name".to_owned(), UiValue::Float(120.0)),
+                ("size".to_owned(), UiValue::Float(80.5)),
+            ])))
         );
     }
 

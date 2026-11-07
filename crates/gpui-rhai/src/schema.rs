@@ -274,6 +274,56 @@ impl ValueSchema {
         }
     }
 
+    /// `value` with each integer this schema reads as a float made one, the way a plain
+    /// Rhai default such as `0` for a `float` field is meant. Other values stay as they
+    /// are; validation still decides whether they fit.
+    #[must_use]
+    pub fn infer(&self, value: UiValue) -> UiValue {
+        match (self, value) {
+            (Self::Float { .. }, UiValue::Integer(integer)) => {
+                UiValue::Float(integer_as_float(integer))
+            }
+            (Self::Array { items, .. }, UiValue::Array(values)) => {
+                UiValue::Array(values.into_iter().map(|value| items.infer(value)).collect())
+            }
+            (Self::Map { values }, UiValue::Map(entries)) => UiValue::Map(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, values.infer(value)))
+                    .collect(),
+            ),
+            (Self::Object { fields, .. }, UiValue::Map(entries)) => UiValue::Map(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| {
+                        let value = match fields.get(&key) {
+                            Some(field) => field.schema.infer(value),
+                            None => value,
+                        };
+                        (key, value)
+                    })
+                    .collect(),
+            ),
+            (Self::Optional { value: schema }, value) if value != UiValue::Null => {
+                schema.infer(value)
+            }
+            (Self::OneOf { variants }, value) => {
+                if variants
+                    .iter()
+                    .any(|variant| variant.validate_ui_value_first(&value).is_ok())
+                {
+                    return value;
+                }
+                variants
+                    .iter()
+                    .map(|variant| (variant, variant.infer(value.clone())))
+                    .find(|(variant, inferred)| variant.validate_ui_value_first(inferred).is_ok())
+                    .map_or(value, |(_, inferred)| inferred)
+            }
+            (_, value) => value,
+        }
+    }
+
     /// Validate a durable host value before converting it back into Rhai.
     ///
     /// # Errors

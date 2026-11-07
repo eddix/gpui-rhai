@@ -237,20 +237,24 @@ headless first frame, and its summary names them. See
 
 ## 4. State and controlled components
 
-State field defaults use the serialized `UiValue` form. Each nested map entry
-and array item needs its own `type` descriptor; a schema of `ui_value` does not
-change this encoding. For example, a map default is:
+State field defaults are plain Rhai values, typed by the field's schema:
 
 ```rhai
-"default": #{ type: "map", value: #{
-    family: #{ type: "string", value: "Default" },
-    name: #{ type: "string", value: "Dark" },
-} }
+fn state_schema() { #{ fields: #{
+    open: #{ schema: #{ type: "bool" }, "default": false },
+    ratio: #{ schema: #{ type: "float" }, "default": 1 },
+    theme: #{ schema: #{ type: "map", values: #{ type: "string" } },
+        "default": #{ family: "Default", name: "Dark" } },
+    picked: #{ schema: #{ type: "optional", value: #{ type: "string" } }, "default": () },
+} } }
 ```
 
-An empty map is `#{ type: "map", value: #{} }`, an empty array is
-`#{ type: "array", value: [] }`, and null is `#{ type: "null" }`.
-Invalid defaults report the owning state field and the required encoding.
+An integer where the schema reads a float becomes one, so `1` above is `1.0`.
+The serialized `UiValue` form, `#{ type: "integer", value: 0 }` with a `type`
+descriptor at every level, still works and takes precedence: a map of only
+`type`, naming a `UiValue` type, and `value` reads as that form. A plain map
+with exactly those two keys must therefore be written tagged. Invalid
+defaults report the owning state field.
 
 State is declared, schema-checked, and scoped to a stable component instance.
 
