@@ -2850,6 +2850,7 @@ impl ScriptView {
         runtime_state.replace_component_styles_from_host(component_styles);
         register_file_assets(&runtime_state, &ui_root)?;
         preload_component_assets(&runtime_state, &component_exports)?;
+        preload_lucide_icons(&runtime_state, file_lucide_icons(&ui_root)?)?;
         for extension in extensions.iter() {
             extension
                 .configure_runtime(&mut runtime_state)
@@ -2938,12 +2939,19 @@ impl ScriptView {
                     .map_err(ScriptViewError::Extension)?
                     .audit;
         }
+        let lucide = sources
+            .assets
+            .keys()
+            .filter_map(|asset| asset.strip_prefix("lucide/"))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
         if !sources.assets.is_empty() {
             runtime_state
                 .assets
                 .register("app", InMemoryAssetProvider::new(sources.assets))?;
         }
         preload_component_assets(&runtime_state, &component_exports)?;
+        preload_lucide_icons(&runtime_state, lucide)?;
         for extension in extensions.iter() {
             extension
                 .configure_runtime(&mut runtime_state)
@@ -3262,6 +3270,47 @@ fn preload_component_assets(
         .collect::<Result<BTreeSet<_>, _>>()?;
     runtime.assets.preload_images(ids)?;
     Ok(())
+}
+
+/// The Lucide icons `gpui-rhai add lucide/<name>` installed in `ui/assets/lucide/`,
+/// preloaded like a component's assets so `asset("app/lucide/<name>")` draws.
+fn preload_lucide_icons(
+    runtime: &UiRuntimeState,
+    names: impl IntoIterator<Item = String>,
+) -> Result<(), ScriptViewError> {
+    let ids = names
+        .into_iter()
+        .map(|name| AssetId::parse(format!("app/lucide/{name}")).map_err(ScriptViewError::Asset))
+        .collect::<Result<Vec<_>, _>>()?;
+    runtime.assets.preload_images(ids)?;
+    Ok(())
+}
+
+fn file_lucide_icons(root: &Path) -> Result<Vec<String>, ScriptViewError> {
+    let directory = root.join("assets/lucide");
+    if !directory.is_dir() {
+        return Ok(Vec::new());
+    }
+    let entries = fs::read_dir(&directory).map_err(|source| ScriptViewError::Io {
+        path: directory.clone(),
+        source,
+    })?;
+    let mut names = Vec::new();
+    for entry in entries {
+        let path = entry
+            .map_err(|source| ScriptViewError::Io {
+                path: directory.clone(),
+                source,
+            })?
+            .path();
+        if path.extension().and_then(|extension| extension.to_str()) == Some("svg")
+            && let Some(name) = path.file_stem().and_then(|stem| stem.to_str())
+        {
+            names.push(name.to_owned());
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 fn validate_manifest_entry(
@@ -9383,6 +9432,57 @@ mod tests {
             prepared.factory.runtime.borrow().clock.now(),
             start + std::time::Duration::from_millis(48)
         );
+    }
+
+    #[test]
+    fn installed_lucide_icons_preload_from_files_and_embedded_sources() {
+        let cached = |prepared: &PreparedScriptView, name: &str| {
+            prepared
+                .factory
+                .runtime
+                .borrow()
+                .assets
+                .cached_image(&AssetId::parse(format!("app/lucide/{name}")).unwrap())
+                .is_ok()
+        };
+        let house = gpui_rhai_registry::lucide_icon("house").unwrap();
+        let entry = ModuleId::parse("main").unwrap();
+        let prepared = ScriptView::sources(
+            entry.clone(),
+            EmbeddedScriptSource::new(BTreeMap::from([(
+                entry,
+                "fn view(ctx) { image_source(asset(\"app/lucide/house\")) }".to_owned(),
+            )])),
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .asset_sources([(
+            "lucide/house".to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: house.as_bytes().to_vec(),
+            },
+        )])
+        .prepare()
+        .unwrap();
+        assert!(cached(&prepared, "house"));
+
+        let directory = tempfile::tempdir().unwrap();
+        let ui = directory.path().join("ui");
+        fs::create_dir_all(ui.join("assets/lucide")).unwrap();
+        fs::write(ui.join("assets/lucide/house.svg"), house).unwrap();
+        fs::write(
+            ui.join("main.rhai"),
+            "fn view(ctx) { image_source(asset(\"app/lucide/house\")) }\n",
+        )
+        .unwrap();
+        fs::write(
+            ui.join("theme.rhai"),
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        fs::write(ui.join("app.toml"), "entry = \"main\"\nruntime_api = 3\n").unwrap();
+        let prepared = ScriptView::files(ui.join("main.rhai")).prepare().unwrap();
+        assert!(cached(&prepared, "house"));
     }
 
     #[test]

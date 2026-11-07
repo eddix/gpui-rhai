@@ -1416,9 +1416,20 @@ pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
     ("absolutely_dark.rhai", ABSOLUTELY_DARK_THEME),
 ];
 
+mod lucide;
 mod skills;
 
+pub use lucide::{LUCIDE_ICONS, LUCIDE_LICENSE, LUCIDE_VERSION};
 pub use skills::BUNDLED_SKILL_FILES;
+
+/// The SVG of the Lucide icon `name`, as `gpui-rhai add lucide/<name>` installs it.
+#[must_use]
+pub fn lucide_icon(name: &str) -> Option<&'static str> {
+    LUCIDE_ICONS
+        .binary_search_by_key(&name, |(icon, _)| icon)
+        .ok()
+        .map(|index| LUCIDE_ICONS[index].1)
+}
 
 #[cfg(test)]
 mod tests {
@@ -1736,6 +1747,16 @@ mod tests {
         ] {
             assert!(!source.contains("title: #{ schema: #{ type: \"string\" }, required: false, sensitive: false, \"default\""));
         }
+    }
+
+    #[test]
+    fn lucide_icons_are_sorted_svgs_found_by_name() {
+        assert!(LUCIDE_ICONS.len() > 2000);
+        assert!(LUCIDE_ICONS.windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert!(LUCIDE_ICONS.iter().all(|(_, svg)| svg.contains("<svg")));
+        assert!(lucide_icon("arrow-left").is_some_and(|svg| svg.contains("currentColor")));
+        assert_eq!(lucide_icon("no-such-icon"), None);
+        assert!(LUCIDE_LICENSE.starts_with("ISC License"));
     }
 
     #[test]

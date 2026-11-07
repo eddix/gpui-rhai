@@ -33,9 +33,13 @@ pub mod theme_studio;
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
     BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID,
-    BUNDLED_PROFILES, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE,
-    TOKEN_BASE_SOURCE, ZH_CN_LOCALE,
+    BUNDLED_PROFILES, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, LUCIDE_LICENSE,
+    LUCIDE_VERSION, STUDIO_SOURCE, TOKEN_BASE_SOURCE, ZH_CN_LOCALE, lucide_icon,
 };
+
+/// Where `add lucide/<name>` writes Lucide's license, which `bundle` copies
+/// into the application.
+const LUCIDE_LICENSE_PATH: &str = "licenses/lucide-ISC.txt";
 #[cfg(test)]
 use gpui_rhai_registry::{
     CALENDAR_SVG, CHECK_SVG, CHEVRON_DOWN_SVG, CHEVRON_LEFT_SVG, CHEVRON_RIGHT_SVG, CHEVRON_UP_SVG,
@@ -464,8 +468,19 @@ impl Project {
         let manifest_path = self.root.join(".gpui-rhai/manifest.toml");
         let manifest_source = read(&manifest_path)?;
         let mut manifest: LocalManifest = toml::from_str(&manifest_source)?;
-        let resolved = registry.resolve(requested)?;
+        let (icons, requested): (Vec<_>, Vec<_>) = requested
+            .iter()
+            .cloned()
+            .partition(|raw| raw.starts_with("lucide/"));
+        let resolved = if requested.is_empty() {
+            Vec::new()
+        } else {
+            registry.resolve(&requested)?
+        };
         let mut plan = ProjectPlan::new(self.root.clone());
+        if !icons.is_empty() {
+            self.plan_lucide_add(&mut plan, &mut manifest, &icons)?;
+        }
         if resolved.iter().any(|id| id.as_str().starts_with("charts/")) {
             self.plan_enable_dependency_feature(&mut plan, "charts")?;
         }
@@ -522,6 +537,77 @@ impl Project {
             manifest_source,
         );
         Ok(plan)
+    }
+
+    /// Install Lucide icons as `ui/assets/lucide/<name>.svg`, with baselines like
+    /// a component's assets, and Lucide's license in `licenses/`.
+    fn plan_lucide_add(
+        &self,
+        plan: &mut ProjectPlan,
+        manifest: &mut LocalManifest,
+        requested: &[String],
+    ) -> Result<(), ProjectError> {
+        let installed = manifest.lucide.get_or_insert_with(|| InstalledLucide {
+            version: LUCIDE_VERSION.to_owned(),
+            icons: BTreeSet::new(),
+        });
+        for raw in requested {
+            let name = raw.strip_prefix("lucide/").unwrap_or(raw);
+            let svg = lucide_icon(name)
+                .ok_or_else(|| ProjectError::UnknownLucideIcon(name.to_owned()))?;
+            if !installed.icons.insert(name.to_owned()) {
+                continue;
+            }
+            let path = format!("lucide/{name}.svg");
+            plan.create(self.root.join("ui/assets").join(&path), svg.to_owned())?;
+            plan.create(
+                self.root.join(".gpui-rhai/baselines/assets").join(&path),
+                svg.to_owned(),
+            )?;
+        }
+        plan.replace_or_create(
+            self.root.join(LUCIDE_LICENSE_PATH),
+            LUCIDE_LICENSE.to_owned(),
+        )
+    }
+
+    /// Move installed Lucide icons to the bundled Lucide release, merging like
+    /// component assets. An icon the release dropped stays the application's.
+    fn plan_lucide_update(
+        &self,
+        plan: &mut ProjectPlan,
+        manifest: &mut LocalManifest,
+    ) -> Result<(), ProjectError> {
+        let Some(installed) = manifest.lucide.as_mut() else {
+            return Ok(());
+        };
+        if installed.version == LUCIDE_VERSION {
+            return Ok(());
+        }
+        let mut conflicted = false;
+        for name in &installed.icons {
+            let path = format!("lucide/{name}.svg");
+            match lucide_icon(name) {
+                Some(svg) => {
+                    if self.plan_asset_update(plan, &path, svg)? {
+                        plan.file_conflicts
+                            .push(Path::new("ui/assets").join(&path));
+                        conflicted = true;
+                    }
+                }
+                None => plan.notes.push(format!(
+                    "lucide/{name} is not in Lucide {LUCIDE_VERSION}; update leaves ui/assets/{path} to the application"
+                )),
+            }
+        }
+        // A conflict keeps the old version, so the next update tries again.
+        if !conflicted {
+            LUCIDE_VERSION.clone_into(&mut installed.version);
+        }
+        plan.replace_or_create(
+            self.root.join(LUCIDE_LICENSE_PATH),
+            LUCIDE_LICENSE.to_owned(),
+        )
     }
 
     fn plan_enable_dependency_feature(
@@ -857,7 +943,7 @@ impl Project {
             }
             let mut asset_conflict = false;
             for asset in &upstream.assets {
-                asset_conflict |= self.plan_asset_update(&mut plan, asset)?;
+                asset_conflict |= self.plan_asset_update(&mut plan, asset.path, asset.source)?;
             }
             if asset_conflict {
                 let added = plan.writes.split_off(write_checkpoint);
@@ -891,6 +977,7 @@ impl Project {
         for shipped in &registry.shipped {
             self.plan_shipped_update(&mut plan, shipped)?;
         }
+        self.plan_lucide_update(&mut plan, &mut manifest)?;
         let styles = self.root.join("ui/styles.rhai");
         if !styles.exists() {
             plan.create(styles, DEFAULT_COMPONENT_STYLES.to_owned())?;
@@ -950,36 +1037,31 @@ impl Project {
     fn plan_asset_update(
         &self,
         plan: &mut ProjectPlan,
-        asset: &RegistryAsset,
+        path: &str,
+        upstream: &str,
     ) -> Result<bool, ProjectError> {
-        let source_path = self.root.join("ui/assets").join(asset.path);
-        let baseline_path = self
-            .root
-            .join(".gpui-rhai/baselines/assets")
-            .join(asset.path);
+        let source_path = self.root.join("ui/assets").join(path);
+        let baseline_path = self.root.join(".gpui-rhai/baselines/assets").join(path);
         match (source_path.exists(), baseline_path.exists()) {
             (false, false) => {
-                plan.create(source_path, asset.source.to_owned())?;
-                plan.create(baseline_path, asset.source.to_owned())?;
+                plan.create(source_path, upstream.to_owned())?;
+                plan.create(baseline_path, upstream.to_owned())?;
             }
             (true, true) => {
                 let source = read(&source_path)?;
                 let baseline = read(&baseline_path)?;
-                let Ok(merged) = three_way_merge(&baseline, &source, asset.source) else {
-                    let conflict_path = self
-                        .root
-                        .join(".gpui-rhai/conflicts/assets")
-                        .join(asset.path);
+                let Ok(merged) = three_way_merge(&baseline, &source, upstream) else {
+                    let conflict_path = self.root.join(".gpui-rhai/conflicts/assets").join(path);
                     plan.replace_or_create(
                         conflict_path,
-                        conflict_artifact(&source, &baseline, asset.source),
+                        conflict_artifact(&source, &baseline, upstream),
                     )?;
                     return Ok(true);
                 };
                 plan.update(source_path, merged, source);
-                plan.update(baseline_path, asset.source.to_owned(), baseline);
+                plan.update(baseline_path, upstream.to_owned(), baseline);
             }
-            _ => return Err(ProjectError::IncompleteAssetBaseline(asset.path.to_owned())),
+            _ => return Err(ProjectError::IncompleteAssetBaseline(path.to_owned())),
         }
         Ok(false)
     }
@@ -2645,6 +2727,15 @@ struct LocalManifest {
     runtime_api: u32,
     #[serde(default)]
     components: BTreeMap<String, InstalledComponent>,
+    /// The Lucide icons `add lucide/<name>` installed, at one Lucide release.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lucide: Option<InstalledLucide>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct InstalledLucide {
+    version: String,
+    icons: BTreeSet<String>,
 }
 
 impl Default for LocalManifest {
@@ -2652,6 +2743,7 @@ impl Default for LocalManifest {
         Self {
             runtime_api: RUNTIME_API_VERSION,
             components: BTreeMap::new(),
+            lucide: None,
         }
     }
 }
@@ -2773,6 +2865,10 @@ pub enum ProjectError {
     },
     #[error("component `{0}` is not in the bundled registry")]
     UnknownComponent(ModuleId),
+    #[error(
+        "Lucide {LUCIDE_VERSION} has no icon `{0}`; names are lowercase with dashes, as on lucide.dev"
+    )]
+    UnknownLucideIcon(String),
     #[error("component registry dependency cycle: {0:?}")]
     RegistryCycle(Vec<ModuleId>),
     #[error("at least one component name is required")]
@@ -3739,6 +3835,142 @@ mod tests {
         let warnings = validate_embedded_assets(directory.path()).unwrap();
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].contains("LICENSE-icons.txt is not an image"));
+    }
+
+    #[test]
+    fn add_installs_lucide_icons_and_their_license() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        let registry = BundledRegistry::load().unwrap();
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(
+                &registry,
+                &["lucide/arrow-left".to_owned(), "lucide/house".to_owned()],
+            )
+            .unwrap()
+            .apply()
+            .unwrap();
+        for name in ["arrow-left", "house"] {
+            for root in ["ui/assets", ".gpui-rhai/baselines/assets"] {
+                assert_eq!(
+                    read(
+                        &directory
+                            .path()
+                            .join(root)
+                            .join(format!("lucide/{name}.svg"))
+                    )
+                    .unwrap(),
+                    lucide_icon(name).unwrap()
+                );
+            }
+        }
+        assert_eq!(
+            read(&directory.path().join(LUCIDE_LICENSE_PATH)).unwrap(),
+            LUCIDE_LICENSE
+        );
+        let manifest = read(&directory.path().join(".gpui-rhai/manifest.toml")).unwrap();
+        assert!(
+            manifest.contains(&format!("version = \"{LUCIDE_VERSION}\""))
+                && manifest.contains("\"arrow-left\""),
+            "{manifest}"
+        );
+
+        // An application draws it as any SVG asset, and check accepts it.
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { image_source(asset(\"app/lucide/arrow-left\")).with_style(style().width(px(16)).height(px(16))) }\n",
+        )
+        .unwrap();
+        project.check().unwrap();
+
+        // Adding it again changes nothing; an unknown name is refused.
+        assert!(
+            project
+                .plan_add(&registry, &["lucide/house".to_owned()])
+                .unwrap()
+                .writes
+                .is_empty()
+        );
+        assert!(matches!(
+            project.plan_add(&registry, &["lucide/no-such-icon".to_owned()]),
+            Err(ProjectError::UnknownLucideIcon(name)) if name == "no-such-icon"
+        ));
+    }
+
+    #[test]
+    fn update_moves_lucide_icons_to_the_bundled_release() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        let registry = BundledRegistry::load().unwrap();
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(
+                &registry,
+                &["lucide/arrow-left".to_owned(), "lucide/house".to_owned()],
+            )
+            .unwrap()
+            .apply()
+            .unwrap();
+        // As an older Lucide release left them: arrow-left untouched, house edited.
+        let old = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M1 1\"/></svg>\n";
+        for root in ["ui/assets", ".gpui-rhai/baselines/assets"] {
+            for name in ["arrow-left", "house"] {
+                fs::write(
+                    directory
+                        .path()
+                        .join(root)
+                        .join(format!("lucide/{name}.svg")),
+                    old,
+                )
+                .unwrap();
+            }
+        }
+        fs::write(
+            directory.path().join("ui/assets/lucide/house.svg"),
+            old.replace("M1 1", "M2 2"),
+        )
+        .unwrap();
+        let manifest_path = directory.path().join(".gpui-rhai/manifest.toml");
+        let manifest = read(&manifest_path).unwrap().replace(
+            &format!("version = \"{LUCIDE_VERSION}\""),
+            "version = \"0.1.0\"",
+        );
+        fs::write(&manifest_path, &manifest).unwrap();
+
+        let plan = project.plan_update(&registry).unwrap();
+        assert_eq!(
+            plan.file_conflicts(),
+            [PathBuf::from("ui/assets/lucide/house.svg")]
+        );
+        plan.apply().unwrap();
+        assert_eq!(
+            read(&directory.path().join("ui/assets/lucide/arrow-left.svg")).unwrap(),
+            lucide_icon("arrow-left").unwrap()
+        );
+        assert!(
+            read(&directory.path().join("ui/assets/lucide/house.svg"))
+                .unwrap()
+                .contains("M2 2")
+        );
+        // The conflict keeps the old release, so the next update tries again.
+        assert!(
+            read(&manifest_path)
+                .unwrap()
+                .contains("version = \"0.1.0\"")
+        );
+
+        fs::write(directory.path().join("ui/assets/lucide/house.svg"), old).unwrap();
+        project.plan_update(&registry).unwrap().apply().unwrap();
+        assert_eq!(
+            read(&directory.path().join("ui/assets/lucide/house.svg")).unwrap(),
+            lucide_icon("house").unwrap()
+        );
+        assert!(
+            read(&manifest_path)
+                .unwrap()
+                .contains(&format!("version = \"{LUCIDE_VERSION}\""))
+        );
     }
 
     #[test]

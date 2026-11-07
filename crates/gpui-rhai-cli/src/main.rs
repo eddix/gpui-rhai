@@ -29,9 +29,10 @@ enum Command {
         #[arg(long, default_value = "pre", value_parser = ["pre", "fast"])]
         backend: String,
     },
-    /// Add source components and their dependencies.
+    /// Add source components and their dependencies, or Lucide icons.
     Add {
-        /// Registry component identifiers or short names.
+        /// Registry component identifiers or short names, or `lucide/<name>`
+        /// for a Lucide icon in `ui/assets/lucide/`.
         components: Vec<String>,
     },
     /// Validate scripts, schemas, themes, and compatibility.

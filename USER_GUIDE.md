@@ -71,7 +71,8 @@ Inside this repository, contributors can invoke the matching workspace CLI with:
 cargo run -p gpui-rhai-cli -- --root /path/to/app init
 ```
 
-`init` creates the normal source tree; `add` fills `components/` and `assets/`:
+`init` creates the normal source tree; `add` fills `components/` and `assets/`
+(`gpui-rhai add lucide/<name>` installs a [Lucide icon](docs/assets.md#lucide)):
 
 ```text
 ui/
