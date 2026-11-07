@@ -8,7 +8,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 rust-version = "1.99"
 authors = ["GPUI Rhai contributors"]
@@ -40,7 +40,7 @@ similar = { version = "=3.2.0", features = ["inline", "unicode"] }
 syntect = { version = "=5.3.0", default-features = false, features = ["default-syntaxes", "regex-fancy", "yaml-load"] }
 regex = "=1.13.1"
 pulldown-cmark = { version = "=0.13.4", default-features = false }
-gpui-rhai-registry = { version = "0.4.2", path = "registry" }
+gpui-rhai-registry = { version = "0.4.3", path = "registry" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

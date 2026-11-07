@@ -2912,7 +2912,7 @@ checksum = "99b18b06f5026b3d312488eacfdddbe78f82b4bf32bb2d2bc3186e31e552b797"
 
 [[package]]
 name = "gpui-rhai"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "event-listener",
  "gpui-fast",
@@ -2943,7 +2943,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-rhai-cli"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "clap",
  "gpui-rhai",
@@ -2975,7 +2975,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-rhai-registry"
-version = "0.4.2"
+version = "0.4.3"
 
 [[package]]
 name = "half"
