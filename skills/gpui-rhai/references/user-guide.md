@@ -136,7 +136,6 @@ gpui-rhai diff
 gpui-rhai update
 gpui-rhai metadata
 gpui-rhai skills .claude/skills
-gpui-rhai embed
 gpui-rhai theme-studio
 gpui-rhai gallery
 ```
@@ -160,7 +159,6 @@ gpui-rhai gallery
   `gpui-rhai-design` for this CLI's version: `.claude/skills` for Claude Code,
   `.agents/skills` for Codex, Cursor and other agents. Run it again after an
   upgrade; it replaces the files it wrote.
-- `embed` generates production Rust `include_str!`/`include_bytes!` wiring.
 - `theme-studio [path]` opens the theme editor and complete component specimen.
 - `gallery` opens the Gallery: every official component in both densities,
   with its source.
@@ -1630,12 +1628,13 @@ Production workflow:
 
 ```text
 gpui-rhai check
-gpui-rhai embed
 cargo build --release
 ```
 
-Do not edit the generated Rust embed module. Edit `ui/`, run `check`, then
-regenerate.
+`gpui-rhai init` writes a `build.rs` that embeds `ui/` through
+`gpui-rhai-build`, and the Host mounts `gpui_rhai::script_view!()`: a debug
+build reads the files, a release build the embedded copy, which Cargo
+rebuilds whenever `ui/` changes.
 
 See [Hot reload and production](https://github.com/eddix/gpui-rhai/blob/main/docs/hot-reload-and-production.md) and
 [Development inspector](https://github.com/eddix/gpui-rhai/blob/main/docs/devtools.md).

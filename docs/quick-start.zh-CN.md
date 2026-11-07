@@ -69,9 +69,10 @@ token 基础层 `ui/tokens.rhai`，由 density、size 两个环境轴取值，�
 `style`/`part_styles`。
 
 `view` 只能描述 UI，不能执行副作用。文件、网络、持久化和平台服务必须由
-Rust host 注册为带 schema 和版本的 capability。需要发布时运行
-`gpui-rhai embed`，使用生成的 embedded source 构建 release；不要在生产环境
-依赖任意文件路径或动态下载脚本。
+Rust host 注册为带 schema 和版本的 capability。`gpui-rhai init` 生成的
+`build.rs` 用 `gpui-rhai-build` 把 `ui/` 嵌进二进制，`script_view!()` 在 debug
+读文件、在 release 读嵌入的副本，所以发布时直接 `cargo build --release`；不要
+在生产环境依赖任意文件路径或动态下载脚本。
 
 可跨 render 保存的回调必须是命名且不捕获环境的函数。Rhai 的编译只检查语法，
 不会证明所有动态函数重载都存在；`gpui-rhai check` 会额外检查已知调用并真实执行

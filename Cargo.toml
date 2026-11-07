@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/gpui-rhai",
+    "crates/gpui-rhai-build",
     "crates/gpui-rhai-cli",
     "registry",
 ]

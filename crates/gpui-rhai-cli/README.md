@@ -19,7 +19,9 @@ gpui-rhai dev
 
 Important commands:
 
-- `init` creates the Rust Host and application-owned `ui/` source tree: the
+- `init` creates the Rust Host (mounting `gpui_rhai::script_view!()`), a
+  `build.rs` that embeds `ui/` for release builds, and the application-owned
+  `ui/` source tree: the
   palette, the token base `tokens.rhai`, `styles.rhai` component overrides and,
   with `--profile`, the design rules `check` reports;
 - `add`, `diff`, and `update` install and three-way merge official source;
@@ -27,7 +29,6 @@ Important commands:
 - `metadata` emits schemas, editor snippets, and Rhai definitions;
 - `skills <directory>` writes the agent skills for this version, for example
   into `.claude/skills` or `.agents/skills`;
-- `embed` generates production `include_str!`/`include_bytes!` wiring;
 - `theme-studio [path]` opens the live semantic theme editor and complete
   component specimen;
 - `gallery` opens the Gallery: every official component in both densities,

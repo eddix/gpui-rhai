@@ -1,0 +1,17 @@
+[package]
+name = "gpui-rhai-build"
+description = "Embeds a gpui-rhai application's ui/ directory into its binary from build.rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/gpui-rhai-build"
+keywords = ["gpui", "rhai", "build", "embed"]
+categories = ["development-tools::build-utils", "gui"]
+include = ["src/**/*.rs", "README.md", "LICENSE-*", "Cargo.toml"]
+
+[lints]
+workspace = true

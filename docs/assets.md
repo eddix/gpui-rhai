@@ -46,10 +46,11 @@ This does not make dynamic Host namespaces statically knowable to the CLI.
 ## Application images
 
 The images under `ui/assets` form the `app` namespace: `ui/assets/icons/star.svg`
-is `asset("app/icons/star")`. `gpui-rhai check` validates them and
-`gpui-rhai embed` compiles them into the binary. Any other file there, such as
-an icon set's license, is no asset: check warns about it and skips it, and
-embed leaves it out. Hidden files such as `.DS_Store` are skipped silently.
+is `asset("app/icons/star")`. `gpui-rhai check` validates them and a release
+build of `script_view!()` reads them from the tree `build.rs` embedded. Any
+other file there, such as an icon set's license, is no asset: check warns about
+it and skips it, and the runtime does not serve it. Hidden files such as
+`.DS_Store` are skipped silently.
 
 A third-party icon set goes in the same way. Copy the SVGs the application uses
 into `ui/assets/icons/`, keep the set's license beside them, and list each icon
@@ -139,9 +140,9 @@ already-cached ID is not a reload operation.
 ## Declared fonts
 
 File applications load `.ttf`, `.otf`, and `.ttc` files under `ui/fonts` before
-their first mounted GPUI view. Embedded applications pass validated in-memory
-`FontSource` values with `.font_source(...)` or `.font_sources(...)`.
-`gpui-rhai embed` emits matching `FONTS` and `font_sources()` artifacts.
+their first mounted GPUI view, from the files or from the tree `build.rs`
+embedded. A Host also passes validated in-memory `FontSource` values with
+`.font_source(...)` or `.font_sources(...)`.
 
 The Host validates safe labels, TrueType/OpenType headers, a 16 MiB per-font
 limit, at most 64 sources, and duplicate payloads. App-global fingerprints

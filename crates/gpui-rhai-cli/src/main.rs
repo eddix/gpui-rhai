@@ -42,7 +42,8 @@ enum Command {
     Diff,
     /// Merge source updates from the bundled registry.
     Update,
-    /// Generate the production embedded-source Rust module.
+    /// Removed in 0.4.3; build.rs embeds ui/ through gpui-rhai-build.
+    #[command(hide = true)]
     Embed,
     /// Generate schema metadata and basic editor snippets.
     Metadata,
@@ -134,13 +135,7 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
                 return Err(ProjectError::UpdateFileConflictsWritten(file_conflicts));
             }
         }
-        Command::Embed => {
-            let plan = project.plan_embed()?;
-            println!("{}", plan.summary());
-            if !cli.dry_run {
-                plan.apply()?;
-            }
-        }
+        Command::Embed => return Err(ProjectError::EmbedRemoved),
         Command::Metadata => {
             let plan = project.plan_editor_metadata()?;
             println!("{}", plan.summary());

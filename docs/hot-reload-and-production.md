@@ -38,29 +38,55 @@ and execution timings.
 
 ## Production
 
-Run:
+A Host mounts one view for every build:
+
+```rust
+let view = gpui_rhai::script_view!()
+    .extension(/* application services */)
+    .prepare()?;
+```
+
+A debug build reads the files under the crate's `ui/` (with hot reload under
+the `dev-reload` feature). A release build reads the copy that `build.rs`
+embedded through `gpui-rhai-build`:
+
+```toml
+[build-dependencies]
+gpui-rhai-build = "0.4"
+```
+
+```rust
+// build.rs
+fn main() {
+    gpui_rhai_build::embed_ui("ui").expect("embed ui/");
+}
+```
+
+`gpui-rhai init` writes both. The build script embeds every file under `ui/`
+except hidden ones, and Cargo runs it again whenever one changes, so the copy
+always matches the source; there is no generated file to keep in step. The
+embedded tree loads as the directory does: `app.toml` names the entry,
+`theme.rhai`, `tokens.rhai`, `styles.rhai` and `profile.rhai`, the other themes
+and locales, the images under `assets/` (as the `app` namespace) and the fonts
+under `fonts/`. Then:
 
 ```text
 gpui-rhai check
-gpui-rhai embed
 cargo build --release
 ```
 
-`embed` deterministically generates `src/gpui_rhai_embedded.rs` using
-`include_str!`/`include_bytes!` for the entry, installed components, the
-application's own modules (every other `.rhai` file below `ui/` that file mode
-loads as a module), component stylesheet, locales, themes, and assets, plus an
-`app_manifest()` constructor. Construct
-`ScriptView::sources` from those generated sources and pass
-`.component_styles(generated::COMPONENT_STYLES_SOURCE)` and
-`.manifest(generated::app_manifest())`.
-Pass `.asset_sources(generated::asset_sources())` so embedded `app/...` image
-IDs resolve exactly like file-backed assets.
-Call `.prepare()` and either mount the result through a `ScriptViewHost` or pass
-it to `ScriptApplication::new`.
 Production needs no filesystem watcher or source-path access, and file-backed
 and embedded sources use the same restricted module-resolution contract.
+`ScriptView::files(path)` and `ScriptView::embedded(&UI)` choose a source
+explicitly, and `ScriptView::sources(..)` runs sources the Host holds in memory.
 
-Do not edit the generated Rust module. Edit files under `ui/`, run `check`, then
-regenerate it. Keep `dev-reload` disabled in release builds unless a product has
-an explicit, reviewed reason to ship source watching.
+A debug build of `script_view!()` reads another tree when `GPUI_RHAI_UI=<dir>`
+is set. A release build ignores it: swapping the scripts of a signed
+application would be a way to inject code into it. A Host that wants such an
+override names its own variable with `.ui_override_env("MY_APP_UI")`. Keep
+`dev-reload` disabled in release builds unless a product has an explicit,
+reviewed reason to ship source watching.
+
+`gpui-rhai embed`, which generated `src/gpui_rhai_embedded.rs`, was removed in
+0.4.3. To migrate, add the build script and dependency above, mount with
+`script_view!()`, and delete the generated file.
