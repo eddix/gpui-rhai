@@ -468,6 +468,50 @@ adds what GPUI lacks (0.4.2):
 macOS banners from GPUI carry no sound; ring the bell beside the notification
 when it should be heard.
 
+## Files dropped from the operating system
+
+A `DropZone` whose `payload_types` lists `os.files` takes the files and folders
+the operating system drags in, once the Host allows it; it is off by default:
+
+```rust
+let view = ScriptView::files("ui/main.rhai").accept_file_drops(true);
+```
+
+The zone highlights while a drag it can take hovers over it. Its `drop` event
+comes from source `os` with operation `copy`, and its payload is
+`#{ files: [#{ file, name, size, kind }] }`: `file` is an opaque handle of kind
+`file`, `name` the name without its folders, `size` the bytes of a file (`()`
+for a folder) and `kind` `file` or `dir`. `file_kinds: ["file"]` limits a zone
+to files; a drag holding another kind cannot drop there.
+
+Scripts never see a path. To act on a file, a script passes its handle to a
+capability. `UiRuntimeState::dropped_files` keeps the paths: the Host's
+extension clones it when it registers the capability, and the handler turns the
+handle back into the path. The handle stays valid while the application runs.
+
+```rust
+struct OpenFile { dropped: gpui_rhai::DroppedFiles }
+
+impl CapabilityHandler for OpenFile {
+    fn call(&mut self, _: &str, input: UiValue) -> Result<UiValue, String> {
+        let UiValue::Handle(handle) = input else { return Err("expected a file".into()) };
+        let path = self.dropped.path(&handle).ok_or("not a dropped file")?;
+        // ...
+        Ok(UiValue::Null)
+    }
+}
+
+impl ScriptViewExtension for Files {
+    fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+        let open = OpenFile { dropped: runtime.dropped_files.clone() };
+        runtime.capabilities.register(descriptor(), open).map_err(|e| e.to_string())
+    }
+}
+```
+
+Outside a capability, `ScriptViewHandle::dropped_file_path(&handle, cx)` gives
+the same path.
+
 ## Key bindings
 
 Mounting never modifies the App keymap. Inspect `PreparedScriptView::key_bindings`

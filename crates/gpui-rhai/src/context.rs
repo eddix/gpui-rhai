@@ -101,6 +101,9 @@ pub struct UiRuntimeState {
     /// Composition audit rules from the application profile.
     pub audit_rules: crate::AuditRules,
     pub capabilities: CapabilityRegistry,
+    /// Files and folders the operating system dropped on a `DropZone`, by the
+    /// handle scripts got for each ([`crate::ScriptView::accept_file_drops`]).
+    pub dropped_files: crate::DroppedFiles,
     pub tasks: TaskRegistry,
     pub subscriptions: SubscriptionRegistry,
     pub timers: crate::TimerRegistry,

@@ -2,7 +2,7 @@
 {
   "id": "components/drop_zone",
   "export": "DropZone",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -10,13 +10,16 @@
   "environment": []
 }
 */
-// Typed same-Host application drop target. OS/file and cross-window drops are excluded.
+// Typed same-Host application drop target; with `os.files`, also files and folders the
+// operating system drags in, when the Host accepts file drops. Cross-window drops are excluded.
 // State: frame-local native target eligibility only; application ownership remains controlled.
 // Example: DropZone(#{ key:"lane", label:"Server lane", target_id:"lane-a",
 //     payload_types:["server"], operations:["move"], content:text("Lane A") })
+// Example: DropZone(#{ key:"import", label:"Import", target_id:"import",
+//     payload_types:["os.files"], operations:["copy"], content:text("Drop files"), on_drop:Fn("imported") })
 
 define_component(#{
-    metadata: #{ id:"components/drop_zone", "export":"DropZone", version: "0.2.0",
+    metadata: #{ id:"components/drop_zone", "export":"DropZone", version: "0.4.3",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
         tokens: ["accent", "danger"],
         environment: [] },
@@ -27,7 +30,9 @@ define_component(#{
         target_id: #{ schema:#{type:"string"}, required:true, sensitive:false,
             doc:"Identity of this zone, 1 to 128 characters; `drop`, the source's `drag_end` and `keyboard_target` use it." },
         payload_types: #{ schema:#{type:"array",max_items:32,items:#{type:"string"}}, required:true, sensitive:false,
-            doc:"Source `payload_type` values this zone accepts; at least one." },
+            doc:"Source `payload_type` values this zone accepts; at least one. `os.files` takes files and folders the operating system drags in, when the Host calls `ScriptView::accept_file_drops(true)`." },
+        file_kinds: #{ schema:#{type:"optional",value:#{type:"array",max_items:2,items:#{type:"string",allowed:["file","dir"]}}}, required:false, sensitive:false,
+            doc:"With `os.files`, the kinds a file drag may hold: `file`, `dir` or both, the default. A drag holding another kind cannot drop." },
         operations: #{ schema:#{type:"array",max_items:2,items:#{type:"string",allowed:["copy","move"]}}, required:true, sensitive:false,
             doc:"Source `operation` values this zone accepts; at least one." },
         priority: #{ schema:#{type:"integer"}, required:false, sensitive:false,
@@ -45,7 +50,8 @@ define_component(#{
         target_id:#{schema:#{type:"string"},required:true,sensitive:false,doc:"This zone's `target_id`."},
         payload_type:#{schema:#{type:"string"},required:true,sensitive:false,
             doc:"`payload_type` of the drag source."},
-        payload:#{schema:#{type:"ui_value"},required:true,sensitive:false,doc:"`payload` of the drag source, unchanged."},
+        payload:#{schema:#{type:"ui_value"},required:true,sensitive:false,
+            doc:"`payload` of the drag source, unchanged. For `os.files` (source `os`, operation `copy`): `#{ files: [#{ file, name, size, kind }] }`, where `file` is an opaque handle the Host turns into the path, `name` has no folders, `size` is in bytes (`()` for a folder) and `kind` is `file` or `dir`."},
         operation:#{schema:#{type:"string",allowed:["copy","move"]},required:true,sensitive:false,
             doc:"`operation` of the drag source."},
         x:#{schema:#{type:"number"},required:true,sensitive:false,
@@ -64,6 +70,7 @@ fn drop_zone_commit(ctx, value) { ctx.emit("drop", value); }
 fn render_DropZone(ctx, props) {
     let interaction = gpui_rhai::DropZonePrimitive(#{ key:`${props.key}-interaction`,
         target_id:props.target_id, payload_types:props.payload_types, operations:props.operations,
+        file_kinds:if "file_kinds" in props { props.file_kinds } else { () },
         priority:props.priority, disabled:props.disabled,
         on_drop:if "on_drop" in props && props.on_drop != () { Fn("drop_zone_commit") } else { () } })
         .with_key(`${props.key}-drop-zone`).with_style(ctx.component_style("interaction",
