@@ -1,6 +1,6 @@
 # Button
 
-`components/button` · export `Button` · version 0.4.0. Generated from
+`components/button` · export `Button` · version 0.4.3. Generated from
 [`registry/components/button.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/button.rhai); do not edit.
 
 Button presents a desktop action: a large block with a centered label.
@@ -23,7 +23,7 @@ button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" })
 | `disabled` | bool | `false` | Blocks clicks and greys the button but keeps the variant's silhouette; a disabled `action` disables it too. |
 | `hoverable` | bool | `true` | Changes the fill on hover; `false` keeps it still. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
-| `loading` | bool | `false` | Blocks clicks and shows the disabled look while work runs; it draws no spinner. |
+| `loading` | bool | `false` | Blocks clicks and shows the disabled look while work runs, with a turning spinner in the label's color: in place of `prefix`, else before the label, which then widens the button. Reduced or no motion holds the spinner still. |
 | `loading_text` | string | `""` | Replaces the label and the accessible name while `loading`; the button keeps the width of `text` unless this is wider. Empty leaves the label as it is. |
 | `on_click` | callback or `()` | — | Called when the button is pressed; not while disabled or loading, and not when `action` is set. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
@@ -50,9 +50,9 @@ button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" })
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `label`, `prefix`, `root`, `shortcut`, `suffix`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `label`, `prefix`, `root`, `shortcut`, `spinner`, `suffix`.
 
 ## Theme
 
-- Tokens: `accent`, `accent_hover`, `border`, `control.border`, `control.danger_hover`, `control.hover`, `control.success_hover`, `control.warning_hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.md`, `spacing.xs`, `success`, `surface_hover`, `text_primary`, `typography.control`, `typography.label`, `warning`
+- Tokens: `accent`, `accent_hover`, `border`, `control.border`, `control.danger_hover`, `control.hover`, `control.success_hover`, `control.warning_hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.icon`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.md`, `spacing.xs`, `success`, `surface_hover`, `text_primary`, `typography.control`, `typography.label`, `warning`
 - Environment: `density`, `size`

@@ -210,8 +210,12 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 - Active: opacity 0.86. Disabled keeps the variant's silhouette and its size:
   block variants become a neutral `surface_hover` block, `outline` keeps its
   `border` frame, `ghost` stays bare; the text turns `disabled`.
-- Loading keeps the width of the idle label where possible and announces the
-  loading text.
+- Loading looks disabled and draws a turning spinner in the label's color, in
+  an icon-sized slot: in place of the prefix icon, else before the label, which
+  widens the button by that slot and its gap (0.4.3, feedback #34). The label
+  keeps the width of the wider of the idle and loading texts and announces the
+  loading text. IconButton swaps its icon for the spinner. Reduced or no motion
+  holds the spinner still.
 - Optional `shortcut` part shows the action's key legend after the label in
   the `code` role at 70% opacity. It shows at every size: a component cannot
   read the resolved size, so an `xs` caller omits the legend itself.

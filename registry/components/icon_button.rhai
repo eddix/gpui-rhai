@@ -2,7 +2,7 @@
 {
   "id": "components/icon_button",
   "export": "IconButton",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button"],
   "capabilities": {},
@@ -24,7 +24,7 @@ define_component(#{
     metadata: #{
         id: "components/icon_button",
         "export": "IconButton",
-        version: "0.4.0",
+        version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button"],
         capabilities: #{},
@@ -68,7 +68,7 @@ define_component(#{
                 doc: "Blocks clicks and greys the icon but keeps the variant's silhouette, as on `Button`; a disabled `action` disables it too." },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Blocks clicks and shows the disabled look while work runs; it draws no spinner." },
+                doc: "Blocks clicks and shows the disabled look while work runs, with Button's turning spinner in place of the icon. Reduced or no motion holds it still." },
             hoverable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true }, doc: "Changes the fill on hover; `false` keeps it still." },
             on_click: #{ schema: #{ type: "optional", value: #{ type: "callback" } },
@@ -82,7 +82,7 @@ define_component(#{
         events: #{ click: #{ payload: #{ type: "null" },
             doc: "Emitted when the button is pressed while enabled, not loading and without an `action`." } },
         slots: #{ icon: #{ required: true, multiple: false, doc: "The icon in the square." } },
-        parts: ["root", "icon"],
+        parts: ["root", "icon", "spinner"],
     },
     render: Fn("render_IconButton")
 });
@@ -134,11 +134,15 @@ fn render_IconButton(ctx, props) {
     if hoverable && !disabled && !loading && !selected {
         base = base.hover(style().background(button::button_hover(variant)));
     }
-    let icon = props.icon.with_style(ctx.component_style("icon", style()
-        .width(theme_length("metrics.icon"))
-        .height(theme_length("metrics.icon"))
-        .text_color(foreground)
-        .disabled(style().text_color(theme_color("disabled")))));
+    let icon = if loading {
+        button::loading_spinner(ctx, if "size" in props { props.size } else { () })
+    } else {
+        props.icon.with_style(ctx.component_style("icon", style()
+            .width(theme_length("metrics.icon"))
+            .height(theme_length("metrics.icon"))
+            .text_color(foreground)
+            .disabled(style().text_color(theme_color("disabled")))))
+    };
     let node = row([icon])
         .with_style(ctx.component_style("root", base))
         .disabled(disabled || loading)
