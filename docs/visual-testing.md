@@ -7,6 +7,59 @@ status/loading, navigation, data/virtualization, assets, and overlays. The
 default metrics and state vocabulary are defined in the
 [design specification](design/).
 
+## Shots of an application
+
+`gpui-rhai shot` renders an application's view offscreen and saves PNGs
+(macOS only). The window opens off the screen and the frame is read back from
+the GPU, so nothing appears and no screen-recording permission is involved:
+
+```sh
+gpui-rhai shot --size 1280x800 --theme Nord/Dark --click Settings --out settings.png
+gpui-rhai shot --locale ar --out ar.png --key cmd-k --wait 300 --out palette.png
+```
+
+The steps run in order: `--size WxH` (1280x800 by default, before the view
+mounts), `--theme Family/Variant` or `--theme Variant` in the current family,
+`--locale ID`, `--click NAME` (the node whose accessible name is NAME, else the
+first whose name starts with it), `--key CHORD` (GPUI syntax, space-separated
+for several), `--wait MS` (advances the view's clock, so timers fire), `--out
+PATH` and `--steps FILE`. A steps file holds one JSON request per line in the
+[automation protocol](automation.md#json-lines-protocol), plus the shot
+commands `click` (`name`, or an automation `locator`), `keys`, `wait`
+(`millis`), `capture` (`path`), `theme` and `locale`:
+
+```json
+{"id":"open","command":"click","locator":{"kind":"role_name","role":"button","name":"Settings"}}
+{"command":"capture","path":"settings.png"}
+{"id":"q1","command":"query","locator":{"kind":"test_id","id":"theme-select"}}
+```
+
+Each line prints one response; the first failure stops the run. Images are in
+device pixels, so a 1280x800 window gives a 2560x1600 PNG on a Retina display.
+
+The command runs the application's `examples/shot.rs`, which `gpui-rhai init`
+writes. It mounts the view as `src/main.rs` does, so register the same
+extensions there, or fakes of the ones that need a network:
+
+```rust
+fn main() {
+    if let Err(error) = gpui_rhai::offscreen::run(|| gpui_rhai::script_view!().prepare()) {
+        eprintln!("shot: {error}");
+        std::process::exit(1);
+    }
+}
+```
+
+`gpui_rhai::offscreen` needs GPUI's `test-support`, which gpui-rhai's
+`offscreen-pre` feature (`offscreen-fast` on gpui-fast) turns on. Enable it in
+`[dev-dependencies]` only, as `init` does; Cargo builds examples with it and
+leaves it out of `cargo build` and `cargo build --release`:
+
+```toml
+[dev-dependencies]
+gpui-rhai = { version = "0.4", default-features = false, features = ["offscreen-pre"] }
+```
+
 ## Tabs, Button, and Badge control baseline
 
 The [component contracts](design/atoms.md) define control appearance; the [Tabs contract](components/catalog.md#tabs) defines

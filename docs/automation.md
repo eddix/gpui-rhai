@@ -84,3 +84,6 @@ a successful dispatch report. The codec performs no I/O beyond the supplied
 
 GPU screenshot capture remains a separate platform gate because it requires a
 painted window and renderer readback rather than a retained semantic snapshot.
+`gpui-rhai shot --steps FILE` provides one on macOS: it reads this protocol and
+adds `capture` and a few other shot commands
+([application shots](visual-testing.md#shots-of-an-application)).

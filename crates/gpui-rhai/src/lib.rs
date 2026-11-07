@@ -115,6 +115,8 @@ pub mod clock;
 mod collection_projection;
 mod island;
 pub mod motion;
+#[cfg(any(feature = "offscreen-pre", feature = "offscreen-fast"))]
+pub mod offscreen;
 
 #[cfg(feature = "gpui-pre")]
 pub use gpui;

@@ -46,6 +46,24 @@ enum Command {
     /// Build a macOS application bundle around the application's binaries,
     /// configured by `[package.metadata.gpui-rhai.bundle]` in Cargo.toml.
     Bundle(BundleArgs),
+    /// Render the view offscreen and save PNGs, through the application's
+    /// `examples/shot.rs` (macOS).
+    ///
+    /// The steps run in order: `--size WxH` (1280x800), `--theme
+    /// Family/Variant` or `--theme Variant`, `--locale ID`, `--click NAME`,
+    /// `--key CHORD` (such as `cmd-k`), `--wait MS`, `--out PATH` and `--steps
+    /// FILE` (JSON lines: automation commands plus `click`, `keys`, `wait`,
+    /// `capture`, `theme` and `locale`). Example: `gpui-rhai shot --theme
+    /// Nord/Dark --click Settings --out settings.png`.
+    Shot {
+        /// The steps, passed on to `examples/shot.rs`.
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            value_name = "STEPS"
+        )]
+        args: Vec<String>,
+    },
     /// Compare installed source with its registry baseline.
     Diff,
     /// Merge source updates from the bundled registry.
@@ -149,6 +167,7 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
         }
         Command::Dev { bundle: false } => project.dev()?,
         Command::Dev { bundle: true } => project.dev_bundle()?,
+        Command::Shot { args } => project.shot(&args)?,
         Command::Bundle(args) => {
             let options = gpui_rhai_cli::bundle::BundleOptions {
                 name: args.name,

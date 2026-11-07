@@ -20,6 +20,12 @@ gpui-fast = ["dep:gpui-fast", "dep:gpui-fast-platform"]
 charts = []
 dev-reload = ["dep:notify"]
 grain-backend = ["rhai/grain"]
+# `gpui_rhai::offscreen`, for an application's `examples/shot.rs`: the one
+# that matches the backend, only in `[dev-dependencies]`, since it turns on
+# GPUI's `test-support`. One feature per fork rather than weak `gpui?/...`
+# features: those would write the other fork into the application's lockfile.
+offscreen-pre = ["gpui-pre", "gpui/test-support", "gpui_platform/test-support"]
+offscreen-fast = ["gpui-fast", "gpui-fast/test-support", "gpui-fast-platform/test-support"]
 
 [dependencies]
 gpui = { workspace = true, optional = true }

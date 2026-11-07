@@ -65,10 +65,14 @@ jobs:
             echo 'gpui-component must not appear in the dependency graph'
             exit 1
           fi
+      - name: Keep GPUI test-support out of default and release builds
+        run: bash scripts/check-test-support.sh
       - name: Format
         run: cargo fmt --all -- --check
       # Every feature but the opt-in Grain backend, which the `stable` job
-      # checks; leaving it out lets the default-feature run below reuse Rhai.
+      # checks, and `offscreen-pre`, which the `native` job checks with GPUI's
+      # test-support; leaving them out lets the default-feature run below
+      # reuse Rhai and GPUI.
       - name: Clippy (MSRV)
         run: cargo clippy --workspace --all-targets --features gpui-rhai/charts,gpui-rhai/dev-reload -- -D warnings
       # Libraries, binaries and integration tests; examples are compiled by
@@ -109,8 +113,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.0
+          components: clippy
       - *sccache
       - *linux-test-deps
+      # `gpui_rhai::offscreen`, for an application's examples/shot.rs. Its
+      # renderer is macOS-only; Linux checks the rest.
+      - name: Offscreen feature
+        run: |
+          cargo clippy -p gpui-rhai --all-targets --locked --features offscreen-pre -- -D warnings
+          cargo test -p gpui-rhai --lib --locked --features offscreen-pre offscreen
       - name: Native keyboard test support
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
       # Every subtree of one node or more becomes a cache island, every view
@@ -142,7 +153,9 @@ jobs:
       - *sccache
       - *linux-test-deps
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --no-default-features --features gpui-rhai/gpui-fast,gpui-rhai/charts,gpui-rhai/dev-reload -- -D warnings
+        run: |
+          cargo clippy --workspace --all-targets --no-default-features --features gpui-rhai/gpui-fast,gpui-rhai/charts,gpui-rhai/dev-reload -- -D warnings
+          cargo clippy -p gpui-rhai --all-targets --locked --no-default-features --features offscreen-fast -- -D warnings
       - name: Test
         run: cargo test --workspace --lib --bins --tests --no-default-features --features gpui-rhai/gpui-fast,gpui-rhai/charts,gpui-rhai/dev-reload
       - name: Native tests
