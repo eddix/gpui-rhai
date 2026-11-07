@@ -32,7 +32,7 @@ base need not declare: `"100"` (the default), `"110"`, `"125"`, `"150"`,
 radius, metrics) and every typography size and line height, so type and the
 controls around it grow together and layouts reflow. Literal lengths stay as
 written: `px(320)` is the author's, `theme_length("metrics.label_column")` the
-theme's, and a component's default width written in pixels (Select's 280px, a
+theme's, and a component's default width written in pixels (Combobox's 280px, a
 Toast's 320px) does not grow; pass a token width where it should. A Host sets
 the scale for every view with `ThemeTokenOverrides::environment_defaults`
 (`"scale" => "125"`), a script for the whole application or a subtree with

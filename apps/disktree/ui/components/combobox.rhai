@@ -2,7 +2,7 @@
 {
   "id": "components/combobox",
   "export": "Combobox",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input"],
   "capabilities": {},
@@ -24,7 +24,7 @@
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.4.0",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input"], capabilities: #{},
         tokens: [
@@ -85,7 +85,7 @@ define_component(#{
             clear_label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                 doc: "Accessible name of the clear button shown with `clearable`; unset, the localized `common.clear` text." },
             trigger: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
-                doc: "Custom trigger that replaces the default field with its clear button and chevron; the panel then takes `width`." },
+                doc: "Custom trigger that replaces the default field with its clear button and chevron; the panel then takes `width`, or its content's width with `\"content\"`." },
             header: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Content at the top of the panel, above the search field." },
             footer: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
@@ -105,8 +105,12 @@ define_component(#{
                 doc: "Rows the list shows before it scrolls; group headings count as rows." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false, doc: "Control size; leave unset to inherit the environment size." },
-            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
-                doc: "Width of the default trigger, which the panel matches, or of the panel under a custom `trigger`; unset is 280 logical pixels." },
+            width: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
+                #{ type: "length" }, #{ type: "string", allowed: ["content"] }] } }, required: false, sensitive: false,
+                doc: "Width of the default trigger, or of the panel under a custom `trigger`; unset is 280 logical pixels. `\"content\"` fits the widest option (and the placeholder), at most 360 logical pixels; past 64 options it measures the 16 longest labels." },
+            panel_width: #{ schema: #{ type: "string", allowed: ["trigger", "content"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "trigger" },
+                doc: "With the default trigger: `trigger` makes the panel exactly as wide as the trigger; `content` makes it at least that wide and wider for longer options, whose labels it measures up to 480 logical pixels." },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "bottom" }, doc: "Side of the trigger the panel opens on." },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
@@ -146,6 +150,44 @@ define_component(#{
 });
 
 fn Combobox(props) { render_component("components/combobox", props) }
+
+// The labels a content width is measured from: every option of a short list, else the
+// longest 16 by character count, so a long list does not lay every label out.
+fn width_probe_labels(options) {
+    let labels = [];
+    if options.len <= 64 {
+        for option in options { labels.push(option.label); }
+        return labels;
+    }
+    for option in options {
+        let chars = option.label.len;
+        if labels.len < 16 || chars > labels[labels.len - 1].len {
+            let at = 0;
+            while at < labels.len && labels[at].len >= chars { at += 1; }
+            labels.insert(at, option.label);
+            if labels.len > 16 { labels.pop(); }
+        }
+    }
+    labels
+}
+
+// Lays rows out without showing them, so its width is the widest row's: what a content-sized
+// trigger or panel measures. Invisible, it is not painted or exposed to accessibility.
+fn width_probe(rows) {
+    column(rows).with_style(style().height(px(0)).overflow_hidden().invisible())
+}
+
+// The panel's own width: under a custom trigger, `width` unless it is "content"; with the
+// default trigger, the trigger's (the overlay sets it), or its content's at least that wide.
+fn panel_width_style(custom_trigger, width, content_width, panel_content) {
+    if custom_trigger {
+        if content_width { style().relative() } else { style().relative().width(width) }
+    } else if panel_content {
+        style().relative()
+    } else {
+        style().relative().width(relative(1.0))
+    }
+}
 
 // Square option rows clear the panel's rounded corner: every side pads by half of
 // radius.lg (clipping is rectangular). Menu and Command pad their panels the same way.
@@ -375,6 +417,11 @@ fn render_Combobox(ctx, props) {
     let mode = prop_or(props, "mode", "single");
     let reset_query = prop_or(props, "reset_query_on_close", false);
     let width = if "width" in props && props.width != () { props.width } else { px(280) };
+    let content_width = type_of(width) == "string";
+    let panel_content = prop_or(props, "panel_width", "trigger") == "content";
+    let probe_labels = if content_width || panel_content {
+        width_probe_labels(props.options)
+    } else { [] };
 
     let chosen = #{};
     for value in selected { chosen[value] = true; }
@@ -428,13 +475,23 @@ fn render_Combobox(ctx, props) {
     if !custom_trigger {
         // One line that gives way first: a long label or placeholder ends in an ellipsis so the
         // clear button and the chevron stay inside a fixed-width trigger.
-        trigger_children.push(text(if selected_label == "" { placeholder } else { selected_label })
+        let value = text(if selected_label == "" { placeholder } else { selected_label })
             .with_key(`${props.key}-trigger-value`)
             .with_style(ctx.component_style(
                 if selected_label == "" { "placeholder" } else { "value" },
                 style().flex_grow().min_width(px(0)).whitespace_nowrap().text_ellipsis()
                     .text_color(if selected_label == "" { theme_color("text_muted") }
-                    else { theme_color("text_primary") }))));
+                    else { theme_color("text_primary") })));
+        if content_width {
+            // The value sits over the probe, whose width is the widest option's.
+            let rows = [];
+            for label in probe_labels + [placeholder] {
+                rows.push(text(label).with_style(style().whitespace_nowrap()));
+            }
+            value = column([value, width_probe(rows)])
+                .with_style(style().flex_grow().min_width(px(0)));
+        }
+        trigger_children.push(value);
         let trigger_actions = [];
         if prop_or(props, "clearable", false) && selected.len > 0 {
             let clear_label = if "clear_label" in props && props.clear_label != () {
@@ -537,12 +594,25 @@ fn render_Combobox(ctx, props) {
         // either density. The estimate only seeds the first frame.
         let visible = prop_or(props, "max_visible", 8);
         if data.len < visible { visible = data.len; }
-        content.push(column([collection_scrollbars(ctx, props, virtual_collection(#{
+        let list = [collection_scrollbars(ctx, props, virtual_collection(#{
             key: `${props.key}-options`, label: props.label,
             data: data, estimated_height: 32, fill_height: true,
             overdraw_pixels: 64, alignment: "top", follow_tail: false
         }, Fn("render_combobox_row").curry(data.len).curry(mode).curry(selected)
-            .curry(reset_query)))])
+            .curry(reset_query)))];
+        if panel_content || (custom_trigger && content_width) {
+            // Option rows as render_combobox_row lays them out: the check column, the label.
+            let rows = [];
+            for label in probe_labels {
+                rows.push(row([
+                    row([]).with_style(style().width(theme_length("metrics.icon"))),
+                    text(label).with_style(style().whitespace_nowrap().max_width(px(480)))
+                ]).with_style(style().padding_x(theme_length("metrics.inset"))
+                    .gap(theme_spacing("sm")).typography("body")));
+            }
+            list.push(width_probe(rows));
+        }
+        content.push(column(list)
             .with_style(ctx.component_style("list", style()
                 .height(theme_length("metrics.row") * visible))));
     }
@@ -550,7 +620,7 @@ fn render_Combobox(ctx, props) {
     content.push(panel_focus_frame(ctx));
     let panel = column(content).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().relative().width(if custom_trigger { width } else { relative(1.0) })
+            panel_width_style(custom_trigger, width, content_width, panel_content)
             .min_width(px(0)).gap(theme_spacing("xs")).padding(list_panel_padding())
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("lg")).background(theme_color("surface_raised"))
@@ -587,12 +657,14 @@ fn render_Combobox(ctx, props) {
     let overlay_config = #{
         id: props.key, kind: "popover", placement: prop_or(props, "placement", "bottom"),
         open: open, align: "start", gap: 4, modal: false, dismiss_on_escape: true, dismiss_on_outside: true,
-        match_trigger_width: !custom_trigger
+        match_trigger_width: !custom_trigger && !panel_content,
+        min_trigger_width: !custom_trigger && panel_content
     };
     if "parent_overlay" in props && props.parent_overlay != () {
         overlay_config.parent = props.parent_overlay;
     }
     let root_style = if custom_trigger { style() }
+        else if content_width { style().max_width(px(360)).min_width(px(0)) }
         else { style().width(width).min_width(px(0)) };
     let node = overlay(trigger, panel, overlay_config)
         .with_key(props.key).with_style(ctx.component_style("root", root_style))

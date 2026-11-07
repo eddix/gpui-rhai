@@ -327,7 +327,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "invisible(_: &mut Style) -> Style",
         params: &[],
-        doc: "Hides the node but keeps its layout space; `visible` undoes it.",
+        doc: "Hides the node but keeps its layout space; like CSS `visibility: hidden`, its subtree also leaves the accessibility tree. `visible` undoes it.",
     },
     ScriptFnDoc {
         signature: "italic(_: &mut Style) -> Style",

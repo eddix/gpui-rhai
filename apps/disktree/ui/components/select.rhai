@@ -2,7 +2,7 @@
 {
   "id": "components/select",
   "export": "Select",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/combobox"],
   "capabilities": {},
@@ -18,7 +18,7 @@
 import "components/combobox" as combobox;
 
 define_component(#{
-    metadata: #{ id: "components/select", "export": "Select", version: "0.2.0",
+    metadata: #{ id: "components/select", "export": "Select", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/combobox"], capabilities: #{},
         tokens: ["border", "danger"],
@@ -74,8 +74,12 @@ define_component(#{
                 doc: "Marks the value invalid: the trigger border turns `danger` and accessibility reports it invalid." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false, doc: "Control size; leave unset to inherit the environment size." },
-            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
-                doc: "Width of the trigger, which the list matches; unset means 280 logical pixels." },
+            width: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [
+                #{ type: "length" }, #{ type: "string", allowed: ["content"] }] } }, required: false, sensitive: false,
+                doc: "Width of the trigger. Unset or `\"content\"`, it fits the widest option and the placeholder, at most 360 logical pixels, and ends a longer value in an ellipsis; past 64 options it measures the 16 longest labels. A stretching column still stretches it, up to that cap." },
+            panel_width: #{ schema: #{ type: "string", allowed: ["trigger", "content"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "content" },
+                doc: "`content` makes the list at least as wide as the trigger and wider for longer options, measured up to 480 logical pixels; `trigger` makes it exactly as wide as the trigger." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 32 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 },
                 doc: "Rows the list shows before it scrolls; group headings count as rows." },
@@ -127,7 +131,8 @@ fn render_Select(ctx, props) {
         max_visible: prop_or(props, "max_visible", 8),
         placement: prop_or(props, "placement", "bottom"),
         size: prop_or(props, "size", ()),
-        width: if "width" in props { props.width } else { px(280) },
+        width: if "width" in props && props.width != () { props.width } else { "content" },
+        panel_width: prop_or(props, "panel_width", "content"),
         on_change: Fn("select_values"),
         on_open_change: Fn("select_open"), on_query_change: Fn("select_query"),
         style: ctx.component_style("root", style()),

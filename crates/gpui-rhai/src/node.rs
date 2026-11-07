@@ -46,9 +46,21 @@ pub struct OverlayNodeSpec {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum OverlayWidthPolicy {
+    /// The panel takes its content's width.
     #[default]
     Content,
+    /// The panel takes the trigger's width.
     MatchTrigger,
+    /// The panel is at least as wide as the trigger, and wider for wider content.
+    AtLeastTrigger,
+}
+
+impl OverlayWidthPolicy {
+    /// Whether the trigger fills the overlay node, whose width the panel then
+    /// follows.
+    pub(crate) const fn follows_trigger(self) -> bool {
+        matches!(self, Self::MatchTrigger | Self::AtLeastTrigger)
+    }
 }
 
 /// Where focus lands on each closed -> open presentation cycle of a modal
@@ -3672,11 +3684,7 @@ pub(crate) fn overlay_node(
     let modal = optional_bool(&mut config, "modal")?
         .unwrap_or(matches!(kind, OverlayKind::Dialog | OverlayKind::Sheet));
     let activate_on_trigger = optional_bool(&mut config, "activate_on_trigger")?.unwrap_or(true);
-    let width_policy = if optional_bool(&mut config, "match_trigger_width")?.unwrap_or(false) {
-        OverlayWidthPolicy::MatchTrigger
-    } else {
-        OverlayWidthPolicy::Content
-    };
+    let width_policy = overlay_width_policy(&mut config)?;
     let initial_focus = match optional_string(&mut config, "initial_focus")?.as_deref() {
         None | Some("panel") => OverlayInitialFocus::Panel,
         Some("first") => OverlayInitialFocus::First,
@@ -3895,6 +3903,21 @@ fn overlay_type_error(name: &str, expected: &str) -> EvalAltResult {
         format!("overlay config field `{name}` must be {expected}").into(),
         Position::NONE,
     )
+}
+
+/// The panel's width against the trigger: `match_trigger_width` or
+/// `min_trigger_width`, at most one of them.
+fn overlay_width_policy(config: &mut Map) -> Result<OverlayWidthPolicy, Box<EvalAltResult>> {
+    let match_trigger = optional_bool(config, "match_trigger_width")?.unwrap_or(false);
+    let min_trigger = optional_bool(config, "min_trigger_width")?.unwrap_or(false);
+    match (match_trigger, min_trigger) {
+        (true, true) => overlay_config_error(
+            "overlay `match_trigger_width` and `min_trigger_width` exclude each other",
+        ),
+        (true, false) => Ok(OverlayWidthPolicy::MatchTrigger),
+        (false, true) => Ok(OverlayWidthPolicy::AtLeastTrigger),
+        (false, false) => Ok(OverlayWidthPolicy::Content),
+    }
 }
 
 fn overlay_config_error<T>(message: impl Into<String>) -> Result<T, Box<EvalAltResult>> {

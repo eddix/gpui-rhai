@@ -848,7 +848,7 @@ impl ScriptOverlayElement {
                     );
                 }
             });
-        if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
+        if self.spec.width_policy.follows_trigger() {
             trigger = trigger.w_full();
         }
         trigger.into_any_element()
@@ -916,8 +916,10 @@ impl ScriptOverlayElement {
                 }
             })
             .child(self.content.take().expect("overlay content rendered once"));
-        if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
-            panel = panel.w_full();
+        match self.spec.width_policy {
+            OverlayWidthPolicy::MatchTrigger => panel = panel.w_full(),
+            OverlayWidthPolicy::AtLeastTrigger => panel = panel.min_w_full(),
+            OverlayWidthPolicy::Content => {}
         }
         // The wrapper takes its content's width, so a percentage width inside it would
         // resolve against itself; it caps the dialog at 90% of the backdrop instead, and the
@@ -930,8 +932,10 @@ impl ScriptOverlayElement {
             self.build_modal_backdrop(panel, viewport)
         } else {
             let mut overlay = div().absolute();
-            if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
-                overlay = overlay.w_full();
+            match self.spec.width_policy {
+                OverlayWidthPolicy::MatchTrigger => overlay = overlay.w_full(),
+                OverlayWidthPolicy::AtLeastTrigger => overlay = overlay.min_w_full(),
+                OverlayWidthPolicy::Content => {}
             }
             overlay.child(panel).into_any_element()
         };
@@ -1113,7 +1117,7 @@ impl Element for ScriptOverlayElement {
                     flex_direction: FlexDirection::Column,
                     ..GpuiStyle::default()
                 };
-                if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
+                if self.spec.width_policy.follows_trigger() {
                     style.size.width = relative(1.0).into();
                 }
                 let layout = window.request_layout(style, children, cx);

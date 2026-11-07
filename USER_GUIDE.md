@@ -1352,7 +1352,9 @@ An anchored overlay can opt into `match_trigger_width: true`. Its native
 wrapper then follows the styled overlay-root allocation and provides that width
 to both the trigger and popup. Combobox uses this policy so `relative(...)` and
 caller-applied flex growth track the parent layout instead of collapsing to
-content width.
+content width. `min_trigger_width: true` lays the trigger out the same way but
+makes the popup only at least that wide, so wider content widens it; a Select's
+list uses it. The two exclude each other.
 
 While a modal is open, Overlay reasserts that focus remains inside its panel on
 every focus-driven GPUI frame. An embedding Host must not repeatedly focus an

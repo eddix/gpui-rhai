@@ -1,6 +1,6 @@
 # Combobox
 
-`components/combobox` · export `Combobox` · version 0.4.0. Generated from
+`components/combobox` · export `Combobox` · version 0.4.3. Generated from
 [`registry/components/combobox.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/combobox.rhai); do not edit.
 
 Public Rhai choice composition over Overlay, Input, and virtual_collection. State: caller owns selected/open/query; component owns only active-option navigation.
@@ -32,6 +32,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `on_submit` | callback or `()` | — | Called with the query when Enter is pressed in the search field and no enabled option matches it, so typed free text can be taken; while an option is active Enter picks it instead. |
 | `open` | bool | required | Whether the panel is open; the caller stores the `open_change` payload and passes it back. |
 | `options` | array of object (at most 100000) | required | Options in display order; options that share a `group` are gathered where that group first appears. |
+| `panel_width` | `"trigger"` or `"content"` | `"trigger"` | With the default trigger: `trigger` makes the panel exactly as wide as the trigger; `content` makes it at least that wide and wider for longer options, whose labels it measures up to 480 logical pixels. |
 | `parent_overlay` | string or `()` | — | Key of the open overlay this one nests in, such as a Dialog; the panel stacks above it and closes with it. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `placeholder` | string | `""` | Trigger text while nothing is selected. |
@@ -44,8 +45,8 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `selected` | array of string (at most 100000) | required | Selected option values, at most one in `single` mode, kept when no option has them (the trigger then shows the value itself); the caller stores the `change` payload and passes it back. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; leave unset to inherit the environment size. |
 | `style` | style | — | Style merged over the root part. |
-| `trigger` | node or `()` | — | Custom trigger that replaces the default field with its clear button and chevron; the panel then takes `width`. |
-| `width` | length or `()` | — | Width of the default trigger, which the panel matches, or of the panel under a custom `trigger`; unset is 280 logical pixels. |
+| `trigger` | node or `()` | — | Custom trigger that replaces the default field with its clear button and chevron; the panel then takes `width`, or its content's width with `"content"`. |
+| `width` | length or `"content"` or `()` | — | Width of the default trigger, or of the panel under a custom `trigger`; unset is 280 logical pixels. `"content"` fits the widest option (and the placeholder), at most 360 logical pixels; past 64 options it measures the 16 longest labels. |
 
 ### `options[]` fields
 

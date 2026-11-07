@@ -27,7 +27,7 @@ Functions that build `UiNode` values.
 | `image_source(source: ?) -> UiNode` | Creates an image node from `source`, an `AssetId` or an image handle; other values are rejected. |
 | `layer(content: UiNode, config: Map) -> UiNode` | Places `content` in a window-level layer; `config` needs `id` and may set `placement` (default `top_right`), `inset` (12 px) and `priority`. |
 | `motion_group(id: String, children: Array) -> UiNode` | Groups children in a layout-transparent fragment whose `shared_layout` nodes join group `id` (1 to 128 letters, digits, `_`, `-`). |
-| `overlay(trigger: UiNode, content: UiNode, config: Map) -> UiNode` | Anchors `content` to `trigger` in a window-level overlay; `config` needs `id` and sets `kind`, `open`, `placement`, `align`, `gap` and dismissal. |
+| `overlay(trigger: UiNode, content: UiNode, config: Map) -> UiNode` | Anchors `content` to `trigger` in a window-level overlay; `config` needs `id` and sets `kind`, `open`, `placement`, `align`, `gap`, dismissal, and the panel's width against the trigger (`match_trigger_width` or `min_trigger_width`). |
 | `render_component(id: String, props: Map) -> UiNode` | Renders the formal component registered as `id` with `props`, validated and defaulted; only during view render. |
 | `row(children: Array) -> UiNode` | Creates a box that lays its children out side by side (`flex_row`); every child must be a `UiNode`. |
 | `stack(children: Array) -> UiNode` | Creates a relatively positioned box, so children can be placed with `style().absolute()` and edge offsets. |
@@ -447,7 +447,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.inset_start(inset: AutoLength) -> Style` | Sets the inset from the logical start edge (left in LTR, right in RTL) to auto; overrides `left`/`right` on that side. |
 | `style.inset_start(inset: Length) -> Style` | Sets the inset from the logical start edge (left in LTR, right in RTL) in px, rem or a `relative` fraction; overrides `left`/`right` there. |
 | `style.inset_start(inset: SignedLength) -> Style` | Sets the inset from the logical start edge (left in LTR, right in RTL) to a signed `offset_*` length; overrides `left`/`right`. |
-| `style.invisible() -> Style` | Hides the node but keeps its layout space; `visible` undoes it. |
+| `style.invisible() -> Style` | Hides the node but keeps its layout space; like CSS `visibility: hidden`, its subtree also leaves the accessibility tree. `visible` undoes it. |
 | `style.italic() -> Style` | Sets the italic font style. |
 | `style.items_baseline() -> Style` | In a row, sets each text child's first baseline on the baseline of the row's own text style, as words in one line are set, so a smaller key legend sits on its label's baseline; other children align to the start. |
 | `style.items_center() -> Style` | Centers children on the container's cross axis. |
