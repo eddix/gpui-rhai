@@ -5,7 +5,17 @@ Copied themes, icons, palettes, and adapted source must add their attribution to
 this file before entering the official registry.
 
 The check, close, chevron, disclosure, calendar, date-navigation, and sort SVGs are original GPUI Rhai project assets. No third-party
-icon or raster image assets are currently included.
+raster image assets are currently included.
+
+## Lucide icons
+
+`registry/lucide/` holds Lucide 1.70.0 (`lucide-static` on npm), 2322 SVG
+icons, which `gpui-rhai add lucide/<name>` copies into an application. Lucide is
+ISC-licensed (Copyright (c) 2026 Lucide Icons and Contributors); the icons
+derived from the Feather project are MIT-licensed (Copyright (c) 2013-present
+Cole Bemis). The full text, with the list of Feather-derived icons, is
+`registry/lucide/LICENSE`, and `add` writes it to the application's
+`licenses/lucide-ISC.txt`. Each SVG keeps its `@license` comment.
 
 ## Direct Rust dependencies
 

@@ -58,6 +58,30 @@ in the metadata `assets` of the component that draws it, or load it with
 `ctx.load_image` as below. An SVG drawn with `currentColor` follows the text
 color.
 
+### Lucide
+
+The registry carries the full [Lucide](https://lucide.dev) set at one pinned
+release (`gpui_rhai_registry::LUCIDE_VERSION`, 1.70.0, 2322 icons). Install the
+icons an application draws by their Lucide names:
+
+```text
+gpui-rhai add lucide/house lucide/arrow-left
+```
+
+Each goes to `ui/assets/lucide/<name>.svg` with a baseline, as a component's
+assets do, and Lucide's license (ISC, and MIT for the icons derived from
+Feather) to `licenses/lucide-ISC.txt` at the project root, which `gpui-rhai
+bundle` copies into the application. Preparation preloads the installed icons,
+so a script draws one as any declared asset; they use `currentColor`:
+
+```rhai
+image_source(asset("app/lucide/house")).with_style(style().width(px(16)).height(px(16)))
+```
+
+When a later registry pins another Lucide release, `gpui-rhai update` moves the
+installed icons to it and merges local edits like any asset; an icon the
+release dropped stays the application's.
+
 ## Dynamic loading
 
 Application lifecycle code may still load or decode dynamic assets:

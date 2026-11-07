@@ -26,6 +26,8 @@ include = [
     "studio/**/*.rhai",
     "stories/**/*.rhai",
     "assets/**/*.svg",
+    "lucide/*.svg",
+    "lucide/LICENSE",
     "skills/**/*.md",
     "README.md",
     "LICENSE-*",
