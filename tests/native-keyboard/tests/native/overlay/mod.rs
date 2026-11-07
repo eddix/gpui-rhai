@@ -2,6 +2,7 @@
 
 mod command;
 mod command_dialog_options;
+mod dialog_size;
 mod focus;
 mod host_open_overlays;
 mod identity;

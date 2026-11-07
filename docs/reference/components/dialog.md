@@ -1,6 +1,6 @@
 # Dialog
 
-`components/dialog` · export `Dialog` · version 0.4.0. Generated from
+`components/dialog` · export `Dialog` · version 0.4.3. Generated from
 [`registry/components/dialog.rhai`](../../../registry/components/dialog.rhai); do not edit.
 
 Dialog presents controlled modal content through the native overlay layer.
@@ -18,7 +18,7 @@ dialog::Dialog(#{ key: "confirm", open: true, title: "Confirm", content: text("C
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `actions` | array of node (at most 8) | `[]` | Buttons in a row at the end of the panel, after the content. |
-| `content` | node | required | Body of the dialog, under the title. |
+| `content` | node | required | Body of the dialog, under the title; it scrolls when the panel would pass 90% of the window's height, the title and actions staying in view. |
 | `dismiss_on_escape` | bool | `true` | Whether Escape asks to close the dialog through `open_change`. |
 | `dismiss_on_outside` | bool | `true` | Whether a press on the backdrop asks to close the dialog through `open_change`. |
 | `initial_focus` | `"panel"` or `"first"` | `"panel"` | What takes focus when the dialog opens: `panel` the panel itself, `first` its first focusable control. |
@@ -29,6 +29,7 @@ dialog::Dialog(#{ key: "confirm", open: true, title: "Confirm", content: text("C
 | `style` | style | — | Style merged over the root part. |
 | `title` | string | required | Heading of the panel and the dialog's accessible name. |
 | `title_visible` | bool | `true` | Whether the title is drawn; a hidden title still names the dialog. |
+| `width` | length or `()` | — | Width of the panel; unset is 420 logical pixels. The panel never passes 90% of the window's width or height. |
 
 ## Events
 
@@ -45,9 +46,9 @@ dialog::Dialog(#{ key: "confirm", open: true, title: "Confirm", content: text("C
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `backdrop`, `content`, `focus_frame`, `panel`, `root`, `title`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `backdrop`, `content`, `focus_frame`, `panel`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `title`.
 
 ## Theme
 
-- Tokens: `border`, `focus_ring`, `radius.lg`, `space.group`, `space.related`, `spacing.xl`, `surface_raised`, `text_primary`, `typography.body`, `typography.title`
+- Tokens: `border`, `focus_ring`, `radius.lg`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `space.group`, `space.related`, `spacing.xl`, `surface_raised`, `text_primary`, `typography.body`, `typography.title`
 - Environment: `density`

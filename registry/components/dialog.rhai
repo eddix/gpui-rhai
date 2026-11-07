@@ -2,13 +2,14 @@
 {
   "id": "components/dialog",
   "export": "Dialog",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "tokens": [
     "surface_raised", "border", "text_primary", "focus_ring", "spacing.xl", "space.group",
-    "space.related", "radius.lg", "typography.title", "typography.body"
+    "space.related", "radius.lg", "typography.title", "typography.body", "scrollbar.thumb",
+    "scrollbar.thumb_hover"
   ],
   "environment": ["density"]
 }
@@ -22,13 +23,14 @@ define_component(#{
     metadata: #{
         id: "components/dialog",
         "export": "Dialog",
-        version: "0.4.0",
+        version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
         tokens: [
             "surface_raised", "border", "text_primary", "focus_ring", "spacing.xl",
-            "space.group", "space.related", "radius.lg", "typography.title", "typography.body"
+            "space.group", "space.related", "radius.lg", "typography.title", "typography.body",
+            "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
         environment: ["density"],
     },
@@ -44,7 +46,9 @@ define_component(#{
                 "default": #{ type: "bool", value: true },
                 doc: "Whether the title is drawn; a hidden title still names the dialog." },
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
-                doc: "Body of the dialog, under the title." },
+                doc: "Body of the dialog, under the title; it scrolls when the panel would pass 90% of the window's height, the title and actions staying in view." },
+            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "Width of the panel; unset is 420 logical pixels. The panel never passes 90% of the window's width or height." },
             actions: #{
                 schema: #{ type: "array", items: #{ type: "node" }, max_items: 8 },
                 required: false,
@@ -87,7 +91,8 @@ define_component(#{
             content: #{ required: true, multiple: false, doc: "Body of the dialog, under the title." },
             actions: #{ required: false, multiple: true, doc: "Buttons in a row at the end of the panel." },
         },
-        parts: ["root", "backdrop", "panel", "title", "content", "actions", "focus_frame"],
+        parts: ["root", "backdrop", "panel", "title", "content", "actions", "focus_frame",
+            "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Dialog")
 });
@@ -121,8 +126,18 @@ fn render_Dialog(ctx, props) {
                 .text_color(theme_color("text_primary"))
         )));
     }
-    children.push(props.content.with_style(ctx.component_style("content",
-        style().typography("body"))));
+    // The body scrolls once the overlay's 90% cap squeezes the panel; the title and the
+    // actions keep their height.
+    children.push(box([props.content]).with_key("body")
+        .with_style(ctx.component_style("content",
+            style().typography("body").relative().min_height(px(0)).overflow_y_scroll()))
+        .with_part_style("scrollbar_track", ctx.component_style("scrollbar_track",
+            style().background(rgba(0x00000000))))
+        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb",
+            style().background(theme_color("scrollbar.thumb"))))
+        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover",
+            style().background(theme_color("scrollbar.thumb_hover"))))
+        .scrollbars("hidden", "auto"));
     if "actions" in props && props.actions != () {
         children.push(
             row(props.actions)
@@ -136,9 +151,11 @@ fn render_Dialog(ctx, props) {
             // Overlays are raised blocks with a hairline; no shadow.
             style()
                 .relative()
-                .width(px(420))
-                // The overlay caps the panel at 90% of the window; it may fill that.
+                .width(if "width" in props && props.width != () { props.width } else { px(420) })
+                // The overlay caps the panel at 90% of the window on both axes; it may fill
+                // that width, and shrinks to that height.
                 .max_width(relative(1.0))
+                .min_height(px(0))
                 .padding(theme_spacing("xl"))
                 .gap(theme_length("space.group"))
                 .radius(theme_radius("lg"))
