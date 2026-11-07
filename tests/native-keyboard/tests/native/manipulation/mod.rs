@@ -3,6 +3,7 @@
 
 mod contracts;
 mod drag_continuation;
+mod file_drops;
 mod resizable_grip_cursor;
 mod slider;
 mod transformed_selection;

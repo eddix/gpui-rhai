@@ -35,7 +35,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/divider`](components/divider.md) | `Divider` | Divider separates adjacent content without owning layout spacing. |
 | [`components/drag_source`](components/drag_source.md) | `DragSource` | Typed in-application data drag source. |
 | [`components/draggable`](components/draggable.md) | `Draggable` | Controlled in-window positioning. |
-| [`components/drop_zone`](components/drop_zone.md) | `DropZone` | Typed same-Host application drop target. |
+| [`components/drop_zone`](components/drop_zone.md) | `DropZone` | Typed same-Host application drop target; with `os.files`, also files and folders the operating system drags in, when the Host accepts file drops. |
 | [`components/empty`](components/empty.md) | `Empty` | Consistent empty-state composition with optional icon, content, and actions. |
 | [`components/form_field`](components/form_field.md) | `FormField` | Associates label, control, description, required state, and error content. |
 | [`components/group_box`](components/group_box.md) | `GroupBox` | Labelled group of related controls or settings: a top hairline and a label-voice heading on the parent's content edge, with no surface of its own. |

@@ -90,8 +90,10 @@ the target's single `drop(...)` proposal and the source's `drag_end(...)`
 result; cancellation and rejection leave committed ownership unchanged.
 
 An optional `keyboard_target` lets a focused source invoke the same typed target
-contract with Enter/Space. OS/file drops and cross-window transfer remain Host
-integration responsibilities.
+contract with Enter/Space. With `os.files` in `payload_types`, a DropZone also
+takes files and folders the operating system drags in, as opaque handles, when
+the Host calls `ScriptView::accept_file_drops(true)` ([embedding](../embedding.md#files-dropped-from-the-operating-system)).
+Cross-window transfer remains a Host integration responsibility.
 
 Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
 [drop_zone.rhai](../../registry/components/drop_zone.rhai).

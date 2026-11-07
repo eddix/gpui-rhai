@@ -1346,6 +1346,32 @@ impl ScriptViewHandle {
         Ok(self.0.entity.read(cx).lifecycle.revision())
     }
 
+    /// The path of a file or folder dropped from the operating system, by the
+    /// opaque `file` handle its `drop` event gave the script
+    /// ([`ScriptView::accept_file_drops`]); `None` for any other handle. A
+    /// capability handler, which gets no `App`, uses a clone of
+    /// [`crate::UiRuntimeState::dropped_files`] instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn dropped_file_path(
+        &self,
+        handle: &crate::OpaqueHandle,
+        cx: &App,
+    ) -> Result<Option<PathBuf>, ScriptViewError> {
+        self.require_not_disposed()?;
+        Ok(self
+            .0
+            .entity
+            .read(cx)
+            .lifecycle
+            .runtime()
+            .borrow()
+            .dropped_files
+            .path(handle))
+    }
+
     /// Return the latest mounted-view render, callback, delivery, or reload error.
     ///
     /// A failed transaction rolls back to the last committed tree, and the view
@@ -2446,6 +2472,7 @@ pub struct ScriptView {
     token_base: Option<String>,
     theme_token_overrides: ThemeTokenOverrides,
     execution_policy: ScriptExecutionPolicy,
+    accept_file_drops: bool,
 }
 
 impl ScriptView {
@@ -2467,6 +2494,7 @@ impl ScriptView {
             token_base: None,
             theme_token_overrides: ThemeTokenOverrides::default(),
             execution_policy: ScriptExecutionPolicy::default(),
+            accept_file_drops: false,
         }
     }
 
@@ -2516,6 +2544,17 @@ impl ScriptView {
     #[must_use]
     pub fn ui_override_env(mut self, name: impl Into<String>) -> Self {
         self.ui_override_env = Some(name.into());
+        self
+    }
+
+    /// Let a `DropZone` that lists the `os.files` payload type take files and
+    /// folders the operating system drags in. Off by default. The script's
+    /// `drop` event carries an opaque handle for each, never its path; the Host
+    /// turns one back into the path with [`crate::DroppedFiles::path`] on
+    /// [`crate::UiRuntimeState::dropped_files`].
+    #[must_use]
+    pub const fn accept_file_drops(mut self, accept: bool) -> Self {
+        self.accept_file_drops = accept;
         self
     }
 
@@ -2755,6 +2794,7 @@ impl ScriptView {
             render_islands: Cell::new(None),
             focus_indicators: Cell::new(FocusIndicators::Navigation),
             execution_policy: self.execution_policy,
+            accept_file_drops: self.accept_file_drops,
             #[cfg(feature = "dev-reload")]
             development: self.development,
         })
@@ -3560,6 +3600,8 @@ struct ScriptWindowFactory {
     /// The mounting view's [`ScriptViewConfig::focus_indicators`].
     focus_indicators: Cell<FocusIndicators>,
     execution_policy: ScriptExecutionPolicy,
+    /// [`ScriptView::accept_file_drops`], for every view the factory mounts.
+    accept_file_drops: bool,
     #[cfg(feature = "dev-reload")]
     development: bool,
 }
@@ -3588,6 +3630,10 @@ impl ScriptWindowFactory {
             mount_lease,
         )?;
         let primitives = engine.primitive_registry();
+        primitives.set_file_drops(
+            self.accept_file_drops
+                .then(|| self.runtime.borrow().dropped_files.clone()),
+        );
         Ok((engine, lifecycle, primitives))
     }
 
@@ -3845,6 +3891,11 @@ impl PreparedScriptView {
             self.development,
         );
         let primitives = self.engine.primitive_registry();
+        primitives.set_file_drops(
+            self.factory
+                .accept_file_drops
+                .then(|| self.factory.runtime.borrow().dropped_files.clone()),
+        );
         let timings = self.engine.take_timings();
         let factory = Rc::clone(&self.factory);
         let overlays = host.overlays();

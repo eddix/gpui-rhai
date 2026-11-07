@@ -801,9 +801,10 @@ Official components wrap them; application components may too.
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `disabled` | bool | `false` | Takes the zone out of drag targeting, so it neither highlights nor accepts drops. |
+| `file_kinds` | array of `"file"` or `"dir"` (at most 2) or `()` | — | With `os.files`, the kinds a file drag may hold, `file`, `dir` or both (the default); a drag holding another kind cannot drop. |
 | `on_drop` | callback or `()` | — | Called with the drop proposal when an accepted drag is released over this zone or a keyboard drop targets it. |
 | `operations` | array of `"copy"` or `"move"` (at most 2) | required | Operations this zone accepts, `copy`, `move` or both; other drags cannot drop here. |
-| `payload_types` | array of string (at most 32) | required | Payload types this zone accepts; a drag of another type shows the invalid highlight and cannot drop. |
+| `payload_types` | array of string (at most 32) | required | Payload types this zone accepts; a drag of another type shows the invalid highlight and cannot drop. `os.files` takes files the operating system drags in, when the Host accepts file drops. |
 | `priority` | integer | — | Rank among overlapping zones: the highest wins, then the smallest area; defaults to 0. |
 | `target_id` | string | required | Stable identifier of this zone; it is `target_id` in `drop` and in the source's `drag_end`. |
 

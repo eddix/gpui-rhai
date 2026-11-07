@@ -853,6 +853,9 @@ pub struct PrimitiveContext {
     focus_handle: Option<gpui::FocusHandle>,
     /// Whether the view shows focus indicators this frame.
     focus_indicators: bool,
+    /// Where dropped files go when the Host accepts file drops, read before the
+    /// render borrows the registry.
+    file_drops: Option<crate::DroppedFiles>,
 }
 
 /// A schema-checked semantic proposal produced by a native primitive policy.
@@ -1097,6 +1100,12 @@ impl PrimitiveContext {
             });
         };
         dispatcher.write_signals(updates, cx)
+    }
+
+    /// Where dropped files go, when the Host lets this view take files the
+    /// operating system drags in.
+    pub(crate) const fn file_drops(&self) -> Option<&crate::DroppedFiles> {
+        self.file_drops.as_ref()
     }
 
     pub(crate) fn interaction_owner(&self, key: &str) -> crate::interaction::InteractionOwner {
@@ -1420,6 +1429,9 @@ struct PrimitiveRegistryInner {
     entries: BTreeMap<PrimitiveId, PrimitiveEntry>,
     mounted: BTreeMap<PrimitiveInstanceId, PrimitiveInstance>,
     generation: ScriptGeneration,
+    /// Where `DropZone`s keep the files the operating system drops, when the
+    /// Host accepts file drops ([`crate::ScriptView::accept_file_drops`]).
+    file_drops: Option<crate::DroppedFiles>,
 }
 
 #[derive(Clone, Default)]
@@ -1443,6 +1455,12 @@ impl fmt::Debug for PrimitiveRegistry {
 impl PrimitiveRegistry {
     pub(crate) fn generation(&self) -> ScriptGeneration {
         self.inner.borrow().generation
+    }
+
+    /// Let `DropZone`s with the `os.files` payload type take files the
+    /// operating system drags in, kept in `files`; `None` turns it off.
+    pub(crate) fn set_file_drops(&self, files: Option<crate::DroppedFiles>) {
+        self.inner.borrow_mut().file_drops = files;
     }
 
     pub(crate) fn set_generation(&self, generation: ScriptGeneration) {
@@ -2175,6 +2193,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             retained_node: self.retained.as_ref().map(|(node, _)| *node),
             focus_handle: self.focus_handle.clone().or(self.runtime.host_focus),
             focus_indicators: self.runtime.focus_indicators,
+            file_drops: registry.inner.borrow().file_drops.clone(),
         };
         match registry.render_instance(
             self.node,
@@ -2829,6 +2848,7 @@ mod tests {
             retained_node: None,
             focus_handle: None,
             focus_indicators: true,
+            file_drops: None,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

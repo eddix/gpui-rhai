@@ -234,8 +234,8 @@ pub use document_view::{
     code_viewer_primitive_descriptor, diff_viewer_primitive_descriptor, init_document_view,
 };
 pub use drag_drop::{
-    DragSourcePrimitiveHandler, DropZonePrimitiveHandler, drag_source_primitive_descriptor,
-    drop_zone_primitive_descriptor,
+    DragSourcePrimitiveHandler, DropZonePrimitiveHandler, DroppedFiles,
+    drag_source_primitive_descriptor, drop_zone_primitive_descriptor,
 };
 pub use draggable::{DraggablePrimitiveHandler, draggable_primitive_descriptor};
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};

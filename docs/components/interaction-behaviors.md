@@ -215,9 +215,10 @@ from the source and inserting into the destination. Copy and move are distinct
 operations when offered.
 
 Payloads are bounded typed application data, not arbitrary executable callbacks
-or retained GPUI objects. OS file drops and cross-window/platform drag sessions
-need explicit Host integration and permissions; an in-app DropZone must not
-silently grant script filesystem access. Provide a keyboard-equivalent operation.
+or retained GPUI objects. OS file drops need the Host's opt-in
+(`ScriptView::accept_file_drops`) and reach scripts as opaque handles, never
+paths, so a DropZone grants no filesystem access; cross-window and platform drag
+sessions need explicit Host integration. Provide a keyboard-equivalent operation.
 
 `DragSource` requires stable `key`, `label`, `source_id`, `payload_type`, bounded
 `payload`, `operation`, and `content`. It supports threshold, disabled state,

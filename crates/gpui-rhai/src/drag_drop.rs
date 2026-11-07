@@ -6,9 +6,10 @@ use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, AppContext, Background, Bounds, Context, DispatchPhase, Edges, Element,
-    ElementId, Entity, FocusHandle, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId,
-    InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent,
-    PaintQuad, ParentElement, Pixels, Render, Style, Styled, Window, div, px, relative, rgba, size,
+    ElementId, Entity, ExternalPaths, FocusHandle, GlobalElementId, Hitbox, HitboxBehavior,
+    InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton,
+    MouseDownEvent, PaintQuad, ParentElement, Pixels, Render, Style, Styled, Window, div, px,
+    relative, rgba, size,
 };
 
 use crate::{
@@ -210,11 +211,43 @@ fn drag_spec(
     )
 }
 
+/// The payload type a zone lists to take files the operating system drags in.
+const OS_FILES: &str = "os.files";
+
+/// The files and folders dropped from the operating system, by the opaque `file`
+/// handle a script got for each in its `drop` event. When the Host accepts file
+/// drops ([`crate::ScriptView::accept_file_drops`]), `UiRuntimeState::dropped_files`
+/// keeps them; an extension clones it in `configure_runtime` and turns a handle a
+/// capability call passes back into the path. Scripts only ever see the handle.
+#[derive(Clone, Debug, Default)]
+pub struct DroppedFiles(Rc<RefCell<Vec<std::path::PathBuf>>>);
+
+impl DroppedFiles {
+    /// The path of the dropped file or folder `handle` stands for; `None` for any
+    /// other handle.
+    #[must_use]
+    pub fn path(&self, handle: &crate::OpaqueHandle) -> Option<std::path::PathBuf> {
+        if handle.kind() != "file" {
+            return None;
+        }
+        let index = usize::try_from(handle.id()).ok()?;
+        self.0.borrow().get(index).cloned()
+    }
+
+    fn insert(&self, path: std::path::PathBuf) -> crate::OpaqueHandle {
+        let mut paths = self.0.borrow_mut();
+        paths.push(path);
+        crate::OpaqueHandle::new("file", u64::try_from(paths.len() - 1).unwrap_or(u64::MAX))
+    }
+}
+
 #[derive(Clone)]
 struct DropZoneConfig {
     id: String,
     target_id: String,
     payload_types: BTreeSet<String>,
+    /// `file`, `dir` or both when `payload_types` lists `os.files`; else empty.
+    file_kinds: BTreeSet<String>,
     operations: BTreeSet<crate::interaction::DragOperation>,
     priority: i64,
     disabled: bool,
@@ -516,12 +549,117 @@ impl PrimitiveHandler for DropZonePrimitiveHandler {
         _: &mut Window,
         _: &mut App,
     ) -> Result<AnyElement, String> {
-        Ok(DropZoneElement {
-            config: parse_target(&instance.node.props, theme)?,
-            context: context.clone(),
-        }
-        .into_any_element())
+        let config = parse_target(&instance.node.props, theme)?;
+        let files = context
+            .file_drops()
+            .filter(|_| !config.file_kinds.is_empty() && !config.disabled)
+            .cloned();
+        let Some(files) = files else {
+            return Ok(DropZoneElement {
+                config,
+                context: context.clone(),
+            }
+            .into_any_element());
+        };
+        let kinds = config.file_kinds.clone();
+        let target_id = config.target_id.clone();
+        let accent = config.accent;
+        let fill = Rgba8::from_rgba_hex((accent.as_rgba_hex() & 0xffff_ff00) | 0x28);
+        let drop_context = context.clone();
+        // A file drag from the operating system is GPUI's own drag of `ExternalPaths`,
+        // which a div's drop listeners take; the zone's element keeps the typed
+        // application drags.
+        Ok(div()
+            .size_full()
+            .child(DropZoneElement {
+                config,
+                context: context.clone(),
+            })
+            .can_drop(move |value, _, _| {
+                value.downcast_ref::<ExternalPaths>().is_some_and(|paths| {
+                    paths
+                        .paths()
+                        .iter()
+                        .all(|path| kinds.contains(file_kind(path)))
+                })
+            })
+            .drag_over::<ExternalPaths>(move |style, _, _, _| {
+                style
+                    .bg(rgba(fill.as_rgba_hex()))
+                    .border_1()
+                    .border_color(rgba(accent.as_rgba_hex()))
+            })
+            .on_drop(move |paths: &ExternalPaths, window, cx| {
+                let files = paths
+                    .paths()
+                    .iter()
+                    .filter_map(|path| dropped_file(&files, path))
+                    .collect();
+                drop_context.propose(
+                    "drop",
+                    file_drop_value(&target_id, files, window.mouse_position()),
+                    window,
+                    cx,
+                );
+            })
+            .into_any_element())
     }
+}
+
+/// `dir` for a folder, `file` for anything else.
+fn file_kind(path: &std::path::Path) -> &'static str {
+    if path.is_dir() { "dir" } else { "file" }
+}
+
+/// What a script learns of a dropped file: an opaque handle, the name without
+/// its folders, the size of a file and the kind.
+fn dropped_file(files: &DroppedFiles, path: &std::path::Path) -> Option<UiValue> {
+    let metadata = std::fs::metadata(path).ok()?;
+    let name = path.file_name().map_or_else(
+        || path.to_string_lossy().into_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    let file = files.insert(path.to_path_buf());
+    Some(UiValue::Map(BTreeMap::from([
+        ("file".to_owned(), UiValue::Handle(file)),
+        ("name".to_owned(), UiValue::String(name)),
+        (
+            "size".to_owned(),
+            if metadata.is_dir() {
+                UiValue::Null
+            } else {
+                UiValue::Integer(i64::try_from(metadata.len()).unwrap_or(i64::MAX))
+            },
+        ),
+        (
+            "kind".to_owned(),
+            UiValue::String(file_kind(path).to_owned()),
+        ),
+    ])))
+}
+
+fn file_drop_value(target_id: &str, files: Vec<UiValue>, position: gpui::Point<Pixels>) -> UiValue {
+    UiValue::Map(BTreeMap::from([
+        ("source_id".to_owned(), UiValue::String("os".to_owned())),
+        (
+            "target_id".to_owned(),
+            UiValue::String(target_id.to_owned()),
+        ),
+        (
+            "payload_type".to_owned(),
+            UiValue::String(OS_FILES.to_owned()),
+        ),
+        (
+            "payload".to_owned(),
+            UiValue::Map(BTreeMap::from([(
+                "files".to_owned(),
+                UiValue::Array(files),
+            )])),
+        ),
+        ("operation".to_owned(), UiValue::String("copy".to_owned())),
+        ("x".to_owned(), UiValue::Float(f64::from(position.x))),
+        ("y".to_owned(), UiValue::Float(f64::from(position.y))),
+    ]))
 }
 
 fn parse_source(
@@ -566,10 +704,22 @@ fn parse_target(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<DropZo
     if payload_types.is_empty() || operations.is_empty() {
         return Err("drop zone requires at least one payload type and operation".to_owned());
     }
+    let file_kinds = if !payload_types.contains(OS_FILES) {
+        BTreeSet::new()
+    } else if matches!(props.data("file_kinds"), Some(UiValue::Array(_))) {
+        let kinds = string_set(props, "file_kinds")?;
+        if kinds.is_empty() || kinds.iter().any(|kind| kind != "file" && kind != "dir") {
+            return Err("drop zone file_kinds must be `file`, `dir` or both".to_owned());
+        }
+        kinds
+    } else {
+        BTreeSet::from(["file".to_owned(), "dir".to_owned()])
+    };
     Ok(DropZoneConfig {
         id: format!("gpui-rhai-drop-zone:{target_id}"),
         target_id,
         payload_types,
+        file_kinds,
         operations,
         priority: props.integer("priority").unwrap_or(0),
         disabled: props.boolean("disabled").unwrap_or(false),
@@ -784,7 +934,19 @@ pub fn drop_zone_primitive_descriptor() -> PrimitiveDescriptor {
                     max_items: Some(32),
                 })
                 .with_doc(
-                    "Payload types this zone accepts; a drag of another type shows the invalid highlight and cannot drop.",
+                    "Payload types this zone accepts; a drag of another type shows the invalid highlight and cannot drop. `os.files` takes files the operating system drags in, when the Host accepts file drops.",
+                ),
+            ),
+            (
+                "file_kinds".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Array {
+                    items: Box::new(ValueSchema::String {
+                        allowed: vec!["file".to_owned(), "dir".to_owned()],
+                    }),
+                    max_items: Some(2),
+                }))
+                .with_doc(
+                    "With `os.files`, the kinds a file drag may hold, `file`, `dir` or both (the default); a drag holding another kind cannot drop.",
                 ),
             ),
             (
