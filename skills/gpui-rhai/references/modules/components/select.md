@@ -1,6 +1,6 @@
 # Select
 
-`components/select` · export `Select` · version 0.2.0. Generated from
+`components/select` · export `Select` · version 0.4.3. Generated from
 [`registry/components/select.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/select.rhai); do not edit.
 
 Scalar controlled Select composed from the public Rhai Combobox component. State: caller owns value/open/query; Combobox owns only active-option navigation.
@@ -28,6 +28,7 @@ select::Select(#{ key: "country", label: "Country", options: countries, value: "
 | `on_query_change` | callback or `()` | — | Called with the new search text as the user types, and with `""` when the list closes or the value is cleared. |
 | `open` | bool | required | Whether the list is open; the caller stores the `open_change` payload and passes it back. |
 | `options` | array of object (at most 100000) | required | Options in display order; options that share a `group` are gathered where that group first appears. |
+| `panel_width` | `"trigger"` or `"content"` | `"content"` | `content` makes the list at least as wide as the trigger and wider for longer options, measured up to 480 logical pixels; `trigger` makes it exactly as wide as the trigger. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `placeholder` | string | `""` | Trigger text while nothing is selected. |
 | `placement` | `"top"` or `"bottom"` or `"left"` or `"right"` | `"bottom"` | Side of the trigger the list opens on. |
@@ -37,7 +38,7 @@ select::Select(#{ key: "country", label: "Country", options: countries, value: "
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; leave unset to inherit the environment size. |
 | `style` | style | — | Style merged over the root part. |
 | `value` | string or `()` | — | Selected option value, or `()` for none, shown as is when no option has it; the caller stores the `change` payload and passes it back. |
-| `width` | length or `()` | — | Width of the trigger, which the list matches; unset means 280 logical pixels. |
+| `width` | length or `"content"` or `()` | — | Width of the trigger. Unset or `"content"`, it fits the widest option and the placeholder, at most 360 logical pixels, and ends a longer value in an ellipsis; past 64 options it measures the 16 longest labels. A stretching column still stretches it, up to that cap. |
 
 ### `options[]` fields
 

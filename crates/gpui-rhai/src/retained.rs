@@ -49,6 +49,8 @@ impl RetainedChildLink {
     }
 }
 
+// Independent per-node flags, each read on its own path.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct RetainedNode {
     id: NodeId,
@@ -65,6 +67,10 @@ pub struct RetainedNode {
     handler_payloads: BTreeMap<String, crate::UiValue>,
     scrollable: bool,
     focus_styled: bool,
+    /// Whether the node's base style is `invisible()`: it takes its place in
+    /// layout, but neither it nor its subtree is painted or exposed to
+    /// accessibility.
+    invisible: bool,
     /// Whether the node's own style leaves its height to its content, so a
     /// cache island can be pinned to the height it measures there.
     sized_by_content: bool,
@@ -319,6 +325,11 @@ impl RetainedNode {
     #[must_use]
     pub const fn focus_styled(&self) -> bool {
         self.focus_styled
+    }
+
+    /// Whether the node's base style is `invisible()`.
+    pub(crate) const fn invisible(&self) -> bool {
+        self.invisible
     }
 
     /// Whether the node's base style leaves its height to its content.
@@ -909,6 +920,7 @@ impl ReconcileTransaction<'_> {
             handler_payloads: candidate.handler_payloads().clone(),
             scrollable: snapshot_scrollable(candidate),
             focus_styled: candidate.style().focus.is_some(),
+            invisible: candidate.style().base.visible == Some(false),
             sized_by_content: crate::renderer::island_root_sized_by_content(
                 &candidate.style().base,
             ),

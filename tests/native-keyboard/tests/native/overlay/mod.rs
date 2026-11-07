@@ -14,3 +14,4 @@ mod panel_focus_frame;
 mod sheet;
 mod toast_stack;
 mod trigger_layout;
+mod trigger_width;

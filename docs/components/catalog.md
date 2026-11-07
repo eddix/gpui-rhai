@@ -363,7 +363,11 @@ Source: [sliding_panel.rhai](../../registry/components/sliding_panel.rhai).
 - `Select` is scalar choice. `Combobox` is searchable single/multiple choice;
   with `on_submit`, Enter in its search field submits typed free text when no
   enabled option matches. Both are strictly controlled for value, open state,
-  and query.
+  and query. A Select without a `width` fits its widest option, up to 360
+  logical pixels, so it keeps one width whatever is picked, and its list is at
+  least as wide as the trigger and wider for longer options (`panel_width`).
+  Combobox keeps its 280-pixel default and takes `width: "content"` and
+  `panel_width: "content"` to do the same.
 - `DatePicker` remains a controlled ISO-date composition over public calendar
   helpers and Overlay.
 

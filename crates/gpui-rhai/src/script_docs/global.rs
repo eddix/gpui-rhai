@@ -527,7 +527,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "overlay(_: UiNode, _: UiNode, _: map) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["trigger", "content", "config"],
-        doc: "Anchors `content` to `trigger` in a window-level overlay; `config` needs `id` and sets `kind`, `open`, `placement`, `align`, `gap` and dismissal.",
+        doc: "Anchors `content` to `trigger` in a window-level overlay; `config` needs `id` and sets `kind`, `open`, `placement`, `align`, `gap`, dismissal, and the panel's width against the trigger (`match_trigger_width` or `min_trigger_width`).",
     },
     ScriptFnDoc {
         signature: "path_close() -> CanvasPathSegment",

@@ -1,5 +1,6 @@
 //! Combobox and Select: picks, free-text submit, unknown selections, trigger layout and width.
 
+mod content_width;
 mod picks;
 mod pointer_and_width;
 mod submit;

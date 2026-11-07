@@ -283,6 +283,9 @@ fn content_name(tree: &RetainedUiTree, node: &RetainedNode) -> String {
         let Some(child) = tree.node(link.node()) else {
             continue;
         };
+        if child.invisible() {
+            continue;
+        }
         if let Some(label) = string_attribute(child, "label") {
             parts.push(label);
         } else if let Some(text) = child.text() {
@@ -312,6 +315,12 @@ fn visit_retained(
     let retained = tree
         .node(id)
         .ok_or(AccessibilityError::MissingRetainedNode(id))?;
+    // As CSS `visibility: hidden`: an invisible subtree keeps its place in
+    // layout (a width probe, for instance) but is not there for assistive
+    // technology or automation.
+    if retained.invisible() {
+        return Ok(());
+    }
     // A node is disabled when it or any retained ancestor is disabled.
     let disabled = disabled_above || bool_attribute(retained, "disabled");
     let semantic = semantic_node(retained, semantic_parent, disabled, labels)?.map(|mut node| {
