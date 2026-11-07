@@ -6834,6 +6834,14 @@ impl ScriptHostView {
                         );
                     cx.notify();
                 }
+                crate::element_ref::ElementCommand::ScrollCollectionToKey { id, item, .. } => {
+                    self.lifecycle
+                        .runtime()
+                        .borrow()
+                        .virtual_requests
+                        .queue_scroll(id, crate::virtual_list::CollectionScrollCommand::Key(item));
+                    cx.notify();
+                }
                 crate::element_ref::ElementCommand::ScrollCollection { id, end, .. } => {
                     self.lifecycle
                         .runtime()

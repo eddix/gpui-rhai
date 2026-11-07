@@ -2253,6 +2253,30 @@ impl UiContext {
         Ok(())
     }
 
+    /// Queue a jump that reveals the item `item` of this component's collection
+    /// `key`, pausing tail following until the reader scrolls back to the end. An
+    /// item key no item has does nothing.
+    ///
+    /// # Errors
+    /// Returns the same errors as [`Self::scroll_collection_to_end`].
+    pub fn scroll_collection_to_key(&self, key: &str, item: &str) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?
+            .pending_element_commands
+            .push(crate::element_ref::ElementCommand::ScrollCollectionToKey {
+                window,
+                id: crate::VirtualCollectionId {
+                    component: self.component.clone(),
+                    key: key.to_owned(),
+                },
+                item: item.to_owned(),
+            });
+        Ok(())
+    }
+
     fn scroll_collection_to_edge(&self, key: &str, end: bool) -> Result<(), UiContextError> {
         self.require_mutation()?;
         let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
@@ -4694,6 +4718,14 @@ fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
             |context: &mut UiContext, key: ImmutableString| {
                 context
                     .scroll_collection_to_start(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "scroll_collection_to_key",
+            |context: &mut UiContext, key: ImmutableString, item: ImmutableString| {
+                context
+                    .scroll_collection_to_key(key.as_str(), item.as_str())
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )

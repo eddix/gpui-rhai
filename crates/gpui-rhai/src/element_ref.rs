@@ -368,6 +368,11 @@ pub(crate) enum ElementCommand {
         id: crate::VirtualCollectionId,
         distance: f64,
     },
+    ScrollCollectionToKey {
+        window: String,
+        id: crate::VirtualCollectionId,
+        item: String,
+    },
     ScrollCollection {
         window: String,
         id: crate::VirtualCollectionId,
@@ -394,6 +399,7 @@ impl ElementCommand {
         match self {
             Self::CopyText { window, .. }
             | Self::ScrollCollectionBy { window, .. }
+            | Self::ScrollCollectionToKey { window, .. }
             | Self::ScrollCollection { window, .. }
             | Self::Focus { window, .. }
             | Self::ScrollTo { window, .. }

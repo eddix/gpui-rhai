@@ -97,11 +97,17 @@ fn follow_changed(ctx, status) {
 }
 fn latest(ctx, value) { ctx.scroll_collection_to_end("messages"); }
 fn beginning(ctx, value) { ctx.scroll_collection_to_start("messages"); }
+fn show(ctx, message) { ctx.scroll_collection_to_key("messages", message); }
 ```
 
-Both commands address the caller's component-local collection key and execute
+The commands address the caller's component-local collection key and execute
 only after its transaction succeeds. The end command resumes tail following
-when enabled; the start command pauses it. An unmounted collection is ignored.
+when enabled; the start command pauses it. `scroll_collection_to_key(key,
+item)` reveals one row of a following list, which `reveal_key` cannot do: it
+pauses following until the reader reaches the bottom or the end command runs,
+scrolls a measured row the least distance into view and an unmeasured one to
+the top, and ignores an item key no row has (0.4.3, feedback #22). Automation
+that looks a recycled row up by name can run it first. An unmounted collection is ignored.
 Commands run after the native view synchronizes newly committed data, keyed
 anchors, reveal and follow policy. Thus a callback that prepends and explicitly
 jumps to the start cannot have its command overwritten by anchor restoration.

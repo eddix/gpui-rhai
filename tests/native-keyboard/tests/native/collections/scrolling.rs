@@ -27,6 +27,8 @@ fn grow(ctx, value) {
 }
 fn latest(ctx, value) {ctx.scroll_collection_to_end("events");}
 fn start(ctx, value) {ctx.scroll_collection_to_start("events");}
+fn reveal(ctx, value) {ctx.scroll_collection_to_key("events", "row-10");}
+fn reveal_missing(ctx, value) {ctx.scroll_collection_to_key("events", "row-none");}
 fn reverse_order(ctx, value) {ctx.set_state("reversed", !ctx.get_state("reversed"));}
 fn rejected_latest(ctx, value) {ctx.scroll_collection_to_end("events"); throw "rejected scroll command";}
 fn prepend_and_start(ctx, value) {ctx.set_state("prefix", ctx.get_state("prefix") - 1); ctx.scroll_collection_to_start("events");}
@@ -59,7 +61,8 @@ fn view(ctx) {
             control("Remove first", Fn("remove_first")), control("Grow", Fn("grow")),
             control("Latest", Fn("latest")), control("Start", Fn("start")), control("Reverse", Fn("reverse_order")),
             control("Rejected latest", Fn("rejected_latest")), control("Prepend and start", Fn("prepend_and_start")),
-            control("Replace and end", Fn("replace_and_end")), control("Recreate source",Fn("recreate_source"))]),
+            control("Replace and end", Fn("replace_and_end")), control("Recreate source",Fn("recreate_source")),
+            control("Reveal 10", Fn("reveal")), control("Reveal missing", Fn("reveal_missing"))]),
         text(`Notices ${ctx.get_state("notices")}`),
         virtual_collection(#{key:"events", label:"Events", data:data, estimated_height:40,
             height:200, overdraw_pixels:80, alignment:if ctx.get_state("bottom"){"bottom"}else{"top"}, follow_tail:FOLLOW,
@@ -162,6 +165,49 @@ fn following_pauses_across_realization_and_resumes_at_the_native_tail(cx: &mut T
             "wheel to bottom resumes native following"
         );
     }
+}
+
+/// `ctx.scroll_collection_to_key` reveals one row of a list that follows its tail
+/// (feedback #22): following pauses there, appends do not move the reader, and the end
+/// resumes it. A key no row has does nothing.
+#[gpui::test]
+fn a_key_reveals_its_row_and_pauses_following_until_the_end(cx: &mut TestAppContext) {
+    let (mut visual, view) = Mount::new(COLLECTION.replace_once("FOLLOW", "true"))
+        .id("reveal-key")
+        .mount(cx);
+    settle(&mut visual, Step::Tick, 10);
+    let tail = metrics(&mut visual, &view);
+    assert!(tail.is_following_tail && tail.scroll_item > 30, "{tail:?}");
+    dispatch_script_button(&mut visual, &view, "Reveal missing");
+    settle(&mut visual, Step::Tick, 10);
+    let after = metrics(&mut visual, &view);
+    assert!(
+        after.is_following_tail && after.scroll_item == tail.scroll_item,
+        "an unknown key does nothing: {tail:?} -> {after:?}"
+    );
+
+    dispatch_script_button(&mut visual, &view, "Reveal 10");
+    settle(&mut visual, Step::Tick, 10);
+    let rows = visible_rows(&mut visual, &view);
+    assert!(
+        rows.iter().any(|(name, _)| name == "Row 10"),
+        "the revealed row is in view: {rows:?}"
+    );
+    assert!(!metrics(&mut visual, &view).is_following_tail);
+    dispatch_script_button(&mut visual, &view, "Append");
+    settle(&mut visual, Step::Tick, 10);
+    assert_eq!(
+        visible_rows(&mut visual, &view),
+        rows,
+        "an append leaves the reader there"
+    );
+    assert_eq!(metrics(&mut visual, &view).unseen_count, 1);
+
+    wheel(&mut visual, -10000.0);
+    assert!(
+        metrics(&mut visual, &view).is_following_tail,
+        "the end resumes following"
+    );
 }
 
 #[gpui::test]

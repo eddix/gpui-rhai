@@ -625,6 +625,14 @@ impl VirtualListView {
                 crate::virtual_list::CollectionScrollCommand::By(distance) => {
                     handle.scroll_by(px(crate::renderer::f64_to_f32(distance)), cx);
                 }
+                // A key no item has does nothing.
+                crate::virtual_list::CollectionScrollCommand::Key(key) => {
+                    if let Some(index) = (0..self.content.data.len())
+                        .find(|index| collection_item_key(&self.content, *index) == Some(&key))
+                    {
+                        handle.reveal(index, cx);
+                    }
+                }
             }
         }
     }

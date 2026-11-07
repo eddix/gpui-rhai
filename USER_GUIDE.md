@@ -1526,8 +1526,10 @@ reorder and remeasurement preserve a surviving reader key and intra-item offset.
 Unseen counts distinct newly added keys while paused, not streamed chunks or
 rerenders; deletion removes unseen keys and resuming clears them.
 `ctx.collection_follow_status(key)` is an event-time query, not a render
-dependency. `ctx.scroll_collection_to_start(key)` pauses following; both scroll
-commands are component-local and execute after a successful transaction.
+dependency. `ctx.scroll_collection_to_start(key)` pauses following, and
+`ctx.scroll_collection_to_key(key, item)` reveals one row and pauses it until
+the reader returns to the bottom; the scroll commands are component-local and
+execute after a successful transaction.
 `follow_tail` and controlled `reveal_key` are mutually exclusive. A Rust Host
 can resolve `ScriptViewHandle::collection_scroll_handle(id, cx)` for status,
 start/end, pixel scrolling or `pause_following`; resolve again after replacement
