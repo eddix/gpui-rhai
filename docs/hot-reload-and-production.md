@@ -87,6 +87,35 @@ override names its own variable with `.ui_override_env("MY_APP_UI")`. Keep
 `dev-reload` disabled in release builds unless a product has an explicit,
 reviewed reason to ship source watching.
 
+## Bundle a macOS application
+
+`gpui-rhai bundle` builds the release binaries and wraps them in a signed
+`.app`, configured in the application's Cargo.toml:
+
+```toml
+[package.metadata.gpui-rhai.bundle]
+name = "Disk Tree"                    # display name; the package name by default
+identifier = "com.example.disktree"   # required
+icon = "bundle/AppIcon.png"           # a square PNG, ideally 1024px
+binaries = ["disktree", "helper"]     # the executable first; the package's only binary by default
+resources = [{ from = "licenses", to = "licenses" }]
+```
+
+The bundle lands in `target/release/bundle/<name>.app`: the binaries in
+`Contents/MacOS`, an `Info.plist` with the package version, the icon converted
+to `.icns`, and the resources in `Contents/Resources`. `licenses/` at the
+project root, for third-party notices, is copied when the configuration lists
+no resources of its own. The bundle is
+signed ad hoc, enough to run on the machine that built it; `--sign <identity>`
+signs with a certificate, and notarization for distribution stays the
+application's step. `--name`, `--identifier` and `--icon` override the
+configuration, and `--debug` bundles a debug build.
+
+`gpui-rhai dev --bundle` builds the debug binaries into the same kind of bundle
+and runs its executable, so macOS treats the process as the application: system
+notifications and the Dock badge, which need a bundle identifier, work while
+`script_view!()` still reads `ui/` from source with hot reload.
+
 `gpui-rhai embed`, which generated `src/gpui_rhai_embedded.rs`, was removed in
 0.4.3. To migrate, add the build script and dependency above, mount with
 `script_view!()`, and delete the generated file.

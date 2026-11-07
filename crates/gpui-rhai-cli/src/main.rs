@@ -37,7 +37,15 @@ enum Command {
     /// Validate scripts, schemas, themes, and compatibility.
     Check,
     /// Run the Cargo application.
-    Dev,
+    Dev {
+        /// Run the debug build inside a macOS application bundle, so system
+        /// notifications and the Dock badge work.
+        #[arg(long)]
+        bundle: bool,
+    },
+    /// Build a macOS application bundle around the application's binaries,
+    /// configured by `[package.metadata.gpui-rhai.bundle]` in Cargo.toml.
+    Bundle(BundleArgs),
     /// Compare installed source with its registry baseline.
     Diff,
     /// Merge source updates from the bundled registry.
@@ -90,6 +98,27 @@ enum Command {
     },
 }
 
+/// `gpui-rhai bundle` options; they take precedence over
+/// `[package.metadata.gpui-rhai.bundle]`.
+#[derive(Debug, clap::Args)]
+struct BundleArgs {
+    /// Display name; the package name by default.
+    #[arg(long)]
+    name: Option<String>,
+    /// Reverse-DNS bundle identifier, such as `com.example.app`.
+    #[arg(long)]
+    identifier: Option<String>,
+    /// Square PNG for the application icon, relative to the project root.
+    #[arg(long)]
+    icon: Option<PathBuf>,
+    /// Code signing identity; ad-hoc (`-`) when absent.
+    #[arg(long)]
+    sign: Option<String>,
+    /// Bundle a debug build instead of a release build.
+    #[arg(long)]
+    debug: bool,
+}
+
 fn run(cli: Cli) -> Result<(), ProjectError> {
     let registry = BundledRegistry::load()?;
     let root = cli.root.clone();
@@ -118,7 +147,17 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
             let report = project.check()?;
             println!("{}", report.summary());
         }
-        Command::Dev => project.dev()?,
+        Command::Dev { bundle: false } => project.dev()?,
+        Command::Dev { bundle: true } => project.dev_bundle()?,
+        Command::Bundle(args) => {
+            let options = gpui_rhai_cli::bundle::BundleOptions {
+                name: args.name,
+                identifier: args.identifier,
+                icon: args.icon,
+                sign: args.sign,
+            };
+            println!("{}", project.bundle(&options, !args.debug, cli.dry_run)?);
+        }
         Command::Diff => println!("{}", project.diff()?.join("\n")),
         Command::Update => {
             let plan = project.plan_update(&registry)?;

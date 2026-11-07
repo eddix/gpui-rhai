@@ -456,8 +456,9 @@ adds what GPUI lacks (0.4.2):
 
 - `system::notifications_available()`: macOS posts notifications only for an
   application bundle with a bundle identifier, so a binary started by
-  `cargo run` shows none and GPUI drops them without an error. Run the binary
-  from inside a bundle while developing notifications.
+  `cargo run` shows none and GPUI drops them without an error. Run
+  `gpui-rhai dev --bundle` while developing notifications: it runs the debug
+  build inside an application bundle ([bundling](hot-reload-and-production.md#bundle-a-macos-application)).
 - `system::set_badge_label(Some("3"))` / `set_badge_label(None)`: the macOS
   Dock badge, set from the main thread (where GPUI runs callbacks); other
   platforms return `SystemServiceError::Unsupported`.

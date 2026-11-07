@@ -22,6 +22,7 @@ use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
 pub mod acceptance;
+pub mod bundle;
 #[cfg(test)]
 mod doc_snippets;
 pub mod gallery;
@@ -984,6 +985,49 @@ impl Project {
     pub fn dev(&self) -> Result<(), ProjectError> {
         let status = Command::new("cargo")
             .arg("run")
+            .current_dir(&self.root)
+            .status()
+            .map_err(ProjectError::Spawn)?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(ProjectError::DevFailed(status.code()))
+        }
+    }
+
+    /// Resolve the application bundle and, unless `dry_run`, build it:
+    /// release or debug binaries in a signed `.app`. Returns what to report.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError`] when the bundle cannot be resolved or built.
+    pub fn bundle(
+        &self,
+        options: &bundle::BundleOptions,
+        release: bool,
+        dry_run: bool,
+    ) -> Result<String, ProjectError> {
+        let plan = bundle::BundlePlan::resolve(&self.root, options)?;
+        if dry_run {
+            return Ok(format!("{plan:#?}"));
+        }
+        let app = plan.build(&self.root, release)?;
+        Ok(format!("Bundled {}", app.display()))
+    }
+
+    /// Build the debug binaries into an application bundle and run its
+    /// executable, so macOS treats the process as the bundled application:
+    /// system notifications and the Dock badge need a bundle identifier.
+    /// `script_view!()` still reads `ui/` from source with hot reload.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError`] when the bundle cannot be resolved or built,
+    /// or the application exits unsuccessfully.
+    pub fn dev_bundle(&self) -> Result<(), ProjectError> {
+        let plan = bundle::BundlePlan::resolve(&self.root, &bundle::BundleOptions::default())?;
+        let app = plan.build(&self.root, false)?;
+        let status = Command::new(app.join("Contents/MacOS").join(&plan.binaries[0]))
             .current_dir(&self.root)
             .status()
             .map_err(ProjectError::Spawn)?;
@@ -2708,6 +2752,8 @@ pub enum ProjectError {
     Spawn(std::io::Error),
     #[error("Cargo application exited unsuccessfully with code {0:?}")]
     DevFailed(Option<i32>),
+    #[error("bundle: {0}")]
+    Bundle(String),
     #[error(
         "`gpui-rhai embed` was removed in 0.4.3: add `gpui-rhai-build` to [build-dependencies], \
          call `gpui_rhai_build::embed_ui(\"ui\")` from build.rs and mount with \
