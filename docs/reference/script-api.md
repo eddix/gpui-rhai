@@ -837,6 +837,7 @@ Official components wrap them; application components may too.
 | `quote_style` | style | required | Style of the Markdown quote part. |
 | `rule_style` | style | required | Style of the Markdown rule part. |
 | `source` | string or native document | required | Inline Markdown or an opaque Host-owned native text document. |
+| `table_max_height` | length or `()` | — | Viewport height of a table over 1,000 cells, which scrolls with an always-shown scrollbar; smaller tables lay out in full. Absolute-resolvable (px/rem); 400 logical pixels unset. |
 | `table_style` | style | required | Style of the Markdown table part. |
 
 | Event | Payload | Description |

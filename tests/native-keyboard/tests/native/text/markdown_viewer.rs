@@ -336,8 +336,9 @@ fn vertical_wheel_over_a_wide_markdown_table_never_becomes_horizontal_scroll(
 ) {
     // A legal header-only table has horizontal overflow but no internal Y
     // range. Its surrounding document can consume the vertical wheel instead.
+    // Long headers take the widest columns, so the table is wider than the reader.
     let source = format!(
-        "| Left | Middle | Right |\n| --- | --- | --- |\n\n{}",
+        "| {WIDE} left | {WIDE} middle | {WIDE} right |\n| --- | --- | --- |\n\n{}",
         "Following paragraph.\n\n".repeat(30)
     );
     let (mut visual, view) = Mount::new(markdown_nested_scroll_fixture(&source))
@@ -390,6 +391,9 @@ fn vertical_wheel_over_a_wide_markdown_table_never_becomes_horizontal_scroll(
     );
 }
 
+/// Header text long enough to take a column's widest width.
+const WIDE: &str = "A header label long enough to take the widest column";
+
 fn markdown_cell_track(visual: &mut VisualTestContext) -> gpui::Point<gpui::Pixels> {
     let cell = visual.debug_bounds("markdown-cell-viewport:0:1:0").unwrap();
     point(cell.right() - px(6.0), cell.top().max(px(0.0)) + px(40.0))
@@ -399,8 +403,10 @@ fn markdown_cell_track(visual: &mut VisualTestContext) -> gpui::Point<gpui::Pixe
 fn a_wide_markdown_table_keeps_its_vertical_track_inside_the_visible_width(
     cx: &mut TestAppContext,
 ) {
-    let mut source = "| Left | Middle | Right |\n| --- | --- | --- |\n".to_owned();
-    for index in 0..40 {
+    // Over 1,000 cells, so the table keeps its own viewport; long headers make it wide.
+    let mut source =
+        format!("| {WIDE} left | {WIDE} middle | {WIDE} right |\n| --- | --- | --- |\n");
+    for index in 0..340 {
         source.push_str(&format!(
             "| row {index} | middle {index} | right {index} |\n"
         ));
@@ -489,14 +495,14 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{key: "wide", label: "Wide table",
         "dragging the visible Y thumb must move the header outside the viewport (overscan may retain it): rtl={rtl}, content={content}, table={table:?}, start={start:?}, end={end:?}, header before={header:?}, after={:?}",
         visual.debug_bounds("markdown-cell:0:0:0")
     );
-    let later_cell = [
-        "markdown-cell:0:10:0",
-        "markdown-cell:0:20:0",
-        "markdown-cell:0:30:0",
-    ]
-    .into_iter()
-    .find_map(|selector| visual.debug_bounds(selector))
-    .expect("the track click realizes later logical rows inside the same viewport");
+    // debug_bounds takes a static selector; a test leaks the few it builds.
+    let later_cell = (10..340)
+        .find_map(|row| {
+            let selector: &'static str =
+                Box::leak(format!("markdown-cell:0:{row}:0").into_boxed_str());
+            visual.debug_bounds(selector)
+        })
+        .expect("the track drag realizes later logical rows inside the same viewport");
     assert_scroll_delta(
         f64::from(later_cell.left() - header.left()),
         0.0,

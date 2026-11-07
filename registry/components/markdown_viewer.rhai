@@ -2,7 +2,7 @@
 {
   "id": "components/markdown_viewer",
   "export": "MarkdownViewer",
-  "version": "0.2.2",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -15,7 +15,7 @@
 //
 // Example: MarkdownViewer(#{key:"article",label:"Article",source:ctx.get_native_text_document("article")})
 define_component(#{
-    metadata: #{ id: "components/markdown_viewer", "export": "MarkdownViewer", version: "0.2.2",
+    metadata: #{ id: "components/markdown_viewer", "export": "MarkdownViewer", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["surface", "surface_raised", "border", "spacing.xs", "spacing.sm", "typography.title", "typography.subtitle", "typography.body", "typography.body_small", "typography.caption"], environment: [] },
     schema: #{
@@ -30,6 +30,8 @@ define_component(#{
                 "default": #{ type: "string", value: "fill" }, doc: "Fill available space or grow to measured content height." },
             max_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [#{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false, sensitive: false,
                 doc: "Maximum content height as a logical-pixel integer or absolute-resolvable Length (px/rem); relative lengths are not supported. Overflow scrolls natively." },
+            table_max_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [#{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false, sensitive: false,
+                doc: "Viewport height of a table over 1,000 cells, which scrolls inside it with an always-shown scrollbar; unset is 400 logical pixels. A smaller table lays out in full and grows with the document. Columns fit their widest cell on one line, 64 to 360 logical pixels, and longer cells wrap." },
             code_block_actions: #{ schema: #{ type: "array", max_items: 1, items: #{ type: "string", allowed: ["copy"] } }, required: false, sensitive: false,
                 "default": #{ type: "array", value: [#{ type: "string", value: "copy" }] }, doc: "Code block actions; copy writes code without fences." },
             image_assets: #{ schema: #{ type: "map", values: #{ type: "string" } }, required: false, sensitive: false,
@@ -54,12 +56,14 @@ fn link(ctx, payload) { ctx.emit("link", payload); }
 fn render_MarkdownViewer(ctx, props) {
     let height = prop_or(props, "height", "fill");
     let max_height = prop_or(props, "max_height", ());
+    let table_max_height = prop_or(props, "table_max_height", ());
     let root = style().width(relative(1.0)).min_width(px(0)).background(theme_color("surface"));
     if height != "content" { root = root.height(relative(1.0)).min_height(px(0)); }
     gpui_rhai::MarkdownViewPrimitive(#{
         key: props.key,
         source: props.source, label: prop_or(props, "label", "Markdown"), height: height,
         max_height: if type_of(max_height) == "i64" { px(max_height) } else { max_height },
+        table_max_height: if type_of(table_max_height) == "i64" { px(table_max_height) } else { table_max_height },
         code_block_actions: prop_or(props, "code_block_actions", ["copy"]),
         image_assets: prop_or(props, "image_assets", #{}),
         heading_roles: ["title", "subtitle", "subtitle", "body", "body_small", "caption"],
