@@ -17,7 +17,7 @@ dependencies = []
 
 [components."components/combobox"]
 version = "0.4.3"
-content_hash = "f1ab8f0f89a33fbe"
+content_hash = "8e54df77e19b0641"
 dependencies = ["components/input"]
 
 [components."components/divider"]
@@ -47,7 +47,7 @@ dependencies = []
 
 [components."components/select"]
 version = "0.4.3"
-content_hash = "5084bab0cc713cf6"
+content_hash = "559bbe21da01d48d"
 dependencies = ["components/combobox"]
 
 [components."components/spinner"]

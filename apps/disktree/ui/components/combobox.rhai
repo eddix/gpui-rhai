@@ -92,6 +92,8 @@ define_component(#{
                 doc: "Content at the bottom of the panel, below the options." },
             empty: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Content shown instead of `empty_text` when no option matches." },
+            option_trailing: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Node factory bound with ctx.node_factory(Fn(...)), called as Fn(ctx, option) for content after an option's label, such as a Tag; option is #{ value, label, selected, active, disabled, place }, `place` being `option` in the list and `trigger` beside the value of a single-mode default trigger. Curry the caller's data into the factory to look an option up by value. The label gives way first; a content width measures it too." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false }, doc: "Disables the trigger so the panel cannot open." },
             clearable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -143,7 +145,7 @@ define_component(#{
         },
         parts: ["root", "trigger", "value", "placeholder", "indicator", "clear",
             "panel", "search", "list", "group", "option", "option_selected",
-            "option_active", "option_disabled", "empty", "check",
+            "option_active", "option_disabled", "empty", "check", "trailing",
             "focus_frame", "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Combobox")
@@ -151,24 +153,30 @@ define_component(#{
 
 fn Combobox(props) { render_component("components/combobox", props) }
 
-// The labels a content width is measured from: every option of a short list, else the
-// longest 16 by character count, so a long list does not lay every label out.
-fn width_probe_labels(options) {
-    let labels = [];
-    if options.len <= 64 {
-        for option in options { labels.push(option.label); }
-        return labels;
-    }
+// The options a content width is measured from: every option of a short list, else the
+// 16 with the longest labels by character count, so a long list does not lay every one out.
+fn width_probe_options(options) {
+    if options.len <= 64 { return options; }
+    let longest = [];
     for option in options {
         let chars = option.label.len;
-        if labels.len < 16 || chars > labels[labels.len - 1].len {
+        if longest.len < 16 || chars > longest[longest.len - 1].label.len {
             let at = 0;
-            while at < labels.len && labels[at].len >= chars { at += 1; }
-            labels.insert(at, option.label);
-            if labels.len > 16 { labels.pop(); }
+            while at < longest.len && longest[at].label.len >= chars { at += 1; }
+            longest.insert(at, option);
+            if longest.len > 16 { longest.pop(); }
         }
     }
-    labels
+    longest
+}
+
+// The caller's content after an option's label (`option_trailing`), or () without it.
+fn option_trailing(ctx, factory, value, label, flags) {
+    if factory == () { return (); }
+    let detail = #{ value: value, label: label, selected: flags.selected, active: flags.active,
+        disabled: flags.disabled, place: flags.place };
+    row([ctx.render_node(factory, detail)]).with_style(ctx.component_style("trailing",
+        style().flex_shrink(false).items_center()))
 }
 
 // Lays rows out without showing them, so its width is the widest row's: what a content-sized
@@ -363,7 +371,7 @@ fn clear_action(ctx, payload) {
 // List rows share one grammar: metrics.row high, text at metrics.inset, the cursor is
 // a selection block with a control's corners, inside the panel's padding.
 
-fn render_combobox_row(total_rows, mode, selected, reset_query, ctx, payload) {
+fn render_combobox_row(total_rows, mode, selected, reset_query, trailing, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         // Group labels align with option text, after the reserved check column.
@@ -399,6 +407,9 @@ fn render_combobox_row(total_rows, mode, selected, reset_query, ctx, payload) {
         text(item.label).with_style(style().flex_grow().min_width(px(0))
             .whitespace_nowrap().text_ellipsis())
     ];
+    let extra = option_trailing(ctx, trailing, item.value, item.label,
+        #{ selected: item.selected, active: item.active, disabled: item.disabled, place: "option" });
+    if extra != () { children.push(extra); }
     let node = row(children)
         .with_key(payload.key).with_style(row_style)
         .disabled(item.disabled).tab_stop(false)
@@ -419,9 +430,10 @@ fn render_Combobox(ctx, props) {
     let width = if "width" in props && props.width != () { props.width } else { px(280) };
     let content_width = type_of(width) == "string";
     let panel_content = prop_or(props, "panel_width", "trigger") == "content";
-    let probe_labels = if content_width || panel_content {
-        width_probe_labels(props.options)
+    let probe_options = if content_width || panel_content {
+        width_probe_options(props.options)
     } else { [] };
+    let trailing = if "option_trailing" in props { props.option_trailing } else { () };
 
     let chosen = #{};
     for value in selected { chosen[value] = true; }
@@ -471,6 +483,11 @@ fn render_Combobox(ctx, props) {
     }
     let placeholder = prop_or(props, "placeholder", "");
     let custom_trigger = "trigger" in props && props.trigger != ();
+    let trigger_trailing = if trailing != () && mode == "single" && selected.len == 1
+        && selected[0] in values && labels.len == 1 {
+        option_trailing(ctx, trailing, selected[0], labels[0],
+            #{ selected: true, active: false, disabled: false, place: "trigger" })
+    } else { () };
     let trigger_children = [];
     if !custom_trigger {
         // One line that gives way first: a long label or placeholder ends in an ellipsis so the
@@ -483,15 +500,21 @@ fn render_Combobox(ctx, props) {
                     .text_color(if selected_label == "" { theme_color("text_muted") }
                     else { theme_color("text_primary") })));
         if content_width {
-            // The value sits over the probe, whose width is the widest option's.
-            let rows = [];
-            for label in probe_labels + [placeholder] {
-                rows.push(text(label).with_style(style().whitespace_nowrap()));
+            // The value sits over the probe, whose width is the widest option's, its
+            // trailing content included.
+            let rows = [text(placeholder).with_style(style().whitespace_nowrap())];
+            for option in probe_options {
+                let cells = [text(option.label).with_style(style().whitespace_nowrap())];
+                let extra = option_trailing(ctx, trailing, option.value, option.label,
+                    #{ selected: true, active: false, disabled: false, place: "trigger" });
+                if extra != () { cells.push(extra); }
+                rows.push(row(cells).with_style(style().gap(theme_spacing("sm"))));
             }
             value = column([value, width_probe(rows)])
                 .with_style(style().flex_grow().min_width(px(0)));
         }
         trigger_children.push(value);
+        if trigger_trailing != () { trigger_children.push(trigger_trailing); }
         let trigger_actions = [];
         if prop_or(props, "clearable", false) && selected.len > 0 {
             let clear_label = if "clear_label" in props && props.clear_label != () {
@@ -599,15 +622,19 @@ fn render_Combobox(ctx, props) {
             data: data, estimated_height: 32, fill_height: true,
             overdraw_pixels: 64, alignment: "top", follow_tail: false
         }, Fn("render_combobox_row").curry(data.len).curry(mode).curry(selected)
-            .curry(reset_query)))];
+            .curry(reset_query).curry(trailing)))];
         if panel_content || (custom_trigger && content_width) {
             // Option rows as render_combobox_row lays them out: the check column, the label.
             let rows = [];
-            for label in probe_labels {
-                rows.push(row([
+            for option in probe_options {
+                let cells = [
                     row([]).with_style(style().width(theme_length("metrics.icon"))),
-                    text(label).with_style(style().whitespace_nowrap().max_width(px(480)))
-                ]).with_style(style().padding_x(theme_length("metrics.inset"))
+                    text(option.label).with_style(style().whitespace_nowrap().max_width(px(480)))
+                ];
+                let extra = option_trailing(ctx, trailing, option.value, option.label,
+                    #{ selected: false, active: false, disabled: false, place: "option" });
+                if extra != () { cells.push(extra); }
+                rows.push(row(cells).with_style(style().padding_x(theme_length("metrics.inset"))
                     .gap(theme_spacing("sm")).typography("body")));
             }
             list.push(width_probe(rows));

@@ -368,6 +368,10 @@ Source: [sliding_panel.rhai](../../registry/components/sliding_panel.rhai).
   least as wide as the trigger and wider for longer options (`panel_width`).
   Combobox keeps its 280-pixel default and takes `width: "content"` and
   `panel_width: "content"` to do the same.
+  Both take `option_trailing`, a Node factory for content after an option's
+  label, such as a Tag with a load figure, in the list and beside a
+  single-mode trigger's value; curry the caller's data into it to look an
+  option up by value.
 - `DatePicker` remains a controlled ISO-date composition over public calendar
   helpers and Overlay.
 

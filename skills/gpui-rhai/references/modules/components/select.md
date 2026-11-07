@@ -27,6 +27,7 @@ select::Select(#{ key: "country", label: "Country", options: countries, value: "
 | `on_open_change` | callback or `()` | — | Called with the requested open state when the trigger is clicked, an arrow key opens the list, an option is picked, or it is dismissed. |
 | `on_query_change` | callback or `()` | — | Called with the new search text as the user types, and with `""` when the list closes or the value is cleared. |
 | `open` | bool | required | Whether the list is open; the caller stores the `open_change` payload and passes it back. |
+| `option_trailing` | callback or `()` | — | Node factory bound with ctx.node_factory(Fn(...)), called as Fn(ctx, option) for content after an option's label, such as a Tag, in the list and beside the trigger's value; option is #{ value, label, selected, active, disabled, place }, `place` being `option` or `trigger`. Curry the caller's data into the factory to look an option up by value. |
 | `options` | array of object (at most 100000) | required | Options in display order; options that share a `group` are gathered where that group first appears. |
 | `panel_width` | `"trigger"` or `"content"` | `"content"` | `content` makes the list at least as wide as the trigger and wider for longer options, measured up to 480 logical pixels; `trigger` makes it exactly as wide as the trigger. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
@@ -60,7 +61,7 @@ select::Select(#{ key: "country", label: "Country", options: countries, value: "
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `clear`, `empty`, `group`, `indicator`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `search`, `trigger`, `value`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `clear`, `empty`, `group`, `indicator`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `search`, `trailing`, `trigger`, `value`.
 
 ## Theme
 
