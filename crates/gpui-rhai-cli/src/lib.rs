@@ -3590,6 +3590,7 @@ mod tests {
             r#"
                 fn view(ctx) {
                     if false { text(); }
+                    if false { text("never").with_style(style().flex_shrink(0.0)); }
                     text("still renders")
                 }
             "#,
@@ -3600,6 +3601,12 @@ mod tests {
         assert!(matches!(error, ProjectError::KnownCalls(_)));
         assert!(error.to_string().contains("text/0"));
         assert!(error.to_string().contains("expected 1"));
+        assert!(
+            error
+                .to_string()
+                .contains("`flex_shrink` takes (bool), not (float)"),
+            "{error}"
+        );
     }
 
     #[test]

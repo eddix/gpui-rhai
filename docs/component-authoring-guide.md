@@ -626,8 +626,11 @@ initial `view(ctx)` through ScriptLifecycle and retained reconciliation.
 Before execution it walks unoptimized Rhai ASTs and validates direct, method,
 and imported-module call arities against the same Engine function metadata that
 generates editor definitions. This catches misspelled or wrong-arity calls in
-branches the initial view does not execute; runtime execution remains the
-type-sensitive authority because Rhai dispatch is dynamic.
+branches the initial view does not execute. The same metadata gives each native
+overload's parameter types, so a literal argument no overload takes, such as
+`style().flex_shrink(0.0)` for `flex_shrink(bool)`, fails too. Arguments that
+are not literals are checked only at runtime, which remains the type-sensitive
+authority because Rhai dispatch is dynamic.
 Render-time errors, duplicate keys, component-state failures, effects/timers,
 and retained budget violations therefore fail headless CI rather than waiting
 for a native window.
