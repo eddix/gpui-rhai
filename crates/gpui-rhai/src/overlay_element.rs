@@ -921,11 +921,16 @@ impl ScriptOverlayElement {
             OverlayWidthPolicy::AtLeastTrigger => panel = panel.min_w_full(),
             OverlayWidthPolicy::Content => {}
         }
-        // The wrapper takes its content's width, so a percentage width inside it would
-        // resolve against itself; it caps the dialog at 90% of the backdrop instead, and the
-        // content may fill it (`max_width(relative(1.0))`).
+        // The wrapper takes its content's size, so a percentage inside it would resolve
+        // against itself; it caps the dialog at 90% of the backdrop on both axes instead, and
+        // the content may fill it (`max_width(relative(1.0))`). A column, so a panel taller
+        // than the cap shrinks to it and its scrolling body takes the difference.
         if self.spec.kind == OverlayKind::Dialog {
-            panel = panel.max_w(relative(0.9));
+            panel = panel
+                .max_w(relative(0.9))
+                .max_h(relative(0.9))
+                .flex()
+                .flex_col();
         }
 
         let overlay = if matches!(self.spec.kind, OverlayKind::Dialog | OverlayKind::Sheet) {

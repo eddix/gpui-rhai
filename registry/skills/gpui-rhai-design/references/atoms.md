@@ -526,9 +526,11 @@ Things you type into have a frame; things you press are blocks.
   title and the Command inside share one text edge.
 - Dialog and Sheet pad with `spacing.xl`; actions are separated by space, not
   a rule. Sheets draw their hairline only on the edge facing the window. A
-  Dialog is 420 wide, at most 90% of the window; `title_visible: false` hides
-  its title, which still names it (a command palette's search field is its
-  header).
+  Dialog is 420 wide unless given a `width`, and at most 90% of the window on
+  both axes: a taller panel stops there and its body scrolls, the title and
+  the actions staying in view (0.4.3, feedback #7). `title_visible: false`
+  hides its title, which still names it (a command palette's search field is
+  its header).
 - Tooltip inverts ink and paper (`text_primary` block, `surface` text, caption)
   and can show an action's key legend (`action` or `shortcut`).
 - Card is a `surface_raised` block (`variant: "outline"` for cards placed on a
