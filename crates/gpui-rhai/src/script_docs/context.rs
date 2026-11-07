@@ -75,6 +75,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Queues a jump to this component's collection start and pauses native following. Applies after newly committed data/anchor synchronization; an absent collection is ignored. Forbidden during render.",
     },
     ScriptFnDoc {
+        signature: "scroll_collection_to_key(_: &mut UiContext, _: string, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "item"],
+        doc: "Queues a jump that reveals the item keyed `item` in this component's collection `key`, so a list that follows its tail can show one row: following pauses and resumes when the reader scrolls back to the end, or with `scroll_collection_to_end`. A measured row scrolls the least distance into view, an unmeasured one to the top. An item key no item has does nothing; forbidden during render.",
+    },
+    ScriptFnDoc {
         signature: "action_enabled(_: &mut UiContext, _: string) -> core::result::Result<bool,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["action"],
         doc: "Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered.",

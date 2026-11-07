@@ -133,11 +133,13 @@ pub struct VirtualRequestRegistry {
     wake: crate::async_runtime::AsyncWake,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum CollectionScrollCommand {
     Start,
     End,
     By(f64),
+    /// Reveal the item with this key, pausing tail following.
+    Key(String),
 }
 
 /// The native follow state, not a second SDK follow state machine.
@@ -213,6 +215,22 @@ impl VirtualCollectionScrollHandle {
             item_ix: 0,
             offset_in_item: gpui::px(0.0),
         });
+        cx.notify(self.notify);
+    }
+
+    /// Reveal item `index`, pausing tail following until the reader scrolls back to
+    /// the end. A measured item scrolls the least distance into view; an unmeasured
+    /// one is top-aligned, so the next frame realizes and measures it.
+    pub(crate) fn reveal(&self, index: usize, cx: &mut gpui::App) {
+        self.state.pause_following_tail();
+        if self.state.bounds_for_item(index).is_some() {
+            self.state.scroll_to_reveal_item(index);
+        } else {
+            self.state.scroll_to(gpui::ListOffset {
+                item_ix: index,
+                offset_in_item: gpui::px(0.0),
+            });
+        }
         cx.notify(self.notify);
     }
 
