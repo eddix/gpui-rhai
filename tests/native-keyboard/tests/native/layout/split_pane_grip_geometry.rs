@@ -21,7 +21,7 @@ fn grip_follows_separator_thickness_in_both_orientations_and_directions(cx: &mut
                     r#"import "components/split_pane" as split;
 fn init(ctx) {{ ctx.set_locale("{locale}"); }}
 fn view(ctx) {{
-    split::SplitPane(#{{ key: "layout", label: "Panels", size: 0.5,
+    split::SplitPane(#{{separator:"lane", key: "layout", label: "Panels", size: 0.5,
         orientation: "{orientation}", min_start: 0.0, min_end: 0.0,
         start: text("Start"), end: text("End"), line: false,
         handle: box([]).with_style(style().width(px(4)).height(px(4)).background(rgba({MARK:#x}))),

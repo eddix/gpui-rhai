@@ -149,14 +149,23 @@ Resizable wrapper. The current source contract includes:
 | `start_collapsed`, `end_collapsed` | Controlled collapse flags; both true is rejected |
 | `keyboard_step` | Positive logical-pixel step; defaults to 8 |
 | `disabled` | Suppress separator interaction |
-| `handle`, `line`, `line_inset` | Decorative grip node over the separator; the native line and its end inset |
+| `separator` | `flush` (default): a 1px `border` line with a transparent 7px hit zone over both panes; `lane`: an 8px lane between them |
+| `handle`, `line`, `line_inset` | Decorative grip node over the separator; the native line (on with `lane`, off with `flush` unless set) and its end inset |
 | `on_resize` / `resize(number)` | Propose the next start-panel ratio |
 
+The flush separator (0.4.3, #221) is the line itself: both panes' surfaces
+reach it and it never changes. Its hit zone is the grip box, transparent, 7px
+across and the separator's full length, centred on the line and painted over
+both panes, so it takes no layout; the grip bar shows only while the separator
+is hovered, dragged or focused (in `focus_ring`). The lane is the 8px separator
+of earlier releases, between the panes, filled on hover and drag and an ink bar
+on focus.
+
 Style parts are `root`, `start`, `end` and `handle`. The handle takes
-`handle_hover` and `handle_drag` while it is hovered or dragged (a
-`surface_hover` fill by default; give them the `handle` background to keep the
-lane still), and a `handle` grip takes `grip`, `grip_hover`, `grip_drag`,
-`grip_focus` and `grip_disabled`. Each pane is a flex column, so content with
+`handle_hover` and `handle_drag` while it is hovered or dragged (a lane's
+`surface_hover` fill by default, nothing on a flush line; give them the
+`handle` background to keep a lane still), and a `handle` grip takes `grip`,
+`grip_hover`, `grip_drag`, `grip_focus` and `grip_disabled`. Each pane is a flex column, so content with
 `flex_grow` fills it and absolute content is placed from the pane's corner.
 Pointer movement updates a
 native preview signal; release emits a ratio proposal. The caller accepts it by

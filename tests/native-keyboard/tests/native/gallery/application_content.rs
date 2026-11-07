@@ -48,16 +48,16 @@ fn field(visual: &mut VisualTestContext, view: &ScriptViewHandle, name: &str) ->
 #[gpui::test]
 fn cli_gallery_split_pane_mounts_default_static_and_factory_grips(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, "split_pane");
-    for label in [
-        "Resize panes",
-        "Resize panes with grip",
-        "Resize panes on a thin separator",
+    // Flush separators are the 1px line; a lane is 8px.
+    for (label, width) in [
+        ("Resize panes", 1.0),
+        ("Resize panes on a lane", 8.0),
+        ("Resize panes with grip", 8.0),
+        ("Resize panes with a drawn grip", 1.0),
     ] {
         let separator = bounds(&mut visual, &view, "separator", label);
         assert!(separator.height > 100.0, "{label}: {separator:?}");
-        if label == "Resize panes on a thin separator" {
-            assert!((separator.width - 1.0).abs() < 0.5, "{separator:?}");
-        }
+        assert!((separator.width - width).abs() < 0.5, "{label}: {separator:?}");
     }
     assert_eq!(last_error(&mut visual, &view), None);
 }

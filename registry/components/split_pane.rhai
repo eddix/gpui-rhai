@@ -2,7 +2,7 @@
 {
   "id": "components/split_pane",
   "export": "SplitPane",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -10,7 +10,13 @@
   "environment": ["density", "size"]
 }
 */
-// Controlled, nestable two-panel split layout with a native drag hot lane.
+// Controlled, nestable two-panel split layout with a native drag separator.
+//
+// The default separator is flush: a 1px `border` line both panes' surfaces reach, which never
+// changes, and a transparent 7px hit zone the full length of it, centred on the line and
+// painted over both panes, so it takes no layout; the grip shows on hover, drag and focus
+// (#221). `separator: "lane"` is the 8px lane between the panes instead, filled on hover
+// and drag, an ink bar on focus, with the native line down its middle.
 //
 // `size` is the controlled start-panel ratio. Pointer moves update only a
 // native signal; `on_resize` fires once when a drag ends or a keyboard step is
@@ -31,8 +37,8 @@
 // keyboard steps, the separator role and the tab stop stay on the native handle. The grip
 // takes the `grip_<state>` part while the handle is hovered, dragged, focused or disabled,
 // from a native signal, so pointer moves never re-render Rhai. The handle itself takes
-// `handle_hover` and `handle_drag` the same way (the `surface_hover` fill by default); give
-// them the `handle` background to keep the lane still. `line: false` drops the native line
+// `handle_hover` and `handle_drag` the same way (a lane's `surface_hover` fill by default;
+// nothing on a flush line); give them the `handle` background to keep a lane still. `line: false` drops the native line
 // for a grip that draws its own. Each pane is a flex column, so content with `flex_grow`
 // fills it, and absolute content is placed from the pane's corner.
 // A styled thin separator keeps its grip centred on the measured lane. For an invisible
@@ -44,7 +50,7 @@
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.4.2",
+    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["border", "surface_hover", "focus_ring", "accent", "text_muted", "surface_raised", "spacing.xs", "spacing.md", "metrics.control", "radius.pill"],
         environment: ["density", "size"] },
@@ -103,9 +109,11 @@ define_component(#{
             grip_active_length: #{ schema: #{ type: "number", exclusive_min: 0.0, max: 512.0 }, required: false, sensitive: false,
                 "default": #{ type: "float", value: 40.0 },
                 doc: "Logical-pixel length the default grip extends to while dragged. The stable hit area contains both endpoints." },
-            line: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: true },
-                doc: "Paints the native line down the separator; set `false` when `handle` draws its own." },
+            separator: #{ schema: #{ type: "string", allowed: ["flush", "lane"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "flush" },
+                doc: "`flush` is a 1px `border` line with a transparent 7px hit zone over both panes and a grip that shows on hover, drag and focus; `lane` is an 8px lane between the panes, filled on hover and drag and an ink bar on focus, with the native line down its middle." },
+            line: #{ schema: #{ type: "optional", value: #{ type: "bool" } }, required: false, sensitive: false,
+                doc: "Paints the native line down the separator; unset, on with `lane` and off with `flush`, whose separator is the line. Set `false` when `handle` draws its own." },
             line_inset: #{ schema: #{ type: "number", min: 0.0, max: 256.0 }, required: false,
                 sensitive: false, "default": #{ type: "float", value: 4.0 },
                 doc: "How far the native line stops short of each end of the separator, in logical pixels." },
@@ -127,7 +135,7 @@ fn SplitPane(props) { render_component("components/split_pane", props) }
 fn split_prop(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn split_commit(ctx, value) { ctx.emit("resize", value); }
 
-fn split_grip_content(ctx, props, horizontal, state) {
+fn split_grip_content(ctx, props, horizontal, state, flush) {
     let duration = ctx.motion_duration("fast");
     let easing = ctx.motion_easing("standard");
     let has_node = "handle" in props && props.handle != ();
@@ -152,38 +160,48 @@ fn split_grip_content(ctx, props, horizontal, state) {
     };
     // Keep the caller's own signal styles and motions on its Node. State-part
     // decoration belongs to this separate wrapper, not a replacement mutation.
+    // A flush separator shows its grip only while hovered, dragged or focused.
+    let rest = style().flex_row().items_center().justify_center().flex_shrink(false);
+    let shown = style();
+    if flush { rest = rest.opacity(0.0); shown = style().opacity(1.0); }
     box([content.with_key(`${props.key}-grip-decoration`)])
         .with_key(`${props.key}-grip-content`)
-        .with_style(ctx.component_style("grip_content",
-            style().flex_row().items_center().justify_center().flex_shrink(false)))
+        .with_style(ctx.component_style("grip_content", rest))
         .signal_style(state, #{
-            hover: ctx.component_style("grip_content_hover", style()),
-            drag: ctx.component_style("grip_content_drag", style()),
-            focus: ctx.component_style("grip_content_focus", style()),
-            disabled: ctx.component_style("grip_content_disabled", style().opacity(0.5)),
+            hover: ctx.component_style("grip_content_hover", shown),
+            drag: ctx.component_style("grip_content_drag", shown),
+            focus: ctx.component_style("grip_content_focus", shown),
+            disabled: ctx.component_style("grip_content_disabled",
+                if flush { style() } else { style().opacity(0.5) }),
         })
 }
 
 // The decorative grip: a box the measured size of the separator on the end pane's start edge, the
 // caller's node centred in it; the end pane paints after the start pane and the separator,
 // so the grip is above both.
-fn split_grip(ctx, props, horizontal, grip_ref, state, separator_ref) {
+fn split_grip(ctx, props, horizontal, grip_ref, state, separator_ref, flush) {
     let shape = style().flex_row().items_center().justify_center()
         .occlude_except_scroll();
     let custom = "handle" in props && props.handle != ();
     let hit_length = if props.grip_length > props.grip_active_length { props.grip_length } else { props.grip_active_length };
     // Custom decoration keeps its intrinsic hit extent, including overhang.
     // Default/factory motion uses a stable box larger than the animated length.
+    // A custom grip and the flush hit zone overhang the separator onto both panes, so they
+    // must not shrink to its thickness.
     shape = if custom {
         shape.background(theme_color("surface_raised"))
-            .border(px(1)).border_color(theme_color("border"))
+            .border(px(1)).border_color(theme_color("border")).flex_shrink(false)
+    } else if flush {
+        // The flush hit zone: transparent, 7px across, the separator's full length.
+        if horizontal { shape.width(px(7)).height(relative(1.0)).flex_shrink(false) }
+        else { shape.width(relative(1.0)).height(px(7)).flex_shrink(false) }
     } else if horizontal {
         shape.width(theme_spacing("md")).height(theme_length("metrics.control") * 1.5).min_height(px(hit_length))
     } else {
         shape.width(theme_length("metrics.control") * 1.5).min_width(px(hit_length)).height(theme_spacing("md"))
     };
     shape = if horizontal { shape.cursor_resize_x() } else { shape.cursor_resize_y() };
-    let grip = box([split_grip_content(ctx, props, horizontal, state)])
+    let grip = box([split_grip_content(ctx, props, horizontal, state, flush)])
         .with_key(`${props.key}-grip`).with_ref(grip_ref)
         .with_style(ctx.component_style("grip", shape))
         .signal_style(state, #{
@@ -193,9 +211,9 @@ fn split_grip(ctx, props, horizontal, grip_ref, state, separator_ref) {
             disabled: ctx.component_style("grip_disabled", style().opacity(0.5)),
         });
     // The separator part can change its thickness. Follow its committed geometry rather
-    // than centering decoration on the default 8px lane; a ref read also follows resize.
+    // than centering decoration on the default thickness; a ref read also follows resize.
     let separator = ctx.element_size(separator_ref);
-    let thickness = if separator == () { 8.0 }
+    let thickness = if separator == () { if flush { 1.0 } else { 8.0 } }
         else if horizontal { separator.width } else { separator.height };
     let lane = style().absolute().flex_row().items_center().justify_center();
     lane = if horizontal { lane.top(px(0)).bottom(px(0)).inset_start(offset_px(-thickness)).width(px(thickness)) }
@@ -262,20 +280,24 @@ fn render_SplitPane(ctx, props) {
     let preview = optional_float_signal("start-size");
     let start_style = pane_style.flex_shrink(false);
     let end_style = pane_style.flex_grow();
-    // The 8px grab zone: the native handle draws the hairline down its middle (`line`,
-    // `line_inset`); hover and drag fill the zone with the tonal step (`handle_hover`,
-    // `handle_drag`) and keyboard focus turns it into an ink bar. The native handle takes
-    // the pointer, so hover comes from its state signal rather than a `hover` style.
-    let handle_style = style().flex_shrink(false)
-        .focus(style().background(theme_color("focus_ring")));
+    let flush = split_prop(props, "separator", "flush") == "flush";
+    // Flush: the separator is the 1px line itself, and stays one through hover, drag and
+    // focus; the grip over it shows those. Lane: the 8px grab zone, with the native handle's
+    // hairline down its middle (`line`, `line_inset`); hover and drag fill the zone with the
+    // tonal step (`handle_hover`, `handle_drag`) and keyboard focus turns it into an ink bar.
+    // The native handle takes the pointer, so hover comes from its state signal rather than
+    // a `hover` style.
+    let thickness = if flush { px(1) } else { px(8) };
+    let handle_style = if flush { style().flex_shrink(false).background(theme_color("border")) }
+        else { style().flex_shrink(false).focus(style().background(theme_color("focus_ring"))) };
     if horizontal {
         start_style = start_style.width(relative(props.size)).height(relative(1.0));
         end_style = end_style.height(relative(1.0));
-        handle_style = handle_style.width(px(8)).height(relative(1.0)).cursor_resize_x();
+        handle_style = handle_style.width(thickness).height(relative(1.0)).cursor_resize_x();
     } else {
         start_style = start_style.height(relative(props.size)).width(relative(1.0));
         end_style = end_style.width(relative(1.0));
-        handle_style = handle_style.height(px(8)).width(relative(1.0)).cursor_resize_y();
+        handle_style = handle_style.height(thickness).width(relative(1.0)).cursor_resize_y();
     }
     let has_grip = props.grip;
     let start = box([props.start]).with_key(start_ref_key)
@@ -286,14 +308,15 @@ fn render_SplitPane(ctx, props) {
         source_ratio: props.size, min_start: props.min_start, min_end: props.min_end,
         max_start: props.max_start, disabled: props.disabled,
         signal: preview, group_ref: root_ref, start_ref: start_ref,
-        line: split_prop(props, "line", true), line_inset: split_prop(props, "line_inset", 4.0) };
+        line: if "line" in props && props.line != () { props.line } else { !flush },
+        line_inset: split_prop(props, "line_inset", 4.0) };
     let state = signal("handle-state", "idle");
     resize_props.state_signal = state;
     let grip = ();
     if has_grip {
         let grip_ref = element_ref(`${props.key}-grip`);
         resize_props.handle_ref = grip_ref;
-        grip = split_grip(ctx, props, horizontal, grip_ref, state, handle_ref);
+        grip = split_grip(ctx, props, horizontal, grip_ref, state, handle_ref, flush);
     }
     if "on_resize" in props && props.on_resize != () { resize_props.on_resize = Fn("split_commit"); }
     let key_payload = #{ orientation: orientation, group_ref: root_ref_key,
@@ -304,8 +327,10 @@ fn render_SplitPane(ctx, props) {
         .with_key(`${props.key}-separator`).with_ref(handle_ref)
         .with_style(ctx.component_style("handle", handle_style))
         .signal_style(state, #{
-            hover: ctx.component_style("handle_hover", style().background(theme_color("surface_hover"))),
-            drag: ctx.component_style("handle_drag", style().background(theme_color("surface_hover"))),
+            hover: ctx.component_style("handle_hover",
+                if flush { style() } else { style().background(theme_color("surface_hover")) }),
+            drag: ctx.component_style("handle_drag",
+                if flush { style() } else { style().background(theme_color("surface_hover")) }),
         })
         .disabled(props.disabled)
         .tab_stop(!props.disabled)

@@ -98,7 +98,7 @@ fn script(orientation: &str, part_styles: &str) -> String {
         r#"import "components/split_pane" as split_pane;
 fn resized(ctx, value) {{}}
 fn view(ctx) {{ column([
-    split_pane::SplitPane(#{{ key: "layout", label: "Resize panels", size: 0.5,
+    split_pane::SplitPane(#{{separator:"lane", key: "layout", label: "Resize panels", size: 0.5,
         orientation: "{orientation}", min_start: 0.0, min_end: 0.0,
         start: text("Start"), end: text("End"), line: false, handle: box([]),{part_styles}
         on_resize: Fn("resized") }})

@@ -108,29 +108,26 @@ fn scroll_area_page(h, v) {
 }
 
 fn split_pane_page(ctx, h, v) {
-    kit::page(h, v, "split_pane", "SplitPane", "A short grip grows smoothly on hover, focus and drag. Native capture and keyboard behavior stay the same for custom grips.", [
-        kit::sec("Panes", column([split_pane::SplitPane(#{ key: "split-main", label: "Resize panes",
+    kit::page(h, v, "split_pane", "SplitPane", "Flush by default: a hairline both panes reach, a 7px hit zone over them and a grip that shows on hover, focus and drag. A lane is an 8px separator between the panes. Native capture and keyboard behavior stay the same for custom grips.", [
+        kit::sec("Flush", column([split_pane::SplitPane(#{ key: "split-main", label: "Resize panes",
             size: kit::val(v, "split.size", 0.35), start: text("Navigation"), end: text("Content"),
             on_resize: kit::store(h, "split.size") })]).with_style(style().height(px(160)).width(px(520)))),
-        kit::sec("Grip", column([split_pane::SplitPane(#{ key: "split-grip", label: "Resize panes with grip",
-            size: kit::val(v, "split.grip_size", 0.5), start: text("Source"), end: text("Preview"),
+        kit::sec("Lane", column([split_pane::SplitPane(#{ key: "split-lane", label: "Resize panes on a lane",
+            separator: "lane", size: kit::val(v, "split.lane_size", 0.5), start: text("Files"), end: text("Preview"),
+            on_resize: kit::store(h, "split.lane_size") })]).with_style(style().height(px(160)).width(px(520)))),
+        kit::sec("Custom grip", column([split_pane::SplitPane(#{ key: "split-grip", label: "Resize panes with grip",
+            separator: "lane", size: kit::val(v, "split.grip_size", 0.5), start: text("Source"), end: text("Preview"),
             handle: grip_dots(), on_resize: kit::store(h, "split.grip_size") })])
             .with_style(style().height(px(160)).width(px(520)))),
-        kit::sec("Thin separator", column([split_pane::SplitPane(#{ key: "split-thin", label: "Resize panes on a thin separator",
-            size: kit::val(v, "split.thin_size", 0.5), start: text("Files"), end: text("Preview"),
-            handle_renderer: ctx.node_factory(Fn("split_bar")), line: false,
-            part_styles: #{ handle: style().width(px(1)),
-                handle_hover: style().background(rgba(0x00000000)),
-                handle_drag: style().background(rgba(0x00000000)),
-                grip: style().width(px(7)).height(relative(1.0)).border(px(0)).background(rgba(0x00000000)),
-                grip_hover: style().border(px(0)), grip_drag: style().border(px(0)),
-                grip_focus: style().border(px(0)) },
-            on_resize: kit::store(h, "split.thin_size") })])
+        kit::sec("Grip renderer", column([split_pane::SplitPane(#{ key: "split-renderer", label: "Resize panes with a drawn grip",
+            size: kit::val(v, "split.renderer_size", 0.5), start: text("Files"), end: text("Preview"),
+            handle_renderer: ctx.node_factory(Fn("split_bar")),
+            on_resize: kit::store(h, "split.renderer_size") })])
             .with_style(style().height(px(160)).width(px(520)))),
     ])
 }
 
-// A business-owned bar inside a 7px transparent, full-height native hit area.
+// A business-owned bar, shown over the flush line while it is hovered, focused or dragged.
 fn split_bar(ctx, detail) {
     box([]).with_style(style().width(px(4)).height(px(24)).background(theme_color("accent")))
         .progress_motion(motion_signal(detail.state, ["drag"],

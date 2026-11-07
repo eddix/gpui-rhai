@@ -1655,7 +1655,7 @@ fn a_split_pane_draws_one_line_down_the_middle_of_its_grab_zone(cx: &mut TestApp
     cx.update(gpui_rhai::install);
     // One native hairline centred in the 8px zone, 4px short of each end; the zone itself
     // paints no edge of its own, so the separator never reads as two lines.
-    let (lines, zone) = separator_lines(cx, "");
+    let (lines, zone) = separator_lines(cx, "separator:\"lane\",");
     assert_eq!(lines.len(), 1, "{lines:?}");
     let (x, width, height) = lines[0];
     assert!(
@@ -1664,7 +1664,7 @@ fn a_split_pane_draws_one_line_down_the_middle_of_its_grab_zone(cx: &mut TestApp
     );
     assert!((height - (180.0 - 8.0)).abs() < 0.01, "{lines:?}");
     // `line: false` leaves the zone to a grip that draws its own.
-    let (lines, _) = separator_lines(cx, "line:false,");
+    let (lines, _) = separator_lines(cx, "separator:\"lane\",line:false,");
     assert!(lines.is_empty(), "{lines:?}");
 }
 

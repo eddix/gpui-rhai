@@ -56,8 +56,8 @@ content_hash = "15e71a2986fabdfa"
 dependencies = []
 
 [components."components/split_pane"]
-version = "0.4.2"
-content_hash = "2db3c8393f13c7a0"
+version = "0.4.3"
+content_hash = "4b0f0807552e93df"
 dependencies = []
 
 [components."components/status_bar"]
