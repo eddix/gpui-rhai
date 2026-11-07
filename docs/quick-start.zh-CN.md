@@ -74,6 +74,12 @@ Rust host 注册为带 schema 和版本的 capability。`gpui-rhai init` 生成�
 读文件、在 release 读嵌入的副本，所以发布时直接 `cargo build --release`；不要
 在生产环境依赖任意文件路径或动态下载脚本。
 
+`init` 还会生成 `examples/shot.rs`：`gpui-rhai shot --out a.png` 在屏幕外渲染
+视图并存 PNG，前面可以按顺序加 `--theme`、`--click`、`--key`、`--wait` 等步骤
+（仅 macOS；窗口开在屏幕外，不会弹出来，也不要录屏权限）。它要用 GPUI 的 test-support，所以 `offscreen-pre`
+特性只写在 `[dev-dependencies]` 里，`cargo build` 不会带上。详见
+[应用截图](visual-testing.md#shots-of-an-application)。
+
 可跨 render 保存的回调必须是命名且不捕获环境的函数。Rhai 的编译只检查语法，
 不会证明所有动态函数重载都存在；`gpui-rhai check` 会额外检查已知调用并真实执行
 首帧，但事件分支仍应以真实 payload 类型测试。入口脚本的函数不要和内置函数同名

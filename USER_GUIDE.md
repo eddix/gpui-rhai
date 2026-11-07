@@ -1719,6 +1719,9 @@ Also exercise:
 - release binaries, not only debug builds.
 
 Visual baselines supplement interaction tests; they do not replace them.
+`gpui-rhai shot` takes an application's screenshots offscreen on macOS, after
+steps such as `--theme`, `--click` and `--key`; see
+[application shots](docs/visual-testing.md#shots-of-an-application).
 
 ## 15. Agent playbook
 

@@ -25,14 +25,20 @@ serde = { version = "1", features = ["derive"] }
 
 [features]
 default = ["gpui-pre"]
-gpui-pre = ["dep:gpui", "dep:gpui_platform", "gpui-rhai/gpui-pre", "gpui-rhai-cli/gpui-pre"]
-gpui-fast = ["dep:gpui-fast", "dep:gpui-fast-platform", "gpui-rhai/gpui-fast", "gpui-rhai-cli/gpui-fast"]
+gpui-pre = ["dep:gpui", "dep:gpui_platform", "gpui-rhai/offscreen-pre", "gpui-rhai-cli/gpui-pre"]
+gpui-fast = ["dep:gpui-fast", "dep:gpui-fast-platform", "gpui-rhai/offscreen-fast", "gpui-rhai-cli/gpui-fast"]
 # Mounted hot-reload tests: `cargo test --features dev-reload --test token_reload`.
 dev-reload = ["gpui-rhai/dev-reload"]
 
 [[test]]
 name = "native"
 path = "tests/native/main.rs"
+
+# `gpui_rhai::offscreen` on the real renderer; its own main, on the main thread.
+[[test]]
+name = "offscreen_shot"
+path = "tests/offscreen_shot.rs"
+harness = false
 
 [[test]]
 name = "token_reload"

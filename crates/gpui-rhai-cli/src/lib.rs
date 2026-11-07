@@ -400,6 +400,12 @@ impl Project {
         } else {
             plan.create(build_path, build_source())?;
         }
+        let shot_path = self.root.join("examples/shot.rs");
+        if shot_path.exists() {
+            plan.create(self.root.join("gpui-rhai-shot-snippet.rs"), shot_source())?;
+        } else {
+            plan.create(shot_path, shot_source())?;
+        }
         plan.create(self.root.join("ui/main.rhai"), starter_ui())?;
         plan.create(self.root.join("ui/theme.rhai"), DEFAULT_THEME.to_owned())?;
         plan.create(
@@ -1028,6 +1034,34 @@ impl Project {
         let plan = bundle::BundlePlan::resolve(&self.root, &bundle::BundleOptions::default())?;
         let app = plan.build(&self.root, false)?;
         let status = Command::new(app.join("Contents/MacOS").join(&plan.binaries[0]))
+            .current_dir(&self.root)
+            .status()
+            .map_err(ProjectError::Spawn)?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(ProjectError::DevFailed(status.code()))
+        }
+    }
+
+    /// Run the application's `examples/shot.rs` with `args`, which renders
+    /// the view offscreen and saves PNGs (`gpui_rhai::offscreen`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError::ShotMissing`] without `examples/shot.rs`, or
+    /// when Cargo cannot start or the shot fails.
+    pub fn shot(&self, args: &[String]) -> Result<(), ProjectError> {
+        if !self.root.join("examples/shot.rs").is_file() {
+            return Err(ProjectError::ShotMissing(format!(
+                "{}\n[dev-dependencies]\ngpui-rhai = {}",
+                shot_source(),
+                shot_dev_dependency(GpuiBackend::Pre),
+            )));
+        }
+        let status = Command::new("cargo")
+            .args(["run", "--quiet", "--example", "shot", "--"])
+            .args(args)
             .current_dir(&self.root)
             .status()
             .map_err(ProjectError::Spawn)?;
@@ -2075,6 +2109,34 @@ fn add_init_dependencies(cargo: &mut DocumentMut, backend: GpuiBackend) {
         cargo["build-dependencies"]["gpui-rhai-build"] =
             Item::Value(Value::from(runtime_requirement()));
     }
+    // examples/shot.rs renders offscreen through GPUI's `test-support`, which
+    // only the dev-dependency turns on; a `cargo build` never sees it.
+    if cargo
+        .get("dev-dependencies")
+        .and_then(|dependencies| dependencies.get("gpui-rhai"))
+        .is_none()
+    {
+        if cargo.get("dev-dependencies").is_none() {
+            cargo["dev-dependencies"] = toml_edit::table();
+        }
+        cargo["dev-dependencies"]["gpui-rhai"] =
+            Item::Value(Value::InlineTable(shot_dev_dependency(backend)));
+    }
+}
+
+/// gpui-rhai with the offscreen feature of `backend`, which also selects
+/// that backend.
+fn shot_dev_dependency(backend: GpuiBackend) -> InlineTable {
+    let mut features = Array::new();
+    features.push(match backend {
+        GpuiBackend::Pre => "offscreen-pre",
+        GpuiBackend::Fast => "offscreen-fast",
+    });
+    let mut dependency = InlineTable::new();
+    dependency.insert("version", Value::from(runtime_requirement()));
+    dependency.insert("default-features", Value::from(false));
+    dependency.insert("features", Value::Array(features));
+    dependency
 }
 
 fn host_source() -> String {
@@ -2086,6 +2148,20 @@ fn host_source() -> String {
     gpui_rhai::ScriptApplication::new(view)
         .run()
         .expect("GPUI Rhai application failed");
+}
+"#
+    .to_owned()
+}
+
+/// The `examples/shot.rs` that `init` writes; `gpui-rhai shot` runs it.
+fn shot_source() -> String {
+    r#"// `gpui-rhai shot --out shot.png` renders the view offscreen and saves PNGs.
+// Mount it as src/main.rs does, with the same extensions (or fakes of them).
+fn main() {
+    if let Err(error) = gpui_rhai::offscreen::run(|| gpui_rhai::script_view!().prepare()) {
+        eprintln!("shot: {error}");
+        std::process::exit(1);
+    }
 }
 "#
     .to_owned()
@@ -2755,6 +2831,11 @@ pub enum ProjectError {
     #[error("bundle: {0}")]
     Bundle(String),
     #[error(
+        "examples/shot.rs is missing; add it and gpui-rhai's offscreen feature in \
+         [dev-dependencies] (`offscreen-fast` on gpui-fast):\n\n{0}"
+    )]
+    ShotMissing(String),
+    #[error(
         "`gpui-rhai embed` was removed in 0.4.3: add `gpui-rhai-build` to [build-dependencies], \
          call `gpui_rhai_build::embed_ui(\"ui\")` from build.rs and mount with \
          `gpui_rhai::script_view!()`; then delete src/gpui_rhai_embedded.rs"
@@ -2913,6 +2994,21 @@ mod tests {
         );
         let main = std::fs::read_to_string(directory.path().join("src/main.rs")).unwrap();
         assert!(main.contains("gpui_rhai::script_view!()"), "{main}");
+        // `gpui-rhai shot` runs examples/shot.rs; only the dev-dependency
+        // turns on the offscreen feature of the backend.
+        let shot = &cargo["dev-dependencies"]["gpui-rhai"];
+        assert_eq!(shot["version"].as_str(), Some(minor));
+        assert_eq!(shot["default-features"].as_bool(), Some(false));
+        assert_eq!(
+            shot["features"].as_array().unwrap(),
+            &[toml::Value::from("offscreen-pre")]
+        );
+        assert!(manifest.contains("\n[dev-dependencies]\n"), "{manifest}");
+        let example = std::fs::read_to_string(directory.path().join("examples/shot.rs")).unwrap();
+        assert!(
+            example.contains("gpui_rhai::offscreen::run(|| gpui_rhai::script_view!().prepare())"),
+            "{example}"
+        );
     }
 
     #[test]
@@ -3084,6 +3180,10 @@ mod tests {
         let source = fs::read_to_string(&cargo).unwrap();
         assert!(
             source.contains("default-features = false, features = [\"gpui-fast\", \"dev-reload\"]"),
+            "{source}"
+        );
+        assert!(
+            source.contains("default-features = false, features = [\"offscreen-fast\"]"),
             "{source}"
         );
         assert_eq!(

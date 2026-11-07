@@ -24,9 +24,12 @@ through 0.1.8 are in the checklist listed under [History](history.md).
    multi-window interaction matrix
    ([real-window scripts](../scripts/macos-real-window/)).
    Before manual work, run the independent `tests/native-keyboard` workspace's
-   tests and strict test-target Clippy; it is intentionally outside the main
-   Cargo workspace so GPUI `test-support` cannot enter release dependency
-   resolution.
+   tests and strict test-target Clippy; it is a workspace of its own so its
+   GPUI `test-support` stays out of the main workspace. GPUI `test-support` is
+   never enabled by default features or in release builds: only gpui-rhai's
+   `offscreen-pre` and `offscreen-fast` turn it on, which applications enable in
+   `[dev-dependencies]` for `examples/shot.rs`. CI runs
+   `scripts/check-test-support.sh` to hold this.
    The structural performance test (`crates/gpui-rhai/tests/state_structure.rs`)
    runs with the main workspace on shared CI; keep absolute latency thresholds
    on the controlled Mac benchmark path (`scripts/benchmark.sh`).
