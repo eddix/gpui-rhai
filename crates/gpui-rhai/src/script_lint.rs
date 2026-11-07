@@ -8,7 +8,8 @@ use thiserror::Error;
 use crate::ModuleId;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-/// One type-agnostic Rhai function-name or arity diagnostic.
+#[non_exhaustive]
+/// One Rhai function-name, arity, or literal-argument diagnostic.
 pub struct KnownCallDiagnostic {
     /// Diagnostic source name supplied by the Host.
     pub source: String,
@@ -26,6 +27,19 @@ pub struct KnownCallDiagnostic {
     pub arity: usize,
     /// Known valid explicit arities; empty means the name is unknown.
     pub expected_arities: Vec<usize>,
+    /// Set when the arity is right but no native overload takes the literal
+    /// arguments, as `style().flex_shrink(0.0)` for `flex_shrink(bool)`.
+    pub literal_arguments: Option<LiteralArguments>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+/// The argument types of a call no overload of a native function takes.
+pub struct LiteralArguments {
+    /// Each argument's type: a literal's type, or `_` for any other expression.
+    pub found: Vec<String>,
+    /// The parameter types of each overload with the call's arity.
+    pub expected: Vec<Vec<String>>,
 }
 
 impl fmt::Display for KnownCallDiagnostic {
@@ -46,6 +60,20 @@ impl fmt::Display for KnownCallDiagnostic {
             return write!(
                 formatter,
                 ": `{qualified}` calls into `{module}`, {THEME_IMPORT}"
+            );
+        }
+        if let Some(arguments) = &self.literal_arguments {
+            let list = |types: &[String]| format!("({})", types.join(", "));
+            let expected = arguments
+                .expected
+                .iter()
+                .map(|types| list(types))
+                .collect::<Vec<_>>()
+                .join(" or ");
+            return write!(
+                formatter,
+                ": `{qualified}` takes {expected}, not {}",
+                list(&arguments.found)
             );
         }
         if self.expected_arities.is_empty() {
@@ -289,6 +317,14 @@ struct MetadataFunction {
     #[serde(rename = "type")]
     function_type: MetadataFunctionType,
     num_params: usize,
+    #[serde(default)]
+    params: Vec<MetadataParam>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MetadataParam {
+    #[serde(rename = "type", default)]
+    kind: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -323,6 +359,10 @@ struct KnownCallCatalog {
     native_direct: BTreeMap<String, BTreeSet<usize>>,
     /// Native functions by name and explicit argument count after the receiver.
     native_method: BTreeMap<String, BTreeSet<usize>>,
+    /// Parameter types of each global native overload, by name.
+    native_direct_types: BTreeMap<String, Vec<Vec<String>>>,
+    /// Parameter types after the receiver of each native overload, by name.
+    native_method_types: BTreeMap<String, Vec<Vec<String>>>,
 }
 
 impl KnownCallCatalog {
@@ -386,6 +426,29 @@ impl KnownCallCatalog {
         }
     }
 
+    fn ingest_parameter_types(&mut self, function: &MetadataFunction) {
+        if function.params.len() != function.num_params {
+            return;
+        }
+        let types = function
+            .params
+            .iter()
+            .map(|param| crate::script_docs::type_name(param.kind.as_deref().unwrap_or("?")))
+            .collect::<Vec<_>>();
+        if function.namespace == MetadataNamespace::Global {
+            self.native_direct_types
+                .entry(function.name.clone())
+                .or_default()
+                .push(types.clone());
+        }
+        if let Some((_, after_receiver)) = types.split_first() {
+            self.native_method_types
+                .entry(function.name.clone())
+                .or_default()
+                .push(after_receiver.to_vec());
+        }
+    }
+
     fn ingest_metadata_module(&mut self, path: &str, module: &MetadataModule) {
         for function in &module.functions {
             if path.is_empty() {
@@ -394,6 +457,7 @@ impl KnownCallCatalog {
                         .insert_direct(function.name.clone(), function.num_params);
                 }
                 if function.function_type == MetadataFunctionType::Native {
+                    self.ingest_parameter_types(function);
                     if function.namespace == MetadataNamespace::Global {
                         self.native_direct
                             .entry(function.name.clone())
@@ -467,6 +531,18 @@ pub(crate) fn lint_known_calls(
         }
     }
 
+    // A script function takes any argument, and entry-script functions answer
+    // calls in every module; a Host function's types are unknown.
+    let mut untyped = parsed
+        .iter()
+        .flat_map(|source| source.ast.iter_functions())
+        .map(|function| (function.name.to_owned(), function.params.len()))
+        .collect::<BTreeSet<_>>();
+    untyped.extend(
+        host.iter()
+            .filter(|function| function.namespace.is_none())
+            .map(|function| (function.name.clone(), function.arity)),
+    );
     let mut diagnostics = Vec::new();
     let mut host_calls = HostCalls {
         declared: host,
@@ -475,8 +551,7 @@ pub(crate) fn lint_known_calls(
     for source in &parsed {
         lint_source(
             source,
-            &catalog,
-            &module_functions,
+            (&catalog, &module_functions, &untyped),
             &mut host_calls,
             &mut diagnostics,
         );
@@ -619,8 +694,11 @@ fn parse_source(
 
 fn lint_source(
     source: &ParsedSource,
-    catalog: &KnownCallCatalog,
-    module_functions: &BTreeMap<String, FunctionSet>,
+    (catalog, module_functions, untyped): (
+        &KnownCallCatalog,
+        &BTreeMap<String, FunctionSet>,
+        &BTreeSet<(String, usize)>,
+    ),
     host: &mut HostCalls<'_>,
     diagnostics: &mut Vec<KnownCallDiagnostic>,
 ) {
@@ -667,6 +745,17 @@ fn lint_source(
                     .as_deref()
                     .and_then(|namespace| imports.get(namespace.split("::").next()?))
                     .cloned();
+                let typed = namespace.is_none()
+                    && expected.contains(&arity)
+                    && !untyped.contains(&(call.name.to_string(), arity));
+                if typed
+                    && let Some(arguments) = untyped_literals(
+                        catalog.native_direct_types.get(call.name.as_str()),
+                        &call.args,
+                    )
+                {
+                    push_literal_mismatch(diagnostics, source, *position, &call.name, arguments);
+                }
                 push_if_invalid(
                     diagnostics,
                     source,
@@ -687,6 +776,17 @@ fn lint_source(
                 );
                 if !takes(&local.method, &call.name, call.args.len()) {
                     host.record(None, &call.name, call.args.len() + 1);
+                }
+                let typed = expected.contains(&call.args.len())
+                    && !untyped.contains(&(call.name.to_string(), call.args.len()))
+                    && !untyped.contains(&(call.name.to_string(), call.args.len() + 1));
+                if typed
+                    && let Some(arguments) = untyped_literals(
+                        catalog.native_method_types.get(call.name.as_str()),
+                        &call.args,
+                    )
+                {
+                    push_literal_mismatch(diagnostics, source, *position, &call.name, arguments);
                 }
                 push_if_invalid(
                     diagnostics,
@@ -784,6 +884,77 @@ fn merged_arities(
     first.into_iter().chain(second).flatten().copied().collect()
 }
 
+/// The call's argument types when no overload with its arity takes its literal
+/// arguments; `None` when one does, or when no overload's types are known.
+fn untyped_literals(
+    overloads: Option<&Vec<Vec<String>>>,
+    arguments: &[Expr],
+) -> Option<LiteralArguments> {
+    let found = arguments.iter().map(literal_type).collect::<Vec<_>>();
+    if found.iter().all(Option::is_none) {
+        return None;
+    }
+    let expected = overloads?
+        .iter()
+        .filter(|types| types.len() == arguments.len())
+        .cloned()
+        .collect::<Vec<_>>();
+    let takes = |types: &Vec<String>| {
+        types.iter().zip(&found).all(|(parameter, found)| {
+            found.is_none_or(|found| parameter == "?" || parameter == found)
+        })
+    };
+    if expected.is_empty() || expected.iter().any(takes) {
+        return None;
+    }
+    let mut expected = expected;
+    expected.sort();
+    expected.dedup();
+    Some(LiteralArguments {
+        found: found
+            .into_iter()
+            .map(|found| found.unwrap_or("_").to_owned())
+            .collect(),
+        expected,
+    })
+}
+
+/// The type of a literal argument, spelled as `script_docs::type_name` spells
+/// parameters; `None` for any other expression.
+fn literal_type(argument: &Expr) -> Option<&'static str> {
+    match argument {
+        Expr::IntegerConstant(..) => Some("int"),
+        Expr::FloatConstant(..) => Some("float"),
+        Expr::StringConstant(..) | Expr::InterpolatedString(..) => Some("String"),
+        Expr::CharConstant(..) => Some("char"),
+        Expr::BoolConstant(..) => Some("bool"),
+        Expr::Unit(..) => Some("()"),
+        Expr::Array(..) => Some("Array"),
+        Expr::Map(..) => Some("Map"),
+        _ => None,
+    }
+}
+
+fn push_literal_mismatch(
+    diagnostics: &mut Vec<KnownCallDiagnostic>,
+    source: &ParsedSource,
+    position: rhai::Position,
+    function: &str,
+    arguments: LiteralArguments,
+) {
+    diagnostics.push(KnownCallDiagnostic {
+        source: source.name.clone(),
+        line: position.line(),
+        column: position.position(),
+        namespace: None,
+        module: None,
+        function: function.to_owned(),
+        arity: arguments.found.len(),
+        expected_arities: Vec::new(),
+        literal_arguments: Some(arguments),
+    });
+}
+
 fn push_if_invalid(
     diagnostics: &mut Vec<KnownCallDiagnostic>,
     source: &ParsedSource,
@@ -805,6 +976,7 @@ fn push_if_invalid(
         function: function.to_owned(),
         arity,
         expected_arities: expected.into_iter().collect(),
+        literal_arguments: None,
     });
 }
 
@@ -812,6 +984,38 @@ fn push_if_invalid(
 mod tests {
     use super::*;
     use crate::RuntimeEngine;
+
+    #[test]
+    fn known_call_lint_rejects_literals_no_overload_takes() {
+        let mut runtime = RuntimeEngine::new();
+        let diagnostics = runtime
+            .lint_known_calls(
+                "ui/main.rhai",
+                r#"
+                    fn shrink(value) { style().flex_shrink(value) }
+                    fn view(ctx) {
+                        if false { return text("a").with_style(style().flex_shrink(0.0)); }
+                        if false { return text("b").with_style(style().flex_shrink(false)); }
+                        if false { return text("c").with_style(shrink(0.0)); }
+                        text(`${ctx.get_state("x")}`).with_style(style().opacity(1).font_weight(600.0))
+                    }
+                "#,
+                &BTreeMap::new(),
+            )
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        assert_eq!(diagnostics.len(), 2, "{diagnostics:#?}");
+        assert!(
+            diagnostics[0].ends_with("`flex_shrink` takes (bool), not (float)"),
+            "{diagnostics:#?}"
+        );
+        assert!(
+            diagnostics[1].ends_with("`font_weight` takes (int), not (float)"),
+            "{diagnostics:#?}"
+        );
+    }
 
     #[test]
     fn known_call_lint_accepts_local_module_core_and_standard_calls() {

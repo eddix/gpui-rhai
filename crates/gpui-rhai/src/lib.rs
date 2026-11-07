@@ -313,7 +313,8 @@ pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };
 pub use script_lint::{
-    HostFunction, HostFunctionError, KnownCallDiagnostic, KnownCallLintError, ShadowedBuiltin,
+    HostFunction, HostFunctionError, KnownCallDiagnostic, KnownCallLintError, LiteralArguments,
+    ShadowedBuiltin,
 };
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,

@@ -218,7 +218,10 @@ calls, and computed registration are rejected before evaluation. Put mutable UI
 state in `UiContext` and start work through lifecycle/event APIs.
 
 Rhai compilation validates syntax, not every dynamic overload. The
-`gpui-rhai check` also lints known calls. It executes the real initial lifecycle
+`gpui-rhai check` also lints known calls in every branch: names, arities, and
+literal arguments against the native parameter types, so
+`style().flex_shrink(0.0)` fails as `` `flex_shrink` takes (bool), not
+(float)``. It executes the real initial lifecycle
 when no Host capability context is required. If a declared capability is used
 by `init`, the CLI performs static validation but deliberately skips that init
 and any initial View that may depend on its state; the summary says which level
