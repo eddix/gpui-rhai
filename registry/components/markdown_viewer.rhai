@@ -25,7 +25,7 @@ define_component(#{
             source: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "document" }] }, required: true, sensitive: false,
                 doc: "Markdown string or Host-owned NativeTextDocument from ctx.get_native_text_document." },
             label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Markdown" }, doc: "Accessible document name." },
+                "default": #{ type: "string", value: "" }, doc: "Accessible document name. Empty, the localized `markdown.label` message, `Markdown` without one." },
             height: #{ schema: #{ type: "string", allowed: ["fill", "content"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "fill" }, doc: "Fill available space or grow to measured content height." },
             max_height: #{ schema: #{ type: "optional", value: #{ type: "one_of", variants: [#{ type: "integer", min: 0 }, #{ type: "length" }] } }, required: false, sensitive: false,
@@ -49,6 +49,13 @@ define_component(#{
     render: Fn("render_MarkdownViewer")
 });
 
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
+
 fn MarkdownViewer(props) { render_component("components/markdown_viewer", props) }
 fn prop_or(props, key, fallback) { if key in props { props[key] } else { fallback } }
 fn link(ctx, payload) { ctx.emit("link", payload); }
@@ -61,7 +68,15 @@ fn render_MarkdownViewer(ctx, props) {
     if height != "content" { root = root.height(relative(1.0)).min_height(px(0)); }
     gpui_rhai::MarkdownViewPrimitive(#{
         key: props.key,
-        source: props.source, label: prop_or(props, "label", "Markdown"), height: height,
+        messages: #{
+            preparing: ctx.t_or("markdown.preparing", "Preparing Markdown…"),
+            updating: ctx.t_or("markdown.updating", "Updating…"),
+            copy: ctx.t_or("markdown.copy", "Copy"),
+            copy_code: ctx.t_or("markdown.copy_code", "Copy code"),
+            code_block: ctx.t_or("markdown.code_block", "{language} code block"),
+            plain_text: ctx.t_or("markdown.plain_text", "Plain text"),
+        },
+        source: props.source, label: localized_prop(ctx, props, "label", "markdown.label", "Markdown"), height: height,
         max_height: if type_of(max_height) == "i64" { px(max_height) } else { max_height },
         table_max_height: if type_of(table_max_height) == "i64" { px(table_max_height) } else { table_max_height },
         code_block_actions: prop_or(props, "code_block_actions", ["copy"]),
@@ -79,5 +94,5 @@ fn render_MarkdownViewer(ctx, props) {
         error_style: ctx.component_style("error", style().typography("body")),
         on_link: if "on_link" in props && props.on_link != () { Fn("link") } else { () },
     }).with_key(props.key).with_style(ctx.component_style("root", root))
-        .accessibility_role("document").accessibility_label(prop_or(props, "label", "Markdown"))
+        .accessibility_role("document").accessibility_label(localized_prop(ctx, props, "label", "markdown.label", "Markdown"))
 }

@@ -1,6 +1,6 @@
 # DiffViewer
 
-`components/diff_viewer` · export `DiffViewer` · version 0.2.0. Generated from
+`components/diff_viewer` · export `DiffViewer` · version 0.4.3. Generated from
 [`registry/components/diff_viewer.rhai`](../../../registry/components/diff_viewer.rhai); do not edit.
 
 Neutral two-way, read-only source comparison over the native document surface.

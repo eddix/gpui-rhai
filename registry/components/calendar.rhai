@@ -1,9 +1,9 @@
 /* gpui-rhai
-{"id":"components/calendar","export":"Calendar","version":"0.4.0","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["surface_hover","accent","accent_hover","on_accent","text.accent","text_primary","text_muted","disabled","focus_ring","selection","metrics.control","metrics.marker","spacing.xs","spacing.sm","radius.md","typography.control","typography.label","typography.body"],"environment":["size","density"]}
+{"id":"components/calendar","export":"Calendar","version":"0.4.3","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["surface_hover","accent","accent_hover","on_accent","text.accent","text_primary","text_muted","disabled","focus_ring","selection","metrics.control","metrics.marker","spacing.xs","spacing.sm","radius.md","typography.control","typography.label","typography.body"],"environment":["size","density"]}
 */
 // The single calendar engine shared by DatePicker and TimeRangePicker.
 // Example: Calendar(#{key:"day",label:"Date",value:"2026-10-16",on_change:Fn("date_changed")})
-define_component(#{metadata:#{id:"components/calendar","export":"Calendar",version:"0.4.0",
+define_component(#{metadata:#{id:"components/calendar","export":"Calendar",version:"0.4.3",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
     tokens:["surface_hover","accent","accent_hover","on_accent","text.accent","text_primary","text_muted","disabled","focus_ring","selection","metrics.control","metrics.marker","spacing.xs","spacing.sm","radius.md","typography.control","typography.label","typography.body"],environment:["size","density"]},
     schema:#{props:#{
@@ -65,7 +65,7 @@ fn calendar_month(ctx,props,month,focus,start,finish,min_date,max_date){
             s=ctx.component_style("day_focused",focused_style);}
         if disabled{s=ctx.component_style("day_disabled",s.text_color(theme_color("disabled")));}
         let label=if date==(){""}else{ctx.format_date(date,"long")};
-        if date!=()&&props.mode=="range"{if date==start{label+=`, ${ctx.t("time.start")}`;}if date==finish{label+=`, ${ctx.t("time.end")}`;}}
+        if date!=()&&props.mode=="range"{if date==start{label+=`, ${ctx.t_or("time.start", "Start")}`;}if date==finish{label+=`, ${ctx.t_or("time.end", "End")}`;}}
         let day=row([text(if cell.day==(){""}else{ctx.format_number(cell.day,#{grouping:false})})])
             .with_key(if date==(){`blank-${w}-${d}`}else{date}).with_style(s).disabled(disabled).tab_stop(false)
             .accessibility_role("gridcell").accessibility_label(label).accessibility_selected(selected||in_range).accessibility_value(date);
@@ -91,12 +91,12 @@ fn render_Calendar(ctx,props){
     let month=if ctx.get_state("month")==""||changed{date_month_start(focus)}else{ctx.get_state("month")};
     let previous=month_target(focus,-1,min_date,max_date);let next=month_target(focus,1,min_date,max_date);
     let head=row([row([text("‹")]).with_key("previous").with_style(ctx.component_style("previous",control_style()))
-        .disabled(previous==focus).accessibility_role("button").accessibility_label(ctx.t("calendar.previous_month"))
+        .disabled(previous==focus).accessibility_role("button").accessibility_label(ctx.t_or("calendar.previous_month", "Previous month"))
         .on_click_value(Fn("navigated"),previous).tab_stop(false),
         text(if props.months==1{ctx.format_month_year(month)}else{props.label})
             .with_style(ctx.component_style("month_title",style().typography("body").font_weight(600))),
         row([text("›")]).with_key("next").with_style(ctx.component_style("next",control_style()))
-        .disabled(next==focus).accessibility_role("button").accessibility_label(ctx.t("calendar.next_month"))
+        .disabled(next==focus).accessibility_role("button").accessibility_label(ctx.t_or("calendar.next_month", "Next month"))
         .on_click_value(Fn("navigated"),next).tab_stop(false)]).with_style(ctx.component_style("header",style().justify_between()));
     let months=[calendar_month(ctx,props,month,focus,start,finish,min_date,max_date)];
     if props.months==2{let next_month=date_checked_add_months(month,1);if next_month!=(){months.push(calendar_month(ctx,props,next_month,focus,start,finish,min_date,max_date));}}

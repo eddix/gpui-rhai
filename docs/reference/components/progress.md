@@ -1,6 +1,6 @@
 # Progress
 
-`components/progress` · export `Progress` · version 0.2.0. Generated from
+`components/progress` · export `Progress` · version 0.4.3. Generated from
 [`registry/components/progress.rhai`](../../../registry/components/progress.rhai); do not edit.
 
 Determinate or indeterminate progress indicator animated entirely in Rust.

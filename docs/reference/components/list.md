@@ -1,6 +1,6 @@
 # List
 
-`components/list` · export `List` · version 0.4.1. Generated from
+`components/list` · export `List` · version 0.4.3. Generated from
 [`registry/components/list.rhai`](../../../registry/components/list.rhai); do not edit.
 
 Controlled virtualized list of keyed rows: the rows Table draws, without columns.
@@ -22,7 +22,7 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 | `badge_width` | number > 0 or length or `()` | — | Badge slot width reserved on every row so the titles align: logical pixels, or a Length resolved in the list's density; `()` fits each badge. |
 | `dividers` | bool | `false` | Draws a 1px border under every row. |
 | `empty` | node or `()` | — | Node shown instead of `empty_text` when `items` is empty. |
-| `empty_text` | string | `"No items"` | Muted text shown when `items` is empty, unless `empty` is given. |
+| `empty_text` | string | `""` | Muted text shown when `items` is empty, unless `empty` is given. Empty, the localized `common.no_items` message, `No items` without one. |
 | `fill_height` | bool | `false` | Grows into the free height of a flex parent instead of a fixed `height`; give exactly one of the two. |
 | `height` | number > 0 or length or `()` | — | Viewport height: logical pixels, or a Length such as `theme_length("metrics.row") * 6`; give exactly one of `height` or `fill_height`. |
 | `items` | native collection or array of object (at most 10000) | required | Rows in display order; a NativeCollection is normalized and navigated in Rust without enumerating it in Rhai. |
@@ -30,7 +30,7 @@ list::List(#{ key: "tickets", label: "Tickets", items: items, selection_mode: "s
 | `keyboard_navigation` | bool | `true` | Owns the single tab stop and navigation keys. Set false only when a parent such as ColumnBrowser owns keyboard navigation and focus; selected rows still remain revealed. |
 | `label` | string | required | Accessible name of the list. |
 | `loading` | bool | `false` | Shows `loading_content` in the list's place instead of the rows. |
-| `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted "Loading…" line. |
+| `loading_content` | node or `()` | — | Node shown while `loading`; `()` shows a muted line with the localized `collection.loading` message ("Loading…"). |
 | `on_context_request` | callback or `()` | — | Called with `#{ key, anchor, source }` when a row is right-pressed or Shift+F10 or the menu key is pressed; without a selection mode it makes the list a tab stop for those keys. |
 | `on_row_activate` | callback or `()` | — | Called with #{ key, has_children } on a double click; useful to distinguish browsing selection from leaf activation. |
 | `on_row_click` | callback or `()` | — | Called with the row key when an enabled row is clicked, or Enter is pressed on the selected row. |

@@ -133,14 +133,14 @@ define_component(#{
                 "default": #{ type: "bool", value: false },
                 doc: "Whether a menu button lists every tab; picking one selects it. Needs `key`." },
             menu_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "All tabs" },
-                doc: "Accessible name of the overflow menu button and its menu." },
+                "default": #{ type: "string", value: "" },
+                doc: "Accessible name of the overflow menu button and its menu. Empty, the localized `tabs.all` message, `All tabs` without one." },
             close_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Close" },
-                doc: "Accessible name of a close button, followed by the tab's label." },
+                "default": #{ type: "string", value: "" },
+                doc: "Accessible name of a close button, followed by the tab's label. Empty, the localized `common.close` message, `Close` without one." },
             add_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Add tab" },
-                doc: "Accessible name of the add button." },
+                "default": #{ type: "string", value: "" },
+                doc: "Accessible name of the add button. Empty, the localized `tabs.add` message, `Add tab` without one." },
             reorderable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Whether tabs move by dragging or Alt+Arrow; moves are reported through `on_reorder`. Needs `key`." },
@@ -203,6 +203,13 @@ define_component(#{
     },
     render: Fn("render_Tabs")
 });
+
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
 
 fn Tabs(props) { render_component("components/tabs", props) }
 fn prop_or(props, name, fallback) { if name in props && props[name] != () { props[name] } else { fallback } }
@@ -342,7 +349,7 @@ fn tab_slot(ctx, props, cfg, tab, selected, close) {
             .with_style(ctx.component_style("close", button))
             .tab_stop(false)
             .accessibility_role("button")
-            .accessibility_label(`${prop_or(props, "close_label", "Close")} ${tab.label}`)
+            .accessibility_label(`${localized_prop(ctx, props, "close_label", "common.close", "Close")} ${tab.label}`)
             .on_click_value(Fn("close_tab"), close));
     }
     // A fixed square, so the mark, the button and nothing keep the tab's width.
@@ -578,7 +585,7 @@ fn overflow_menu(ctx, props, cfg, tabs) {
     // The bar keeps its separators: a hairline between the strip and the menu.
     if cfg.variant == "bar" { edge = edge.border_start(px(1)).border_color(theme_color("border")); }
     row([tab_overflow_menu::TabOverflowMenu(#{ key: `${cfg.key}-menu`,
-        label: prop_or(props, "menu_label", "All tabs"), value: props.value, items: items,
+        label: localized_prop(ctx, props, "menu_label", "tabs.all", "All tabs"), value: props.value, items: items,
         on_pick: Fn("menu_pick") })])
         .with_key("menu").with_style(ctx.component_style("menu", edge))
 }
@@ -706,7 +713,7 @@ fn render_Tabs(ctx, props) {
     children.push(list);
     if has_add {
         children.push(icon_button::IconButton(#{ key: "add",
-            icon: image_source(asset("app/icons/plus")), label: prop_or(props, "add_label", "Add tab"),
+            icon: image_source(asset("app/icons/plus")), label: localized_prop(ctx, props, "add_label", "tabs.add", "Add tab"),
             on_click: Fn("add_tab") }).with_style(ctx.component_style("add", style().flex_shrink(false))));
     }
     if has_menu || end.len > 0 {

@@ -2,7 +2,7 @@
 {
   "id": "components/command_dialog",
   "export": "CommandDialog",
-  "version": "0.2.1",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/command", "components/dialog"],
   "capabilities": {},
@@ -22,7 +22,7 @@ import "components/command" as command;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.2.1",
+    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/command", "components/dialog"], capabilities: #{},
         tokens: ["metrics.inset", "radius.lg"],
@@ -63,11 +63,11 @@ define_component(#{
             ] }, required: true, sensitive: false,
                 doc: "Commands to rank: item maps, or a native collection keyed by value with the same fields but no `action`." },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Type a command" },
-                doc: "Hint shown in the empty search field." },
+                "default": #{ type: "string", value: "" },
+                doc: "Hint shown in the empty search field. Empty, the localized `command.placeholder` message, `Type a command` without one." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "No commands found" },
-                doc: "Message shown in place of the list when no command matches." },
+                "default": #{ type: "string", value: "" },
+                doc: "Message shown in place of the list when no command matches. Empty, the localized `command.empty` message, `No commands found` without one." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 },
                 doc: "Rows the list shows before it scrolls; group headings count as rows." },
@@ -116,6 +116,13 @@ define_component(#{
     render: Fn("render_CommandDialog")
 });
 
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
+
 fn CommandDialog(props) { render_component("components/command_dialog", props) }
 fn query_action(ctx, query) { ctx.emit("query_change", query); }
 fn active_action(ctx, value) { ctx.emit("active_change", value); }
@@ -130,8 +137,8 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 fn render_CommandDialog(ctx, props) {
     let list = command::Command(#{ key: `${props.key}-command`, label: props.label,
         query: props.query, active_value: props.active_value, items: props.items,
-        placeholder: prop_or(props, "placeholder", "Type a command"),
-        empty_text: prop_or(props, "empty_text", "No commands found"),
+        placeholder: localized_prop(ctx, props, "placeholder", "command.placeholder", "Type a command"),
+        empty_text: localized_prop(ctx, props, "empty_text", "command.empty", "No commands found"),
         max_visible: prop_or(props, "max_visible", 8),
         disabled: prop_or(props, "disabled", false),
         autofocus: true,

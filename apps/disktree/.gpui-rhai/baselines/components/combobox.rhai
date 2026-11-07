@@ -78,10 +78,10 @@ define_component(#{
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" }, doc: "Trigger text while nothing is selected." },
             search_placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Search" }, doc: "Placeholder of the search field." },
+                "default": #{ type: "string", value: "" }, doc: "Placeholder of the search field. Empty, the localized `common.search` message, `Search` without one." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "No results" },
-                doc: "Text shown when no option matches; the `empty` slot replaces it." },
+                "default": #{ type: "string", value: "" },
+                doc: "Text shown when no option matches; the `empty` slot replaces it. Empty, the localized `common.no_results` message, `No results` without one." },
             clear_label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                 doc: "Accessible name of the clear button shown with `clearable`; unset, the localized `common.clear` text." },
             trigger: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
@@ -150,6 +150,13 @@ define_component(#{
     },
     render: Fn("render_Combobox")
 });
+
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
 
 fn Combobox(props) { render_component("components/combobox", props) }
 
@@ -519,7 +526,7 @@ fn render_Combobox(ctx, props) {
         if prop_or(props, "clearable", false) && selected.len > 0 {
             let clear_label = if "clear_label" in props && props.clear_label != () {
                 props.clear_label
-            } else { ctx.t("common.clear") };
+            } else { ctx.t_or("common.clear", "Clear") };
             let clear_style = ctx.component_style("clear", style()
                 .width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
                 .items_center().justify_center()
@@ -595,7 +602,7 @@ fn render_Combobox(ctx, props) {
         // The search spans the panel on the rows' inset; without a header it heads the panel.
         let search = #{
             key: `${props.key}-search`, label: props.label, value: query,
-            placeholder: prop_or(props, "search_placeholder", "Search"),
+            placeholder: localized_prop(ctx, props, "search_placeholder", "common.search", "Search"),
             appearance: "embedded",
             on_change: Fn("query_action")
         };
@@ -608,7 +615,7 @@ fn render_Combobox(ctx, props) {
     }
     if ordered.len == 0 {
         content.push(if "empty" in props && props.empty != () { props.empty }
-            else { row([text(prop_or(props, "empty_text", "No results"))])
+            else { row([text(localized_prop(ctx, props, "empty_text", "common.no_results", "No results"))])
             .with_style(ctx.component_style("empty", style().min_height(theme_length("metrics.row"))
                     .padding_x(theme_length("metrics.inset")).items_center()
                     .typography("body").text_color(theme_color("text_muted")))) });

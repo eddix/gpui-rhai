@@ -1,6 +1,6 @@
 # Pagination
 
-`components/pagination` · export `Pagination` · version 0.2.0. Generated from
+`components/pagination` · export `Pagination` · version 0.4.3. Generated from
 [`registry/components/pagination.rhai`](../../../registry/components/pagination.rhai); do not edit.
 
 Pagination is a stateless Rhai composition for one-based controlled page state.

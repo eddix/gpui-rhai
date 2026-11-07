@@ -2,7 +2,7 @@
 {
   "id": "components/pagination",
   "export": "Pagination",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/icon", "components/select"],
   "capabilities": {},
@@ -23,7 +23,7 @@ import "components/icon" as icon;
 import "components/select" as select;
 
 define_component(#{
-    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.2.0",
+    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
         tokens: [
@@ -165,10 +165,10 @@ fn render_Pagination(ctx, props) {
     let previous_icon = icon::Icon(#{
         source: asset("app/icons/chevron_left"),
         rtl_source: asset("app/icons/chevron_right"), size: size,
-        label: ctx.t("pagination.previous")
+        label: ctx.t_or("pagination.previous", "Previous page")
     });
     let previous = button::Button(#{
-        text: ctx.t("pagination.previous"), prefix: previous_icon,
+        text: ctx.t_or("pagination.previous", "Previous page"), prefix: previous_icon,
         size: size, variant: "ghost", disabled: props.current_page == 1,
     }).with_style(ctx.component_style("previous", style()));
     controls.push(if callback == () { previous } else {
@@ -189,10 +189,10 @@ fn render_Pagination(ctx, props) {
     let next_icon = icon::Icon(#{
         source: asset("app/icons/chevron_right"),
         rtl_source: asset("app/icons/chevron_left"), size: size,
-        label: ctx.t("pagination.next")
+        label: ctx.t_or("pagination.next", "Next page")
     });
     let next = button::Button(#{
-        text: ctx.t("pagination.next"), suffix: next_icon,
+        text: ctx.t_or("pagination.next", "Next page"), suffix: next_icon,
         size: size, variant: "ghost", disabled: props.current_page == pages,
     }).with_style(ctx.component_style("next", style()));
     controls.push(if callback == () { next } else {
@@ -201,7 +201,7 @@ fn render_Pagination(ctx, props) {
 
     let children = [];
     if prop_or(props, "show_summary", true) {
-        children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t("pagination.items")} · ${ctx.t("pagination.page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
+        children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t_or("pagination.items", "items")} · ${ctx.t_or("pagination.page", "Page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
             .with_style(ctx.component_style("summary", style()
                 .typography("body").font_feature("tnum", 1).text_color(theme_color("text_muted")))));
     }
@@ -213,9 +213,9 @@ fn render_Pagination(ctx, props) {
             select_options.push(#{ value: `${option}`, label: `${option}` });
         }
         children.push(row([
-            text(ctx.t("pagination.per_page")).with_style(ctx.component_style("page_size_label", style())),
+            text(ctx.t_or("pagination.per_page", "Items per page")).with_style(ctx.component_style("page_size_label", style())),
             select::Select(#{
-                key: `${props.key}-page-size`, label: ctx.t("pagination.per_page"), options: select_options,
+                key: `${props.key}-page-size`, label: ctx.t_or("pagination.per_page", "Items per page"), options: select_options,
                 value: `${props.page_size}`, open: ctx.get_state("page_size_open"),
                 query: ctx.get_state("page_size_query"), size: size, width: px(96),
                 on_change: Fn("pagination_size"), on_open_change: Fn("page_size_open"),

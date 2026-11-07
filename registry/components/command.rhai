@@ -2,7 +2,7 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {},
@@ -23,7 +23,7 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.4.0",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{},
         tokens: [
@@ -71,11 +71,11 @@ define_component(#{
             ] }, required: true, sensitive: false,
                 doc: "Commands to rank: item maps, or a native collection keyed by value with the same fields but no `content` or `action`." },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Type a command" },
-                doc: "Hint shown in the empty search field." },
+                "default": #{ type: "string", value: "" },
+                doc: "Hint shown in the empty search field. Empty, the localized `command.placeholder` message, `Type a command` without one." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "No commands found" },
-                doc: "Message shown in place of the list when no command matches." },
+                "default": #{ type: "string", value: "" },
+                doc: "Message shown in place of the list when no command matches. Empty, the localized `command.empty` message, `No commands found` without one." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 },
                 doc: "Rows the list shows before it scrolls; group headings count as rows." },
@@ -106,6 +106,13 @@ define_component(#{
     },
     render: Fn("render_Command")
 });
+
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
 
 fn Command(props) { render_component("components/command", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
@@ -345,7 +352,7 @@ fn render_Command(ctx, props) {
     let active = model.active;
     // The search heads the panel full width, one size above the rows, on their inset.
     let search = input::Input(#{ key: `${props.key}-search`, label: props.label, value: query,
-        placeholder: prop_or(props, "placeholder", "Type a command"),
+        placeholder: localized_prop(ctx, props, "placeholder", "command.placeholder", "Type a command"),
         appearance: "embedded", size: "lg",
         disabled: prop_or(props, "disabled", false),
         autofocus: prop_or(props, "autofocus", false),
@@ -353,7 +360,7 @@ fn render_Command(ctx, props) {
         on_submit: Fn("submit_action").curry(#{ value: active, action: model.active_action }) })
         .with_style(ctx.component_style("search", style()));
     let body = if data.len == 0 {
-        row([text(prop_or(props, "empty_text", "No commands found"))])
+        row([text(localized_prop(ctx, props, "empty_text", "command.empty", "No commands found"))])
             .with_style(ctx.component_style("empty", style()
                 .min_height(theme_length("metrics.row") * 3).padding_x(theme_length("metrics.inset"))
                 .items_center().justify_center()

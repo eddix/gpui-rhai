@@ -1,6 +1,6 @@
 # Resizable
 
-`components/resizable` · export `Resizable` · version 0.2.1. Generated from
+`components/resizable` · export `Resizable` · version 0.4.3. Generated from
 [`registry/components/resizable.rhai`](../../../registry/components/resizable.rhai); do not edit.
 
 Controlled single-element rectangle resizing inside one local boundary. State: only native pointer preview; application rectangle remains controlled.
@@ -27,7 +27,7 @@ resizable::Resizable(#{ key:"card", label:"Resize card",
 | `handles` | array of `"n"` or `"s"` or `"e"` or `"w"` or `"ne"` or `"nw"` or `"se"` or `"sw"` (at most 8) | `["n", "s", "e", "w", "ne", "nw", "se", "sw"]` | Edges and corners that get a resize handle, each at most once. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `keyboard_step` | number > 0, ≤ 512 | `8.0` | Logical pixels an arrow key moves the focused handle's edge; Shift moves four times as far. |
-| `label` | string | required | Accessible name; each handle reads as `<label>: <handle> resize handle`. |
+| `label` | string | required | Accessible name; each handle reads as the localized `resizable.handle` message, `<label>: <handle> resize handle` in English. |
 | `line` | bool | `true` | Paints the native marks (edge lines, corner squares); set `false` when grips draw their own. |
 | `line_inset` | number 0–256 | `4.0` | How far an edge handle's native line stops short of each end, in logical pixels. |
 | `max_height` | number > 0, ≤ 16384 | `16384.0` | Largest height a resize may propose, in logical pixels; at least `min_height`. |

@@ -1,8 +1,9 @@
 //! Labels and defaults of the official components follow their schema docs: a loading Button
 //! shows and announces its loading text and a spinner (in place of its prefix, or before the
 //! label), IconButton swaps its icon for the spinner, Avatar derives uppercased initials
-//! by grapheme, Spinner turns on the theme's `ambient` duration unless given a speed, and the
-//! Select and Combobox clear buttons share the localized `common.clear` name.
+//! by grapheme, Spinner turns on the theme's `ambient` duration unless given a speed, the
+//! Select and Combobox clear buttons share the localized `common.clear` name, and built-in
+//! text reads in the application's locale, or in English without one.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -272,5 +273,95 @@ fn view(ctx) { column([
     assert_eq!(
         names(&mut visual, &view, "button"),
         ["清除", "清除", "Reset fruit"]
+    );
+}
+
+const BUILT_IN_TEXT: &str = r#"import "components/alert_dialog" as alert_dialog;
+import "components/tag" as tag;
+import "components/progress" as progress;
+import "components/list" as list;
+fn view(ctx) { column([
+    tag::Tag(#{ text: "Alpha", closable: true }),
+    progress::Progress(#{ key: "sync", label: "Sync", indeterminate: true }),
+    list::List(#{ key: "empty", label: "Empty", items: [], height: 60 }),
+    text(ctx.t_or("missing.key", "Kept {name}", #{ name: "as is" })).test_id("missing"),
+    alert_dialog::AlertDialog(#{ key: "confirm", open: true, title: "Delete?" }),
+]).with_style(style().width(px(480)).height(px(360))) }"#;
+
+fn built_in_text(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
+    let nodes = nodes(visual, view);
+    let mut texts = nodes
+        .iter()
+        .filter(|node| node.role == "button")
+        .map(|node| node.name.clone())
+        .collect::<Vec<_>>();
+    texts.extend(
+        nodes
+            .iter()
+            .filter_map(|node| match (&node.role[..], &node.value) {
+                ("progressbar", Some(UiValue::String(value))) => Some(value.clone()),
+                _ => None,
+            }),
+    );
+    texts.extend(
+        nodes
+            .iter()
+            .filter(|node| {
+                node.role == "text" && ["No items", "没有项目"].contains(&&node.name[..])
+            })
+            .map(|node| node.name.clone()),
+    );
+    texts.push(text_of(visual, view, "missing"));
+    texts
+}
+
+#[gpui::test]
+fn built_in_text_reads_in_the_application_locale(cx: &mut TestAppContext) {
+    let (mut visual, view) = mount(cx, BUILT_IN_TEXT);
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(
+        built_in_text(&mut visual, &view),
+        [
+            "Remove Alpha",
+            "Cancel",
+            "Continue",
+            "indeterminate",
+            "No items",
+            "Kept as is"
+        ]
+    );
+    visual.update(|_, cx| assert!(view.select_locale("zh-CN", cx).unwrap()));
+    settle(&mut visual);
+    assert_eq!(
+        built_in_text(&mut visual, &view),
+        [
+            "移除 Alpha",
+            "取消",
+            "继续",
+            "进度未知",
+            "没有项目",
+            "Kept as is"
+        ]
+    );
+}
+
+#[gpui::test]
+fn built_in_text_reads_in_english_without_a_locale(cx: &mut TestAppContext) {
+    let (mut visual, view) = Mount::components(BUILT_IN_TEXT)
+        .motion(MotionPreference::None)
+        .id("no-locale")
+        .mount(cx);
+    settle(&mut visual);
+    assert_eq!(last_error(&mut visual, &view), None);
+    assert_eq!(
+        built_in_text(&mut visual, &view),
+        [
+            "Remove Alpha",
+            "Cancel",
+            "Continue",
+            "indeterminate",
+            "No items",
+            "Kept as is"
+        ]
     );
 }

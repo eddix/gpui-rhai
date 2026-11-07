@@ -1,6 +1,6 @@
 # SelectionArea
 
-`components/selection_area` · export `SelectionArea` · version 0.2.0. Generated from
+`components/selection_area` · export `SelectionArea` · version 0.4.3. Generated from
 [`registry/components/selection_area.rhai`](../../../registry/components/selection_area.rhai); do not edit.
 
 Controlled Canvas click/range/marquee object selection.

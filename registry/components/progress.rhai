@@ -2,7 +2,7 @@
 {
   "id": "components/progress",
   "export": "Progress",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/progress", "export": "Progress", version: "0.2.0",
+        id: "components/progress", "export": "Progress", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["accent", "surface_hover"],
         environment: [],
@@ -76,7 +76,7 @@ fn render_Progress(ctx, props) {
         )))
         .accessibility_role("progressbar")
         .accessibility_label(props.label)
-        .accessibility_value(if indeterminate { "indeterminate" } else { value })
+        .accessibility_value(if indeterminate { ctx.t_or("progress.indeterminate", "indeterminate") } else { value })
         .accessibility_value_min(0.0)
         .accessibility_value_max(max)
 }

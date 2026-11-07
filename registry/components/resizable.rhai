@@ -2,7 +2,7 @@
 {
   "id": "components/resizable",
   "export": "Resizable",
-  "version": "0.2.1",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -21,7 +21,7 @@
 //     on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.2.1",
+    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["focus_ring", "accent", "border", "surface_raised"],
         environment: [] },
@@ -29,7 +29,7 @@ define_component(#{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                doc: "Accessible name; each handle reads as `<label>: <handle> resize handle`." },
+                doc: "Accessible name; each handle reads as the localized `resizable.handle` message, `<label>: <handle> resize handle` in English." },
             rect: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
                 x: #{ schema: #{ type: "number" }, required: true, sensitive: false,
                     doc: "Left edge, in logical pixels from the root's left edge." },
@@ -228,7 +228,7 @@ fn render_Resizable(ctx, props) {
             .disabled(props.disabled)
             .tab_stop(!props.disabled)
             .accessibility_role("separator")
-            .accessibility_label(`${props.label}: ${handle} resize handle`);
+            .accessibility_label(ctx.t_or("resizable.handle", "{label}: {handle} resize handle", #{ label: props.label, handle: handle }));
         let orientation = handle_orientation(handle);
         if orientation != () { node = node.accessibility_orientation(orientation); }
         surface_children.push(node);

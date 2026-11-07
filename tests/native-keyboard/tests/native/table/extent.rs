@@ -5,7 +5,7 @@ use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE};
 use std::collections::BTreeMap;
 
 use super::{mount_refreshed, table};
-use crate::support::{Host, ReplaceOnce, Step, bounds, by_role, dispatch};
+use crate::support::{Host, ReplaceOnce, Step, bounds, by_role, dispatch, snapshot};
 
 struct Rows;
 impl ScriptViewExtension for Rows {
@@ -29,6 +29,21 @@ impl ScriptViewExtension for Rows {
             )
             .map_err(|error| error.to_string())
     }
+}
+
+/// The name of column `title`'s resize handle, in the language the table reads: these
+/// tables switch between English and Arabic.
+fn resize_handle(v: &mut VisualTestContext, view: &ScriptViewHandle, title: &str) -> String {
+    let names = [
+        format!("Resize {title} column"),
+        format!("تغيير حجم العمود {title}"),
+    ];
+    snapshot(v, view)
+        .nodes()
+        .find(|node| node.role == "separator" && names.contains(&node.name))
+        .unwrap_or_else(|| panic!("no resize handle for column {title}"))
+        .name
+        .clone()
 }
 fn script(rtl: bool, native: bool, widths: &str, controlled: bool) -> String {
     let rows = if native {
@@ -374,7 +389,8 @@ fn accepted_final_column_width_recomputes_extent_and_clamps_offset(cx: &mut Test
         let a = bounds(&mut v, &view, "columnheader", "A");
         let p = point(px((table.x + 150.0) as f32), px((a.y + 15.0) as f32));
         wheel(&mut v, p, if rtl { 500.0 } else { -500.0 }, 0.0);
-        command(&mut v, &view, "separator", "Resize C column", "key:right");
+        let resize = resize_handle(&mut v, &view, "C");
+        command(&mut v, &view, "separator", &resize, "key:right");
         settle(&mut v);
         assert_width(&mut v, &view, "C", "Gamma", 168.0);
         wheel(&mut v, p, if rtl { 500.0 } else { -500.0 }, 0.0);
@@ -476,7 +492,8 @@ fn native_drag_override_repaints_widths_and_extent_without_rhai(cx: &mut TestApp
             if rtl { 1000.0 } else { -1000.0 },
             0.0,
         );
-        let handle = bounds(&mut v, &view, "separator", "Resize C column");
+        let resize = resize_handle(&mut v, &view, "C");
+        let handle = bounds(&mut v, &view, "separator", &resize);
         let start = point(
             px((handle.x + handle.width / 2.0) as f32),
             px((handle.y + 15.0) as f32),
@@ -535,7 +552,8 @@ fn single_column_under_equal_overflow_and_autofit_share_the_viewport(cx: &mut Te
             let after = bounds(&mut v, &view, "columnheader", "C");
             let expected = (width - 300.0_f64).max(0.0);
             assert!((after.x - before.x - if rtl { expected } else { -expected }).abs() < 0.6);
-            let handle = bounds(&mut v, &view, "separator", "Resize C column");
+            let resize = resize_handle(&mut v, &view, "C");
+            let handle = bounds(&mut v, &view, "separator", &resize);
             let h = point(
                 px((handle.x + handle.width / 2.0) as f32),
                 px((handle.y + 15.0) as f32),
@@ -580,7 +598,8 @@ fn component_min_max_and_native_override_use_one_width_authority(cx: &mut TestAp
         assert_width(&mut v, &view, "B", "Beta", 90.0);
         assert_width(&mut v, &view, "C", "Gamma", 120.0);
         for _ in 0..6 {
-            command(&mut v, &view, "separator", "Resize C column", "key:right");
+            let resize = resize_handle(&mut v, &view, "C");
+            command(&mut v, &view, "separator", &resize, "key:right");
         }
         assert_width(&mut v, &view, "C", "Gamma", 150.0);
         let table = bounds(&mut v, &view, "table", "Extent Table");

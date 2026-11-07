@@ -1,6 +1,6 @@
 # Calendar
 
-`components/calendar` · export `Calendar` · version 0.4.0. Generated from
+`components/calendar` · export `Calendar` · version 0.4.3. Generated from
 [`registry/components/calendar.rhai`](../../../registry/components/calendar.rhai); do not edit.
 
 The single calendar engine shared by DatePicker and TimeRangePicker.

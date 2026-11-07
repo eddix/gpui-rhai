@@ -2,7 +2,7 @@
 {
   "id": "components/tag",
   "export": "Tag",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -27,7 +27,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tag", "export": "Tag", version: "0.4.2",
+        id: "components/tag", "export": "Tag", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{}, assets: ["icons/close.svg"],
         tokens: [
@@ -59,7 +59,7 @@ define_component(#{
             },
             close_label: #{ schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false, sensitive: false,
-                doc: "Accessible name of the close button; defaults to `Remove <text>`." },
+                doc: "Accessible name of the close button; defaults to the localized `tag.remove` message, `Remove <text>` in English." },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
@@ -108,7 +108,7 @@ fn render_Tag(ctx, props) {
     let value = [text(props.text).with_style(ctx.component_style("label", style()))];
     if closable {
         let label = if "close_label" in props && props.close_label != () { props.close_label }
-            else { `Remove ${props.text}` };
+            else { ctx.t_or("tag.remove", "Remove {name}", #{ name: props.text }) };
         // The 12px close glyph and 2px focus frame are structural constants.
         let close = row([image_source(asset("app/icons/close"))
                 .with_style(style().width(px(12)).height(px(12)))])

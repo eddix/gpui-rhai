@@ -1,6 +1,6 @@
 # Carousel
 
-`components/carousel` · export `Carousel` · version 0.4.2. Generated from
+`components/carousel` · export `Carousel` · version 0.4.3. Generated from
 [`registry/components/carousel.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/carousel.rhai); do not edit.
 
 A controlled pager that shows one item at a time, for a compact place that steps through items of one kind: alerts, cards, previews. The caller owns `index`; the arrows, the dots and the keys propose another one. It never turns by itself.
@@ -27,10 +27,10 @@ carousel::Carousel(#{ key: "alerts", label: "Active alerts", index: current,
 | `key` | string | required | Stable identity of the carousel, which names its sliding panel and keeps its focus state. |
 | `label` | string | required | Accessible name of the carousel and its controls; the `header` layout also shows it as the title. |
 | `label_visible` | bool | `true` | Whether the `header` layout shows the label as its title; it stays the accessible name. |
-| `next_label` | string | `"Next"` | Accessible name of the next arrow. |
+| `next_label` | string | `""` | Accessible name of the next arrow. Empty, the localized `common.next` message, `Next` without one. |
 | `on_change` | callback or `()` | — | Called with the proposed `index` when an arrow, a dot or a key steps; without it the controls are inert. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
-| `previous_label` | string | `"Previous"` | Accessible name of the previous arrow. |
+| `previous_label` | string | `""` | Accessible name of the previous arrow. Empty, the localized `common.previous` message, `Previous` without one. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Overrides the `size` environment for the carousel. |
 | `style` | style | — | Style merged over the root part. |
 | `variant` | `"header"` or `"overlay"` | `"header"` | `header`: the label and the controls in a row above the item. `overlay`: arrows over the item's sides, shown while it is hovered or the controls have focus, and the position below it. |

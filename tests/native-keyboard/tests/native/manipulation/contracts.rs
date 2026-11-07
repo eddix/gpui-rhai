@@ -213,10 +213,10 @@ fn rtl_horizontal_sortable_drops_on_the_side_the_pointer_is_on(cx: &mut TestAppC
         alpha.x > bravo.x,
         "the row runs right to left: {alpha:?} {bravo:?}"
     );
-    // Drag delta (the leftmost row) onto bravo's right half: between alpha and bravo,
-    // that is before bravo in the logical order.
+    // The Arabic locale names the handles. Drag delta (the leftmost row) onto bravo's
+    // right half: between alpha and bravo, that is before bravo in the logical order.
     let source = at(
-        bounds(&mut visual, &view, "button", "Reorder delta"),
+        bounds(&mut visual, &view, "button", "إعادة ترتيب delta"),
         0.5,
         0.5,
     );
@@ -231,7 +231,7 @@ fn rtl_horizontal_sortable_drops_on_the_side_the_pointer_is_on(cx: &mut TestAppC
 #[gpui::test]
 fn rtl_horizontal_sortable_alt_arrows_move_the_way_they_point(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, RTL_SORTABLE, "rtl-sortable-keys");
-    let target = bounds(&mut visual, &view, "button", "Reorder alpha");
+    let target = bounds(&mut visual, &view, "button", "إعادة ترتيب alpha");
     click(&mut visual, at(target, 0.5, 0.5));
     // Alpha is the rightmost row; Alt+Left moves it left, past bravo.
     visual.simulate_keystrokes("alt-left");

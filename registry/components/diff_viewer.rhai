@@ -2,7 +2,7 @@
 {
   "id": "components/diff_viewer",
   "export": "DiffViewer",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -14,7 +14,7 @@
 // Example: DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A" }, right: #{ source: b, label: "Server B" }, mode: "split" })
 
 define_component(#{
-    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.2.0",
+    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["surface", "scrollbar.thumb", "scrollbar.thumb_hover"],
         environment: [] },
@@ -99,6 +99,17 @@ fn render_DiffViewer(ctx, props) {
         .background(theme_color("surface")));
     gpui_rhai::DiffViewPrimitive(#{
         key: props.key,
+        messages: #{
+            find: ctx.t_or("diff.find", "Find on both sides"),
+            no_matches: ctx.t_or("document.no_matches", "No matches"),
+            invalid_regex: ctx.t_or("document.invalid_regex", "Invalid regex: {error}"),
+            calculating: ctx.t_or("diff.calculating", "Calculating comparison…"),
+            no_differences: ctx.t_or("diff.no_differences", "No differences"),
+            preparing: ctx.t_or("diff.preparing", "Preparing"),
+            change: ctx.t_or("diff.change", "Change {current} of {count}"),
+            syntax_fallback: ctx.t_or("diff.syntax_fallback", "syntax fallback: {error}"),
+            updating: ctx.t_or("diff.updating", "Updating comparison…"),
+        },
         left_source: left.source,
         left_label: left.label,
         left_file_name: side_or(left, "file_name", ()),
@@ -131,5 +142,5 @@ fn render_DiffViewer(ctx, props) {
             Fn("location_activate")
         } else { () },
     }).with_key(props.key).with_style(root_style).accessibility_role("document")
-        .accessibility_label(`${left.label} compared with ${right.label}`)
+        .accessibility_label(ctx.t_or("diff.label", "{left} compared with {right}", #{ left: left.label, right: right.label }))
 }

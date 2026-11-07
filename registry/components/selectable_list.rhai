@@ -2,7 +2,7 @@
 {
   "id": "components/selectable_list",
   "export": "SelectableList",
-  "version": "0.4.1",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -34,7 +34,7 @@
 // navigation_keys, context_keys and the handlers they bind.
 
 define_component(#{
-    metadata: #{ id: "components/selectable_list", "export": "SelectableList", version: "0.4.1",
+    metadata: #{ id: "components/selectable_list", "export": "SelectableList", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
@@ -85,10 +85,10 @@ define_component(#{
                 "default": #{ type: "bool", value: false },
                 doc: "Shows `loading_content` in the list's place instead of the rows." },
             loading_content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
-                doc: "Node shown while `loading`; `()` shows a muted \"Loading…\" line." },
+                doc: "Node shown while `loading`; `()` shows a muted line with the localized `collection.loading` message (\"Loading…\")." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "No items" },
-                doc: "Muted text shown when `items` is empty, unless `empty` is given." },
+                "default": #{ type: "string", value: "" },
+                doc: "Muted text shown when `items` is empty, unless `empty` is given. Empty, the localized `common.no_items` message, `No items` without one." },
             empty: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
                 doc: "Node shown instead of `empty_text` when `items` is empty." },
             on_selection_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
@@ -137,6 +137,13 @@ define_component(#{
     },
     render: Fn("render_SelectableList")
 });
+
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
 
 fn SelectableList(props) { render_component("components/selectable_list", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
@@ -359,12 +366,12 @@ fn render_SelectableList(ctx, props) {
     if prop_or(props, "loading", false) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
-        } else { text("Loading…") };
+        } else { text(ctx.t_or("collection.loading", "Loading…")) };
         return list_state(ctx, props, size, "loading", loading);
     }
     if props.items.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
-            else { text(prop_or(props, "empty_text", "No items")) };
+            else { text(localized_prop(ctx, props, "empty_text", "common.no_items", "No items")) };
         return list_state(ctx, props, size, "empty", empty);
     }
     let data = native_selection_view(props.items, if mode == "none" { [] } else { selected });

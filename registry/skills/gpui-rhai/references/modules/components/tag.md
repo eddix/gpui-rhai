@@ -1,6 +1,6 @@
 # Tag
 
-`components/tag` · export `Tag` · version 0.4.2. Generated from
+`components/tag` · export `Tag` · version 0.4.3. Generated from
 [`registry/components/tag.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tag.rhai); do not edit.
 
 Tag labels a category: a flat tonal tape with an optional facet segment.
@@ -20,7 +20,7 @@ tag::Tag(#{ facet: "env", text: "prod", variant: "danger" })
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `closable` | bool | `false` | Adds a close button after the text. |
-| `close_label` | string or `()` | — | Accessible name of the close button; defaults to `Remove <text>`. |
+| `close_label` | string or `()` | — | Accessible name of the close button; defaults to the localized `tag.remove` message, `Remove <text>` in English. |
 | `disabled` | bool | `false` | Draws the tag in the `disabled` color and makes the close button inert. |
 | `facet` | string or `()` | — | Key drawn uppercase in a segment before the text, as in `ENV prod`; empty means none. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |

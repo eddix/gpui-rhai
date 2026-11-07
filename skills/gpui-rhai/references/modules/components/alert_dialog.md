@@ -1,6 +1,6 @@
 # AlertDialog
 
-`components/alert_dialog` · export `AlertDialog` · version 0.2.0. Generated from
+`components/alert_dialog` · export `AlertDialog` · version 0.4.3. Generated from
 [`registry/components/alert_dialog.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/alert_dialog.rhai); do not edit.
 
 Controlled confirmation dialog with explicit cancel and confirm semantics: every close reports `confirm` or `cancel` first, Escape and backdrop presses `cancel`. State: caller owns open state; the component retains no application value.
@@ -15,8 +15,8 @@ alert_dialog::AlertDialog(#{ key: "delete", open: true, title: "Delete item?", o
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `cancel_label` | string | `"Cancel"` | Text of the cancel button. |
-| `confirm_label` | string | `"Continue"` | Text of the confirm button. |
+| `cancel_label` | string | `""` | Text of the cancel button. Empty, the localized `common.cancel` message, `Cancel` without one. |
+| `confirm_label` | string | `""` | Text of the confirm button. Empty, the localized `common.continue` message, `Continue` without one. |
 | `confirm_variant` | `"primary"` or `"danger"` or `"warning"` | `"danger"` | Button variant of the confirm button. |
 | `content` | node or `()` | — | Extra content after the description. |
 | `description` | string or `()` | — | Muted text under the title. |

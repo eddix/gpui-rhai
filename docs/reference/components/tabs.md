@@ -17,14 +17,14 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `add_label` | string | `"Add tab"` | Accessible name of the add button. |
-| `close_label` | string | `"Close"` | Accessible name of a close button, followed by the tab's label. |
+| `add_label` | string | `""` | Accessible name of the add button. Empty, the localized `tabs.add` message, `Add tab` without one. |
+| `close_label` | string | `""` | Accessible name of a close button, followed by the tab's label. Empty, the localized `common.close` message, `Close` without one. |
 | `end` | array of node (at most 8) | `[]` | Nodes at the far end of the strip, after the add button and the overflow menu. |
 | `keep_mounted` | bool | `false` | Retains all supplied panels, including native scrolling, caret/selection/undo and focus identity. Hidden panels have no layout, input or presented accessibility. Business effects keep running; use ctx.is_visible() for an explicit application pause policy. |
 | `key` | string | — | Stable identity of the tabs; required with `reorderable`, `overflow_menu` or a sliding `panel_motion`, whose drag list, menu and sliding panel it names. |
 | `label` | string | required | Accessible name of the tab list, and of the group that holds the list and the panel. |
 | `layout` | `"content"` or `"equal"` | `"content"` | Tab widths of a horizontal list: `content` fits each label and scrolls when the tabs do not fit, `equal` fills the width and shares it equally. |
-| `menu_label` | string | `"All tabs"` | Accessible name of the overflow menu button and its menu. |
+| `menu_label` | string | `""` | Accessible name of the overflow menu button and its menu. Empty, the localized `tabs.all` message, `All tabs` without one. |
 | `motion_key` | string | `""` | Shared-layout id, at most 128 characters, that slides the selected indicator between tabs; empty turns it off. |
 | `on_add` | callback or `()` | — | Draws a "+" button after the last tab, pinned at the strip's end when the tabs overflow; called when it is pressed. |
 | `on_change` | callback or `()` | — | Called with a tab's `value` when it is clicked, reached with an arrow key, Home or End, or picked in the overflow menu; without it the tabs do not select. |

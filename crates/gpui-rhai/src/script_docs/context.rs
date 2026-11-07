@@ -522,6 +522,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Returns the message `key` in the current locale, falling back to the default locale; records a locale dependency in render.",
     },
     ScriptFnDoc {
+        signature: "t_or(_: &mut UiContext, _: string, _: string) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "fallback"],
+        doc: "Returns the message `key` as `ctx.t` does, or `fallback` when the application has no locale or no bundle defines `key`; what official components use for their built-in text. Records a locale dependency in render.",
+    },
+    ScriptFnDoc {
+        signature: "t_or(_: &mut UiContext, _: string, _: string, _: map) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "fallback", "values"],
+        doc: "`ctx.t_or(key, fallback)` with each `{name}` in the text replaced by `values[name]`: `ctx.t_or(\"tag.remove\", \"Remove {name}\", #{ name: label })`.",
+    },
+    ScriptFnDoc {
         signature: "text_direction(_: &mut UiContext) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &[],
         doc: "Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render.",

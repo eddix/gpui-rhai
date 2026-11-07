@@ -2,7 +2,7 @@
 {
   "id": "components/date_picker",
   "export": "DatePicker",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/calendar"],
   "capabilities": {},
@@ -25,7 +25,7 @@ import "components/calendar" as calendar;
 
 define_component(#{
     metadata: #{
-        id: "components/date_picker", "export": "DatePicker", version: "0.4.0",
+        id: "components/date_picker", "export": "DatePicker", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/calendar"], capabilities: #{},
         tokens: [
@@ -199,7 +199,7 @@ fn render_DatePicker(ctx, props) {
             .with_style(ctx.component_style("clear", style()
                 .items_center().justify_center()
                 .hover(style().background(theme_color("surface_hover")))))
-            .accessibility_role("button").accessibility_label(ctx.t("calendar.clear"))
+            .accessibility_role("button").accessibility_label(ctx.t_or("calendar.clear", "Clear date"))
             .on_click_value(Fn("clear_date"), #{ changed: true }));
     }
     trigger_actions.push(row([image_source(asset("app/icons/calendar"))
@@ -208,7 +208,7 @@ fn render_DatePicker(ctx, props) {
         .with_style(ctx.component_style("trigger_icon", style()
             .items_center().justify_center()
             .text_color(theme_color("text_muted"))))
-        .accessibility_role("image").accessibility_label(ctx.t("calendar.open")));
+        .accessibility_role("image").accessibility_label(ctx.t_or("calendar.open", "Open calendar")));
     let trigger_children = [trigger_value, row(trigger_actions)
             .with_style(style().gap(theme_spacing("xs")).items_center())];
     // The trigger is a field; while focused or open the focus color owns the frame.

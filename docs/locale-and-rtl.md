@@ -57,9 +57,31 @@ and fraction digits. Component summary text uses neutral localized labels and
 formatted numbers. Currency, percentages with business-specific rounding, and
 pluralized prose belong to caller policy or a future complete formatter.
 
+## Built-in component text
+
+Official components read their own text through `ctx.t_or`: button labels,
+empty and loading states, search placeholders, accessible names, and the status
+lines of the native Markdown, code, and diff views. An application's locale
+translates them, and a key its bundles leave out reads in English, as does an
+application without locales. A text prop that used to default to English, such
+as `empty_text`, `cancel_label`, or `search_placeholder`, now defaults to `""`,
+which means the localized message; a non-empty value still wins.
+
+The bundled English, Simplified Chinese, and Arabic files define every key. A
+bundle copied from an earlier version keeps loading, since none of these keys is
+required, but shows English for them until it gains the keys from
+`registry/locales/<locale>.rhai`. The groups are `common.*`, `collection.*`,
+`command.*`, `code.*`, `document.*`, `diff.*`, `markdown.*`, `tabs.*`,
+`toast.*`, `column_browser.*`, and one or two keys each for Sortable, Tag,
+Table, Tree, SelectionArea, Progress, Resizable, and PanZoom. A key with
+`{name}`-style placeholders keeps them in every language.
+
 ## Runtime API
 
 - `ctx.t(key)` resolves required internal phrases.
+- `ctx.t_or(key, fallback)` resolves `key`, or returns `fallback` when no
+  locale is loaded or no bundle defines it. `ctx.t_or(key, fallback, values)`
+  then replaces each `{name}` with `values[name]`.
 - `ctx.format_date(iso_date, style)` accepts strict Gregorian `YYYY-MM-DD` and
   `short`, `medium`, or `long`.
 - `ctx.format_month_year(iso_date)` applies the validated locale month/year

@@ -2,7 +2,7 @@
 {
   "id": "components/carousel",
   "export": "Carousel",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/sliding_panel", "components/icon_button", "components/icon"],
   "capabilities": {},
@@ -38,7 +38,7 @@ import "components/icon" as icon;
 
 define_component(#{
     metadata: #{
-        id: "components/carousel", "export": "Carousel", version: "0.4.2",
+        id: "components/carousel", "export": "Carousel", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/sliding_panel", "components/icon_button", "components/icon"],
         capabilities: #{},
@@ -79,11 +79,11 @@ define_component(#{
                 "default": #{ type: "bool", value: true },
                 doc: "Whether the `header` layout shows the label as its title; it stays the accessible name." },
             previous_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Previous" },
-                doc: "Accessible name of the previous arrow." },
+                "default": #{ type: "string", value: "" },
+                doc: "Accessible name of the previous arrow. Empty, the localized `common.previous` message, `Previous` without one." },
             next_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Next" },
-                doc: "Accessible name of the next arrow." },
+                "default": #{ type: "string", value: "" },
+                doc: "Accessible name of the next arrow. Empty, the localized `common.next` message, `Next` without one." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false, doc: "Overrides the `size` environment for the carousel." },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
@@ -103,6 +103,13 @@ define_component(#{
     },
     render: Fn("render_Carousel")
 });
+
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
 
 fn Carousel(props) { render_component("components/carousel", props) }
 fn prop_or(props, name, fallback) { if name in props && props[name] != () { props[name] } else { fallback } }
@@ -139,7 +146,7 @@ fn arrow(ctx, props, cfg, step) {
         source: asset(if back { "app/icons/chevron_left" } else { "app/icons/chevron_right" }),
         rtl_source: asset(if back { "app/icons/chevron_right" } else { "app/icons/chevron_left" }) });
     let config = #{ key: part, icon: glyph,
-        label: if back { prop_or(props, "previous_label", "Previous") } else { prop_or(props, "next_label", "Next") },
+        label: if back { localized_prop(ctx, props, "previous_label", "common.previous", "Previous") } else { localized_prop(ctx, props, "next_label", "common.next", "Next") },
         variant: if cfg.overlay { "outline" } else { "ghost" },
         disabled: target < 0 || !cfg.selects };
     if target >= 0 && cfg.selects { config.on_click = Fn("pick").curry(target); }

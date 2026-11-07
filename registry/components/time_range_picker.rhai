@@ -1,5 +1,5 @@
 /* gpui-rhai
-{"id":"components/time_range_picker","export":"TimeRangePicker","version":"0.4.0","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/calendar","components/time_input","components/input","components/button"],"capabilities":{},"tokens":["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],"environment":["size","density"]}
+{"id":"components/time_range_picker","export":"TimeRangePicker","version":"0.4.3","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":["components/calendar","components/time_input","components/input","components/button"],"capabilities":{},"tokens":["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],"environment":["size","density"]}
 */
 // Controlled relative windows and explicit date-time drafts, committed only on Apply.
 // Example: TimeRangePicker(#{key:"period",label:"Query period",
@@ -9,7 +9,7 @@ import "components/time_input" as time_input;
 import "components/input" as input;
 import "components/button" as button;
 // The controlled value changes only through presets, shifts, or Apply. A draft never queries.
-define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRangePicker",version:"0.4.0",
+define_component(#{metadata:#{id:"components/time_range_picker","export":"TimeRangePicker",version:"0.4.3",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:["components/calendar","components/time_input","components/input","components/button"],capabilities:#{},
     tokens:["surface_raised","surface_hover","border","focus_ring","text_primary","text_muted","text.danger","selection","metrics.control","metrics.field_pad","metrics.inset","spacing.xxs","spacing.xs","spacing.sm","spacing.lg","radius.md","radius.lg","typography.control","typography.caption","typography.body"],environment:["size","density"]},
     schema:#{props:#{
@@ -86,34 +86,34 @@ fn shift_button(value,ctx,payload){apply_range(ctx,value)}
 fn occurrence_button(field,instant,ctx,payload){chosen_instant(field,ctx,instant);}
 fn preset_cursor(ctx,index){ctx.set_state("preset_index",index);handled()}
 fn switch_zone(value,precision,zone,ctx,payload){reset_draft(ctx,value,zone,precision);handled()}
-fn last_label(ctx,duration){let label=ctx.t("time.last");label.replace("{value}",ctx.format_duration(duration));label}
+fn last_label(ctx,duration){let label=ctx.t_or("time.last", "Last {value}");label.replace("{value}",ctx.format_duration(duration));label}
 fn valid_date_or(value,fallback){try{date_info(value);return value;}catch(error){return fallback;}}
 fn parse_draft(ctx,start_date,start_time,end_date,end_time,zone,precision,start_choice,end_choice,min,max,span){
     let start_parsed=ctx.parse_time(start_time,precision);let end_parsed=ctx.parse_time(end_time,precision);
     let result=#{value:(),error:"",start_candidates:[],end_candidates:[]};
-    if start_parsed==()||end_parsed==(){result.error=ctx.t("time.invalid");return result;}
+    if start_parsed==()||end_parsed==(){result.error=ctx.t_or("time.invalid", "Enter a valid date and time");return result;}
     try{result.start_candidates=time_local_candidates(start_date,start_parsed,zone);result.end_candidates=time_local_candidates(end_date,end_parsed,zone);}
-    catch(error){result.error=ctx.t("time.invalid");return result;}
-    if result.start_candidates.len==0||result.end_candidates.len==0{result.error=ctx.t("time.gap");return result;}
+    catch(error){result.error=ctx.t_or("time.invalid", "Enter a valid date and time");return result;}
+    if result.start_candidates.len==0||result.end_candidates.len==0{result.error=ctx.t_or("time.gap", "This local time does not exist");return result;}
     let start=if result.start_candidates.len==1{result.start_candidates[0]}else if start_choice in result.start_candidates{start_choice}else{()};
     let finish=if result.end_candidates.len==1{result.end_candidates[0]}else if end_choice in result.end_candidates{end_choice}else{()};
-    if start==()||finish==(){result.error=ctx.t("time.fold");return result;}
-    if finish<=start{result.error=ctx.t("time.order");return result;}
+    if start==()||finish==(){result.error=ctx.t_or("time.fold", "Choose which occurrence");return result;}
+    if finish<=start{result.error=ctx.t_or("time.order", "End must be after start");return result;}
     let value=#{kind:"absolute",start:start,end:finish};
-    if time_range_error(value,min,max,span)!=""{result.error=ctx.t("time.bounds");return result;}
+    if time_range_error(value,min,max,span)!=""{result.error=ctx.t_or("time.bounds", "Range is outside the allowed bounds or span");return result;}
     result.value=value;result
 }
 fn occurrence_choices(ctx,label,candidates,choice,field,zone){
     let nodes=[];if candidates.len>1{for instant in candidates{nodes.push(button::Button(#{key:`${field}-${instant}`,
         text:ctx.format_time(instant,"long",zone),variant:if instant==choice{"secondary"}else{"outline"},
         on_click:Fn("occurrence_button").curry(field,instant)})
-        .accessibility_label(`${label}, ${ctx.t("time.fold")}, ${ctx.format_time(instant,"long",zone)}`));}}
+        .accessibility_label(`${label}, ${ctx.t_or("time.fold", "Choose which occurrence")}, ${ctx.format_time(instant,"long",zone)}`));}}
     column(nodes).with_style(style().gap(theme_spacing("xxs")))
 }
 fn draft_field(ctx,props,values,label,date_field,time_field,candidates,zone){
     let date=values[date_field];let clock=values[time_field];let choice_field=if date_field=="start_date"{"start_choice"}else{"end_choice"};
     column([text(label).with_style(style().typography("body")),
-        input::Input(#{key:`${props.key}-${date_field}`,label:`${label} ${ctx.t("time.custom")}`,value:date,
+        input::Input(#{key:`${props.key}-${date_field}`,label:`${label} ${ctx.t_or("time.custom", "Custom range")}`,value:date,
             on_change:Fn("edited").curry(date_field)}),
         time_input::TimeInput(#{key:`${props.key}-${time_field}`,label:label,value:clock,precision:props.precision,
             on_change:Fn("edited").curry(time_field)}),
@@ -137,7 +137,7 @@ fn picker_presets(ctx,props,presets){
             .on_click_value(Fn("apply_range"),value).tab_stop(false));
     }
     let group=column(rows).with_key("presets").with_style(ctx.component_style("presets",style().gap(theme_spacing("xs")).focus(style())))
-        .tab_stop(true).accessibility_role("listbox").accessibility_label(ctx.t("time.presets"));
+        .tab_stop(true).accessibility_role("listbox").accessibility_label(ctx.t_or("time.presets", "Relative ranges"));
     if eligible.len>0{let position=0;for i in 0..eligible.len{if eligible[i]==index{position=i;}}
         group=group.on_key_value("up",Fn("preset_cursor"),eligible[if position>0{position-1}else{eligible.len-1}])
         .on_key_value("down",Fn("preset_cursor"),eligible[if position+1<eligible.len{position+1}else{0}]);
@@ -149,7 +149,7 @@ fn render_TimeRangePicker(ctx,props){
     let min=option(props,"min");let max=option(props,"max");let span=option(props,"max_span_ms");
     let error=time_range_error(props.value,min,max,span);if error!=""{throw `TimeRangePicker controlled range: ${error}`;}
     let resolved=time_range_resolve(props.value,ctx.now());let parts=time_parts(resolved.start,props.time_zone);
-    let zone_label=if props.time_zone=="local"{`${ctx.t("time.local")} UTC${parts.zone}`}else{props.time_zone};
+    let zone_label=if props.time_zone=="local"{`${ctx.t_or("time.local", "Local")} UTC${parts.zone}`}else{props.time_zone};
     let presets=props.presets;if presets.len==0{for duration in [900000,3600000,86400000,604800000]{
         presets.push(#{label:last_label(ctx,duration),duration_ms:duration});}}
     let preset_keys=#{};for preset in presets{let label=preset.label;label.trim();
@@ -176,27 +176,27 @@ fn render_TimeRangePicker(ctx,props){
     let zone=values.zone;if zone==""{zone=props.time_zone;}
     let draft=parse_draft(ctx,values.start_date,values.start_time,values.end_date,values.end_time,zone,props.precision,
         values.start_choice,values.end_choice,min,max,span);
-    if stale{draft.value=();draft.error=ctx.t("time.updated");}
+    if stale{draft.value=();draft.error=ctx.t_or("time.updated", "The range changed; updating the draft");}
     let date_min=if min==(){()}else{time_parts(min,zone).date};let date_max=if max==(){()}else{time_parts(max,zone).date};
     let dates=[];
-    if open{dates.push(calendar::Calendar(#{key:`${props.key}-calendar`,label:ctx.t("time.custom"),mode:"range",months:2,
+    if open{dates.push(calendar::Calendar(#{key:`${props.key}-calendar`,label:ctx.t_or("time.custom", "Custom range"),mode:"range",months:2,
         value:valid_date_or(values.start_date,time_parts(resolved.start,zone).date),
         end:if !stale&&ctx.get_state("selecting_end"){()}else{valid_date_or(values.end_date,time_parts(resolved.end,zone).date)},
         min_date:date_min,max_date:date_max,today:time_parts(ctx.now(),zone).date,on_change:Fn("calendar_changed")})
         .with_style(ctx.component_style("calendar",style())));}
     let custom_nodes=dates+[row([
-        draft_field(ctx,props,values,ctx.t("time.start"),"start_date","start_time",draft.start_candidates,zone),
-        draft_field(ctx,props,values,ctx.t("time.end"),"end_date","end_time",draft.end_candidates,zone)])
+        draft_field(ctx,props,values,ctx.t_or("time.start", "Start"),"start_date","start_time",draft.start_candidates,zone),
+        draft_field(ctx,props,values,ctx.t_or("time.end", "End"),"end_date","end_time",draft.end_candidates,zone)])
         .with_style(ctx.component_style("fields",style().gap(theme_spacing("sm")).items_start()))];
     if draft.error!=""{custom_nodes.push(text(draft.error).with_style(ctx.component_style("error",style().typography("caption").text_color(theme_color("text.danger"))))
             .accessibility_role("status"));}
     custom_nodes.push(row([
-        button::Button(#{key:`${props.key}-apply`,text:ctx.t("time.apply"),variant:"primary",disabled:draft.value==(),
+        button::Button(#{key:`${props.key}-apply`,text:ctx.t_or("time.apply", "Apply"),variant:"primary",disabled:draft.value==(),
             on_click:Fn("apply_button").curry(draft.value,identity)})]).with_style(ctx.component_style("actions",style().justify_end())));
     let custom=column(custom_nodes).with_style(style().gap(theme_spacing("sm")));
     let draft_offset=time_parts(if draft.value==(){resolved.start}else{draft.value.start},zone).zone;
-    let zones=[text(`${ctx.t("time.zone")}: ${zone} UTC${draft_offset}`).with_style(ctx.component_style("zone",style().typography("caption")))];
-    if props.zone_switch{for candidate in ["local","UTC"]{zones.push(button::Button(#{key:`zone-${candidate}`,text:if candidate=="local"{ctx.t("time.local")}else{"UTC"},variant:"ghost",
+    let zones=[text(`${ctx.t_or("time.zone", "Time zone")}: ${zone} UTC${draft_offset}`).with_style(ctx.component_style("zone",style().typography("caption")))];
+    if props.zone_switch{for candidate in ["local","UTC"]{zones.push(button::Button(#{key:`zone-${candidate}`,text:if candidate=="local"{ctx.t_or("time.local", "Local")}else{"UTC"},variant:"ghost",
         on_click:Fn("switch_zone").curry(if draft.value==(){props.value}else{draft.value},props.precision,candidate)}));}}
     let panel=column([row(zones).with_style(style().items_center().gap(theme_spacing("xs"))),
         row([picker_presets(ctx,props,presets),custom]).with_style(style().items_start().gap(theme_spacing("lg")))])
@@ -212,7 +212,7 @@ fn render_TimeRangePicker(ctx,props){
         for direction in [-1,1]{let shifted=#{kind:"absolute",start:resolved.start+direction*width,end:resolved.end+direction*width};
             nodes.push(button::Button(#{key:`${props.key}-shift-${direction}`,text:if direction<0{"‹"}else{"›"},variant:"ghost",
                 disabled:time_range_error(shifted,min,max,span)!="",on_click:Fn("shift_button").curry(shifted)})
-                .accessibility_label(ctx.t(if direction<0{"time.previous"}else{"time.next"})));}}
+                .accessibility_label(if direction<0{ctx.t_or("time.previous","Previous range")}else{ctx.t_or("time.next","Next range")}));}}
     let root=row(nodes).with_style(ctx.component_style("root",style().gap(theme_spacing("xs")).items_center())).disabled(props.disabled);
     if "size" in props&&props.size!=(){root.env(#{size:props.size})}else{root}
 }

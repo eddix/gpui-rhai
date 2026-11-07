@@ -17,7 +17,7 @@ dependencies = []
 
 [components."components/combobox"]
 version = "0.4.3"
-content_hash = "8e54df77e19b0641"
+content_hash = "2807af90a6765d2e"
 dependencies = ["components/input"]
 
 [components."components/divider"]
@@ -41,13 +41,13 @@ content_hash = "bd9fc4fd7d260ac7"
 dependencies = []
 
 [components."components/progress"]
-version = "0.2.0"
-content_hash = "62cdcab95e9b4199"
+version = "0.4.3"
+content_hash = "08e0ff5f81fafdf5"
 dependencies = []
 
 [components."components/select"]
 version = "0.4.3"
-content_hash = "559bbe21da01d48d"
+content_hash = "26080264378186db"
 dependencies = ["components/combobox"]
 
 [components."components/spinner"]

@@ -55,7 +55,7 @@ define_component(#{
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" }, doc: "Trigger text while nothing is selected." },
             search_placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Search" }, doc: "Placeholder of the search field shown with `searchable`." },
+                "default": #{ type: "string", value: "" }, doc: "Placeholder of the search field shown with `searchable`. Empty, the localized `common.search` message, `Search` without one." },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" },
                 doc: "Text shown when no option matches; empty uses the localized `common.no_results` message." },
@@ -109,6 +109,13 @@ define_component(#{
     render: Fn("render_Select")
 });
 
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
+
 fn Select(props) { render_component("components/select", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn select_values(ctx, values) { ctx.emit("change", if values.len == 0 { () } else { values[0] }); }
@@ -125,8 +132,8 @@ fn render_Select(ctx, props) {
         selected: selected, open: props.open, query: props.query,
         searchable: prop_or(props, "searchable", false),
         placeholder: prop_or(props, "placeholder", ""),
-        search_placeholder: prop_or(props, "search_placeholder", "Search"),
-        empty_text: if empty_text == "" { ctx.t("common.no_results") } else { empty_text },
+        search_placeholder: localized_prop(ctx, props, "search_placeholder", "common.search", "Search"),
+        empty_text: if empty_text == "" { ctx.t_or("common.no_results", "No results") } else { empty_text },
         clear_label: prop_or(props, "clear_label", ()),
         clearable: prop_or(props, "clearable", false), reset_query_on_close: true,
         disabled: prop_or(props, "disabled", false),

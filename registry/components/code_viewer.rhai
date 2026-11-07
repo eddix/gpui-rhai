@@ -2,7 +2,7 @@
 {
   "id": "components/code_viewer",
   "export": "CodeViewer",
-  "version": "0.2.1",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -14,7 +14,7 @@
 // Example: CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai source", language: "rhai" })
 
 define_component(#{
-    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.2.1",
+    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: ["surface", "surface_raised", "scrollbar.thumb", "scrollbar.thumb_hover"],
         environment: [] },
@@ -26,8 +26,8 @@ define_component(#{
                 required: true, sensitive: false,
                 doc: "Text to show: a string, or a Host-owned `NativeTextDocument` from `ctx.get_native_text_document`." },
             label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "Code" },
-                doc: "Accessible name of the document surface." },
+                "default": #{ type: "string", value: "" },
+                doc: "Accessible name of the document surface. Empty, the localized `code.label` message, `Code` without one." },
             file_name: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                 doc: "File name whose extension picks the syntax when `language` is not set." },
             language: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
@@ -68,6 +68,13 @@ define_component(#{
     render: Fn("render_CodeViewer")
 });
 
+// The text prop `name`, or the localized `key` message (`fallback` without one) while it
+// is empty or unset.
+fn localized_prop(ctx, props, name, key, fallback) {
+    let value = if name in props && props[name] != () { props[name] } else { "" };
+    if value == "" { ctx.t_or(key, fallback) } else { value }
+}
+
 fn CodeViewer(props) { render_component("components/code_viewer", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn location_activate(ctx, payload) { ctx.emit("location_activate", payload); }
@@ -81,8 +88,16 @@ fn render_CodeViewer(ctx, props) {
     let root_style = ctx.component_style("root", root_base);
     gpui_rhai::CodeViewPrimitive(#{
         key: props.key,
+        messages: #{
+            find: ctx.t_or("document.find", "Find in document"),
+            no_matches: ctx.t_or("document.no_matches", "No matches"),
+            invalid_regex: ctx.t_or("document.invalid_regex", "Invalid regex: {error}"),
+            loading: ctx.t_or("document.loading", "Loading document…"),
+            updating: ctx.t_or("document.updating", "Updating document…"),
+            highlight_unavailable: ctx.t_or("document.highlight_unavailable", "Syntax highlighting unavailable: {error}"),
+        },
         source: props.source,
-        label: prop_or(props, "label", "Code"),
+        label: localized_prop(ctx, props, "label", "code.label", "Code"),
         file_name: prop_or(props, "file_name", ()),
         language: prop_or(props, "language", ()),
         show_line_numbers: prop_or(props, "show_line_numbers", true),
@@ -106,5 +121,5 @@ fn render_CodeViewer(ctx, props) {
             Fn("location_activate")
         } else { () },
     }).with_key(props.key).with_style(root_style).accessibility_role("document")
-        .accessibility_label(prop_or(props, "label", "Code"))
+        .accessibility_label(localized_prop(ctx, props, "label", "code.label", "Code"))
 }

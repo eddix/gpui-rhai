@@ -338,14 +338,14 @@ fn a_new_item_slides_in_from_the_side_it_comes_from(cx: &mut TestAppContext) {
     );
     assert_eq!(log(&mut visual, &view), "1 0 3");
 
-    // Right-to-left text mirrors it.
+    // Right-to-left text mirrors it. The Arabic locale names the arrows.
     let (mut visual, view) = mount_with(cx, carousel(0, ""), MotionPreference::Normal, true);
     let (start, rest) = slide(
         &mut visual,
         &view,
         "body-1",
         false,
-        press("button", "Next", view.clone()),
+        press("button", "التالي", view.clone()),
     );
     assert!(
         start < rest - 1.0,
