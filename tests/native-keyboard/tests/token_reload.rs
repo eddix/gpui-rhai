@@ -75,7 +75,7 @@ impl App {
     fn with(
         cx: &mut TestAppContext,
         name: &str,
-        configure: impl FnOnce(FileScriptView) -> FileScriptView,
+        configure: impl FnOnce(ScriptView) -> ScriptView,
     ) -> Self {
         let dir =
             std::env::temp_dir().join(format!("gpui-rhai-reload-{name}-{}", std::process::id()));
@@ -94,7 +94,7 @@ impl App {
             "fn tokens(){#{metrics:#{unit:px(40)}}}",
         )
         .unwrap();
-        let prepared = configure(FileScriptView::new(dir.join("main.rhai")).development(true))
+        let prepared = configure(ScriptView::files(dir.join("main.rhai")).development(true))
             .prepare()
             .unwrap();
         cx.update(gpui_rhai::install);
@@ -183,7 +183,7 @@ impl App {
 }
 
 fn prepare_error(dir: &Path) -> Option<String> {
-    FileScriptView::new(dir.join("main.rhai"))
+    ScriptView::files(dir.join("main.rhai"))
         .prepare()
         .err()
         .map(|error| error.to_string())

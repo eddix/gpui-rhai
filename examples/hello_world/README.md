@@ -6,7 +6,7 @@ This is the smallest complete GPUI Rhai application. It demonstrates:
 - semantic theme tokens;
 - a Rhai event callback;
 - mouse click and Enter/Space keyboard activation;
-- a `FileScriptView` adapted to a standalone `ScriptApplication`.
+- a `ScriptView` adapted to a standalone `ScriptApplication`.
 
 Run it from the repository root:
 

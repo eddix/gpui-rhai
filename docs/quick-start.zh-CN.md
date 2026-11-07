@@ -80,7 +80,7 @@ Rust host 注册为带 schema 和版本的 capability。需要发布时运行
 `x.index_of(a, b)` 也会落到你的 `fn index_of(a, b)` 上；`check` 会给出
 `builtin-shadow` 警告。
 
-Rust 侧以脚本视图为核心：`FileScriptView` / `EmbeddedScriptView` 先生成
+Rust 侧以脚本视图为核心：`ScriptView` 先生成
 `PreparedScriptView`。独立应用交给 `ScriptApplication` 打开窗口；已有 GPUI
 应用则通过一个共享的 `ScriptViewHost` 在同一窗口挂载多个相互隔离的视图。
 脚本 view 作为 Rust flex row/column 的直接子项时应使用 `view.flex_item()`；固定、

@@ -81,7 +81,7 @@ fn findings(
         .collect()
 }
 
-fn audited(view: EmbeddedScriptView) -> PreparedScriptView {
+fn audited(view: ScriptView) -> PreparedScriptView {
     view.profile_source(productivity())
         .motion_preference(MotionPreference::None)
         .prepare()

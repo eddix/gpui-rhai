@@ -256,9 +256,9 @@ The runtime sets these limits for every script:
 | string length | 1 MiB |
 
 A Host changes the operation budget with `operation_limit(n)` and the depths
-with `expression_depth_limits(global, functions)` on `EmbeddedScriptView` or
-`FileScriptView`. The array, map and string limits are the Rhai engine's own: a
-Host that trusts its scripts raises them in
+with `expression_depth_limits(global, functions)` on `ScriptView`. The array,
+map and string limits are the Rhai engine's own: a Host that trusts its
+scripts raises them in
 `ScriptViewExtension::configure_rhai_engine`, for example
 `engine.set_max_array_size(50_000)`.
 

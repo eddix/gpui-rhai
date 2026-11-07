@@ -24,7 +24,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{TestAppContext, WindowHandle};
-use gpui_rhai::{EmbeddedScriptView, ScriptViewConfig, ScriptViewHandle, ScriptViewHost};
+use gpui_rhai::{ScriptView, ScriptViewConfig, ScriptViewHandle, ScriptViewHost};
 
 use crate::support::{Host, Mount};
 
@@ -52,7 +52,7 @@ fn mount_refreshed(
 /// [`mount_refreshed`] does.
 fn mount_example(
     cx: &mut TestAppContext,
-    view: EmbeddedScriptView,
+    view: ScriptView,
     host_id: &'static str,
     view_id: &'static str,
 ) -> (WindowHandle<Host>, ScriptViewHandle) {

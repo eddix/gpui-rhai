@@ -98,7 +98,7 @@ single-use prepared views:
 gpui_rhai::install(cx);
 let host = gpui_rhai::ScriptViewHost::new("main-window", cx)?;
 
-let first = gpui_rhai::FileScriptView::new("plugins/first/ui/main.rhai")
+let first = gpui_rhai::ScriptView::files("plugins/first/ui/main.rhai")
     .prepare()?
     .mount(
         gpui_rhai::ScriptViewConfig::new("first-widget"),
@@ -112,7 +112,7 @@ For deterministic tests, inject one monotonic clock before `prepare`:
 
 ```rust
 let manual_clock = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
-let prepared = gpui_rhai::FileScriptView::new("plugins/first/ui/main.rhai")
+let prepared = gpui_rhai::ScriptView::files("plugins/first/ui/main.rhai")
     .runtime_clock(manual_clock.clock())
     .prepare()?;
 
@@ -192,7 +192,7 @@ Register slots before preparing the outer script view:
 let slots = gpui_rhai::HostSlotRegistry::new()
     .with_script_view("content", resident_view.clone())?;
 
-let shell = gpui_rhai::EmbeddedScriptView::new(entry, sources, theme)
+let shell = gpui_rhai::ScriptView::sources(entry, sources, theme)
     .extension(slots)
     .prepare()?;
 ```

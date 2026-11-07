@@ -210,7 +210,7 @@ mod profile {
                 );
             }
             modules.insert(gpui_rhai::ModuleId::parse("main").unwrap(), source);
-            let prepared = gpui_rhai::EmbeddedScriptView::new(
+            let prepared = gpui_rhai::ScriptView::sources(
                 gpui_rhai::ModuleId::parse("main").unwrap(),
                 gpui_rhai::EmbeddedScriptSource::new(modules),
                 gpui_rhai_registry::DEFAULT_THEME,

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
 const REGION: &str = include_str!("../../../registry/layouts/region.rhai");
 const TOOLBAR: &str = include_str!("../../../registry/layouts/toolbar.rhai");
@@ -238,7 +238,7 @@ fn main() {
 /// # Panics
 ///
 /// Panics only if a static module ID is invalid.
-pub fn view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScriptView {
+pub fn view(theme: &str, locale: &str, visual_state: &str) -> ScriptView {
     let theme = if matches!(
         theme,
         "default-light" | "default-dark" | "tokyo-night" | "catppuccin-mocha"
@@ -308,7 +308,7 @@ pub fn view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScriptView
         module("components/toggle", TOGGLE),
         module("components/spinner", SPINNER),
     ]));
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
+    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
         .token_base(include_str!("../../../registry/tokens.rhai"))
         .theme_sources([
             ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),

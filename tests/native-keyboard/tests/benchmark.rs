@@ -705,7 +705,7 @@ fn document_end_to_end_baseline(cx: &mut TestAppContext) {
     let mut direct_sources = document_component_source();
     direct_sources.insert(entry.clone(), direct_main);
     let direct_started = Instant::now();
-    gpui_rhai::EmbeddedScriptView::new(
+    gpui_rhai::ScriptView::sources(
         entry.clone(),
         gpui_rhai::EmbeddedScriptSource::new(direct_sources),
         theme,
@@ -721,7 +721,7 @@ fn document_end_to_end_baseline(cx: &mut TestAppContext) {
     let mut native_sources = document_component_source();
     native_sources.insert(entry.clone(), native_main.to_owned());
     let native_started = Instant::now();
-    gpui_rhai::EmbeddedScriptView::new(
+    gpui_rhai::ScriptView::sources(
         entry,
         gpui_rhai::EmbeddedScriptSource::new(native_sources),
         theme,
@@ -783,7 +783,7 @@ fn view(ctx) {
     );
     let native_ui_prepare_started = Instant::now();
     let native_ui_clock = gpui_rhai::ManualRuntimeClock::new(Instant::now());
-    let native_ui_prepared = gpui_rhai::EmbeddedScriptView::new(
+    let native_ui_prepared = gpui_rhai::ScriptView::sources(
         gpui_rhai::ModuleId::parse("document-ui-benchmark").unwrap(),
         gpui_rhai::EmbeddedScriptSource::new(native_ui_sources),
         theme,
@@ -1202,7 +1202,7 @@ fn view(ctx){{ {page} }}"#,
     )
 }
 
-fn scroll_view(layout: ScrollLayout) -> gpui_rhai::EmbeddedScriptView {
+fn scroll_view(layout: ScrollLayout) -> gpui_rhai::ScriptView {
     use std::collections::BTreeMap;
     let module =
         |id: &str, source: &str| (gpui_rhai::ModuleId::parse(id).unwrap(), source.to_owned());
@@ -1241,7 +1241,7 @@ fn scroll_view(layout: ScrollLayout) -> gpui_rhai::EmbeddedScriptView {
         )
     })
     .collect();
-    gpui_rhai::EmbeddedScriptView::new(
+    gpui_rhai::ScriptView::sources(
         gpui_rhai::ModuleId::parse("main").unwrap(),
         scripts,
         SCROLL_THEME,
@@ -1652,7 +1652,7 @@ struct ShellBenchmarkReport {
     layouts: Vec<ShellLayoutReport>,
 }
 
-fn shell_view(component: bool) -> gpui_rhai::EmbeddedScriptView {
+fn shell_view(component: bool) -> gpui_rhai::ScriptView {
     use std::collections::BTreeMap;
     let module =
         |id: &str, source: &str| (gpui_rhai::ModuleId::parse(id).unwrap(), source.to_owned());
@@ -1676,7 +1676,7 @@ fn shell_view(component: bool) -> gpui_rhai::EmbeddedScriptView {
             include_str!("../../../registry/components/input.rhai"),
         ),
     ]));
-    gpui_rhai::EmbeddedScriptView::new(
+    gpui_rhai::ScriptView::sources(
         gpui_rhai::ModuleId::parse("main").unwrap(),
         scripts,
         SCROLL_THEME,

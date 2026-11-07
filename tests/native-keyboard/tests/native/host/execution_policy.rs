@@ -64,8 +64,8 @@ impl Fixture {
         std::fs::write(root.join("app.toml"), "entry = \"main\"\nruntime_api = 3\n").unwrap();
         Self { root }
     }
-    fn builder(&self) -> FileScriptView {
-        FileScriptView::new(self.root.join("main.rhai")).development(false)
+    fn builder(&self) -> ScriptView {
+        ScriptView::files(self.root.join("main.rhai")).development(false)
     }
 }
 impl Drop for Fixture {
@@ -80,9 +80,9 @@ impl Drop for Fixture {
         std::fs::remove_dir_all(&self.root).unwrap();
     }
 }
-fn embedded(source: &str) -> EmbeddedScriptView {
+fn embedded(source: &str) -> ScriptView {
     let entry = ModuleId::parse("main").unwrap();
-    EmbeddedScriptView::new(
+    ScriptView::sources(
         entry.clone(),
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         THEME,

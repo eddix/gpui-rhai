@@ -74,7 +74,7 @@ bundled_themes!(
 );
 
 /// Every bundled palette as `(themes/ file name, source)`, for
-/// `EmbeddedScriptView::theme_sources`.
+/// `ScriptView::theme_sources`.
 pub fn bundled_palette_sources() -> Vec<(String, &'static str)> {
     vec![
         ("aetheria.rhai", AETHERIA),

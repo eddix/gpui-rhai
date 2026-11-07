@@ -66,14 +66,14 @@ mod capture {
     use std::time::Duration;
 
     use gpui::{AppContext, VisualTestAppContext, px, size};
-    use gpui_rhai::{EmbeddedScriptView, MotionPreference};
+    use gpui_rhai::{ScriptView, MotionPreference};
 
     use super::baseline_cases::{ExampleCase, example_cases, example_window};
     use super::{
         dashboard_layout, data_table, embedded_views, form_showcase, offscreen, settings_panel,
     };
 
-    fn view(case: &ExampleCase) -> Option<(EmbeddedScriptView, (f32, f32))> {
+    fn view(case: &ExampleCase) -> Option<(ScriptView, (f32, f32))> {
         Some(match case.example {
             "settings_panel" => (
                 settings_panel::view(case.theme, case.locale),

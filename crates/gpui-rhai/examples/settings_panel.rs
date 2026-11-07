@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
 const REGION: &str = include_str!("../../../registry/layouts/region.rhai");
 const STACK: &str = include_str!("../../../registry/layouts/stack.rhai");
@@ -261,7 +261,7 @@ const THEMES: &[&str] = &[
 /// # Panics
 ///
 /// Panics only if a static module ID is invalid.
-pub fn view(theme: &str, locale: &str) -> EmbeddedScriptView {
+pub fn view(theme: &str, locale: &str) -> ScriptView {
     let theme = if THEMES.contains(&theme) {
         theme
     } else {
@@ -293,7 +293,7 @@ pub fn view(theme: &str, locale: &str) -> EmbeddedScriptView {
         module("components/toggle_group", TOGGLE_GROUP),
         module("components/accordion", ACCORDION),
     ]));
-    EmbeddedScriptView::new(
+    ScriptView::sources(
         ModuleId::parse("main").expect("main module"),
         scripts,
         DEFAULT_DARK,

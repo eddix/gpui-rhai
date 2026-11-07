@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
-    ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication,
+    ComponentStateSchema, EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView,
     ScriptViewExtension, StateField, StoreId, UiRuntimeState, UiValue, ValueSchema,
 };
 
@@ -138,7 +138,7 @@ fn main() {
         module("components/button", BUTTON),
         module("components/dialog", DIALOG),
     ]));
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
+    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
         .token_base(include_str!("../../../registry/tokens.rhai"))
         .extension(MultiWindowStores)
         .theme_sources([(

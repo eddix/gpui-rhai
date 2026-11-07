@@ -1,9 +1,9 @@
 # Development inspector
 
 Development hosts expose an in-window inspector with `Command-Option-I` or
-`F12`. `FileScriptView` enables development mode in debug builds when the
-`dev-reload` feature is active; embedded hosts opt in with
-`EmbeddedScriptView::development(true)`. `ScriptApplication` installs the
+`F12`. A file-backed `ScriptView` enables development mode in debug builds when
+the `dev-reload` feature is active; other sources opt in with
+`ScriptView::development(true)`. `ScriptApplication` installs the
 shortcut for its focused view. Existing GPUI hosts may control one isolated
 view through `ScriptViewHandle::set_inspector_open`; mounting never adds a
 global shortcut automatically.

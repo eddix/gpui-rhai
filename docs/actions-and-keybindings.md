@@ -23,14 +23,14 @@ let binding = KeyBindingSpec::new(
     ActionId::parse("document.save")?,
     Some("GPUIRhaiHost".to_owned()),
 )?;
-let prepared = EmbeddedScriptView::new(entry, scripts, theme)
+let prepared = ScriptView::sources(entry, scripts, theme)
     .key_binding(binding)
     .prepare()?;
 let host = ScriptViewHost::new("main", cx)?;
 host.bind_keys(prepared.key_bindings().iter().cloned(), cx)?;
 ```
 
-The same declaration is available on `FileScriptView`, but mounting a view never
+The same declaration is available on `ScriptView`, but mounting a view never
 changes the App keymap automatically. The host must explicitly approve and bind
 the declarations. Binding the same keys/context to different actions is an
 error; repeating the same binding is idempotent. In the pinned gpui-pre 0.3.11,

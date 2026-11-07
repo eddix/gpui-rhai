@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
 const THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
 
@@ -93,7 +93,7 @@ fn view(ctx) {
 }
 "#;
 
-fn showcase_view() -> EmbeddedScriptView {
+fn showcase_view() -> ScriptView {
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         (ModuleId::parse("main").unwrap(), MAIN.to_owned()),
         (
@@ -101,7 +101,7 @@ fn showcase_view() -> EmbeddedScriptView {
             PANEL.to_owned(),
         ),
     ]));
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME)
+    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, THEME)
         .token_base(include_str!("../../../registry/tokens.rhai"))
 }
 

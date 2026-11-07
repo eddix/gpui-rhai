@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
 use gpui_rhai::{
-    AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, MotionPreference,
+    AssetData, EmbeddedScriptSource, ScriptView, ModuleId, MotionPreference,
     PreparedScriptView, ScriptViewConfig, ScriptViewError, ScriptViewHandle, ScriptViewHost,
     ScriptViewState,
 };
@@ -79,12 +79,12 @@ pub(crate) fn registry_source(id: &str) -> &'static str {
     .unwrap_or_else(|| panic!("no official module {id:?}"))
 }
 
-type ConfigureView = Box<dyn FnOnce(EmbeddedScriptView) -> EmbeddedScriptView>;
+type ConfigureView = Box<dyn FnOnce(ScriptView) -> ScriptView>;
 type ConfigureMount = Box<dyn FnOnce(ScriptViewConfig) -> ScriptViewConfig>;
 
 /// An embedded view to mount in a test window.
 ///
-/// [`Mount::new`] starts where `EmbeddedScriptView` starts, plus the default dark theme and the
+/// [`Mount::new`] starts where `ScriptView` starts, plus the default dark theme and the
 /// token base: the entry module `main`, no other modules, no locale, no assets and the motion
 /// preference from the environment. Each difference a test needs is one call, so a test that
 /// mounts without assets or with a custom extension says so where it mounts.
@@ -191,10 +191,10 @@ impl Mount {
         self
     }
 
-    /// Any other `EmbeddedScriptView` option: extensions, clocks, theme sources, styles.
+    /// Any other `ScriptView` option: extensions, clocks, theme sources, styles.
     pub(crate) fn with(
         mut self,
-        configure: impl FnOnce(EmbeddedScriptView) -> EmbeddedScriptView + 'static,
+        configure: impl FnOnce(ScriptView) -> ScriptView + 'static,
     ) -> Self {
         self.view.push(Box::new(configure));
         self
@@ -209,8 +209,8 @@ impl Mount {
         self
     }
 
-    fn embedded(&mut self) -> EmbeddedScriptView {
-        let mut view = EmbeddedScriptView::new(
+    fn embedded(&mut self) -> ScriptView {
+        let mut view = ScriptView::sources(
             ModuleId::parse("main").unwrap(),
             EmbeddedScriptSource::new(std::mem::take(&mut self.modules)),
             std::mem::take(&mut self.theme),

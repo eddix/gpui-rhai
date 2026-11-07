@@ -4,11 +4,11 @@ use std::time::Duration;
 use gpui_rhai::gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px, rgba};
 use gpui_rhai::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityHandler, CapabilityId,
-    CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView,
-    HostSlotRegistry, ModuleId, ObjectField, PrimitiveContext, PrimitiveDescriptor,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveValue, RuntimeEngine,
-    ScriptApplication, ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork,
-    TaskWork, UiRuntimeState, UiValue, ValueSchema,
+    CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, HostSlotRegistry, ModuleId,
+    ObjectField, PrimitiveContext, PrimitiveDescriptor, PrimitiveHandler, PrimitiveId,
+    PrimitiveInstance, PrimitiveValue, RuntimeEngine, ScriptApplication, ScriptView,
+    ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiRuntimeState,
+    UiValue, ValueSchema,
 };
 use semver::Version;
 
@@ -260,7 +260,7 @@ fn main() {
         })
         .expect("static host slot name");
 
-    EmbeddedScriptView::new(entry, scripts, DEFAULT_DARK)
+    ScriptView::sources(entry, scripts, DEFAULT_DARK)
         .token_base(include_str!("../../../registry/tokens.rhai"))
         .extension(DemoExtension)
         .extension(host_slots)

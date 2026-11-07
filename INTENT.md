@@ -45,7 +45,7 @@ hidden behind a fixed precompiled language bridge. One UI may combine:
 The Rust host can remain minimal:
 
 ```rust
-let view = FileScriptView::new("ui/main.rhai")
+let view = ScriptView::files("ui/main.rhai")
     .extension(/* application services and native handlers */)
     .prepare()?;
 ScriptApplication::new(view).run()?;

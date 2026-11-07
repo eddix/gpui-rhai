@@ -782,7 +782,7 @@ directly:
 ```rust
 use std::collections::BTreeMap;
 use gpui_rhai::{
-    EventResponse, FileScriptView, NativeHandlerDescriptor, NativeHandlerId,
+    EventResponse, ScriptView, NativeHandlerDescriptor, NativeHandlerId,
     ScriptViewExtension, ValueSchema,
 };
 
@@ -810,7 +810,7 @@ impl ScriptViewExtension for HostBridge {
     }
 }
 
-let prepared = FileScriptView::new("ui/main.rhai")
+let prepared = ScriptView::files("ui/main.rhai")
     .extension(HostBridge)
     .prepare()?;
 ```
@@ -862,7 +862,7 @@ Choose the smallest boundary:
 ### Standalone script application
 
 ```rust
-let prepared = gpui_rhai::FileScriptView::new("ui/main.rhai")
+let prepared = gpui_rhai::ScriptView::files("ui/main.rhai")
     .prepare()?;
 
 gpui_rhai::ScriptApplication::new(prepared).run()?;
@@ -874,7 +874,7 @@ gpui_rhai::ScriptApplication::new(prepared).run()?;
 gpui_rhai::install(cx);
 let host = gpui_rhai::ScriptViewHost::new("main-window", cx)?;
 
-let view = gpui_rhai::FileScriptView::new("plugins/user-view/ui/main.rhai")
+let view = gpui_rhai::ScriptView::files("plugins/user-view/ui/main.rhai")
     .prepare()?
     .mount(
         gpui_rhai::ScriptViewConfig::new("user-view"),
@@ -1167,7 +1167,7 @@ the direct-string budget.
 Wall time is independent of the monotonic Motion/test clock and is available
 without the optional charts feature. `WallClock::system()`, `fixed(epoch_ms)`
 and `from_source(...)` provide the Rust presentation clock; both
-`FileScriptView` and `EmbeddedScriptView` accept `.wall_clock(clock)`. A fixed
+`ScriptView` accepts `.wall_clock(clock)`. A fixed
 or custom source makes application tests deterministic without changing time
 arithmetic or animation speed.
 
@@ -1257,8 +1257,7 @@ token base entirely; see the `byod_treemap` example.
 
 Rust Hosts may layer user preferences uniformly over every default, bundled,
 and user-supplied variant with
-`FileScriptView::theme_token_overrides` or
-`EmbeddedScriptView::theme_token_overrides`. `ThemeTokenOverrides` partially
+`ScriptView::theme_token_overrides`. `ThemeTokenOverrides` partially
 merges semantic colors, spacing/radii, typography roles, motion roles, and
 namespaced tokens; it never changes theme identity. Overrides are validated on
 startup and reapplied after file-theme hot reload. Use this for preferences
@@ -1277,7 +1276,7 @@ Use `ui/styles.rhai` when the customization belongs to a formal component
 rather than a universal token. A rule targets an exact component ID and one of
 its declared parts with the normal typed `Style` builder. File-backed views
 discover it automatically; production embedding passes
-`COMPONENT_STYLES_SOURCE` to `EmbeddedScriptView::component_styles`. See
+`COMPONENT_STYLES_SOURCE` to `ScriptView::component_styles`. See
 [Component stylesheets](https://github.com/eddix/gpui-rhai/blob/main/docs/component-styles.md).
 
 Open Theme Studio with:

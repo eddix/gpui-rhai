@@ -1664,7 +1664,7 @@ fn literal_geometry(line: &str) -> Option<&'static str> {
     }
 }
 
-/// The application's own modules, by the rule `FileScriptView` discovers them
+/// The application's own modules, by the rule `ScriptView` discovers them
 /// with: every `.rhai` file below `ui/` except the entry, the theme, styles,
 /// token base and profile and anything in a `themes` or `locales` directory,
 /// with the path minus `.rhai` as its ID. Installed registry components are
@@ -2079,7 +2079,7 @@ fn generated_embed_module(
     output.push_str("pub const THEME_SOURCE: &str = include_str!(\"../ui/theme.rhai\");\n\n");
     if has_token_base {
         output.push_str(
-            "/// Pass to `EmbeddedScriptView::token_base`.\npub const TOKEN_BASE_SOURCE: &str = include_str!(\"../ui/tokens.rhai\");\n\n",
+            "/// Pass to `ScriptView::token_base`.\npub const TOKEN_BASE_SOURCE: &str = include_str!(\"../ui/tokens.rhai\");\n\n",
         );
     }
     output.push_str(
@@ -2158,7 +2158,7 @@ const CARGO_NEW_MAIN: &str = "fn main() {\n    println!(\"Hello, world!\");\n}\n
 
 fn host_source() -> String {
     r#"fn main() {
-    let view = gpui_rhai::FileScriptView::new("ui/main.rhai")
+    let view = gpui_rhai::ScriptView::files("ui/main.rhai")
         .prepare()
         .expect("GPUI Rhai view preparation failed");
     gpui_rhai::ScriptApplication::new(view)

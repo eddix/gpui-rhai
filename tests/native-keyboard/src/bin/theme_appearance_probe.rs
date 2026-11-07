@@ -111,7 +111,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
     }
     fn prepared(records: Records) -> PreparedScriptView {
         let entry = ModuleId::parse("main").unwrap();
-        EmbeddedScriptView::new(
+        ScriptView::sources(
             entry.clone(),
             EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), SOURCE.into())])),
             gpui_rhai_registry::DEFAULT_THEME,

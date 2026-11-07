@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
 const THEME: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
 
@@ -39,8 +39,8 @@ fn view(ctx) {
 }
 "#;
 
-fn chat_view() -> EmbeddedScriptView {
-    EmbeddedScriptView::new(
+fn chat_view() -> ScriptView {
+    ScriptView::sources(
         ModuleId::parse("main").unwrap(),
         EmbeddedScriptSource::new(BTreeMap::from([(
             ModuleId::parse("main").unwrap(),

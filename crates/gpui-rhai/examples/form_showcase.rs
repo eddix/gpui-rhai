@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
-    CalendarClock, EmbeddedScriptSource, EmbeddedScriptView, GregorianDate, ModuleId,
-    ScriptApplication,
+    CalendarClock, EmbeddedScriptSource, GregorianDate, ModuleId, ScriptApplication, ScriptView,
 };
 
 const REGION: &str = include_str!("../../../registry/layouts/region.rhai");
@@ -244,7 +243,7 @@ pub const WINDOW: (f32, f32) = (760.0, 720.0);
 /// # Panics
 ///
 /// Panics only if a static module ID or the fixed visual date is invalid.
-pub fn view(theme: &str, locale: &str, state: &str) -> EmbeddedScriptView {
+pub fn view(theme: &str, locale: &str, state: &str) -> ScriptView {
     let theme = if matches!(
         theme,
         "default-light"
@@ -294,7 +293,7 @@ pub fn view(theme: &str, locale: &str, state: &str) -> EmbeddedScriptView {
         module("components/dialog", DIALOG),
         module("components/toast", TOAST),
     ]));
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
+    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
         .token_base(include_str!("../../../registry/tokens.rhai"))
         .theme_sources([
             ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),

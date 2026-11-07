@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
 const MAIN: &str = include_str!("../../../examples/hello_world/ui/main.rhai");
 const BUTTON: &str = include_str!("../../../examples/hello_world/ui/components/button.rhai");
@@ -27,7 +27,7 @@ fn main() {
             INPUT.to_owned(),
         ),
     ]));
-    EmbeddedScriptView::new(entry, scripts, THEME)
+    ScriptView::sources(entry, scripts, THEME)
         .token_base(include_str!("../../../registry/tokens.rhai"))
         .locale_sources([
             ("locales/en.rhai".to_owned(), EN.to_owned()),

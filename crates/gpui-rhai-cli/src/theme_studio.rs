@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_rhai::{
-    AssetData, ColorValue, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView,
-    EventResponse, ModuleId, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, Rgba8,
-    RuntimeEngine, ScriptApplication, ScriptViewExtension, ThemeMode, ThemeVariant, UiRuntimeState,
-    UiValue, ValueSchema, load_theme_source,
+    AssetData, ColorValue, ComponentInstancePath, EmbeddedScriptSource, EventResponse, ModuleId,
+    NativeEvent, NativeHandlerDescriptor, NativeHandlerId, Rgba8, RuntimeEngine, ScriptApplication,
+    ScriptView, ScriptViewExtension, ThemeMode, ThemeVariant, UiRuntimeState, UiValue, ValueSchema,
+    load_theme_source,
 };
 
 use super::{
@@ -887,7 +887,7 @@ fn launch(
         })
         .collect::<Vec<_>>();
     let entry = ModuleId::parse("main").map_err(|error| error.to_string())?;
-    EmbeddedScriptView::new(entry, scripts, primary)
+    ScriptView::sources(entry, scripts, primary)
         .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources(additional_themes)
         .locale_sources([

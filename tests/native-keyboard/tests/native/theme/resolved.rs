@@ -29,9 +29,9 @@ impl ScriptViewExtension for Themes {
         Ok(())
     }
 }
-fn builder(source: &str, system: bool, none: bool) -> EmbeddedScriptView {
+fn builder(source: &str, system: bool, none: bool) -> ScriptView {
     let entry = ModuleId::parse("main").unwrap();
-    EmbeddedScriptView::new(
+    ScriptView::sources(
         entry.clone(),
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         DEFAULT_THEME,

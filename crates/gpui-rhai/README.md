@@ -31,7 +31,7 @@ gpui-rhai check
   extensions;
 - optional native composable charts with typed/streaming data, Geo2D,
   interaction, motion, Rust extensions, and SVG/PNG export;
-- `FileScriptView` and `EmbeddedScriptView` preparation for standalone or
+- `ScriptView` preparation for standalone or
   embedded GPUI windows;
 - explicit resource budgets and no dependency on `gpui-component`.
 

@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use gpui_rhai::{FileScriptView, ScriptApplication};
+use gpui_rhai::{ScriptApplication, ScriptView};
 
 fn main() {
     let entry =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/hello_world/ui/main.rhai");
-    FileScriptView::new(entry)
+    ScriptView::files(entry)
         .prepare()
         .and_then(|prepared| {
             ScriptApplication::new(prepared)

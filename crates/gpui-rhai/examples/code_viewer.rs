@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
 const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const COMPONENT: &str = include_str!("../../../registry/components/code_viewer.rhai");
@@ -30,7 +30,7 @@ fn view(ctx) {
 "#;
 
 fn prepared() -> gpui_rhai::PreparedScriptView {
-    EmbeddedScriptView::new(
+    ScriptView::sources(
         ModuleId::parse("main").unwrap(),
         EmbeddedScriptSource::new(BTreeMap::from([
             (ModuleId::parse("main").unwrap(), MAIN.to_owned()),

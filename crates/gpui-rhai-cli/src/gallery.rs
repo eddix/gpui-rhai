@@ -7,12 +7,12 @@ use gpui_rhai::gpui::{
 };
 use gpui_rhai::{
     AppManifest, AssetData, CapabilityDescriptor, CapabilityId, CapabilityMethod, ChartDataLimits,
-    ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, HostSlotRegistry,
-    ModuleId, NativeChartData, NativeCollection, NativeEvent, NativeHandlerDescriptor,
-    NativeHandlerId, NativeTextDocument, ObjectField, PreparedScriptView, RuntimeEngine,
-    ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
-    SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode, ThemeTokenOverrides, ThemeVariant,
-    UiRuntimeState, UiValue, ValueSchema, extract_imports, install, load_theme_source,
+    ChartDataset, ChartGeoMap, EmbeddedScriptSource, HostSlotRegistry, ModuleId, NativeChartData,
+    NativeCollection, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, NativeTextDocument,
+    ObjectField, PreparedScriptView, RuntimeEngine, ScriptView, ScriptViewConfig,
+    ScriptViewExtension, ScriptViewHandle, ScriptViewHost, SubscriptionCapabilityHandler,
+    SubscriptionWork, ThemeMode, ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue,
+    ValueSchema, extract_imports, install, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -759,7 +759,7 @@ fn build_view(
     launch: &GalleryLaunch,
     chart_stream: Option<NativeChartData>,
     host_slots: Option<HostSlotRegistry>,
-) -> Result<EmbeddedScriptView, String> {
+) -> Result<ScriptView, String> {
     let story = resolve_story(&launch.story, &launch.case)?;
     let (theme_name, primary_theme) = theme_source(&launch.theme)?;
     let locale_sources = locale_sources(&launch.locale)?;
@@ -773,24 +773,21 @@ fn build_view(
         format!("{}\n{}\n", story_source, story_init_source(&launch.locale)?)
     };
     let entry = ModuleId::parse(story.source_module).map_err(|error| error.to_string())?;
-    let mut view =
-        EmbeddedScriptView::new(entry.clone(), story_scripts(story, source)?, primary_theme)
-            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .theme_sources(
-                BUNDLED_THEME_SOURCES
-                    .iter()
-                    .filter(|(name, _)| *name != theme_name)
-                    .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
+    let mut view = ScriptView::sources(entry.clone(), story_scripts(story, source)?, primary_theme)
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
+        .theme_sources(
+            BUNDLED_THEME_SOURCES
+                .iter()
+                .filter(|(name, _)| *name != theme_name)
+                .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
+        )
+        .locale_sources(locale_sources.map(|(name, source)| (name.to_owned(), source.to_owned())))
+        .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
+            (
+                path.strip_suffix(".svg").unwrap_or(path).to_owned(),
+                asset(source.as_bytes()),
             )
-            .locale_sources(
-                locale_sources.map(|(name, source)| (name.to_owned(), source.to_owned())),
-            )
-            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    asset(source.as_bytes()),
-                )
-            }));
+        }));
     if story.fixture == Some("operations") {
         let manifest = AppManifest::new(entry)
             .with_capability("gallery.operations", "*")
@@ -838,7 +835,7 @@ fn build_view(
 /// # Errors
 ///
 /// Returns a catalog, theme, locale, source, or runtime assembly error.
-pub fn view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
+pub fn view(launch: &GalleryLaunch) -> Result<ScriptView, String> {
     build_view(launch, None, None)
 }
 
@@ -847,13 +844,13 @@ pub fn view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
 pub fn view_with_host_slots(
     launch: &GalleryLaunch,
     slots: HostSlotRegistry,
-) -> Result<EmbeddedScriptView, String> {
+) -> Result<ScriptView, String> {
     build_view(launch, None, Some(slots))
 }
 
 /// Build the resident form used by the HostSlot acceptance story.
 #[doc(hidden)]
-pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
+pub fn host_resident_view(launch: &GalleryLaunch) -> Result<ScriptView, String> {
     let (theme_name, primary_theme) = theme_source(&launch.theme)?;
     let source = format!(
         "{}\n{}\n",
@@ -865,7 +862,7 @@ pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, 
         bundled_dependency_modules(&source, &["components/input", "components/textarea"])?;
     modules.insert(entry.clone(), source);
     Ok(
-        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), primary_theme)
+        ScriptView::sources(entry, EmbeddedScriptSource::new(modules), primary_theme)
             .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
             .theme_sources(
                 BUNDLED_THEME_SOURCES
@@ -895,9 +892,7 @@ pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, 
 ///
 /// Returns a catalog, theme, locale, source, or runtime assembly error.
 #[doc(hidden)]
-pub fn chart_streaming_view_with_data(
-    stream: NativeChartData,
-) -> Result<EmbeddedScriptView, String> {
+pub fn chart_streaming_view_with_data(stream: NativeChartData) -> Result<ScriptView, String> {
     build_view(
         &GalleryLaunch {
             story: "charts/streaming".to_owned(),
