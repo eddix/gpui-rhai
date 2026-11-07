@@ -31,6 +31,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 | `on_query_change` | callback or `()` | — | Called with the new search text as the user types, and with `""` when `reset_query_on_close` resets it. |
 | `on_submit` | callback or `()` | — | Called with the query when Enter is pressed in the search field and no enabled option matches it, so typed free text can be taken; while an option is active Enter picks it instead. |
 | `open` | bool | required | Whether the panel is open; the caller stores the `open_change` payload and passes it back. |
+| `option_trailing` | callback or `()` | — | Node factory bound with ctx.node_factory(Fn(...)), called as Fn(ctx, option) for content after an option's label, such as a Tag; option is #{ value, label, selected, active, disabled, place }, `place` being `option` in the list and `trigger` beside the value of a single-mode default trigger. Curry the caller's data into the factory to look an option up by value. The label gives way first; a content width measures it too. |
 | `options` | array of object (at most 100000) | required | Options in display order; options that share a `group` are gathered where that group first appears. |
 | `panel_width` | `"trigger"` or `"content"` | `"trigger"` | With the default trigger: `trigger` makes the panel exactly as wide as the trigger; `content` makes it at least that wide and wider for longer options, whose labels it measures up to 480 logical pixels. |
 | `parent_overlay` | string or `()` | — | Key of the open overlay this one nests in, such as a Dialog; the panel stacks above it and closes with it. |
@@ -78,7 +79,7 @@ combobox::Combobox(#{ key: "country", label: "Country", options: options, select
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `clear`, `empty`, `focus_frame`, `group`, `indicator`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `trigger`, `value`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `check`, `clear`, `empty`, `focus_frame`, `group`, `indicator`, `list`, `option`, `option_active`, `option_disabled`, `option_selected`, `panel`, `placeholder`, `root`, `scrollbar_thumb`, `scrollbar_thumb_hover`, `scrollbar_track`, `search`, `trailing`, `trigger`, `value`.
 
 ## Theme
 

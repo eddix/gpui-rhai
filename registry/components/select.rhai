@@ -80,6 +80,8 @@ define_component(#{
             panel_width: #{ schema: #{ type: "string", allowed: ["trigger", "content"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "content" },
                 doc: "`content` makes the list at least as wide as the trigger and wider for longer options, measured up to 480 logical pixels; `trigger` makes it exactly as wide as the trigger." },
+            option_trailing: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Node factory bound with ctx.node_factory(Fn(...)), called as Fn(ctx, option) for content after an option's label, such as a Tag, in the list and beside the trigger's value; option is #{ value, label, selected, active, disabled, place }, `place` being `option` or `trigger`. Curry the caller's data into the factory to look an option up by value." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 32 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 },
                 doc: "Rows the list shows before it scrolls; group headings count as rows." },
@@ -102,7 +104,7 @@ define_component(#{
         slots: #{},
         parts: ["root", "trigger", "value", "placeholder", "indicator", "clear",
             "panel", "search", "list", "group", "option", "option_selected",
-            "option_active", "option_disabled", "empty"],
+            "option_active", "option_disabled", "empty", "trailing"],
     },
     render: Fn("render_Select")
 });
@@ -133,6 +135,7 @@ fn render_Select(ctx, props) {
         size: prop_or(props, "size", ()),
         width: if "width" in props && props.width != () { props.width } else { "content" },
         panel_width: prop_or(props, "panel_width", "content"),
+        option_trailing: prop_or(props, "option_trailing", ()),
         on_change: Fn("select_values"),
         on_open_change: Fn("select_open"), on_query_change: Fn("select_query"),
         style: ctx.component_style("root", style()),
@@ -151,6 +154,7 @@ fn render_Select(ctx, props) {
             option_active: ctx.component_style("option_active", style()),
             option_disabled: ctx.component_style("option_disabled", style()),
             empty: ctx.component_style("empty", style()),
+            trailing: ctx.component_style("trailing", style()),
         }
     }).with_key(props.key);
     node.accessibility_invalid(prop_or(props, "error", false))
