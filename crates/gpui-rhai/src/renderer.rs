@@ -3244,7 +3244,17 @@ impl GpuiNodeRenderer {
                         .with_key_captures(environment.key_captures.to_vec())
                         .with_assets(environment.assets.cloned())
                         .with_intrinsic_size(environment.intrinsic_size.cloned())
-                        .with_focus_indicators(environment.focus_indicators),
+                        .with_focus_indicators(environment.focus_indicators)
+                        .with_host_focus(
+                            (!environment
+                                .primitives
+                                .uses_primary_focus(&primitive.primitive))
+                            .then(|| {
+                                retained_id
+                                    .and_then(|id| environment.focus_handles.get(&id).cloned())
+                            })
+                            .flatten(),
+                        ),
                         crate::PrimitiveTheme::capture_with_environment(
                             &environment.resolver(),
                             environment.direction,

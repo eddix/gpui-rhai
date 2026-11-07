@@ -9,11 +9,14 @@ props are `selected`, `open`, and `query`; callbacks emit `change`,
 `open_change`, and `query_change`. Custom trigger, header, footer, and empty
 slots remain ordinary nodes.
 
-`width` accepts every public `Length`. Fixed pixels retain their exact width;
-relative widths resolve from the component's real parent allocation, and the
-standard instance style can add `flex_grow`/`min_width(0)` for mixed flex rows.
-The popup panel follows the realized trigger width rather than reusing the
-declared length, so it remains aligned after window and parent-layout changes.
+`width` accepts every public `Length` and defaults to 280 logical pixels.
+Fixed pixels retain their exact width; relative widths resolve from the
+component's real parent allocation, and the standard instance style can add
+`flex_grow`/`min_width(0)` for mixed flex rows. `"content"` fits the widest
+option instead, as Select does by default. The popup panel follows the realized
+trigger width rather than reusing the declared length, so it remains aligned
+after window and parent-layout changes; `panel_width: "content"` lets longer
+options widen it past the trigger (the overlay's `min_trigger_width`).
 
 The textual `label` and all three controlled props are required. `label` names
 the trigger, listbox, virtual collection, and searchable Input; `placeholder`

@@ -2061,6 +2061,9 @@ pub(crate) struct PrimitiveWindowContext {
     intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     view_id: String,
     focus_indicators: bool,
+    /// The focus handle of the node that hosts a primitive without a primary
+    /// focus of its own: the node tracks it, the primitive only reads it.
+    host_focus: Option<gpui::FocusHandle>,
 }
 
 impl PrimitiveWindowContext {
@@ -2084,11 +2087,19 @@ impl PrimitiveWindowContext {
             intrinsic_size: None,
             view_id: view_id.into(),
             focus_indicators: true,
+            host_focus: None,
         }
     }
 
     pub(crate) fn with_focus_indicators(mut self, shown: bool) -> Self {
         self.focus_indicators = shown;
+        self
+    }
+
+    /// The hosting node's focus handle, for a primitive that paints its host's focus
+    /// (a `SplitPane` handle's grip) without owning a focus target.
+    pub(crate) fn with_host_focus(mut self, handle: Option<gpui::FocusHandle>) -> Self {
+        self.host_focus = handle;
         self
     }
 
@@ -2162,7 +2173,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             view_id: self.runtime.view_id,
             instance: None,
             retained_node: self.retained.as_ref().map(|(node, _)| *node),
-            focus_handle: self.focus_handle.clone(),
+            focus_handle: self.focus_handle.clone().or(self.runtime.host_focus),
             focus_indicators: self.runtime.focus_indicators,
         };
         match registry.render_instance(

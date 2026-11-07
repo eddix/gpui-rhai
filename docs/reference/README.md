@@ -68,7 +68,7 @@ The functions, methods and native primitives a script calls are in the
 | [`components/sliding_panel`](components/sliding_panel.md) | `SlidingPanel` | Shows `content`, and when `value` changes slides the new content in from the side of the one it replaces as it fades in: a short way (`motion_distance("moderate")`) in the `fast` duration, mirrored in right-to-left text and settled by the Host's reduced or no-motion policy. |
 | [`components/sortable`](components/sortable.md) | `Sortable` | Controlled keyed ordering with native pointer targets and keyboard moves. |
 | [`components/spinner`](components/spinner.md) | `Spinner` | Compact indeterminate activity indicator animated by the native runtime clock. |
-| [`components/split_pane`](components/split_pane.md) | `SplitPane` | Controlled, nestable two-panel split layout with a native drag hot lane. |
+| [`components/split_pane`](components/split_pane.md) | `SplitPane` | Controlled, nestable two-panel split layout with a native drag separator. |
 | [`components/status_bar`](components/status_bar.md) | `StatusBar` | Compact application footer with stable logical start, center, and end regions. |
 | [`components/switch`](components/switch.md) | `Switch` | Controlled binary switch with disabled and loading states. |
 | [`components/tab_overflow_menu`](components/tab_overflow_menu.md) | `TabOverflowMenu` | A chevron button whose menu lists every tab of a strip; picking one reports its value. |

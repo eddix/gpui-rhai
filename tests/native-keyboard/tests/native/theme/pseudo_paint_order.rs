@@ -118,7 +118,7 @@ fn split_pane_handle_keeps_its_focus_bar_under_the_pointer(cx: &mut TestAppConte
     let main = r#"import "components/split_pane" as split_pane;
 fn resized(ctx, value) {}
 fn view(ctx) { column([
-    split_pane::SplitPane(#{ key: "layout", label: "Resize panels", size: 0.5,
+    split_pane::SplitPane(#{ separator:"lane", key: "layout", label: "Resize panels", size: 0.5,
         start: text("Start"), end: text("End"), on_resize: Fn("resized") })
         .with_style(style().width(px(420)).height(px(180))),
 ]) }"#;

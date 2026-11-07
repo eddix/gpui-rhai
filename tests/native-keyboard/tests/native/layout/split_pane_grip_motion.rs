@@ -22,7 +22,7 @@ fn custom_grip(ctx, detail) {{
             motion_transition("height",20.0,44.0,#{{duration_ms:80,easing:"linear"}})))
 }}
 fn view(ctx) {{
-    split::SplitPane(#{{key:"panels",label:"Panels",size:0.5,orientation:"{orientation}",
+    split::SplitPane(#{{separator:"lane",key:"panels",label:"Panels",size:0.5,orientation:"{orientation}",
         min_start:0.0,min_end:0.0,start:text("Start"),end:text("End"),
         part_styles:#{{grip_content:style().background(rgba({MARK:#x}))}},
         {extra}
@@ -259,7 +259,7 @@ fn state_schema(){#{fields:#{choice:#{schema:#{type:"bool"},"default":#{type:"bo
 fn choose(ctx,p){ctx.set_state("choice",!ctx.get_state("choice"));}
 fn view(ctx){column([
  text("Choose").test_id("choose").on_click(Fn("choose")),
- split::SplitPane(#{key:"panels",label:"Panels",size:0.5,min_start:0.0,min_end:0.0,
+ split::SplitPane(#{separator:"lane",key:"panels",label:"Panels",size:0.5,min_start:0.0,min_end:0.0,
  start:text("A"),end:text("B"),handle_renderer:if ctx.get_state("choice"){b::factory(ctx)}else{a::factory(ctx)}})
  .with_style(style().width(px(420)).height(px(180)))])}
 "#;

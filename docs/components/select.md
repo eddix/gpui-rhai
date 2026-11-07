@@ -14,15 +14,27 @@ nor Combobox has a privileged Rust node or private state machine.
 - required controlled `open: bool` and `query: string`;
 - `placeholder`, `search_placeholder`, `empty_text`, and `clear_label` strings;
 - `clearable`, `searchable`, `disabled`, and `error` booleans;
-- `size`, `placement`, `max_visible`, and optional `width: Length`;
+- `size`, `placement`, `max_visible`, `width: Length | "content"` and
+  `panel_width: "content" | "trigger"`;
+- an optional `option_trailing` Node factory for content after an option's
+  label;
 - optional `on_change`, `on_open_change`, and `on_query_change` callbacks.
 
-Relative width and caller-applied flex sizing are forwarded through the
-Combobox root. The trigger consumes that realized allocation and the popup
-panel matches the trigger after layout; a sibling Select with a fixed width can
-therefore remain fixed while another Combobox grows with the row. In a fixed
-width the trigger's label or placeholder stays on one line and ends in an
-ellipsis when it does not fit, so the clear button and the chevron stay inside.
+Without a `width` (or with `"content"`) the trigger fits the widest option and
+the placeholder, trailing content included, at most 360 logical pixels, so it
+keeps one width whatever is picked; past 64 options it measures the 16 longest
+labels. A column that stretches its children still stretches it, up to that
+cap. The list is at least as wide as the trigger and wider for longer options
+(`panel_width: "content"`, measured up to 480 logical pixels); `"trigger"`
+makes it exactly the trigger's width. The measuring is an `invisible()` probe,
+outside the accessibility tree.
+
+A Length width (relative widths and caller-applied flex sizing included) is
+forwarded through the Combobox root. The trigger consumes that realized
+allocation; a sibling Select with a fixed width can therefore remain fixed
+while another Combobox grows with the row. In a fixed width the trigger's label
+or placeholder stays on one line and ends in an ellipsis when it does not fit,
+so the clear button and the chevron stay inside.
 
 Rhai `()` is the only empty-value sentinel. Empty-string option values remain
 legal and distinct from null. Option values must be unique, and a disabled
