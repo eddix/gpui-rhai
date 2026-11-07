@@ -1494,26 +1494,52 @@ pub trait ColorResolver {
     }
 }
 
-/// A resolver bound to the environment inherited by one rendered subtree.
+/// Whether two subtrees render in the same local theme (`None`: the view's).
+fn same_theme(a: Option<&crate::ThemeVariant>, b: Option<&crate::ThemeVariant>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => std::ptr::eq(a, b),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// A resolver bound to the environment inherited by one rendered subtree, and
+/// to its local theme when a component above set one.
 #[derive(Clone, Copy)]
 pub(crate) struct EnvironmentScoped<'a, C: ?Sized> {
     inner: &'a C,
     environment: crate::Environment,
+    local: Option<&'a crate::ThemeVariant>,
 }
 
 impl<'a, C: ColorResolver + ?Sized> EnvironmentScoped<'a, C> {
     pub(crate) const fn new(inner: &'a C, environment: crate::Environment) -> Self {
-        Self { inner, environment }
+        Self {
+            inner,
+            environment,
+            local: None,
+        }
+    }
+
+    const fn with_local(mut self, local: Option<&'a crate::ThemeVariant>) -> Self {
+        self.local = local;
+        self
     }
 }
 
 impl<C: ColorResolver + ?Sized> ColorResolver for EnvironmentScoped<'_, C> {
     fn resolve_token(&self, token: &str) -> Option<Rgba8> {
-        self.inner.resolve_token(token)
+        match self.local {
+            Some(local) => local.resolve_token(token),
+            None => self.inner.resolve_token(token),
+        }
     }
 
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
-        self.inner.color_snapshot()
+        match self.local {
+            Some(local) => local.color_snapshot(),
+            None => self.inner.color_snapshot(),
+        }
     }
 
     fn environment(&self) -> crate::Environment {
@@ -1525,7 +1551,10 @@ impl<C: ColorResolver + ?Sized> ColorResolver for EnvironmentScoped<'_, C> {
         length: Length,
         environment: &crate::Environment,
     ) -> Option<Length> {
-        self.inner.resolve_length_in(length, environment)
+        match self.local {
+            Some(local) => local.resolve_length_in(length, environment),
+            None => self.inner.resolve_length_in(length, environment),
+        }
     }
 
     fn resolve_typography_in(
@@ -1533,15 +1562,24 @@ impl<C: ColorResolver + ?Sized> ColorResolver for EnvironmentScoped<'_, C> {
         role: &str,
         environment: &crate::Environment,
     ) -> Option<crate::ResolvedTypography> {
-        self.inner.resolve_typography_in(role, environment)
+        match self.local {
+            Some(local) => local.resolve_typography_in(role, environment),
+            None => self.inner.resolve_typography_in(role, environment),
+        }
     }
 
     fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
-        self.inner.token_set()
+        match self.local {
+            Some(local) => local.token_set(),
+            None => self.inner.token_set(),
+        }
     }
 
     fn resolve_motion(&self) -> crate::ThemeMotion {
-        self.inner.resolve_motion()
+        match self.local {
+            Some(local) => local.resolve_motion(),
+            None => self.inner.resolve_motion(),
+        }
     }
 }
 
@@ -1661,6 +1699,13 @@ struct RenderEnvironment<'a, C> {
     motion_preference: crate::MotionPreference,
     motion_quality: crate::MotionQuality,
     colors: &'a C,
+    /// The frame's local themes (`ctx.set_local_theme`), by component.
+    theme_scopes: Option<&'a crate::theme::LocalThemes>,
+    /// The local theme this subtree renders in, which takes over from `colors`.
+    local_theme: Option<&'a crate::ThemeVariant>,
+    /// A local theme starts at this node: unless it sets a text color, it takes
+    /// the theme's `text_primary`, which its text inherits.
+    theme_text_pending: bool,
     interaction: &'a InteractionState,
     primitives: &'a PrimitiveRegistry,
     dispatcher: Option<&'a NodeEventDispatcher>,
@@ -1814,13 +1859,29 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
             baseline_parent: self.baseline_parent,
             baseline_children: style.direction == Some(FlexDirection::Row)
                 && style.align == Some(Align::Baseline),
+            theme_text_pending: false,
             ..self.with_resolved_text_color(style)
         }
     }
 
-    /// The theme resolver bound to this subtree's inherited environment.
+    /// The theme resolver bound to this subtree's inherited environment and
+    /// local theme.
     fn resolver(&self) -> EnvironmentScoped<'a, C> {
-        EnvironmentScoped::new(self.colors, self.environment)
+        EnvironmentScoped::new(self.colors, self.environment).with_local(self.local_theme)
+    }
+
+    /// The local theme a node starts: that of the innermost component it is the
+    /// root of, when that component set one; else the inherited one.
+    fn local_theme_of(&self, node: &UiNode) -> Option<&'a crate::ThemeVariant> {
+        let Some(scopes) = self.theme_scopes.filter(|scopes| !scopes.is_empty()) else {
+            return self.local_theme;
+        };
+        node.forwarded_components()
+            .into_iter()
+            .flat_map(|forwarded| forwarded.iter())
+            .chain(node.component_root())
+            .find_map(|component| scopes.get(component))
+            .or(self.local_theme)
     }
 
     /// Apply a node's own environment overrides and disabled state; the
@@ -1836,9 +1897,13 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
                 }
             }
         }
+        let local_theme = self.local_theme_of(node);
         Self {
             environment,
             inherited_disabled: self.inherited_disabled || is_disabled(node),
+            local_theme,
+            theme_text_pending: self.theme_text_pending
+                || !same_theme(local_theme, self.local_theme),
             ..*self
         }
     }
@@ -1915,6 +1980,8 @@ pub(crate) struct WindowRenderResources<'a> {
     pub window_drag: bool,
     /// The view's cache islands this frame; only the view's own tree has them.
     pub islands: Option<&'a crate::island::IslandFrame>,
+    /// The frame's local themes (`ctx.set_local_theme`), by component.
+    pub theme_scopes: Option<&'a crate::theme::LocalThemes>,
 }
 
 #[derive(Clone, Copy)]
@@ -1967,6 +2034,9 @@ impl GpuiNodeRenderer {
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
+            theme_scopes: None,
+            local_theme: None,
+            theme_text_pending: false,
             interaction,
             primitives,
             dispatcher: None,
@@ -2062,6 +2132,9 @@ impl GpuiNodeRenderer {
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
+            theme_scopes: None,
+            local_theme: None,
+            theme_text_pending: false,
             interaction,
             primitives,
             dispatcher: None,
@@ -2150,6 +2223,9 @@ impl GpuiNodeRenderer {
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
+            theme_scopes: None,
+            local_theme: None,
+            theme_text_pending: false,
             interaction,
             primitives,
             dispatcher: Some(dispatcher),
@@ -2230,6 +2306,9 @@ impl GpuiNodeRenderer {
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
+            theme_scopes: None,
+            local_theme: None,
+            theme_text_pending: false,
             interaction,
             primitives,
             dispatcher: Some(dispatcher),
@@ -2299,6 +2378,7 @@ impl GpuiNodeRenderer {
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let text_selection = TextSelectionRegistry::default();
         let resources = WindowRenderResources {
+            theme_scopes: None,
             now: Instant::now(),
             clock: &crate::RuntimeClock::default(),
             motion_preference: crate::MotionPreference::Normal,
@@ -2370,6 +2450,9 @@ impl GpuiNodeRenderer {
             motion_preference: resources.motion_preference,
             motion_quality: resources.motion_quality,
             colors,
+            theme_scopes: resources.theme_scopes,
+            local_theme: None,
+            theme_text_pending: false,
             interaction,
             primitives,
             dispatcher: Some(resources.dispatcher),
@@ -2455,6 +2538,9 @@ impl GpuiNodeRenderer {
             motion_preference: resources.motion_preference,
             motion_quality: resources.motion_quality,
             colors,
+            theme_scopes: resources.theme_scopes,
+            local_theme: None,
+            theme_text_pending: false,
             interaction,
             primitives,
             dispatcher: Some(resources.dispatcher),
@@ -2521,6 +2607,9 @@ impl GpuiNodeRenderer {
             motion_preference: resources.motion_preference,
             motion_quality: resources.motion_quality,
             colors,
+            theme_scopes: resources.theme_scopes,
+            local_theme: None,
+            theme_text_pending: false,
             interaction,
             primitives,
             dispatcher: Some(resources.dispatcher),
@@ -2591,6 +2680,12 @@ impl GpuiNodeRenderer {
             motion_preference: resources.motion_preference,
             motion_quality: resources.motion_quality,
             colors,
+            theme_scopes: resources.theme_scopes,
+            local_theme: inherited
+                .local_theme
+                .and_then(|index| resources.theme_scopes?.by_index(index))
+                .map(|(_, theme)| theme),
+            theme_text_pending: false,
             interaction: &interaction,
             primitives,
             dispatcher: Some(resources.dispatcher),
@@ -2776,6 +2871,9 @@ impl GpuiNodeRenderer {
             && retained_id == Some(root)
         {
             island_root_box(&mut resolved_style, width);
+        }
+        if environment.theme_text_pending && resolved_style.text_color.is_none() {
+            resolved_style.text_color = Some(ColorValue::Token("text_primary".to_owned()));
         }
         let mut local_environment = environment.below(&resolved_style);
         if node.style().hover.is_some() && retained_id.is_some() {
@@ -3426,6 +3524,12 @@ fn render_layer_node<C: ColorResolver>(
     path: &str,
     retained_id: Option<NodeId>,
 ) -> AnyElement {
+    // A host-managed layer paints outside the view, where the text color its
+    // local theme gave the subtree does not reach: its content sets it again.
+    let environment = &RenderEnvironment {
+        theme_text_pending: environment.theme_text_pending || environment.local_theme.is_some(),
+        ..*environment
+    };
     let content = GpuiNodeRenderer::render_internal(
         content,
         environment,
@@ -3578,7 +3682,7 @@ fn text_node_content<C: ColorResolver, E: ParentElement>(
         return element.child(text.to_owned());
     }
     let highlight = environment
-        .colors
+        .resolver()
         .resolve(&ColorValue::Token("selection".to_owned()))
         .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f655));
     let selection_id = retained_id.map_or_else(
@@ -3677,6 +3781,11 @@ fn render_island_boundary<C: ColorResolver>(
             width_anchor: width_anchor.unwrap_or(0),
             hover_group: environment.hover_group.filter(|_| group_hover),
             room: environment.island.room,
+            local_theme: environment.local_theme.and_then(|theme| {
+                environment
+                    .theme_scopes
+                    .and_then(|scopes| scopes.index_of(theme))
+            }),
         },
         fingerprint: Rc::clone(&frame.fingerprint),
         revision: frame.revision,
@@ -3862,9 +3971,18 @@ fn render_flattened_children<C: ColorResolver>(
             Some((id, frame, frame.entries.get(&id)?))
         });
         if let UiNodeKind::Fragment { children } = child.kind() {
+            // A component whose root is a fragment starts its local theme on
+            // each of the fragment's children.
+            let local_theme = environment.local_theme_of(child);
+            let scoped = RenderEnvironment {
+                theme_text_pending: environment.theme_text_pending
+                    || !same_theme(local_theme, environment.local_theme),
+                local_theme,
+                ..*environment
+            };
             rendered.extend(render_flattened_children(
                 children,
-                environment,
+                &scoped,
                 boundary_fallback,
                 &child_path,
                 child_id,
@@ -5547,6 +5665,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         now: environment.now,
         clock: environment.clock.clone(),
         colors: OwnedColorResolver::capture(&environment.resolver()),
+        theme_scopes: environment.theme_scopes.cloned().unwrap_or_default(),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
         dispatcher: environment

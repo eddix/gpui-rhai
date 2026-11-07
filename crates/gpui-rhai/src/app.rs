@@ -4904,6 +4904,8 @@ struct ScriptRenderSnapshot {
     motion_quality: crate::MotionQuality,
     assets: AssetRegistry,
     theme: ThemeVariant,
+    /// The variants of the component subtrees with a local theme.
+    local_themes: crate::theme::LocalThemes,
     motions: BTreeMap<crate::MotionKey, f64>,
     motion_ghosts: Vec<crate::motion::MotionGhost>,
     signals: crate::SignalRegistry,
@@ -5670,6 +5672,7 @@ impl ScriptHostView {
         let fingerprint = crate::island::FrameFingerprint {
             generation: planned.0,
             theme: snapshot.theme.clone(),
+            local_themes: snapshot.local_themes.clone(),
             locale: snapshot.locale.clone(),
             number: snapshot.number.clone(),
             motion_preference: snapshot.motion_preference,
@@ -5787,6 +5790,7 @@ impl HostFrame {
             a11y_active: self.a11y_active,
             window_drag: view.window_drag_areas,
             islands: None,
+            theme_scopes: (!snapshot.local_themes.is_empty()).then_some(&snapshot.local_themes),
         }
     }
 }
@@ -6342,6 +6346,11 @@ impl ScriptHostView {
             appearance,
             &self.theme,
         );
+        let local_themes = runtime
+            .theme
+            .as_ref()
+            .map(|themes| themes.local_themes(appearance))
+            .unwrap_or_default();
         let direction = runtime
             .locale
             .as_ref()
@@ -6366,6 +6375,7 @@ impl ScriptHostView {
             motion_quality: runtime.motions.quality(),
             assets: runtime.assets.clone(),
             theme,
+            local_themes,
             motions: runtime.motion_values.clone(),
             motion_ghosts: runtime
                 .motion_ghosts

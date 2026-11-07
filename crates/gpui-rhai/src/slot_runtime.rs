@@ -14,6 +14,9 @@ pub(crate) struct NodeSlotRuntime {
     pub now: std::time::Instant,
     pub clock: crate::RuntimeClock,
     pub colors: OwnedColorResolver,
+    /// The frame's local themes, for the components inside the slot content;
+    /// `colors` already holds the one the slot renders in.
+    pub theme_scopes: crate::theme::LocalThemes,
     pub primitives: PrimitiveRegistry,
     pub assets: AssetRegistry,
     pub dispatcher: NodeEventDispatcher,
@@ -122,6 +125,7 @@ impl NodeSlotRuntime {
             a11y_active: self.a11y_active,
             window_drag: self.window_drag,
             islands: None,
+            theme_scopes: (!self.theme_scopes.is_empty()).then_some(&self.theme_scopes),
         };
         GpuiNodeRenderer::render_subtree_with_window_runtime_at(
             node,

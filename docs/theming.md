@@ -146,12 +146,27 @@ fn swatch(ctx, variant) {
 }
 ```
 
-An unknown variant or color throws. `set_local_theme` changes what
-`ctx.theme_variant()` reports in its scope, but painting still resolves
-`theme_color(...)` against the window's theme; read the colors with
-`theme_colors` where a subtree must show another theme. A theme file is not a
-module: `import "themes/dracula"` fails, and `gpui-rhai check` points to
-`theme_colors` instead.
+An unknown variant or color throws. A theme file is not a module:
+`import "themes/dracula"` fails, and `gpui-rhai check` points to `theme_colors`
+instead.
+
+### Local themes
+
+`ctx.set_local_theme(family, name)` (or `set_local_theme_system`,
+`set_local_theme_system_pair`) gives the calling component's subtree another
+theme. Everything that subtree paints resolves its tokens against that variant:
+colors, spacing, radii, typography and motion, in nodes, native primitives such
+as text fields and document viewers, and the overlays opened inside it. Its
+text takes the variant's `text_primary` unless a node sets a color. A nested
+local theme wins over an outer one, and `ctx.theme_variant()` reports the same
+variant inside the scope.
+
+The scope covers what renders inside the component, as CSS inheritance does:
+content a parent passes in as a slot takes the child's theme, while the
+parent's own `ctx.theme_variant()` still reports the outer one. The component
+paints its own background; the theme does not add one. A node leaving with an
+exit animation paints its last frames in the view's theme. `theme_colors` still
+reads another theme's colors without changing what a subtree paints.
 
 Declare that effect in the formal component schema. Its start callback receives
 the same metadata as deps and restarts only when they change. Event-time reads
