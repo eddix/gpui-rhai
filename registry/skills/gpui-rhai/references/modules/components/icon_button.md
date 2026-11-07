@@ -1,6 +1,6 @@
 # IconButton
 
-`components/icon_button` · export `IconButton` · version 0.4.0. Generated from
+`components/icon_button` · export `IconButton` · version 0.4.3. Generated from
 [`registry/components/icon_button.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/icon_button.rhai); do not edit.
 
 IconButton presents one icon in a square action target.
@@ -23,7 +23,7 @@ icon_button::IconButton(#{ icon: svg(markup), label: "Close", variant: "ghost", 
 | `icon` | node | required | Icon node, sized `metrics.icon` square and drawn in the button's text color. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name; the button shows no text, so it must not be empty. |
-| `loading` | bool | `false` | Blocks clicks and shows the disabled look while work runs; it draws no spinner. |
+| `loading` | bool | `false` | Blocks clicks and shows the disabled look while work runs, with Button's turning spinner in place of the icon. Reduced or no motion holds it still. |
 | `on_click` | callback or `()` | — | Called when the button is pressed; not while disabled or loading, and not when `action` is set. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `selected` | bool | `false` | Pressed state of a toggle; `ghost`, `outline` and `secondary` fill with `selection` and stop reacting to hover. |
@@ -45,7 +45,7 @@ icon_button::IconButton(#{ icon: svg(markup), label: "Close", variant: "ghost", 
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `icon`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `icon`, `root`, `spinner`.
 
 ## Theme
 

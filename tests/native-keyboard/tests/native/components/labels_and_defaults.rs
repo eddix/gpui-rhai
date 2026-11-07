@@ -1,5 +1,6 @@
 //! Labels and defaults of the official components follow their schema docs: a loading Button
-//! shows and announces its loading text at the idle width, Avatar derives uppercased initials
+//! shows and announces its loading text and a spinner (in place of its prefix, or before the
+//! label), IconButton swaps its icon for the spinner, Avatar derives uppercased initials
 //! by grapheme, Spinner turns on the theme's `ambient` duration unless given a speed, and the
 //! Select and Combobox clear buttons share the localized `common.clear` name.
 
@@ -85,10 +86,13 @@ fn view(ctx) { row([button::Button(#{ text: "Deploy", loading: true, loading_tex
 }
 
 #[gpui::test]
-fn a_loading_button_keeps_the_width_of_its_idle_label(cx: &mut TestAppContext) {
+fn a_loading_button_adds_a_spinner_to_the_width_of_its_idle_label(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(
         cx,
         r#"import "components/button" as button;
+import "components/icon_button" as icon_button;
+fn icon() { image_source(asset("app/icons/check"))
+    .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))) }
 fn view(ctx) { column([
     row([button::Button(#{ text: "Publish release" })]),
     row([button::Button(#{ text: "Publish release", loading: true, loading_text: "Saving" })]),
@@ -96,33 +100,65 @@ fn view(ctx) { column([
     row([button::Button(#{ text: "Go", loading: true, loading_text: "Working on it" })]),
     row([button::Button(#{ text: "Save", loading: true })]),
     row([button::Button(#{ text: "Save" })]),
+    row([button::Button(#{ text: "Sync", prefix: icon() })]),
+    row([button::Button(#{ text: "Sync", loading: true, prefix: icon() })]),
+    row([icon_button::IconButton(#{ label: "Refresh", icon: image_source(asset("app/icons/check")) })]),
+    row([icon_button::IconButton(#{ label: "Refresh", loading: true, icon: image_source(asset("app/icons/check")) })]),
 ]) }"#,
     );
     assert_eq!(last_error(&mut visual, &view), None);
+    let spinners = bounds_of(&mut visual, &view, "presentation", "");
+    let icon_slot = |bounds: &GeometryBounds| bounds.width > 10.0 && bounds.width < 20.0;
+    let slots: Vec<_> = spinners.iter().filter(|bounds| icon_slot(bounds)).collect();
+    assert_eq!(
+        slots.len(),
+        5,
+        "one spinner per loading button: {spinners:?}"
+    );
+    let slot = slots[0].width;
+
+    // The spinner and the gap after it are what loading adds; the label keeps the wider of
+    // the idle and loading texts, centered.
     let idle = bounds(&mut visual, &view, "button", "Publish release");
     let shorter = bounds(&mut visual, &view, "button", "Saving");
+    let added = shorter.width - idle.width;
     assert!(
-        (idle.width - shorter.width).abs() < 0.5 && (idle.height - shorter.height).abs() < 0.5,
+        added > slot && added < slot + 12.0,
         "idle {idle:?}, loading {shorter:?}"
     );
-    let text = bounds(&mut visual, &view, "text", "Saving");
-    let idle_text = bounds(&mut visual, &view, "text", "Publish release");
     assert!(
-        text.width + 10.0 < idle_text.width,
-        "{text:?} {idle_text:?}"
+        (idle.height - shorter.height).abs() < 0.5,
+        "{idle:?} {shorter:?}"
     );
-    assert!(
-        ((text.x + text.width / 2.0) - (shorter.x + shorter.width / 2.0)).abs() < 1.0,
-        "the loading text is centered: {text:?} in {shorter:?}"
-    );
-    // A wider loading text widens the button to fit, as the idle button with that text.
     let wider = bounds_of(&mut visual, &view, "button", "Working on it");
     assert_eq!(wider.len(), 2, "{wider:?}");
-    assert!((wider[0].width - wider[1].width).abs() < 0.5, "{wider:?}");
-    // Without a loading text the label stays as it is.
+    assert!(
+        (wider[1].width - wider[0].width - added).abs() < 0.5,
+        "{wider:?}"
+    );
     let plain = bounds_of(&mut visual, &view, "button", "Save");
     assert_eq!(plain.len(), 2, "{plain:?}");
-    assert!((plain[0].width - plain[1].width).abs() < 0.5, "{plain:?}");
+    assert!(
+        (plain[0].width - plain[1].width - added).abs() < 0.5,
+        "{plain:?}"
+    );
+    // The spinner sits before the label.
+    let text = bounds(&mut visual, &view, "text", "Saving");
+    assert!(
+        slots[0].x + slots[0].width <= text.x,
+        "{:?} {text:?}",
+        slots[0]
+    );
+
+    // In place of a prefix icon, or of an IconButton's icon, the width holds.
+    for name in ["Sync", "Refresh"] {
+        let pair = bounds_of(&mut visual, &view, "button", name);
+        assert_eq!(pair.len(), 2, "{pair:?}");
+        assert!(
+            (pair[0].width - pair[1].width).abs() < 0.5,
+            "{name}: {pair:?}"
+        );
+    }
 }
 
 #[gpui::test]

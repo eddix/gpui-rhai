@@ -2,14 +2,14 @@
 {
   "id": "components/button",
   "export": "Button",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "tokens": [
     "surface_hover", "text_primary", "accent", "accent_hover", "on_accent", "danger",
     "on_danger", "warning", "on_warning", "success", "on_success", "border",
-    "focus_ring", "disabled", "control.hover", "control.border", "control.danger_hover", "control.warning_hover", "control.success_hover", "metrics.control", "metrics.control_pad",
+    "focus_ring", "disabled", "control.hover", "control.border", "control.danger_hover", "control.warning_hover", "control.success_hover", "metrics.control", "metrics.control_pad", "metrics.icon",
     "spacing.xs", "radius.md", "typography.control", "typography.label"
   ],
   "environment": ["size", "density"]
@@ -27,14 +27,14 @@ define_component(#{
     metadata: #{
         id: "components/button",
         "export": "Button",
-        version: "0.4.0",
+        version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
         tokens: [
             "surface_hover", "text_primary", "accent", "accent_hover", "on_accent", "danger",
             "on_danger", "warning", "on_warning", "success", "on_success", "border",
-            "focus_ring", "disabled", "control.hover", "control.border", "control.danger_hover", "control.warning_hover", "control.success_hover", "metrics.control", "metrics.control_pad",
+            "focus_ring", "disabled", "control.hover", "control.border", "control.danger_hover", "control.warning_hover", "control.success_hover", "metrics.control", "metrics.control_pad", "metrics.icon",
             "spacing.xs", "radius.md", "typography.control", "typography.label"
         ],
         environment: ["size", "density"],
@@ -93,7 +93,7 @@ define_component(#{
                 required: false,
                 sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Blocks clicks and shows the disabled look while work runs; it draws no spinner.",
+                doc: "Blocks clicks and shows the disabled look while work runs, with a turning spinner in the label's color: in place of `prefix`, else before the label, which then widens the button. Reduced or no motion holds the spinner still.",
             },
             loading_text: #{
                 schema: #{ type: "string" },
@@ -135,7 +135,7 @@ define_component(#{
             prefix: #{ required: false, multiple: false, doc: "Node before the label." },
             suffix: #{ required: false, multiple: false, doc: "Node after the label." },
         },
-        parts: ["root", "label", "prefix", "suffix", "shortcut"],
+        parts: ["root", "label", "prefix", "suffix", "shortcut", "spinner"],
     },
     render: Fn("render_Button")
 });
@@ -174,6 +174,35 @@ fn run_action(action, ctx, payload) {
 }
 
 fn Button(props) { render_component("components/button", props) }
+
+// The loading indicator: Spinner's five strokes in the disabled label's color, turning on
+// the runtime clock (reduced or no motion holds it still), centered in an icon-sized slot
+// so it takes a prefix icon's place exactly. Drawn here rather than through
+// components/spinner, so a Button needs no other component. The strokes span 14 logical
+// pixels, 12 at the xs and sm sizes; an inherited size cannot be read, so it takes 14.
+fn loading_spinner(ctx, size) {
+    let diameter = if size == "xs" || size == "sm" { 12.0 } else { 14.0 };
+    let scale = diameter / 16.0;
+    let width = 1.7 * scale;
+    let color = theme_color("disabled");
+    let scene = canvas_scene([
+        canvas_line("a", 8.0 * scale, 1.0 * scale, 8.0 * scale, 4.0 * scale, width, color),
+        canvas_line("b", 12.95 * scale, 3.05 * scale, 10.8 * scale, 5.2 * scale, width, color),
+        canvas_line("c", 15.0 * scale, 8.0 * scale, 12.0 * scale, 8.0 * scale, width, color),
+        canvas_line("d", 12.95 * scale, 12.95 * scale, 10.8 * scale, 10.8 * scale, width, color),
+        canvas_line("e", 8.0 * scale, 15.0 * scale, 8.0 * scale, 12.0 * scale, width, color)
+    ]);
+    let strokes = canvas(scene).with_key("loading-spinner")
+        .with_style(style().width(px(diameter)).height(px(diameter)).flex_shrink(false))
+        .motion(motion_transition("rotate", 0.0, 360.0,
+            #{ duration_ms: ctx.motion_duration("ambient"), easing: "linear",
+                iterations: "infinite", intent: "essential" }));
+    row([strokes]).with_style(ctx.component_style("spinner",
+            style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
+                .items_center().justify_center().flex_shrink(false)))
+        .accessibility_role("presentation")
+}
+
 fn render_Button(ctx, props) {
     let variant = if "variant" in props { props.variant } else { "secondary" };
     let action = if "action" in props && props.action != () { props.action } else { () };
@@ -225,7 +254,9 @@ fn render_Button(ctx, props) {
     }
 
     let children = [];
-    if "prefix" in props && props.prefix != () {
+    if loading {
+        children.push(loading_spinner(ctx, if "size" in props { props.size } else { () }));
+    } else if "prefix" in props && props.prefix != () {
         children.push(props.prefix.with_style(ctx.component_style("prefix",
             style().text_color(foreground).disabled(style().text_color(theme_color("disabled"))))));
     }
