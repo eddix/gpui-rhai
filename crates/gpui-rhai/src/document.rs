@@ -195,12 +195,13 @@ impl DocumentRuntimeConfig {
     pub(crate) fn prepare_markdown(
         &self,
         request: &crate::MarkdownPreparation,
+        previous: Option<&crate::PreparedMarkdown>,
         canceled: &std::sync::atomic::AtomicBool,
         alive: &std::sync::atomic::AtomicBool,
     ) -> Result<crate::PreparedMarkdown, String> {
         let counters = &self.markdown_preparations;
         counters.started.fetch_add(1, Ordering::Relaxed);
-        let result = request.prepare_with_liveness(canceled, alive);
+        let result = request.prepare_with_liveness(previous, canceled, alive);
         if result.is_ok() {
             &counters.succeeded
         } else {
@@ -650,6 +651,38 @@ impl NativeTextDocumentRegistry {
         Ok(crate::read_dependency::owners(
             self.readers.get(name).cloned().unwrap_or_default(),
         ))
+    }
+
+    /// Append `text` to a registered document as its next revision: the same
+    /// identity, the revision after the current one. A `MarkdownViewer` prepares only
+    /// the tail of a document that grows this way. Empty text changes nothing.
+    ///
+    /// # Errors
+    /// Returns for an unknown name, or when the revision cannot advance.
+    pub fn append(
+        &mut self,
+        name: &str,
+        text: &str,
+    ) -> Result<BTreeSet<ComponentInstancePath>, DocumentError> {
+        let current = self
+            .documents
+            .get(name)
+            .ok_or_else(|| DocumentError::UnknownDocument(name.to_owned()))?;
+        if text.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let next = current.revision().checked_add(1).ok_or_else(|| {
+            DocumentError::NonMonotonicRevision {
+                identity: current.identity().to_owned(),
+                current: current.revision(),
+                next: current.revision(),
+            }
+        })?;
+        let mut grown = String::with_capacity(current.text().len() + text.len());
+        grown.push_str(current.text());
+        grown.push_str(text);
+        let document = NativeTextDocument::new(current.identity(), next, grown)?;
+        self.replace(name, document)
     }
 
     #[cfg(test)]
@@ -1669,6 +1702,40 @@ mod tests {
         assert!(matches!(
             registry.replace("config", stale),
             Err(DocumentError::NonMonotonicRevision { .. })
+        ));
+    }
+
+    #[test]
+    fn an_append_is_the_next_revision_of_the_same_document() {
+        let reader = ComponentInstancePath::root("View", "main");
+        let mut registry = NativeTextDocumentRegistry::new();
+        registry
+            .register(
+                "reply",
+                NativeTextDocument::new("reply/7", 3, Arc::<str>::from("# Reply\n")).unwrap(),
+            )
+            .unwrap();
+        registry.read_tracked(&reader, "reply").unwrap();
+        assert_eq!(
+            registry.append("reply", "\nfirst chunk").unwrap(),
+            BTreeSet::from([reader.clone()])
+        );
+        let grown = registry.read_tracked(&reader, "reply").unwrap();
+        assert_eq!(
+            (grown.identity(), grown.revision(), grown.text()),
+            ("reply/7", 4, "# Reply\n\nfirst chunk")
+        );
+        assert!(
+            registry.append("reply", "").unwrap().is_empty(),
+            "empty text changes nothing"
+        );
+        assert_eq!(
+            registry.read_tracked(&reader, "reply").unwrap().revision(),
+            4
+        );
+        assert!(matches!(
+            registry.append("missing", "text"),
+            Err(DocumentError::UnknownDocument(_))
         ));
     }
 

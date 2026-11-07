@@ -88,6 +88,8 @@ struct MarkdownViewerEntity {
     focus: FocusHandle,
     mono: SharedString,
     prepared: Option<Arc<PreparedMarkdown>>,
+    /// The last preparation, which a streamed source's next revision extends.
+    previous: Option<crate::PreparedMarkdown>,
     selection: DocumentSelection,
     scroll: ListState,
     scroll_source: crate::ScrollbarSourceHandle,
@@ -164,6 +166,7 @@ impl MarkdownViewerEntity {
         {
             self.limits.markdown_cache_hit();
             self.install_prepared(prepared.model());
+            self.previous = Some(prepared);
             self.loading = false;
             self.error = None;
             if self.config.content {
@@ -175,13 +178,14 @@ impl MarkdownViewerEntity {
         self.loading = true;
         self.error = None;
         let runtime = self.limits.clone();
+        let previous = self.previous.clone();
         self.task = Some(cx.spawn(async move |owner, cx| {
             // A foreground boundary coalesces same-cycle streaming replacements;
             // dropping the owned task and cancellation flag stops obsolete work.
             let result = cx
-                .background_spawn(
-                    async move { runtime.prepare_markdown(&request, &canceled, &alive) },
-                )
+                .background_spawn(async move {
+                    runtime.prepare_markdown(&request, previous.as_ref(), &canceled, &alive)
+                })
                 .await;
             let _ = owner.update(cx, |viewer, cx| {
                 if viewer.job != job || !viewer.alive.load(Ordering::Acquire) {
@@ -191,6 +195,7 @@ impl MarkdownViewerEntity {
                 match result {
                     Ok(prepared) => {
                         viewer.install_prepared(prepared.model());
+                        viewer.previous = Some(prepared.clone());
                         if let Some(cache) = &cache {
                             cache.insert(prepared);
                         }
@@ -1552,6 +1557,7 @@ impl PrimitiveHandler for MarkdownViewerPrimitiveHandler {
                     focus: cx.focus_handle(),
                     mono: resolve_document_monospace_family(cx),
                     prepared: None,
+                    previous: None,
                     selection: DocumentSelection::default(),
                     scroll_source: crate::ScrollbarSourceHandle::new(scroll.clone()),
                     scroll,

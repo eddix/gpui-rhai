@@ -52,11 +52,23 @@ or an absolute-resolvable `Length` (`px`/`rem`), not a relative length.
 
 Parsing runs on background typed immutable snapshots. Rapid revisions replace
 the owned task and cancel obsolete work; a released/replaced viewer cannot
-receive a late commit. Each parse preserves complete Markdown semantics:
-appended reference definitions can change an earlier block, so the runtime
-compares the full native block model and invalidates from the first changed
-block instead of assuming only the final block can change. This intentionally
-uses a complete semantic parse rather than an unsafe tail-only optimization.
+receive a late commit. Each parse preserves complete Markdown semantics, and
+the runtime compares the full native block model and invalidates from the
+first changed block.
+
+A revision whose text extends the previous one, as a streamed reply's does
+(through `append_native_text_document` or a replacement that keeps the old
+text as its prefix), parses only from the previous revision's last top-level
+block: a complete block cannot change once the next one starts, so the blocks
+before it, and their code highlighting, carry over, and the model is the one a
+full parse gives (0.4.3, #23). A setext underline, a list continuation, a lazy
+quote line or a closing fence change only that last block, which parses again.
+A link reference definition, which every block may use, takes a full parse, as
+does a text that does not extend the previous one. Streaming a 125 KB reply 256
+bytes at a time costs about 0.6 s of preparation in all instead of 25 s
+(`markdown_stream_preparation_baseline`, release build, Apple M5 Pro); a
+revision costs about what it adds. `MarkdownPreparation::prepare_after` offers
+the same to a Host that prepares outside a viewer.
 GPUI measures and virtualizes block heights. Long paragraphs/code/cells are
 split at UTF-8 boundaries into at most 4 KiB text segments.
 
@@ -203,9 +215,16 @@ view.replace_native_text_document(
 )?;
 ```
 
-Only components that read the named document are invalidated. Revisions for the
-same document identity must increase; changing identity starts a new reading
-session. Inline strings use the retained primitive identity as their session,
+A streamed reply can send each chunk instead of the whole text so far:
+
+```rust
+view.append_native_text_document("reply-42", chunk, cx)?;
+```
+
+which publishes the next revision of the same identity with `chunk` appended;
+an empty chunk changes nothing. Only components that read the named document are
+invalidated. Revisions for the same document identity must increase; changing
+identity starts a new reading session. Inline strings use the retained primitive identity as their session,
 so changing content does not reset scroll merely because its hash changed.
 
 Mounted hosts can call `view.register_native_text_document(name, snapshot, cx)`

@@ -171,21 +171,55 @@ impl MarkdownPreparation {
     /// # Errors
     /// Returns a cancellation, resource-limit or parser error.
     pub fn prepare(&self, canceled: &AtomicBool) -> Result<PreparedMarkdown, String> {
-        self.prepare_with_liveness(canceled, &AtomicBool::new(true))
+        self.prepare_with_liveness(None, canceled, &AtomicBool::new(true))
+    }
+
+    /// Prepare as [`Self::prepare`] does, reusing `previous` when this request's
+    /// source extends its source: as a streamed reply grows, only `previous`'s last
+    /// top-level block and the new text parse again (and only their code blocks are
+    /// highlighted), so a revision costs about what it adds rather than the whole
+    /// reply. The result is the model a full preparation gives. A different syntax
+    /// snapshot or limits, a source that does not start with `previous`'s, or a link
+    /// reference definition, which every block may use, prepare in full.
+    ///
+    /// # Errors
+    /// Returns a cancellation, resource-limit or parser error.
+    pub fn prepare_after(
+        &self,
+        previous: &PreparedMarkdown,
+        canceled: &AtomicBool,
+    ) -> Result<PreparedMarkdown, String> {
+        self.prepare_with_liveness(Some(previous), canceled, &AtomicBool::new(true))
     }
 
     pub(crate) fn prepare_with_liveness(
         &self,
+        previous: Option<&PreparedMarkdown>,
         canceled: &AtomicBool,
         alive: &AtomicBool,
     ) -> Result<PreparedMarkdown, String> {
-        let model = crate::markdown::prepare_markdown(
-            &self.key.source,
-            &SyntaxRegistry::from_snapshot(self.key.syntax.clone()),
-            self.key.limits,
-            canceled,
-            alive,
-        )?;
+        let syntaxes = SyntaxRegistry::from_snapshot(self.key.syntax.clone());
+        let reusable = previous.filter(|previous| {
+            Arc::ptr_eq(&previous.key.syntax, &self.key.syntax)
+                && previous.key.limits == self.key.limits
+        });
+        let model = match reusable {
+            Some(previous) => crate::markdown::prepare_markdown_after(
+                &previous.model,
+                &self.key.source,
+                &syntaxes,
+                self.key.limits,
+                canceled,
+                alive,
+            ),
+            None => crate::markdown::prepare_markdown(
+                &self.key.source,
+                &syntaxes,
+                self.key.limits,
+                canceled,
+                alive,
+            ),
+        }?;
         let estimated_bytes = model_bytes(&model)
             .saturating_add(std::mem::size_of::<PreparedMarkdown>())
             .saturating_add(self.key.source.identity().len());
@@ -273,7 +307,7 @@ fn model_bytes(model: &MarkdownModel) -> usize {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::NativeTextDocument;
 
@@ -401,5 +435,93 @@ mod tests {
         let debug = format!("{prepared:?}");
         assert!(!debug.contains("secret-token"));
         assert!(!debug.contains("private.example"));
+    }
+
+    /// A streamed assistant reply of about 120 KB: paragraphs, a list, Rust code
+    /// blocks and a table, repeated.
+    pub(crate) fn streamed_reply() -> String {
+        use std::fmt::Write as _;
+
+        let mut reply = String::new();
+        let mut section = 0;
+        while reply.len() < 120 * 1024 {
+            section += 1;
+            let _ = write!(
+                reply,
+                "## Step {section}\n\nThe service `checkout-{section}` restarts after the \
+                 deploy. **Watch** the error rate, then *continue* with the [runbook](https://example.com/{section}).\n\n\
+                 - check the queue depth\n- compare p95 latency\n- confirm the rollback plan\n\n```rust\n"
+            );
+            for line in 0..30 {
+                let _ = writeln!(
+                    reply,
+                    "fn step_{section}_{line}(input: &str) -> Result<usize, Error> {{ Ok(input.len() + {line}) }}"
+                );
+            }
+            reply.push_str("```\n\n| host | region | load |\n| --- | --- | ---: |\n");
+            for row in 0..8 {
+                let _ = writeln!(reply, "| host-{section}-{row} | eu-west-1 | {} |", row * 7);
+            }
+            reply.push('\n');
+        }
+        reply
+    }
+
+    /// Streaming cost: every revision of a reply appended 256 bytes at a time,
+    /// prepared in full and then after the previous revision (#23). `cargo test -p
+    /// gpui-rhai --release --lib markdown_stream_preparation -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "benchmark; run in release with --ignored --nocapture"]
+    fn markdown_stream_preparation_baseline() {
+        let reply = streamed_reply();
+        let syntaxes = SyntaxRegistry::new();
+        let canceled = AtomicBool::new(false);
+        let mut cuts: Vec<usize> = (256..reply.len()).step_by(256).collect();
+        cuts.push(reply.len());
+        for cut in &mut cuts {
+            while !reply.is_char_boundary(*cut) {
+                *cut += 1;
+            }
+        }
+        let request = |end: usize| {
+            MarkdownPreparation::new(
+                DocumentSource::Inline(Arc::from(&reply[..end])),
+                &syntaxes,
+                DocumentLimits::default(),
+            )
+            .unwrap()
+        };
+        for incremental in [false, true] {
+            let started = std::time::Instant::now();
+            let mut marks = Vec::new();
+            let mut previous: Option<PreparedMarkdown> = None;
+            for (index, end) in cuts.iter().enumerate() {
+                let revision = std::time::Instant::now();
+                let prepared = match (&previous, incremental) {
+                    (Some(previous), true) => request(*end).prepare_after(previous, &canceled),
+                    _ => request(*end).prepare(&canceled),
+                }
+                .unwrap();
+                let elapsed = revision.elapsed();
+                if [cuts.len() / 4, cuts.len() / 2, cuts.len() - 1].contains(&index) {
+                    marks.push((*end, elapsed));
+                }
+                previous = Some(prepared);
+            }
+            println!(
+                "markdown stream ({}): {} revisions of {} bytes, total {:?}",
+                if incremental {
+                    "after the previous"
+                } else {
+                    "in full"
+                },
+                cuts.len(),
+                reply.len(),
+                started.elapsed()
+            );
+            for (bytes, elapsed) in marks {
+                println!("  one revision at {bytes} bytes: {elapsed:?}");
+            }
+        }
     }
 }

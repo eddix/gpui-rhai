@@ -1077,8 +1077,9 @@ CodeViewer, DiffViewer and MarkdownViewer accept direct strings. A Rust Host
 with large or frequently changing text registers a revisioned
 `NativeTextDocument`, reads it from Rhai with
 `ctx.get_native_text_document(name)`, and publishes later revisions through
-`ScriptViewHandle::replace_native_text_document`. Only exact subscribed
-components rerender; native parsing then completes in a cancellable background
+`ScriptViewHandle::replace_native_text_document`, or appends a streamed chunk
+with `append_native_text_document`, after which a MarkdownViewer parses only the
+last block and the new text. Only exact subscribed components rerender; native parsing then completes in a cancellable background
 job without moving Rhai values across threads.
 
 Dependency ownership follows callback context: the formal component whose
