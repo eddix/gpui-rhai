@@ -75,7 +75,6 @@ Complex component contracts: [Table](components/table.md),
 - [Release notes and upgrade index](releases/README.md): [0.2.0](releases/0.2.0.md),
   [0.1.8](releases/0.1.8.md) and every earlier version
 - [CHANGELOG](../CHANGELOG.md)
-- [0.4.3 plan](plans/2026-11-06-0.4.3.zh-CN.md): the current round, in Chinese
 - [History](history.md): audits, plans and research of earlier rounds
 
 ## Maintaining these documents

@@ -4,9 +4,9 @@ Audits, plans, research and ledgers from earlier rounds are kept in git history,
 not in the current tree. Their lasting requirements were merged into the
 maintained documents: the design specification in [design/](design/), the
 decision records in [adr/](adr/), the [release checklist](release-checklist.md)
-and the tests. Each link below opens a record as it was at
-`decb1b4`, the last commit that contained it. They are written mostly in
-Chinese and record what was true for that round, not the current API.
+and the tests. Each link below opens a record as it was at the last commit
+that contained it (`decb1b4` for the rounds through 0.2.0). They are written
+mostly in Chinese and record what was true for that round, not the current API.
 
 ## Audits
 
@@ -44,6 +44,7 @@ Chinese and record what was true for that round, not the current API.
 | 2026-09-24 | [2026-09-24-gpui-omarchy](https://github.com/eddix/gpui-rhai/tree/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/research/2026-09-24-gpui-omarchy) | What gpui-rhai can borrow from gpui-omarchy |
 | 2026-10-02 | [2026-10-02-0.1.8-release-convergence.zh-CN.md](https://github.com/eddix/gpui-rhai/blob/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/plans/2026-10-02-0.1.8-release-convergence.zh-CN.md) | 0.1.8 convergence and release plan |
 | 2026-10-04 | [2026-10-04-design-system-0.2.zh-CN.md](https://github.com/eddix/gpui-rhai/blob/decb1b40db335eb4b447efe32b55dd89c1bfc754/docs/plans/2026-10-04-design-system-0.2.zh-CN.md) | 0.2.0 design system plan and the PR #111 closing consensus |
+| 2026-11-06 | [2026-11-06-0.4.3.zh-CN.md](https://github.com/eddix/gpui-rhai/blob/a0813684e458833642bb2a943f702b89e9e38cd0/docs/plans/2026-11-06-0.4.3.zh-CN.md) | 0.4.3 plan: the rest of oh-my-traex's feedback, local themes, Lucide, and the deferred GPUI upgrade, with its design decisions |
 
 ## Ledgers and old gates
 
