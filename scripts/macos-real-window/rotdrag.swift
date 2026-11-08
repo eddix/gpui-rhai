@@ -1,6 +1,6 @@
 let w = window()!
 activate(w.pid)
-let pivot = CGPoint(x: w.bounds.minX + 369, y: w.bounds.minY + 252)
+let pivot = CGPoint(x: w.bounds.minX + 369, y: w.bounds.minY + 235)
 let start = CGPoint(x: pivot.x + 80, y: pivot.y)
 mouse(.mouseMoved, start); usleep(300_000)
 shot(w, "/tmp/rw/r0.png")

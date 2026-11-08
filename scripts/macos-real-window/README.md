@@ -34,9 +34,17 @@ with `NSRunningApplication`.
 
 Screenshots go to `/tmp/rw/`; compare them in RGB. The steps find the window
 by owner name and press at offsets from its top-left corner, measured in the
-window size of the run that wrote them. A window of another size moves the
+window size of the run that wrote them: a 1628x1039 Gallery and two 1600x1039
+`multi_window` windows (0.4.3, macOS 27). A window of another size moves the
 targets: check a step's offsets against a screenshot before trusting its
 result.
+
+Two behaviors come from the platform, not the release (0.4.2 shows both):
+
+- `typeText` posts Unicode-only key events, which GPUI does not insert, so the
+  letters in `keys.swift` change nothing; `type.swift` sends key codes.
+- On macOS 27 a synthetic title-bar drag follows the pointer only partly, and
+  its release leaves the window tiled to the top half of the screen.
 
 ## Steps
 

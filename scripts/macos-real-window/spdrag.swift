@@ -1,7 +1,8 @@
 let w = window()!
 activate(w.pid)
 // The first SplitPane's separator: 520px wide, size 0.35, starting at the page content edge.
-let start = CGPoint(x: w.bounds.minX + 268 + 182 + 4, y: w.bounds.minY + 220)
+// It is flush: a hairline at 268 + 182 with a 7px hit zone over it.
+let start = CGPoint(x: w.bounds.minX + 268 + 182 + 1, y: w.bounds.minY + 220)
 mouse(.mouseMoved, start); usleep(300_000)
 shot(w, "/tmp/rw/s0.png")
 mouse(.leftMouseDown, start); usleep(120_000)
