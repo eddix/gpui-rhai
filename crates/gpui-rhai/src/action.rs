@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui::{DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate};
+use gpui::{KeyBinding, KeyBindingContextPredicate};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -193,7 +193,7 @@ impl KeyBindingSpec {
             ));
         }
         for keystroke in keystrokes.split_whitespace() {
-            gpui::Keystroke::parse(keystroke)
+            gpui::Keystroke::parse_with_os(keystroke, host_os())
                 .map_err(|error| ActionError::InvalidKeystroke(error.to_string()))?;
         }
         if let Some(context) = &context {
@@ -216,11 +216,13 @@ impl KeyBindingSpec {
 
     /// Convert the validated specification into a GPUI key binding.
     ///
+    /// `cx` supplies the keyboard mapper and host OS the binding loads against.
+    ///
     /// # Errors
     ///
     /// Returns an [`ActionError`] if data was deserialized without passing
     /// through [`KeyBindingSpec::new`] and is invalid.
-    pub fn to_gpui(&self) -> Result<KeyBinding, ActionError> {
+    pub fn to_gpui(&self, cx: &gpui::App) -> Result<KeyBinding, ActionError> {
         let context = self
             .context
             .as_deref()
@@ -236,7 +238,7 @@ impl KeyBindingSpec {
             context,
             false,
             None,
-            &DummyKeyboardMapper,
+            cx,
         )
         .map_err(|error| ActionError::InvalidKeystroke(error.to_string()))
     }
@@ -265,7 +267,7 @@ impl ActionShortcut {
     fn from_keystrokes(keystrokes: &str, mac: bool) -> Self {
         let chords = keystrokes
             .split_whitespace()
-            .filter_map(|chord| gpui::Keystroke::parse(chord).ok())
+            .filter_map(|chord| gpui::Keystroke::parse_with_os(chord, host_os()).ok())
             .map(|keystroke| {
                 let modifiers = keystroke.modifiers;
                 let mut names = Vec::new();
@@ -313,7 +315,7 @@ impl ActionShortcut {
                     || chord.chars().all(|character| {
                         character.is_ascii_lowercase() || character.is_ascii_digit()
                     });
-                spelled && gpui::Keystroke::parse(chord).is_ok()
+                spelled && gpui::Keystroke::parse_with_os(chord, host_os()).is_ok()
             });
         if keystrokes {
             Self::from_keystrokes(text, cfg!(target_os = "macos"))
@@ -534,18 +536,31 @@ mod tests {
     }
 
     #[test]
-    fn key_bindings_validate_and_convert_to_gpui() {
-        let binding = KeyBindingSpec::new(
-            "cmd-s",
-            ActionId::parse("document.save").unwrap(),
-            Some("Editor && mode == full".to_owned()),
-        )
-        .unwrap();
-        binding.to_gpui().unwrap();
+    fn key_bindings_validate() {
+        assert!(
+            KeyBindingSpec::new(
+                "cmd-s",
+                ActionId::parse("document.save").unwrap(),
+                Some("Editor && mode == full".to_owned()),
+            )
+            .is_ok()
+        );
 
         assert!(matches!(
             KeyBindingSpec::new("", ActionId::parse("document.save").unwrap(), None,),
             Err(ActionError::InvalidKeystroke(_))
         ));
+    }
+}
+
+/// The OS `secondary-` resolves against. `Keystroke::parse` only takes static
+/// strings; dynamic text goes through `parse_with_os`.
+fn host_os() -> gpui::OperatingSystem {
+    if cfg!(target_os = "macos") {
+        gpui::OperatingSystem::Mac
+    } else if cfg!(target_os = "windows") {
+        gpui::OperatingSystem::Windows
+    } else {
+        gpui::OperatingSystem::Linux
     }
 }

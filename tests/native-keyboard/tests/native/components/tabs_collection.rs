@@ -6,7 +6,7 @@
 //! revealed, and an optional menu lists every tab.
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
+    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext,
     point, px,
 };
 use gpui_rhai::{GeometryBounds, MotionPreference, ScriptViewHandle};
@@ -233,10 +233,10 @@ fn a_narrow_strip_scrolls_and_keeps_the_selected_tab_revealed(cx: &mut TestAppCo
     );
     // A vertical wheel scrolls the strip sideways.
     let before = bounds(&mut visual, &view, "tab", "Tab number 11").x;
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: center(strip),
         delta: ScrollDelta::Pixels(point(px(0.0), px(120.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     settle(&mut visual);
     let after = bounds(&mut visual, &view, "tab", "Tab number 11").x;
@@ -525,10 +525,10 @@ fn scrolling_by_hand_after_a_reorder_is_not_pulled_back(cx: &mut TestAppContext)
         strip,
         "after reversing",
     );
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: center(strip),
         delta: ScrollDelta::Pixels(point(px(0.0), px(800.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     settle(&mut visual);
     let scrolled = bounds(&mut visual, &view, "tab", "Tab number 1");

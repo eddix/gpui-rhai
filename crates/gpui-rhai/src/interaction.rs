@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use gpui::{
     App, DispatchPhase, EntityId, Hitbox, ListState, MouseButton, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollHandle, ScrollWheelEvent, Window, WindowId, point, px,
+    Pixels, Point, ScrollEvent, ScrollHandle, Window, WindowId, point, px,
 };
 
 use crate::{GeometryBounds, UiValue};
@@ -601,7 +601,7 @@ struct NativeWheelRegion {
     handler: Rc<NativeWheelHandler>,
 }
 
-pub(crate) type NativeWheelHandler = dyn Fn(&ScrollWheelEvent, &mut Window, &mut App);
+pub(crate) type NativeWheelHandler = dyn Fn(&ScrollEvent, &mut Window, &mut App);
 
 #[derive(Default)]
 struct NativeWheelCaptures {
@@ -800,7 +800,7 @@ impl WindowInteractionCoordinator {
 
     pub(crate) fn install_wheel_capture_start(&self, window: &mut Window) {
         let coordinator = self.clone();
-        window.on_mouse_event(move |_: &ScrollWheelEvent, phase, window, cx| {
+        window.on_mouse_event(move |_: &ScrollEvent, phase, window, cx| {
             if phase == DispatchPhase::Capture {
                 coordinator.begin_wheel_capture(window, cx);
             }
@@ -1390,7 +1390,7 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn install(&self, window: &mut Window) {
-        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+        window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
             if phase != DispatchPhase::Bubble {
                 return;
             }

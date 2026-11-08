@@ -12,7 +12,7 @@ use gpui::{
     App, Axis, Background, Bounds, ContentMask, CursorStyle, DispatchPhase, Edges, Element,
     ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, IsZero,
     LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, PaintQuad, Pixels, Point, Position,
-    Rgba, ScrollHandle, ScrollWheelEvent, Style, Window, fill, point, px, relative, rgba, size,
+    Rgba, ScrollEvent, ScrollHandle, Style, Window, fill, point, px, relative, rgba, size,
 };
 
 use crate::{Rgba8, TextDirection, UiNode, UiValue};
@@ -948,7 +948,7 @@ fn register_wheel_listener(
         state.0.set(inner);
         cx.notify(view);
     });
-    window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+    window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
         if !disabled && viewport.contains(&event.position) {
             match (&region, phase) {
                 (

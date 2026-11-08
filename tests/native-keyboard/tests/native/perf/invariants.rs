@@ -1,7 +1,7 @@
 //! Counters that keep a frame's cost tied to what changed: a frame after no
 //! commit does not walk the committed tree.
 
-use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, point, px, size};
+use gpui::{ScrollDelta, ScrollEvent, TestAppContext, point, px, size};
 
 use crate::support::{Mount, Step, bounds, center, settle};
 
@@ -34,10 +34,10 @@ fn only_frames_after_a_commit_walk_the_committed_tree(cx: &mut TestAppContext) {
         .unwrap();
     let (mut quiet, mut committing) = (0, 0);
     for step in 0..40 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: at,
             delta: ScrollDelta::Pixels(point(px(0.0), px(-32.0))),
-            ..ScrollWheelEvent::default()
+            ..ScrollEvent::default()
         });
         settle(&mut visual, Step::Tick, 2);
         let statistics = visual
@@ -82,10 +82,10 @@ fn quiet_scroll_frames_replay_the_cold_filler(cx: &mut TestAppContext) {
         .unwrap();
     let mut quiet = 0;
     for step in 0..20 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: at,
             delta: ScrollDelta::Pixels(point(px(0.0), px(-32.0))),
-            ..ScrollWheelEvent::default()
+            ..ScrollEvent::default()
         });
         settle(&mut visual, Step::Tick, 2);
         let statistics = visual

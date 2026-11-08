@@ -2,7 +2,7 @@
 //! reconstruct one from a remembered approximate pixel offset.
 use std::{cell::RefCell, rc::Rc};
 
-use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px};
+use gpui::{ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::{
     ScriptViewExtension, ScriptViewHandle, UiRuntimeState, VirtualCollectionMetrics,
     VirtualRequestRegistry,
@@ -152,10 +152,10 @@ fn pause_reader(
 ) -> VirtualCollectionMetrics {
     let initial = metrics(visual, view);
     let viewport = visual.debug_bounds("virtual-list:history").unwrap();
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: point(viewport.left() + px(60.0), viewport.top() + px(100.0)),
         delta: ScrollDelta::Pixels(point(px(0.0), px(400.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     settle(visual, Step::Tick, 10);
     let paused = metrics(visual, view);

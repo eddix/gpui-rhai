@@ -5,7 +5,7 @@
 //! carry a bound factory, so rows the collection realizes later, after a
 //! scroll, call back into the application too.
 
-use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px};
+use gpui::{ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::ScriptViewHandle;
 
 use crate::support::{Mount, Step, by_role, by_test_id, dispatch, last_error, settle, text_of};
@@ -102,7 +102,7 @@ fn a_virtual_collection_renders_a_factory_in_rows_it_realizes_later(cx: &mut Tes
         let viewport = visual
             .debug_bounds("virtual-list:tracks-rows")
             .expect("mounted rows");
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(
                 viewport.origin.x + viewport.size.width / 2.0,
                 viewport.origin.y + viewport.size.height / 2.0,

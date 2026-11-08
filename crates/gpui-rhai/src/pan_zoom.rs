@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
-    ScrollWheelEvent, Styled, Window, div, px,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, ScrollEvent,
+    Styled, Window, div, px,
 };
 
 use crate::{
@@ -224,7 +224,7 @@ impl PanZoomEntity {
         cx.stop_propagation();
     }
 
-    fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn wheel(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         let explicit =
             read_bool_signal(&self.context, &self.config.wheel_active_signal, cx).unwrap_or(false);
         if self.suspended || self.config.disabled {
@@ -348,7 +348,7 @@ impl Render for PanZoomEntity {
         div()
             .size_full()
             .on_mouse_down(self.config.pan_button, cx.listener(Self::mouse_down))
-            .on_scroll_wheel(cx.listener(Self::wheel))
+            .on_scroll(cx.listener(Self::wheel))
     }
 }
 

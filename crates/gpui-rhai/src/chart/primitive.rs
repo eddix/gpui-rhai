@@ -14,8 +14,8 @@ use gpui::{
     AnyElement, App, AppContext, Bounds, ContentMask, Context, Element, ElementId, Entity,
     FocusHandle, FontFallbacks, FontWeight, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled, Task,
-    WeakEntity, Window, canvas, div, fill, point, px, rgba, size,
+    MouseMoveEvent, ParentElement, Pixels, Point, Render, ScrollEvent, Styled, Task, WeakEntity,
+    Window, canvas, div, fill, point, px, rgba, size,
 };
 
 use super::{
@@ -1476,7 +1476,7 @@ impl ChartEntity {
         cx.notify();
     }
 
-    fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn wheel(&mut self, event: &ScrollEvent, window: &mut Window, cx: &mut Context<Self>) {
         let explicit_gesture_ending = matches!(event.touch_phase, gpui::TouchPhase::Ended)
             && self.wheel_gesture == ChartWheelGesture::Explicit
             && self.viewport_preview_dirty;
@@ -1865,7 +1865,7 @@ impl Render for ChartEntity {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .on_scroll_wheel(cx.listener(Self::wheel))
+            .on_scroll(cx.listener(Self::wheel))
             .child(chart_canvas);
         if let Some(scene) = &scene {
             for label in scene.labels.iter() {

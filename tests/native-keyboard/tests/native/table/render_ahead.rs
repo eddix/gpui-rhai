@@ -4,7 +4,7 @@
 //! where a Table sets nothing.
 
 use gpui::{
-    Pixels, Point, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px,
+    Pixels, Point, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
 };
 use gpui_rhai::{
     ExecutionOperation, RuntimeEngine, ScriptViewExtension, ScriptViewHandle,
@@ -83,10 +83,10 @@ impl Scrolled {
     fn scroll(&mut self, steps: usize, down: bool) -> (usize, usize) {
         let (mut rendering, mut rows) = (0, 0);
         for _ in 0..steps {
-            self.visual.simulate_event(ScrollWheelEvent {
+            self.visual.simulate_event(ScrollEvent {
                 position: self.at,
                 delta: ScrollDelta::Pixels(point(px(0.0), px(if down { -32.0 } else { 32.0 }))),
-                ..ScrollWheelEvent::default()
+                ..ScrollEvent::default()
             });
             settle(&mut self.visual, Step::Tick, 2);
             let rendered = self.renders();

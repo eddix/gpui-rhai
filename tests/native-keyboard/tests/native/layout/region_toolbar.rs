@@ -243,10 +243,10 @@ fn data_view_insets_a_body_that_does_not_bleed(cx: &mut TestAppContext) {
 fn scroll_body(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> (f64, f64) {
     let before = bounds(visual, view, "row-0");
     #[allow(clippy::cast_possible_truncation)]
-    visual.simulate_event(gpui::ScrollWheelEvent {
+    visual.simulate_event(gpui::ScrollEvent {
         position: point(px((before.x + 20.0) as f32), px((before.y + 60.0) as f32)),
         delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-120.0))),
-        ..gpui::ScrollWheelEvent::default()
+        ..gpui::ScrollEvent::default()
     });
     visual.run_until_parked();
     settle(visual, Step::Frame, 1);

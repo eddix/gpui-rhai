@@ -2,7 +2,7 @@
 
 use gpui::{
     Context, InteractiveElement as _, IntoElement, Modifiers, MouseButton, ParentElement as _,
-    Render, ScrollDelta, ScrollWheelEvent, Styled as _, TestAppContext, VisualTestContext, Window,
+    Render, ScrollDelta, ScrollEvent, Styled as _, TestAppContext, VisualTestContext, Window,
     point, px,
 };
 use gpui_rhai::NativeTextDocument;
@@ -315,7 +315,7 @@ fn markdown_wheel(
     x: f32,
     y: f32,
 ) {
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(x), px(y))),
         ..Default::default()

@@ -3,7 +3,7 @@
 
 use crate::support::{Mount, bounds, by_role, center, palette_texts, snapshot};
 use gpui::{
-    Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px,
+    Modifiers, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
 };
 use gpui_rhai::{UiRuntimeState, UiValue};
 
@@ -221,10 +221,10 @@ fn grouped_command_initial_reveal_keeps_its_first_header_natural(cx: &mut TestAp
     );
 
     let option = bounds(&mut visual, &view, "option", "Command 3");
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: center(option),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     for _ in 0..4 {
         cx.background_executor
@@ -282,10 +282,10 @@ fn command_preserves_manual_scroll_and_reveals_controlled_active_item(cx: &mut T
     cx.run_until_parked();
     let mut visual = VisualTestContext::from_window(*window, cx);
     let row = bounds(&mut visual, &view, "option", "Command 6");
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: center(row),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     visual.run_until_parked();
     let manually_scrolled = visual

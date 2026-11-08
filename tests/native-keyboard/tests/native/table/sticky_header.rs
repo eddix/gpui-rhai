@@ -74,13 +74,13 @@ fn a_pushed_sticky_header_does_not_cover_the_column_header(cx: &mut TestAppConte
         }
         #[allow(clippy::cast_possible_truncation)]
         let step = remaining.min(first_group.height * 4.0) as f32;
-        visual.simulate_event(gpui::ScrollWheelEvent {
+        visual.simulate_event(gpui::ScrollEvent {
             position: point(
                 px((first_group.x + 20.0) as f32),
                 px((body_top + 60.0) as f32),
             ),
             delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-step))),
-            ..gpui::ScrollWheelEvent::default()
+            ..gpui::ScrollEvent::default()
         });
         visual.run_until_parked();
         visual.update(|window, cx| window.simulate_next_frame(cx));
