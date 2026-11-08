@@ -1083,8 +1083,8 @@ struct DependencySpec {
 /// backend its gpui-rhai dependency selects, and returns warnings for the
 /// lockfile beside it.
 fn validate_gpui_dependency_family(path: &Path) -> Result<Vec<String>, ProjectError> {
-    const GPUI_PRE_VERSION: &str = "=0.3.9";
-    const GPUI_FAST_VERSION: &str = "=0.1.9";
+    const GPUI_PRE_VERSION: &str = "=0.3.11";
+    const GPUI_FAST_VERSION: &str = "=0.1.13";
     // `check` run inside a workspace member sees `./Cargo.toml`; the walks up
     // to the workspace manifest and lockfile need the real directories.
     let path = fs::canonicalize(path).map_err(|source| ProjectError::Io {
@@ -3051,14 +3051,14 @@ mod tests {
 
         fs::write(
             &cargo,
-            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.9\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.9\", default-features = false }\n",
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.11\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.11\", default-features = false }\n",
         )
         .unwrap();
         validate_gpui_dependency_family(&cargo).unwrap();
 
         fs::write(
             &cargo,
-            "[workspace]\nmembers = []\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.9\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.9\", default-features = false }\n\n[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\ngpui_platform.workspace = true\n",
+            "[workspace]\nmembers = []\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.11\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.11\", default-features = false }\n\n[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\ngpui_platform.workspace = true\n",
         )
         .unwrap();
         validate_gpui_dependency_family(&cargo).unwrap();
@@ -3075,7 +3075,7 @@ mod tests {
 
         // gpui-fast, with a renamed pin of the same version (as nsh needs), passes.
         write(&format!(
-            "{fast}gpui-fast-pin = {{ package = \"gpui-fast\", version = \"=0.1.9\", default-features = false }}\n"
+            "{fast}gpui-fast-pin = {{ package = \"gpui-fast\", version = \"=0.1.13\", default-features = false }}\n"
         ));
         assert_eq!(
             validate_gpui_dependency_family(&cargo).unwrap(),
@@ -3087,7 +3087,7 @@ mod tests {
                 "default-features = false",
             ),
             (
-                format!("{fast}gpui = {{ package = \"gpui-pre\", version = \"=0.3.9\" }}\n"),
+                format!("{fast}gpui = {{ package = \"gpui-pre\", version = \"=0.3.11\" }}\n"),
                 "use `gpui_rhai::gpui`",
             ),
             (
@@ -3095,7 +3095,7 @@ mod tests {
                 "a binary holds one version",
             ),
             (
-                "gpui-rhai = \"0.4\"\ngpui-fast = \"=0.1.9\"\n".to_owned(),
+                "gpui-rhai = \"0.4\"\ngpui-fast = \"=0.1.13\"\n".to_owned(),
                 "enable gpui-rhai's `gpui-fast` feature",
             ),
         ] {
@@ -3111,7 +3111,7 @@ mod tests {
         write(fast);
         fs::write(
             directory.path().join("Cargo.lock"),
-            "[[package]]\nname = \"gpui-pre\"\nversion = \"0.3.9\"\n\n[[package]]\nname = \"gpui-fast\"\nversion = \"0.1.9\"\n",
+            "[[package]]\nname = \"gpui-pre\"\nversion = \"0.3.11\"\n\n[[package]]\nname = \"gpui-fast\"\nversion = \"0.1.13\"\n",
         )
         .unwrap();
         let warnings = validate_gpui_dependency_family(&cargo).unwrap();
@@ -3144,7 +3144,7 @@ mod tests {
         let directory = fixture();
         fs::write(
             directory.path().join("Cargo.toml"),
-            "[workspace]\nmembers = [\"app\"]\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.9\", default-features = false }\n",
+            "[workspace]\nmembers = [\"app\"]\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.11\", default-features = false }\n",
         )
         .unwrap();
         let member = directory.path().join("app");

@@ -23,7 +23,7 @@ outside dismissal, Escape routing, focus fallback, and approved key bindings.
 
 ## GPUI package identity
 
-gpui-rhai 0.4.2 uses the exact `gpui-pre 0.3.9` core/platform family while
+gpui-rhai 0.4.2 uses the exact `gpui-pre 0.3.11` core/platform family while
 preserving the Rust use names `gpui` and `gpui_platform`. Prefer the public
 re-exports so every Host type is guaranteed to match the runtime:
 
@@ -42,8 +42,8 @@ exact family version:
 ```toml
 [dependencies]
 gpui-rhai = "0.4.2"
-gpui = { package = "gpui-pre", version = "=0.3.9", default-features = false, features = ["font-kit"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+gpui = { package = "gpui-pre", version = "=0.3.11", default-features = false, features = ["font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 ```
 
 Official `gpui 0.2.2` and `gpui-pre` expose similarly named but incompatible
@@ -53,7 +53,7 @@ reports the required declaration but never rewrites `Cargo.toml` automatically.
 ### The gpui-fast backend
 
 gpui-rhai also builds on [gpui-fast](https://github.com/longbridge/gpui-fast)
-0.1.9, for an application that links another gpui-fast UI into the same
+0.1.13, for an application that links another gpui-fast UI into the same
 binary (nsh's `nsh-platform-gpui` 0.4 builds on that version). Turn off the
 default `gpui-pre` feature and reach GPUI through the re-exports, which then
 name gpui-fast's crates:
@@ -67,7 +67,7 @@ gpui-rhai = { version = "0.4", default-features = false, features = ["gpui-fast"
 share a binary: both register the same Objective-C classes when they load, so
 a process that links both aborts at launch, before `main`. `gpui-rhai check`
 rejects a direct dependency on the fork the application does not build on and
-a gpui-fast version other than 0.1.9 (a binary holds one), and warns when the
+a gpui-fast version other than 0.1.13 (a binary holds one), and warns when the
 workspace's `Cargo.lock` resolves both forks; separate binaries may each link
 one.
 

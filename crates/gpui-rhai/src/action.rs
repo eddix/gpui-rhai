@@ -449,6 +449,18 @@ pub enum ActionError {
     InvalidContext(String),
 }
 
+/// The OS `secondary-` resolves against. `Keystroke::parse` only takes static
+/// strings; dynamic text goes through `parse_with_os`.
+fn host_os() -> gpui::OperatingSystem {
+    if cfg!(target_os = "macos") {
+        gpui::OperatingSystem::Mac
+    } else if cfg!(target_os = "windows") {
+        gpui::OperatingSystem::Windows
+    } else {
+        gpui::OperatingSystem::Linux
+    }
+}
+
 #[cfg(test)]
 mod shortcut_tests {
     use super::*;
@@ -550,17 +562,5 @@ mod tests {
             KeyBindingSpec::new("", ActionId::parse("document.save").unwrap(), None,),
             Err(ActionError::InvalidKeystroke(_))
         ));
-    }
-}
-
-/// The OS `secondary-` resolves against. `Keystroke::parse` only takes static
-/// strings; dynamic text goes through `parse_with_os`.
-fn host_os() -> gpui::OperatingSystem {
-    if cfg!(target_os = "macos") {
-        gpui::OperatingSystem::Mac
-    } else if cfg!(target_os = "windows") {
-        gpui::OperatingSystem::Windows
-    } else {
-        gpui::OperatingSystem::Linux
     }
 }
