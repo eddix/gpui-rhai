@@ -1,6 +1,6 @@
 let w0 = window()!
 activate(w0.pid)
-let compact = CGPoint(x: w0.bounds.minX + 817, y: w0.bounds.minY + 18)
+let compact = CGPoint(x: w0.bounds.minX + 1127, y: w0.bounds.minY + 18)
 shot(w0, "/tmp/rw/c0.png")
 mouse(.mouseMoved, compact); usleep(150_000)
 mouse(.leftMouseDown, compact); usleep(120_000)
@@ -13,6 +13,6 @@ mouse(.leftMouseUp, CGPoint(x: compact.x + 40, y: compact.y + 20)); usleep(500_0
 click(compact)
 usleep(500_000)
 shot(window()!, "/tmp/rw/c1.png")
-let comfortable = CGPoint(x: w0.bounds.minX + 607, y: w0.bounds.minY + 18)
+let comfortable = CGPoint(x: w0.bounds.minX + 1030, y: w0.bounds.minY + 18)
 click(comfortable)
 usleep(400_000)
