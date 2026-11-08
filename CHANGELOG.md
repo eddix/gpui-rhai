@@ -5,6 +5,84 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.4.3 - 2026-11-12
+
+This release finishes oh-my-traex's feedback on 0.4.2 and the items once left
+for later. Like 0.4.2 it changes some defaults and the Rust API without a minor
+bump, by the maintainer's choice: the breaking items are marked below. Runtime
+API stays 3.
+
+- **Breaking:** the backends move to gpui-pre 0.3.11 and gpui-fast 0.1.13
+  (#225, by @javagg). `KeyBindingSpec::to_gpui` takes `&App`; scroll handlers
+  take `ScrollEvent`; `gpui-rhai check` expects a Host to pin `=0.3.11` or
+  `=0.1.13`. nsh-platform-gpui 0.5.0 is the release beside it.
+
+- **Breaking:** one `ScriptView` replaces `FileScriptView` and
+  `EmbeddedScriptView`: `ScriptView::files`, `::embedded` and `::sources`,
+  and `script_view!()`, which reads `ui/` in a debug build and the embedded
+  tree in a release build. The new crate `gpui-rhai-build` embeds `ui/` from
+  `build.rs`; `gpui-rhai embed` is removed and explains the migration.
+  `ui_override_env(name)` reads files from a path in that variable; a debug
+  build honors `GPUI_RHAI_UI`.
+- `gpui-rhai bundle` builds a signed macOS `.app` from
+  `[package.metadata.gpui-rhai.bundle]`, and `gpui-rhai dev --bundle` runs the
+  debug build inside one, where notifications and the Dock badge work.
+- `gpui-rhai shot` renders the application offscreen on the real renderer
+  and saves PNGs, through the application's `examples/shot.rs` and
+  `gpui_rhai::offscreen` (features `offscreen-pre` / `offscreen-fast`, in
+  dev-dependencies only).
+- **Breaking:** a Select without a width fits its widest option (at most
+  360 logical pixels), and its list is at least as wide as the trigger
+  (`panel_width`); Combobox takes `width: "content"`. An `invisible()`
+  subtree leaves the accessibility tree and content-derived names.
+- **Breaking:** a loading Button draws a turning spinner in place of its
+  prefix icon or before its label; IconButton swaps its icon for it.
+- Select and Combobox take `option_trailing`, a Node factory for content
+  after an option's label.
+- Tabs takes `variant: "chip"`, separate tabs with a raised selected chip
+  (D84); the all-tabs menu trigger has a control's corners.
+- Dialog takes `width`; a dialog stops at 90% of the window and scrolls its
+  body under the title and above the actions.
+- **Breaking:** SplitPane's separator is a flush 1px line by default (D85);
+  `separator: "lane"` keeps the lane. A focused handle's grip takes
+  `focus_ring`.
+- **Breaking:** Markdown tables lay out by their content: columns of 64 to
+  360 logical pixels, wrapped rows that grow, a table of up to 1,000 cells in
+  full; a larger one scrolls in `table_max_height` (400).
+- `ctx.scroll_collection_to_key(key, item)` reveals one row of a list that
+  follows its tail, pausing the following.
+- A streamed Markdown reply parses only its tail:
+  `ScriptViewHandle::append_native_text_document` and
+  `MarkdownPreparation::prepare_after`; a 125 KB reply streamed 256 bytes at
+  a time took 24.7 s of preparation and now takes 0.6 s.
+- **Breaking:** built-in component text reads in the application's locale
+  through `ctx.t_or(key, fallback[, values])`. The 23 text props that defaulted
+  to English default to `""`, meaning the localized text; hardcoded strings
+  and the native viewers' status text go through the locale too. The bundled
+  locales gain 49 keys, none required.
+- `ThemePreference::SystemPair { light, dark }` and
+  `ctx.set_theme_system_pair` (window and subtree forms too) follow the
+  system appearance across theme families. **Breaking:** `ThemePreference`
+  is `#[non_exhaustive]`.
+- **Breaking:** a local theme (`ctx.set_local_theme` and its system forms)
+  changes what its subtree paints: colors, lengths, typography and motion,
+  in nodes, primitives and overlays, and its text color.
+- State defaults may be plain Rhai values typed by the schema; the tagged
+  `UiValue` form still works and wins.
+- `gpui-rhai check` fails a literal argument no overload takes, as
+  `style().flex_shrink(0.0)`, in every branch. **Breaking:**
+  `KnownCallDiagnostic` gains `literal_arguments` and is `#[non_exhaustive]`.
+- `gpui-rhai check` defers the capabilities `app.toml` declares, so a
+  component effect that starts a subscription no longer fails it
+  (`CapabilityRegistry::defer`).
+- A DropZone with the `os.files` payload type takes files and folders the
+  operating system drags in, once the Host calls
+  `ScriptView::accept_file_drops(true)`; scripts get opaque handles, and
+  `UiRuntimeState::dropped_files` turns one into the path.
+- The registry carries Lucide 1.70.0 (2322 icons): `gpui-rhai add
+  lucide/<name>` installs one with Lucide's license, `update` follows a new
+  pinned release, and preparation preloads the installed icons.
+
 ## 0.4.2 - 2026-11-06
 
 This release follows oh-my-traex's feedback on 0.4.0. It changes some
