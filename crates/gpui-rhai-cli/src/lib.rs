@@ -1368,6 +1368,10 @@ fn workspace_dependency(
 /// A warning when the lockfile of the workspace around `manifest` resolves
 /// both GPUI forks: separate binaries may each link one, a single binary must
 /// not link both.
+///
+/// A lockfile records every target's dependencies. gpui-fast's platform crate
+/// names `gpui-pre-ios`, which depends on gpui-pre, for iOS builds only, so the
+/// walk from the workspace's own packages stops there.
 fn lockfile_warnings(manifest: &Path) -> Result<Option<String>, ProjectError> {
     let Some(lockfile) = manifest
         .parent()
@@ -1378,9 +1382,40 @@ fn lockfile_warnings(manifest: &Path) -> Result<Option<String>, ProjectError> {
     else {
         return Ok(None);
     };
-    let source = read(&lockfile)?;
-    let resolves = |package: &str| source.contains(&format!("name = \"{package}\"\n"));
-    Ok((resolves("gpui-pre") && resolves("gpui-fast")).then(|| {
+    let lock: toml::Value = toml::from_str(&read(&lockfile)?)?;
+    let mut dependencies = BTreeMap::<&str, Vec<&str>>::new();
+    let mut pending = Vec::new();
+    for package in lock
+        .get("package")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(name) = package.get("name").and_then(toml::Value::as_str) else {
+            continue;
+        };
+        dependencies.entry(name).or_default().extend(
+            package
+                .get("dependencies")
+                .and_then(toml::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(toml::Value::as_str)
+                .filter_map(|dependency| dependency.split(' ').next()),
+        );
+        // A package without a source is the workspace's own.
+        if package.get("source").is_none() {
+            pending.push(name);
+        }
+    }
+    let mut reached = BTreeSet::new();
+    while let Some(name) = pending.pop() {
+        if name == "gpui-pre-ios" || !reached.insert(name) {
+            continue;
+        }
+        pending.extend(dependencies.get(name).into_iter().flatten().copied());
+    }
+    Ok((reached.contains("gpui-pre") && reached.contains("gpui-fast")).then(|| {
         format!(
             "gpui-family {}: resolves both gpui-pre and gpui-fast; a binary that links both aborts at launch, so keep them in separate binaries or select one backend",
             lockfile.display()
@@ -3267,6 +3302,30 @@ mod tests {
         let warnings = validate_gpui_dependency_family(&cargo).unwrap();
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("aborts at launch"), "{warnings:?}");
+
+        // gpui-fast's platform reaches gpui-pre only through its iOS crate,
+        // which a desktop build does not link: no warning.
+        let registry = "source = \"registry+https://github.com/rust-lang/crates.io-index\"\n";
+        let ios_only = format!(
+            "[[package]]\nname = \"fixture\"\nversion = \"0.1.0\"\ndependencies = [\"gpui-fast\", \"gpui-fast-platform\"]\n\n\
+             [[package]]\nname = \"gpui-fast\"\nversion = \"0.1.13\"\n{registry}\n\
+             [[package]]\nname = \"gpui-fast-platform\"\nversion = \"0.1.13\"\n{registry}dependencies = [\"gpui-fast\", \"gpui-pre-ios\"]\n\n\
+             [[package]]\nname = \"gpui-pre-ios\"\nversion = \"0.3.11\"\n{registry}dependencies = [\"gpui-pre\"]\n\n\
+             [[package]]\nname = \"gpui-pre\"\nversion = \"0.3.11\"\n{registry}"
+        );
+        fs::write(directory.path().join("Cargo.lock"), &ios_only).unwrap();
+        let warnings = validate_gpui_dependency_family(&cargo).unwrap();
+        assert_eq!(warnings.len(), 0, "{warnings:?}");
+        // The same lockfile with the application on gpui-pre as well still warns.
+        fs::write(
+            directory.path().join("Cargo.lock"),
+            ios_only.replace(
+                "dependencies = [\"gpui-fast\", \"gpui-fast-platform\"]",
+                "dependencies = [\"gpui-fast\", \"gpui-fast-platform\", \"gpui-pre\"]",
+            ),
+        )
+        .unwrap();
+        assert_eq!(validate_gpui_dependency_family(&cargo).unwrap().len(), 1);
     }
 
     #[test]
