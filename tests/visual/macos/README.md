@@ -20,8 +20,10 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
   byte-identical); on 2026-11-05, for 0.4.1, the 15 Gallery files whose
   sidebar scrollbar thumb moved when the Lists group gained the SelectableList
   page (the other 4 Gallery files and all 38 example files rendered identical
-  in RGB)
-- Environment of the current files: macOS 27.0, gpui-pre 0.3.9, Rust 1.95.0,
+  in RGB); on 2026-11-11, for 0.4.3, the 47 files (14 Gallery, 33 examples)
+  whose text gpui-pre 0.3.11 draws at slightly different subpixel glyph
+  positions (the other 10 rendered identical)
+- Environment of the current files: macOS 27.0.1, gpui-pre 0.3.11, Rust 1.99.0,
   rendered offscreen and read back from the GPU texture (no window chrome, no
   screen capture), stored in device pixels (2x)
 - Settings: 640 × 520 points / 1280 × 1040 pixels
