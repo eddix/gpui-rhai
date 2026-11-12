@@ -7,7 +7,7 @@ use super::{mount_example, mount_refreshed, table, table_1000_example};
 use crate::support::{
     ReplaceOnce, Step, dispatch_script_button, settle, snapshot, wait_for_view_text,
 };
-use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px, size};
+use gpui::{ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px, size};
 use gpui_rhai::{ExecutionOperation, UiNode, UiValue};
 
 /// Advances the clock 16ms and runs until parked, `times` times.
@@ -222,13 +222,13 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
             .expect("sticky group header has committed bounds")
     };
     let scroll = |visual: &mut VisualTestContext, delta: f32| {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(
                 viewport.origin.x + viewport.size.width / 2.0,
                 viewport.origin.y + viewport.size.height / 2.0,
             ),
             delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
-            ..ScrollWheelEvent::default()
+            ..ScrollEvent::default()
         });
     };
 
@@ -243,13 +243,13 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
     let sticky_bounds = visual
         .debug_bounds("virtual-list-sticky:groups-body")
         .expect("the group header must enter the sticky layer after crossing the viewport top");
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: point(
             sticky_bounds.origin.x + sticky_bounds.size.width / 2.0,
             sticky_bounds.origin.y + sticky_bounds.size.height / 2.0,
         ),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-240.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     cx.background_executor
         .advance_clock(std::time::Duration::from_millis(16));
@@ -528,13 +528,13 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
     );
 
     let coordinate = |value: f64| px(value.to_string().parse::<f32>().unwrap());
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: point(
             coordinate(expanded.x + expanded.width / 2.0),
             coordinate(expanded.y + expanded.height / 2.0),
         ),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-600.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     advance(&mut visual, 4);
     let scrolled_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());

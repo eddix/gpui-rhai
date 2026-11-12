@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use gpui::{
-    Background, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    Background, Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext,
     VisualTestContext, WindowHandle, point, px, rgba,
 };
 use gpui_rhai::*;
@@ -518,7 +518,7 @@ fn view(ctx) { box([
     let before = marker_x(&mut visual);
     let position = point(px(40.), px(30.));
     visual.simulate_mouse_move(position, None, Modifiers::none());
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.), px(-45.))),
         ..Default::default()
@@ -1033,7 +1033,7 @@ fn view(ctx){let value=ctx.get_state("transform");column([
     visual.run_until_parked();
     assert_eq!(status(&mut visual, &view), "40.0,20.0,1.0,1");
 
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: start,
         delta: ScrollDelta::Lines(point(0.0, -4.0)),
         ..Default::default()
@@ -1045,7 +1045,7 @@ fn view(ctx){let value=ctx.get_state("transform");column([
     assert!(zoomed.ends_with(",2"), "status={zoomed}");
 
     for _ in 0..3 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: start,
             delta: ScrollDelta::Pixels(point(px(0.0), px(-12.0))),
             ..Default::default()
@@ -1064,7 +1064,7 @@ fn view(ctx){let value=ctx.get_state("transform");column([
         (gpui::TouchPhase::Moved, -10.0),
         (gpui::TouchPhase::Ended, 0.0),
     ] {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: start,
             delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
             touch_phase: phase,
@@ -1572,7 +1572,7 @@ fn view(ctx){
     #[allow(clippy::cast_possible_truncation)]
     let position = point(px((list.x + 20.0) as f32), px((list.y + 40.0) as f32));
     visual.simulate_mouse_move(position, None, Modifiers::none());
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.), px(-60.))),
         ..Default::default()

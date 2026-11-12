@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use gpui::{
-    IntoElement, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    IntoElement, Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext,
     VisualTestContext, Window, WindowHandle, point, px,
 };
 use gpui_rhai::*;
@@ -107,10 +107,10 @@ fn chart_catalog_story_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppCon
     let figure_y = |visual: &mut VisualTestContext| bounds(visual, &view, "figure", "pie").y;
     let before = figure_y(&mut visual);
     for _ in 0..12 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(px(4.0), px(400.0)),
             delta: ScrollDelta::Pixels(point(px(0.0), px(-700.0))),
-            ..ScrollWheelEvent::default()
+            ..ScrollEvent::default()
         });
     }
     pump(cx, &mut visual);
@@ -136,7 +136,7 @@ fn plain_wheel_over_chart_bubbles_to_scroll_container(cx: &mut TestAppContext) {
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
     let before = chart_bounds(&mut visual, &view);
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: center(before),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
         ..Default::default()
@@ -194,12 +194,12 @@ fn chart_controlled_zoom_rejects_unacknowledged_preview(cx: &mut TestAppContext)
     pump(cx, &mut visual);
     let bounds = chart_bounds(&mut visual, &view);
     for _ in 0..3 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(px((bounds.x + 180.0) as f32), px((bounds.y + 160.0) as f32)),
             delta: ScrollDelta::Pixels(point(px(0.0), px(40.0))),
             ..Default::default()
         });
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(px((bounds.x + 180.0) as f32), px((bounds.y + 160.0) as f32)),
             delta: ScrollDelta::Pixels(point(px(0.0), px(0.0))),
             touch_phase: gpui::TouchPhase::Ended,
@@ -247,7 +247,7 @@ fn chart_phase_less_mouse_wheel_commits(cx: &mut TestAppContext) {
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
     let position = chart_position(&mut visual, &view);
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Lines(point(0.0, 1.0)),
         touch_phase: gpui::TouchPhase::Moved,
@@ -264,7 +264,7 @@ fn chart_trackpad_preview_survives_intermediate_draw(cx: &mut TestAppContext) {
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
     let position = chart_position(&mut visual, &view);
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(40.0))),
         touch_phase: gpui::TouchPhase::Started,
@@ -275,7 +275,7 @@ fn chart_trackpad_preview_survives_intermediate_draw(cx: &mut TestAppContext) {
         status(&mut visual, &view).starts_with("0|"),
         "an explicitly started gesture committed before Ended"
     );
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(0.0))),
         touch_phase: gpui::TouchPhase::Ended,
@@ -305,7 +305,7 @@ fn unrelated_host_render_does_not_acknowledge_a_viewport_proposal(cx: &mut TestA
     pump(cx, &mut visual);
     let position = chart_position(&mut visual, &view);
     for _ in 0..2 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position,
             delta: ScrollDelta::Lines(point(0.0, 1.0)),
             touch_phase: gpui::TouchPhase::Moved,
@@ -335,7 +335,7 @@ fn acknowledging_an_old_proposal_preserves_the_current_gesture(cx: &mut TestAppC
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
     let position = chart_position(&mut visual, &view);
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Lines(point(0.0, 1.0)),
         touch_phase: gpui::TouchPhase::Moved,
@@ -344,7 +344,7 @@ fn acknowledging_an_old_proposal_preserves_the_current_gesture(cx: &mut TestAppC
     visual.run_until_parked();
     assert!(status(&mut visual, &view).starts_with("1|"));
 
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(40.0))),
         touch_phase: gpui::TouchPhase::Started,
@@ -352,7 +352,7 @@ fn acknowledging_an_old_proposal_preserves_the_current_gesture(cx: &mut TestAppC
     });
     visual.run_until_parked();
     click_named(&mut visual, &view, "button", "Acknowledge");
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(0.0))),
         touch_phase: gpui::TouchPhase::Ended,
@@ -378,7 +378,7 @@ fn resumed_chart_discards_an_interrupted_explicit_wheel_gesture(cx: &mut TestApp
         pump(cx, &mut visual);
         if active_gesture {
             let position = chart_position(&mut visual, &view);
-            visual.simulate_event(ScrollWheelEvent {
+            visual.simulate_event(ScrollEvent {
                 position,
                 delta: ScrollDelta::Pixels(point(px(0.0), px(40.0))),
                 touch_phase: gpui::TouchPhase::Started,
@@ -391,7 +391,7 @@ fn resumed_chart_discards_an_interrupted_explicit_wheel_gesture(cx: &mut TestApp
         visual.update(|_, cx| view.resume(cx).unwrap());
         pump(cx, &mut visual);
         let position = chart_position(&mut visual, &view);
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position,
             delta: ScrollDelta::Lines(point(0.0, 1.0)),
             touch_phase: gpui::TouchPhase::Moved,
@@ -1136,7 +1136,7 @@ fn canceling_preview_rebuilds_the_committed_frame(cx: &mut TestAppContext) {
     pump(cx, &mut visual);
     let committed = positions.lock().unwrap()[0];
     let bounds = chart_bounds(&mut visual, &view);
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: point(px((bounds.x + 180.0) as f32), px((bounds.y + 160.0) as f32)),
         delta: ScrollDelta::Pixels(point(px(0.0), px(400.0 * std::f32::consts::LN_2))),
         touch_phase: gpui::TouchPhase::Started,
@@ -1201,7 +1201,7 @@ fn wheel_figure(
     phase: gpui::TouchPhase,
 ) {
     let position = figure_coordinate(visual, view, chart, ChartPoint { x: 150.0, y: 140.0 });
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
         touch_phase: phase,
@@ -1344,7 +1344,7 @@ fn linked_cartesian_axes_keep_independent_logical_windows(cx: &mut TestAppContex
         "source",
         ChartPoint { x: 150.0, y: 140.0 },
     );
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: wheel,
         delta: ScrollDelta::Lines(point(0.0, -25.0)),
         touch_phase: gpui::TouchPhase::Moved,
@@ -1444,7 +1444,7 @@ fn geo_link_group_synchronizes_acknowledged_camera(cx: &mut TestAppContext) {
         "source",
         ChartPoint { x: 150.0, y: 140.0 },
     );
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: wheel,
         delta: ScrollDelta::Lines(point(0.0, -25.0)),
         touch_phase: gpui::TouchPhase::Moved,

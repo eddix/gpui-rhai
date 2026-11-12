@@ -2,7 +2,7 @@
 //! nothing to the extent a viewport scrolls through.
 
 use crate::support::{Mount, bounds, center};
-use gpui::{Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, point, px};
+use gpui::{Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, point, px};
 
 #[gpui::test]
 fn scroll_area_thumb_drag_updates_the_retained_scroll_handle(cx: &mut TestAppContext) {
@@ -71,10 +71,10 @@ fn view(ctx) {{ column([{body}]).with_style(style().width(px(400)).height(px(600
     cx.run_until_parked();
     let viewport = bounds(&mut visual, &view, "region", "Logs");
     for _ in 0..10 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: center(viewport),
             delta: ScrollDelta::Pixels(point(px(0.0), px(-500.0))),
-            ..ScrollWheelEvent::default()
+            ..ScrollEvent::default()
         });
         visual.run_until_parked();
     }

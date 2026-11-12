@@ -1,6 +1,6 @@
 //! Real GPUI layout/editor/focus evidence for the shared retained-page policy.
 use gpui::{IntoElement, ParentElement, Render, Styled};
-use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px};
+use gpui::{ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::{MotionPreference, NavigateBack, UiValue};
 use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID};
 
@@ -89,10 +89,10 @@ fn native_continuity(cx: &mut TestAppContext, source: &str) {
         .unwrap()
         .visual
         .y;
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: crate::support::center(viewport),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-180.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     settle(&mut visual, Step::Frame, 2);
     let before = node_by_test_id(&mut visual, &view, "line:10");

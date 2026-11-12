@@ -2,7 +2,7 @@
 //! scrolling, selection, keyboard focus and hover: window A renders every
 //! frame in full, window B replays its cache islands.
 
-use gpui::{Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, point, px, size};
+use gpui::{Modifiers, ScrollDelta, ScrollEvent, TestAppContext, point, px, size};
 
 use crate::support::{Lockstep, Mount, Step, bounds, center, settle};
 
@@ -67,13 +67,13 @@ fn scrolling_and_selecting_a_table_keeps_the_windows_identical(cx: &mut TestAppC
     let at = at.unwrap();
     for step in 0..40 {
         sides.act(|visual, _| {
-            visual.simulate_event(ScrollWheelEvent {
+            visual.simulate_event(ScrollEvent {
                 position: at,
                 delta: ScrollDelta::Pixels(point(
                     px(0.0),
                     px(if step < 30 { -32.0 } else { 48.0 }),
                 )),
-                ..ScrollWheelEvent::default()
+                ..ScrollEvent::default()
             });
             settle(visual, Step::Tick, 2);
         });
@@ -267,10 +267,10 @@ fn scrolling_a_container_replays_the_islands_beside_it(cx: &mut TestAppContext) 
     let mut hits = 0;
     for step in 0..12 {
         sides.act(|visual, _| {
-            visual.simulate_event(ScrollWheelEvent {
+            visual.simulate_event(ScrollEvent {
                 position: at,
                 delta: ScrollDelta::Pixels(point(px(0.0), px(if step < 9 { -24.0 } else { 40.0 }))),
-                ..ScrollWheelEvent::default()
+                ..ScrollEvent::default()
             });
             settle(visual, Step::Tick, 2);
         });

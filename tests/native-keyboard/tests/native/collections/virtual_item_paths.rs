@@ -3,7 +3,7 @@
 //! newly realized row cannot take the path of a retained row's component.
 
 use gpui::{
-    Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px,
+    Modifiers, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
 };
 use gpui_rhai::*;
 
@@ -101,7 +101,7 @@ fn keyless_components_in_new_rows_do_not_take_retained_paths(cx: &mut TestAppCon
 
     let position = point(px(200.0), px(100.0));
     visual.simulate_mouse_move(position, None, Modifiers::none());
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(-120.0))),
         ..Default::default()

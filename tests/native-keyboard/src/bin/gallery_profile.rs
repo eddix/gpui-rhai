@@ -37,7 +37,7 @@ mod profile {
     use std::time::{Duration, Instant};
 
     use gpui::{
-        AnyWindowHandle, Modifiers, MouseMoveEvent, ScrollDelta, ScrollWheelEvent,
+        AnyWindowHandle, Modifiers, MouseMoveEvent, ScrollDelta, ScrollEvent,
         VisualTestAppContext, point, px,
     };
     use gpui_rhai::{
@@ -374,10 +374,10 @@ mod profile {
                 let window = s.window;
                 s.cx.simulate_event(
                     window,
-                    ScrollWheelEvent {
+                    ScrollEvent {
                         position: point(px(100.0), px(400.0)),
                         delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
-                        ..ScrollWheelEvent::default()
+                        ..ScrollEvent::default()
                     },
                 );
             }));

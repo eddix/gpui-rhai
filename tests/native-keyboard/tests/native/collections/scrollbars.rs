@@ -9,7 +9,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, Bounds, Context, InteractiveElement, IntoElement,
     IsZero as _, ListAlignment, ListState, Modifiers, MouseButton, ParentElement, Pixels, Point,
-    Render, ScrollDelta, ScrollHandle, ScrollWheelEvent, StatefulInteractiveElement, Styled,
+    Render, ScrollDelta, ScrollHandle, ScrollEvent, StatefulInteractiveElement, Styled,
     TestAppContext, VisualTestContext, Window, div, list, point, px,
 };
 use gpui_rhai::{
@@ -91,7 +91,7 @@ impl PrimitiveHandler for Handler {
             .w(px(300.0))
             .h(px(200.0))
             .overflow_hidden()
-            .on_scroll_wheel(move |_, _, _| {
+            .on_scroll(move |_, _, _| {
                 observer
                     .bubbled_wheels
                     .set(observer.bubbled_wheels.get() + 1)
@@ -302,7 +302,7 @@ fn replacing_a_retained_source_lease_cancels_the_old_thumb_drag(cx: &mut TestApp
 fn entirely_unconsumed_track_wheel_events_are_not_swallowed(cx: &mut TestAppContext) {
     let (mut visual, _, probe) = mount(cx, "unconsumed-scroll-wheel");
     let bounds = probe.scroll.viewport_bounds();
-    let event = |delta| ScrollWheelEvent {
+    let event = |delta| ScrollEvent {
         position: point(bounds.right() - px(6.0), bounds.top() + px(100.0)),
         delta: ScrollDelta::Pixels(delta),
         ..Default::default()
@@ -334,7 +334,7 @@ fn opt_in_body_wheel_consumes_once_before_native_list_and_leaves_unsupported_inp
         crate::support::dispatch_script_button(&mut visual, &view, "Refresh");
         settle(&mut visual, Step::Tick, 4);
         let viewport = probe.scroll.viewport_bounds();
-        let event = |delta| ScrollWheelEvent {
+        let event = |delta| ScrollEvent {
             position: viewport.center(),
             delta: ScrollDelta::Pixels(delta),
             ..Default::default()
@@ -452,7 +452,7 @@ fn nested_body_region_wins_over_parent_overlay_and_chains_only_boundary_residual
     settle(&mut visual, Step::Tick, 4);
     assert!(inner.max_offset().y > px(24.0));
     assert!(outer.max_offset().y > px(24.0));
-    let wheel = |position| ScrollWheelEvent {
+    let wheel = |position| ScrollEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(-24.0))),
         ..Default::default()
@@ -591,7 +591,7 @@ fn cached_native_body_replays_current_event_regions_after_unrelated_sibling_upda
             before,
             "precondition: unrelated sibling redraw must reuse cached native prepaint/paint"
         );
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: inner.bounds().center(),
             delta: ScrollDelta::Pixels(point(px(0.0), px(-24.0))),
             ..Default::default()
@@ -637,7 +637,7 @@ impl Render for OverlappingBodyHosts {
                     |_, _, _| (),
                     move |_, (), window, _| {
                         let stop = Rc::clone(&stop);
-                        window.on_mouse_event(move |_: &ScrollWheelEvent, phase, _, cx| {
+                        window.on_mouse_event(move |_: &ScrollEvent, phase, _, cx| {
                             if phase == gpui::DispatchPhase::Capture && stop.get() {
                                 cx.stop_propagation();
                             }
@@ -680,7 +680,7 @@ fn overlapping_hosts_collect_every_capture_before_frontmost_body_consumes(cx: &m
     cx.run_until_parked();
     let mut visual = VisualTestContext::from_window(*window, cx);
     settle(&mut visual, Step::Frame, 3);
-    let event = || ScrollWheelEvent {
+    let event = || ScrollEvent {
         position: states[1].1.bounds().center(),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-24.0))),
         ..Default::default()
@@ -804,7 +804,7 @@ fn host_scrollhandle_scrollbars_share_rtl_axes_wheel_and_deactivation_policy(
             "a horizontal track click preserves the vertical position"
         );
         settle(&mut visual, Step::Tick, 3);
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(px(track_x), px(100.0)),
             delta: ScrollDelta::Pixels(point(px(0.0), px(-10.0))),
             ..Default::default()

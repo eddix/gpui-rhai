@@ -182,11 +182,12 @@ fn command(
 }
 fn wheel(v: &mut VisualTestContext, p: gpui::Point<gpui::Pixels>, x: f32, y: f32) {
     v.simulate_mouse_move(p, None, Modifiers::none());
-    v.simulate_event(gpui::ScrollWheelEvent {
+    v.simulate_event(gpui::ScrollEvent {
         position: p,
         delta: gpui::ScrollDelta::Pixels(point(px(x), px(y))),
         touch_phase: gpui::TouchPhase::Moved,
         modifiers: Modifiers::none(),
+        ..gpui::ScrollEvent::default()
     });
     v.run_until_parked();
     v.update(|window, _| window.refresh());

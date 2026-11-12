@@ -6,6 +6,7 @@ mod editor_capture;
 mod embedded_input;
 mod focus_order;
 mod focus_within;
+mod key_bindings;
 mod key_phases;
 mod node_keys;
 mod tab_stops;

@@ -565,7 +565,7 @@ impl ScriptViewHost {
         let bindings = bindings.into_iter().collect::<Vec<_>>();
         let converted = bindings
             .iter()
-            .map(KeyBindingSpec::to_gpui)
+            .map(|binding| binding.to_gpui(cx))
             .collect::<Result<Vec<_>, _>>()?;
         let mut new = Vec::new();
         {

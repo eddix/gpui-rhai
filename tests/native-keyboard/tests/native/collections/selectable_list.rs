@@ -5,7 +5,7 @@
 //! application and keeps its own tab stop, and rows realized after a scroll behave the same.
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
+    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext,
     point, px,
 };
 use gpui_rhai::*;
@@ -109,7 +109,7 @@ fn a_control_in_a_row_calls_back_into_the_application(cx: &mut TestAppContext) {
         .debug_bounds("virtual-list:tracks-rows")
         .expect("mounted rows");
     for _ in 0..8 {
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(
                 viewport.origin.x + viewport.size.width / 2.0,
                 viewport.origin.y + viewport.size.height / 2.0,

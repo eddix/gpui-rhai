@@ -1,6 +1,6 @@
 //! Regression controls for native following and keyed reader anchors (#162/163).
 
-use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext, point, px};
+use gpui::{ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::{ScriptViewHandle, VirtualCollectionMetrics};
 
 use crate::support::{
@@ -85,7 +85,7 @@ fn wheel(visual: &mut VisualTestContext, delta: f32) {
     let viewport = visual
         .debug_bounds("virtual-list:events")
         .expect("mounted list viewport");
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: point(
             viewport.origin.x + viewport.size.width / 2.0,
             viewport.origin.y + viewport.size.height / 2.0,
@@ -591,7 +591,7 @@ fn view(ctx){render_component("tests/residual_scroll",#{key:"chain"})}
     settle(&mut visual, Step::Tick, 10);
     let track_wheel = |visual: &mut VisualTestContext, x: f32, y: f32| {
         let viewport = visual.debug_bounds("virtual-list:inner").unwrap();
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(viewport.right() - px(6.0), viewport.top() + px(50.0)),
             delta: ScrollDelta::Pixels(point(px(x), px(y))),
             ..Default::default()

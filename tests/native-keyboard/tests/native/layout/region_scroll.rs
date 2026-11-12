@@ -3,7 +3,7 @@
 //! (the control); the wheel precondition shows the body is a viewport.
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, VisualTestContext,
+    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext,
     point, px,
 };
 use gpui_rhai::{MotionPreference, ScriptViewHandle};
@@ -79,10 +79,10 @@ fn wheel(
     let (mut visual, view) = mount(cx, view_body);
     let viewport = bounds(&mut visual, &view, viewport_role, viewport_name);
     let before = bounds(&mut visual, &view, "text", "Row 11").y;
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: center(viewport),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-200.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     visual.run_until_parked();
     let after = bounds(&mut visual, &view, "text", "Row 11").y;

@@ -1388,10 +1388,10 @@ fn scroll_layout(
             .unwrap();
         let _ = take_snapshot(&mut visual, &view);
         let started = Instant::now();
-        visual.simulate_event(gpui::ScrollWheelEvent {
+        visual.simulate_event(gpui::ScrollEvent {
             position: at,
             delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.0), px(-32.0))),
-            ..gpui::ScrollWheelEvent::default()
+            ..gpui::ScrollEvent::default()
         });
         scroll_settle(&mut visual);
         let total_us = micros(started);

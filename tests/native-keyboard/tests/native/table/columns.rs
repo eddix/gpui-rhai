@@ -7,7 +7,7 @@ use crate::support::{
 };
 use gpui::{
     Context, IntoElement, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, ParentElement,
-    Render, ScrollDelta, ScrollWheelEvent, Styled, TestAppContext, VisualTestContext, Window, div,
+    Render, ScrollDelta, ScrollEvent, Styled, TestAppContext, VisualTestContext, Window, div,
     point, px, size,
 };
 use gpui_rhai::{ExecutionOperation, ScriptViewConfig, ScriptViewHandle, ScriptViewHost};
@@ -357,13 +357,13 @@ fn native_collection_table_autofit_stays_on_the_realized_rust_path(cx: &mut Test
         "an unobserved auto-fit should stay entirely in Rust: {performance:?}"
     );
 
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: point(
             px((header.x + header.width / 2.0) as f32),
             px((header.y + 120.0) as f32),
         ),
         delta: ScrollDelta::Pixels(point(px(0.0), px(-600.0))),
-        ..ScrollWheelEvent::default()
+        ..ScrollEvent::default()
     });
     for _ in 0..4 {
         cx.background_executor

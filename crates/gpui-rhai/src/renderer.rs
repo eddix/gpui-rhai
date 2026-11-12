@@ -9,10 +9,9 @@ use gpui::{
     ContentMask, Context, CursorStyle, Div, Element, ElementId, FocusHandle, FontFallbacks,
     FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Img, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
-    ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText,
-    TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px, relative,
-    rems, rgba,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollEvent, ScrollHandle,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText, TextAlign, Window,
+    auto, div, img, linear_color_stop, linear_gradient, point, px, relative, rems, rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
@@ -1046,7 +1045,7 @@ fn apply_pointer_motion_handlers(
     let wheel = node.event_handlers("wheel").to_vec();
     if !wheel.is_empty() {
         let payload_context = (*payload_context).clone();
-        element = element.on_scroll_wheel(move |event, window, app| {
+        element = element.on_scroll(move |event, window, app| {
             let payload = payload_context.enrich(wheel_payload(event));
             let response = dispatch_ui_handler_phases(
                 &wheel,
@@ -1176,7 +1175,7 @@ fn pointer_payload(
     .into_value()
 }
 
-fn wheel_payload(event: &ScrollWheelEvent) -> UiValue {
+fn wheel_payload(event: &ScrollEvent) -> UiValue {
     let position = logical_point(event.position);
     let delta = event.delta.pixel_delta(px(16.0));
     crate::WheelEventData {
