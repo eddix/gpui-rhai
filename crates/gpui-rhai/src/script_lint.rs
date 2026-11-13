@@ -7,6 +7,17 @@ use thiserror::Error;
 
 use crate::ModuleId;
 
+mod capabilities;
+pub use capabilities::{CapabilityCallDiagnostic, CapabilityCallReport};
+
+/// One parse-only analysis of native calls and Host capability declarations.
+#[derive(Clone, Debug, Default)]
+pub struct ScriptPreflight {
+    pub known_calls: Vec<KnownCallDiagnostic>,
+    pub host_functions: BTreeSet<HostFunction>,
+    pub capabilities: CapabilityCallReport,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 /// One Rhai function-name, arity, or literal-argument diagnostic.
@@ -286,6 +297,8 @@ impl fmt::Display for HostFunction {
 #[derive(Debug, Error)]
 /// Failure to construct or parse inputs for known-call validation.
 pub enum KnownCallLintError {
+    #[error(transparent)]
+    Contract(#[from] crate::CapabilityContractError),
     #[error("failed to read registered Rhai function metadata: {0}")]
     Metadata(#[from] serde_json::Error),
     #[error("failed to parse `{source_name}` for known-call validation: {message}")]
@@ -511,6 +524,26 @@ pub(crate) fn lint_known_calls(
     modules: &BTreeMap<ModuleId, String>,
     host: &BTreeSet<HostFunction>,
 ) -> Result<(Vec<KnownCallDiagnostic>, BTreeSet<HostFunction>), KnownCallLintError> {
+    let report = preflight_calls(engine, entry_name, entry_source, modules, host, None)?;
+    Ok((report.known_calls, report.host_functions))
+}
+
+pub(crate) fn preflight_calls(
+    engine: &mut Engine,
+    entry_name: &str,
+    entry_source: &str,
+    modules: &BTreeMap<ModuleId, String>,
+    host: &BTreeSet<HostFunction>,
+    capability_context: Option<(&crate::AppManifest, Option<&crate::CapabilityContract>)>,
+) -> Result<ScriptPreflight, KnownCallLintError> {
+    if let Some((manifest, _)) = capability_context
+        && manifest.runtime_api != crate::RUNTIME_API_VERSION
+    {
+        return Err(crate::CapabilityContractError::Runtime(manifest.runtime_api).into());
+    }
+    if let Some((manifest, Some(contract))) = capability_context {
+        contract.validate_manifest(manifest)?;
+    }
     let mut catalog = KnownCallCatalog::from_engine(engine)?;
     catalog.insert_host_functions(host);
     let previous_optimization = engine.optimization_level();
@@ -575,7 +608,15 @@ pub(crate) fn lint_known_calls(
             ))
     });
     diagnostics.dedup();
-    Ok((diagnostics, host_calls.called))
+    let capabilities = capability_context
+        .map_or_else(CapabilityCallReport::default, |(manifest, contract)| {
+            capabilities::check(&parsed, &catalog, host, manifest, contract)
+        });
+    Ok(ScriptPreflight {
+        known_calls: diagnostics,
+        host_functions: host_calls.called,
+        capabilities,
+    })
 }
 
 /// The Host functions a lint was given and those the sources call.

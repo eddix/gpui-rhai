@@ -5,6 +5,17 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## Unreleased
+
+- Host capability contracts can be exported as data-only, versioned JSON.
+  `gpui-rhai check --host-contract <file>` checks literal capability IDs,
+  methods, sync/task/subscription entry points and literal input schemas,
+  including unexecuted branches. Missing contracts, dynamic names and
+  ambiguous overloads are explicitly unverified, not silently accepted as
+  validated. `CapabilityRegistry::require_contract` detects stale tooling
+  declarations in the real Host before activation; runtime permission and
+  lifecycle checks remain authoritative.
+
 ## 0.4.3 - 2026-11-12
 
 This release finishes oh-my-traex's feedback on 0.4.2 and the items once left

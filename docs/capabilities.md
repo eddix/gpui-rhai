@@ -22,6 +22,66 @@ Attach it with `.extension(AppServices)`. The complete synchronous, task, and
 subscription example is `crates/gpui-rhai/examples/extension_host.rs`. File views load
 `ui/app.toml`; embedded applications pass `AppManifest` with `.manifest(...)`.
 
+## Export a Host contract for static checking
+
+`CapabilityRegistry::export_contract()` reads registered descriptors and the
+sync/task/subscription modes actually registered. It does not call handlers,
+initialize services, activate capabilities or execute script. For a separate
+export command that must not even construct services, use
+`CapabilityContract::from_descriptors`: supply the same descriptors and modes
+your registration code uses, without handlers. Serialize the result with
+`serde_json::to_string_pretty` and write it only when the application explicitly
+requests an export.
+
+```text
+gpui-rhai check --host-contract host-contract.json
+```
+
+The path is relative to `--root`, or absolute. The JSON format version, runtime
+API version and informational SDK version are separate. The contract contains
+only public declarations; the SDK adds no handler pointers, activation state,
+service values or workspace locations. Schema defaults are public too:
+do not store secrets in them. Contracts read by `from_json` are capped at 4 MiB.
+
+Preflight uses the real Engine's API metadata and the same unoptimized AST
+parse as known-call lint. It checks app manifest requirements and literal
+capability IDs, method names and entry-point kinds, including branches that
+will not execute. Fully literal input containers are schema-checked without
+evaluating expressions; diagnostics do not print input values. It does not
+infer lifecycle validity, callback behavior or the values of dynamic inputs.
+
+Without a contract, manifest membership is still checked but method/mode/schema
+coverage is explicitly **unverified**. Dynamic names and calls shadowed by a
+script function or another Host overload remain unverified too. The report
+separates checked calls from checked literal inputs. A static success never
+means the Host services or their dependent lifecycle were executed.
+
+The embedding SDK exposes the same analysis through
+`RuntimeEngine::preflight_calls` and the CLI library through
+`Project::check_with_host_contract`. No filesystem or module resolver access
+is needed for the SDK analysis: pass the source map and data contract.
+
+### Detect stale declarations in the real Host
+
+After registering services in `ScriptViewExtension::configure_runtime`, load
+the same contract with `CapabilityContract::from_json`, then call
+`runtime.capabilities.require_contract(contract)`. A mismatched schema, method,
+version or mode fails preparation; later manifest activations recheck the
+complete registered catalog. A failed check does not replace the expectation
+or partially activate capabilities. A manifest reload rechecks the retained
+expectation at activation; pure permission reductions, including revoking all
+capabilities, remain possible even if a tooling contract is stale. A newly
+prepared Host runs its registration hook
+again. Editing the tooling JSON alone does not replace a running Host's
+expectation: the Host must explicitly validate and adopt a new contract.
+
+The comparison uses full canonical declarations, not hash equality.
+`fingerprint()` supplies a deterministic diagnostic identity; documentation
+edits and the informational SDK version do not change it. The fingerprint is
+not a signature, credential or grant. Changing the JSON cannot grant access:
+the real registry still checks the active manifest, current version, input and
+output schemas, invocation origin and component/lifecycle ownership on calls.
+
 ## Rhai calls
 
 Synchronous methods may run anywhere except `view`: `init`, an event callback,

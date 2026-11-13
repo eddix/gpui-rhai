@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -36,7 +36,11 @@ enum Command {
         components: Vec<String>,
     },
     /// Validate scripts, schemas, themes, and compatibility.
-    Check,
+    Check {
+        /// JSON capability declarations exported by the Host; relative to --root.
+        #[arg(long)]
+        host_contract: Option<PathBuf>,
+    },
     /// Run the Cargo application.
     Dev {
         /// Run the debug build inside a macOS application bundle, so system
@@ -162,8 +166,8 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
                 plan.apply()?;
             }
         }
-        Command::Check => {
-            let report = project.check()?;
+        Command::Check { host_contract } => {
+            let report = check_project(&project, &root, host_contract)?;
             println!("{}", report.summary());
         }
         Command::Dev { bundle: false } => project.dev()?,
@@ -238,6 +242,21 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
         }
     }
     Ok(())
+}
+
+fn check_project(
+    project: &Project,
+    root: &Path,
+    host_contract: Option<PathBuf>,
+) -> Result<gpui_rhai_cli::CheckReport, ProjectError> {
+    let Some(path) = host_contract else {
+        return project.check();
+    };
+    let path = root.join(path);
+    let file = std::fs::File::open(&path).map_err(|source| ProjectError::Io { path, source })?;
+    let contract = gpui_rhai::CapabilityContract::from_reader(file)
+        .map_err(gpui_rhai::KnownCallLintError::from)?;
+    project.check_with_host_contract(&contract)
 }
 
 /// Gallery pages first, then the development stories.

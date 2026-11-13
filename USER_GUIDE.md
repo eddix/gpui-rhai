@@ -395,6 +395,16 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
+For Host capabilities, export their declarations with
+`CapabilityRegistry::export_contract()` (or `CapabilityContract::from_descriptors`
+without constructing services), then run
+`gpui-rhai check --host-contract host-contract.json`. This checks literal IDs,
+methods, entry-point kinds and literal inputs even in unexecuted branches;
+dynamic calls and missing contracts are explicitly unverified. In the real
+Host, `CapabilityRegistry::require_contract` rejects stale declarations before
+activation. Static checking grants no permissions and does not replace Host
+or lifecycle validation. See [Capabilities](docs/capabilities.md).
+
 The bundled catalog contains official source components and patterns. Each
 keeps one contract for its ID and export, controlled-state boundary, semantic
 events, size vocabulary and style parts:

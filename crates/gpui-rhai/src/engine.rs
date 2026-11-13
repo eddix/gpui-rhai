@@ -2209,6 +2209,32 @@ impl RuntimeEngine {
         )
     }
 
+    /// Parse-only native-call and capability preflight, including branches
+    /// that never execute. Uses the real Engine metadata and an optional
+    /// data-only Host contract; never invokes script or Host handlers.
+    /// Dynamic dispatch and names are reported as unverified, not authorized.
+    ///
+    /// # Errors
+    /// Returns parse, metadata or contract-format/schema errors.
+    pub fn preflight_calls(
+        &mut self,
+        entry_name: &str,
+        entry_source: &str,
+        modules: &BTreeMap<ModuleId, String>,
+        host: &BTreeSet<crate::HostFunction>,
+        manifest: &crate::AppManifest,
+        contract: Option<&crate::CapabilityContract>,
+    ) -> Result<crate::ScriptPreflight, crate::KnownCallLintError> {
+        crate::script_lint::preflight_calls(
+            &mut self.engine,
+            entry_name,
+            entry_source,
+            modules,
+            host,
+            Some((manifest, contract)),
+        )
+    }
+
     /// List entry-script functions that replace a native function of the same
     /// name and arity. Rhai prefers the script function for every call,
     /// including method calls inside imported components, so a helper named

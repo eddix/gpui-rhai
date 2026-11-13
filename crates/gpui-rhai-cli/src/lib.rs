@@ -676,6 +676,25 @@ impl Project {
     ///
     /// Returns [`ProjectError`] for any invalid artifact.
     pub fn check(&self) -> Result<CheckReport, ProjectError> {
+        self.check_inner(None)
+    }
+
+    /// Check literal capability calls against data exported by the real Host.
+    /// Does not execute or activate a service; dynamic calls remain unverified.
+    ///
+    /// # Errors
+    /// Returns project, contract or static-call diagnostics.
+    pub fn check_with_host_contract(
+        &self,
+        contract: &gpui_rhai::CapabilityContract,
+    ) -> Result<CheckReport, ProjectError> {
+        self.check_inner(Some(contract))
+    }
+
+    fn check_inner(
+        &self,
+        contract: Option<&gpui_rhai::CapabilityContract>,
+    ) -> Result<CheckReport, ProjectError> {
         let family_warnings = validate_gpui_dependency_family(&self.root.join("Cargo.toml"))?;
         let manifest_path = self.root.join(".gpui-rhai/manifest.toml");
         let manifest: LocalManifest = toml::from_str(&read(&manifest_path)?)?;
@@ -727,14 +746,17 @@ impl Project {
         for (id, path) in application_modules(&self.root, &manifest)? {
             entry_modules.insert(id, read(&path)?);
         }
-        let (initial_view_validated, host_extensions) = validate_entry(
+        let (initial_view_validated, host_extensions, capability_calls) = validate_entry(
             &self.root,
             &entry_modules,
             &components,
             &declarations.host.functions(),
             deferred,
+            (&app, contract),
         )?;
-        let host_validation_required = capabilities_declared || !host_extensions.is_empty();
+        let host_validation_required = capabilities_declared
+            || !host_extensions.is_empty()
+            || !capability_calls.unchecked.is_empty();
         let styles_path = self.root.join("ui/styles.rhai");
         if styles_path.exists() {
             load_component_styles(
@@ -764,6 +786,7 @@ impl Project {
             host_validation_required,
             initial_view_validated,
             host_extensions: host_extensions.iter().map(ToString::to_string).collect(),
+            capability_calls,
             warnings,
         })
     }
@@ -1626,7 +1649,15 @@ fn validate_entry(
     components: &ComponentRegistry,
     declared: &BTreeSet<HostFunction>,
     capabilities: Vec<gpui_rhai::CapabilityId>,
-) -> Result<(bool, BTreeSet<HostFunction>), ProjectError> {
+    (manifest, contract): (&AppManifest, Option<&gpui_rhai::CapabilityContract>),
+) -> Result<
+    (
+        bool,
+        BTreeSet<HostFunction>,
+        gpui_rhai::CapabilityCallReport,
+    ),
+    ProjectError,
+> {
     let run_hostless_lifecycle = capabilities.is_empty();
     let entry_path = root.join("ui/main.rhai");
     let entry = read(&entry_path)?;
@@ -1639,11 +1670,24 @@ fn validate_entry(
         .expect("HostSlot registers on a fresh engine");
     let mut host = declared.clone();
     host.insert(HostFunction::primitive("HostSlot").expect("HostSlot is a PascalCase export"));
-    let (call_diagnostics, host_calls) =
-        runtime.lint_known_calls_with_host("ui/main.rhai", &entry, modules, &host)?;
+    let preflight =
+        runtime.preflight_calls("ui/main.rhai", &entry, modules, &host, manifest, contract)?;
+    let call_diagnostics = preflight.known_calls;
+    let host_calls = preflight.host_functions;
+    let capability_calls = preflight.capabilities;
     if !call_diagnostics.is_empty() {
         return Err(ProjectError::KnownCalls(
             call_diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+    }
+    if !capability_calls.diagnostics.is_empty() {
+        return Err(ProjectError::KnownCalls(
+            capability_calls
+                .diagnostics
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
@@ -1702,15 +1746,15 @@ fn validate_entry(
     )?;
     if !host_calls.is_empty() {
         // Only the Host has these: the first frame would fail on them here.
-        Ok((false, host_calls))
+        Ok((false, host_calls, capability_calls))
     } else if run_hostless_lifecycle {
         lifecycle.start(&mut runtime)?;
-        Ok((true, host_calls))
+        Ok((true, host_calls, capability_calls))
     } else if !has_init {
         lifecycle.validate_initial_view_without_init(&mut runtime)?;
-        Ok((true, host_calls))
+        Ok((true, host_calls, capability_calls))
     } else {
-        Ok((false, host_calls))
+        Ok((false, host_calls, capability_calls))
     }
 }
 
@@ -2801,6 +2845,8 @@ pub struct CheckReport {
     /// `[host]` declarations of `ui/app.toml`; when there are any, the
     /// headless first frame did not run.
     pub host_extensions: Vec<String>,
+    /// Literal capability-call coverage; never a grant to execute the Host.
+    pub capability_calls: gpui_rhai::CapabilityCallReport,
     /// Built-in shadowing and the application profile's design rules; never
     /// fatal.
     pub warnings: Vec<String>,
@@ -2810,6 +2856,20 @@ impl CheckReport {
     #[must_use]
     pub fn summary(&self) -> String {
         let mut summary = self.status();
+        let calls = &self.capability_calls;
+        if calls.checked_calls > 0 || !calls.unchecked.is_empty() {
+            use std::fmt::Write as _;
+            let _ = write!(
+                summary,
+                "\nCapability preflight: {} literal call(s) and {} literal input(s) checked; {} call(s) unverified. Runtime authorization and lifecycle checks still apply.",
+                calls.checked_calls,
+                calls.checked_inputs,
+                calls.unchecked.len()
+            );
+            for unchecked in &calls.unchecked {
+                let _ = write!(summary, "\nunverified: {unchecked}");
+            }
+        }
         for warning in &self.warnings {
             summary.push_str("\nwarning: ");
             summary.push_str(warning);

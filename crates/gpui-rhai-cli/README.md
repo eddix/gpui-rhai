@@ -25,7 +25,10 @@ Important commands:
   palette, the token base `tokens.rhai`, `styles.rhai` component overrides and,
   with `--profile`, the design rules `check` reports;
 - `add`, `diff`, and `update` install and three-way merge official source;
-- `check` compiles and executes a validated headless first frame;
+- `check` validates scripts and executes a headless first frame when it does
+  not require the Host; `check --host-contract host-contract.json` also checks
+  literal capability calls against exported Host declarations without calling
+  services, and reports unverified dynamic calls explicitly;
 - `dev` runs the application; `dev --bundle` runs it inside a macOS
   application bundle, for system notifications and the Dock badge;
 - `shot` renders the view offscreen on macOS and saves PNGs, after steps

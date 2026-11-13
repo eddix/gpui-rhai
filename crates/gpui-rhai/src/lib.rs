@@ -9,7 +9,12 @@ pub extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
 pub extern crate gpui_fast_platform as gpui_platform;
 
+mod capability_contract;
 pub mod column_resize;
+pub use capability_contract::{
+    CAPABILITY_CONTRACT_FORMAT, CapabilityCallKind, CapabilityContract, CapabilityContractEntry,
+    CapabilityContractError,
+};
 pub mod component;
 pub mod component_styles;
 pub mod composition_audit;
@@ -313,8 +318,8 @@ pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };
 pub use script_lint::{
-    HostFunction, HostFunctionError, KnownCallDiagnostic, KnownCallLintError, LiteralArguments,
-    ShadowedBuiltin,
+    CapabilityCallDiagnostic, CapabilityCallReport, HostFunction, HostFunctionError,
+    KnownCallDiagnostic, KnownCallLintError, LiteralArguments, ScriptPreflight, ShadowedBuiltin,
 };
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,

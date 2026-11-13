@@ -422,6 +422,30 @@ families may add namespaced typed maps such as `charts.series_a` with
 color/length/number/string values. Namespace/name/type and finite/non-nested
 length rules are validated before an atomic theme generation becomes active.
 
+## Host declaration preflight
+
+Capability descriptors and registered sync/task/subscription modes have one
+data-only export, `CapabilityContract`. The CLI's `check --host-contract`
+and `RuntimeEngine::preflight_calls` use it with the normal unoptimized
+known-call AST analysis; they never initialize services or evaluate script.
+Reports distinguish checked literal call signatures, checked literal inputs,
+and calls that remain dynamic, overloaded or lack a Host contract.
+
+The real Host may require the same contract before activation. Its complete
+canonical declarations, not a fingerprint alone, must match the registered
+catalog. A candidate expectation and activation replace the last-good ones
+only after validation; a stale expectation cannot block pure permission
+reductions. This boundary does not replace manifest authorization,
+schema validation, origin checks, generation or lifecycle ownership.
+See [Capabilities](capabilities.md#export-a-host-contract-for-static-checking).
+
+The earlier GPUI Shell adoption investigation is not a new runtime roadmap:
+native cache islands already cover the static-subtree experiment (0.3.3), and
+later frame/width invalidation remains authoritative. Fixed-structure templates
+remain an unproven optimization, not a public API. Independent cumulative
+performance snapshots and single-source native API declarations remain useful
+separate work; this preflight change does not claim either is complete.
+
 ## Source ownership
 
 The CLI writes editable sources under `ui/` and pristine install baselines under

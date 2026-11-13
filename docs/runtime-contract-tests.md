@@ -5,6 +5,7 @@ programs remain unchanged evidence; they are not substituted for these tests.
 
 | ID / contract | Product test entry and controls |
 | --- | --- |
+| HOST-01 data-only capability contracts and preflight | Root `capability_preflight.rs`: all modes, descriptor-only export, JSON/schema/version validation, documentation-only identity changes, unreachable module calls, wrong ID/method/mode, literal payload redaction, missing/dynamic/overloaded coverage, stale real Host preparation, atomic activation and runtime revocation. `script_lint::capabilities` optimizer control proves no compile-time native execution, including parse failure. CLI `tests/host_contract.rs` consumes exported JSON through the actual binary in a fresh project. |
 | WIN-01 exact mount ownership/deferred revocation | `windows/authority.rs`: same/new Host, same/new ID, Focus/Close, retained clone control |
 | WIN-02 enqueue origin/peer pump/reservation | `windows/command_origin.rs`, `windows/command_deliveries.rs`: timer/input/task/subscription, mixed success order, live/suspend versus dispose/drop/close/remount |
 | VIRT-01 final invocation manifest/scoped atomic state deltas | `crates/gpui-rhai/tests/virtual_transactions.rs`: sibling/overlap order, batch, failure retry; existing lifecycle transparent-wrapper tests |

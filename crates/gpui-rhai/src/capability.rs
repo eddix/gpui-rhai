@@ -315,6 +315,7 @@ pub struct CapabilityRegistry {
     entries: BTreeMap<CapabilityId, CapabilityEntry>,
     active: BTreeSet<CapabilityId>,
     deferred: BTreeSet<CapabilityId>,
+    expected_contract: Option<crate::CapabilityContract>,
 }
 
 impl fmt::Debug for CapabilityRegistry {
@@ -324,6 +325,7 @@ impl fmt::Debug for CapabilityRegistry {
             .field("registered", &self.entries.keys().collect::<Vec<_>>())
             .field("active", &self.active)
             .field("deferred", &self.deferred)
+            .field("expected_contract", &self.expected_contract.is_some())
             .finish()
     }
 }
@@ -332,6 +334,63 @@ impl CapabilityRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Export registered declarations, without calling any handler or service.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid schema declaration.
+    pub fn export_contract(
+        &self,
+    ) -> Result<crate::CapabilityContract, crate::CapabilityContractError> {
+        crate::CapabilityContract::from_descriptors(self.entries.values().map(|entry| {
+            use crate::CapabilityCallKind::{Subscription, Sync, Task};
+            let modes = [
+                (Sync, entry.sync.is_some()),
+                (Task, entry.task.is_some()),
+                (Subscription, entry.subscription.is_some()),
+            ]
+            .into_iter()
+            .filter_map(|(kind, present)| present.then_some(kind))
+            .collect();
+            (entry.descriptor.clone(), modes)
+        }))
+    }
+
+    /// Require the tooling contract to match this real Host before activation.
+    /// Call after registration in `ScriptViewExtension::configure_runtime`.
+    /// Activations recheck the complete catalog, except permission reductions:
+    /// a stale tooling file must never prevent revocation. This grants
+    /// no capability and does not replace manifest or per-call validation.
+    ///
+    /// # Errors
+    /// Rejects invalid or stale contracts without replacing the previous expectation.
+    pub fn require_contract(
+        &mut self,
+        expected: crate::CapabilityContract,
+    ) -> Result<(), crate::CapabilityContractError> {
+        self.validate_contract(&expected)?;
+        self.expected_contract = Some(expected);
+        Ok(())
+    }
+
+    /// Compare declarations exactly, ignoring documentation and SDK patch versions.
+    ///
+    /// # Errors
+    /// Reports invalid or stale contracts. Fingerprints are only diagnostics;
+    /// the comparison uses the full canonical declarations, not a hash match.
+    pub fn validate_contract(
+        &self,
+        expected: &crate::CapabilityContract,
+    ) -> Result<(), crate::CapabilityContractError> {
+        let actual = self.export_contract()?;
+        if expected.semantic_bytes()? != actual.semantic_bytes()? {
+            return Err(crate::CapabilityContractError::Stale {
+                expected: expected.fingerprint()?,
+                actual: actual.fingerprint()?,
+            });
+        }
+        Ok(())
     }
 
     /// Register a host implementation and its public schema.
@@ -424,6 +483,14 @@ impl CapabilityRegistry {
         &mut self,
         requirements: &BTreeMap<CapabilityId, VersionReq>,
     ) -> Result<(), CapabilityError> {
+        let reducing_only = requirements.len() < self.active.len()
+            && requirements.keys().all(|id| self.active.contains(id));
+        if !requirements.is_empty()
+            && !reducing_only
+            && let Some(expected) = &self.expected_contract
+        {
+            self.validate_contract(expected)?;
+        }
         let mut active = BTreeSet::new();
         for (id, requirement) in requirements {
             let entry = self
@@ -657,7 +724,9 @@ impl CapabilityRegistry {
     }
 }
 
-fn validate_descriptor(descriptor: &CapabilityDescriptor) -> Result<(), CapabilityError> {
+pub(crate) fn validate_descriptor(
+    descriptor: &CapabilityDescriptor,
+) -> Result<(), CapabilityError> {
     if descriptor.methods.is_empty() {
         return Err(CapabilityError::NoMethods(descriptor.id.clone()));
     }
@@ -756,6 +825,8 @@ impl AppManifest {
 
 #[derive(Debug, Error)]
 pub enum CapabilityError {
+    #[error(transparent)]
+    Contract(#[from] crate::CapabilityContractError),
     #[error("capability ID `{0}` must be a namespaced `snake_case` identifier")]
     InvalidId(String),
     #[error("invalid capability version requirement `{requirement}`: {source}")]
