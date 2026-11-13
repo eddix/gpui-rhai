@@ -15,6 +15,10 @@ semantic versioning from this release.
   validated. `CapabilityRegistry::require_contract` detects stale tooling
   declarations in the real Host before activation; runtime permission and
   lifecycle checks remain authoritative.
+- **Breaking (Rust tooling API):** `CheckReport` adds `capability_calls`;
+  callers constructing it directly must supply a `CapabilityCallReport`.
+  Exhaustive matches on `CapabilityError` and `KnownCallLintError` must handle
+  the new `Contract` variant. Runtime API remains 3.
 
 ## 0.4.3 - 2026-11-12
 
