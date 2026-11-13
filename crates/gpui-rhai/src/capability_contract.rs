@@ -46,8 +46,9 @@ pub struct CapabilityContractEntry {
 /// A portable description of a Host's complete capability registry.
 ///
 /// Contains declarations only: does not inspect handlers, service values,
-/// file locations or activation state. Schema defaults are public too; never put a
-/// secret in a public schema. `sdk_version` is informational, not authorization
+/// file locations or activation state. Field defaults are omitted: capability
+/// calls do not apply them, and they may contain business data or handles.
+/// `sdk_version` is informational, not authorization
 /// or the contract's semantic identity.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,6 +89,7 @@ impl CapabilityContract {
                 },
             );
         }
+        contract.strip_metadata(false);
         contract.validate()?;
         Ok(contract)
     }
@@ -102,7 +104,8 @@ impl CapabilityContract {
                 "contract exceeds 4 MiB".into(),
             ));
         }
-        let contract: Self = serde_json::from_str(source)?;
+        let mut contract: Self = serde_json::from_str(source)?;
+        contract.strip_metadata(false);
         contract.validate()?;
         Ok(contract)
     }
@@ -200,28 +203,37 @@ impl CapabilityContract {
         self.validate()?;
         let mut canonical = self.clone();
         canonical.sdk_version.clear();
-        for entry in canonical.capabilities.values_mut() {
+        canonical.strip_metadata(true);
+        Ok(serde_json::to_vec(&canonical)?)
+    }
+
+    fn strip_metadata(&mut self, strip_docs: bool) {
+        for entry in self.capabilities.values_mut() {
             for method in entry.methods.values_mut() {
-                strip_schema_docs(&mut method.input);
-                strip_schema_docs(&mut method.output);
+                strip_schema_metadata(&mut method.input, strip_docs);
+                strip_schema_metadata(&mut method.output, strip_docs);
             }
         }
-        Ok(serde_json::to_vec(&canonical)?)
     }
 }
 
-fn strip_schema_docs(schema: &mut ValueSchema) {
+fn strip_schema_metadata(schema: &mut ValueSchema, strip_docs: bool) {
     match schema {
         ValueSchema::Object { fields, .. } => {
             for field in fields.values_mut() {
-                field.doc = None;
-                strip_schema_docs(&mut field.schema);
+                field.default = None;
+                if strip_docs {
+                    field.doc = None;
+                }
+                strip_schema_metadata(&mut field.schema, strip_docs);
             }
         }
-        ValueSchema::Array { items, .. } => strip_schema_docs(items),
-        ValueSchema::Map { values } => strip_schema_docs(values),
-        ValueSchema::Optional { value } => strip_schema_docs(value),
-        ValueSchema::OneOf { variants } => variants.iter_mut().for_each(strip_schema_docs),
+        ValueSchema::Array { items, .. } => strip_schema_metadata(items, strip_docs),
+        ValueSchema::Map { values } => strip_schema_metadata(values, strip_docs),
+        ValueSchema::Optional { value } => strip_schema_metadata(value, strip_docs),
+        ValueSchema::OneOf { variants } => variants
+            .iter_mut()
+            .for_each(|schema| strip_schema_metadata(schema, strip_docs)),
         _ => {}
     }
 }

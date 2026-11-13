@@ -557,3 +557,37 @@ fn a_valid_contract_still_calls_the_real_handler_only_after_activation() {
     );
     assert_eq!(calls.get(), 1);
 }
+
+#[test]
+fn schema_exports_do_not_copy_default_business_values_or_resource_handles() {
+    let mut descriptor = descriptor();
+    let ValueSchema::Object { fields, .. } = &mut descriptor.methods.get_mut("read").unwrap().input
+    else {
+        unreachable!()
+    };
+    fields.get_mut("path").unwrap().default = Some(UiValue::String("APP_SECRET_DEFAULT".into()));
+    fields.insert(
+        "resource".into(),
+        ObjectField::optional(ValueSchema::Handle {
+            kind: "resource".into(),
+        })
+        .with_default(UiValue::Handle(gpui_rhai::OpaqueHandle::new(
+            "resource", 90_348_238,
+        ))),
+    );
+    let mut registry = CapabilityRegistry::new();
+    registry.register(descriptor, NeverRun).unwrap();
+    let contract = registry.export_contract().unwrap();
+    let json = serde_json::to_string(&contract).unwrap();
+    assert!(!json.contains("APP_SECRET_DEFAULT"));
+    assert!(!json.contains("90348238"));
+    // Neither export nor validation turns a default into a supplied input.
+    let schema =
+        &contract.capabilities[&CapabilityId::parse("app.files").unwrap()].methods["read"].input;
+    assert!(
+        schema
+            .validate(&rhai::Dynamic::from_map(rhai::Map::new()))
+            .is_err()
+    );
+    registry.validate_contract(&contract).unwrap();
+}

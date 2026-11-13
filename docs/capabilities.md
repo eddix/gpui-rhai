@@ -40,8 +40,11 @@ gpui-rhai check --host-contract host-contract.json
 The path is relative to `--root`, or absolute. The JSON format version, runtime
 API version and informational SDK version are separate. The contract contains
 only public declarations; the SDK adds no handler pointers, activation state,
-service values or workspace locations. Schema defaults are public too:
-do not store secrets in them. Contracts read by `from_json` are capped at 4 MiB.
+service values or workspace locations. Field defaults are omitted, including
+nested defaults: capability calls validate supplied values rather than filling
+defaults, and those values could contain business data or resource handles.
+Do not put secrets in public schema documentation or enum declarations.
+Contracts read by `from_json` are capped at 4 MiB.
 
 Preflight uses the real Engine's API metadata and the same unoptimized AST
 parse as known-call lint. It checks app manifest requirements and literal
