@@ -1,3 +1,8 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::gpui::{
@@ -16,7 +21,7 @@ const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const TOAST: &str = include_str!("../../../registry/components/toast.rhai");
-const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
+const THEME: &str = shared_themes::PRIMARY;
 
 const WIDGET: &str = r#"
 import "layouts/stack" as stack;
@@ -114,6 +119,10 @@ pub fn prepared_widget(open: bool, toast: bool) -> gpui_rhai::PreparedScriptView
             BUTTON.to_owned(),
         ),
         (
+            ModuleId::parse("components/spinner").unwrap(),
+            gpui_rhai_registry::SPINNER_SOURCE.to_owned(),
+        ),
+        (
             ModuleId::parse("components/input").unwrap(),
             INPUT.to_owned(),
         ),
@@ -128,6 +137,8 @@ pub fn prepared_widget(open: bool, toast: bool) -> gpui_rhai::PreparedScriptView
     ]));
     ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, THEME)
         .token_base(include_str!("../../../registry/tokens.rhai"))
+        .font_sources(shared_fonts::sources())
+        .theme_sources(shared_themes::additional())
         .asset_sources(registry_icons())
         .prepare()
         .expect("embedded widget prepares")
@@ -145,6 +156,13 @@ pub struct EmbeddedViewsDemo {
 }
 
 impl EmbeddedViewsDemo {
+    #[cfg(test)]
+    pub(crate) fn live_widgets(&self) -> Vec<ScriptViewHandle> {
+        let mut views = vec![self.first.clone(), self.second.clone()];
+        views.extend(self.third.iter().cloned());
+        views
+    }
+
     /// Mount the three widgets in one Host.
     ///
     /// # Panics
@@ -189,16 +207,21 @@ impl EmbeddedViewsDemo {
         if let Some(view) = self.third.take() {
             view.dispose(cx).expect("third widget disposes");
         } else {
-            self.third = Some(
-                prepared_widget(false, false)
-                    .mount(
-                        ScriptViewConfig::new("third-widget"),
-                        self.host.clone(),
-                        window,
-                        cx,
-                    )
-                    .expect("third widget remounts"),
-            );
+            // A shared design is this application's policy, not an implicit
+            // SDK rule between independently mounted views. New content follows
+            // the same first-view design that owns the native Host chrome.
+            let theme = self.first.theme_snapshot(cx).expect("first view is live");
+            let view = prepared_widget(false, false)
+                .mount(
+                    ScriptViewConfig::new("third-widget"),
+                    self.host.clone(),
+                    window,
+                    cx,
+                )
+                .expect("third widget remounts");
+            view.select_theme(&theme.variant.family, &theme.variant.name, cx)
+                .expect("all widgets register the same four designs");
+            self.third = Some(view);
         }
         cx.notify();
     }

@@ -7,13 +7,13 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
-    "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
+    "metrics.tabs_track_h", "metrics.segment_px", "segmented.normal", "typography.segment"
   ],
   "environment": ["size", "density"]
 }
 */
-// ToggleGroup holds pressed tool state: equal-height segments joined inside one frame.
+// ToggleGroup holds pressed state in a padded tonal track, with independent
+// selected surfaces and a stable intrinsic label width across font weights.
 //
 // State: caller owns values; component owns only the roving active item.
 // Example: ToggleGroup(#{ key: "align", label: "Alignment", values: ["left"], items: items, on_change: Fn("changed") })
@@ -26,8 +26,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
-            "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
-            "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
+            "metrics.tabs_track_h", "metrics.segment_px", "segmented.normal", "typography.segment"
         ],
         environment: ["size", "density"] },
     schema: #{
@@ -71,7 +70,7 @@ define_component(#{
             "default": #{ type: "string", value: "" } } } },
         events: #{ change: #{ payload: #{ type: "array", max_items: 64, items: #{ type: "string" } },
             doc: "Emitted when a segment is clicked or activated; the payload is the full next `values` array." } },
-        slots: #{}, parts: ["root", "item"],
+        slots: #{}, parts: ["root", "item", "item_pressed", "label", "label_pressed"],
     },
     render: Fn("render_ToggleGroup")
 });
@@ -158,6 +157,18 @@ fn press_action(spec, ctx, payload) {
     if spec.emit { ctx.emit("change", spec.next); }
 }
 
+fn segment_label(ctx,label,pressed) {
+    // Both weights participate in the same intrinsic grid cell. Only one is
+    // visible; the button's explicit label is the sole accessible name.
+    let regular=row([text(label).with_style(ctx.component_style("label",style()))])
+        .with_style(style().grid_cell(1,1).items_center().justify_center()
+            .merge(if pressed{style().invisible()}else{style().visible()}));
+    let selected=row([text(label).with_style(ctx.component_style(["label","label_pressed"],style()))])
+        .with_style(style().grid_cell(1,1).items_center().justify_center()
+            .merge(if pressed{style().visible()}else{style().invisible()}));
+    box([regular,selected]).with_style(style().grid().grid_cols(1).grid_rows(1))
+}
+
 fn render_ToggleGroup(ctx, props) {
     let mode = if "mode" in props { props.mode } else { "single" };
     if mode == "single" && props.values.len > 1 { throw "single toggle group accepts at most one value"; }
@@ -170,50 +181,21 @@ fn render_ToggleGroup(ctx, props) {
     let can_change = "on_change" in props && props.on_change != ();
     let count = props.items.len;
 
-    // The group is one control with a control's corners in either orientation. The outer
-    // segments carry the frame's corners, so a pressed fill never pokes past them
-    // (clipping is rectangular).
-    let corner = theme_radius("md");
     let segments = [];
     for index in 0..count {
         let item = props.items[index];
         let pressed = includes(props.values, item.value);
         let unavailable = disabled || item_disabled(item);
-        let fill = if pressed { theme_color("selection") } else { rgba(0x00000000) };
-        // Segments overlap the 2px group frame by -2px on its sides, so a pressed fill
-        // and the focus border sit flush with the outer edge.
         let segment = style()
             .flex_row().items_center().justify_center().self_stretch()
-            .min_height(theme_length("metrics.control"))
-            .padding_x(theme_length("metrics.control_pad"))
-            .border(px(2)).border_color(fill)
-            .background(fill)
-            .text_color(if pressed { theme_color("text_primary") } else { theme_color("text_muted") })
-            .focus(style().border_color(theme_color("focus_ring")))
-            .disabled(style().text_color(theme_color("disabled")));
-        if vertical {
-            segment = segment.margin_x(offset_px(-2));
-            if index == 0 {
-                segment = segment.margin_top(offset_px(-2)).radius_top_left(corner).radius_top_right(corner);
-            }
-            if index == count - 1 {
-                segment = segment.margin_bottom(offset_px(-2))
-                    .radius_bottom_left(corner).radius_bottom_right(corner);
-            }
-        } else {
-            segment = segment.margin_y(offset_px(-2));
-            if index == 0 { segment = segment.margin_start(offset_px(-2)).radius_start(corner); }
-            if index == count - 1 { segment = segment.margin_end(offset_px(-2)).radius_end(corner); }
-        }
-        if !pressed && !unavailable {
-            segment = segment.hover(style().background(theme_color("surface_hover"))
-                .text_color(theme_color("text_primary")));
-        }
+            .min_height(theme_length("metrics.tabs_track_h"))
+            .padding_x(theme_length("metrics.segment_px")).border(px(0)).focus(style());
+        let state = if pressed || unavailable {style()}else{ctx.theme_style("segmented.normal")};
         let key = segment_key(props.key, item.value);
-        let node = row([text(item.label)])
+        let node = row([segment_label(ctx,item.label,pressed)])
             .with_key(key)
             .with_ref(element_ref(key))
-            .with_style(ctx.component_style("item", segment))
+            .with_style(ctx.component_style(if pressed {["item","item_pressed"]}else{["item"]}, segment, state))
             .disabled(unavailable)
             .tab_stop(!unavailable && item.value == active)
             .accessibility_role("button")
@@ -229,10 +211,9 @@ fn render_ToggleGroup(ctx, props) {
         segments.push(node);
     }
 
-    let frame = style()
-        .border(px(2)).border_color(theme_color("border"))
-        .radius(corner).clip()
-        .typography("control");
+    // The theme owns track and option geometry. No negative frame margins or
+    // clip are needed; the inset focus ring belongs to the actual roving item.
+    let frame = style().border(px(0)).min_width(px(0)).typography("segment");
     let root = if vertical { column(segments) } else { row(segments) };
     root = root
         .with_style(ctx.component_style("root", frame))

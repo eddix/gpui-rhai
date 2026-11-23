@@ -44,6 +44,8 @@ fn view(ctx) {
         })
     ]).with_style(
         style()
+            .typography("body")
+            .text_color(theme_color("text_primary"))
             .gap(px(16))
             .padding(px(24))
             .background(theme_color("surface"))

@@ -1,36 +1,34 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
-const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
+const THEME: &str = shared_themes::PRIMARY;
 const COMPONENT: &str = include_str!("../../../registry/components/diff_viewer.rhai");
 
 const MAIN: &str = r#"
 import "components/diff_viewer" as diff_viewer;
+import "components/toggle_group" as toggle_group;
 
 fn state_schema() { #{ fields: #{
     mode: #{ schema: #{ type: "string", allowed: ["unified", "split"] },
         "default": #{ type: "string", value: "split" } }
 } } }
 fn activated(ctx, location) { () }
-fn show_unified(ctx, payload) { ctx.set_state("mode", "unified"); }
-fn show_split(ctx, payload) { ctx.set_state("mode", "split"); }
-fn mode_button(ctx, label, mode, handler) {
-    let selected = ctx.get_state("mode") == mode;
-    let background = if selected { theme_color("selection") } else { theme_color("surface_raised") };
-    text(label).with_style(style().padding_x(px(8)).padding_y(px(4)).background(background))
-        .on_click(handler)
-}
+fn mode_changed(ctx, values) { ctx.set_state("mode", values[0]); }
 
 fn view(ctx) {
     column([
         row([
-            text("SERVER CONFIG DIFF").with_style(style().typography("heading").font_weight(700)),
-            row([
-                mode_button(ctx, "Unified", "unified", Fn("show_unified")),
-                mode_button(ctx, "Split", "split", Fn("show_split"))
-            ]).with_style(style().gap(px(1)))
-        ]).with_style(style().items_center().justify_between()),
+            text("Server config diff").with_style(style().typography("heading")),
+            toggle_group::ToggleGroup(#{key:"diff-mode",label:"Diff layout",size:"sm",
+                items:[#{value:"unified",label:"Unified"},#{value:"split",label:"Split"}],
+                values:[ctx.get_state("mode")],allow_empty:false,on_change:Fn("mode_changed")})
+        ]).with_style(style().items_center().justify_between().flex_wrap().gap(theme_spacing("sm"))),
         diff_viewer::DiffViewer(#{
             key: "server-config",
             mode: ctx.get_state("mode"),
@@ -49,12 +47,18 @@ fn view(ctx) {
             on_location_activate: Fn("activated")
         })
     ]).with_style(style().width(relative(1)).height(relative(1))
-        .min_width(px(0)).min_height(px(0)).padding(px(18)).gap(px(10))
+        .min_width(px(0)).min_height(px(0)).padding(theme_spacing("lg")).gap(theme_spacing("md"))
+        .typography("body").text_color(theme_color("text_primary"))
         .background(theme_color("surface")))
 }
 "#;
 
-fn prepared() -> gpui_rhai::PreparedScriptView {
+/// Build the neutral file-comparison tutorial with the bundled full designs.
+///
+/// # Panics
+/// Panics if a static module identifier is invalid.
+#[must_use]
+pub fn view() -> ScriptView {
     ScriptView::sources(
         ModuleId::parse("main").unwrap(),
         EmbeddedScriptSource::new(BTreeMap::from([
@@ -63,16 +67,20 @@ fn prepared() -> gpui_rhai::PreparedScriptView {
                 ModuleId::parse("components/diff_viewer").unwrap(),
                 COMPONENT.to_owned(),
             ),
+            (
+                ModuleId::parse("components/toggle_group").unwrap(),
+                gpui_rhai_registry::TOGGLE_GROUP_SOURCE.to_owned(),
+            ),
         ])),
         THEME,
     )
     .token_base(include_str!("../../../registry/tokens.rhai"))
-    .prepare()
-    .expect("DiffViewer prepares")
+    .font_sources(shared_fonts::sources())
+    .theme_sources(shared_themes::additional())
 }
 
 fn main() {
-    ScriptApplication::new(prepared())
+    ScriptApplication::new(view().prepare().expect("DiffViewer prepares"))
         .window_size(1_100.0, 680.0)
         .run()
         .expect("DiffViewer runs");
@@ -84,6 +92,6 @@ mod tests {
 
     #[test]
     fn diff_viewer_example_prepares() {
-        let _ = prepared();
+        view().prepare().unwrap();
     }
 }

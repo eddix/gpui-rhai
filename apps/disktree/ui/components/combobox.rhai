@@ -208,15 +208,6 @@ fn panel_width_style(custom_trigger, width, content_width, panel_content) {
 // radius.lg (clipping is rectangular). Menu and Command pad their panels the same way.
 fn list_panel_padding() { theme_radius("lg") * 0.5 }
 
-// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
-// panel's hairline (painted over its children) turns the focus color and this frame adds
-// the inner pixel. A control inside shows its own frame instead.
-fn panel_focus_frame(ctx) {
-    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
-        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
-        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
-        .group_focus(style().border_color(theme_color("focus_ring")))))
-}
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn collection_scrollbars(ctx, props, node) {
     node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
@@ -383,7 +374,7 @@ fn render_combobox_row(total_rows, mode, selected, reset_query, trailing, ctx, p
     if item.kind == "group" {
         // Group labels align with option text, after the reserved check column.
         let column_spacer = row([]).with_style(style().width(theme_length("metrics.icon")));
-        return row([column_spacer, text(item.label.to_upper())]).with_key(payload.key)
+        return row([column_spacer, text(item.label)]).with_key(payload.key)
             .with_style(ctx.component_style("group",
             style().height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
                     .gap(theme_spacing("sm")).items_center().typography("label")
@@ -473,14 +464,16 @@ fn render_Combobox(ctx, props) {
     // reaches the row renderer and the Enter handlers once, so the data does not grow with
     // options times selected values.
     let data = [];
-    for group in group_order {
-        if group.label != () {
-            data.push(#{ key: `group:${group.key}`, kind: "group", label: group.label });
-        }
-        for option in buckets[group.key] {
-            data.push(#{ key: `option:${option.value}`, kind: "option", value: option.value,
-                label: option.label, disabled: option_disabled(option),
-                selected: option.value in chosen, active: option.value == active });
+    if open {
+        for group in group_order {
+            if group.label != () {
+                data.push(#{ key: `group:${group.key}`, kind: "group", label: group.label });
+            }
+            for option in buckets[group.key] {
+                data.push(#{ key: `option:${option.value}`, kind: "option", value: option.value,
+                    label: option.label, disabled: option_disabled(option),
+                    selected: option.value in chosen, active: option.value == active });
+            }
         }
     }
 
@@ -594,96 +587,103 @@ fn render_Combobox(ctx, props) {
         }
     }
 
-    let content = [];
-    let header = "header" in props && props.header != ();
-    let searchable = prop_or(props, "searchable", false);
-    if header { content.push(props.header); }
-    if searchable {
-        // The search spans the panel on the rows' inset; without a header it heads the panel.
-        let search = #{
-            key: `${props.key}-search`, label: props.label, value: query,
-            placeholder: localized_prop(ctx, props, "search_placeholder", "common.search", "Search"),
-            appearance: "embedded",
-            on_change: Fn("query_action")
-        };
-        // With nothing to pick, Enter in the field submits the typed text; otherwise it reaches
-        // the panel, which picks the active option.
-        if enabled.len == 0 && "on_submit" in props && props.on_submit != () {
-            search.on_submit = Fn("submit_action");
-        }
-        content.push(input::Input(search).with_style(ctx.component_style("search", style())));
-    }
-    if ordered.len == 0 {
-        content.push(if "empty" in props && props.empty != () { props.empty }
-            else { row([text(localized_prop(ctx, props, "empty_text", "common.no_results", "No results"))])
-            .with_style(ctx.component_style("empty", style().min_height(theme_length("metrics.row"))
-                    .padding_x(theme_length("metrics.inset")).items_center()
-                    .typography("body").text_color(theme_color("text_muted")))) });
-    } else {
-        // Rows are metrics.row high, so the viewport is a whole number of rows in
-        // either density. The estimate only seeds the first frame.
-        let visible = prop_or(props, "max_visible", 8);
-        if data.len < visible { visible = data.len; }
-        let list = [collection_scrollbars(ctx, props, virtual_collection(#{
-            key: `${props.key}-options`, label: props.label,
-            data: data, estimated_height: 32, fill_height: true,
-            overdraw_pixels: 64, alignment: "top", follow_tail: false
-        }, Fn("render_combobox_row").curry(data.len).curry(mode).curry(selected)
-            .curry(reset_query).curry(trailing)))];
-        if panel_content || (custom_trigger && content_width) {
-            // Option rows as render_combobox_row lays them out: the check column, the label.
-            let rows = [];
-            for option in probe_options {
-                let cells = [
-                    row([]).with_style(style().width(theme_length("metrics.icon"))),
-                    text(option.label).with_style(style().whitespace_nowrap().max_width(px(480)))
-                ];
-                let extra = option_trailing(ctx, trailing, option.value, option.label,
-                    #{ selected: false, active: false, disabled: false, place: "option" });
-                if extra != () { cells.push(extra); }
-                rows.push(row(cells).with_style(style().padding_x(theme_length("metrics.inset"))
-                    .gap(theme_spacing("sm")).typography("body")));
+    // Keep the overlay and trigger identity mounted while closed, but do not
+    // construct a hidden search editor, virtual collection or typeahead
+    // bindings. The overlay owns the trigger's navigation/open handlers.
+    let panel = column([]).with_key(`${props.key}-panel`);
+    if open {
+        let content = [];
+        let header = "header" in props && props.header != ();
+        let searchable = prop_or(props, "searchable", false);
+        if header { content.push(props.header); }
+        if searchable {
+            // The search spans the panel on the rows' inset; without a header it heads the panel.
+            let search = #{
+                key: `${props.key}-search`, label: props.label, value: query,
+                placeholder: localized_prop(ctx, props, "search_placeholder", "common.search", "Search"),
+                appearance: "embedded",
+                on_change: Fn("query_action")
+            };
+            // With nothing to pick, Enter in the field submits the typed text; otherwise it reaches
+            // the panel, which picks the active option.
+            if enabled.len == 0 && "on_submit" in props && props.on_submit != () {
+                search.on_submit = Fn("submit_action");
             }
-            list.push(width_probe(rows));
+            content.push(input::Input(search).with_style(ctx.component_style("search", style())));
         }
-        content.push(column(list)
-            .with_style(ctx.component_style("list", style()
-                .height(theme_length("metrics.row") * visible))));
-    }
-    if "footer" in props && props.footer != () { content.push(props.footer); }
-    content.push(panel_focus_frame(ctx));
-    let panel = column(content).with_key(`${props.key}-panel`)
-        .with_style(ctx.component_style("panel",
-            panel_width_style(custom_trigger, width, content_width, panel_content)
-            .min_width(px(0)).gap(theme_spacing("xs")).padding(list_panel_padding())
-                .border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("lg")).background(theme_color("surface_raised"))
-                .focus(style().border_color(theme_color("focus_ring")))))
-        .tab_stop(true).accessibility_role("listbox").accessibility_label(props.label);
+        if ordered.len == 0 {
+            content.push(if "empty" in props && props.empty != () { props.empty }
+                else { row([text(localized_prop(ctx, props, "empty_text", "common.no_results", "No results"))])
+                .with_style(ctx.component_style("empty", style().min_height(theme_length("metrics.row"))
+                        .padding_x(theme_length("metrics.inset")).items_center()
+                        .typography("body").text_color(theme_color("text_muted")))) });
+        } else {
+            // Rows are metrics.row high, so the viewport is a whole number of rows in
+            // either density. The estimate only seeds the first frame.
+            let visible = prop_or(props, "max_visible", 8);
+            if data.len < visible { visible = data.len; }
+            let list = [collection_scrollbars(ctx, props, virtual_collection(#{
+                key: `${props.key}-options`, label: props.label,
+                data: data, estimated_height: 32, fill_height: true,
+                overdraw_pixels: 64, alignment: "top", follow_tail: false
+            }, Fn("render_combobox_row").curry(data.len).curry(mode).curry(selected)
+                .curry(reset_query).curry(trailing)))];
+            if panel_content || (custom_trigger && content_width) {
+                // Option rows as render_combobox_row lays them out: the check column, the label.
+                let rows = [];
+                for option in probe_options {
+                    let cells = [
+                        row([]).with_style(style().width(theme_length("metrics.icon"))),
+                        text(option.label).with_style(style().whitespace_nowrap().max_width(px(480)))
+                    ];
+                    let extra = option_trailing(ctx, trailing, option.value, option.label,
+                        #{ selected: false, active: false, disabled: false, place: "option" });
+                    if extra != () { cells.push(extra); }
+                    rows.push(row(cells).with_style(style().padding_x(theme_length("metrics.inset"))
+                        .gap(theme_spacing("sm")).typography("body")));
+                }
+                list.push(width_probe(rows));
+            }
+            content.push(column(list)
+                .with_style(ctx.component_style("list", style()
+                    .height(theme_length("metrics.row") * visible))));
+        }
+        if "footer" in props && props.footer != () { content.push(props.footer); }
+        let focus_frame = ctx.component_style("focus_frame", style()
+            .focus_ring(px(2), offset_px(-2), theme_color("focus_ring")));
+        panel = column(content).with_key(`${props.key}-panel`)
+            .with_style(ctx.component_style("panel",
+                panel_width_style(custom_trigger, width, content_width, panel_content)
+                .min_width(px(0)).gap(theme_spacing("xs")).padding(list_panel_padding())
+                    .border(px(1)).border_color(theme_color("border"))
+                    .radius(theme_radius("lg")).background(theme_color("surface_raised"))
+                    .merge(focus_frame).group_focus(focus_frame)))
+            .tab_stop(true).accessibility_role("listbox").accessibility_label(props.label);
 
-    if enabled.len > 0 {
-        panel = panel
-            .on_key_value("up", Fn("navigate_action"),
-                #{ active: adjacent_value(enabled, active, -1), open: false })
-            .on_key_value("down", Fn("navigate_action"),
-                #{ active: adjacent_value(enabled, active, 1), open: false })
-            .on_key_value("home", Fn("navigate_action"),
-                #{ active: edge_value(enabled, false), open: false })
-            .on_key_value("end", Fn("navigate_action"),
-                #{ active: edge_value(enabled, true), open: false });
-        for item in data {
-            if item.kind == "option" && item.value == active {
-                panel = panel.on_key_value("enter",
-                    pick_action(mode, selected, reset_query), item.value);
+        if enabled.len > 0 {
+            panel = panel
+                .on_key_value("up", Fn("navigate_action"),
+                    #{ active: adjacent_value(enabled, active, -1), open: false })
+                .on_key_value("down", Fn("navigate_action"),
+                    #{ active: adjacent_value(enabled, active, 1), open: false })
+                .on_key_value("home", Fn("navigate_action"),
+                    #{ active: edge_value(enabled, false), open: false })
+                .on_key_value("end", Fn("navigate_action"),
+                    #{ active: edge_value(enabled, true), open: false });
+            for item in data {
+                if item.kind == "option" && item.value == active {
+                    panel = panel.on_key_value("enter",
+                        pick_action(mode, selected, reset_query), item.value);
+                }
             }
-        }
-        if !prop_or(props, "searchable", false) {
-            for key in [
-                "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-                "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"
-            ] {
-                panel = panel.on_key_value(key, Fn("navigate_action"),
-                    #{ active: typeahead_value(enabled, active, key), open: false });
+            if !prop_or(props, "searchable", false) {
+                for key in [
+                    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+                    "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"
+                ] {
+                    panel = panel.on_key_value(key, Fn("navigate_action"),
+                        #{ active: typeahead_value(enabled, active, key), open: false });
+                }
             }
         }
     }

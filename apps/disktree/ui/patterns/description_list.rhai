@@ -2,7 +2,7 @@
 {
   "id": "patterns/description_list",
   "export": "DescriptionList",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
@@ -23,7 +23,7 @@
 
 define_component(#{
     metadata: #{
-        id: "patterns/description_list", "export": "DescriptionList", version: "0.2.0",
+        id: "patterns/description_list", "export": "DescriptionList", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
@@ -95,7 +95,7 @@ fn render_DescriptionList(ctx, props) {
             .accessibility_role("group").accessibility_label(item.label));
     }
     let root = style().flex_col().typography("body");
-    if stacked { root = root.gap(theme_length("space.group")); }
-    column(rows).with_style(ctx.component_style("root", root))
+    column(rows).with_style(ctx.component_style("root", root,
+        if stacked {style().gap(theme_length("space.group"))}else{style()}))
         .accessibility_role("list").accessibility_label(props.label)
 }

@@ -1,8 +1,13 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
-const THEME: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
+const THEME: &str = shared_themes::PRIMARY;
 
 const MAIN: &str = r#"
 fn message(ctx, payload) {
@@ -34,12 +39,18 @@ fn view(ctx) {
             height: 520, overdraw_pixels: 240, alignment: "bottom",
             follow_tail: true
         }, Fn("message")).with_key("message-list")
+            .accessibility_role("list").accessibility_label("Messages")
     ]).with_key("chat").with_style(style().flex_col().gap(px(14)).padding(px(24))
         .width(px(620)).background(theme_color("surface")))
 }
 "#;
 
-fn chat_view() -> ScriptView {
+/// Build the variable-height virtual-collection tutorial.
+///
+/// # Panics
+/// Panics if a static module identifier is invalid.
+#[must_use]
+pub fn view() -> ScriptView {
     ScriptView::sources(
         ModuleId::parse("main").unwrap(),
         EmbeddedScriptSource::new(BTreeMap::from([(
@@ -49,10 +60,12 @@ fn chat_view() -> ScriptView {
         THEME,
     )
     .token_base(include_str!("../../../registry/tokens.rhai"))
+    .font_sources(shared_fonts::sources())
+    .theme_sources(shared_themes::additional())
 }
 
 fn main() {
-    let view = chat_view().prepare().expect("variable chat prepares");
+    let view = view().prepare().expect("variable chat prepares");
     ScriptApplication::new(view)
         .window_size(700.0, 640.0)
         .run()
@@ -65,7 +78,7 @@ mod tests {
 
     #[test]
     fn variable_height_chat_prepares() {
-        chat_view().prepare().unwrap();
+        view().prepare().unwrap();
         let mut engine = gpui_rhai::RuntimeEngine::new();
         let compiled = engine.compile(MAIN).unwrap();
         let runtime = std::rc::Rc::new(std::cell::RefCell::new(gpui_rhai::UiRuntimeState::new()));

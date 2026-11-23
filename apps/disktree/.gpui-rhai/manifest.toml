@@ -1,23 +1,23 @@
 runtime_api = 3
 
 [components."components/badge"]
-version = "0.4.2"
-content_hash = "6fff1db8fa33eb9a"
+version = "0.4.3"
+content_hash = "b0dfbcd9e10a569f"
 dependencies = []
 
 [components."components/button"]
 version = "0.4.3"
-content_hash = "8a5f3796200976d5"
-dependencies = []
+content_hash = "f483c2ea042d0410"
+dependencies = ["components/spinner"]
 
 [components."components/checkbox"]
-version = "0.4.0"
-content_hash = "d75c3d8da54e716e"
+version = "0.4.3"
+content_hash = "f245da9202adcac3"
 dependencies = []
 
 [components."components/combobox"]
 version = "0.4.3"
-content_hash = "2807af90a6765d2e"
+content_hash = "72c67a3dde239cb8"
 dependencies = ["components/input"]
 
 [components."components/divider"]
@@ -27,22 +27,22 @@ dependencies = []
 
 [components."components/input"]
 version = "0.4.0"
-content_hash = "241b74c403e27be3"
+content_hash = "0215304f844babed"
 dependencies = []
 
 [components."components/kbd"]
-version = "0.4.0"
-content_hash = "e04c399591c14cdb"
+version = "0.4.3"
+content_hash = "77204e58346479f9"
 dependencies = []
 
 [components."components/popover"]
 version = "0.4.0"
-content_hash = "bd9fc4fd7d260ac7"
+content_hash = "758b899f49f57c53"
 dependencies = []
 
 [components."components/progress"]
 version = "0.4.3"
-content_hash = "08e0ff5f81fafdf5"
+content_hash = "1859ce5327dff5ce"
 dependencies = []
 
 [components."components/select"]
@@ -51,8 +51,8 @@ content_hash = "26080264378186db"
 dependencies = ["components/combobox"]
 
 [components."components/spinner"]
-version = "0.2.0"
-content_hash = "15e71a2986fabdfa"
+version = "0.4.3"
+content_hash = "3c52d47b9f611de2"
 dependencies = []
 
 [components."components/split_pane"]
@@ -62,17 +62,17 @@ dependencies = []
 
 [components."components/status_bar"]
 version = "0.2.0"
-content_hash = "b0717e76f2131dc0"
+content_hash = "20eaa20681a199d9"
 dependencies = []
 
 [components."components/title_bar"]
 version = "0.2.0"
-content_hash = "0cc58ee30acdaba0"
+content_hash = "286d8e315c3d71e8"
 dependencies = []
 
 [components."components/toggle_group"]
 version = "0.4.0"
-content_hash = "daf8ba0863ecca80"
+content_hash = "cdb24384dd0be156"
 dependencies = []
 
 [components."layouts/inline"]
@@ -86,16 +86,16 @@ content_hash = "9fbba52c827d9fe7"
 dependencies = []
 
 [components."patterns/description_list"]
-version = "0.2.0"
-content_hash = "645693a3de13da4a"
+version = "0.4.3"
+content_hash = "40646ebc92ae3b85"
 dependencies = []
 
 [components."patterns/section"]
 version = "0.2.0"
-content_hash = "af76a2e3c39a50ef"
+content_hash = "af9ead44b7d4b850"
 dependencies = []
 
 [components."patterns/stat"]
 version = "0.2.0"
-content_hash = "6d6ed80dd39a03c2"
+content_hash = "419f17f763e8068d"
 dependencies = []

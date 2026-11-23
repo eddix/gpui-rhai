@@ -7,14 +7,14 @@
 fn theme() {
     #{ family: "Retro 82", name: "Dark", mode: "dark", tokens: #{
         colors: #{
-            surface: 0x05182eff, surface_raised: 0x0a2540ff, surface_hover: 0x134e5aff,
-            text_primary: 0xf6dcacff, text_muted: 0xa7c9c6ff,
-            accent: 0xfaa968ff, accent_hover: 0xffc28eff, on_accent: 0x031222ff,
+            surface: 0x05182eff, surface_raised: 0x13253aff, surface_hover: 0x213248ff,
+            text_primary: 0xf6dcacff, text_muted: 0x99bab7ff,
+            accent: 0xfaa968ff, accent_hover: 0xffb780ff, on_accent: 0x031222ff,
             danger: 0xf82531ff, on_danger: 0x031222ff,
             warning: 0xe9e03cff, on_warning: 0x031222ff,
             success: 0x36a6a4ff, on_success: 0x031222ff,
-            border: 0x2a6b78ff, focus_ring: 0x8cbfb8ff,
-            selection: 0x222935ff, disabled: 0x5e9694ff,
+            border: 0x455465ff, focus_ring: 0x8cbfb8ff,
+            selection: 0x282225ff, disabled: 0x69788aff,
         },
     } }
 }

@@ -102,6 +102,12 @@ define_component(#{
                 "default": #{ type: "bool", value: true },
                 doc: "Lets a click outside the panel and its trigger close the popover through `on_open_change`.",
             },
+            initial_focus: #{
+                schema: #{ type: "string", allowed: ["panel", "first"] },
+                required: false, sensitive: false,
+                "default": #{ type: "string", value: "panel" },
+                doc: "First moves focus to the first reachable control when the popover opens. Panel preserves the default nonmodal focus behavior.",
+            },
             on_open_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
@@ -131,19 +137,10 @@ fn optional_bool(props, name, fallback) {
 
 fn Popover(props) { render_component("components/popover", props) }
 
-// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
-// panel's hairline (painted over its children) turns the focus color and this frame adds
-// the inner pixel. A control inside shows its own frame instead.
-fn panel_focus_frame(ctx) {
-    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
-        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
-        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
-        .group_focus(style().border_color(theme_color("focus_ring")))))
-}
 fn render_Popover(ctx, props) {
     let placement = if "placement" in props { props.placement } else { "bottom" };
     let gap = if "gap" in props { props.gap } else { 8.0 };
-    let content = column([props.content, panel_focus_frame(ctx)])
+    let content = column([props.content])
         .with_style(ctx.component_style("content",
             style()
                 .relative()
@@ -154,7 +151,8 @@ fn render_Popover(ctx, props) {
                 .radius(theme_radius("lg"))
                 .border(px(1))
                 .border_color(theme_color("border"))
-                .group_focus(style().border_color(theme_color("focus_ring")))
+                .group_focus(ctx.component_style("focus_frame", style()
+                    .focus_ring(px(2), offset_px(-2), theme_color("focus_ring"))))
                 .background(theme_color("surface_raised"))
                 .typography("body")
         ))
@@ -168,6 +166,7 @@ fn render_Popover(ctx, props) {
         open: props.open,
         gap: gap,
         modal: false,
+        initial_focus: props.initial_focus,
         dismiss_on_escape: optional_bool(props, "dismiss_on_escape", true),
         dismiss_on_outside: optional_bool(props, "dismiss_on_outside", true),
     };

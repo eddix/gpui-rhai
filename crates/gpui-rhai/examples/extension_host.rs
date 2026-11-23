@@ -1,7 +1,12 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use gpui_rhai::gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px, rgba};
+use gpui_rhai::gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div};
 use gpui_rhai::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityHandler, CapabilityId,
     CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, HostSlotRegistry, ModuleId,
@@ -12,9 +17,9 @@ use gpui_rhai::{
 };
 use semver::Version;
 
-const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
-
 const MAIN: &str = r#"
+import "components/card" as card;
+
 define_component(#{
     metadata: #{ id: "examples/ticker", "export": "Ticker", version: "0.1.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
@@ -45,7 +50,7 @@ fn start_ticker(ctx, deps) {
 fn stop_ticker(ctx, deps) { () }
 fn render_Ticker(ctx, props) {
     effect("watch", (), Fn("start_ticker"), Fn("stop_ticker"));
-    text(`Subscription tick: ${ctx.get_state("tick")}`)
+    text(`Subscription tick: ${ctx.get_state("tick")}`).test_id("extension-tick")
 }
 fn Ticker() { render_component("examples/ticker", #{ key: "ticker" }) }
 fn host_slot(name) { gpui_rhai::HostSlot(#{ key: name, name: name }) }
@@ -58,15 +63,20 @@ fn init(ctx) {
 
 fn view(ctx) {
     column([
-        text("Host extension"),
-        my_app::StatusCard(#{ message: ctx.get_state("message") }),
-        host_slot("native-footer").with_style(style().width(relative(1.0)).height(px(32))),
+        text("Host extension").with_style(style().typography("heading")),
+        card::Card(#{key:"status-card",header:text("Host update"),
+            content:my_app::StatusMessage(#{message:ctx.get_state("message")})
+                .with_key("host-message").accessibility_role("status")
+                .accessibility_label("Host extension message").accessibility_value(ctx.get_state("message"))})
+            .test_id("extension-status-card"),
+        host_slot("native-footer").with_style(style().width(relative(1.0)).height(theme_length("metrics.row"))),
         Ticker(),
-        text("The card above is rendered by a Rust primitive.")
+        text("Rust owns the content; the official Card owns its design.")
             .with_style(style().text_color(theme_color("text_muted")))
     ]).with_style(
-        style().width(px(520)).padding(px(24)).gap(px(16))
-            .background(theme_color("surface"))
+        style().width(relative(1.0)).height(relative(1.0))
+            .padding(theme_spacing("lg")).gap(theme_spacing("md")).typography("body")
+            .background(theme_color("surface")).text_color(theme_color("text_primary"))
     )
 }
 "#;
@@ -121,40 +131,26 @@ impl SubscriptionCapabilityHandler for TickerCapability {
     }
 }
 
-struct StatusCard;
+struct StatusMessage;
 
-impl PrimitiveHandler for StatusCard {
+impl PrimitiveHandler for StatusMessage {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
         _: &PrimitiveContext,
-        theme: &gpui_rhai::PrimitiveTheme,
+        _: &gpui_rhai::PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
     ) -> Result<AnyElement, String> {
         let Some(PrimitiveValue::Data(UiValue::String(message))) =
             instance.node.props.get("message")
         else {
-            return Err("StatusCard.message must be a string".to_owned());
+            return Err("StatusMessage.message must be a string".to_owned());
         };
 
-        Ok(div()
-            .p_4()
-            .rounded(px(10.0))
-            .bg(rgba(
-                theme
-                    .color("accent")
-                    .unwrap_or_else(|| gpui_rhai::Rgba8::from_rgba_hex(0x2563_ebff))
-                    .as_rgba_hex(),
-            ))
-            .text_color(rgba(
-                theme
-                    .color("on_accent")
-                    .unwrap_or_else(|| gpui_rhai::Rgba8::from_rgba_hex(0xffff_ffff))
-                    .as_rgba_hex(),
-            ))
-            .child(message.clone())
-            .into_any_element())
+        // Preserve inherited Card typography and ink. A primitive that only
+        // supplies content does not need a second card painter or font recipe.
+        Ok(div().child(message.clone()).into_any_element())
     }
 }
 
@@ -165,9 +161,9 @@ impl ScriptViewExtension for DemoExtension {
         engine
             .register_primitive(
                 PrimitiveDescriptor {
-                    id: PrimitiveId::parse("my_app.status_card")
+                    id: PrimitiveId::parse("my_app.status_message")
                         .map_err(|error| error.to_string())?,
-                    export: "StatusCard".to_owned(),
+                    export: "StatusMessage".to_owned(),
                     props: BTreeMap::from([(
                         "message".to_owned(),
                         ObjectField::required(ValueSchema::string()),
@@ -177,7 +173,7 @@ impl ScriptViewExtension for DemoExtension {
                     lifecycle: false,
                     effect: None,
                 },
-                StatusCard,
+                StatusMessage,
             )
             .map_err(|error| error.to_string())
     }
@@ -241,9 +237,22 @@ impl ScriptViewExtension for DemoExtension {
     }
 }
 
-fn main() {
+/// Build the runnable Host-extension example, also mounted by the native tests.
+///
+/// # Panics
+///
+/// Panics if a static module ID, capability requirement or Host-slot name in
+/// this example is invalid.
+#[must_use]
+pub fn view() -> ScriptView {
     let entry = ModuleId::parse("main").expect("static module ID");
-    let scripts = EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), MAIN.to_owned())]));
+    let scripts = EmbeddedScriptSource::new(BTreeMap::from([
+        (entry.clone(), MAIN.to_owned()),
+        (
+            ModuleId::parse("components/card").expect("static Card module ID"),
+            include_str!("../../../registry/components/card.rhai").to_owned(),
+        ),
+    ]));
     let manifest = AppManifest::new(entry.clone())
         .with_capability("app.text_transform", "*")
         .expect("static capability requirement")
@@ -260,11 +269,17 @@ fn main() {
         })
         .expect("static host slot name");
 
-    ScriptView::sources(entry, scripts, DEFAULT_DARK)
+    ScriptView::sources(entry, scripts, shared_themes::PRIMARY)
         .token_base(include_str!("../../../registry/tokens.rhai"))
+        .font_sources(shared_fonts::sources())
+        .theme_sources(shared_themes::additional())
         .extension(DemoExtension)
         .extension(host_slots)
         .manifest(manifest)
+}
+
+fn main() {
+    view()
         .prepare()
         .and_then(|prepared| {
             ScriptApplication::new(prepared)

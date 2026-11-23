@@ -3,6 +3,8 @@
 //! building every example as a test target. Their `main` functions are never called.
 
 #![allow(dead_code)]
+// Each included standalone program intentionally owns its helper modules.
+#![allow(clippy::duplicate_mod)]
 
 #[path = "../examples/artistic_showcase.rs"]
 mod artistic_showcase;

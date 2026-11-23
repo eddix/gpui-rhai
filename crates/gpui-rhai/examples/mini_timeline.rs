@@ -1,8 +1,13 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
-const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
+const THEME: &str = shared_themes::PRIMARY;
 
 const TIMELINE: &str = r#"
 define_component(#{
@@ -95,7 +100,12 @@ fn view(ctx) {
 }
 "#;
 
-fn timeline_view() -> ScriptView {
+/// Build the pointer-capture and native-signal timeline tutorial.
+///
+/// # Panics
+/// Panics if a static module identifier is invalid.
+#[must_use]
+pub fn view() -> ScriptView {
     ScriptView::sources(
         ModuleId::parse("main").unwrap(),
         EmbeddedScriptSource::new(BTreeMap::from([
@@ -108,10 +118,12 @@ fn timeline_view() -> ScriptView {
         THEME,
     )
     .token_base(include_str!("../../../registry/tokens.rhai"))
+    .font_sources(shared_fonts::sources())
+    .theme_sources(shared_themes::additional())
 }
 
 fn main() {
-    let view = timeline_view().prepare().expect("timeline prepares");
+    let view = view().prepare().expect("timeline prepares");
     ScriptApplication::new(view)
         .window_size(760.0, 380.0)
         .run()
@@ -124,6 +136,6 @@ mod tests {
 
     #[test]
     fn pure_rhai_mini_timeline_prepares() {
-        timeline_view().prepare().unwrap();
+        view().prepare().unwrap();
     }
 }

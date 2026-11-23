@@ -9,6 +9,8 @@ also covers real native multi-window creation.
 - The `shared` app store invalidates readers across windows.
 - `ScriptViewExtension::configure_window` declares a `session` store for each window.
 - Theme and locale overrides are per-window; choosing Arabic also exercises RTL layout.
+- Light/Dark keeps the current Modern/Clean design family. The operation row wraps
+  within each window and uses shared typography and spacing tokens.
 - Native close requests call a generation-bound Rhai handler. The confirmation dialog
   explicitly calls `close_window`, after which window state, stores, overlays, animation,
   tasks, subscriptions, and pending image work are released.
@@ -18,3 +20,8 @@ Run it from the repository root:
 ```sh
 cargo run -p gpui-rhai --example multi_window
 ```
+
+Native integration tests mount the executable's `view()` factory with managed
+window authority: `init` opens a real peer window, controls remain inside the
+window in all four presets, shared count survives design changes, and the native
+close/cancel/confirm flow exercises the real dialog and window command owner.

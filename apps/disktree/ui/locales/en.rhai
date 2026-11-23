@@ -13,6 +13,7 @@ fn locale() {
             "common.no_results": "No results",
             "pagination.items": "items",
             "pagination.next": "Next page",
+            "pagination.of": "of",
             "pagination.page": "Page",
             "pagination.per_page": "Items per page",
             "pagination.previous": "Previous page",

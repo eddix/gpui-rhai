@@ -9,8 +9,10 @@ it in the same pull request.
 
 ![](docs/screenshots/side-by-side.png)
 
-The default skin, dark and Flexoki Light (`--theme light`), exploring
-gpui-rhai's own source tree.
+The image above is a historical capture, not a visual baseline for the current
+design. The default skin now starts in Modern; `--theme light` selects Modern
+Light. The minimal skin starts in Clean. Both can switch to either complete
+design using their existing theme controls.
 
 ```sh
 cd apps/disktree
@@ -40,9 +42,10 @@ disktree-rhai --skin ./skins/minimal   # the bundled second skin
   dogfood loop the default skin itself is developed in.
 
 A skin directory is `app.toml`, `main.rhai`, `core.rhai`, `tokens.rhai`
-(the gpui-rhai 0.2 token base), `theme.rhai` plus optional extra theme
-variants under `themes/` (palettes own colors only — typography, spacing
-and metrics come from the token base), and the official 0.2 components the
+(the shared token base), `theme.rhai` plus optional extra theme
+variants under `themes/`. Modern and Clean own complete typography, geometry
+and component recipes; alternate palettes inherit the base design. Fonts live
+under `fonts/` with their license under `licenses/`. The official components the
 skin mounts under `components/`, `layouts/`, and `patterns/` (with their
 declared SVGs under `assets/`). Skins own the tiling (`core.rhai`), the
 palette, the panels, and the keymap — everything above the scan
@@ -66,9 +69,9 @@ disktree-rhai [PATH] [-a] [-H] [-d 1-6] [--metric files|bytes]
 
 `--theme` resolution: explicit flag → Omarchy theme
 (`~/.local/state/omarchy/current/theme/colors.toml`, degradable) →
-dark. The family ships two variants — Tokyo Night and Flexoki Light —
-and `system` follows the window appearance live, mosaic palette
-included.
+dark. `system` follows the window appearance within the skin's starting
+Modern or Clean family, mosaic palette included. The previous application
+palettes remain explicit alternatives, not hidden overrides of the new presets.
 
 ## Acceptance
 
@@ -90,6 +93,8 @@ cargo run --example spike_squarify   # M0 spike: op budget of the layout port
 cargo run --example spike_canvas     # M0 spike: retained canvas at scale
 cargo run --example du_parity        # engine vs du
 cargo run --example rhai_check -- ui/main.rhai
+cargo run --example theme_check               # token base + primary full preset
+cargo run --example theme_check -- skins/minimal
 ```
 
 On macOS, two harnesses drive the real renderer offscreen:
@@ -99,6 +104,20 @@ cargo run --example key_harness      # every key through a real window
 cargo run --example screenshot -- PATH   # PNG of the frame; SHOT_OUT,
                                          # SHOT_THEME, SHOT_KEYS, SHOT_W
 ```
+
+Capture both skins across the four complete presets on macOS, using a directory
+of test files as `PATH`. Output stays outside the repository:
+
+```sh
+SHOT_PROBE=1 SHOT_PROBE_OUT_DIR=/tmp/disktree-default cargo run --example screenshot -- PATH
+SHOT_SKIN=skins/minimal/main.rhai SHOT_PROBE=1 SHOT_PROBE_OUT_DIR=/tmp/disktree-minimal cargo run --example screenshot -- PATH
+```
+
+`SHOT_SKIN` is absolute or relative to this application directory.
+`SHOT_PRESET=Clean/Light` selects one complete preset before key/drag steps;
+`SHOT_THEME=light` only chooses the startup appearance within the skin's own
+family. Probe mode renders and validates each required preset, and an error
+exits nonzero. These are real-renderer checks, not physical OS-input acceptance.
 
 `ui/components/`, `ui/layouts/` and `ui/patterns/` are installed from the
 registry and recorded in `.gpui-rhai/manifest.toml`. When the registry
