@@ -43,7 +43,7 @@ define_component(#{
                 doc: "Buttons in a row at the end of the panel, after the content." },
             size: #{ schema: #{ type: "integer", min: 160, max: 960 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 360 },
-                doc: "Width of a `start` or `end` sheet, or height of a `top` or `bottom` one, in logical pixels." },
+                doc: "Preferred width of a `start` or `end` sheet, or height of a `top` or `bottom` one, in logical pixels; bounded by the viewport." },
             dismiss_on_escape: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
                 doc: "Whether Escape asks to close the sheet through `open_change`." },
@@ -81,7 +81,8 @@ fn render_Sheet(ctx, props) {
         .gap(theme_length("space.related")).justify_end())));
     }
     // A raised block with a hairline on the edge that faces the window.
-    let panel_style = style().padding(theme_spacing("xl")).gap(theme_length("space.group"))
+    let panel_style = style().max_width(relative(1.0)).max_height(relative(1.0))
+        .padding(theme_spacing("xl")).gap(theme_length("space.group"))
         .background(theme_color("surface_raised")).border_color(theme_color("border"));
     panel_style = if side == "start" { panel_style.border_end(px(1)) }
         else if side == "end" { panel_style.border_start(px(1)) }
@@ -92,17 +93,10 @@ fn render_Sheet(ctx, props) {
     } else {
         panel_style = panel_style.width(relative(1.0)).height(px(size));
     }
-    // The 2px focus frame while the panel itself holds focus, over the hairline too.
-    let frame = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0));
-    frame = if side == "start" { frame.inset_end(offset_px(-1)) }
-        else if side == "end" { frame.inset_start(offset_px(-1)) }
-        else if side == "top" { frame.bottom(offset_px(-1)) }
-        else { frame.top(offset_px(-1)) };
-    children.push(row([]).with_style(ctx.component_style("focus_frame", frame
-        .border(px(2)).border_color(rgba(0x00000000))
-        .group_focus(style().border_color(theme_color("focus_ring"))))));
-    panel_style = panel_style.relative()
-        .group_focus(style().border_color(theme_color("focus_ring")));
+    // The shared decoration follows the final panel bounds on every side, including
+    // theme overrides that replace the layout hairline with a non-layout shadow edge.
+    panel_style = panel_style.relative().group_focus(ctx.component_style("focus_frame", style()
+        .focus_ring(px(2), offset_px(-2), theme_color("focus_ring"))));
     let panel = column(children).with_style(ctx.component_style("panel", panel_style))
         .accessibility_role("dialog").accessibility_label(props.title);
     let node = overlay(row([]), panel, #{

@@ -148,14 +148,15 @@ fn render_ColumnBrowser(ctx, props) {
         } else { `column-${index}` };
         let target = #{ column: column.key, ancestors: ancestors, reference: reference };
         targets.push(target);
-        let available = !value_or(column, "loading", false) && value_or(column, "error", ()) == ();
+        let loading = value_or(column, "loading", false);
+        let available = !loading && value_or(column, "error", ()) == ();
         let nearby = if available {
             let data = native_list_view(column.items, if selected == () { [] } else { [selected] });
             native_list_neighbors(data, if selected == () { [] } else { [selected] })
         } else { #{ first: (), last: (), previous: (), next: (), current: (), current_index: (), has_children: false } };
         neighbors.push(nearby);
         let body;
-        if value_or(column, "error", ()) != () && !value_or(column, "loading", false) {
+        if value_or(column, "error", ()) != () && !loading {
             let status = [text(column.error).selectable(true)];
             if value_or(props, "on_retry", ()) != () {
                 status.push(button::Button(#{ key: `retry-${index}`, text: ctx.t_or("common.retry", "Retry"), variant: "ghost", on_click: Fn("retry").curry(column.key) }).tab_stop(false));
@@ -168,11 +169,13 @@ fn render_ColumnBrowser(ctx, props) {
                     #{ name: column.title, level: index + 1, count: props.columns.len }),
                 items: column.items, fill_height: true, selection_mode: "single",
                 selected_keys: if selected == () { [] } else { [selected] }, keyboard_navigation: false, active: index == active,
-                loading: value_or(column, "loading", false), empty_text: if value_or(column, "empty_text", "") == "" { ctx.t_or("common.no_items", "No items") } else { column.empty_text },
+                loading: loading,
+                loading_content: if loading { text(ctx.t_or("collection.loading", "Loading…")).accessibility_role("status") } else { () },
+                empty_text: if value_or(column, "empty_text", "") == "" { ctx.t_or("common.no_items", "No items") } else { column.empty_text },
                 on_row_click: Fn("select_row").curry(target),
                 on_row_activate: Fn("activate_row").curry(target) });
         }
-        let heading = text(column.title.to_upper()).with_style(ctx.component_style("heading", style()
+        let heading = text(column.title).accessibility_role("label").with_style(ctx.component_style("heading", style()
             .min_height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
             .typography("label").text_color(theme_color("text_muted"))));
         parts.push(column([heading, body]).with_key(`column-${column.key}`).with_ref(element_ref(reference))

@@ -28,7 +28,7 @@ fn step_time(value,precision,ctx,direction){
 fn render_TimeInput(ctx,props){
     let node=input::Input(#{key:props.key,label:props.label,value:props.value,error:props.error,
         disabled:props.disabled,on_change:Fn("changed")})
-        .with_style(ctx.component_style("root",ctx.component_style("input",style())))
+        .with_style(ctx.component_style(["root","input"],style()))
         .on_key_value("up",Fn("step_time").curry(props.value,props.precision),1)
         .on_key_value("down",Fn("step_time").curry(props.value,props.precision),-1);
     if "size" in props&&props.size!=(){node.env(#{size:props.size})}else{node}

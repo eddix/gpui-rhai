@@ -13,8 +13,9 @@ use gpui_rhai::{
 };
 
 use super::{
-    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_THEME_SOURCES,
-    DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE, ZH_CN_LOCALE,
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID,
+    BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID, BUNDLED_THEME_SOURCES, EN_LOCALE,
+    MODERN_DARK_THEME, STUDIO_SOURCE, ZH_CN_LOCALE,
 };
 const COLOR_TOKENS: &[&str] = &[
     "surface",
@@ -48,13 +49,13 @@ struct StudioSession {
 }
 
 impl StudioSession {
-    /// The edited palette over the design-language token base, under the
+    /// The complete edited theme over the design-language token base, under the
     /// identity the specimen is previewing.
-    fn preview(&self) -> ThemeVariant {
-        let mut variant = with_token_base(&self.document);
+    fn preview(&self) -> Result<ThemeVariant, String> {
+        let mut variant = with_token_base(&self.document)?;
         variant.family.clone_from(&self.preview_family);
         variant.name.clone_from(&self.preview_variant);
-        variant
+        Ok(variant)
     }
 
     fn path_text(&self) -> String {
@@ -228,7 +229,7 @@ fn color_handler(session: Rc<RefCell<StudioSession>>, token: String) -> Handler 
                     std::sync::Arc::make_mut(&mut session.document.tokens)
                         .colors
                         .insert(token.clone(), color);
-                    session.preview()
+                    session.preview()?
                 };
                 runtime
                     .replace_theme_variant_from_host(preview)
@@ -250,7 +251,7 @@ fn mode_handler(session: Rc<RefCell<StudioSession>>, mode: String) -> Handler {
             } else {
                 ThemeMode::Dark
             };
-            session.preview()
+            session.preview()?
         };
         set_root_field(runtime, "mode", UiValue::String(mode.clone()))?;
         runtime
@@ -313,7 +314,7 @@ fn handle_action(
             }
             fs::write(
                 &resolved,
-                canonical_source(&borrowed.document, &borrowed.attribution),
+                canonical_source(&borrowed.document, &borrowed.attribution)?,
             )
             .map_err(|error| format!("failed to write {}: {error}", resolved.display()))?;
             set_status(runtime, format!("Saved {}", resolved.display()))?;
@@ -322,7 +323,7 @@ fn handle_action(
             let preview = {
                 let mut borrowed = session.borrow_mut();
                 derive_semantic_colors(&mut borrowed.document);
-                borrowed.preview()
+                borrowed.preview()?
             };
             runtime
                 .replace_theme_variant_from_host(preview)
@@ -391,7 +392,7 @@ fn sync_document(
     )?;
     sync_color_fields(runtime, &session.document)?;
     runtime
-        .replace_theme_variant_from_host(session.preview())
+        .replace_theme_variant_from_host(session.preview()?)
         .map_err(|error| error.to_string())?;
     set_status(
         runtime,
@@ -452,48 +453,52 @@ fn validation_status(theme: &ThemeVariant) -> String {
     if let Err(error) = theme.validate() {
         return format!("Invalid theme: {error}");
     }
-    let resolved = with_token_base(theme);
+    let resolved = match with_token_base(theme) {
+        Ok(theme) => theme,
+        Err(error) => return format!("Invalid theme: {error}"),
+    };
     let theme = &resolved;
     let mut warnings = Vec::new();
     let mut pairs = Vec::new();
     for foreground in ["text_primary", "text_muted"] {
         for background in ["surface", "surface_raised", "surface_hover", "selection"] {
-            pairs.push((foreground, background));
+            pairs.push((foreground, background, 4.5));
         }
     }
     pairs.extend([
-        ("on_accent", "accent"),
-        ("on_accent", "accent_hover"),
-        ("on_danger", "danger"),
-        ("on_warning", "warning"),
-        ("on_success", "success"),
+        ("on_accent", "accent", 4.5),
+        ("on_accent", "accent_hover", 4.5),
+        ("on_danger", "danger", 4.5),
+        ("on_warning", "warning", 4.5),
+        ("on_success", "success", 4.5),
+        ("field.placeholder", "surface.field", 4.5),
+        ("choice.description", "surface", 4.5),
+        ("switch.thumb_off_ink", "switch.thumb", 4.5),
+        ("text.subtle", "surface_raised", 4.5),
+        ("button.ghost_fg", "surface_raised", 4.5),
+        ("text.icon", "surface.field", 3.0),
     ]);
-    for (foreground, background) in pairs {
-        let ratio = contrast(
-            theme
-                .tokens
-                .color(foreground)
-                .unwrap_or(Rgba8::from_rgba_hex(0)),
-            theme
-                .tokens
-                .color(background)
-                .unwrap_or(Rgba8::from_rgba_hex(0)),
-        );
-        if ratio < 4.5 {
-            warnings.push(format!("{foreground}/{background} {ratio:.2}:1"));
-        }
-    }
     for foreground in ["focus_ring", "control.border", "scrollbar.thumb"] {
         for background in ["surface", "surface_raised"] {
-            if let (Some(fg), Some(bg)) = (
-                theme.tokens.color(foreground),
-                theme.tokens.color(background),
-            ) {
-                let ratio = contrast(fg, bg);
-                if ratio < 3.0 {
-                    warnings.push(format!("{foreground}/{background} {ratio:.2}:1"));
-                }
-            }
+            pairs.push((foreground, background, 3.0));
+        }
+    }
+    for (foreground, background, minimum) in pairs {
+        let (Some(fg), Some(bg)) = (
+            theme.tokens.color(foreground),
+            theme.tokens.color(background),
+        ) else {
+            continue;
+        };
+        if bg.as_rgba_hex() & 0xff != 0xff {
+            warnings.push(format!("{foreground}/{background}: translucent backing requires parent-specific contrast evidence"));
+            continue;
+        }
+        let ratio = contrast(fg, bg);
+        if ratio < minimum {
+            warnings.push(format!(
+                "{foreground}/{background} {ratio:.2}:1 (requires {minimum}:1)"
+            ));
         }
     }
     if warnings.is_empty() {
@@ -504,7 +509,7 @@ fn validation_status(theme: &ThemeVariant) -> String {
 }
 
 fn contrast(first: Rgba8, second: Rgba8) -> f64 {
-    first.contrast_ratio(second)
+    first.over(second).contrast_ratio(second)
 }
 
 fn mix(first: Rgba8, second: Rgba8, second_weight: u16) -> Rgba8 {
@@ -568,10 +573,9 @@ fn leading_attribution(source: &str) -> Vec<String> {
         .collect()
 }
 
-/// Serialize a palette theme. Palettes own colors only: typography,
-/// spacing, metrics and radius belong to the token base, so saving never
-/// writes layout tokens.
-fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
+/// Preserve the complete theme, not only the palette. The public exporter
+/// checks a lossless round trip through the ordinary Rhai constructors.
+fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> Result<String, String> {
     let mut output = String::new();
     for line in attribution {
         let _ = writeln!(output, "{line}");
@@ -579,52 +583,15 @@ fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
     if !attribution.is_empty() {
         output.push('\n');
     }
-    output.push_str("fn theme() {\n    #{\n");
-    let _ = writeln!(output, "        family: {},", json_string(&theme.family));
-    let _ = writeln!(output, "        name: {},", json_string(&theme.name));
-    let _ = writeln!(
-        output,
-        "        mode: \"{}\",",
-        match theme.mode {
-            ThemeMode::Light => "light",
-            ThemeMode::Dark => "dark",
-        }
-    );
-    output.push_str("        tokens: #{\n            colors: #{\n");
-    let colors = theme.tokens.color_snapshot();
-    let ordered = COLOR_TOKENS
-        .iter()
-        .filter_map(|token| {
-            colors
-                .get(*token)
-                .map(|color| ((*token).to_owned(), *color))
-        })
-        .chain(
-            colors
-                .iter()
-                .filter(|(token, _)| !COLOR_TOKENS.contains(&token.as_str()))
-                .map(|(token, color)| (token.clone(), *color)),
-        );
-    for (token, color) in ordered {
-        let key = if token.contains('.') {
-            json_string(&token)
-        } else {
-            token
-        };
-        let _ = writeln!(
-            output,
-            "                {key}: 0x{:08x},",
-            color.as_rgba_hex()
-        );
-    }
-    output.push_str("            },\n        },\n    }\n}\n");
-    output
+    output.push_str(&gpui_rhai::export_theme_source(theme).map_err(|error| error.to_string())?);
+    Ok(output)
 }
 
-/// Merge a palette document over the bundled token base. Palettes contain
-/// colors only, so the document is serialized and reloaded with the base.
-fn with_token_base(document: &ThemeVariant) -> ThemeVariant {
+/// Merge the complete document over the bundled base. In particular Clean
+/// typography, geometry and component recipes must survive this operation.
+fn with_token_base(document: &ThemeVariant) -> Result<ThemeVariant, String> {
     let engine = RuntimeEngine::new();
+    let source = canonical_source(document, &[])?;
     gpui_rhai::load_token_base(
         engine.engine(),
         "tokens.rhai",
@@ -635,16 +602,16 @@ fn with_token_base(document: &ThemeVariant) -> ThemeVariant {
             engine.engine(),
             Some(&base),
             "<studio-preview>",
-            &canonical_source(document, &[]),
+            &source,
             &gpui_rhai::ThemeTokenOverrides::default(),
         )
     })
-    .unwrap_or_else(|_| document.clone())
+    .map_err(|error| error.to_string())
 }
 
 fn default_draft() -> Result<ThemeVariant, String> {
     let engine = RuntimeEngine::new();
-    load_theme_source(engine.engine(), "default_dark.rhai", DEFAULT_THEME)
+    load_theme_source(engine.engine(), "modern_dark.rhai", MODERN_DARK_THEME)
         .map_err(|error| error.to_string())
 }
 
@@ -685,7 +652,6 @@ fn source_with_state(theme: &ThemeVariant, path: &str, status: &str) -> String {
     source
         .replace("__BUILTIN_OPTIONS__", &builtin_options_source())
         .replace("__GALLERY_ONLY__", "false")
-        .replace("__GALLERY_THEME__", &json_string("default_dark"))
         .replace("__GALLERY_CATEGORY__", &json_string("all"))
         .replace(
             "__VISUAL_DIALOG__",
@@ -780,6 +746,8 @@ fn studio_scripts(main: &str) -> EmbeddedScriptSource {
     modules.extend(
         BUNDLED_COMPONENT_SOURCES_BY_ID
             .iter()
+            .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
+            .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
             .map(|(id, source)| module(id, source)),
     );
     EmbeddedScriptSource::new(modules)
@@ -830,7 +798,7 @@ pub fn run(root: PathBuf, path: Option<PathBuf>) -> Result<(), String> {
             default_draft()?,
             Vec::new(),
             None,
-            "New theme from Default Dark".to_owned(),
+            "New theme from Modern Dark".to_owned(),
         )
     };
     let session = Rc::new(RefCell::new(StudioSession {
@@ -866,7 +834,7 @@ fn launch(
         &borrowed.path_text(),
         &format!("{status}. {}", validation_status(&borrowed.document)),
     );
-    let primary = canonical_source(&borrowed.preview(), &borrowed.attribution);
+    let primary = canonical_source(&borrowed.preview()?, &borrowed.attribution)?;
     let preview_identity = (
         borrowed.preview_family.clone(),
         borrowed.preview_variant.clone(),
@@ -888,6 +856,7 @@ fn launch(
         .collect::<Vec<_>>();
     let entry = ModuleId::parse("main").map_err(|error| error.to_string())?;
     ScriptView::sources(entry, scripts, primary)
+        .font_sources(crate::gallery::gallery_fonts()?)
         .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources(additional_themes)
         .locale_sources([
@@ -915,11 +884,30 @@ fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_rhai::{RestrictedModuleResolver, ScriptLifecycle};
+    use gpui_rhai::{
+        RestrictedModuleResolver, ScriptLifecycle, UiEventHandler, UiNode, UiNodeKind,
+    };
+
+    fn find_key<'a>(node: &'a UiNode, key: &str) -> Option<&'a UiNode> {
+        if node.key().is_some_and(|node_key| node_key.as_str() == key) {
+            return Some(node);
+        }
+        match node.kind() {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                children.iter().find_map(|child| find_key(child, key))
+            }
+            _ => None,
+        }
+    }
 
     #[test]
     fn canonical_theme_round_trips_and_preserves_attribution() {
-        let mut theme = default_draft().unwrap();
+        let mut theme = load_theme_source(
+            RuntimeEngine::new().engine(),
+            "palette",
+            gpui_rhai_registry::DEFAULT_THEME,
+        )
+        .unwrap();
         std::sync::Arc::make_mut(&mut theme.tokens)
             .namespaces
             .insert(
@@ -929,7 +917,7 @@ mod tests {
                     gpui_rhai::ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x0033_66ff)),
                 )]),
             );
-        let source = canonical_source(&theme, &["// Attribution".to_owned()]);
+        let source = canonical_source(&theme, &["// Attribution".to_owned()]).unwrap();
         assert!(source.starts_with("// Attribution\n\n"));
         let engine = RuntimeEngine::new();
         let reloaded = load_theme_source(engine.engine(), "roundtrip.rhai", &source).unwrap();
@@ -938,7 +926,7 @@ mod tests {
             theme.tokens.color_snapshot()
         );
         assert!(reloaded.tokens.spacing.is_empty() && reloaded.tokens.typography.roles.is_empty());
-        let preview = with_token_base(&reloaded);
+        let preview = with_token_base(&reloaded).unwrap();
         assert!(preview.tokens.color("table.selection").is_some());
         assert_eq!(
             canonical_source(&reloaded, &[]),
@@ -948,8 +936,62 @@ mod tests {
     }
 
     #[test]
+    fn full_presets_keep_their_recipes_through_studio_preview_and_save() {
+        let engine = RuntimeEngine::new();
+        for &(name, source) in gpui_rhai_registry::BUNDLED_DESIGN_PRESET_SOURCES {
+            let original = load_theme_source(engine.engine(), name, source).unwrap();
+            let preview = with_token_base(&original).unwrap();
+            for (component, parts) in original.tokens.component_styles.iter() {
+                let actual = preview
+                    .tokens
+                    .component_styles
+                    .component(component)
+                    .unwrap();
+                for (part, expected) in parts {
+                    assert_eq!(
+                        actual.get(part),
+                        Some(expected),
+                        "{name}: preview {component}/{part}"
+                    );
+                }
+            }
+            assert!(
+                preview.tokens.component_styles == original.tokens.component_styles,
+                "{name}: preview changed the style sheet"
+            );
+            assert_eq!(
+                preview.tokens.typography, original.tokens.typography,
+                "{name}"
+            );
+            assert_eq!(preview.tokens.spacing, original.tokens.spacing, "{name}");
+            let saved = canonical_source(&preview, &[]).unwrap();
+            let reloaded = load_theme_source(engine.engine(), "saved.rhai", &saved).unwrap();
+            for (component, parts) in preview.tokens.component_styles.iter() {
+                let actual = reloaded
+                    .tokens
+                    .component_styles
+                    .component(component)
+                    .unwrap();
+                for (part, expected) in parts {
+                    assert_eq!(
+                        actual.get(part),
+                        Some(expected),
+                        "{name}: {component}/{part}"
+                    );
+                }
+            }
+            assert_eq!(reloaded, preview, "{name}");
+        }
+    }
+
+    #[test]
     fn validation_checks_hover_foregrounds_and_every_reading_surface() {
-        let mut theme = default_draft().unwrap();
+        let mut theme = load_theme_source(
+            RuntimeEngine::new().engine(),
+            "calibrated-palette",
+            gpui_rhai_registry::DEFAULT_THEME,
+        )
+        .unwrap();
         assert!(!validation_status(&theme).contains("warnings"));
         let colors = &mut std::sync::Arc::make_mut(&mut theme.tokens).colors;
         colors.insert("accent_hover".to_owned(), colors["on_accent"]);
@@ -964,11 +1006,59 @@ mod tests {
     #[test]
     fn every_bundled_palette_passes_the_studio_readability_matrix() {
         let engine = RuntimeEngine::new();
-        for &(name, source) in BUNDLED_THEME_SOURCES {
+        for &(name, source) in gpui_rhai_registry::BUNDLED_PALETTE_SOURCES {
             let theme = load_theme_source(engine.engine(), name, source).unwrap();
             let status = validation_status(&theme);
             assert!(!status.contains("warnings"), "{name}: {status}");
         }
+    }
+
+    #[test]
+    fn exact_design_presets_keep_visible_contrast_warnings_instead_of_being_recolored() {
+        let engine = RuntimeEngine::new();
+        for &(name, source) in gpui_rhai_registry::BUNDLED_DESIGN_PRESET_SOURCES {
+            let theme = load_theme_source(engine.engine(), name, source).unwrap();
+            let status = validation_status(&theme);
+            assert!(
+                status.contains("warnings"),
+                "{name}: source soft edges must not be silently calibrated"
+            );
+            assert!(!theme.tokens.component_styles.is_empty());
+        }
+    }
+
+    #[test]
+    fn studio_reports_placeholder_alpha_and_parent_dependent_backgrounds() {
+        let engine = RuntimeEngine::new();
+        let mut theme = load_theme_source(
+            engine.engine(),
+            "modern_light.rhai",
+            gpui_rhai_registry::MODERN_LIGHT_THEME,
+        )
+        .unwrap();
+        let original = theme.clone();
+        let status = validation_status(&theme);
+        assert!(
+            status.contains("field.placeholder/surface.field"),
+            "{status}"
+        );
+        assert!(status.contains("choice.description/surface"), "{status}");
+        assert_eq!(theme, original, "reporting must not change the palette");
+        let colors = &mut std::sync::Arc::make_mut(&mut theme.tokens).colors;
+        colors.insert("text_muted".to_owned(), Rgba8::from_rgba_hex(0x0000_0010));
+        let status = validation_status(&theme);
+        assert!(status.contains("text_muted/surface_raised"), "{status}");
+        assert!(
+            contrast(
+                Rgba8::from_rgba_hex(0x0000_0010),
+                Rgba8::from_rgba_hex(0xffff_ffff)
+            ) < 1.2
+        );
+        std::sync::Arc::make_mut(&mut theme.tokens).colors.insert(
+            "surface_raised".to_owned(),
+            Rgba8::from_rgba_hex(0xffff_ff80),
+        );
+        assert!(validation_status(&theme).contains("parent-specific contrast evidence"));
     }
 
     #[test]
@@ -989,6 +1079,58 @@ mod tests {
             .lint_shadowed_builtins("studio", &main)
             .unwrap();
         assert!(found.is_empty(), "{found:?}");
+    }
+
+    fn assert_every_preview_switch(lifecycle: &mut ScriptLifecycle, engine: &mut RuntimeEngine) {
+        assert!(find_key(lifecycle.root().unwrap(), "preview-contents-controls").is_some());
+        let mut previous = "controls";
+        // Cover every ordered pair: the budget counts both teardown and setup.
+        for next in [
+            "navigation",
+            "data",
+            "controls",
+            "product",
+            "navigation",
+            "controls",
+            "data",
+            "navigation",
+            "product",
+            "data",
+            "product",
+            "controls",
+        ] {
+            let button = find_key(lifecycle.root().unwrap(), &format!("preview-switch-{next}"))
+                .expect("preview switch is mounted");
+            let Some(UiEventHandler::Script(callback)) = button.handler("click") else {
+                panic!("preview switch has no script handler");
+            };
+            let _ = lifecycle
+                .invoke_callback_transactional(engine, callback, UiValue::Null)
+                .unwrap();
+            assert!(
+                lifecycle
+                    .render_dirty(engine)
+                    .unwrap_or_else(|error| panic!("preview {previous} -> {next}: {error}"))
+            );
+            let root = lifecycle.root().unwrap();
+            assert!(find_key(root, &format!("preview-contents-{next}")).is_some());
+            assert!(find_key(root, &format!("preview-contents-{previous}")).is_none());
+            assert_eq!(
+                find_key(root, &format!("preview-switch-{next}"))
+                    .unwrap()
+                    .attributes()
+                    .get("pressed"),
+                Some(&UiValue::Bool(true))
+            );
+            assert_eq!(
+                find_key(root, &format!("preview-switch-{previous}"))
+                    .unwrap()
+                    .attributes()
+                    .get("pressed"),
+                Some(&UiValue::Bool(false))
+            );
+            previous = next;
+        }
     }
 
     #[test]
@@ -1048,7 +1190,7 @@ mod tests {
         )
         .unwrap();
         lifecycle.start(&mut engine).unwrap();
-        assert!(lifecycle.root().is_some());
+        assert_every_preview_switch(&mut lifecycle, &mut engine);
 
         load_into_session(
             &session,

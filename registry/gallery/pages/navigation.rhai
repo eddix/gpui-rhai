@@ -2,6 +2,7 @@
 // not to the Gallery root. Navigation entries are visits to application data.
 import "gallery/kit" as kit;
 import "components/tabs" as tabs;
+import "components/breadcrumb" as breadcrumb;
 import "components/card" as card;
 import "gallery/retained_page_panel" as panel;
 import "components/button" as button;
@@ -13,6 +14,7 @@ import "patterns/navigation_stack" as navigation;
 
 fn pages() {
     [
+        #{ id: "breadcrumb", title: "Breadcrumb", group: "Navigation" },
         #{ id: "tabs", title: "Tabs", group: "Navigation" },
         #{ id: "tab_overflow_menu", title: "TabOverflowMenu", group: "Navigation" },
         #{ id: "carousel", title: "Carousel", group: "Navigation" },
@@ -22,7 +24,9 @@ fn pages() {
     ]
 }
 fn view(ctx, h, v, id) {
-    if id == "tabs" {
+    if id == "breadcrumb" {
+        breadcrumb_page(h, v)
+    } else if id == "tabs" {
         tabs_page(h, v)
     } else if id == "tab_overflow_menu" {
         overflow_page(h, v)
@@ -41,6 +45,39 @@ fn view(ctx, h, v, id) {
     } else {
         ()
     }
+}
+
+fn breadcrumb_page(h, v) {
+    let tight = kit::val(v,"breadcrumb.tight",false);
+    let active = kit::val(v,"breadcrumb.current","rollout");
+    let nodes = [
+        #{ value:"workspace",label:"Workspace",icon:asset("app/icons/branch") },
+        #{ value:"services", label:"Service catalogue" },
+        #{ value:"deployments",label:"Production deployments" },
+        #{ value:"release",label:"Release candidates" },
+        #{ value:"rollout",label:"Checkout rollout · October" },
+    ];
+    let trail = [];
+    for crumb in nodes {
+        trail.push(crumb);
+        if crumb.value == active { break; }
+    }
+    let navigation = breadcrumb::Breadcrumb(#{key:"deployment-trail",label:"Deployment path",
+        items:trail,on_navigate:kit::store(h,"breadcrumb.current")});
+    let framed = box([navigation]).with_style(style().width(px(if tight {235}else{640}))
+        .max_width(relative(1.0)));
+    kit::page(h,v,"breadcrumb","Breadcrumb",
+        "The trail folds only as much as the actual text and container require. Visible and folded ancestors navigate identically.",[
+        kit::sec("Deployment ancestry",kit::pile([
+            framed,
+            kit::line([
+                button::Button(#{key:"crumb-width",text:if tight {"Widen trail"} else {"Narrow trail"},
+                    variant:"secondary",on_click:kit::put(h,"breadcrumb.tight",!tight)}),
+                button::Button(#{key:"crumb-reset",text:"Restore full path",variant:"ghost",
+                    on_click:kit::put(h,"breadcrumb.current","rollout")})
+            ])
+        ]))
+    ])
 }
 
 fn demo_tab(ctx, value) { ctx.set_state("tab", value); }

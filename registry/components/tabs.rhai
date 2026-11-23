@@ -7,15 +7,7 @@
   "dependencies": ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
   "capabilities": {},
   "assets": ["icons/close.svg", "icons/plus.svg"],
-  "tokens": [
-    "surface_hover", "surface_raised", "focus_ring", "text_primary", "tabs.foreground",
-    "tabs.counter", "control.hover", "border", "disabled", "tabbar.background", "tabbar.active",
-    "accent", "on_accent", "warning", "on_warning", "danger", "on_danger",
-    "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.inset",
-    "metrics.label_column", "metrics.counter", "spacing.xxs", "spacing.xs", "spacing.sm",
-    "space.related", "space.group", "radius.xs", "radius.pill", "radius.md",
-    "typography.control", "typography.counter", "typography.body"
-  ],
+  "tokens": ["accent","border","control.hover","danger","disabled","focus_ring","metrics.control","metrics.control_pad","metrics.counter","metrics.icon","metrics.inset","metrics.label_column","metrics.tabs_bar_h","metrics.tabs_content_gap","metrics.tabs_track_h","on_accent","on_danger","on_warning","radius.md","radius.pill","radius.xs","space.group","space.related","spacing.sm","spacing.xs","spacing.xxs","surface_hover","surface_raised","tabbar.active","tabbar.background","tabs.bar_addon","tabs.bar_list","tabs.bar_tab","tabs.chip_addon","tabs.chip_indicator","tabs.chip_list","tabs.chip_tab","tabs.counter","tabs.foreground","tabs.hover","tabs.track_addon","tabs.track_indicator","tabs.track_list","tabs.track_tab","tabs.underline_addon","tabs.underline_indicator","tabs.underline_list","tabs.underline_tab","text_primary","typography.body","typography.control","typography.counter","warning"],
   "environment": ["size", "density"]
 }
 */
@@ -48,15 +40,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/tab_overflow_menu", "components/icon_button", "components/sliding_panel"],
         capabilities: #{},
-        tokens: [
-            "surface_hover", "surface_raised", "focus_ring", "text_primary", "tabs.foreground",
-            "tabs.counter", "control.hover", "border", "disabled", "tabbar.background", "tabbar.active",
-            "accent", "on_accent", "warning", "on_warning", "danger", "on_danger",
-            "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.inset",
-            "metrics.label_column", "metrics.counter", "spacing.xxs", "spacing.xs", "spacing.sm",
-            "space.related", "space.group", "radius.xs", "radius.pill", "radius.md",
-            "typography.control", "typography.counter", "typography.body"
-        ],
+        tokens: ["accent","border","control.hover","danger","disabled","focus_ring","metrics.control","metrics.control_pad","metrics.counter","metrics.icon","metrics.inset","metrics.label_column","metrics.tabs_bar_h","metrics.tabs_content_gap","metrics.tabs_track_h","on_accent","on_danger","on_warning","radius.md","radius.pill","radius.xs","space.group","space.related","spacing.sm","spacing.xs","spacing.xxs","surface_hover","surface_raised","tabbar.active","tabbar.background","tabs.bar_addon","tabs.bar_list","tabs.bar_tab","tabs.chip_addon","tabs.chip_indicator","tabs.chip_list","tabs.chip_tab","tabs.counter","tabs.foreground","tabs.hover","tabs.track_addon","tabs.track_indicator","tabs.track_list","tabs.track_tab","tabs.underline_addon","tabs.underline_indicator","tabs.underline_list","tabs.underline_tab","text_primary","typography.body","typography.control","typography.counter","warning"],
         environment: ["size", "density"],
         assets: ["icons/close.svg", "icons/plus.svg"],
     },
@@ -197,7 +181,7 @@ define_component(#{
             end: #{ required: false, multiple: true, doc: "Nodes at the far end of the strip." },
         },
         parts: ["root", "strip", "list", "line", "indicator", "focus_frame", "tab", "tab_selected",
-            "label", "icon", "counter", "lamp", "slot", "close", "dirty", "add", "menu", "start", "end",
+            "label", "icon", "icon_selected", "counter", "counter_selected", "lamp", "slot", "close", "dirty", "add", "menu", "menu_trigger", "start", "end",
             "panel"],
         effects: ["reveal", "reveal_order"],
     },
@@ -297,7 +281,7 @@ fn reveal_order_start(ctx, deps) {
 fn count_text(count) { if count > 99 { "99+" } else { `${count}` } }
 
 // The count capsule or the tone lamp after the label, if the tab has either.
-fn tab_marker(ctx, tab) {
+fn tab_marker(ctx, tab, selected) {
     let count = tab_value_or(tab, "count");
     let tone = tab_value_or(tab, "tone");
     if count != () {
@@ -309,8 +293,10 @@ fn tab_marker(ctx, tab) {
             .padding_x(theme_spacing("xs")).flex_shrink(false).items_center().justify_center()
             .radius(theme_radius("pill")).background(fill)
             .typography("counter").font_feature("tnum", 1).text_color(ink);
+        let parts = if selected && tone == () { ["counter","counter_selected"] } else { ["counter"] };
+        let tone_style = if tone != () { style().background(fill).text_color(ink) } else { style() };
         return row([text(count_text(count)).with_style(style().whitespace_nowrap())])
-            .with_key("counter").with_style(ctx.component_style("counter", capsule));
+            .with_key("counter").with_style(ctx.component_style(parts, capsule, tone_style));
     }
     if tone != () {
         // The 6px square is the status-lamp constant.
@@ -381,10 +367,9 @@ fn tab_style(cfg, tab, selected, slotted, on_edge) {
     let label_visible = if "label_visible" in tab { tab.label_visible } else { true };
     let base = style().relative().items_center().gap(theme_spacing("xs")).typography("control")
         .text_color(if selected { theme_color("text_primary") } else { theme_color("tabs.foreground") })
-        .hover(style().text_color(theme_color("text_primary")))
-        .disabled(style().text_color(theme_color("disabled")));
+        .disabled(style().opacity(0.4));
     if cfg.vertical {
-        return base.width(relative(1.0)).min_height(theme_length("metrics.control"))
+        return base.width(relative(1.0)).min_height(theme_length("metrics.tabs_track_h"))
             .padding_x(theme_length("metrics.control_pad")).justify_start();
     }
     if cfg.layout == "equal" {
@@ -416,9 +401,7 @@ fn tab_style(cfg, tab, selected, slotted, on_edge) {
             .radius(theme_radius("md"))
             .padding_x(if label_visible || cfg.layout == "equal" { theme_length("metrics.control_pad") }
                 else { theme_spacing("sm") });
-        return if selected { base } else {
-            base.hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary")))
-        };
+        return base;
     }
     // Track slots fill the track's inner height.
     base = base.self_stretch().justify_center();
@@ -435,18 +418,18 @@ fn selection_marks(ctx, cfg) {
             .radius(theme_radius("xs")).background(theme_color("surface_raised"))
             .border(px(2)).border_color(theme_color("surface_raised"))
             .group_focus(style().border_color(theme_color("focus_ring")));
-        marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", thumb)));
+        marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", thumb, ctx.theme_style("tabs.track_indicator"))));
     } else if cfg.variant == "chip" {
         // The chip's thumb: raised, with a hairline, taking the list's focus on its frame.
         let thumb = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
             .radius(theme_radius("md")).background(theme_color("surface_raised"))
             .border(px(1)).border_color(theme_color("border"))
             .group_focus(style().border(px(2)).border_color(theme_color("focus_ring")));
-        marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", thumb)));
+        marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", thumb, ctx.theme_style("tabs.chip_indicator"))));
     } else if cfg.variant == "underline" {
         let bar = style().absolute().left(theme_spacing("xs")).right(theme_spacing("xs"))
             .bottom(px(0)).height(px(2)).background(theme_color("text_primary"));
-        marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", bar)));
+        marks.push(row([]).with_key("indicator").with_style(ctx.component_style("indicator", bar, ctx.theme_style("tabs.underline_indicator"))));
     }
     if cfg.motion_key != "" {
         for index in 0..marks.len {
@@ -489,7 +472,7 @@ fn tab_node(ctx, props, cfg, tabs, index) {
         content.push(tab.head);
     } else {
         if has_icon {
-            content.push(tab.icon.with_style(ctx.component_style("icon",
+            content.push(tab.icon.with_style(ctx.component_style(if selected { ["icon","icon_selected"] } else { ["icon"] },
                 style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
                     .flex_shrink(false))));
         }
@@ -499,12 +482,12 @@ fn tab_node(ctx, props, cfg, tabs, index) {
         } else {
             content.push(text(" ").with_style(style().width(px(0)).overflow_hidden()));
         }
-        let marker = tab_marker(ctx, tab);
+        let marker = tab_marker(ctx, tab, selected);
         if marker != () { content.push(marker); }
     }
     // Above the thumb, and shrinking with the slot so a long label truncates.
     children.push(row(content).with_key("content").with_style(style().relative().items_center()
-        .justify_center().gap(theme_spacing("xs")).min_width(px(0))));
+        .justify_center().gap(theme_length("metrics.tabs_content_gap")).min_width(px(0))));
     let item_ref = if cfg.reorderable && !disabled { element_ref(`tab-${tab.value}`) } else { () };
     if item_ref != () { children.push(drag_overlay(cfg, tabs, index, item_ref)); }
     if slotted { children.push(tab_slot(ctx, props, cfg, tab, selected, close)); }
@@ -516,8 +499,10 @@ fn tab_node(ctx, props, cfg, tabs, index) {
         name = `${name}, ${tab.tone_label}`;
     }
     let on_edge = index == 0 && cfg.start_len == 0;
-    let resolved = ctx.component_style("tab", tab_style(cfg, tab, selected, slotted, on_edge));
-    if selected { resolved = ctx.component_style("tab_selected", resolved); }
+    let parts = if selected { ["tab", "tab_selected"] } else { ["tab"] };
+    let variant_style = ctx.theme_style(`tabs.${cfg.variant}_tab`);
+    if selected { variant_style = variant_style.without_hover(); }
+    let resolved = ctx.component_style(parts, tab_style(cfg, tab, selected, slotted, on_edge), variant_style);
     // Business values may be empty. Prefixing is injective and supplies a non-empty node key
     // without changing the controlled value or callback payload.
     let node = row(children).with_key(`tab:${tab.value}`).with_style(resolved)
@@ -586,6 +571,7 @@ fn overflow_menu(ctx, props, cfg, tabs) {
     if cfg.variant == "bar" { edge = edge.border_start(px(1)).border_color(theme_color("border")); }
     row([tab_overflow_menu::TabOverflowMenu(#{ key: `${cfg.key}-menu`,
         label: localized_prop(ctx, props, "menu_label", "tabs.all", "All tabs"), value: props.value, items: items,
+        part_styles: #{trigger:ctx.component_style("menu_trigger",style(),ctx.theme_style(`tabs.${cfg.variant}_addon`))},
         on_pick: Fn("menu_pick") })])
         .with_key("menu").with_style(ctx.component_style("menu", edge))
 }
@@ -675,12 +661,12 @@ fn render_Tabs(ctx, props) {
         list_style = list_style.min_width(theme_length("metrics.label_column")).min_height(px(0))
             .overflow_y_scroll();
     } else {
-        list_style = list_style.min_height(theme_length("metrics.control")).overflow_x_scroll();
+        list_style = list_style.min_height(px(0)).overflow_x_scroll();
     }
     // The list always sits in the strip, so the strip, which may be the component's root
     // beside other keyless Tabs, carries no fixed key and the list's ref has one.
     list = list.with_key("tabs").with_ref(list_ref)
-        .with_style(ctx.component_style("list", list_style))
+        .with_style(ctx.component_style("list", list_style, ctx.theme_style(`tabs.${variant}_list`)))
         .accessibility_role("tablist").accessibility_label(props.label)
         .accessibility_value(props.value);
     if !vertical { list = list.translate_wheel(); }
@@ -714,7 +700,7 @@ fn render_Tabs(ctx, props) {
     if has_add {
         children.push(icon_button::IconButton(#{ key: "add",
             icon: image_source(asset("app/icons/plus")), label: localized_prop(ctx, props, "add_label", "tabs.add", "Add tab"),
-            on_click: Fn("add_tab") }).with_style(ctx.component_style("add", style().flex_shrink(false))));
+            on_click: Fn("add_tab") }).with_style(ctx.component_style("add", style().flex_shrink(false), ctx.theme_style(`tabs.${variant}_addon`))));
     }
     if has_menu || end.len > 0 {
         // The add button follows the last tab; the rest goes to the far end.
@@ -727,12 +713,16 @@ fn render_Tabs(ctx, props) {
     if vertical {
         strip_style = strip_style.min_height(px(0));
     } else if variant == "bar" {
-        strip_style = strip_style.height(theme_length("metrics.control"))
+        strip_style = strip_style.height(theme_length("metrics.tabs_bar_h"))
             .background(theme_color("tabbar.background"));
     }
     strip_style = strip_style.width(if layout == "equal" && !vertical { relative(1.0) } else { auto() });
+    // A panel-less Tabs returns the strip as its root. Resolve both public
+    // parts in one cascade so root stylesheet overrides are not dropped.
+    let strip_parts = if panels.len == 0 { ["root", "strip"] } else { ["strip"] };
+    let strip_state = if panels.len == 0 { style().gap(px(0)) } else { style() };
     let strip = (if vertical { column(children) } else { row(children) })
-        .with_style(ctx.component_style("strip", strip_style));
+        .with_style(ctx.component_style(strip_parts, strip_style, strip_state));
 
     let size_env = "size" in props && props.size != ();
     if panels.len == 0 {

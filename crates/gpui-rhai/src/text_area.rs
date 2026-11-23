@@ -5,20 +5,19 @@ use std::sync::Arc;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, FontFallbacks, FontWeight, GlobalElementId,
-    IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PaintQuad, Pixels, Point, Render, ScrollHandle, SharedString, Style as GpuiStyle,
-    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill,
-    point, prelude::*, px, relative, rgba, size,
+    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, IntoElement, KeyBinding,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
+    Pixels, Point, Render, ScrollHandle, SharedString, TextAlign, TextRun, UTF16Selection,
+    UnderlineStyle, Window, WrappedLine, actions, div, fill, point, prelude::*, px, rgba, size,
 };
 use rhai::{Engine, FuncRegistration, INT, ImmutableString};
 
 use crate::text_edit::TextBuffer;
-use crate::text_input::{NativeTypography, TextInputCallbacks, native_typography};
+use crate::text_input::{TextInputCallbacks, request_editor_layout, text_style_defaults};
 use crate::{
     ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
-    PrimitiveValue, Rgba8, UiValue, ValueSchema,
+    PrimitiveValue, Rgba8, Style, UiValue, ValueSchema,
 };
 
 const MAX_TEXTAREA_ROWS: i64 = 1_000;
@@ -42,6 +41,7 @@ actions!(
         End,
         Newline,
         Submit,
+        AltSubmit,
         ShowCharacterPalette,
         Paste,
         Cut,
@@ -75,6 +75,20 @@ pub fn init_text_area(cx: &mut App) {
         KeyBinding::new("shift-enter", Newline, Some("GPUIRhaiTextarea")),
         KeyBinding::new("enter", Submit, Some("GPUIRhaiTextarea && submit_enter")),
         KeyBinding::new(
+            "alt-enter",
+            AltSubmit,
+            Some("GPUIRhaiTextarea && alt_submit"),
+        ),
+        KeyBinding::new(
+            if cfg!(target_os = "macos") {
+                "cmd-enter"
+            } else {
+                "ctrl-enter"
+            },
+            AltSubmit,
+            Some("GPUIRhaiTextarea && alt_mod_submit"),
+        ),
+        KeyBinding::new(
             if cfg!(target_os = "macos") {
                 "cmd-enter"
             } else {
@@ -92,6 +106,15 @@ pub fn init_text_area(cx: &mut App) {
 }
 
 pub(crate) fn register_text_area_api(engine: &mut Engine) {
+    FuncRegistration::new("text_initial")
+        .in_global_namespace()
+        .register_into_engine(engine, |value: ImmutableString| -> String {
+            static LETTER_OR_NUMBER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+            LETTER_OR_NUMBER
+                .get_or_init(|| regex::Regex::new(r"[\p{L}\p{N}]").expect("fixed Unicode class"))
+                .find(value.as_str())
+                .map_or_else(String::new, |letter| letter.as_str().to_uppercase())
+        });
     FuncRegistration::new("grapheme_count")
         .in_global_namespace()
         .register_into_engine(engine, |value: ImmutableString| -> INT {
@@ -108,11 +131,13 @@ struct TextAreaConfig {
     disabled: bool,
     read_only: bool,
     submit_key: Option<String>,
+    alt_submit_key: Option<String>,
     min_rows: usize,
     max_rows: usize,
     rows: Option<usize>,
+    min_viewport_height: Option<Pixels>,
+    max_viewport_height: Option<Pixels>,
     max_length: Option<usize>,
-    typography: NativeTypography,
     autofocus: bool,
     placeholder_color: Rgba8,
     selection_color: Rgba8,
@@ -125,6 +150,12 @@ impl TextAreaConfig {
         self.rows
             .unwrap_or_else(|| measured.clamp(self.min_rows, self.max_rows))
     }
+
+    fn viewport_height(&self, line_height: Pixels, measured: usize) -> Pixels {
+        let natural = line_height * self.viewport_rows(measured);
+        let floored = natural.max(self.min_viewport_height.unwrap_or(px(0.0)));
+        floored.min(self.max_viewport_height.unwrap_or(floored))
+    }
 }
 
 pub(crate) struct TextAreaEntity {
@@ -134,6 +165,7 @@ pub(crate) struct TextAreaEntity {
     callbacks: TextInputCallbacks,
     layout: Option<TextAreaLayout>,
     measured_rows: usize,
+    caret_reveal_pending: bool,
     last_bounds: Option<Bounds<Pixels>>,
     preferred_x: Option<Pixels>,
     selecting: bool,
@@ -154,6 +186,7 @@ impl TextAreaEntity {
             focus: cx.focus_handle().tab_stop(!config.disabled),
             buffer,
             measured_rows: config.min_rows,
+            caret_reveal_pending: false,
             config,
             callbacks,
             layout: None,
@@ -194,22 +227,37 @@ impl TextAreaEntity {
         self.preferred_x = None;
     }
 
-    fn ensure_cursor_visible(&self) {
+    fn ensure_cursor_visible(&mut self) {
+        self.caret_reveal_pending = true;
+    }
+
+    fn reveal_caret_in_viewport(&mut self, window: &Window) -> bool {
+        if !std::mem::take(&mut self.caret_reveal_pending) || !self.focus.is_focused(window) {
+            return false;
+        }
         let Some(layout) = &self.layout else {
-            return;
+            return false;
         };
         let Some(position) = layout.position_for_index(self.buffer.cursor_offset()) else {
-            return;
+            return false;
         };
-        let viewport =
-            self.config.typography.line_height * self.config.viewport_rows(self.measured_rows);
-        let mut top = (-self.scroll.offset().y).max(px(0.0));
+        let viewport = self.scroll.bounds().size.height;
+        if viewport <= px(0.0) {
+            return false;
+        }
+        let current = -self.scroll.offset().y;
+        let mut top = current;
         if position.y < top {
             top = position.y;
-        } else if position.y + self.config.typography.line_height > top + viewport {
-            top = position.y + self.config.typography.line_height - viewport;
+        } else if position.y + layout.line_height > top + viewport {
+            top = position.y + layout.line_height - viewport;
+        }
+        top = top.clamp(px(0.0), self.scroll.max_offset().y);
+        if top == current {
+            return false;
         }
         self.scroll.set_offset(point(px(0.0), -top));
+        true
     }
 
     /// Whether a script capture handler above the editor takes the key that
@@ -319,9 +367,9 @@ impl TextAreaEntity {
         let x = self.preferred_x.unwrap_or(position.x);
         self.preferred_x = Some(x);
         let target_y = if step.is_negative() {
-            position.y - self.config.typography.line_height
+            position.y - layout.line_height
         } else {
-            position.y + self.config.typography.line_height
+            position.y + layout.line_height
         };
         let offset = layout.closest_index_for_position(point(x, target_y));
         if extend {
@@ -416,6 +464,19 @@ impl TextAreaEntity {
     }
 
     fn submit(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
+        self.submit_with(self.callbacks.submit.clone(), window, cx);
+    }
+
+    fn alt_submit(&mut self, _: &AltSubmit, window: &mut Window, cx: &mut Context<Self>) {
+        self.submit_with(self.callbacks.alt_submit.clone(), window, cx);
+    }
+
+    fn submit_with(
+        &mut self,
+        callback: Option<crate::text_input::TextValueHandler>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.script_takes_key(window, cx) {
             return;
         }
@@ -427,7 +488,7 @@ impl TextAreaEntity {
         {
             return;
         }
-        if let Some(submit) = self.callbacks.submit.clone() {
+        if let Some(submit) = callback {
             let value = self.buffer.content.clone();
             window.defer(cx, move |window, cx| submit(value, window, cx));
         }
@@ -520,8 +581,11 @@ impl TextAreaEntity {
             return;
         }
         self.focus.focus(window, cx);
+        let Some(position) = window.event_position_in_layout(event.position) else {
+            return;
+        };
         self.selecting = true;
-        let index = self.index_for_mouse(event.position);
+        let index = self.index_for_mouse(position);
         if event.modifiers.shift {
             self.buffer.select_to(index);
         } else {
@@ -536,9 +600,11 @@ impl TextAreaEntity {
         self.selecting = false;
     }
 
-    fn mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.selecting {
-            let index = self.index_for_mouse(event.position);
+    fn mouse_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selecting
+            && let Some(position) = window.event_position_in_layout(event.position)
+        {
+            let index = self.index_for_mouse(position);
             self.buffer.select_to(index);
             self.reset_preferred_x();
             self.ensure_cursor_visible();
@@ -599,6 +665,7 @@ impl EntityInputHandler for TextAreaEntity {
             return;
         }
         self.buffer.replace(range_utf16.as_ref(), text);
+        self.ensure_cursor_visible();
         self.emit_change(window, cx);
         cx.notify();
     }
@@ -616,6 +683,7 @@ impl EntityInputHandler for TextAreaEntity {
         }
         self.buffer
             .replace_and_mark(range_utf16.as_ref(), text, selected_utf16);
+        self.ensure_cursor_visible();
         cx.notify();
     }
 
@@ -632,11 +700,7 @@ impl EntityInputHandler for TextAreaEntity {
         let end = layout.position_for_index(range.end)?;
         Some(Bounds::from_corners(
             bounds.origin + start,
-            bounds.origin
-                + point(
-                    end.x.max(start.x + px(1.0)),
-                    end.y + self.config.typography.line_height,
-                ),
+            bounds.origin + point(end.x.max(start.x + px(1.0)), end.y + layout.line_height),
         ))
     }
 
@@ -803,7 +867,7 @@ impl IntoElement for TextAreaElement {
 }
 
 impl Element for TextAreaElement {
-    type RequestLayoutState = ();
+    type RequestLayoutState = usize;
     type PrepaintState = TextAreaPrepaint;
 
     fn id(&self) -> Option<ElementId> {
@@ -820,16 +884,16 @@ impl Element for TextAreaElement {
         _: Option<&gpui::InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
-    ) -> (LayoutId, ()) {
+    ) -> (LayoutId, usize) {
         let input = self.input.read(cx);
         let rows = input
             .layout
             .as_ref()
             .map_or(input.measured_rows, TextAreaLayout::visual_rows);
-        let mut style = GpuiStyle::default();
-        style.size.width = relative(1.0).into();
-        style.size.height = (input.config.typography.line_height * rows).into();
-        (window.request_layout(style, [], cx), ())
+        (
+            request_editor_layout(window, window.line_height() * rows),
+            rows,
+        )
     }
 
     fn prepaint(
@@ -837,7 +901,7 @@ impl Element for TextAreaElement {
         _: Option<&GlobalElementId>,
         _: Option<&gpui::InspectorElementId>,
         bounds: Bounds<Pixels>,
-        (): &mut (),
+        laid_out_rows: &mut usize,
         window: &mut Window,
         cx: &mut App,
     ) -> TextAreaPrepaint {
@@ -848,6 +912,8 @@ impl Element for TextAreaElement {
             input.buffer.content.clone().into()
         };
         let text_style = window.text_style();
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
+        let line_height = window.line_height();
         let color = if input.buffer.content.is_empty() {
             rgba(input.config.placeholder_color.as_rgba_hex()).into()
         } else {
@@ -856,6 +922,7 @@ impl Element for TextAreaElement {
         let base = TextRun {
             len: content.len(),
             font: text_style.font(),
+            letter_spacing: text_style.letter_spacing,
             color,
             background_color: None,
             underline: None,
@@ -864,13 +931,7 @@ impl Element for TextAreaElement {
         let runs = marked_runs(&base, input.buffer.marked.as_ref(), content.len());
         let lines = window
             .text_system()
-            .shape_text(
-                content,
-                input.config.typography.font_size,
-                &runs,
-                Some(bounds.size.width),
-                None,
-            )
+            .shape_text(content, font_size, &runs, Some(bounds.size.width), None)
             .unwrap_or_default()
             .into_vec();
         let lines = if lines.is_empty() {
@@ -878,7 +939,7 @@ impl Element for TextAreaElement {
                 .text_system()
                 .shape_text(
                     " ".into(),
-                    input.config.typography.font_size,
+                    font_size,
                     &[base],
                     Some(bounds.size.width),
                     None,
@@ -888,11 +949,7 @@ impl Element for TextAreaElement {
         } else {
             lines
         };
-        let layout = TextAreaLayout::new(
-            lines,
-            &input.buffer.content,
-            input.config.typography.line_height,
-        );
+        let layout = TextAreaLayout::new(lines, &input.buffer.content, line_height);
         let selection = layout.selection_quads(
             &input.buffer.selected,
             bounds.origin,
@@ -905,22 +962,27 @@ impl Element for TextAreaElement {
             .flatten()
             .map(|position| {
                 fill(
-                    Bounds::new(
-                        bounds.origin + position,
-                        size(px(1.5), input.config.typography.line_height),
-                    ),
+                    Bounds::new(bounds.origin + position, size(px(1.5), line_height)),
                     rgba(input.config.caret_color.as_rgba_hex()),
                 )
             });
         self.input.update(cx, |input, cx| {
             let visual_rows = layout.visual_rows();
             let measured = input.config.viewport_rows(visual_rows);
-            if measured != input.measured_rows {
-                input.measured_rows = measured;
-                cx.notify();
-            }
+            let relayout = visual_rows != *laid_out_rows || measured != input.measured_rows;
+            input.measured_rows = measured;
             input.last_bounds = Some(bounds);
             input.layout = Some(layout.clone());
+            if relayout || input.caret_reveal_pending {
+                // A capped viewport can keep its height while the child
+                // grows. Relayout that extent before reading ScrollHandle's
+                // range; the offset of this prepaint has already been chosen.
+                cx.defer_in(window, move |input, window, cx| {
+                    if relayout || input.reveal_caret_in_viewport(window) {
+                        cx.notify();
+                    }
+                });
+            }
         });
         TextAreaPrepaint {
             layout,
@@ -934,14 +996,14 @@ impl Element for TextAreaElement {
         _: Option<&GlobalElementId>,
         _: Option<&gpui::InspectorElementId>,
         bounds: Bounds<Pixels>,
-        (): &mut (),
+        _laid_out_rows: &mut usize,
         state: &mut TextAreaPrepaint,
         window: &mut Window,
         cx: &mut App,
     ) {
         let input = self.input.read(cx);
         let focus = input.focus.clone();
-        let line_height = input.config.typography.line_height;
+        let line_height = state.layout.line_height;
         window.handle_input(
             &focus,
             ElementInputHandler::new(bounds, self.input.clone()),
@@ -981,6 +1043,8 @@ fn marked_runs(base: &TextRun, marked: Option<&Range<usize>>, len: usize) -> Vec
             underline: Some(UnderlineStyle {
                 color: Some(base.color),
                 thickness: px(1.0),
+                paint_tag: None,
+                baseline_offset: None,
                 wavy: false,
             }),
             ..base.clone()
@@ -996,32 +1060,44 @@ fn marked_runs(base: &TextRun, marked: Option<&Range<usize>>, len: usize) -> Vec
 }
 
 impl Render for TextAreaEntity {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::app::read_host_frame_epoch(cx);
-        let viewport_rows = self.config.viewport_rows(self.measured_rows);
-        let viewport_height = self.config.typography.line_height * viewport_rows;
+        let viewport_height = self
+            .config
+            .viewport_height(window.line_height(), self.measured_rows);
         let key_context = match (
             self.callbacks.submit.is_some(),
             self.config.submit_key.as_deref(),
+            self.callbacks
+                .alt_submit
+                .as_ref()
+                .map(|_| self.config.alt_submit_key.as_deref().unwrap_or("alt_enter")),
         ) {
-            (true, Some("enter")) => "GPUIRhaiTextarea submit_enter",
-            (true, Some("mod_enter")) => "GPUIRhaiTextarea submit_mod_enter",
+            (true, Some("enter"), Some("alt_enter")) => "GPUIRhaiTextarea submit_enter alt_submit",
+            (true, Some("enter"), Some("mod_enter")) => {
+                "GPUIRhaiTextarea submit_enter alt_mod_submit"
+            }
+            (true, Some("mod_enter"), Some("alt_enter")) => {
+                "GPUIRhaiTextarea submit_mod_enter alt_submit"
+            }
+            (true, Some("enter"), _) => "GPUIRhaiTextarea submit_enter",
+            (true, Some("mod_enter"), _) => "GPUIRhaiTextarea submit_mod_enter",
+            (_, _, Some("alt_enter")) => "GPUIRhaiTextarea alt_submit",
+            (_, _, Some("mod_enter")) => "GPUIRhaiTextarea alt_mod_submit",
             _ => "GPUIRhaiTextarea",
         };
-        let mut root = div().flex();
-        if let Some(family) = &self.config.typography.family {
-            root = root.font_family(family.clone());
-        }
-        if !self.config.typography.fallbacks.is_empty() {
-            root.text_style().font_fallbacks = Some(FontFallbacks::from_fonts(
-                self.config.typography.fallbacks.clone(),
-            ));
-        }
-        root.font_weight(FontWeight(f32::from(self.config.typography.weight)))
+        div()
+            .flex()
             .key_context(key_context)
             .track_focus(&self.focus)
-            .on_key_down(|event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key.as_str() == "tab" {
+            .on_key_down(cx.listener(|editor, event: &KeyDownEvent, window, cx| {
+                let key = event.keystroke.key.as_str();
+                if key == "escape" && editor.buffer.marked().is_some() {
+                    // Platform input may already consume this. Hosts that still
+                    // forward the key must not let a parent interrupt work
+                    // while the focused editor has pending composition.
+                    cx.stop_propagation();
+                } else if key == "tab" {
                     if event.keystroke.modifiers.shift {
                         window.focus_prev(cx);
                     } else {
@@ -1029,7 +1105,7 @@ impl Render for TextAreaEntity {
                     }
                     cx.stop_propagation();
                 }
-            })
+            }))
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
@@ -1046,6 +1122,7 @@ impl Render for TextAreaEntity {
             .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::newline))
             .on_action(cx.listener(Self::submit))
+            .on_action(cx.listener(Self::alt_submit))
             .on_action(cx.listener(Self::show_character_palette))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
@@ -1056,9 +1133,6 @@ impl Render for TextAreaEntity {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .line_height(self.config.typography.line_height)
-            .text_size(self.config.typography.font_size)
-            .opacity(if self.config.disabled { 0.55 } else { 1.0 })
             .child(
                 div()
                     .id("textarea-scroll")
@@ -1087,6 +1161,10 @@ pub struct TextAreaPrimitiveHandler {
 }
 
 impl PrimitiveHandler for TextAreaPrimitiveHandler {
+    fn style_defaults(&self, props: &PrimitiveProps) -> Result<Style, String> {
+        text_style_defaults(props)
+    }
+
     fn uses_primary_focus(&self) -> bool {
         true
     }
@@ -1167,7 +1245,7 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
             .string("value")
             .unwrap_or_default()
             .to_owned();
-        let config = config_from_props(&instance.node.props, theme, window)?;
+        let config = config_from_props(&instance.node.props, theme, window.rem_size())?;
         let callbacks = primitive_callbacks(events);
         let shared_focus = instance.focus_handle().cloned();
         let entity = if let Some(entity) = self.instances.get(&id) {
@@ -1214,6 +1292,11 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
 }
 
 fn validate_text_area_value(value: &str, config: &TextAreaConfig) -> Result<(), String> {
+    if config.submit_key.as_deref() == Some("mod_enter")
+        && config.alt_submit_key.as_deref() == Some("mod_enter")
+    {
+        return Err("Textarea primary and alternate submit keys must differ".to_owned());
+    }
     if config.min_rows == 0 || config.max_rows < config.min_rows {
         return Err("Textarea requires 1 <= min_rows <= max_rows".to_owned());
     }
@@ -1233,8 +1316,29 @@ fn validate_text_area_value(value: &str, config: &TextAreaConfig) -> Result<(), 
 fn config_from_props(
     props: &PrimitiveProps,
     theme: &crate::PrimitiveTheme,
-    window: &Window,
+    rem_size: Pixels,
 ) -> Result<TextAreaConfig, String> {
+    let limit = |name| match props.get(name) {
+        Some(PrimitiveValue::Length(value)) => theme
+            .resolve_length(*value)
+            .and_then(|length| match length {
+                crate::Length::Pixels(value) => Some(value),
+                crate::Length::Rems(value) => Some(value * f64::from(rem_size)),
+                _ => None,
+            })
+            .and_then(|value| value.to_string().parse::<f32>().ok())
+            .filter(|height| height.is_finite() && *height > 0.0)
+            .map(|height| Some(px(height)))
+            .ok_or_else(|| format!("Textarea {name} must resolve to positive pixels")),
+        _ => Ok(None),
+    };
+    let min_viewport_height = limit("min_viewport_height")?;
+    let max_viewport_height = limit("max_viewport_height")?;
+    if let (Some(min), Some(max)) = (min_viewport_height, max_viewport_height)
+        && min > max
+    {
+        return Err("Textarea min_viewport_height must not exceed max_viewport_height".to_owned());
+    }
     let accent = theme
         .color("accent")
         .unwrap_or_else(|| Rgba8::from_rgba_hex(0x3b82_f6ff));
@@ -1243,11 +1347,13 @@ fn config_from_props(
         disabled: props.boolean("disabled").unwrap_or(false),
         read_only: props.boolean("read_only").unwrap_or(false),
         submit_key: props.string("submit_key").map(str::to_owned),
+        alt_submit_key: props.string("alt_submit_key").map(str::to_owned),
         min_rows: usize_prop(props, "min_rows")?.unwrap_or(3),
         max_rows: usize_prop(props, "max_rows")?.unwrap_or(8),
         rows: usize_prop(props, "rows")?,
+        min_viewport_height,
+        max_viewport_height,
         max_length: usize_prop(props, "max_length")?,
-        typography: native_typography(theme, props.string("typography").unwrap_or("body"), window)?,
         autofocus: props.boolean("autofocus").unwrap_or(false),
         placeholder_color: theme
             .part_color(props, "placeholder_style", false)
@@ -1273,6 +1379,7 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
     let focus_events = events.clone();
     let blur_events = events.clone();
     let submit_events = events.clone();
+    let alt_submit_events = events.clone();
     TextInputCallbacks {
         change: Some(Rc::new(move |value, window, cx| {
             let _ = change_events.emit("change", UiValue::String(value), window, cx);
@@ -1280,6 +1387,11 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
         submit: events.observes("submit").then(|| {
             Rc::new(move |value, window: &mut Window, cx: &mut App| {
                 let _ = submit_events.emit("submit", UiValue::String(value), window, cx);
+            }) as crate::text_input::TextValueHandler
+        }),
+        alt_submit: events.observes("alt_submit").then(|| {
+            Rc::new(move |value, window: &mut Window, cx: &mut App| {
+                let _ = alt_submit_events.emit("alt_submit", UiValue::String(value), window, cx);
             }) as crate::text_input::TextValueHandler
         }),
         focus: Some(Rc::new(move |window, cx| {
@@ -1292,6 +1404,7 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
         key_capture: Some(Rc::new(move |window, cx| {
             key_events.script_takes_key(window, cx)
         })),
+        ..TextInputCallbacks::default()
     }
 }
 
@@ -1368,6 +1481,16 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
                 ),
             ),
             (
+                "min_viewport_height".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Length))
+                    .with_doc("Optional positive pixel-resolving floor for the native scroll viewport, excluding outer editor padding and borders."),
+            ),
+            (
+                "max_viewport_height".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Length))
+                    .with_doc("Optional positive pixel-resolving cap for the native scroll viewport, excluding outer editor padding and borders."),
+            ),
+            (
                 "rows".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::bounded_integer(
                     Some(1),
@@ -1440,6 +1563,16 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
                 optional_callback().with_doc("Called with the full text on the configured submit key; disabled, read-only and composing fields never submit."),
             ),
             (
+                "alt_submit_key".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::String {
+                    allowed: vec!["alt_enter".to_owned(), "mod_enter".to_owned()],
+                })).with_doc("Shortcut for on_alt_submit. Defaults to Alt+Enter; mod_enter uses Cmd+Enter on macOS or Ctrl+Enter elsewhere. Must differ from submit_key."),
+            ),
+            (
+                "on_alt_submit".to_owned(),
+                optional_callback().with_doc("Optional alternate submission (Alt+Enter by default). Uses the same native focus and composition guards as the main submit."),
+            ),
+            (
                 "on_focus".to_owned(),
                 optional_callback().with_doc("Called when the field gains keyboard focus."),
             ),
@@ -1457,6 +1590,13 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
 
 fn text_area_events() -> BTreeMap<String, EventSchema> {
     BTreeMap::from([
+        (
+            "alt_submit".to_owned(),
+            EventSchema {
+                doc: Some("Emitted by Alt+Enter only when explicitly enabled; reports the full text without changing it.".to_owned()),
+                payload: ValueSchema::string(),
+            },
+        ),
         (
             "submit".to_owned(),
             EventSchema {
@@ -1512,22 +1652,18 @@ mod tests {
 
     #[test]
     fn config_rejects_controlled_values_over_grapheme_limit() {
-        let config = TextAreaConfig {
+        let mut config = TextAreaConfig {
             placeholder: "".into(),
             disabled: false,
             read_only: false,
             submit_key: None,
+            alt_submit_key: None,
             min_rows: 3,
             max_rows: 8,
             rows: None,
+            min_viewport_height: None,
+            max_viewport_height: None,
             max_length: Some(1),
-            typography: NativeTypography {
-                family: None,
-                fallbacks: Vec::new(),
-                font_size: px(14.0),
-                line_height: px(20.0),
-                weight: 400,
-            },
             autofocus: false,
             placeholder_color: Rgba8::from_rgba_hex(0xa1a1_aaff),
             selection_color: Rgba8::from_rgba_hex(0x3b82_f655),
@@ -1536,5 +1672,12 @@ mod tests {
         };
         assert!(validate_text_area_value("👩🏽‍💻", &config).is_ok());
         assert!(validate_text_area_value("👩🏽‍💻x", &config).is_err());
+        config.submit_key = Some("mod_enter".into());
+        config.alt_submit_key = Some("mod_enter".into());
+        assert!(
+            validate_text_area_value("", &config)
+                .unwrap_err()
+                .contains("must differ")
+        );
     }
 }

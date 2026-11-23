@@ -1,6 +1,6 @@
 # Checkbox
 
-`components/checkbox` · export `Checkbox` · version 0.4.0. Generated from
+`components/checkbox` · export `Checkbox` · version 0.4.3. Generated from
 [`registry/components/checkbox.rhai`](../../../registry/components/checkbox.rhai); do not edit.
 
 Controlled checkbox with checked, unchecked, and indeterminate states. State: controlled by checked/indeterminate props.
@@ -32,9 +32,9 @@ checkbox::Checkbox(#{ checked: true, label: "Remember", on_change: Fn("changed")
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `box`, `label`, `mark`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `box`, `control`, `label`, `mark`, `root`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `on_accent`, `radius.xs`, `spacing.sm`, `surface_hover`, `surface_raised`, `text_primary`, `typography.control`
+- Tokens: `accent`, `border`, `checkbox.draw_delay_ms`, `checkbox.draw_ms`, `checkbox.mixed_draw_ms`, `checkbox.stroke_width`, `choice.checked`, `choice.fill`, `choice.on_fill`, `choice.unchecked`, `control.border`, `disabled`, `focus_ring`, `metrics.choice_line`, `metrics.control`, `metrics.mark`, `on_accent`, `radius.xs`, `spacing.sm`, `surface.field`, `surface_hover`, `surface_raised`, `text_primary`, `typography.control`
 - Environment: `density`, `size`

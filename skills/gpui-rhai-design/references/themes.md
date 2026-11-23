@@ -1,201 +1,156 @@
-# Theme authoring
+# Design presets and theme authoring
 
-For authors of palette themes and token bases. Read
-[principles.md](principles.md) first.
+**Target: modern / clean.** The source default is renamed modern; clean keeps
+its name. This document replaces the old visual token defaults, not the
+runtime's open theme mechanism. The four complete variants are implemented;
+the full native visual and interaction migration is still under verification.
 
-## 1. Three token layers
+Read [principles](principles.md), [exact reference](modern-clean-spec.md), and
+the [component map](component-coverage.md) before selecting values.
 
-The resolved token set of a window is built from three layers, lowest first:
+## 1. Preset, appearance and application overrides
 
-| Layer | Source | Owns |
+| Axis | Owns | Layout |
 |---|---|---|
-| **Token base** | `ui/tokens.rhai` (copied from `registry/tokens.rhai`) | typography roles and families, spacing scale, `metrics.*`, radius roles, derived colors, environment declarations |
-| **Palette theme** | `ui/theme.rhai`, `ui/themes/*.rhai` | semantic colors and palette-specific derived colors |
-| **Host overrides** | `ThemeTokenOverrides` from the embedding Rust Host | user and platform preferences: radius scale, UI and mono font, text scale, density default, motion timing |
+| modern / clean | complete component metrics, type, corners, surfaces, effects and state recipes | may differ and reflow |
+| light / dark within a preset | the source appearance's colors/alpha/gradient/shadow colors | same geometry |
+| application palette | an intentional alternate palette, if requested | does not redefine the reference baseline |
+| accessibility/Host preferences | font/reading scale, motion and other user preferences | explicit, separately verified |
 
-A later layer replaces individual tokens of an earlier one. Palette themes
-should contain colors only, so switching palette never changes layout
-([principle 4](principles.md#4-switching-palette-never-reflows-layout)). A
-theme that sets typography or metrics is valid, but it opts out of that
-guarantee.
+The four reference configurations are modern/light, modern/dark, clean/light,
+clean/dark, selected as family `Modern` / `Clean` and variant `Light` / `Dark`.
+Do not merely rename the old Default palette modern while retaining its
+paper/cobalt colors and old geometry.
 
-Applications that bring their own design may skip the token base entirely and
-write a theme with any vocabulary they like. Nothing is required until a
-component that declares a token is mounted.
+## 2. Token layers
 
-## 2. Token values
+Keep the runtime neutral and the source vocabulary above it. An implementation
+needs a preset base, appearance/state values and explicit application/Host
+overrides, resolved atomically so a modern frame cannot accidentally use clean
+metrics with old colors.
 
-```rhai
-fn tokens() {
-    #{
-        spacing: #{
-            sm: px(8),
-            lg: by_env("density", #{ comfortable: px(16), compact: px(12) }),
-        },
-        metrics: #{
-            row: by_env("density", #{ comfortable: px(32), compact: px(28) }),
-            control: by_env(["density", "size"], #{
-                comfortable: #{ xs: px(24), sm: px(28), md: px(32), lg: px(36) },
-                compact: #{ xs: px(20), sm: px(24), md: px(28), lg: px(32) },
-            }),
-        },
-        colors: #{
-            "text.accent": readable(theme_color("accent"), theme_color("text_primary"),
-                theme_color("surface_hover"), 4.5),
-            "control.hover": mix(theme_color("surface_hover"), theme_color("text_primary"), 0.06),
-        },
-    }
-}
-```
+The existing token base/palette/Host override machinery is reusable, but the
+old rule "themes own colors only" does not describe a complete style preset.
+Keep palette-only changes geometry-stable; distinguish them from a deliberate
+design switch. Modern/clean are not density values.
 
-- Lengths: `px`, `rem`.
-- `by_env(names, table)` makes a value depend on inherited environment values,
-  resolved during native rendering. Nested tables follow the order of `names`.
-- Colors: literal `0xrrggbbaa`, `color("...")`, or expressions over other
-  tokens: `theme_color(name)`, `mix(a, b, t)`, `alpha(c, a)`, and
-  `readable(color, toward, background, ratio)`, which moves `color` toward
-  `toward` only as far as needed to reach the contrast `ratio` on
-  `background`. Expressions resolve against the final merged token set, so a
-  derived color follows the active palette and Host overrides.
-- Environment declarations: `environment: #{ density: #{ values: [...],
-  "default": "comfortable" } }`. `default` is a reserved Rhai keyword, so the
-  key is quoted. The token base declares `density` and `size`. A subtree
-  selects a value with `.env(#{ density: "compact" })`; a Host sets the
-  application default with `ThemeTokenOverrides::environment_defaults`. Radius
-  roles follow the component's kind, not an environment value.
+## 3. Primitive values and component aliases
 
-## 3. Semantic colors
+Extract primitive values without normalizing away source distinctions. Build
+aliases for real semantic contexts, for example:
 
-Official components declare the colors they read. The design language's
-semantic set is:
+- text: strongest, primary, secondary, subtle, placeholder, icon, on-solid;
+- surface: canvas, tray, card/field/overlay and their state washes;
+- semantic fg/bg pairs: info, success, warning, danger, purple;
+- edges: decorative hairline, functional edge, strong/focused edge;
+- geometry: button/field/icon-button sizes and insets; cards' outer/inner
+  layers; family-specific row, marker and icon metrics;
+- type: button label, field value/label/hint, card title/body, menu row,
+  numeric and code roles;
+- effects: ordered shadows, gradient fill/edge stops and clip boxes, focus,
+  blur/mask and motion recipes.
 
-```text
-surface, surface_raised, surface_hover, text_primary, text_muted,
-accent, accent_hover, on_accent, danger, on_danger, warning, on_warning,
-success, on_success, border, focus_ring, selection, disabled
-```
+These are design concepts, not newly registered token names or unsupported
+API examples. Reuse existing representations where exact; extend generic
+mechanisms where not. Current theme values do not magically become arbitrary
+CSS shadow/filter lists because this document names them.
 
-`on_*` colors are foregrounds for text and marks on the matching fill. Choose
-them independently; deriving them from `text_primary` is not reliable across
-light and dark palettes.
+Do not flatten component-local geometry into one global token. For example,
+Modern Card's inner radius and Popover's radius are both 16px; giving a shared
+radius a new value must not accidentally add another 6px to the Popover.
 
-## 4. Constraints
+## 4. Geometry, type and effects
 
-These are checked by the theme tests for bundled themes and by Theme Studio for
-drafts.
+Use the exact [geometry matrix](modern-clean-spec.md#core-metrics),
+not the previous comfortable/compact table. Typical modern Button md40/r12
+differs from clean28/r6; modern field md36/r10 differs from clean32/r7.
+No single `metrics.control` or radius-by-height formula describes both.
 
-| Pair or property | Minimum |
-|---|---:|
-| `text_primary` and `text_muted` on `surface`, `surface_raised`, `surface_hover`, `selection` | 4.5:1 |
-| each `on_*` on its fill | 4.5:1 |
-| `focus_ring` on `surface` | 3:1 |
-| `accent` on `surface` (indicator bar, checked marks) | 3:1 |
-| `surface_hover` distinguishable from `surface` | 1.15:1 |
-| derived `text.*` on `surface_hover` | 4.5:1 (guaranteed by `readable`) |
-| `text_primary` on the derived `tag.facet` and `table.selection` | 4.5:1 (guaranteed by `readable`); each still differs from its base (`surface_hover`, `surface`) |
+Use Inter and the actual source weights/line heights/tracking. Native font
+resources must match the source; WOFF/WOFF2 cannot be passed directly to the
+current `FontSource`. Respect the font license when introducing resources.
 
-Semantic rules:
+Shadows are lists, not one vague elevation level. Preserve zero-blur shadow
+outlines, fractional widths, negative spread, inset, alpha and layer order.
+modern's primary gradient border is not just an accent color; clean's
+hairline shadow is not a layout border. Ordered/inset shadows are exposed by
+the shared Style API. Remaining binding/rendering gaps are explicit in the
+specification and work log.
 
-- **Hue separation.** The accent hue keeps at least 30° (HSL) from the danger,
-  warning and success hues, and status hues keep at least 30° from each other.
-  An orange accent next to an amber warning makes every highlight look like an
-  alert.
-- **Same semantics in both modes.** If `focus_ring` is the ink color in the
-  dark variant, it is the ink color in the light variant too.
-- **Selection is not hover.** `selection` and `surface_hover` must be visibly
-  different, since a row can be selected and hovered.
-- **Status colors are for status.** A palette must not reuse a status color as
-  its accent.
-- Check contrast against the surface the text is actually painted on, not only
-  the window background.
+## 5. Color resolution
 
-## 5. Default palettes
+Keep raw sRGB values and alpha, including eight-digit hex. Resolve
+`color-mix(in srgb, …)` in the same space with correct alpha handling.
+Do not replace those expressions with HSL adjustments, Oklab calibration or
+an arbitrary darker/lighter result in the reference port.
 
-Paper, ink and one cobalt spot color.
+Light/dark recipes have local distinctions: clean Card dark surface is
+`#1b1b1e`, while clean Button/TextField use `#1c1c1e`; modern field/Card dark
+surface is `#19191b` while modern secondary Button uses `#232326`. Preserve
+these values rather than flattening everything into one raised-surface role.
 
-| Role | Light | Dark |
-|---|---|---|
-| `surface` | `#f3f1ea` paper | `#151412` warm graphite |
-| `surface_raised` | `#fdfbf4` | `#21201e` |
-| `surface_hover` | `#dfddd7` | `#2e2d2b` |
-| `text_primary` | `#1c1b18` ink | `#e8e4da` |
-| `text_muted` | `#514d44` | `#bcb7aa` |
-| `accent` | `#1f45b8` cobalt | `#3d5fe0` cobalt |
-| `accent_hover` | `#173aac` | `#3454d4` |
-| `on_accent` | `#ffffff` | `#ffffff` |
-| `danger` / `on_danger` | `#b3261e` / `#ffffff` | `#ef6b5e` / `#151412` |
-| `warning` / `on_warning` | `#855600` / `#ffffff` | `#e2a640` / `#151412` |
-| `success` / `on_success` | `#2e6b36` / `#ffffff` | `#7cbd78` / `#151412` |
-| `border` | `#adaca7` | `#50504e` |
-| `focus_ring` | `#1c1b18` ink | `#e8e4da` ink |
-| `selection` | `#bdcdee` | `#141e3b` |
-| `disabled` | `#817f7b` | `#737270` |
-
-In the dark palette cobalt is dark enough to carry white text but below 4.5:1
-as text on graphite; components therefore use the derived `text.accent`
-when accent is text; it follows the final merged palette rather than a fixed hex.
+For normal, hover, focus, checked/selected, disabled, loading, invalid and
+read-only, preserve the source combinations. Focus is not universally ink or
+universally blue; normal fields strengthen their neutral edge, whereas
+buttons commonly have a blue outline. Disabled opacity also differs by family.
 
 ## 6. Bundled themes
 
-`gpui-rhai init` installs every bundled variant as editable Rhai source:
-`ui/theme.rhai` starts as Default Dark and the other variants live in
-`ui/themes/`, embedded only as ordinary project-owned files.
+The existing Default/Tokyo/Catppuccin/Omarchy-derived/Dracula/Molokai/
+Absolutely palette files remain current implementation assets, with their
+attribution and app-owned update behavior. They are not the modern/clean
+reference and are not deleted or automatically renamed by this document.
+
+Keep their existing source credits when copying or updating them:
 
 | Variants | Origin |
 |---|---|
-| Default Light and Dark, Tokyo Night and Storm, Catppuccin Latte and Mocha | project themes |
-| Ethereal, Everforest, Gruvbox, Hackerman, Nord, Retro 82 | semantic adaptations of the themes in the MIT-licensed [Omarchy repository](https://github.com/basecamp/omarchy/tree/master/themes) |
-| Hermarchy | adapted from [Archer Clawbot's Hermarchy](https://github.com/archer-clawbot/omarchy-hermarchy-theme), MIT |
-| Aetheria | adapted from [Dizziee's Aetheria](https://github.com/JJDizz1L/aetheria), MIT |
-| Futurism | an original palette inspired by [Bjarne Øverli's Futurism](https://github.com/bjarneo/omarchy-futurism-theme); no source code or artwork from it is redistributed |
-| Dracula | adapted from [Dracula](https://github.com/dracula/dracula-theme), MIT |
-| Molokai | adapted from [Tomas Restrepo's Molokai](https://github.com/tomasr/molokai), MIT (after Monokai by Wimer Hazenberg) |
-| Absolutely Light and Dark | adapted from Absolutely, a built-in theme of the OpenAI Codex app, with the anchors republished in [shaw-baobao/codex-themes](https://github.com/shaw-baobao/codex-themes) (MIT) |
+| Default Light/Dark, Tokyo Night/Storm, Catppuccin Latte/Mocha | project semantic adaptations |
+| Ethereal, Everforest, Gruvbox, Hackerman, Nord, Retro 82 | [Omarchy themes](https://github.com/basecamp/omarchy/tree/master/themes), MIT |
+| Hermarchy | [Archer Clawbot](https://github.com/archer-clawbot/omarchy-hermarchy-theme), MIT |
+| Aetheria | [Dizziee](https://github.com/JJDizz1L/aetheria), MIT |
+| Futurism | original palette inspired by [Bjarne Øverli](https://github.com/bjarneo/omarchy-futurism-theme); no source code/artwork redistributed |
+| Dracula | [Dracula theme](https://github.com/dracula/dracula-theme), MIT |
+| Molokai | [Tomas Restrepo](https://github.com/tomasr/molokai), MIT, after Monokai by Wimer Hazenberg |
+| Absolutely Light/Dark | Codex Absolutely anchors republished in [shaw-baobao/codex-themes](https://github.com/shaw-baobao/codex-themes), MIT |
 
-All bundled palettes contain colors only and satisfy section 4. Source roles
-are translated into the semantic roles rather than copied mechanically: error,
-warning, success, focus and their foreground pairs keep their meaning and stay
-readable. Where a source palette violates a semantic rule (for example an
-accent and a warning of the same hue), the adaptation adjusts the status color
-and records why in a comment. Each adapted file repeats its short attribution
-at the top so it survives copying into an application; theme identity and
-runtime tokens carry no provenance metadata. Theme Studio renders the
-canonical component specimen under any variant.
+[Legacy palette calibration](https://github.com/eddix/gpui-rhai/blob/main/docs/design/palette-calibration.md) explains the installed
+colors and their tests. Its global7:1/5.2:1 reading targets,2:1 decorative
+borders and warm-paper/cobalt anchors do not authorize altering the new
+reference. Source soft grays do not all satisfy those constraints; record the
+actual contrast/role and obtain explicit approval for any accessibility-driven
+design difference. Do not silently weaken existing palette tests in this round.
 
-## 7. Palette calibration and display margin
+For the four exact presets the accepted default is preservation plus truthful
+risk reporting. An enhanced-contrast design is an explicit selection, not an
+automatic mutation of the original palette. General SDK audits remain strict;
+Theme Studio reports body, placeholder, metadata, ghost-label and icon pairs,
+compositing foreground alpha and warning when the backing is parent-dependent.
+For example, the original Modern Light Table header is `#8f8f8f` on white
+(about3.23:1). Command keycaps also retain their original normal/active ink
+and opacity. These are reported risks, not WCAG passes. Switch's secondary
+description also keeps its original soft gray/alpha; Theme Studio reports that
+role separately from the primary label. The fixed-fixture test ledger checks
+the exact stock palette, component path, role and numeric backing;
+it never turns those colors into a general exemption for applications or Host
+overrides. Table surface/grid/selection roles are independent of generic lists.
 
-Bundled palettes keep their original page background, accent, status fills and
-paired fill foregrounds. They are semantic adaptations, not byte-identical
-upstream palettes. Their neutral/tonal ramp is calibrated in Oklab/OKLCH:
-change lightness while retaining hue/chroma, reducing chroma only when needed to
-stay in sRGB. HSL lightness and equal RGB increments do not give equal perceptual
-steps. [Calibration and the per-theme rationale](https://github.com/eddix/gpui-rhai/blob/main/docs/design/palette-calibration.md) record
-the maintained targets and verification commands.
+## 7. Theme Studio and migration acceptance
 
-For bundled themes, the reading target is stronger than the general minimum:
-`text_primary` reaches 7:1 and `text_muted` at least 5.2:1 on all four reading
-surfaces. Main and secondary text keep at least 0.075 Oklab L separation. Dark
-page → raised → hover steps are about 0.05 L each; light themes use a small
-upward paper step and a downward hover step. Hover and selection also differ in
-lightness, not only hue. These are calibration guardrails, not a claim about
-every physical monitor or a new validation requirement on application palettes.
+Theme Studio must eventually distinguish a design preset from an appearance
+or alternate palette, and show real components in all applicable states.
+Its current validation is not proof of modern/clean parity. A green palette
+check cannot validate multiple shadow layers, typography, geometry or motion.
 
-`border` remains a decorative panel/divider role (at least 2:1 against page and
-raised surfaces in bundled themes). `control.border` is a derived functional
-outline at 3:1 on both surfaces. Input, Textarea, InputGroup, choice triggers,
-Checkbox/Radio and outline buttons consume it; an embedded search line and
-disabled controls keep their quiet `border` treatment. This avoids increasing
-every divider to the contrast needed to identify an editable field. D70 updates
-the earlier low-contrast-outline guidance.
+Before shipping the new presets:
 
-Primary hover preserves contrast with `on_accent`; status hovers use
-`control.{danger,warning,success}_hover`, which back off a tint before it can make
-the paired text unreadable. Syntax foregrounds use `readable` on the tonal code
-surface; a status fill is not automatically a suitable small-text color.
-Scrollbar thumbs are independently calibrated for 3:1 instead of an arbitrary
-low alpha. All derived roles remain ordinary overrideable color tokens.
+- close the public paint/text gaps without per-component private renderers;
+- implement exact source-matched defaults and explicit derived targets for
+  SDK-only controls/variants;
+- update the copied registry tokens/styles, profiles, CLI specimens and docs;
+- preserve locale/RTL, live switching, identity/focus and user preferences;
+- capture four-configuration GPUI baselines under fixed fonts/viewport/DPR;
+- run the functional/native matrix as well as visual comparisons.
 
-Theme Studio checks reading text on every surface, primary hover, and derived
-control/scrollbar roles using the runtime's own contrast implementation. A
-passing palette check is not a full accessibility certification: status still
-needs text/icons, focus must be visible, and actual control composition matters.
+Do not replace old baselines with source-browser shots or call a partial
+approximation a completed 1:1 migration.

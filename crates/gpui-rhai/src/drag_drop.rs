@@ -181,14 +181,29 @@ fn register_source_pointer(
         let owner = context.interaction_owner(&config.id);
         let spec = drag_spec(&config, owner.clone(), view);
         let finish_context = context.clone();
+        let on_start: Option<crate::interaction::DragPhaseHandler> =
+            context.observes("drag_start").then(|| {
+                let start_context = context.clone();
+                Rc::new(move |window: &mut Window, cx: &mut App| {
+                    start_context.propose_while_mounted("drag_start", UiValue::Null, window, cx);
+                }) as crate::interaction::DragPhaseHandler
+            });
         context.begin_application_drag(
             spec,
             event.position,
             config.threshold,
             move |result, cancelled, window, cx| {
-                finish_context.propose("drag_end", drag_end_value(&result, cancelled), window, cx);
+                finish_context.propose_while_mounted(
+                    "drag_end",
+                    drag_end_value(&result, cancelled),
+                    window,
+                    cx,
+                );
             },
-            None,
+            crate::interaction::ApplicationDragPhases {
+                start: on_start,
+                tap: None,
+            },
             window,
             cx,
         );
@@ -475,7 +490,7 @@ impl DragSourceEntity {
             .context
             .perform_keyboard_drop(&spec, target, window, cx);
         self.context
-            .propose("drag_end", drag_end_value(&result, false), window, cx);
+            .propose_while_mounted("drag_end", drag_end_value(&result, false), window, cx);
         cx.stop_propagation();
     }
 }
@@ -888,6 +903,12 @@ pub fn drag_source_primitive_descriptor() -> PrimitiveDescriptor {
                     .with_doc("Ignores presses and keys and removes the source from the tab order."),
             ),
             (
+                "on_drag_start".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
+                    "Called once when a pointer drag crosses its threshold. No callback for a tap or keyboard-only drop.",
+                ),
+            ),
+            (
                 "on_drag_end".to_owned(),
                 ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc(
                     "Called with the outcome when a started drag is dropped or cancelled, or a keyboard drop runs.",
@@ -895,6 +916,12 @@ pub fn drag_source_primitive_descriptor() -> PrimitiveDescriptor {
             ),
         ]),
         events: BTreeMap::from([(
+            "drag_start".to_owned(),
+            EventSchema {
+                doc: Some("Emitted when a pointer gesture becomes an active application drag.".to_owned()),
+                payload: ValueSchema::Null,
+            },
+        ), (
             "drag_end".to_owned(),
             EventSchema {
                 doc: Some(

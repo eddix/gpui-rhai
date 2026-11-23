@@ -41,5 +41,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `control`, `fill`, `head
 
 ## Theme
 
-- Tokens: `accent`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `spacing.sm`, `spacing.xs`, `surface`, `surface_hover`, `text_muted`, `text_primary`, `typography.body`
+- Tokens: `accent`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `metrics.slider_track`, `spacing.sm`, `spacing.xs`, `surface`, `surface_hover`, `text_muted`, `text_primary`, `typography.body`
 - Environment: `density`, `size`

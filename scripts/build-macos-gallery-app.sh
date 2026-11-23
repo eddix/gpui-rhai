@@ -8,7 +8,7 @@ fi
 
 story="${1:-}"
 case_id="${2:-basic}"
-theme="${3:-default-dark}"
+theme="${3:-modern-dark}"
 locale="${4:-en}"
 motion="${5:-normal}"
 if [[ -n "${story}" && ! "${story}" =~ ^[a-zA-Z0-9_/-]+$ ]]; then

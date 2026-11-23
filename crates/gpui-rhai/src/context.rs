@@ -1451,6 +1451,7 @@ pub struct UiContext {
     component_style: Option<crate::Style>,
     component_part_styles: BTreeMap<String, crate::Style>,
     global_component_part_styles: BTreeMap<String, crate::Style>,
+    preset_component_part_styles: Option<Rc<BTreeMap<String, crate::Style>>>,
     non_reusable_render_reads: Rc<RefCell<BTreeSet<ComponentInstancePath>>>,
     event_target: Option<crate::GeometryBounds>,
 }
@@ -1509,6 +1510,7 @@ impl UiContext {
             component_style: None,
             component_part_styles: BTreeMap::new(),
             global_component_part_styles: BTreeMap::new(),
+            preset_component_part_styles: None,
             non_reusable_render_reads: Rc::new(RefCell::new(BTreeSet::new())),
             event_target: None,
         };
@@ -1576,6 +1578,7 @@ impl UiContext {
             component_style: self.component_style.clone(),
             component_part_styles: self.component_part_styles.clone(),
             global_component_part_styles: self.global_component_part_styles.clone(),
+            preset_component_part_styles: None,
             non_reusable_render_reads: Rc::clone(&self.non_reusable_render_reads),
             event_target: self.event_target,
         };
@@ -1595,6 +1598,13 @@ impl UiContext {
         // Structure supplies child identity, while callbacks and observable
         // reads must still belong to an executable formal/root component.
         let mut context = self.for_component(component, events);
+        // A structural identity is not a new formal component/style owner.
+        // Keep the declaring component's preset alongside its already retained
+        // application and instance rules. Sharing also avoids copying every
+        // preset Style for each visible virtual row.
+        context
+            .preset_component_part_styles
+            .clone_from(&self.preset_component_part_styles);
         context.callback_component = self.callback_component.clone();
         context.callback_incarnation = self.callback_incarnation;
         context.callback_events = self.callback_events.clone();
@@ -1649,14 +1659,53 @@ impl UiContext {
 
     pub(crate) fn with_component_styles(
         mut self,
-        global_part_styles: BTreeMap<String, crate::Style>,
+        component: &crate::ComponentDefinition,
         style: Option<crate::Style>,
         part_styles: BTreeMap<String, crate::Style>,
-    ) -> Self {
-        self.global_component_part_styles = global_part_styles;
+    ) -> Result<Self, crate::ComponentStyleError> {
+        self.refresh_component_styles(&component.metadata.id, &component.schema.parts)?;
         self.component_style = style;
         self.component_part_styles = part_styles;
-        self
+        Ok(self)
+    }
+
+    /// Refresh only environment-owned rules. Instance props and callback/read
+    /// ownership are unchanged when a retained formal invocation is rerendered.
+    pub(crate) fn refresh_component_styles(
+        &mut self,
+        component: &crate::ModuleId,
+        parts: &BTreeSet<String>,
+    ) -> Result<(), crate::ComponentStyleError> {
+        self.preset_component_part_styles = self
+            .with_resolved_theme(|variant| {
+                variant
+                    .tokens
+                    .component_styles
+                    .validate_parts(component, parts)?;
+                Ok(variant
+                    .tokens
+                    .component_styles
+                    .component(component)
+                    .cloned()
+                    .unwrap_or_default())
+            })
+            .transpose()?
+            .filter(|parts| !parts.is_empty())
+            .map(Rc::new);
+        let runtime = self.runtime.try_borrow().map_err(|_| {
+            crate::ComponentStyleError::Script(
+                "UI state is already borrowed while refreshing component styles".to_owned(),
+            )
+        })?;
+        runtime
+            .component_styles()
+            .validate_parts(component, parts)?;
+        self.global_component_part_styles = runtime
+            .component_styles()
+            .component(component)
+            .cloned()
+            .unwrap_or_default();
+        Ok(())
     }
 
     pub(crate) fn reset_non_reusable_render_reads(&self) {
@@ -1684,19 +1733,83 @@ impl UiContext {
         }
     }
 
-    fn resolve_component_style(&self, part: &str, mut base: crate::Style) -> crate::Style {
-        if let Some(style) = self.global_component_part_styles.get(part) {
-            base = base.merged(style);
+    fn resolve_component_style(&self, part: &str, base: crate::Style) -> crate::Style {
+        self.resolve_component_state_style(part, base, None)
+    }
+
+    fn resolve_component_state_style(
+        &self,
+        part: &str,
+        base: crate::Style,
+        state: Option<&crate::Style>,
+    ) -> crate::Style {
+        self.resolve_component_parts_style(&[part], base, state)
+    }
+
+    fn resolve_component_parts_style(
+        &self,
+        parts: &[&str],
+        mut base: crate::Style,
+        state: Option<&crate::Style>,
+    ) -> crate::Style {
+        for part in parts {
+            if let Some(style) = self
+                .preset_component_part_styles
+                .as_ref()
+                .and_then(|rules| rules.get(*part))
+            {
+                base = base.merged(style);
+            }
         }
-        if part == "root"
+        if let Some(state) = state {
+            base = base.merged(state);
+        }
+        for part in parts {
+            if let Some(style) = self.global_component_part_styles.get(*part) {
+                base = base.merged(style);
+            }
+        }
+        if parts.contains(&"root")
             && let Some(style) = &self.component_style
         {
             base = base.merged(style);
         }
-        if let Some(style) = self.component_part_styles.get(part) {
-            base = base.merged(style);
+        for part in parts {
+            if let Some(style) = self.component_part_styles.get(*part) {
+                base = base.merged(style);
+            }
         }
         base
+    }
+
+    fn resolve_component_part_array(
+        &self,
+        parts: Array,
+        base: crate::Style,
+        state: Option<&crate::Style>,
+    ) -> Result<crate::Style, Box<EvalAltResult>> {
+        let invalid = || {
+            Box::new(EvalAltResult::ErrorRuntime(
+                "component_style parts must be 1..32 unique snake_case strings".into(),
+                Position::NONE,
+            ))
+        };
+        if parts.is_empty() || parts.len() > 32 {
+            return Err(invalid());
+        }
+        let parts = parts
+            .into_iter()
+            .map(|value| value.into_string().map_err(|_| invalid()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let names = parts.iter().map(String::as_str).collect::<Vec<_>>();
+        if names
+            .iter()
+            .any(|name| !crate::token::valid_token_segment(name))
+            || names.iter().copied().collect::<BTreeSet<_>>().len() != names.len()
+        {
+            return Err(invalid());
+        }
+        Ok(self.resolve_component_parts_style(&names, base, state))
     }
 
     /// The Node factory `renderer` names, scoped as a callback created here.
@@ -2044,6 +2157,47 @@ impl UiContext {
         ])))
     }
 
+    /// Read the last presented coordinates of exactly this text anchor plan.
+    /// A pending mount, a different plan, or unmeasurable text returns null.
+    ///
+    /// # Errors
+    ///
+    /// Returns for runtime borrowing conflicts.
+    pub fn text_anchors(
+        &self,
+        reference: &crate::ElementRef,
+        plan: &crate::text_anchors::TextAnchorPlan,
+    ) -> Result<UiValue, UiContextError> {
+        use crate::element_ref::ElementRefGeometryRead;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let registry = runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
+        let node = if self.phase == ExecutionPhase::Render {
+            runtime.element_refs.resolve_and_track_geometry_read(
+                reference,
+                &self.read_dependency,
+                ElementRefGeometryRead::TextAnchors,
+            )
+        } else {
+            runtime.element_refs.resolve(reference).ok()
+        };
+        drop(runtime);
+        let Some(node) = node else {
+            return Ok(UiValue::Null);
+        };
+        if self.phase == ExecutionPhase::Render {
+            registry.read_ref_observation(
+                reference.id(),
+                node,
+                &self.read_dependency,
+                ElementRefGeometryRead::TextAnchors,
+            );
+        }
+        Ok(registry.text_anchors(node, plan))
+    }
+
     /// Read a ref's committed logical layout width and height.
     ///
     /// Returns null until measured or while unmounted. In render, observes size
@@ -2067,53 +2221,102 @@ impl UiContext {
         ])))
     }
 
+    /// Read the last committed layout-width class: `0..=breakpoints.len()`.
+    /// A boundary belongs to the lower class (`width <= boundary`). Returns
+    /// null until measured or while unbound. Render readers wake only outside
+    /// their current class interval, unless a size/bounds read is stronger.
+    ///
+    /// # Errors
+    ///
+    /// Returns for invalid breakpoints, geometry or runtime borrow conflicts.
+    pub fn element_width_class(
+        &self,
+        reference: &crate::ElementRef,
+        breakpoints: &[f64],
+    ) -> Result<UiValue, UiContextError> {
+        crate::responsive::validate_element_width_breakpoints(breakpoints)?;
+        self.observe_element_geometry(reference, true, |geometry| {
+            let Some(geometry) = geometry else {
+                return Ok((
+                    crate::element_ref::ElementRefGeometryRead::LayoutSize,
+                    UiValue::Null,
+                ));
+            };
+            let (class, interval) =
+                crate::responsive::classify_element_width(geometry.layout.width, breakpoints)?;
+            Ok((
+                crate::element_ref::ElementRefGeometryRead::WidthClass(interval),
+                UiValue::Integer(
+                    i64::try_from(class)
+                        .map_err(|_| ResponsiveError::InvalidElementWidthBreakpoints)?,
+                ),
+            ))
+        })
+    }
+
     fn element_geometry(
         &self,
         reference: &crate::ElementRef,
         observation: crate::element_ref::ElementRefGeometryRead,
     ) -> Result<Option<crate::ElementGeometry>, UiContextError> {
-        use crate::element_ref::ElementRefGeometryRead;
+        self.observe_element_geometry(
+            reference,
+            observation != crate::element_ref::ElementRefGeometryRead::Bounds,
+            |geometry| Ok((observation, geometry)),
+        )
+    }
 
+    fn observe_element_geometry<R>(
+        &self,
+        reference: &crate::ElementRef,
+        allow_missing: bool,
+        observe: impl FnOnce(
+            Option<crate::ElementGeometry>,
+        )
+            -> Result<(crate::element_ref::ElementRefGeometryRead, R), UiContextError>,
+    ) -> Result<R, UiContextError> {
         let mut runtime = self
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        let node = if self.phase == ExecutionPhase::Render {
-            match observation {
-                ElementRefGeometryRead::Bounds => runtime
-                    .element_refs
-                    .resolve_and_track_geometry(reference, &self.read_dependency),
-                ElementRefGeometryRead::LayoutSize => runtime
-                    .element_refs
-                    .resolve_and_track_geometry_read(reference, &self.read_dependency, observation),
-            }
-        } else if observation == ElementRefGeometryRead::LayoutSize {
+        let node = if self.phase == ExecutionPhase::Render || allow_missing {
             runtime.element_refs.resolve(reference).ok()
         } else {
             Some(runtime.element_refs.resolve(reference)?)
         };
-        let Some(node) = node else {
-            return Ok(None);
-        };
         let geometry_registry =
             runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
+        let geometry = node.and_then(|node| geometry_registry.get(node));
+        let (observation, result) = observe(geometry)?;
+        if self.phase == ExecutionPhase::Render {
+            if observation == crate::element_ref::ElementRefGeometryRead::Bounds {
+                runtime
+                    .element_refs
+                    .resolve_and_track_geometry(reference, &self.read_dependency);
+            } else {
+                runtime.element_refs.resolve_and_track_geometry_read(
+                    reference,
+                    &self.read_dependency,
+                    observation,
+                );
+            }
+        }
         drop(runtime);
-        let geometry = if self.phase == ExecutionPhase::Render {
-            match observation {
-                ElementRefGeometryRead::Bounds => {
-                    geometry_registry.read_ref_tracked(reference.id(), node, &self.read_dependency)
-                }
-                ElementRefGeometryRead::LayoutSize => geometry_registry.read_ref_observation(
+        if self.phase == ExecutionPhase::Render
+            && let Some(node) = node
+        {
+            if observation == crate::element_ref::ElementRefGeometryRead::Bounds {
+                geometry_registry.read_ref_tracked(reference.id(), node, &self.read_dependency);
+            } else {
+                geometry_registry.read_ref_observation(
                     reference.id(),
                     node,
                     &self.read_dependency,
                     observation,
-                ),
+                );
             }
-        } else {
-            geometry_registry.get(node)
-        };
-        Ok(geometry)
+        }
+        Ok(result)
     }
 
     /// Resolve and read a committed component-local ref by its stable key.
@@ -2146,6 +2349,21 @@ impl UiContext {
         let reference =
             crate::ElementRef::new(crate::ElementRefId::new(self.component.clone(), key)?);
         self.element_size(&reference)
+    }
+
+    /// Read the layout-width class through a component-local ref key.
+    ///
+    /// # Errors
+    ///
+    /// Returns for invalid keys/breakpoints or runtime borrow conflicts.
+    pub fn element_width_class_by_key(
+        &self,
+        key: &str,
+        breakpoints: &[f64],
+    ) -> Result<UiValue, UiContextError> {
+        let reference =
+            crate::ElementRef::new(crate::ElementRefId::new(self.component.clone(), key)?);
+        self.element_width_class(&reference, breakpoints)
     }
 
     /// The window bounds of a laid-out item of one of this component's virtual
@@ -2226,6 +2444,31 @@ impl UiContext {
             .element_refs
             .resolve_key(&self.component, key)?;
         self.focus_element(&reference)
+    }
+
+    /// Queue focus inside a component-local scope. Chooses the first enabled
+    /// editor, then a heading; an invalid editor takes priority when requested.
+    ///
+    /// # Errors
+    ///
+    /// Returns during render, outside a window, or for an unknown scope key.
+    pub fn focus_descendant(&self, key: &str, prefer_invalid: bool) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let reference = runtime.element_refs.resolve_key(&self.component, key)?;
+        let scope = runtime.element_refs.resolve(&reference)?;
+        runtime.pending_element_commands.push(
+            crate::element_ref::ElementCommand::FocusDescendant {
+                window,
+                scope,
+                prefer_invalid,
+            },
+        );
+        Ok(())
     }
 
     /// Queue a jump to this component's collection tail after the invocation
@@ -3193,12 +3436,36 @@ impl UiContext {
     ///
     /// Returns locale, serialization, or runtime borrow errors.
     pub fn number_metadata(&self) -> Result<Map, UiContextError> {
-        let number = self.read_locale(|locale, window, component| {
-            locale.number(window, Some(component)).cloned()
+        let dynamic = self.with_number_metadata(|number| {
+            rhai::serde::to_dynamic(number).map_err(|error| LocaleError::Decode(error.to_string()))
         })?;
-        let dynamic = rhai::serde::to_dynamic(number)
-            .map_err(|error| LocaleError::Decode(error.to_string()))?;
         Ok(dynamic.cast::<Map>())
+    }
+
+    fn with_number_metadata<T>(
+        &self,
+        read: impl Fn(&crate::NumberMetadata) -> Result<T, LocaleError>,
+    ) -> Result<T, UiContextError> {
+        static FALLBACK: std::sync::LazyLock<crate::NumberMetadata> =
+            std::sync::LazyLock::new(crate::NumberMetadata::default);
+        match self.read_locale(|locale, window, component| {
+            let number = locale.number(window, Some(component))?;
+            read(number)
+        }) {
+            Err(UiContextError::LocaleUnavailable) => Ok(read(&FALLBACK)?),
+            result => result,
+        }
+    }
+
+    /// Parse a localized decimal. Empty or invalid input returns no number.
+    ///
+    /// # Errors
+    ///
+    /// Returns locale-selection or runtime borrow errors.
+    pub fn parse_number(&self, value: &str) -> Result<Option<f64>, UiContextError> {
+        self.with_number_metadata(|number| {
+            Ok(crate::locale::parse_number_with_metadata(value, number))
+        })
     }
 
     /// Format an integer through the selected locale.
@@ -3211,8 +3478,8 @@ impl UiContext {
         value: INT,
         options: NumberFormatOptions,
     ) -> Result<String, UiContextError> {
-        self.read_locale(|locale, window, component| {
-            locale.format_integer(window, Some(component), value, options)
+        self.with_number_metadata(|number| {
+            crate::format_integer_with_metadata(value, options, number)
         })
     }
 
@@ -3226,8 +3493,8 @@ impl UiContext {
         value: FLOAT,
         options: NumberFormatOptions,
     ) -> Result<String, UiContextError> {
-        self.read_locale(|locale, window, component| {
-            locale.format_number(window, Some(component), value, options)
+        self.with_number_metadata(|number| {
+            crate::format_number_with_metadata(value, options, number)
         })
     }
 
@@ -3700,6 +3967,7 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        let previous = runtime.motions.preference();
         runtime.motions.request_preference(if reduced {
             crate::MotionPreference::Reduced
         } else {
@@ -3707,7 +3975,12 @@ impl UiContext {
         });
         let now = runtime.clock.now();
         runtime.motion_values = runtime.motions.snapshot(now);
-        runtime.mark_dirty([self.component.clone()]);
+        if previous == runtime.motions.preference() {
+            runtime.mark_dirty([self.component.clone()]);
+        } else {
+            let readers = runtime.component_state.paths();
+            runtime.mark_dirty(readers);
+        }
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
             self.component.to_string(),
@@ -3796,6 +4069,43 @@ impl UiContext {
             .variants()
             .find(|variant| variant.family == family && variant.name == name)
             .map(|variant| variant.tokens.color_snapshot())
+    }
+
+    /// Read a namespaced theme setting/recipe and track the actual scoped
+    /// theme during rendering. Lengths remain symbolic, so a descendant's
+    /// inherited size/reading scale is resolved at native layout, not here.
+    /// Returns None for a missing token or unavailable theme.
+    #[must_use]
+    pub fn theme_token(&self, path: &str) -> Option<Dynamic> {
+        self.with_resolved_theme(|variant| {
+            use crate::ThemeTokenValue;
+            match variant.tokens.token(path)? {
+                ThemeTokenValue::Color(value) => {
+                    Some(Dynamic::from(crate::ColorValue::Literal(*value)))
+                }
+                ThemeTokenValue::Length(_) => crate::Length::token(path).ok().map(Dynamic::from),
+                ThemeTokenValue::Number(value) => Some(Dynamic::from_float(*value)),
+                ThemeTokenValue::String(value) => Some(Dynamic::from(value.clone())),
+                ThemeTokenValue::Style(value) => Some(Dynamic::from((**value).clone())),
+            }
+        })
+        .flatten()
+    }
+
+    /// Read a typed style recipe. A genuinely headless context without a
+    /// theme returns an empty style; a configured theme with a missing or
+    /// mistyped recipe returns an explicit error instead of silently falling
+    /// back to another design.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UiContextError::UnknownThemeToken`] for an unavailable style.
+    pub fn theme_style(&self, path: &str) -> Result<crate::Style, UiContextError> {
+        self.with_resolved_theme(|variant| match variant.tokens.token(path) {
+            Some(crate::ThemeTokenValue::Style(value)) => Ok((**value).clone()),
+            _ => Err(UiContextError::UnknownThemeToken(path.to_owned())),
+        })
+        .unwrap_or_else(|| Ok(crate::Style::new()))
     }
 
     fn with_resolved_theme<R>(&self, project: impl FnOnce(&crate::ThemeVariant) -> R) -> Option<R> {
@@ -3915,6 +4225,16 @@ impl UiContext {
             .try_borrow()
             .map_or(crate::MotionQuality::Low, |runtime| {
                 runtime.motions.quality()
+            })
+    }
+
+    /// The effective Host motion preference for this view.
+    #[must_use]
+    pub fn motion_preference(&self) -> crate::MotionPreference {
+        self.runtime
+            .try_borrow()
+            .map_or(crate::MotionPreference::None, |runtime| {
+                runtime.motions.preference()
             })
     }
 
@@ -4407,6 +4727,15 @@ impl CustomType for UiContext {
                 },
             )
             .with_fn(
+                "component_style",
+                |context: &mut Self,
+                 part: ImmutableString,
+                 base: crate::Style,
+                 state: crate::Style| {
+                    context.resolve_component_state_style(part.as_str(), base, Some(&state))
+                },
+            )
+            .with_fn(
                 "call_capability",
                 |context: &mut Self,
                  capability: ImmutableString,
@@ -4419,6 +4748,7 @@ impl CustomType for UiContext {
                 },
             );
         register_state_store_context_methods(&mut builder);
+        register_component_part_array_methods(&mut builder);
         register_native_collection_context_methods(&mut builder);
         register_native_document_context_methods(&mut builder);
         #[cfg(feature = "charts")]
@@ -4721,7 +5051,19 @@ fn register_signal_context_methods(builder: &mut TypeBuilder<UiContext>) {
 }
 
 fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    register_element_width_class_context_methods(builder);
     builder
+        .with_fn(
+            "text_anchors",
+            |context: &mut UiContext,
+             reference: crate::ElementRef,
+             plan: crate::text_anchors::TextAnchorPlan| {
+                context
+                    .text_anchors(&reference, &plan)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
         .with_fn(
             "element_size",
             |context: &mut UiContext, reference: crate::ElementRef| {
@@ -4791,7 +5133,60 @@ fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
             context
                 .focus_element_by_key(key.as_str())
                 .map_err(|error| Box::new(context_runtime_error(&error)))
-        });
+        })
+        .with_fn(
+            "focus_descendant",
+            |context: &mut UiContext, key: ImmutableString, invalid: bool| {
+                context
+                    .focus_descendant(key.as_str(), invalid)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
+}
+
+fn register_element_width_class_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn(
+            "element_width_class",
+            |context: &mut UiContext, reference: crate::ElementRef, values: Array| {
+                context
+                    .element_width_class(&reference, &element_width_breakpoints(values)?)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "element_width_class",
+            |context: &mut UiContext, key: ImmutableString, values: Array| {
+                context
+                    .element_width_class_by_key(key.as_str(), &element_width_breakpoints(values)?)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
+}
+
+fn element_width_breakpoints(values: Array) -> Result<Vec<f64>, Box<EvalAltResult>> {
+    if values.len() > crate::responsive::MAX_ELEMENT_WIDTH_BREAKPOINTS {
+        return Err(Box::new(context_runtime_error(
+            &ResponsiveError::InvalidElementWidthBreakpoints.into(),
+        )));
+    }
+    values
+        .into_iter()
+        .map(|value| {
+            crate::value::script_number(&value).ok_or_else(|| {
+                Box::new(EvalAltResult::ErrorRuntime(
+                    format!(
+                        "element width breakpoint must be a number, got {}",
+                        value.type_name()
+                    )
+                    .into(),
+                    Position::NONE,
+                ))
+            })
+        })
+        .collect()
 }
 
 fn geometry_bounds_value(bounds: crate::GeometryBounds) -> UiValue {
@@ -5195,6 +5590,7 @@ fn register_message_context_methods(builder: &mut TypeBuilder<UiContext>) {
 fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
     register_time_context_methods(builder);
     register_message_context_methods(builder);
+    register_number_context_methods(builder);
     builder
         .with_fn(
             "set_locale",
@@ -5234,12 +5630,43 @@ fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
             context
                 .calendar_metadata()
                 .map_err(|error| Box::new(context_runtime_error(&error)))
-        })
+        });
+}
+
+fn register_number_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
         .with_fn("number", |context: &mut UiContext| {
             context
                 .number_metadata()
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         })
+        .with_fn(
+            "parse_number",
+            |context: &mut UiContext, value: ImmutableString| {
+                context
+                    .parse_number(value.as_str())
+                    .map(|value| value.map_or(Dynamic::UNIT, Dynamic::from))
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "number_text",
+            |context: &mut UiContext,
+             value: FLOAT,
+             digits: INT,
+             prefix: ImmutableString,
+             suffix: ImmutableString,
+             share: bool| {
+                localized_number_text(
+                    context,
+                    value,
+                    digits,
+                    prefix.as_str(),
+                    suffix.as_str(),
+                    share,
+                )
+            },
+        )
         .with_fn("format_number", |context: &mut UiContext, value: INT| {
             context
                 .format_integer(value, NumberFormatOptions::default())
@@ -5274,6 +5701,32 @@ fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         );
+}
+
+fn localized_number_text(
+    context: &mut UiContext,
+    value: FLOAT,
+    digits: INT,
+    prefix: &str,
+    suffix: &str,
+    share: bool,
+) -> Result<crate::UiNode, Box<EvalAltResult>> {
+    if !(0..=12).contains(&digits) || prefix.len() > 64 || suffix.len() > 64 {
+        return Err(Box::new(EvalAltResult::ErrorRuntime(
+            "number_text needs 0–12 digits and affixes of at most 64 bytes".into(),
+            Position::NONE,
+        )));
+    }
+    let format = crate::locale::NumberTextFormat {
+        digits: u8::try_from(digits).expect("validated fraction digits"),
+        prefix,
+        suffix,
+        share,
+    };
+    let rendered = context
+        .with_number_metadata(|number| format.format(value, number))
+        .map_err(|error| Box::new(context_runtime_error(&error)))?;
+    Ok(format.attach(crate::UiNode::text(rendered)))
 }
 
 fn number_format_options(mut options: Map) -> Result<NumberFormatOptions, Box<EvalAltResult>> {
@@ -5377,7 +5830,46 @@ fn theme_color_map(
     }
 }
 
+fn register_component_part_array_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn(
+            "component_style",
+            |context: &mut UiContext, parts: Array, base: crate::Style| {
+                context.resolve_component_part_array(parts, base, None)
+            },
+        )
+        .with_fn(
+            "component_style",
+            |context: &mut UiContext, parts: Array, base: crate::Style, state: crate::Style| {
+                context.resolve_component_part_array(parts, base, Some(&state))
+            },
+        );
+}
+
 fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    register_theme_selection_context_methods(builder);
+    builder
+        .with_fn(
+            "theme_style",
+            |context: &mut UiContext, path: ImmutableString| {
+                context
+                    .theme_style(&path)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "theme_token",
+            |context: &mut UiContext, path: ImmutableString| {
+                context.theme_token(&path).ok_or_else(|| {
+                    Box::new(context_runtime_error(&UiContextError::UnknownThemeToken(
+                        path.to_string(),
+                    )))
+                })
+            },
+        );
+}
+
+fn register_theme_selection_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn(
             "theme_variant",
@@ -5599,6 +6091,14 @@ fn register_motion_context_methods(builder: &mut TypeBuilder<UiContext>) {
             }
         })
         .with_fn(
+            "motion_preference",
+            |context: &mut UiContext| match context.motion_preference() {
+                crate::MotionPreference::Normal => "normal",
+                crate::MotionPreference::Reduced => "reduced",
+                crate::MotionPreference::None => "none",
+            },
+        )
+        .with_fn(
             "play_motion",
             |context: &mut UiContext, handle: crate::MotionHandle| {
                 context
@@ -5812,6 +6312,8 @@ pub enum UiContextError {
     LocaleUnavailable,
     #[error("no theme manager is configured for this application")]
     ThemeUnavailable,
+    #[error("unknown namespaced theme token `{0}`")]
+    UnknownThemeToken(String),
     #[cfg(feature = "charts")]
     #[error("native chart data name `{0}` must be a safe identifier")]
     InvalidChartDataName(String),
@@ -6593,6 +7095,68 @@ mod tests {
     }
 
     #[test]
+    fn structural_scopes_keep_the_declaring_preset_parts_and_cascade() {
+        let owner = ComponentInstancePath::root("List", "rows");
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let mut render = UiContext::new(
+            runtime,
+            owner.clone(),
+            Some("main".into()),
+            ExecutionPhase::Render,
+            BTreeMap::new(),
+        );
+        let mut preset = crate::Style::new();
+        preset.base.text_color = Some(crate::ColorValue::Literal(crate::Rgba8::from_rgb_hex(
+            0x0012_3456,
+        )));
+        render.preset_component_part_styles =
+            Some(Rc::new(BTreeMap::from([("row".to_owned(), preset)])));
+        for overridden in [false, true] {
+            if overridden {
+                let mut app = crate::Style::new();
+                app.base.font_weight = Some(600);
+                render
+                    .global_component_part_styles
+                    .insert("row".to_owned(), app);
+                let mut instance = crate::Style::new();
+                instance.base.opacity = Some(0.75);
+                render
+                    .component_part_styles
+                    .insert("row".to_owned(), instance);
+            }
+            let expected = render.resolve_component_style("row", crate::Style::new());
+            let structure = render.for_structural_scope(
+                owner.child("VirtualCollection", "viewport"),
+                BTreeMap::new(),
+            );
+            let item = structure.for_structural_scope(
+                structure.component_path().child("Item", "second"),
+                BTreeMap::new(),
+            );
+            assert_eq!(
+                structure.resolve_component_style("row", crate::Style::new()),
+                expected
+            );
+            assert_eq!(
+                item.resolve_component_style("row", crate::Style::new()),
+                expected
+            );
+            assert_eq!(item.callback_component, owner);
+            assert!(Rc::ptr_eq(
+                structure.preset_component_part_styles.as_ref().unwrap(),
+                item.preset_component_part_styles.as_ref().unwrap()
+            ));
+            assert!(
+                render
+                    .for_component(owner.child("Other", "sibling"), BTreeMap::new())
+                    .preset_component_part_styles
+                    .is_none(),
+                "a new formal owner resolves its own preset"
+            );
+        }
+    }
+
+    #[test]
     fn structural_store_paths_invalidate_executable_owner_not_synthetic_scope() {
         for window_store in [false, true] {
             let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
@@ -7269,6 +7833,83 @@ mod tests {
             runtime.borrow().motions.timeline_state(&handle),
             Some(crate::MotionPlaybackState::Playing)
         );
+    }
+
+    #[test]
+    fn element_width_classes_track_pending_bindings_but_not_in_class_changes() {
+        let context = mounted_context(ExecutionPhase::Render);
+        let owner = context.component_path().clone();
+        let reference =
+            crate::ElementRef::new(crate::ElementRefId::new(owner.clone(), "field").unwrap());
+        let mut engine = Engine::new();
+        register_ui_context_api(&mut engine);
+        let mut scope = rhai::Scope::new();
+        scope.push("ctx", context.clone());
+        scope.push("reference", reference.clone());
+        let script = r#"[ctx.element_width_class(reference,[150]),ctx.element_width_class("field",[100.0,200.0])]"#;
+        let pending = engine.eval_with_scope::<Array>(&mut scope, script).unwrap();
+        assert!(pending.iter().all(Dynamic::is_unit));
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("field")).unwrap();
+        let node = tree.root_id().unwrap();
+        let geometry = context.runtime().borrow().geometry_for(Some("main"));
+        context
+            .runtime()
+            .borrow_mut()
+            .element_refs
+            .reconcile(&owner, BTreeMap::from([(reference.id().clone(), node)]));
+        geometry.sync_ref_readers(
+            &owner,
+            context
+                .runtime()
+                .borrow()
+                .element_refs
+                .geometry_bindings(&owner),
+        );
+        geometry.update(
+            node,
+            crate::ElementGeometry {
+                layout: crate::GeometryBounds::new(0.0, 0.0, 120.0, 30.0).unwrap(),
+                visual: crate::GeometryBounds::new(0.0, 0.0, 300.0, 30.0).unwrap(),
+                clip: None,
+            },
+        );
+        geometry.take_dirty();
+        let dependency = crate::read_dependency::ReadDependency::component(&owner);
+        context
+            .runtime()
+            .borrow_mut()
+            .element_refs
+            .reset_contribution(&dependency);
+        geometry.reset_contribution(&dependency);
+        let ready = engine.eval_with_scope::<Array>(&mut scope, script).unwrap();
+        assert_eq!(ready[0].clone_cast::<INT>(), 0);
+        assert_eq!(ready[1].clone_cast::<INT>(), 1);
+        assert!(
+            context
+                .element_width_class(&reference, &[150.0, 100.0])
+                .is_err()
+        );
+        assert!(
+            engine
+                .eval_with_scope::<Dynamic>(
+                    &mut scope,
+                    r#"ctx.element_width_class(reference,["bad"])"#
+                )
+                .is_err()
+        );
+        let mut measured = geometry.get(node).unwrap();
+        measured.layout.width = 130.0;
+        measured.layout.height = 90.0;
+        measured.visual.width = 400.0;
+        geometry.update(node, measured);
+        assert!(
+            geometry.take_dirty().is_empty(),
+            "invalid reads must not strengthen the subscription"
+        );
+        measured.layout.width = 151.0;
+        geometry.update(node, measured);
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner]));
     }
 
     #[test]

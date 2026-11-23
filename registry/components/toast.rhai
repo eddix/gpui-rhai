@@ -222,7 +222,7 @@ fn toast_node(ctx, item, dismiss_label, activatable, hover_pause) {
         .text_color(theme_color("text_primary"));
     if activatable { card_style = card_style.focus(style().border_color(theme_color("focus_ring"))); }
     let card = column(children).with_key(item.id)
-        .with_style(ctx.component_style(`toast_${variant}`, ctx.component_style("toast", card_style)))
+        .with_style(ctx.component_style(["toast",`toast_${variant}`], card_style))
         .accessibility_role(if variant == "danger" { "alert" } else { "status" })
         .accessibility_label(item.title);
     if hover_pause { card = card.on_hover_value(Fn("toast_hover"), item.id); }

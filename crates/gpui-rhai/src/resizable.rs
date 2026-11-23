@@ -385,40 +385,35 @@ fn register_pointer_listeners(
         if !crate::handle_state::over_handle(&hitbox, grip, window) {
             return;
         }
-        let Some(boundary) = down_events.element_bounds(&down_config.boundary_ref, cx) else {
+        let Some(space) = down_events
+            .element_geometry(&down_config.boundary_ref, cx)
+            .and_then(crate::interaction::ResizeGestureSpace::new)
+        else {
             return;
         };
-        if down_config.constraints.contain
-            && !rect_within_boundary(down_config.source, (boundary.width, boundary.height))
+        if down_config.constraints.contain && !rect_within_boundary(down_config.source, space.size)
         {
             return;
         }
         if let Some(focus) = down_config.focus.as_ref() {
             focus.focus(window, cx);
         }
-        let boundary_size = (boundary.width, boundary.height);
         let update_config = down_config.clone();
         let update_events = down_events.clone();
         let update =
             move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
-                let Some(boundary) = update_events.element_bounds(&update_config.boundary_ref, cx)
-                else {
+                let boundary = update_events.element_geometry(&update_config.boundary_ref, cx);
+                let Some((dx, dy)) = space.displacement(boundary, gesture) else {
                     return crate::interaction::InteractionFlow::Cancel;
                 };
-                if (boundary.width - boundary_size.0).abs() > 0.5
-                    || (boundary.height - boundary_size.1).abs() > 0.5
-                {
-                    return crate::interaction::InteractionFlow::Cancel;
-                }
                 if gesture.moved() {
-                    let (dx, dy) = gesture.delta();
                     let rect = resize_rect(
                         update_config.source,
                         update_config.handle,
                         dx,
                         dy,
                         update_config.constraints,
-                        boundary_size,
+                        space.size,
                     );
                     write_preview(&update_events, &update_config, Some(rect), cx);
                 }
@@ -432,23 +427,17 @@ fn register_pointer_listeners(
                 if !gesture.moved() {
                     return;
                 }
-                let boundary_unchanged = finish_events
-                    .element_bounds(&finish_config.boundary_ref, cx)
-                    .is_some_and(|boundary| {
-                        (boundary.width - boundary_size.0).abs() <= 0.5
-                            && (boundary.height - boundary_size.1).abs() <= 0.5
-                    });
-                if !boundary_unchanged {
+                let boundary = finish_events.element_geometry(&finish_config.boundary_ref, cx);
+                let Some((dx, dy)) = space.displacement(boundary, gesture) else {
                     return;
-                }
-                let (dx, dy) = gesture.delta();
+                };
                 let rect = resize_rect(
                     finish_config.source,
                     finish_config.handle,
                     dx,
                     dy,
                     finish_config.constraints,
-                    boundary_size,
+                    space.size,
                 );
                 finish_events.propose("resize", resize_payload(rect), window, cx);
             };

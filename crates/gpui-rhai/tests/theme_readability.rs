@@ -2,7 +2,7 @@
 use gpui_rhai::{
     Rgba8, RuntimeEngine, ThemeMode, ThemeTokenOverrides, load_theme_with_layers, load_token_base,
 };
-use gpui_rhai_registry::{BUNDLED_THEME_SOURCES, TOKEN_BASE_SOURCE};
+use gpui_rhai_registry::{BUNDLED_PALETTE_SOURCES, TOKEN_BASE_SOURCE};
 
 #[allow(clippy::many_single_char_names)] // Standard Oklab matrix notation.
 fn lightness(color: Rgba8) -> f64 {
@@ -32,7 +32,7 @@ fn all_palettes_have_reading_margin_and_ordered_perceptual_surface_steps() {
     println!(
         "| Theme | Primary minimum | Muted minimum | Page L | Raised L | Hover L | Border/well | Primary hover text |"
     );
-    for &(file, source) in BUNDLED_THEME_SOURCES {
+    for &(file, source) in BUNDLED_PALETTE_SOURCES {
         let theme = load_theme_with_layers(
             engine.engine(),
             Some(&base),
@@ -162,7 +162,7 @@ fn tabs_counter_shows_on_every_tab_surface_and_keeps_its_text_readable() {
     let engine = RuntimeEngine::new();
     let base = load_token_base(engine.engine(), "tokens.rhai", TOKEN_BASE_SOURCE).unwrap();
     println!("| Theme | Text on capsule | Weakest step | Against |");
-    for &(file, source) in BUNDLED_THEME_SOURCES {
+    for &(file, source) in BUNDLED_PALETTE_SOURCES {
         let theme = load_theme_with_layers(
             engine.engine(),
             Some(&base),

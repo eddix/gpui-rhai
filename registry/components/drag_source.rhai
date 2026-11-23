@@ -24,6 +24,10 @@ define_component(#{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
         label: #{ schema:#{type:"string"}, required:true, sensitive:false,
             doc:"Accessible name of the drag source button." },
+        description: #{ schema:#{type:"optional",value:#{type:"string"}}, required:false, sensitive:false,
+            doc:"Optional accessible description of the item or move gesture, attached to the actual focused source." },
+        source_ref: #{ schema:#{type:"optional",value:#{type:"ref"}}, required:false, sensitive:false,
+            doc:"Caller-owned ref to the native focusable drag source, for returning focus after a custom keyboard flow." },
         source_id: #{ schema:#{type:"string"}, required:true, sensitive:false,
             doc:"Identity of the dragged item, 1 to 128 characters; drop zones receive it as `source_id`." },
         payload_type: #{ schema:#{type:"string"}, required:true, sensitive:false,
@@ -43,9 +47,13 @@ define_component(#{
         disabled: #{ schema:#{type:"bool"}, required:false, sensitive:false,
             "default":#{type:"bool",value:false},
             doc:"Ignores pointer and keyboard input and removes the source from the tab order." },
+        on_drag_start: #{ schema:#{type:"optional",value:#{type:"callback"}}, required:false, sensitive:false,
+            doc:"Called once when a pointer drag crosses its threshold, not on a tap or keyboard drop." },
         on_drag_end: #{ schema:#{type:"optional",value:#{type:"callback"}}, required:false, sensitive:false,
             doc:"Called with `{accepted, target_id, operation, cancelled}` when a drag or keyboard drop ends." },
-    }, state:#{fields:#{}}, events:#{ drag_end:#{ payload:#{type:"object",allow_unknown:false,fields:#{
+    }, state:#{fields:#{}}, events:#{
+      drag_start:#{payload:#{type:"null"},doc:"Emitted when a pointer gesture becomes an active application drag."},
+      drag_end:#{ payload:#{type:"object",allow_unknown:false,fields:#{
         accepted:#{schema:#{type:"bool"},required:true,sensitive:false,
             doc:"True when a drop zone received the drop; that zone's Host still decides what it does."},
         target_id:#{schema:#{type:"optional",value:#{type:"string"}},required:true,sensitive:false,
@@ -61,12 +69,14 @@ define_component(#{
 });
 
 fn DragSource(props) { render_component("components/drag_source", props) }
+fn drag_source_start(ctx, value) { ctx.emit("drag_start", value); }
 fn drag_source_end(ctx, value) { ctx.emit("drag_end", value); }
 
 fn render_DragSource(ctx, props) {
     let native = #{ key:`${props.key}-interaction`, source_id:props.source_id,
         payload_type:props.payload_type, payload:props.payload, operation:props.operation,
         threshold:props.threshold, disabled:props.disabled,
+        on_drag_start:if "on_drag_start" in props && props.on_drag_start != () { Fn("drag_source_start") } else { () },
         on_drag_end:if "on_drag_end" in props && props.on_drag_end != () { Fn("drag_source_end") } else { () } };
     if "keyboard_target" in props && props.keyboard_target != () {
         native.keyboard_target = props.keyboard_target;
@@ -78,6 +88,8 @@ fn render_DragSource(ctx, props) {
                 .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("button").accessibility_label(props.label);
+    if "description" in props && props.description != () { interaction=interaction.accessibility_description(props.description); }
+    if "source_ref" in props && props.source_ref != () { interaction=interaction.with_ref(props.source_ref); }
     box([
         props.content.with_key(`${props.key}-content`).with_style(ctx.component_style("content",style())),
         interaction

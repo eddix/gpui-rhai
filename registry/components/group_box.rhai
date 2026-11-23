@@ -49,7 +49,7 @@ fn GroupBox(props) { render_component("components/group_box", props) }
 fn render_GroupBox(ctx, props) {
     // A labelled group: a hairline rule, a label-voice heading and the content, all on
     // the parent's content edge.
-    let header = [text(props.label.to_upper()).with_style(ctx.component_style("label", style()
+    let header = [text(props.label).with_style(ctx.component_style("label", style()
         .typography("label").text_color(theme_color("text_muted"))))];
     if "description" in props && props.description != () {
         header.push(text(props.description).with_style(ctx.component_style("description", style()

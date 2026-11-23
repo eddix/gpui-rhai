@@ -1,24 +1,26 @@
 //! Native text input behavior adapted from GPUI's Apache-2.0 `examples/input.rs`.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
-    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, FontFallbacks,
-    FontWeight, GlobalElementId, IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Render, ShapedLine,
-    SharedString, Style as GpuiStyle, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window,
-    actions, div, fill, point, prelude::*, px, relative, rgba, size,
+    App, AvailableSpace, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Div, Element,
+    ElementId, ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable,
+    FontFallbacks, FontWeight, GlobalElementId, IntoElement, KeyBinding, KeyDownEvent, LayoutId,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Render,
+    ShapedLine, SharedString, Style as GpuiStyle, TextAlign, TextRun, UTF16Selection,
+    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, rgba, size,
 };
 
+use crate::segmented_entry::{CodeFrame, CodePresentation};
 pub use crate::text_edit::TextBuffer;
 
 use crate::{
     ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, Rgba8, UiValue,
-    ValueSchema,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps, Rgba8,
+    Style, UiValue, ValueSchema,
 };
 
 actions!(
@@ -59,6 +61,8 @@ pub fn init_text_input(cx: &mut App) {
         KeyBinding::new("shift-cmd-z", Redo, Some("GPUIRhaiTextInput")),
         KeyBinding::new("home", Home, Some("GPUIRhaiTextInput")),
         KeyBinding::new("end", End, Some("GPUIRhaiTextInput")),
+        KeyBinding::new("up", Home, Some("GPUIRhaiCodeEntry")),
+        KeyBinding::new("down", End, Some("GPUIRhaiCodeEntry")),
         KeyBinding::new("enter", Submit, Some("GPUIRhaiTextInput")),
         KeyBinding::new(
             "ctrl-cmd-space",
@@ -69,6 +73,7 @@ pub fn init_text_input(cx: &mut App) {
 }
 
 pub(crate) type TextValueHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
+type TextAccessValueHandler = Rc<dyn Fn(UiValue, &mut Window, &mut App)>;
 pub(crate) type TextSignalHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 pub(crate) type TextTabHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 /// Whether a script capture handler above the editor takes the key being
@@ -79,10 +84,27 @@ pub(crate) type TextKeyCaptureHandler = Rc<dyn Fn(&mut Window, &mut App) -> bool
 pub(crate) struct TextInputCallbacks {
     pub change: Option<TextValueHandler>,
     pub submit: Option<TextValueHandler>,
+    pub alt_submit: Option<TextValueHandler>,
     pub focus: Option<TextSignalHandler>,
     pub blur: Option<TextSignalHandler>,
     pub tab: Option<TextTabHandler>,
     pub key_capture: Option<TextKeyCaptureHandler>,
+    pub native_set_value: Option<TextAccessValueHandler>,
+    pub native_increment: Option<TextSignalHandler>,
+    pub native_decrement: Option<TextSignalHandler>,
+    pub intents: Option<Rc<TextInputIntents>>,
+}
+
+/// Optional compound-field behavior. Ordinary editors keep their native key
+/// bindings and paste path, and do not allocate this set of callbacks.
+#[derive(Default)]
+pub(crate) struct TextInputIntents {
+    paste: Option<TextAccessValueHandler>,
+    move_before: Option<TextSignalHandler>,
+    empty_backspace: Option<TextSignalHandler>,
+    cancel: Option<TextSignalHandler>,
+    submit_on_tab: bool,
+    rtl: bool,
 }
 
 pub(crate) struct TextInputEntity {
@@ -94,12 +116,23 @@ pub(crate) struct TextInputEntity {
     read_only: bool,
     selection_color: Rgba8,
     caret_color: Rgba8,
-    typography: NativeTypography,
     callbacks: TextInputCallbacks,
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     scroll_x: Pixels,
     selecting: bool,
+    width_preference: EditorWidthPreference,
+    code: Option<Rc<CodePresentation>>,
+    accepted_code: Option<String>,
+    last_code: Option<Box<CodeFrame>>,
+    code_motion: RefCell<crate::segmented_motion::SegmentedMotion>,
+    code_driver: Option<crate::renderer::NativeNodeMotion>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum EditorWidthPreference {
+    Stable,
+    Text,
 }
 
 #[derive(Clone)]
@@ -112,7 +145,6 @@ pub(crate) struct TextInputConfig {
     pub(crate) autofocus: bool,
     pub(crate) selection_color: Rgba8,
     pub(crate) caret_color: Rgba8,
-    pub(crate) typography: NativeTypography,
 }
 
 fn placeholder_ink(color: Option<Rgba8>, inherited: gpui::Hsla) -> gpui::Hsla {
@@ -126,6 +158,84 @@ pub(crate) struct NativeTypography {
     pub(crate) font_size: Pixels,
     pub(crate) line_height: Pixels,
     pub(crate) weight: u16,
+}
+
+impl NativeTypography {
+    /// Apply a native chrome owner's typography before adding its editor.
+    pub(crate) fn apply(&self, mut root: Div) -> Div {
+        if let Some(family) = &self.family {
+            root = root.font_family(family.clone());
+        }
+        if !self.fallbacks.is_empty() {
+            root.text_style().font_fallbacks =
+                Some(FontFallbacks::from_fonts(self.fallbacks.clone()));
+        }
+        root.font_weight(FontWeight(f32::from(self.weight)))
+            .text_size(self.font_size)
+            .line_height(self.line_height)
+    }
+}
+
+pub(crate) fn text_style_defaults(props: &PrimitiveProps) -> Result<Style, String> {
+    let style = Style::new()
+        .typography(props.string("typography").unwrap_or("body"))
+        .map_err(|e| e.to_string())?;
+    if props.boolean("disabled").unwrap_or(false) {
+        style.opacity(0.55).map_err(|e| e.to_string())
+    } else {
+        Ok(style)
+    }
+}
+
+/// One native measurement contract for single- and multi-line editors. A
+/// percentage-only leaf has no intrinsic width; the preference is stable as
+/// content changes, while the allocator still owns known/fill/minmax widths.
+pub(crate) fn request_editor_layout(window: &mut Window, height: Pixels) -> LayoutId {
+    request_text_width(window, height, None)
+}
+
+fn request_text_width(window: &mut Window, height: Pixels, intrinsic: Option<&str>) -> LayoutId {
+    let mut style = GpuiStyle::default();
+    if intrinsic.is_none() {
+        style.size.width = relative(1.0).into();
+    }
+    style.size.height = height.into();
+    let text_style = window.text_style();
+    let font_size = text_style.font_size.to_pixels(window.rem_size());
+    let shape = |content: SharedString| {
+        window.text_system().shape_line(
+            content.clone(),
+            font_size,
+            &[TextRun {
+                len: content.len(),
+                font: text_style.font(),
+                letter_spacing: text_style.letter_spacing,
+                color: text_style.color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            }],
+            None,
+        )
+    };
+    let zero = shape("0".into()).width;
+    let preferred = match intrinsic {
+        None => px((f32::from(zero) * 20.0).min(f32::MAX)),
+        Some(text) => {
+            let text = single_line(text).unwrap_or_default();
+            (zero * 2.0).max(shape(text.into_owned().into()).width + px(2.0))
+        }
+    };
+    window.request_measured_layout(style, move |known, available, _, _| {
+        size(
+            known.width.unwrap_or_else(|| match available.width {
+                AvailableSpace::MinContent => px(0.0),
+                AvailableSpace::MaxContent => preferred,
+                AvailableSpace::Definite(width) => preferred.min(width),
+            }),
+            known.height.unwrap_or(height),
+        )
+    })
 }
 
 pub(crate) fn native_typography(
@@ -201,12 +311,17 @@ impl TextInputEntity {
             read_only: config.read_only,
             selection_color: config.selection_color,
             caret_color: config.caret_color,
-            typography: config.typography,
             callbacks,
             last_layout: None,
             last_bounds: None,
             scroll_x: px(0.0),
             selecting: false,
+            width_preference: EditorWidthPreference::Stable,
+            code: None,
+            accepted_code: None,
+            last_code: None,
+            code_motion: RefCell::default(),
+            code_driver: None,
         }
     }
 
@@ -224,12 +339,86 @@ impl TextInputEntity {
         self.read_only = config.read_only;
         self.selection_color = config.selection_color;
         self.caret_color = config.caret_color;
-        self.typography = config.typography.clone();
         self.callbacks = callbacks;
         cx.notify();
     }
 
+    fn configure_primitive(
+        &mut self,
+        code: Option<Rc<CodePresentation>>,
+        config: &TextInputConfig,
+        callbacks: TextInputCallbacks,
+        props: &PrimitiveProps,
+        native_motion: Option<crate::renderer::NativeNodeMotion>,
+        cx: &mut Context<Self>,
+    ) {
+        let before = self.code.as_ref().map(|code| code.spec);
+        let after = code.as_ref().map(|code| code.spec);
+        let replaced = after.is_some()
+            && self
+                .accepted_code
+                .as_ref()
+                .is_some_and(|current| current != &config.value);
+        if before != after || after.is_some() && (replaced || config.disabled || config.read_only) {
+            self.buffer.cancel_composition();
+        }
+        let reset = before != after
+            || self.buffer.marked().is_none() && self.buffer.content != config.value;
+        self.buffer.set_max_length(after.map(|spec| spec.length));
+        if let Some(after) = after {
+            let previous = self
+                .accepted_code
+                .as_deref()
+                .filter(|_| before == Some(after));
+            self.code_motion.get_mut().accepted(
+                previous,
+                &config.value,
+                !config.disabled && !config.read_only,
+            );
+            self.code_driver = native_motion;
+        } else {
+            self.code_motion = RefCell::default();
+            self.code_driver = None;
+        }
+        self.accepted_code = after.map(|_| config.value.clone());
+        self.code = code;
+        self.width_preference = if props.boolean("intrinsic_width") == Some(true) {
+            EditorWidthPreference::Text
+        } else {
+            EditorWidthPreference::Stable
+        };
+        self.update_props(config, callbacks, cx);
+        if reset && after.is_some() {
+            self.select_insertion_point(self.buffer.content.len());
+        }
+    }
+
+    fn segmented_prepaint(
+        &self,
+        code: &CodePresentation,
+        bounds: Bounds<Pixels>,
+        window: &mut Window,
+    ) -> TextPrepaint {
+        let mut frame = code.frame(
+            bounds,
+            &self.buffer,
+            self.focus.is_focused(window),
+            !self.disabled && !self.read_only,
+            window,
+        );
+        frame.sample_edit_motion(
+            &mut self.code_motion.borrow_mut(),
+            self.code_driver.as_ref(),
+            self.buffer.marked().is_none(),
+            window,
+        );
+        TextPrepaint::segmented(frame, bounds.origin)
+    }
+
     fn emit_change(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.accepted_code.as_deref() == Some(self.buffer.content.as_str()) {
+            return;
+        }
         if let Some(change) = self.callbacks.change.clone() {
             let value = self.buffer.content.clone();
             window.defer(cx, move |window, cx| change(value, window, cx));
@@ -238,6 +427,17 @@ impl TextInputEntity {
 
     fn left(&mut self, _: &Left, window: &mut Window, cx: &mut Context<Self>) {
         if self.script_takes_key(window, cx) {
+            return;
+        }
+        if self.move_before(false, window, cx) {
+            return;
+        }
+        if let Some(code) = &self.code
+            && self.buffer.marked().is_none()
+        {
+            let previous = self.buffer.previous_boundary(self.buffer.selected.start);
+            code.spec.select(&mut self.buffer, previous);
+            cx.notify();
             return;
         }
         let offset = if self.buffer.selected.is_empty() {
@@ -251,6 +451,17 @@ impl TextInputEntity {
 
     fn right(&mut self, _: &Right, window: &mut Window, cx: &mut Context<Self>) {
         if self.script_takes_key(window, cx) {
+            return;
+        }
+        if self.move_before(true, window, cx) {
+            return;
+        }
+        if let Some(code) = &self.code
+            && self.buffer.marked().is_none()
+        {
+            let next = self.buffer.next_boundary(self.buffer.selected.start);
+            code.spec.select(&mut self.buffer, next);
+            cx.notify();
             return;
         }
         let offset = if self.buffer.selected.is_empty() {
@@ -293,7 +504,7 @@ impl TextInputEntity {
         if self.script_takes_key(window, cx) {
             return;
         }
-        self.buffer.move_to(0);
+        self.select_insertion_point(0);
         cx.notify();
     }
 
@@ -301,8 +512,18 @@ impl TextInputEntity {
         if self.script_takes_key(window, cx) {
             return;
         }
-        self.buffer.move_to(self.buffer.content.len());
+        self.select_insertion_point(self.buffer.content.len());
         cx.notify();
+    }
+
+    fn select_insertion_point(&mut self, offset: usize) {
+        if let Some(code) = &self.code
+            && self.buffer.marked().is_none()
+        {
+            code.spec.select(&mut self.buffer, offset);
+        } else {
+            self.buffer.move_to(offset);
+        }
     }
 
     /// Whether a script capture handler above the editor takes the key that
@@ -317,11 +538,48 @@ impl TextInputEntity {
                 .is_some_and(|take| take(window, cx))
     }
 
+    fn emit_edit_intent(
+        &self,
+        handler: Option<&TextSignalHandler>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.buffer.permits_submit(self.disabled, self.read_only) {
+            return false;
+        }
+        let Some(handler) = handler.cloned() else {
+            return false;
+        };
+        window.defer(cx, move |window, cx| handler(window, cx));
+        true
+    }
+
+    fn move_before(&self, right: bool, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(intents) = self.callbacks.intents.as_ref() else {
+            return false;
+        };
+        right == intents.rtl
+            && self.buffer.selected == (0..0)
+            && self.emit_edit_intent(intents.move_before.as_ref(), window, cx)
+    }
+
     fn backspace(&mut self, _: &Backspace, window: &mut Window, cx: &mut Context<Self>) {
         if self.script_takes_key(window, cx) {
             return;
         }
         if self.disabled || self.read_only {
+            return;
+        }
+        if self.buffer.content.is_empty()
+            && self.emit_edit_intent(
+                self.callbacks
+                    .intents
+                    .as_ref()
+                    .and_then(|intents| intents.empty_backspace.as_ref()),
+                window,
+                cx,
+            )
+        {
             return;
         }
         if self.buffer.selected.is_empty() {
@@ -380,12 +638,72 @@ impl TextInputEntity {
         if self.disabled || self.read_only {
             return;
         }
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text())
-            && let Some(text) = single_line(&text)
+        if let Some(clipboard) = cx.read_from_clipboard().and_then(|item| item.text())
+            && let Some(text) = single_line(&clipboard)
         {
-            self.buffer.replace(None, &text);
-            self.emit_change(window, cx);
+            if let Some(code) = &self.code {
+                code.spec.replace(&mut self.buffer, None, &text, true);
+            } else {
+                self.buffer.replace(None, &text);
+            }
+            if let Some(paste) = self
+                .callbacks
+                .intents
+                .as_ref()
+                .and_then(|intents| intents.paste.clone())
+            {
+                // Keep native selection and undo for an ordinary pasted token.
+                // A compound control can also read the unflattened list once.
+                let payload = UiValue::Map(BTreeMap::from([
+                    ("clipboard".into(), UiValue::String(clipboard)),
+                    ("value".into(), UiValue::String(self.buffer.content.clone())),
+                ]));
+                window.defer(cx, move |window, cx| paste(payload, window, cx));
+            } else {
+                self.emit_change(window, cx);
+            }
             cx.notify();
+        }
+    }
+
+    fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        match event.keystroke.key.as_str() {
+            "tab" => {
+                let shift = event.keystroke.modifiers.shift;
+                if let Some(tab) = self.callbacks.tab.clone() {
+                    window.defer(cx, move |window, cx| tab(shift, window, cx));
+                } else if !shift
+                    && self
+                        .callbacks
+                        .intents
+                        .as_ref()
+                        .is_some_and(|intents| intents.submit_on_tab)
+                    && self.buffer.permits_submit(self.disabled, self.read_only)
+                    && !self.buffer.content.trim().is_empty()
+                    && self.callbacks.submit.is_some()
+                {
+                    self.submit(&Submit, window, cx);
+                } else if shift {
+                    window.focus_prev(cx);
+                } else {
+                    window.focus_next(cx);
+                }
+                cx.stop_propagation();
+            }
+            "escape"
+                if !self.buffer.content.is_empty()
+                    && self.emit_edit_intent(
+                        self.callbacks
+                            .intents
+                            .as_ref()
+                            .and_then(|intents| intents.cancel.as_ref()),
+                        window,
+                        cx,
+                    ) =>
+            {
+                cx.stop_propagation();
+            }
+            _ => {}
         }
     }
 
@@ -433,6 +751,9 @@ impl TextInputEntity {
     }
 
     fn index_for_mouse(&self, position: Point<Pixels>) -> usize {
+        if let Some(code) = &self.last_code {
+            return code.index_for_point(position, self.buffer.content.len());
+        }
         let (Some(bounds), Some(line)) = (&self.last_bounds, &self.last_layout) else {
             return 0;
         };
@@ -450,12 +771,15 @@ impl TextInputEntity {
             return;
         }
         self.focus.focus(window, cx);
+        let Some(position) = window.event_position_in_layout(event.position) else {
+            return;
+        };
         self.selecting = true;
-        let index = self.index_for_mouse(event.position);
+        let index = self.index_for_mouse(position);
         if event.modifiers.shift {
             self.buffer.select_to(index);
         } else {
-            self.buffer.move_to(index);
+            self.select_insertion_point(index);
         }
         cx.notify();
     }
@@ -464,9 +788,11 @@ impl TextInputEntity {
         self.selecting = false;
     }
 
-    fn mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.selecting {
-            let index = self.index_for_mouse(event.position);
+    fn mouse_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selecting
+            && let Some(position) = window.event_position_in_layout(event.position)
+        {
+            let index = self.index_for_mouse(position);
             self.buffer.select_to(index);
             cx.notify();
         }
@@ -507,7 +833,12 @@ impl EntityInputHandler for TextInputEntity {
 
     fn unmark_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let was_marked = self.buffer.marked().is_some();
-        self.buffer.unmark();
+        if let (Some(code), Some(marked)) = (&self.code, self.buffer.marked()) {
+            let text = self.buffer.content[marked.clone()].to_owned();
+            code.spec.replace(&mut self.buffer, None, &text, false);
+        } else {
+            self.buffer.unmark();
+        }
         if was_marked {
             self.emit_change(window, cx);
             cx.notify();
@@ -527,7 +858,12 @@ impl EntityInputHandler for TextInputEntity {
         let Some(text) = single_line(text) else {
             return;
         };
-        self.buffer.replace(range_utf16.as_ref(), &text);
+        if let Some(code) = &self.code {
+            code.spec
+                .replace(&mut self.buffer, range_utf16, &text, false);
+        } else {
+            self.buffer.replace(range_utf16.as_ref(), &text);
+        }
         self.emit_change(window, cx);
         cx.notify();
     }
@@ -559,8 +895,11 @@ impl EntityInputHandler for TextInputEntity {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let line = self.last_layout.as_ref()?;
         let range = self.buffer.range_from_utf16(&range_utf16);
+        if let Some(code) = &self.last_code {
+            return code.bounds_for_range(&range, self.buffer.content.len());
+        }
+        let line = self.last_layout.as_ref()?;
         Some(Bounds::from_corners(
             point(
                 bounds.left() + line.x_for_index(range.start) - self.scroll_x,
@@ -583,6 +922,12 @@ impl EntityInputHandler for TextInputEntity {
         if !bounds.contains(&point) {
             return None;
         }
+        if let Some(code) = &self.last_code {
+            return Some(
+                self.buffer
+                    .offset_to_utf16(code.index_for_point(point, self.buffer.content.len())),
+            );
+        }
         let line = self.last_layout.as_ref()?;
         let index = line.index_for_x(point.x - bounds.left() + self.scroll_x)?;
         Some(self.buffer.offset_to_utf16(index))
@@ -599,6 +944,20 @@ struct TextPrepaint {
     selection: Option<PaintQuad>,
     origin: Point<Pixels>,
     scroll_x: Pixels,
+    code: Option<Box<CodeFrame>>,
+}
+
+impl TextPrepaint {
+    fn segmented(frame: CodeFrame, origin: Point<Pixels>) -> Self {
+        Self {
+            line: None,
+            cursor: None,
+            selection: None,
+            origin,
+            scroll_x: px(0.),
+            code: Some(Box::new(frame)),
+        }
+    }
 }
 
 fn horizontal_scroll_for_cursor(
@@ -645,10 +1004,19 @@ impl Element for TextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        let mut style = GpuiStyle::default();
-        style.size.width = relative(1.0).into();
-        style.size.height = window.line_height().into();
-        (window.request_layout(style, [], cx), ())
+        let height = window.line_height();
+        let input = self.input.read(cx);
+        if let Some(code) = &input.code {
+            return (code.request_layout(window), ());
+        }
+        let intrinsic = (input.width_preference == EditorWidthPreference::Text).then(|| {
+            if input.buffer.content.is_empty() {
+                input.placeholder.as_ref()
+            } else {
+                input.buffer.content.as_str()
+            }
+        });
+        (request_text_width(window, height, intrinsic), ())
     }
 
     fn prepaint(
@@ -661,6 +1029,9 @@ impl Element for TextElement {
         cx: &mut App,
     ) -> TextPrepaint {
         let input = self.input.read(cx);
+        if let Some(code) = &input.code {
+            return input.segmented_prepaint(code, bounds, window);
+        }
         let content: SharedString = input.buffer.content.clone().into();
         let selected = input.buffer.selected.clone();
         let cursor = input.buffer.cursor_offset();
@@ -676,6 +1047,7 @@ impl Element for TextElement {
         let run = TextRun {
             len: display.len(),
             font: text_style.font(),
+            letter_spacing: text_style.letter_spacing,
             color,
             background_color: None,
             underline: None,
@@ -692,6 +1064,8 @@ impl Element for TextElement {
                     underline: Some(UnderlineStyle {
                         color: Some(run.color),
                         thickness: px(1.0),
+                        paint_tag: None,
+                        baseline_offset: None,
                         wavy: false,
                     }),
                     ..run.clone()
@@ -744,6 +1118,7 @@ impl Element for TextElement {
             selection,
             origin,
             scroll_x,
+            code: None,
         }
     }
 
@@ -758,11 +1133,24 @@ impl Element for TextElement {
         cx: &mut App,
     ) {
         let focus = self.input.read(cx).focus.clone();
-        window.handle_input(
-            &focus,
-            ElementInputHandler::new(bounds, self.input.clone()),
-            cx,
-        );
+        if !self.input.read(cx).disabled {
+            window.handle_input(
+                &focus,
+                ElementInputHandler::new(bounds, self.input.clone()),
+                cx,
+            );
+        }
+        if let Some(frame) = state.code.take() {
+            if let Some(code) = self.input.read(cx).code.clone() {
+                code.paint(&frame, window, cx);
+            }
+            self.input.update(cx, |input, _| {
+                input.last_code = Some(frame);
+                input.last_layout = None;
+                input.last_bounds = Some(bounds);
+            });
+            return;
+        }
         let Some(line) = state.line.take() else {
             return;
         };
@@ -786,6 +1174,7 @@ impl Element for TextElement {
         });
         self.input.update(cx, |input, _| {
             input.last_layout = Some(line);
+            input.last_code = None;
             input.last_bounds = Some(bounds);
             input.scroll_x = state.scroll_x;
         });
@@ -795,33 +1184,25 @@ impl Element for TextElement {
 impl Render for TextInputEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::app::read_host_frame_epoch(cx);
-        let tab = self.callbacks.tab.clone();
         let submit_enabled = self.callbacks.submit.is_some();
-        let mut root = div().flex().size_full().items_center();
-        if let Some(family) = &self.typography.family {
-            root = root.font_family(family.clone());
-        }
-        if !self.typography.fallbacks.is_empty() {
-            root.text_style().font_fallbacks =
-                Some(FontFallbacks::from_fonts(self.typography.fallbacks.clone()));
-        }
-        root.font_weight(FontWeight(f32::from(self.typography.weight)))
-            .key_context("GPUIRhaiTextInput")
-            .track_focus(&self.focus)
-            .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key.as_str() == "tab" {
-                    if let Some(tab) = &tab {
-                        let tab = tab.clone();
-                        let shift = event.keystroke.modifiers.shift;
-                        window.defer(cx, move |window, cx| tab(shift, window, cx));
-                    } else if event.keystroke.modifiers.shift {
-                        window.focus_prev(cx);
-                    } else {
-                        window.focus_next(cx);
-                    }
-                    cx.stop_propagation();
-                }
+        div()
+            .flex()
+            .h_full()
+            .when(
+                self.code.is_none() && self.width_preference == EditorWidthPreference::Stable,
+                gpui::Styled::w_full,
+            )
+            .items_center()
+            .key_context(if self.code.is_some() {
+                "GPUIRhaiTextInput GPUIRhaiCodeEntry"
+            } else {
+                "GPUIRhaiTextInput"
             })
+            .when(
+                self.code.as_ref().is_none_or(|code| !code.is_success()),
+                |input| input.track_focus(&self.focus),
+            )
+            .on_key_down(cx.listener(Self::key_down))
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
@@ -845,9 +1226,6 @@ impl Render for TextInputEntity {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .line_height(self.typography.line_height)
-            .text_size(self.typography.font_size)
-            .opacity(if self.disabled { 0.55 } else { 1.0 })
             .child(TextElement { input: cx.entity() })
     }
 }
@@ -864,18 +1242,35 @@ pub struct TextInputPrimitiveHandler {
 }
 
 impl PrimitiveHandler for TextInputPrimitiveHandler {
+    fn style_defaults(&self, props: &PrimitiveProps) -> Result<Style, String> {
+        text_style_defaults(props)
+    }
+
     fn uses_primary_focus(&self) -> bool {
         true
     }
 
-    fn accessibility_actions(
+    fn accessibility_actions_for_props(
         &self,
         _instance: &PrimitiveInstanceId,
+        props: &PrimitiveProps,
     ) -> Vec<gpui::AccessibleAction> {
-        vec![
+        if props.boolean("code_verified") == Some(true) {
+            return Vec::new();
+        }
+        let mut actions = vec![
             gpui::AccessibleAction::Focus,
             gpui::AccessibleAction::SetValue,
-        ]
+        ];
+        for (prop, action) in [
+            ("on_increment", gpui::AccessibleAction::Increment),
+            ("on_decrement", gpui::AccessibleAction::Decrement),
+        ] {
+            if matches!(props.get(prop), Some(crate::PrimitiveValue::Callback(_))) {
+                actions.push(action);
+            }
+        }
+        actions
     }
 
     fn perform_accessibility_action(
@@ -904,19 +1299,53 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
                 Ok(())
             }
             gpui::AccessibleAction::SetValue => {
-                let Some(gpui::accesskit::ActionData::Value(value)) = data else {
-                    return Err("text input SetValue requires string data".to_owned());
-                };
+                use gpui::accesskit::ActionData;
+                let input = entity.read(cx);
+                if input.disabled || input.read_only {
+                    return Err("text input is disabled or read-only".to_owned());
+                }
+                if let Some(callback) = input.callbacks.native_set_value.clone() {
+                    let value = match data {
+                        Some(ActionData::Value(text)) => UiValue::String(text.to_string()),
+                        Some(ActionData::NumericValue(value)) if value.is_finite() => {
+                            UiValue::Float(*value)
+                        }
+                        _ => return Err("SetValue requires a string or finite number".to_owned()),
+                    };
+                    callback(value, window, cx);
+                } else {
+                    let Some(ActionData::Value(value)) = data else {
+                        return Err("text input SetValue requires string data".to_owned());
+                    };
+                    if let Some(callback) = input.callbacks.change.clone() {
+                        let text = input.code.as_ref().map_or_else(
+                            || value.to_string(),
+                            |code| code.spec.normalize(value.as_ref()),
+                        );
+                        if !value.is_empty() && text.is_empty() {
+                            return Ok(());
+                        }
+                        if input.accepted_code.as_deref() != Some(text.as_str()) {
+                            callback(text, window, cx);
+                        }
+                    }
+                }
+                Ok(())
+            }
+            gpui::AccessibleAction::Increment | gpui::AccessibleAction::Decrement => {
                 let callback = {
                     let input = entity.read(cx);
                     if input.disabled || input.read_only {
                         return Err("text input is disabled or read-only".to_owned());
                     }
-                    input.callbacks.change.clone()
-                };
-                if let Some(callback) = callback {
-                    callback(value.to_string(), window, cx);
+                    if action == gpui::AccessibleAction::Increment {
+                        input.callbacks.native_increment.clone()
+                    } else {
+                        input.callbacks.native_decrement.clone()
+                    }
                 }
+                .ok_or_else(|| "text input has no stepping action".to_owned())?;
+                callback(window, cx);
                 Ok(())
             }
             _ => Err("unsupported text input accessibility action".to_owned()),
@@ -935,12 +1364,12 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             .id
             .clone()
             .ok_or_else(|| "TextInputPrimitive requires a stable key".to_owned())?;
-        let value = instance
-            .node
-            .props
-            .string("value")
-            .unwrap_or_default()
-            .to_owned();
+        let code = CodePresentation::resolve(&instance.node.props, theme, window).map(Rc::new);
+        let raw_value = instance.node.props.string("value").unwrap_or_default();
+        let value = code.as_ref().map_or_else(
+            || raw_value.to_owned(),
+            |code| code.spec.normalize(raw_value),
+        );
         let placeholder = instance
             .node
             .props
@@ -950,12 +1379,6 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
         let disabled = instance.node.props.boolean("disabled").unwrap_or(false);
         let read_only = instance.node.props.boolean("read_only").unwrap_or(false);
         let autofocus = instance.node.props.boolean("autofocus").unwrap_or(false);
-        let typography_role = instance
-            .node
-            .props
-            .string("typography")
-            .unwrap_or("body")
-            .to_owned();
         let selection_color = theme
             .color("selection")
             .unwrap_or_else(|| Rgba8::from_rgba_hex(0x292e_42ff));
@@ -973,9 +1396,8 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             autofocus,
             selection_color,
             caret_color,
-            typography: native_typography(theme, &typography_role, window)?,
         };
-        let callbacks = primitive_callbacks(events);
+        let callbacks = primitive_callbacks(events, &instance.node.props, theme.direction());
         let shared_focus = instance.focus_handle().cloned();
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
@@ -1010,7 +1432,20 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             entity
         };
         entity.update(cx, |input, cx| {
-            input.update_props(&config, callbacks, cx);
+            if code.is_none() && input.code.is_some() {
+                input
+                    .code_motion
+                    .get_mut()
+                    .stop(input.code_driver.as_ref(), window);
+            }
+            input.configure_primitive(
+                code,
+                &config,
+                callbacks,
+                &instance.node.props,
+                events.native_motion(),
+                cx,
+            );
         });
         Ok(entity.into_any_element())
     }
@@ -1048,7 +1483,11 @@ fn single_line(text: &str) -> Option<std::borrow::Cow<'_, str>> {
     Some(std::borrow::Cow::Borrowed(text))
 }
 
-fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
+fn primitive_callbacks(
+    events: &PrimitiveContext,
+    props: &PrimitiveProps,
+    direction: crate::TextDirection,
+) -> TextInputCallbacks {
     let key_events = events.clone();
     let change_events = events.clone();
     let submit_events = events.clone();
@@ -1074,7 +1513,65 @@ fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
         key_capture: Some(Rc::new(move |window, cx| {
             key_events.script_takes_key(window, cx)
         })),
+        native_set_value: events.observes("set_value").then(|| {
+            let events = events.clone();
+            Rc::new(move |value, window: &mut Window, cx: &mut App| {
+                let _ = events.emit("set_value", value, window, cx);
+            }) as TextAccessValueHandler
+        }),
+        alt_submit: None,
+        native_increment: text_signal_handler(events, "increment"),
+        native_decrement: text_signal_handler(events, "decrement"),
+        intents: text_input_intents(events, props, direction),
     }
+}
+
+fn text_input_intents(
+    events: &PrimitiveContext,
+    props: &PrimitiveProps,
+    direction: crate::TextDirection,
+) -> Option<Rc<TextInputIntents>> {
+    let paste = events.observes("paste").then(|| {
+        let events = events.clone();
+        Rc::new(move |payload, window: &mut Window, cx: &mut App| {
+            let _ = events.emit("paste", payload, window, cx);
+        }) as TextAccessValueHandler
+    });
+    let move_before = text_signal_handler(events, "move_before");
+    let empty_backspace = text_signal_handler(events, "empty_backspace");
+    let cancel = text_signal_handler(events, "cancel");
+    let submit_on_tab = props.boolean("submit_on_tab") == Some(true);
+    (paste.is_some()
+        || move_before.is_some()
+        || empty_backspace.is_some()
+        || cancel.is_some()
+        || submit_on_tab)
+        .then(|| {
+            Rc::new(TextInputIntents {
+                paste,
+                move_before,
+                empty_backspace,
+                cancel,
+                submit_on_tab,
+                rtl: direction == crate::TextDirection::RightToLeft,
+            })
+        })
+}
+
+fn text_signal_handler(events: &PrimitiveContext, name: &'static str) -> Option<TextSignalHandler> {
+    events.observes(name).then(|| {
+        let events = events.clone();
+        Rc::new(move |window: &mut Window, cx: &mut App| {
+            let _ = events.emit(name, UiValue::Null, window, cx);
+        }) as TextSignalHandler
+    })
+}
+
+fn code_style_prop(name: &str, doc: &str) -> (String, ObjectField) {
+    (
+        name.to_owned(),
+        ObjectField::optional(ValueSchema::Style).with_doc(doc),
+    )
 }
 
 /// Build the compile-time `TextInput` primitive schema.
@@ -1104,6 +1601,61 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "placeholder_style".to_owned(),
                 ObjectField::optional(ValueSchema::Style).with_doc("Text color (or background) of the placeholder; falls back to theme text_muted, then inherited text color, never a fixed alpha."),
+            ),
+            (
+                "intrinsic_width".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_doc(
+                    "Prefer the actual shaped text width including the caret, rather than a stable 20-digit preference. Still shrinks to the allocated width.",
+                ),
+            ),
+            (
+                "code_length".to_owned(),
+                ObjectField::optional(ValueSchema::Integer {min:Some(1),max:Some(24)})
+                    .with_doc("Draw this many fixed-position code cells over the same editor. Constrains committed input to the configured alphabet."),
+            ),
+            (
+                "code_separator".to_owned(),
+                ObjectField::optional(ValueSchema::Integer {min:Some(0),max:Some(23)})
+                    .with_doc("Before which logical cell to draw a divider; zero or outside the current code length draws none."),
+            ),
+            (
+                "code_alphanumeric".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_doc("Accept uppercase-normalized Latin letters as well as digits in the segmented editor."),
+            ),
+            code_style_prop("code_cell_style", "Cell metrics, radius, edge, fill, shadows, and digit size."),
+            code_style_prop("code_filled_style", "Paint refinement for occupied cells."),
+            code_style_prop("code_active_style", "Outline, radius and optional halo of the active cell."),
+            code_style_prop("code_separator_style", "Separator width, height and color."),
+            code_style_prop("code_caret_style", "Text color of the caret in an unfilled active cell."),
+            (
+                "code_success_label".to_owned(),ObjectField::optional(ValueSchema::optional(ValueSchema::string()))
+                    .with_doc("The native confirmation label used for constrained sizing; code_verified switches to the non-editable pill."),
+            ),
+            code_style_prop("code_success_style","Success capsule fill, edge, shape, height, text, and spacing."),
+            code_style_prop("code_success_icon_style","Width and ink of the confirmation check."),
+            (
+                "code_verified".to_owned(),ObjectField::optional(ValueSchema::Bool)
+                    .with_doc("Presents the non-editable confirmation while keeping the measured footprint."),
+            ),
+            (
+                "code_discarding".to_owned(),ObjectField::optional(ValueSchema::Bool)
+                    .with_doc("Uses the committed primitive progress to fade a failed attempt in reverse cell order before clearing."),
+            ),
+            (
+                "code_centered".to_owned(),ObjectField::optional(ValueSchema::Bool)
+                    .with_doc("Centers cells and confirmation content inside the editor's allocated bounds."),
+            ),
+            (
+                "on_set_value".to_owned(),
+                optional_callback().with_doc("Optional override for a complete accessibility SetValue edit."),
+            ),
+            (
+                "on_increment".to_owned(),
+                optional_callback().with_doc("Optional handler for native accessibility increment."),
+            ),
+            (
+                "on_decrement".to_owned(),
+                optional_callback().with_doc("Optional handler for native accessibility decrement."),
             ),
             (
                 "disabled".to_owned(),
@@ -1142,6 +1694,32 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
                 ),
             ),
             (
+                "submit_on_tab".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_doc(
+                    "With on_submit, forward Tab submits nonblank text instead of traversing focus. Empty input and Shift-Tab still traverse normally.",
+                ),
+            ),
+            (
+                "on_paste".to_owned(),
+                optional_callback().with_doc(
+                    "If set, replaces the change notification for paste with a single notification containing the raw clipboard and the resulting single-line value.",
+                ),
+            ),
+            (
+                "on_move_before".to_owned(),
+                optional_callback().with_doc(
+                    "Called on the backward logical arrow with an empty selection at offset zero. Use to move into a preceding chip or field.",
+                ),
+            ),
+            (
+                "on_empty_backspace".to_owned(),
+                optional_callback().with_doc("Called for Backspace in an empty editor."),
+            ),
+            (
+                "on_cancel".to_owned(),
+                optional_callback().with_doc("Handles Escape only with an editable, nonempty, unmarked draft."),
+            ),
+            (
                 "on_focus".to_owned(),
                 optional_callback().with_doc("Called when the field gains keyboard focus."),
             ),
@@ -1151,6 +1729,31 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             ),
         ]),
         events: BTreeMap::from([
+            ("paste".to_owned(), EventSchema {
+                doc: Some("Raw clipboard text and the resulting single-line value after replacing the native selection.".to_owned()),
+                payload: ValueSchema::Object {
+                    fields: BTreeMap::from([
+                        ("clipboard".to_owned(), ObjectField::required(ValueSchema::string())),
+                        ("value".to_owned(), ObjectField::required(ValueSchema::string())),
+                    ]),
+                    allow_unknown: false,
+                },
+            }),
+            ("move_before".to_owned(), EventSchema {
+                doc: Some("A logical backward move at the first insertion point, outside IME composition.".to_owned()),
+                payload: ValueSchema::Null,
+            }),
+            ("empty_backspace".to_owned(), EventSchema {
+                doc: Some("Backspace when the editor has no text.".to_owned()),
+                payload: ValueSchema::Null,
+            }),
+            ("cancel".to_owned(), EventSchema {
+                doc: Some("Escape when the editor has an editable draft and no IME composition.".to_owned()),
+                payload: ValueSchema::Null,
+            }),
+            ("set_value".to_owned(), EventSchema { doc: Some("A complete native accessibility edit, with string or numeric data.".to_owned()), payload: ValueSchema::UiValue }),
+            ("increment".to_owned(), EventSchema { doc: Some("Native accessibility increment.".to_owned()), payload: ValueSchema::Null }),
+            ("decrement".to_owned(), EventSchema { doc: Some("Native accessibility decrement.".to_owned()), payload: ValueSchema::Null }),
             (
                 "change".to_owned(),
                 EventSchema {

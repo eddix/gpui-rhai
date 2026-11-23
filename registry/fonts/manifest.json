@@ -1,0 +1,26 @@
+{
+  "family": "Inter",
+  "package": "@fontsource/inter",
+  "version": "5.3.0",
+  "license": "OFL-1.1",
+  "faces": [
+    {
+      "file": "Inter-400.ttf",
+      "weight": 400,
+      "codepoints": 1622,
+      "sha256": "27e1e547ec4604361b16773d41ff106da4269249d94f50946b7eb33aaa62c36b"
+    },
+    {
+      "file": "Inter-500.ttf",
+      "weight": 500,
+      "codepoints": 1622,
+      "sha256": "b7f5c14c5c2538ea03bc303c237c7c5b4118f1770e7dde119807021320b44157"
+    },
+    {
+      "file": "Inter-600.ttf",
+      "weight": 600,
+      "codepoints": 1622,
+      "sha256": "b7c64c98d1ecbb757ca3378b2e9d919062d9ff800c3f07fb3159c3f50fb63e68"
+    }
+  ]
+}

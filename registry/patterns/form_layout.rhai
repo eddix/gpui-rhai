@@ -166,7 +166,7 @@ fn render_FormLayout(ctx, props) {
     for group in groups {
         let children = [];
         if "title" in group && group.title != () {
-            children.push(text(group.title.to_upper()).with_style(ctx.component_style("group_title", style()
+            children.push(text(group.title).with_style(ctx.component_style("group_title", style()
                 .typography("label").text_color(theme_color("text_muted"))))
                 .accessibility_role("heading").accessibility_level(3));
         }

@@ -5,9 +5,29 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "canvas_peak_paint_above(_: &mut UiNode, _: types::dynamic::Dynamic, _: ColorValue, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["limit_y", "foreground", "background"],
+        doc: "On an existing Canvas peak binding, set foreground and optional background (color or ()) while the sampled vertex is strictly above the authored y threshold. Tests before display projection, offset and clamping and does not change layout or schedule a script evaluation.",
+    },
+    ScriptFnDoc {
+        signature: "follow_canvas_peak(_: &mut UiNode, _: CanvasPeakRoute, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: array) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["route", "offset_x", "offset_y", "bounds"],
+        doc: "Translates the node to the route's highest vertex at its native path_progress sample (default 1), with any route projection applied before the supplied offsets. Bounds may be empty or [min_x, min_y, max_x, max_y]; offsets and bounds are display coordinates.",
+    },
+    ScriptFnDoc {
+        signature: "image_fallback_text(_: &mut UiNode, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["text"],
+        doc: "Sets non-interactive text on this image, directional image or SVG when native loading fails, not while pending. Style through image_fallback; preserves the image owner's accessible name and presentation diagnostics. Empty text hides the visual error only. Does not propagate into arbitrary child nodes or turn missing declared assets into valid preparation.",
+    },
+    ScriptFnDoc {
         signature: "retained_page(_: &mut UiNode, _: bool) -> UiNode",
         params: &["visible"],
         doc: "Retains the complete native page subtree while excluding hidden content from layout, input and presented accessibility. Invisible motion freezes; hiding alone never cancels business work.",
+    },
+    ScriptFnDoc {
+        signature: "overflow_summary_for(_: &mut UiNode, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["count"],
+        doc: "In an intrinsic overflow_row, presents this cell only when exactly count ordinary cells are omitted (0 to 1024). A zero variant reserves width even when all ordinary cells fit. Summaries never remove a required cell; supply one variant per supported count.",
     },
     ScriptFnDoc {
         signature: "navigation_scope(_: &mut UiNode, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -45,9 +65,19 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Takes the accessible description from the labels or text of the nodes with these space-separated `accessibility_id`s.",
     },
     ScriptFnDoc {
+        signature: "accessibility_description(_: &mut UiNode, _: string) -> UiNode",
+        params: &["description"],
+        doc: "Sets a direct auxiliary description without changing the accessible name. A declared accessibility_described_by relationship takes precedence, including an empty resolved description. Useful for data-only virtual rows without creating element refs or global semantic IDs.",
+    },
+    ScriptFnDoc {
         signature: "accessibility_expanded(_: &mut UiNode, _: bool) -> UiNode",
         params: &["expanded"],
         doc: "Sets whether the content the node controls, such as a menu or a disclosure panel, is expanded.",
+    },
+    ScriptFnDoc {
+        signature: "accessibility_hidden(_: &mut UiNode, _: bool) -> UiNode",
+        params: &["hidden"],
+        doc: "Excludes decorative content and descendants from the semantic tree and implicit accessible names, without hiding, unmounting or disabling the visual subtree. Do not use on focusable controls. Visual/contrast audits remain active.",
     },
     ScriptFnDoc {
         signature: "accessibility_id(_: &mut UiNode, _: string) -> UiNode",
@@ -187,7 +217,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "enter_motion(_: &mut UiNode, _: gpui_rhai::motion::MotionSource) -> UiNode",
         params: &["source"],
-        doc: "Declares a motion source that plays when the keyed node mounts or its replay key changes; the same as `motion`.",
+        doc: "Plays when the keyed node mounts or receives a different explicit replay key. Recipe changes on an already mounted track do not restart or retarget it.",
     },
     ScriptFnDoc {
         signature: "env(_: &mut UiNode, _: map) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -205,9 +235,44 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Tells the composition audit that this container's heading is drawn elsewhere, such as in a host's panel header.",
     },
     ScriptFnDoc {
+        signature: "leading_float(_: &mut UiNode, _: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["side", "min_column_width", "min_text_width"],
+        doc: "Float the first child of a full-width column at logical start or end; the following prose flows beside and below it. The native layout uses the figure's presented size, the column's horizontal gap and the figure's bottom margin. Below either width limit it stacks without remounting. Each prose child must have one ordinary wrapping text leaf.",
+    },
+    ScriptFnDoc {
+        signature: "wrap_exclusion(_: &mut UiNode, _: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["side", "width", "height"],
+        doc: "Soft-wraps the first native rows around a leading rectangle on the physical left or right. Width and height are logical pixels measured from this text; lower rows use full width. Zero clears the exclusion. Does not position the figure or change a non-wrapping or truncated text node.",
+    },
+    ScriptFnDoc {
+        signature: "capture_text_anchors(_: &mut UiNode, _: TextAnchorPlan) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["plan"],
+        doc: "Projects the plan from this plain or rich text node's native paint. The node must already have an element ref and its text must match the plan source.",
+    },
+    ScriptFnDoc {
+        signature: "intrinsic_width_motion(_: &mut UiNode, _: string, _: i64, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "duration_ms", "easing"],
+        doc: "Glides an auto-sized node from its last presented width to the real constrained width when the content key changes. Explicit width, mount, same-key reflow and Reduced/None are not animated.",
+    },
+    ScriptFnDoc {
+        signature: "layout_size_motion(_: &mut UiNode, _: string, _: string, _: i64, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "axis", "duration_ms", "easing"],
+        doc: "When the controlled key changes, retargets the measured width or height of this existing node from its last presented size to the new constrained layout size. Works with auto and declared lengths; siblings and hit bounds use the same intermediate layout. The first presentation and same-key reflow do not start a track. Reduced/None snap.",
+    },
+    ScriptFnDoc {
         signature: "layout_motion(_: &mut UiNode, _: i64, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["duration_ms", "easing"],
         doc: "Animates the node between committed layout positions over `duration_ms`, with `linear`, `ease_in`, `ease_out` or `ease_in_out`.",
+    },
+    ScriptFnDoc {
+        signature: "paint_transition(_: &mut UiNode, _: i64, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["duration_ms", "easing"],
+        doc: "Retargets paint colors on the existing native node from their displayed sample. Supports solid paint, compatible layered gradient stops and compatible shadow colors. Does not animate layout or subtree opacity. Initial presentation and Reduced/None snap.",
+    },
+    ScriptFnDoc {
+        signature: "paint_transition(_: &mut UiNode, _: i64, _: string, _: map) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["duration_ms", "easing", "options"],
+        doc: "Adds a bounded delay_ms and opts into group_effects for resolved opacity and grayscale. Explicit opacity or grayscale tracks retain compositing ownership. Layout is unchanged; first presentation and Reduced/None snap.",
     },
     ScriptFnDoc {
         signature: "motion(_: &mut UiNode, _: gpui_rhai::motion::MotionSource) -> UiNode",
@@ -215,9 +280,67 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Declares a motion source for one property of the keyed node, replacing an earlier source for it; rerenders keep its progress.",
     },
     ScriptFnDoc {
+        signature: "number_motion_source(_: &mut UiNode) -> UiNode",
+        params: &[],
+        doc: "Marks a keyed element with an ElementRef as a producer for number_value and optional number_weight tracks.",
+    },
+    ScriptFnDoc {
+        signature: "sample_flex_share(_: &mut UiNode, _: MotionNumbers, _: i64, _: f64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["group", "index", "cutoff"],
+        doc: "Projects a lane into a box with zero flex basis and grow proportional to the share of the sampled sum. Native layout reserves gaps and minimum widths first. Fractions at or below cutoff are absent from layout; cutoff is 0 to 1.",
+    },
+    ScriptFnDoc {
+        signature: "sample_numbers(_: &mut UiNode, _: MotionNumbers, _: string, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["group", "projection", "index"],
+        doc: "Projects one native numerical frame as accepted-fallback text (amount, percent, sum, weighted_sum, remaining, capacity_percent) or box width (width_fraction). Lanes are zero-based.",
+    },
+    ScriptFnDoc {
+        signature: "with_capacity(_: &mut MotionNumbers, _: f64) -> core::result::Result<gpui_rhai::number_motion::MotionNumbers,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["capacity"],
+        doc: "Pins a nonnegative, finite capacity to a MotionNumbers group. Width percentages divide by the greater of capacity and total usage; remaining and capacity_percent use the accepted capacity.",
+    },
+    ScriptFnDoc {
+        signature: "sample_partition(_: &mut UiNode, _: MotionNumbers, _: i64, _: f64, _: f64, _: f64, _: bool) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["group", "index", "width", "height", "gap", "tooltip"],
+        doc: "Projects a numbered lane or the unallocated lane (-1) from one joint native layout into a box. Uses its authored style before all tracks are available. Tooltip mode anchors to a business lane; both modes use the same immutable frame.",
+    },
+    ScriptFnDoc {
+        signature: "with_capacity(_: &mut MotionNumbers, _: ElementRef) -> core::result::Result<gpui_rhai::number_motion::MotionNumbers,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["source"],
+        doc: "Samples capacity from a separate number_motion_source in the same component. The capacity source does not contribute to the lane sum.",
+    },
+    ScriptFnDoc {
+        signature: "sample_partition_visibility(_: &mut UiNode, _: MotionNumbers, _: i64, _: f64, _: f64, _: f64, _: f64, _: f64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &[
+            "group",
+            "index",
+            "width",
+            "height",
+            "gap",
+            "min_width",
+            "min_height",
+        ],
+        doc: "Shows a decorative box only when the current lane meets both minimum dimensions after its gutter. Uses its authored visibility until tracks are sampled.",
+    },
+    ScriptFnDoc {
+        signature: "sample_strip_hint(_: &mut UiNode, _: MotionNumbers, _: i64, _: f64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["group", "index", "fallback"],
+        doc: "Positions the single child of a full-width box at a lane's sampled midpoint along the space left after measuring the child. Uses the authored fallback fraction (0 to 1) for a missing or empty lane; direction follows the view.",
+    },
+    ScriptFnDoc {
+        signature: "motion_on_change(_: &mut UiNode, _: string) -> UiNode",
+        params: &["key"],
+        doc: "Plays this keyed node's finite motion sources only when `key` changes. Mount/remount presents terminal values without frames. Equal keys preserve progress; source-only changes settle. Does not control timelines, exits or progress bindings.",
+    },
+    ScriptFnDoc {
         signature: "motion_particle_count(_: &mut UiNode, _: i64) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["count"],
         doc: "Declares how many particles the node draws itself, such as Canvas circles, against the `motion_particles` budget; it draws nothing. At least 0.",
+    },
+    ScriptFnDoc {
+        signature: "repeat_press(_: &mut UiNode) -> UiNode",
+        params: &[],
+        doc: "A keyed click target activates on primary mouse-down, then proposes its latest committed click payload while the same mouse press stays inside. Repeats begin after 400 ms and accelerate to a 40 ms floor. Changing callback identity, a failed transaction, leaving, disabling, suspension, unmount, or window deactivation ends the press. Keyboard, a touch tap, and automation stay one-shot.",
     },
     ScriptFnDoc {
         signature: "motion_replay_key(_: &mut UiNode, _: string) -> UiNode",
@@ -302,7 +425,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "on_key_value(_: &mut UiNode, _: string, _: Fn, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key", "handler", "value"],
-        doc: "Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with its own `value` as payload.",
+        doc: "Appends a handler for a key pressed while focus is on or inside the node, with its own `value` as payload. Use `plain+1` for an unmodified press only, `ctrl+s` for a chord, or an unqualified key such as `escape` for a fallback.",
     },
     ScriptFnDoc {
         signature: "on_open_change(_: &mut UiNode, _: Fn) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

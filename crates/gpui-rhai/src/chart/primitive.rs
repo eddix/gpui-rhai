@@ -2368,7 +2368,8 @@ fn chart_config_from_source(
             .unwrap_or(0),
         background: props
             .style("background_style")
-            .and_then(|style| style.base.background.as_ref())
+            .and_then(|style| style.base.background.as_deref())
+            .and_then(crate::BackgroundFill::as_solid_value)
             .and_then(|color| theme.resolve_color(color)),
         theme: theme.clone(),
     })

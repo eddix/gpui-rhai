@@ -98,14 +98,20 @@ name = "Disk Tree"                    # display name; the package name by defaul
 identifier = "com.example.disktree"   # required
 icon = "bundle/AppIcon.png"           # a square PNG, ideally 1024px
 binaries = ["disktree", "helper"]     # the executable first; the package's only binary by default
-resources = [{ from = "licenses", to = "licenses" }]
+resources = [                          # optional; replaces the defaults below
+    { from = "licenses", to = "licenses" },
+    { from = "ui/licenses", to = "ui/licenses" },
+]
 ```
 
 The bundle lands in `target/release/bundle/<name>.app`: the binaries in
 `Contents/MacOS`, an `Info.plist` with the package version, the icon converted
-to `.icns`, and the resources in `Contents/Resources`. `licenses/` at the
-project root, for third-party notices, is copied when the configuration lists
-no resources of its own. The bundle is
+to `.icns`, and the resources in `Contents/Resources`. When the configuration
+omits `resources`, existing `licenses/` and `ui/licenses/` directories are
+copied at those relative paths. This keeps application notices and the UI font
+license installed by `init` readable outside the embedded binary. An explicit
+resource list, including `[]`, replaces those defaults; include the appropriate
+notices yourself in that case. The bundle is
 signed ad hoc, enough to run on the machine that built it; `--sign <identity>`
 signs with a certificate, and notarization for distribution stays the
 application's step. `--name`, `--identifier` and `--icon` override the

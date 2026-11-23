@@ -5,9 +5,14 @@ between neutral layers and text, not every theme into the same grey skin.
 `registry/themes/` is authoritative; application copies remain editable and the
 CLI's three-way update must preserve their local changes.
 
+This calibration applies to the 19 auxiliary variants in
+`BUNDLED_PALETTE_SOURCES`, not the four exact Modern/Clean presets. Those four
+keep their authored colors and report measured contrast risks; calibration
+does not silently recolor them or turn those findings into an accessibility pass.
+
 ## Method
 
-- Preserve all 15 page-background and accent anchors, status fills and their
+- Preserve each palette's page-background and accent anchors, status fills and their
   paired foregrounds. Preserve each neutral ramp's cool/warm/chromatic character.
 - Adjust tonal lightness in Oklab/OKLCH, retaining hue and chroma. Gamut mapping
   reduces chroma rather than clipping RGB channels and shifting the hue. The
@@ -73,12 +78,12 @@ weakest step always the track). No variant needs its own value.
 ## Verification and visual review
 
 ```sh
-cargo test -p gpui-rhai --test theme_readability --all-features -- --nocapture
-cargo test --manifest-path tests/native-keyboard/Cargo.toml --test native theme::derived_color_contrast
+cargo test -p gpui-rhai --test theme_readability --locked -- --nocapture
+CARGO_TARGET_DIR="$PWD/target" cargo test --manifest-path tests/native-keyboard/Cargo.toml --test native theme::derived_color_contrast --locked
 cargo test -p gpui-rhai-cli --lib theme_studio
 ```
 
-The first test prints the final per-theme contrast/lightness table and checks
+The first test prints the final auxiliary-palette contrast/lightness table and checks
 reading surfaces, outline/focus/scrollbar roles, hover foregrounds and syntax.
 Mounted tests check real controls, selected data rows and facet tags in every
 palette. Theme Studio warns on the broader pair matrix for application drafts.

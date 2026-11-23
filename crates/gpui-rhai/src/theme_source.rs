@@ -145,6 +145,15 @@ fn decode_layer(map: Map) -> Result<TokenLayer, ThemeError> {
                 }
             }
             "typography" => decode_typography(expect_map(value, "typography")?, &mut layer)?,
+            "component_styles" => {
+                layer.component_styles = crate::component_styles::decode_component_styles(value)
+                    .map_err(|error| decode_error("component_styles", error.to_string()))?;
+            }
+            "component_styles_replace" => {
+                layer.component_styles_replace = value
+                    .as_bool()
+                    .map_err(|_| decode_error("component_styles_replace", "expected a boolean"))?;
+            }
             "motion" => layer.motion = decode_motion(&value)?,
             "environment" => {
                 for (name, value) in expect_map(value, "environment")? {
@@ -161,6 +170,7 @@ fn decode_layer(map: Map) -> Result<TokenLayer, ThemeError> {
         }
     }
     layer.normalize_colors();
+    layer.validate_color_paths()?;
     Ok(layer)
 }
 
@@ -186,6 +196,11 @@ fn decode_namespace(
 }
 
 fn decode_namespaced_value(value: Dynamic, path: &str) -> Result<ThemeTokenValue, ThemeError> {
+    if value.is::<crate::Style>() {
+        return Ok(ThemeTokenValue::Style(Box::new(
+            value.cast::<crate::Style>(),
+        )));
+    }
     if value.is_float() {
         return Ok(ThemeTokenValue::Number(
             value.as_float().unwrap_or_default(),

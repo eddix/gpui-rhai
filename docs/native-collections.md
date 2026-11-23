@@ -165,15 +165,25 @@ neighbor lookup do not materialize the entire collection in Rhai.
 
 Command accepts the same Array-or-NativeCollection split. A native command row
 uses its collection key as the action value and supplies `label`, optional
-`keywords`, `group`, `shortcut`, and `disabled` fields. The generic
+`keywords`, `hint`, `group`, `shortcut`, `disabled`, and logical asset ID strings
+for `icon`/`logo`. It never carries a UI node. The generic
 `native_fuzzy_view` data plane performs Unicode lowercase normalization,
 exact/prefix/substring/subsequence scoring, stable group-local ranking, group
 projection, and disabled-aware edge/adjacent navigation in Rust.
 
-Projected group rows use the same configured row-height metric as projected
-commands. This keeps Array and NativeCollection layout equivalent and lets the
-source component create asymmetric header spacing without a second unstyleable
-height contract.
+Projected rows carry an initial height estimate, not a second exact-height
+contract. Array and NativeCollection commands use the same measured native
+collection: headings have natural typography/padding extent and short results
+fit it under the command-row-based cap.
+
+The generic fuzzy configuration optionally accepts `hint_field`, `icon_field`
+and `logo_field`. A hint participates in ranking with keyword precedence and
+therefore in structural order-cache identity. Icon/logo field choices are
+presentation-only and reuse that order. Missing/null optional row fields are
+empty; supplied visual asset values must be logical asset IDs, not URLs or
+paths, and are validated when the row is projected. Loading and preparation
+remain the Host asset pipeline's responsibility. Disabled-aware navigation and
+controlled activity are independent of these decorations.
 
 The structural order cache excludes the active command, so arrow movement
 reuses filtering/ranking and changes only visible-row projection. The official

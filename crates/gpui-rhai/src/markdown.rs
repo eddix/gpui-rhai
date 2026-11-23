@@ -16,6 +16,97 @@ use crate::{
 /// Maximum UTF-8 bytes shaped in one ordinary Markdown virtual row.
 pub const MARKDOWN_SEGMENT_BYTES: usize = 4096;
 
+/// Quote literal inline content without turning data into Markdown structure.
+/// Use character references also for whitespace at a line boundary: backslash
+/// escapes alone cannot preserve indentation, trailing spaces or line breaks.
+pub(crate) fn inline_literal(text: &str) -> String {
+    use std::fmt::Write as _;
+    let mut quoted = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch.is_ascii_punctuation() || ch.is_ascii_whitespace() {
+            let _ = write!(quoted, "&#{};", u32::from(ch));
+        } else if ch == '\0' {
+            // CommonMark replaces a NUL with U+FFFD.
+            quoted.push('\u{fffd}');
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted
+}
+
+/// Bound literal highlighting work and preserve UTF-8 offsets for the
+/// same glyph projection used by selection and links.
+pub(crate) fn text_match_ranges(
+    text: &str,
+    terms: rhai::Array,
+    words_only: bool,
+) -> Result<rhai::Array, Box<rhai::EvalAltResult>> {
+    use std::collections::BTreeSet;
+    use unicode_segmentation::UnicodeSegmentation as _;
+    const MAX_BYTES: usize = 65_536;
+    const MAX_RANGES: usize = 128;
+    if text.len() > MAX_BYTES || terms.len() > MAX_RANGES {
+        return Err("text match input exceeds its bounded range budget".into());
+    }
+    let terms = terms
+        .into_iter()
+        .map(|term| {
+            term.try_cast::<rhai::ImmutableString>()
+                .ok_or("expected text match terms")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if terms.iter().map(|term| term.len()).sum::<usize>() > MAX_BYTES {
+        return Err("text match terms exceed 64 KiB".into());
+    }
+    let mut matches = Vec::new();
+    if words_only {
+        let words = terms
+            .iter()
+            .flat_map(|term| term.unicode_words())
+            .filter(|word| word.chars().count() >= if word.is_ascii() { 4 } else { 2 })
+            .map(str::to_lowercase)
+            .collect::<BTreeSet<_>>();
+        matches.extend(
+            text.unicode_word_indices()
+                .filter(|(_, word)| words.contains(&word.to_lowercase()))
+                .take(MAX_RANGES)
+                .map(|(start, word)| start..start + word.len()),
+        );
+    } else {
+        for term in terms.iter().filter(|term| !term.is_empty()) {
+            matches.extend(
+                text.match_indices(term.as_str())
+                    .take(MAX_RANGES)
+                    .map(|(start, word)| start..start + word.len()),
+            );
+        }
+    }
+    matches.sort_unstable_by_key(|range| (range.start, range.end));
+    let mut merged: Vec<Range<usize>> = Vec::new();
+    for range in matches {
+        if let Some(last) = merged.last_mut()
+            && range.start <= last.end
+        {
+            last.end = last.end.max(range.end);
+        } else if merged.len() == MAX_RANGES {
+            break;
+        } else {
+            merged.push(range);
+        }
+    }
+    Ok(merged
+        .into_iter()
+        .map(|range| {
+            let offset = |n| i64::try_from(n).expect("bounded text fits i64").into();
+            rhai::Dynamic::from_map(rhai::Map::from_iter([
+                ("start".into(), offset(range.start)),
+                ("end".into(), offset(range.end)),
+            ]))
+        })
+        .collect())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Mark {
     Strong,
@@ -676,6 +767,69 @@ mod tests {
             &AtomicBool::new(true),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn literal_segments_keep_utf8_offsets_and_do_not_introduce_markdown_structure() {
+        let first = "  中文 & [mutable](not-a-link) **bold** ";
+        let second = "• العربية 🧑🏻‍💻\n\t";
+        let source = format!(
+            "{}&#160;[&#91;1&#93;](gpui-cite:1)\n\n{}",
+            inline_literal(first),
+            inline_literal(second)
+        );
+        let document = parse(&source);
+        assert_eq!(
+            document.plain.as_ref(),
+            format!("{first}\u{a0}[1]\n\n{second}")
+        );
+        assert_eq!(document.blocks.len(), 2);
+        let links = document.blocks[0]
+            .text
+            .marks
+            .iter()
+            .filter_map(|mark| {
+                if let Mark::Link {
+                    href,
+                    label,
+                    first: true,
+                } = &mark.mark
+                {
+                    Some((label.as_str(), href.as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(links, vec![("[1]", "gpui-cite:1")]);
+        assert_eq!(document.blocks[1].text.marks, [] as [InlineMark; 0]);
+    }
+
+    #[test]
+    fn match_ranges_respect_utf8_and_merge_overlapping_terms() {
+        let text = "A 新版本 Report report";
+        let assert_ranges = |terms: &[&str], words, expected: Vec<&str>| {
+            let results = text_match_ranges(
+                text,
+                terms
+                    .iter()
+                    .map(|term| rhai::Dynamic::from(term.to_string()))
+                    .collect(),
+                words,
+            )
+            .unwrap();
+            let actual = results
+                .into_iter()
+                .map(|range| {
+                    let range = range.cast::<rhai::Map>();
+                    let at = |key| usize::try_from(range[key].as_int().unwrap()).unwrap();
+                    &text[at("start")..at("end")]
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+        };
+        assert_ranges(&["新版本 Report", "Report"], false, vec!["新版本 Report"]);
+        assert_ranges(&["REPORT"], true, vec!["Report", "report"]);
     }
 
     #[test]

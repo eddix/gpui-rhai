@@ -216,6 +216,21 @@ impl Element for VirtualListEntityElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        if let Some(length) = self.content.item_height {
+            let height = match length {
+                crate::Length::Pixels(value) => value,
+                crate::Length::Rems(value) => value * f64::from(window.rem_size()),
+                _ => self.content.estimated_height,
+            };
+            if height.is_finite() && height > 0.0 && height <= f64::from(f32::MAX) {
+                self.content.estimated_height = height;
+            }
+        }
+        if let Some(crate::Length::Rems(value)) = self.content.max_height {
+            self.content.max_height = Some(crate::Length::Pixels(
+                (value * f64::from(window.rem_size())).min(f64::from(f32::MAX)),
+            ));
+        }
         let identity = NativeCollectionIdentity {
             view: self.runtime.view_id.clone(),
             collection: self.content.id.clone(),
@@ -237,6 +252,7 @@ impl Element for VirtualListEntityElement {
                             VirtualListView::new(
                                 self.content.clone(),
                                 self.runtime.clone(),
+                                self.retained_node,
                                 cx.entity_id(),
                                 self.scrollbars.clone(),
                                 self.scrollbar_spec,
@@ -249,10 +265,16 @@ impl Element for VirtualListEntityElement {
                     view.scrollbars = self.scrollbars.clone();
                     view.scrollbar_spec = self.scrollbar_spec;
                 });
+                let fills_parent =
+                    self.content.height.is_none() && self.content.max_height.is_none();
                 let mut element = div()
                     .flex()
                     .flex_col()
-                    .size_full()
+                    .w_full()
+                    // The native view owns its current fitted height. Capturing
+                    // that height here would freeze an outer wrapper while
+                    // native row/width updates rerender only the child entity.
+                    .when(fills_parent, gpui::Styled::h_full)
                     .child(view.clone())
                     .into_any_element();
                 let layout = element.request_layout(window, cx);
@@ -283,7 +305,9 @@ impl Element for VirtualListEntityElement {
         // bounds. Scroll physics still use ListState's measured viewport.
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         frame.element.prepaint(window, cx);
-        frame.view.update(cx, VirtualListView::seed_viewport_hints);
+        frame
+            .view
+            .update(cx, |view, cx| view.seed_viewport_hints(window, cx));
         frame
             .view
             .update(cx, |view, cx| view.publish_follow_status(window, cx));
@@ -343,6 +367,11 @@ impl Element for VirtualListEntityElement {
     }
 }
 
+/// Exact geometry keys; positive and negative zero do not change padding.
+fn padding_key(padding: [f64; 2]) -> [u64; 2] {
+    padding.map(|value| (value + 0.0).to_bits())
+}
+
 fn overdraw_item_count(content: &VirtualCollectionNodeSpec) -> usize {
     (content.overdraw_pixels / content.estimated_height)
         .ceil()
@@ -380,6 +409,7 @@ impl IntoElement for VirtualListEntityElement {
 struct VirtualListView {
     content: VirtualCollectionNodeSpec,
     runtime: NodeSlotRuntime,
+    retained_node: Option<crate::NodeId>,
     scroll: ListState,
     frame_indices: Rc<RefCell<BTreeSet<usize>>>,
     /// A fill-height list cannot judge visibility before its viewport is
@@ -395,6 +425,10 @@ struct VirtualListView {
     hinted_width: Option<Pixels>,
     scroll_source_epoch: u64,
     intrinsic_rows: BTreeMap<String, IntrinsicRow>,
+    /// Exact only after a complete short list has been measured at its real
+    /// width. Long/incomplete lists retain the bounded viewport, never an
+    /// estimated total or an eager all-items measurement.
+    fitted_height: Option<Pixels>,
 }
 
 struct IntrinsicRow {
@@ -427,6 +461,7 @@ impl VirtualListView {
     fn new(
         content: VirtualCollectionNodeSpec,
         mut runtime: NodeSlotRuntime,
+        retained_node: Option<crate::NodeId>,
         notify: gpui::EntityId,
         scrollbars: crate::ScrollbarContext,
         scrollbar_spec: crate::ScrollbarSpec,
@@ -436,6 +471,7 @@ impl VirtualListView {
         let mut this = Self {
             content,
             runtime,
+            retained_node,
             scroll,
             frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
             pending_reveal: false,
@@ -448,6 +484,7 @@ impl VirtualListView {
             hinted_width: None,
             scroll_source_epoch: 0,
             intrinsic_rows: BTreeMap::new(),
+            fitted_height: None,
         };
         this.synchronize_intrinsic_rows();
         this.reveal_controlled_target();
@@ -465,8 +502,15 @@ impl VirtualListView {
         // theme can change every row's geometry, so cached heights are stale.
         let geometry_changed = self.runtime.environment != runtime.environment
             || self.runtime.inherited_disabled != runtime.inherited_disabled
-            || !self.runtime.colors.same_tokens(&runtime.colors);
+            || !self.runtime.colors.same_tokens(&runtime.colors)
+            || self.content.estimated_height.to_bits() != content.estimated_height.to_bits();
         let changed = self.content != content || geometry_changed;
+        if geometry_changed
+            || self.content.max_height != content.max_height
+            || padding_key(self.content.content_padding) != padding_key(content.content_padding)
+        {
+            self.fitted_height = None;
+        }
         let recreate = collection_requires_recreation(&self.content, &content);
         let data_changed = self.content.data != content.data;
         let key_order_changed = data_changed && !same_key_order(&self.content.data, &content.data);
@@ -536,6 +580,7 @@ impl VirtualListView {
             // GPUI owns remeasurement and anchor correction. Invalidate heights
             // without resetting identity, position or native follow state.
             self.scroll.remeasure_items(0..self.content.data.len());
+            self.hinted_width = None;
         }
         if recreate || replaced {
             // Source replacement must retire a captured thumb gesture even
@@ -700,7 +745,8 @@ impl VirtualListView {
         }
     }
 
-    fn seed_viewport_hints(&mut self, cx: &mut Context<Self>) {
+    fn seed_viewport_hints(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.fit_measured_content(window, cx);
         // Only a native measurement clears a dirty lease. Hidden retained
         // rows stay dirty and coalesce further commits until presented.
         for row in self.intrinsic_rows.values() {
@@ -727,6 +773,62 @@ impl VirtualListView {
                 .clone()
                 .with_uniform_item_height(px(finite_to_f32(self.content.estimated_height)));
             cx.notify();
+        }
+    }
+
+    fn viewport_height(&self) -> Option<Pixels> {
+        self.content
+            .height
+            .map(|height| px(finite_to_f32(height)))
+            .or_else(|| {
+                self.content.max_height.and_then(|length| match length {
+                    crate::Length::Pixels(maximum) => Some(
+                        self.fitted_height
+                            .unwrap_or(px(finite_to_f32(maximum)))
+                            .min(px(finite_to_f32(maximum))),
+                    ),
+                    _ => None,
+                })
+            })
+    }
+
+    fn fit_measured_content(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(crate::Length::Pixels(maximum)) = self.content.max_height else {
+            return;
+        };
+        let maximum = px(finite_to_f32(maximum));
+        let count = self.content.data.len();
+        // bounds_for_item is available only for stable measured items at or
+        // after the current anchor. If every item fits, GPUI brings the anchor
+        // back to the start. Do not infer a short total from a measured tail or
+        // from scrollbar max_offset (which is zero for *all* fitting totals).
+        let padding = px(finite_to_f32(self.content.content_padding.iter().sum()));
+        let height = if count == 0 {
+            padding.min(maximum)
+        } else {
+            self.scroll
+                .bounds_for_item(0)
+                .zip(self.scroll.bounds_for_item(count - 1))
+                .and_then(|(first, last)| {
+                    let extent = (last.bottom() - first.top()).max(px(0.0)) + padding;
+                    if extent >= maximum {
+                        return Some(maximum);
+                    }
+                    (0..count)
+                        .all(|index| self.scroll.bounds_for_item(index).is_some())
+                        .then_some(extent)
+                })
+                .unwrap_or(maximum)
+        };
+        if self.fitted_height != Some(height) {
+            self.fitted_height = Some(height);
+            // A notification inside this prepaint can be consumed by the
+            // in-flight parent render. Publish the new intrinsic preference
+            // after the effect stack has returned, through a weak owner.
+            cx.defer_in(window, |_, _, cx| cx.notify());
+            if let Some(parent) = &self.runtime.intrinsic_size {
+                parent.invalidate(cx);
+            }
         }
     }
 
@@ -838,9 +940,10 @@ fn estimated_target_is_initially_visible(
     content: &VirtualCollectionNodeSpec,
     index: usize,
 ) -> bool {
-    content
-        .height
-        .is_some_and(|height| (index.saturating_add(1) as f64) * content.estimated_height <= height)
+    content.height.is_some_and(|height| {
+        content.content_padding[0] + (index.saturating_add(1) as f64) * content.estimated_height
+            <= height
+    })
 }
 
 impl Render for VirtualListView {
@@ -860,7 +963,8 @@ impl Render for VirtualListView {
         let mut runtime = self.runtime.clone();
         runtime.wheel_parents.insert(
             0,
-            crate::scrollbar::ScrollWheelSource::new(self.scroll.clone(), (false, true), false),
+            crate::scrollbar::ScrollWheelSource::new(self.scroll.clone(), (false, true), false)
+                .with_retained_viewport(&self.runtime.geometry, self.retained_node),
         );
         let frame_indices = Rc::new(RefCell::new(BTreeSet::new()));
         self.frame_indices = Rc::clone(&frame_indices);
@@ -868,7 +972,7 @@ impl Render for VirtualListView {
         if let Some(sticky) = sticky {
             frame_indices.borrow_mut().insert(sticky.index);
         }
-        let fixed_height = content.height.map(finite_to_f32);
+        let fixed_height = self.viewport_height();
         let list_content = content.clone();
         let list_runtime = runtime.clone();
         let list_frame_indices = Rc::clone(&frame_indices);
@@ -881,7 +985,9 @@ impl Render for VirtualListView {
             render_virtual_item(&list_content, &list_runtime, sticky, index, invalidator)
         })
         .w_full()
-        .when_some(fixed_height, |list, height| list.h(px(height)))
+        .pt(px(finite_to_f32(content.content_padding[0])))
+        .pb(px(finite_to_f32(content.content_padding[1])))
+        .when_some(fixed_height, gpui::Styled::h)
         .when(fixed_height.is_none(), |list| list.flex_1().min_h(px(0.0)));
         let sticky = sticky.and_then(|sticky| {
             let key = collection_item_key(&content, sticky.index)?;
@@ -1173,7 +1279,10 @@ mod tests {
             data: crate::VirtualCollectionData::Values(vec![crate::UiValue::Null]),
             realized,
             estimated_height: 32.0,
+            item_height: None,
             height: Some(160.0),
+            max_height: None,
+            content_padding: [0.; 2],
             overdraw_pixels: 32.0,
             bottom_align: false,
             follow_tail: false,
@@ -1364,7 +1473,10 @@ mod tests {
             data: crate::VirtualCollectionData::Values(vec![crate::UiValue::Null; 20]),
             realized: std::collections::BTreeMap::new(),
             estimated_height: 32.0,
+            item_height: None,
             height: Some(384.0),
+            max_height: None,
+            content_padding: [0.; 2],
             overdraw_pixels: 64.0,
             bottom_align: false,
             follow_tail: false,

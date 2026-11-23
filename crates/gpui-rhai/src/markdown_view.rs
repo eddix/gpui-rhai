@@ -2,6 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{
     Arc,
@@ -20,6 +21,7 @@ use crate::document_view::{
     document_source_prop, document_text_metrics, resolve_document_monospace_family,
     resolved_pixels, theme_color, view_messages_prop,
 };
+use crate::inline_link::{InlineLink, link_payload};
 use crate::markdown::{BlockKind, Mark, MarkdownText, PreparedMarkdown, TableCell};
 use crate::{
     DocumentRuntimeConfig, DocumentSource, EventSchema, ObjectField, PrimitiveContext,
@@ -72,6 +74,9 @@ struct Config {
     images: BTreeMap<String, String>,
     heading_roles: Vec<String>,
     messages: ViewMessages,
+    tag_link_prefix: Option<String>,
+    active_tag_link: Option<String>,
+    annotations: Vec<Range<usize>>,
 }
 
 const MESSAGES: &[(&str, &str)] = &[
@@ -591,6 +596,16 @@ impl crate::ScrollbarSource for TableRowsSource {
 }
 
 impl Paint {
+    fn inline_background(&self, style: &Style) -> Option<gpui::Hsla> {
+        style
+            .base
+            .background
+            .as_deref()
+            .and_then(crate::BackgroundFill::as_solid_value)
+            .and_then(|color| self.theme.resolve_color(color))
+            .map(|color| rgba(color.as_rgba_hex()).into())
+    }
+
     #[allow(clippy::too_many_lines)] // One bounded native block's presentation by semantic kind.
     fn block(&self, index: usize, window: &mut Window, cx: &mut App) -> AnyElement {
         let Some(block) = self.prepared.blocks.get(index) else {
@@ -730,7 +745,6 @@ impl Paint {
     fn text(&self, text: &MarkdownText, id: usize, part: &str) -> AnyElement {
         let mut highlights = Vec::new();
         let mut links = Vec::new();
-        let mut focus_links = Vec::new();
         let mut images = Vec::new();
         for mark in &text.marks {
             let mut style = HighlightStyle::default();
@@ -749,7 +763,8 @@ impl Paint {
                         rgba(
                             part.base
                                 .background
-                                .as_ref()
+                                .as_deref()
+                                .and_then(crate::BackgroundFill::as_solid_value)
                                 .and_then(|color| self.theme.resolve_color(color))
                                 .unwrap_or_else(|| {
                                     theme_color(&self.theme, "surface_raised", 0x3333_33ff)
@@ -768,10 +783,24 @@ impl Paint {
                     }
                 }
                 Mark::Link { href, label, first } => {
+                    let tag = self
+                        .config
+                        .tag_link_prefix
+                        .as_ref()
+                        .is_some_and(|prefix| href.starts_with(prefix));
+                    let part = if tag {
+                        if self.config.active_tag_link.as_ref() == Some(href) {
+                            "tag_active"
+                        } else {
+                            "tag"
+                        }
+                    } else {
+                        "link"
+                    };
                     style.color = Some(
                         rgba(
                             self.config
-                                .part("link")
+                                .part(part)
                                 .base
                                 .text_color
                                 .as_ref()
@@ -783,15 +812,28 @@ impl Paint {
                         )
                         .into(),
                     );
-                    style.underline = Some(gpui::UnderlineStyle {
-                        thickness: px(1.0),
-                        color: None,
-                        wavy: false,
-                    });
-                    links.push((mark.range.clone(), href.clone(), label.clone()));
-                    if *first {
-                        focus_links.push((mark.range.clone(), href.clone(), label.clone()));
+                    if tag {
+                        let tag_style = self.config.part(part);
+                        style.background_color = self.inline_background(&tag_style);
+                        style.font_weight = tag_style
+                            .base
+                            .font_weight
+                            .map(|weight| FontWeight(f32::from(weight)));
+                    } else {
+                        style.underline = Some(gpui::UnderlineStyle {
+                            thickness: px(1.0),
+                            color: None,
+                            paint_tag: None,
+                            baseline_offset: None,
+                            wavy: false,
+                        });
                     }
+                    links.push(InlineLink {
+                        bytes: mark.range.clone(),
+                        destination: href.clone(),
+                        label: label.clone(),
+                        first: *first,
+                    });
                 }
                 Mark::Image(destination) => images.push((
                     mark.range.clone(),
@@ -811,6 +853,20 @@ impl Paint {
                 }
             }
             highlights.push((mark.range.clone(), style));
+        }
+        if !self.disabled && !self.config.annotations.is_empty() {
+            let ink = self.inline_background(&self.config.part("annotation"));
+            for range in &self.config.annotations {
+                if let Some(range) = annotation_intersection(text, range) {
+                    highlights.push((
+                        range,
+                        HighlightStyle {
+                            background_color: ink,
+                            ..HighlightStyle::default()
+                        },
+                    ));
+                }
+            }
         }
         if let Some(range) = self.selection.range_for(
             DocumentSide::Single,
@@ -861,7 +917,10 @@ impl Paint {
             selection: self.selection.clone(),
             focus: self.focus.clone(),
             events: self.context.clone(),
-            links: links.clone().into(),
+            links: links.into(),
+            link_focus_ink: Some(
+                rgba(theme_color(&self.theme, "focus_ring", 0x7aa2_f7ff).as_rgba_hex()).into(),
+            ),
             disabled: self.disabled,
         };
         let mut part_style = self.config.part(part);
@@ -890,44 +949,6 @@ impl Paint {
                 theme_color(&self.theme, "text_primary", 0xeeee_eeff).as_rgba_hex(),
             ))
             .child(interactive);
-        // Focus-only overlays expose each inline link without drawing a second
-        // label or disturbing native text shaping/selection. Normal hitboxes do
-        // not occlude the underlying document text's pointer listeners.
-        if !self.disabled {
-            for (index, (range, href, label)) in focus_links.into_iter().enumerate() {
-                let events = self.context.clone();
-                let payload = link_payload(href.clone(), label.clone());
-                let focus_color =
-                    rgba(theme_color(&self.theme, "focus_ring", 0x7aa2_f7ff).as_rgba_hex());
-                content = content.child(
-                    div()
-                        .id(SharedString::from(format!(
-                            "markdown-link-{}-{index}-{}",
-                            text.range.start, range.start
-                        )))
-                        .absolute()
-                        .inset_0()
-                        .role(Role::Link)
-                        .aria_label(label)
-                        .aria_description(href)
-                        .tab_index(0)
-                        .focus_visible(move |style| style.border_1().border_color(focus_color))
-                        .on_a11y_action(gpui::AccessibleAction::Click, {
-                            let events = events.clone();
-                            let payload = payload.clone();
-                            move |_, window, cx| {
-                                let _ = events.emit("link", payload.clone(), window, cx);
-                            }
-                        })
-                        .on_key_down(move |event, window, cx| {
-                            if event.keystroke.key == "enter" {
-                                let _ = events.emit("link", payload.clone(), window, cx);
-                                cx.stop_propagation();
-                            }
-                        }),
-                );
-            }
-        }
         for (index, (range, destination, alt)) in images.into_iter().enumerate() {
             if let Some(id) = self
                 .config
@@ -1303,6 +1324,19 @@ impl Paint {
     }
 }
 
+/// Decorations use visible UTF-8 byte offsets, not source offsets. A
+/// decoration crossing native chunks is clipped to each chunk; malformed
+/// boundaries inside a code point never reach the shaper.
+fn annotation_intersection(text: &MarkdownText, decoration: &Range<usize>) -> Option<Range<usize>> {
+    let start = decoration.start.max(text.range.start);
+    let end = decoration.end.min(text.range.end);
+    if start >= end {
+        return None;
+    }
+    let local = start - text.range.start..end - text.range.start;
+    text.text.get(local.clone()).map(|_| local)
+}
+
 /// The width of `text` on one line in `base` at `size`, its strong, emphasis and
 /// code marks set as they paint; a header cell is semibold.
 fn measure_text(
@@ -1361,12 +1395,6 @@ fn measure_text(
     )
 }
 
-fn link_payload(href: String, text: String) -> UiValue {
-    UiValue::Map(BTreeMap::from([
-        ("href".to_owned(), UiValue::String(href)),
-        ("text".to_owned(), UiValue::String(text)),
-    ]))
-}
 fn number_f32(value: usize) -> f32 {
     value.to_string().parse().unwrap_or(f32::MAX)
 }
@@ -1512,6 +1540,32 @@ impl PrimitiveHandler for MarkdownViewerPrimitiveHandler {
                 _ => DEFAULT_TABLE_MAX_HEIGHT,
             },
             copy_code: matches!(props.data("code_block_actions"), Some(UiValue::Array(actions)) if actions.contains(&UiValue::String("copy".to_owned()))),
+            tag_link_prefix: props
+                .string("tag_link_prefix")
+                .filter(|prefix| !prefix.is_empty())
+                .map(str::to_owned),
+            active_tag_link: props.string("active_tag_link").map(str::to_owned),
+            annotations: match props.data("annotations") {
+                Some(UiValue::Array(ranges)) => ranges
+                    .iter()
+                    .filter_map(|range| {
+                        let UiValue::Map(fields) = range else {
+                            return None;
+                        };
+                        let (Some(UiValue::Integer(start)), Some(UiValue::Integer(end))) =
+                            (fields.get("start"), fields.get("end"))
+                        else {
+                            return None;
+                        };
+                        (start < end)
+                            .then(|| {
+                                Some(usize::try_from(*start).ok()?..usize::try_from(*end).ok()?)
+                            })
+                            .flatten()
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
             parts: PARTS
                 .iter()
                 .map(|part| {
@@ -1639,6 +1693,9 @@ const PARTS: &[&str] = &[
     "rule",
     "loading",
     "error",
+    "tag",
+    "tag_active",
+    "annotation",
 ];
 
 /// The public native primitive contract used by the source-owned `MarkdownViewer`.
@@ -1657,13 +1714,29 @@ pub fn markdown_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         ("image_assets".to_owned(), ObjectField::optional(ValueSchema::Map { values: Box::new(ValueSchema::string()) }).with_doc("Explicit destination-to-Host-asset-ID map. Missing images show alt text; URLs are never fetched.")),
         ("heading_roles".to_owned(), ObjectField::required(ValueSchema::Array { items: Box::new(ValueSchema::string()), max_items: Some(6) }).with_doc("Typography roles for heading levels 1 through 6; an explicit heading part typography overrides these.")),
         ("on_link".to_owned(), ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)).with_doc("Emits href and visible text. Does not open a browser.")),
+        ("tag_link_prefix".to_owned(), ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc("Matching link destinations retain link activation but use the inline tag style.")),
+        ("active_tag_link".to_owned(), ObjectField::optional(ValueSchema::optional(ValueSchema::string())).with_doc("Matching tag link that uses tag_active_style.")),
+        ("annotations".to_owned(), ObjectField::optional(ValueSchema::Array {
+            max_items: Some(128),
+            items: Box::new(ValueSchema::Object {
+                allow_unknown: false,
+                fields: BTreeMap::from([
+                    ("start".to_owned(), ObjectField::required(ValueSchema::Integer { min: Some(0), max: None })),
+                    ("end".to_owned(), ObjectField::required(ValueSchema::Integer { min: Some(0), max: None })),
+                ]),
+            }),
+        }).with_doc("Visible text UTF-8 byte ranges painted with annotation_style. No effect on parsing, hit tests, or selection.")),
         view_messages_prop(MESSAGES),
     ]);
     for part in PARTS {
         props.insert(
             format!("{part}_style"),
-            ObjectField::required(ValueSchema::Style)
-                .with_doc(format!("Style of the Markdown {part} part.")),
+            if matches!(*part, "tag" | "tag_active" | "annotation") {
+                ObjectField::optional(ValueSchema::Style)
+            } else {
+                ObjectField::required(ValueSchema::Style)
+            }
+            .with_doc(format!("Style of the Markdown {part} part.")),
         );
     }
     PrimitiveDescriptor {

@@ -5,6 +5,41 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "overflow_row(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Uses a centered, nonwrapping intrinsic row for Box children. Cells keep their measured native widths/heights, not flex grow/shrink distribution. Insufficient width omits lower overflow_priority cohorts from native layout, paint, keyboard and presented semantics; required cells stay. Equal priorities collapse together. Reserves the full intrinsic line height and preserves logical ownership/state/effects; this is not a retained-page lifecycle pause. Decisions happen before paint without a Rhai resize loop. Grid, wrapping, baseline or stretching layouts override the mode. Fragment styles do not create a cell: wrap a group in row/box to give it one priority.",
+    },
+    ScriptFnDoc {
+        signature: "overflow_row(_: &mut Style, _: bool) -> Style",
+        params: &["enabled"],
+        doc: "Enables overflow_row, or explicitly clears a lower-layer overflow layout with false. Disabling leaves ordinary layout declarations unchanged.",
+    },
+    ScriptFnDoc {
+        signature: "overflow_priority(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["priority"],
+        doc: "Marks an intrinsic overflow-row cell optional, with priority 0..65535. Lower priorities collapse first; equal-priority cells form an atomic cohort, useful for a whole set of page numbers. Only affects layout-bearing children of an enabled overflow_row. A later overflow_required() restores a required cell.",
+    },
+    ScriptFnDoc {
+        signature: "overflow_required(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Clears a lower-layer overflow_priority; the overflow row must retain this cell even when required content cannot fit.",
+    },
+    ScriptFnDoc {
+        signature: "grid_cell(_: &mut Style, _: i64, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["column", "row"],
+        doc: "Places an item at a one-based grid cell (1..32767). Multiple children can share a cell; native intrinsic sizing includes all of them, allowing normal/bold labels or other overlays to reserve their maximum size. Spans may be combined with this placement. Opacity 0 retains measurement; display none does not.",
+    },
+    ScriptFnDoc {
+        signature: "focus_ring(_: &mut Style, _: Length, _: Length, _: ColorValue) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["width", "offset", "color"],
+        doc: "Draws a non-layout focus ring when this node owns visible focus, following the view's focus-indicator policy. Inside an active group_focus/focus_within refinement, a visual part follows that explicitly borrowed focus scope instead. Merely inheriting focus never activates a base ring on every descendant. Width/offset accept px, rem or theme lengths, not percentages. The gap remains transparent and the ring follows the node's physical/logical radii and translation. Zero width clears an inherited ring. Does not enlarge the hit area; ancestor clipping still applies.",
+    },
+    ScriptFnDoc {
+        signature: "focus_ring(_: &mut Style, _: Length, _: SignedLength, _: ColorValue) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["width", "offset", "color"],
+        doc: "The signed-offset focus ring: offset_px(-2) with a 2px stroke paints inside the border box, without consuming layout space or a component-specific overlay. Signed rem offsets are also supported; auto and relative offsets are invalid. Completely collapsed inset geometry emits no paint.",
+    },
+    ScriptFnDoc {
         signature: "auto_grid_columns(_: &mut Style, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["minimum", "preferred", "maximum"],
         doc: "Lays out Box children in responsive equal-width columns (1 <= minimum <= preferred <= maximum <= 1000000 logical pixels). Each bound is a number of logical pixels or a Length: px, rems or a theme token such as theme_length(\"metrics.label_column\"), resolved natively in the node's environment on every frame, so the grid follows the tokens its cards use through theme and density changes. Bounds that resolve out of order lay out at the nearest valid ones (the minimum holds) and report a presentation diagnostic. Minimum determines auto-fit breakpoints, preferred supplies the unmeasured natural width hint, and maximum caps growth. Native width refinement after mount/resize does not run Rhai. Intrinsic row heights and child aspect_ratio use GPUI; the last row keeps the same tracks. One track per child; use explicit grids for spans. Not virtualized.",
@@ -30,6 +65,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Fills the node with a solid color, literal or theme token; replaces a gradient set earlier on this style.",
     },
     ScriptFnDoc {
+        signature: "background(_: &mut Style, _: PaintColor) -> Style",
+        params: &["color"],
+        doc: "Replaces the whole background with native-context ink, e.g. alpha(current_color(),0.1).",
+    },
+    ScriptFnDoc {
         signature: "block(_: &mut Style) -> Style",
         params: &[],
         doc: "Uses block layout: children stack vertically in normal flow and flex alignment does not apply.",
@@ -48,6 +88,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "border_color(_: &mut Style, _: ColorValue) -> Style",
         params: &["color"],
         doc: "Sets one border color, literal or theme token, for every edge.",
+    },
+    ScriptFnDoc {
+        signature: "border_color(_: &mut Style, _: PaintColor) -> Style",
+        params: &["color"],
+        doc: "Sets the border ink from the final native text color without changing the border widths.",
     },
     ScriptFnDoc {
         signature: "border_dashed(_: &mut Style) -> Style",
@@ -200,6 +245,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Sets whether the node may shrink below its flex basis when space runs out: `true` lets it, `false` forbids it.",
     },
     ScriptFnDoc {
+        signature: "flex_shrink_weight(_: &mut Style, _: f64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["weight"],
+        doc: "Sets a finite shrink factor from 0 to 1000. In an overfull flex row or column, a higher factor gives up more of this child's flex basis; zero keeps its basis.",
+    },
+    ScriptFnDoc {
+        signature: "flex_shrink_weight(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["weight"],
+        doc: "Sets a finite shrink factor from 0 to 1000. In an overfull flex row or column, a higher factor gives up more of this child's flex basis; zero keeps its basis.",
+    },
+    ScriptFnDoc {
         signature: "flex_wrap(_: &mut Style) -> Style",
         params: &[],
         doc: "Lets a flex container wrap its children onto further lines.",
@@ -212,7 +267,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "focus(_: &mut Style, _: Style) -> Style",
         params: &["style"],
-        doc: "Paints the nested style's background, border color, text color and opacity while the node has keyboard focus, over `hover` paint and under `active`. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width.",
+        doc: "Paints the nested style's background, border color, text color, shadow and gradient while the node has visible focus. Without an exterior focus_ring declaration or an explicit focus border color, an existing border takes the focus_ring token; no border space is added. Use focus_ring(width, offset, color) for a non-layout exterior outline instead.",
     },
     ScriptFnDoc {
         signature: "focus_within(_: &mut Style, _: Style) -> Style",
@@ -247,7 +302,17 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "gap(_: &mut Style, _: Length) -> Style",
         params: &["gap"],
-        doc: "Sets the space between children on both axes, in px, rem or a `relative` fraction of the container.",
+        doc: "Sets spacing on both axes, clearing earlier gap_x/gap_y declarations on this layer or lower layers. Accepts px, rem, theme lengths or a relative fraction of the container.",
+    },
+    ScriptFnDoc {
+        signature: "gap_x(_: &mut Style, _: Length) -> Style",
+        params: &["gap"],
+        doc: "Sets only horizontal spacing (column-gap) between children, in px, rem, theme lengths or relative units. Physical axis, unchanged by RTL or flex direction. A later gap() resets both axes. Applies to flex, wrapped rows, explicit grids and auto_grid_columns.",
+    },
+    ScriptFnDoc {
+        signature: "gap_y(_: &mut Style, _: Length) -> Style",
+        params: &["gap"],
+        doc: "Sets only vertical spacing (row-gap), including between wrapped flex lines, in px, rem, theme lengths or relative units. A later gap() resets both axes. Applies to flex, explicit grids and auto_grid_columns.",
     },
     ScriptFnDoc {
         signature: "grid(_: &mut Style) -> Style",
@@ -260,9 +325,19 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Makes the node a grid with `columns` equal-width columns, from 1 to 1024.",
     },
     ScriptFnDoc {
+        signature: "grid_cols_max_content(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["columns"],
+        doc: "Makes the node a grid with 1..1024 independently max-content-sized columns, rather than equal fractional widths. Follows native text measurement and works with grid_cell(column,row). A later grid_cols or auto_grid_columns replaces this sizing mode.",
+    },
+    ScriptFnDoc {
         signature: "grid_rows(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["rows"],
         doc: "Makes the node a grid with `rows` equal-height rows, from 1 to 1024.",
+    },
+    ScriptFnDoc {
+        signature: "grid_rows_intrinsic(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["rows"],
+        doc: "Makes the node a grid with 1..1024 independently content-sized rows, with a min-content floor and max-content ceiling per track. A later grid_rows restores equal fractional rows.",
     },
     ScriptFnDoc {
         signature: "group_focus(_: &mut Style, _: Style) -> Style",
@@ -395,6 +470,26 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Sets the left inset of a positioned node to a signed `offset_*` length, which may be negative; `inset_start`/`inset_end` win there.",
     },
     ScriptFnDoc {
+        signature: "letter_spacing_em(_: &mut Style, _: f64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["spacing"],
+        doc: "Sets signed font-relative tracking, computed at the declaring element’s final font size.",
+    },
+    ScriptFnDoc {
+        signature: "letter_spacing_em(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["spacing"],
+        doc: "Sets signed font-relative tracking, computed at the declaring element’s final font size.",
+    },
+    ScriptFnDoc {
+        signature: "letter_spacing_px(_: &mut Style, _: f64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["spacing"],
+        doc: "Sets signed tracking in logical pixels. Zero clears previously declared tracking.",
+    },
+    ScriptFnDoc {
+        signature: "letter_spacing_px(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["spacing"],
+        doc: "Sets signed tracking in logical pixels. Zero clears previously declared tracking.",
+    },
+    ScriptFnDoc {
         signature: "line_clamp(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["lines"],
         doc: "Limits text to `lines` lines, from 1 to 10000, and hides the rest; `text_ellipsis` marks the cut.",
@@ -403,6 +498,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "line_height(_: &mut Style, _: Length) -> Style",
         params: &["height"],
         doc: "Sets the line height in px or rem, overriding the typography role's; a `relative` length is ignored.",
+    },
+    ScriptFnDoc {
+        signature: "layered_gradient(_: &mut Style, _: LayeredGradient) -> Style",
+        params: &["gradient"],
+        doc: "Replaces the whole background with a premultiplied sRGB layer stack. This also works in paint-only state styles.",
     },
     ScriptFnDoc {
         signature: "linear_gradient(_: &mut Style, _: LinearGradientSpec) -> Style",
@@ -605,6 +705,91 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Blocks pointer input from reaching elements painted behind the node but lets scroll wheel input through.",
     },
     ScriptFnDoc {
+        signature: "transform(_: &mut Style, _: map) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["affine"],
+        doc: "Sets a visual affine without changing layout. Options: rotate, scale_x, scale_y, skew_x, skew_y, origin_x and origin_y. Angles are degrees, origins are border-box fractions (default 0.5). An empty map clears a lower-priority transform.",
+    },
+    ScriptFnDoc {
+        signature: "isolated_opacity(_: &mut Style, _: bool) -> Style",
+        params: &["enabled"],
+        doc: "Opt this base style into applying its opacity to the composited subtree once. Does not change layout, mouse targets, keyboard focus, or descendants' own opacity. Ordinary opacity retains per-primitive semantics without this switch.",
+    },
+    ScriptFnDoc {
+        signature: "bottom_fade(_: &mut Style, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["start", "end"],
+        doc: "Fade the composed foreground to transparent between two border-box y fractions (0 <= start < end <= 1). This is a paint-only alpha mask, not a hit-test or accessibility clip.",
+    },
+    ScriptFnDoc {
+        signature: "edge_fade(_: &mut Style, _: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["axis", "leading", "trailing"],
+        doc: "Apply physical x or y alpha ramps to the already-composed subtree. Each distance is a logical-pixel value, zero leaves that edge unchanged, and short boxes shrink both ramps proportionally. Replaces a lower-priority fade without clipping input.",
+    },
+    ScriptFnDoc {
+        signature: "scroll_edge_fade(_: &mut Style, _: string, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["axis", "leading", "trailing"],
+        doc: "Fade physical viewport edges only while more content is hidden in that direction. Distances are logical pixels, and the node must scroll on the selected axis. Paint follows its native scroll handle without changing layout or hit geometry.",
+    },
+    ScriptFnDoc {
+        signature: "glyph_sweep(_: &mut Style, _: ColorValue, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["ink", "half_width", "phase"],
+        doc: "Overlays a triangular tint on already-shaped monochrome glyphs, without changing base ink or layout. Half width is 0.01–0.5 of the text extent; phase runs from 0 (outside left) to 1 (outside right). Animate phase with the glyph_sweep property. Apple rendering only in this candidate.",
+    },
+    ScriptFnDoc {
+        signature: "glyph_ink_sweep(_: &mut Style, _: ColorValue, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["ink", "half_width", "travel", "phase"],
+        doc: "Replaces part of the original monochrome ink with a triangular highlight, interpolating premultiplied color before applying atlas coverage once. Width and travel are text-box fractions; travel must be at least 1 plus twice the half width and at most 3. Uses the same glyph_sweep animation property. Apple rendering only in this candidate.",
+    },
+    ScriptFnDoc {
+        signature: "without_glyph_sweep(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Clears a glyph sweep set by a lower style layer.",
+    },
+    ScriptFnDoc {
+        signature: "paint_reveal_x(_: &mut Style, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["radius", "progress"],
+        doc: "Shows a rounded left-origin fraction of composed paint. Radius is logical pixels, progress runs from 0 (empty) to 1 (ordinary paint), and animated samples use paint_reveal_x. Layout and pointer/focus geometry are unchanged. Apple renderer only in the candidate.",
+    },
+    ScriptFnDoc {
+        signature: "without_paint_reveal_x(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Clear a rounded paint reveal from a lower-priority style.",
+    },
+    ScriptFnDoc {
+        signature: "without_bottom_fade(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Clear the alpha fade (one-way or both edges) from a lower-priority style.",
+    },
+    ScriptFnDoc {
+        signature: "foreground_blur(_: &mut Style, _: f64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["sigma"],
+        doc: "Gaussian-blurs the composed foreground subtree using sigma in 0..=64 logical pixels. Zero clears the filter. Leaves layout and input bounds unchanged; does not sample the backdrop.",
+    },
+    ScriptFnDoc {
+        signature: "foreground_blur(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["sigma"],
+        doc: "Gaussian-blurs the composed foreground subtree using integer sigma in 0..=64 logical pixels. Zero clears the filter. Leaves layout and input bounds unchanged; does not sample the backdrop.",
+    },
+    ScriptFnDoc {
+        signature: "foreground_grayscale(_: &mut Style, _: f64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["amount"],
+        doc: "Desaturates the composed foreground subtree in sRGB without changing its alpha. Zero clears the filter; one applies full grayscale. Layout and input geometry stay unchanged. Apple rendering only in this candidate.",
+    },
+    ScriptFnDoc {
+        signature: "foreground_grayscale(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["amount"],
+        doc: "Clears foreground grayscale with zero or sets full grayscale with one. The effect composes once across the subtree.",
+    },
+    ScriptFnDoc {
+        signature: "backdrop_blur(_: &mut Style, _: f64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["sigma"],
+        doc: "Gaussian-blurs the already-painted destination underneath this rounded border box, in the current composition surface. Sigma is 0..=64 logical pixels. Zero clears the filter; content stays sharp.",
+    },
+    ScriptFnDoc {
+        signature: "backdrop_blur(_: &mut Style, _: i64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["sigma"],
+        doc: "Gaussian-blurs the already-painted destination underneath this rounded border box, in the current composition surface. Integer sigma is 0..=64 logical pixels. Zero clears the filter; content stays sharp.",
+    },
+    ScriptFnDoc {
         signature: "opacity(_: &mut Style, _: f64) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["opacity"],
         doc: "Sets the node's opacity from 0 (transparent) to 1 (opaque); a bound signal or animation overrides it.",
@@ -762,12 +947,32 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "shadow(_: &mut Style, _: ShadowSpec) -> Style",
         params: &["shadow"],
-        doc: "Sets one box shadow from `shadow(#{x, y, blur, spread, color})`, in logical pixels, replacing an earlier one.",
+        doc: "Sets one box shadow from `shadow(#{x, y, blur, spread, color, inset})`, in logical pixels, replacing an earlier stack.",
+    },
+    ScriptFnDoc {
+        signature: "shadows(_: &mut Style, _: array) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["layers"],
+        doc: "Replaces the shadow stack with at most 32 shadow(...) values, topmost first. Supports inset and signed spread. An empty array clears the stack. Shadows consume no layout space and work in hover/active/focus refinements.",
+    },
+    ScriptFnDoc {
+        signature: "without_hover(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Removes a recipe's hover refinement, retaining idle paint and other states.",
+    },
+    ScriptFnDoc {
+        signature: "without_active(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Removes a recipe's active refinement, retaining idle paint and other states.",
     },
     ScriptFnDoc {
         signature: "text_center(_: &mut Style) -> Style",
         params: &[],
         doc: "Centers text horizontally.",
+    },
+    ScriptFnDoc {
+        signature: "inherit_text_color(_: &mut Style) -> Style",
+        params: &[],
+        doc: "Removes a lower-layer text color so this node inherits its parent's text color. A later text_color declaration replaces this reset; this is not a contextual currentColor paint or an isolated opacity group.",
     },
     ScriptFnDoc {
         signature: "text_color(_: &mut Style, _: ColorValue) -> Style",

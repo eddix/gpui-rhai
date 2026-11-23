@@ -6,10 +6,11 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {},
+  "assets": ["icons/command_search_modern.svg", "icons/command_search_clean.svg", "icons/command_enter_modern.svg", "icons/command_enter_clean.svg"],
   "tokens": [
     "surface_raised", "border", "surface_hover", "selection", "text_primary",
-    "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-    "radius.md", "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
+    "text_muted", "disabled", "metrics.command_row", "metrics.command_narrow_row", "metrics.inset", "spacing.xs", "spacing.sm",
+    "radius.md", "radius.lg", "typography.body", "typography.label", "command.search_asset", "command.enter_asset", "command.enter_label", "command.group_case", "command.narrow_footer", "scrollbar.thumb", "scrollbar.thumb_hover"
   ],
   "environment": ["size", "density"]
 }
@@ -26,14 +27,21 @@ define_component(#{
     metadata: #{ id: "components/command", "export": "Command", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{},
+        assets: ["icons/command_search_modern.svg", "icons/command_search_clean.svg", "icons/command_enter_modern.svg", "icons/command_enter_clean.svg"],
         tokens: [
             "surface_raised", "border", "surface_hover", "selection", "text_primary",
-            "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
-            "radius.md", "radius.lg", "typography.body", "typography.label", "scrollbar.thumb", "scrollbar.thumb_hover"
+            "text_muted", "disabled", "metrics.command_row", "metrics.command_narrow_row", "metrics.inset", "spacing.xs", "spacing.sm",
+            "radius.md", "radius.lg", "typography.body", "typography.label", "command.search_asset", "command.enter_asset", "command.enter_label", "command.group_case", "command.narrow_footer", "scrollbar.thumb", "scrollbar.thumb_hover"
         ],
         environment: ["size", "density"] },
     schema: #{
         props: #{
+            appearance: #{ schema: #{type:"string",allowed:["panel","embedded"]},required:false,sensitive:false,
+                "default":#{type:"string",value:"panel"},doc:"panel owns its tray/card chrome; embedded lets a surrounding Dialog or host panel own those edges, without changing the input or row identity." },
+            footer_visible: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:true},
+                doc:"Shows the keyboard-hint footer, or the caller's footer node. Hiding it does not change navigation or bindings."},
+            footer: #{schema:#{type:"optional",value:#{type:"node"}},required:false,sensitive:false,
+                doc:"Optional footer content in place of the default navigation/Enter hints; no shortcut is registered."},
             scrollbar: #{ schema: #{ type: "string", allowed: ["auto", "always", "hidden"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "auto" }, doc: "Shared command-list scrollbar visibility; the search field keeps keyboard focus." },
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -43,33 +51,8 @@ define_component(#{
                 doc: "Search text; the caller stores the `query_change` payload and passes it back." },
             active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Highlighted command value; the caller stores the `active_change` payload. Other values show the first enabled match." },
-            items: #{ schema: #{ type: "one_of", variants: [
-                #{ type: "array", max_items: 4096, items: #{
-                    type: "object", allow_unknown: false, fields: #{
-                        value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                            doc: "Unique, non-empty id reported by `active_change` and `action`." },
-                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                            doc: "Non-empty text ranked against the query; the row shows it unless `content` is set." },
-                        content: #{ schema: #{ type: "optional", value: #{ type: "node" } },
-                            required: false, sensitive: false,
-                            doc: "Rich node shown in place of the label text; ranking and the accessible name still use `label`." },
-                        keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
-                            required: false, sensitive: false, "default": #{ type: "array", value: [] },
-                            doc: "Extra terms matched against the query; a keyword match ranks just below the same label match." },
-                        group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                            doc: "Heading the command is listed under; groups keep the source order of their first match." },
-                        shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                            doc: "Key legend shown at the row end, written like `cmd-k`; overrides the binding of `action`." },
-                        action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                            doc: "Registered action dispatched on activation; it also supplies the shortcut legend and can disable the row." },
-                        disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                            "default": #{ type: "bool", value: false },
-                            doc: "Dims the command; it cannot be activated and keyboard navigation skips it." },
-                    }
-                } },
-                #{ type: "collection" }
-            ] }, required: true, sensitive: false,
-                doc: "Commands to rank: item maps, or a native collection keyed by value with the same fields but no `content` or `action`." },
+            items: #{ schema: /* @contract command-items:start */ #{"type": "one_of", "variants": [#{"type": "array", "max_items": 4096, "items": #{"type": "object", "allow_unknown": false, "fields": #{"value": #{"schema": #{"type": "string"}, "required": true, "sensitive": false, "doc": "Unique non-empty value reported by active_change and action."}, "label": #{"schema": #{"type": "string"}, "required": true, "sensitive": false, "doc": "Required searchable/accessibility text; content may replace its visual label."}, "content": #{"schema": #{"type": "optional", "value": #{"type": "node"}}, "required": false, "sensitive": false, "doc": "Rich visual label; ranking and accessible name still use label."}, "hint": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Inline secondary text, also searched with keyword precedence."}, "icon": #{"schema": #{"type": "optional", "value": #{"type": "one_of", "variants": [#{"type": "node"}, #{"type": "string"}]}}, "required": false, "sensitive": false, "doc": "Non-interactive glyph node or logical asset ID; the leading slot is reserved when empty."}, "logo": #{"schema": #{"type": "optional", "value": #{"type": "one_of", "variants": [#{"type": "node"}, #{"type": "string"}]}}, "required": false, "sensitive": false, "doc": "Non-interactive logo node or logical asset ID on a tile; takes precedence over icon."}, "keywords": #{"schema": #{"type": "array", "max_items": 32, "items": #{"type": "string"}}, "required": false, "sensitive": false, "default": #{"type": "array", "value": []}, "doc": "Additional search terms with keyword precedence."}, "group": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Heading; groups preserve first matching source order."}, "shortcut": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Row-end shortcut legend overriding a registered action binding."}, "action": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Registered action dispatched on activation; its enabled state and shortcut are inherited."}, "disabled": #{"schema": #{"type": "bool"}, "required": false, "sensitive": false, "default": #{"type": "bool", "value": false}, "doc": "Dimmed and excluded from activation and navigation."}}}}, #{"type": "collection"}]} /* @contract command-items:end */, required: true, sensitive: false,
+                doc: "Commands to rank: item maps, or a native collection keyed by value with the same textual fields and logical asset IDs for icon/logo, but no `content`, UI nodes or per-row `action`." },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" },
                 doc: "Hint shown in the empty search field. Empty, the localized `command.placeholder` message, `Type a command` without one." },
@@ -78,7 +61,10 @@ define_component(#{
                 doc: "Message shown in place of the list when no command matches. Empty, the localized `command.empty` message, `No commands found` without one." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 },
-                doc: "Rows the list shows before it scrolls; group headings count as rows." },
+                doc: "Maximum viewport capacity in command-row units; group headings use their natural measured height." },
+            narrow_at: #{schema:#{type:"number",min:0.0,max:16384.0},required:false,sensitive:false,
+                "default":#{type:"float",value:480.0},
+                doc:"At or below this committed card width in logical pixels, use taller rows and hide visual hints/keycaps. This observes the actual card, not the window; initial unmeasured layout uses wide presentation."},
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Disables the whole command: the search field, the rows and the list's keys." },
@@ -101,7 +87,8 @@ define_component(#{
             action: #{ payload: #{ type: "string" },
                 doc: "Emitted when a command is clicked or activated with Enter, after its bound action; the payload is its value." },
         },
-        slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty",
+        slots: #{footer:#{required:false,multiple:false,doc:"Optional keyboard hints or application-owned status."}},
+        parts: ["root", "root_embedded", "card", "card_embedded", "search", "search_input", "search_placeholder", "search_icon", "search_hint", "search_hint_icon", "search_hint_text", "footer", "footer_hint", "list", "list_viewport", "group", "item", "item_narrow", "item_active", "icon_slot", "icon_slot_active", "logo_slot", "icon", "logo", "image_fallback", "text", "label", "hint", "shortcut", "shortcut_active", "empty",
             "scrollbar_track", "scrollbar_thumb", "scrollbar_thumb_hover"],
     },
     render: Fn("render_Command")
@@ -116,6 +103,9 @@ fn localized_prop(ctx, props, name, key, fallback) {
 
 fn Command(props) { render_component("components/command", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+fn command_setting(ctx,name,fallback) {
+    if ctx.theme_variant()==() {fallback}else{ctx.theme_token(`command.${name}`)}
+}
 fn collection_scrollbars(ctx, props, node) {
     node.with_part_style("scrollbar_track", ctx.component_style("scrollbar_track", style().background(rgba(0x00000000))))
         .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb", style().background(theme_color("scrollbar.thumb"))))
@@ -124,6 +114,15 @@ fn collection_scrollbars(ctx, props, node) {
 }
 fn item_disabled(item) { "disabled" in item && item.disabled }
 fn item_group(item) { if "group" in item && item.group != () { item.group } else { "" } }
+fn item_hint(item) { if "hint" in item && item.hint != () {item.hint}else{""} }
+fn item_asset(item,name) { if name in item && type_of(item[name])=="string" {item[name]}else{""} }
+fn glyph_present(value) {value!=() && (type_of(value)!="string" || value!="")}
+fn glyph_node(ctx,value,label) {
+    if type_of(value)=="string" {
+        image_source(asset(value)).image_fallback_text(text_initial(label))
+            .with_part_style("image_fallback",ctx.component_style("image_fallback",style()))
+    }else{value}
+}
 
 fn fuzzy_score(text, query) {
     let source = text.to_lower();
@@ -148,6 +147,8 @@ fn fuzzy_score(text, query) {
 
 fn item_score(item, query) {
     let score = fuzzy_score(item.label, query);
+    let hint = item_hint(item);
+    if hint!="" {let candidate=fuzzy_score(hint,query)-100;if candidate>score {score=candidate;}}
     for keyword in prop_or(item, "keywords", []) {
         let candidate = fuzzy_score(keyword, query) - 100;
         if candidate > score { score = candidate; }
@@ -180,6 +181,10 @@ fn validate_array_items(items) {
     for item in items {
         if item.value == "" { throw "Command item value must not be empty"; }
         if item.label == "" { throw `Command item ${item.value} label must not be empty`; }
+        for name in ["icon","logo"] {
+            let id=item_asset(item,name);
+            if id!="" {asset(id);}
+        }
         if item.value in seen { throw `duplicate Command item value ${item.value}`; }
         seen[item.value] = true;
     }
@@ -194,6 +199,7 @@ fn adjacent(values, active, step) {
 }
 
 fn query_action(ctx, query) { ctx.emit("query_change", query); }
+fn focus_search(ctx, reference_key) { ctx.focus(reference_key); handled() }
 fn active_action(current, ctx, value) {
     if current != value { ctx.emit("active_change", value); }
     handled()
@@ -218,15 +224,16 @@ fn activation_handler(action) {
     if action == () { Fn("action_value") } else { Fn("dispatch_value").curry(action) }
 }
 
-// List rows: metrics.row high, text at metrics.inset; the cursor is a selection block
-// with a control's corners, inside the panel's padding.
+// Items have a stable command-row height; headings have their own natural
+// text/padding extent. Both belong to the same measured native collection.
 
-fn render_command_row(content, total_rows, ctx, payload) {
+fn render_command_row(content, total_rows, narrow, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
-        return row([text(item.label.to_upper())]).with_key(payload.key)
+        let label = if command_setting(ctx,"group_case","preserve")=="upper" {item.label.to_upper()}else{item.label};
+        return row([text(label)]).with_key(payload.key)
             .with_style(ctx.component_style("group", style()
-                .height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
+                .padding_x(theme_length("metrics.inset"))
                 .items_center().typography("label")
                 .text_color(theme_color("text_muted"))))
             .accessibility_role("heading").accessibility_label(item.label)
@@ -234,22 +241,60 @@ fn render_command_row(content, total_rows, ctx, payload) {
     }
     let action = if "action" in item { item.action } else { () };
     let disabled = item.disabled || (action != () && !ctx.action_enabled(action));
-    let shortcut = if item.shortcut != "" { key_shortcut(item.shortcut).label }
+    let shortcut = if item.shortcut != "" { key_shortcut(item.shortcut) }
         else if action != () {
             let bound = ctx.action_shortcut(action);
-            if bound == () { "" } else { bound.label }
-        } else { "" };
-    let label = if item.value in content { content[item.value] } else { text(item.label) };
-    // The label and its key legend share one baseline, as words in one line do.
-    let words = [label.with_style(ctx.component_style("label", style().flex_grow()))];
-    if shortcut != "" {
-        words.push(kbd::Kbd(#{ key: `${payload.key}-shortcut`, text: shortcut, appearance: "inline" })
-            .with_style(ctx.component_style("shortcut", style())));
+            if bound == () { key_shortcut("") } else { bound }
+        } else { key_shortcut("") };
+    let visual = if item.value in content {content[item.value]}else{#{}};
+    let label = if "content" in visual {visual.content}else{text(item.label)};
+    let logo = prop_or(visual,"logo",prop_or(item,"logo",""));
+    let icon = prop_or(visual,"icon",prop_or(item,"icon",""));
+    let has_logo = glyph_present(logo);
+    let glyph = if has_logo {logo}else{icon};
+    let leading = if glyph_present(glyph) {
+        [glyph_node(ctx,glyph,item.label).with_style(ctx.component_style(if has_logo {"logo"}else{"icon"},style()))]
+    }else{[]};
+    let slot_parts = ["icon_slot"];
+    if has_logo {slot_parts.push("logo_slot");}
+    else if item.active {slot_parts.push("icon_slot_active");}
+    let leading = row(leading).with_key("leading").with_style(ctx.component_style(slot_parts,
+        style().items_center().justify_center().flex_shrink(false))).accessibility_hidden(true).tab_stop(false);
+    let text_nodes = [label.with_style(ctx.component_style("label",style().min_width(px(0))
+        .whitespace_nowrap().text_ellipsis()))];
+    let hint = item_hint(item);
+    if hint!="" {text_nodes.push(text(hint).with_key("hint").with_style(ctx.component_style("hint",style()
+        .min_width(px(0)).whitespace_nowrap().text_ellipsis())).retained_page(!narrow));}
+    // Keycaps are centered controls beside the label, not inline text whose
+    // baseline or width is inferred from a concatenated legend.
+    let children = [leading,row(text_nodes).with_key("text").with_style(ctx.component_style("text",style()
+        .flex_grow().min_width(px(0)).items_baseline().gap(theme_spacing("sm"))))];
+    if shortcut.label != "" {
+        let caps = [];
+        if shortcut.chords.is_empty() || shortcut.chords.len > 8 {
+            // Literal legends are opaque text. Long valid sequences also stay
+            // one display value rather than constructing an unbounded keycap
+            // grid. Their complete binding/semantic metadata remains intact.
+            caps.push(kbd::Kbd(#{key:`${payload.key}-shortcut-literal`,text:shortcut.label,appearance:"menu"}));
+        }else{
+            for chord_index in 0..shortcut.chords.len {
+                let chord = shortcut.chords[chord_index];
+                for key_index in 0..chord.keys.len {
+                    let key = chord.keys[key_index];
+                    caps.push(kbd::Kbd(#{key:`${payload.key}-shortcut-${chord_index}-${key_index}`,
+                        text:key.label,label:key.spoken,appearance:"menu"}));
+                }
+            }
+        }
+        // Fixed grid columns retain binding order in RTL as well. Chords remain
+        // structured in the SDK; the spoken full shortcut lives on the option.
+        children.push(box(caps).with_key("shortcut").with_style(ctx.component_style(
+            if item.active {["shortcut","shortcut_active"]}else{["shortcut"]},
+            style().grid_cols_max_content(caps.len).items_center()))
+            .accessibility_hidden(true).retained_page(!narrow));
     }
-    let children = [row(words).with_style(style().flex_grow().min_width(px(0)).items_baseline()
-        .gap(theme_spacing("xs")))];
     let row_style = style()
-        .height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
+        .height(theme_length(if narrow {"metrics.command_narrow_row"}else{"metrics.command_row"})).padding_x(theme_length("metrics.inset"))
         .radius(theme_radius("md")).gap(theme_spacing("sm")).items_center()
         .typography("body")
         .text_color(theme_color("text_primary"))
@@ -257,11 +302,15 @@ fn render_command_row(content, total_rows, ctx, payload) {
     row_style = if item.active {
         row_style.background(theme_color("selection")).hover(style().background(theme_color("selection")))
     } else { row_style.hover(style().background(theme_color("surface_hover"))) };
+    let item_parts=["item"];
+    if narrow {item_parts.push("item_narrow");}
+    if item.active {item_parts.push("item_active");}
     let node = row(children).with_key(payload.key)
-        .with_style(ctx.component_style(if item.active { "item_active" } else { "item" }, row_style))
+        .with_style(ctx.component_style(item_parts, row_style))
         .tab_stop(false).disabled(disabled)
         .accessibility_option(item.label, item.active, payload.index + 1, total_rows);
-    if shortcut != "" { node = node.accessibility_key_shortcuts(shortcut); }
+    if hint!="" {node=node.accessibility_description(hint);}
+    if shortcut.label != "" { node = node.accessibility_key_shortcuts(shortcut.label); }
     if disabled { node } else {
         node.on_hover_value(Fn("active_hover").curry(item.active), item.value)
             .on_click_value(activation_handler(action), item.value)
@@ -282,11 +331,16 @@ fn array_command_model(ctx, items, query, row_height, stored) {
             let action = prop_or(item, "action", ());
             // A row whose action is disabled is disabled for the keys too.
             let ranked = #{ value: item.value, label: item.label,
+                hint:item_hint(item),icon:item_asset(item,"icon"),logo:item_asset(item,"logo"),
                 shortcut: if "shortcut" in item && item.shortcut != () { item.shortcut } else { "" },
                 action: action,
                 disabled: item_disabled(item) || (action != () && !ctx.action_enabled(action)),
                 score: score, source_index: index };
-            if "content" in item && item.content != () { content[item.value] = item.content; }
+            let visual = #{};
+            for name in ["content","icon","logo"] {
+                if name in item && item[name]!=() && type_of(item[name])!="string" {visual[name]=item[name];}
+            }
+            if len(visual)>0 {content[item.value]=visual;}
             bucket.push(ranked);
             buckets[group] = bucket;
         }
@@ -298,7 +352,8 @@ fn array_command_model(ctx, items, query, row_height, stored) {
         if group != "" { data.push(#{ key: `group:${group}`, kind: "group", label: group, height: row_height }); }
         for item in bucket {
             let row = #{ key: `item:${item.value}`, kind: "item", value: item.value,
-                label: item.label, shortcut: item.shortcut, action: item.action, disabled: item.disabled,
+                label: item.label, hint:item.hint,icon:item.icon,logo:item.logo,
+                shortcut: item.shortcut, action: item.action, disabled: item.disabled,
                 active: false, height: row_height };
             data.push(row);
         }
@@ -324,6 +379,7 @@ fn array_command_model(ctx, items, query, row_height, stored) {
 fn native_command_model(items, query, row_height, stored) {
     let config = #{ query: query, label_field: "label", keywords_field: "keywords",
         group_field: "group", shortcut_field: "shortcut", disabled_field: "disabled",
+        hint_field:"hint",icon_field:"icon",logo_field:"logo",
         active: stored, row_height: row_height };
     let data = native_fuzzy_view(items, config);
     let active = native_fuzzy_adjacent(data, stored, 0);
@@ -338,8 +394,13 @@ fn native_command_model(items, query, row_height, stored) {
 }
 
 fn render_Command(ctx, props) {
+    let container_ref=element_ref("command-container");
+    let width_class=ctx.element_width_class(container_ref,[props.narrow_at]);
+    let narrow=width_class!=() && width_class==0;
+    let row_metric=theme_length(if narrow {"metrics.command_narrow_row"}else{"metrics.command_row"});
     let query = props.query;
-    // The native model estimates with the comfortable row; rows render at metrics.row.
+    // Native data carries an initial estimate; layout and the viewport's row
+    // capacity share the late-bound command-row metric, including density/scale.
     let row_height = 32;
     let stored = props.active_value;
     let model = if is_native_collection(props.items) {
@@ -350,53 +411,92 @@ fn render_Command(ctx, props) {
     };
     let data = model.data;
     let active = model.active;
-    // The search heads the panel full width, one size above the rows, on their inset.
+    let search_ref = element_ref("command-search-input");
     let search = input::Input(#{ key: `${props.key}-search`, label: props.label, value: query,
         placeholder: localized_prop(ctx, props, "placeholder", "command.placeholder", "Type a command"),
         appearance: "embedded", size: "lg",
         disabled: prop_or(props, "disabled", false),
         autofocus: prop_or(props, "autofocus", false),
         on_change: Fn("query_action"),
-        on_submit: Fn("submit_action").curry(#{ value: active, action: model.active_action }) })
-        .with_style(ctx.component_style("search", style()));
+        on_submit: Fn("submit_action").curry(#{ value: active, action: model.active_action }),
+        part_styles:#{placeholder:ctx.component_style("search_placeholder",style())} })
+        .with_ref(search_ref)
+        .with_style(ctx.component_style("search_input", style().flex_grow().flex_basis(relative(0))
+            .min_width(px(0)).min_height(px(0)).padding(px(0)).border(px(0)).radius(px(0))
+            .background(rgba(0x00000000)).shadows([]).focus(style().shadows([]))));
+    let enter_label = command_setting(ctx,"enter_label","ENTER");
+    let search = row([
+        image_source(asset(command_setting(ctx,"search_asset","app/icons/command_search_modern"))).with_key("search-icon")
+            .with_style(ctx.component_style("search_icon",style().flex_shrink(false))).accessibility_hidden(true),
+        search,
+        row([
+            image_source(asset(command_setting(ctx,"enter_asset","app/icons/command_enter_modern"))).with_key("enter-icon")
+                .with_style(ctx.component_style("search_hint_icon",style().flex_shrink(false))),
+            text(if enter_label=="" {""}else{ctx.t_or("command.enter_hint",enter_label)})
+                .with_style(ctx.component_style("search_hint_text",style().whitespace_nowrap())),
+        ]).with_key("enter-hint").with_style(ctx.component_style("search_hint",style().items_center().flex_shrink(false)))
+            .accessibility_hidden(true).retained_page(!narrow),
+    ]).with_key("search").with_style(ctx.component_style("search",style().items_center().cursor_text()))
+        .on_click_value(Fn("focus_search"),"command-search-input").tab_stop(false).accessibility_role("group");
     let body = if data.len == 0 {
         row([text(localized_prop(ctx, props, "empty_text", "command.empty", "No commands found"))])
             .with_style(ctx.component_style("empty", style()
-                .min_height(theme_length("metrics.row") * 3).padding_x(theme_length("metrics.inset"))
+                .min_height(row_metric * 3).padding_x(theme_length("metrics.inset"))
                 .items_center().justify_center()
                 .typography("body").text_color(theme_color("text_muted"))))
             .accessibility_role("status")
     } else {
         let max_visible = prop_or(props, "max_visible", 8);
-        let visible_rows = if data.len < max_visible { data.len } else { max_visible };
         let collection = #{ key: `${props.key}-list`, label: props.label, data: data,
-            estimated_height: row_height, fill_height: true,
+            estimated_height: row_height, max_height: row_metric * max_visible,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false,
         };
         if active != "" {
             collection.reveal_key = if is_native_collection(data) { active } else { `item:${active}` };
         }
-        // A whole number of metrics.row rows in either density.
-        column([collection_scrollbars(ctx, props, virtual_collection(collection,
-            Fn("render_command_row").curry(model.content).curry(data.len)))])
-            .with_style(ctx.component_style("list", style()
-                .height(theme_length("metrics.row") * visible_rows)))
+        // Short results fit actual measured rows, including natural headings;
+        // large results keep one bounded viewport without eager measurement.
+        let viewport = column([collection_scrollbars(ctx, props, virtual_collection(collection,
+            Fn("render_command_row").curry(model.content).curry(data.len).curry(narrow))
+            .accessibility_role("listbox").accessibility_label(props.label).tab_stop(false))])
+            .with_key("viewport").with_style(ctx.component_style("list_viewport", style()
+                .min_height(px(0))));
+        column([viewport]).with_key("list").with_style(ctx.component_style("list",style().min_width(px(0)).min_height(px(0))))
     };
-    // Every side pads by half of radius.lg so the square rows and the search line clear the
-    // rounded corner (clipping is rectangular).
-    let root = column([search, body]).with_key(props.key)
-        .with_style(ctx.component_style("root", style()
-            .gap(theme_spacing("xs")).padding(theme_radius("lg") * 0.5).radius(theme_radius("lg"))
-            .border(px(1)).border_color(theme_color("border"))
-            .background(theme_color("surface_raised"))))
-        .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);
-    // A disabled container disables every row natively.
-    if prop_or(props, "disabled", false) { return root.disabled(true); }
+    let embedded = props.appearance=="embedded";
+    let card = column([search,body]).with_key("card").with_ref(container_ref)
+        .with_style(ctx.component_style(if embedded {["card","card_embedded"]}else{["card"]},
+            style().min_width(px(0)).min_height(px(0)).gap(px(0))));
+    // Only search/results own these keys. An application footer may contain
+    // real controls; Enter or arrows there must not activate a command as well.
     if model.enabled {
-        root.on_key_value("up", Fn("active_action").curry(active), model.previous)
+        card = card.on_key_value("up", Fn("active_action").curry(active), model.previous)
             .on_key_value("down", Fn("active_action").curry(active), model.next)
             .on_key_value("home", Fn("active_action").curry(active), model.first)
             .on_key_value("end", Fn("active_action").curry(active), model.last)
-            .on_key_value("enter", activation_handler(model.active_action), active)
-    } else { root }
+            .on_key_value("enter", activation_handler(model.active_action), active);
+    }
+    let children = [card];
+    if props.footer_visible {
+        let custom_footer="footer" in props && props.footer!=();
+        let footer = if custom_footer {props.footer}else{row([
+            row([kbd::Kbd(#{key:"navigate-hint",keys:["up","down"],appearance:"menu"}),
+                text(ctx.t_or("command.navigate_hint","Navigate"))])
+                .with_style(ctx.component_style("footer_hint",style().items_center())),
+            row([kbd::Kbd(#{key:"activate-hint",keys:"enter",appearance:"menu"}),
+                text(ctx.t_or("command.run_hint","Run"))])
+                .with_key("run-hint").with_style(ctx.component_style("footer_hint",style().items_center())).retained_page(!narrow),
+        ]).with_style(style().width(relative(1.0)).min_width(px(0)).items_center().justify_between())};
+        let hide_footer=narrow && !custom_footer && command_setting(ctx,"narrow_footer","visible")=="hidden";
+        children.push(row([footer]).with_key("footer").with_style(ctx.component_style("footer",style().min_width(px(0)).items_center().flex_shrink(false))).retained_page(!hide_footer));
+    }
+    let root = column(children).with_key(props.key)
+        .with_style(ctx.component_style(if embedded {["root","root_embedded"]}else{["root"]}, style()
+            .gap(px(0)).min_width(px(0)).min_height(px(0)).padding(theme_radius("lg") * 0.5).radius(theme_radius("lg"))
+            .border(px(1)).border_color(theme_color("border"))
+            .background(theme_color("surface_raised"))))
+        .tab_stop(false).accessibility_role("group").accessibility_label(props.label);
+    // A disabled container disables every row natively.
+    if prop_or(props, "disabled", false) { return root.disabled(true); }
+    root
 }

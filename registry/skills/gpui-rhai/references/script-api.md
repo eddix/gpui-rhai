@@ -25,6 +25,7 @@ Functions that build `UiNode` values.
 | `image(asset: AssetId) -> UiNode` | Creates an image node for a component-declared, preloaded asset; an undeclared asset renders an image error. |
 | `image(handle: OpaqueHandle) -> UiNode` | Creates an image node for an image handle from `ctx.load_image` or a capability; a handle of another kind raises an error. |
 | `image_source(source: ?) -> UiNode` | Creates an image node from `source`, an `AssetId` or an image handle; other values are rejected. |
+| `inline_prose(prose: UiNode, targets: Array) -> UiNode` | Places up to 32 keyed empty link nodes over nonoverlapping grapheme ranges of a rich `text([...])` node. Targets are `#{ start, end, node }` maps with zero-based, end-exclusive indices. Each link remains a normal retained keyboard and accessibility node; its pointer hits follow the shaped line fragments, not the semantic rectangle. |
 | `layer(content: UiNode, config: Map) -> UiNode` | Places `content` in a window-level layer; `config` needs `id` and may set `placement` (default `top_right`), `inset` (12 px) and `priority`. |
 | `motion_group(id: String, children: Array) -> UiNode` | Groups children in a layout-transparent fragment whose `shared_layout` nodes join group `id` (1 to 128 letters, digits, `_`, `-`). |
 | `overlay(trigger: UiNode, content: UiNode, config: Map) -> UiNode` | Anchors `content` to `trigger` in a window-level overlay; `config` needs `id` and sets `kind`, `open`, `placement`, `align`, `gap`, dismissal, and the panel's width against the trigger (`match_trigger_width` or `min_trigger_width`). |
@@ -34,7 +35,7 @@ Functions that build `UiNode` values.
 | `svg(markup: String) -> UiNode` | Creates an inline SVG node from self-contained markup of at most 64 KiB and 2,048 elements; scripts and external references are rejected. |
 | `text(spans: Array) -> UiNode` | Creates a rich text node from `span` values; no span may split a grapheme cluster. |
 | `text(content: String) -> UiNode` | Creates a plain text node. |
-| `virtual_collection(config: Map, renderer: FnPtr) -> UiNode` | Creates a virtual list of `config.data` rendering visible items via named `renderer(ctx, payload)`; needs `key`, `estimated_height`, `height` or `fill_height`. `overscan_items`, `batch_items` and `retain_items` set how far it renders ahead and what it keeps. |
+| `virtual_collection(config: Map, renderer: FnPtr) -> UiNode` | Creates a virtual list of `config.data` rendering visible items via named `renderer(ctx, payload)`; needs `key`, `estimated_height` and exactly one sizing mode: numeric `height`, `fill_height: true`, or positive absolute Length `max_height` to fit actual measured content up to that cap. Theme/rem caps resolve in the inherited environment. Optional `item_height` is a positive px/rem/theme Length used for native uniform hints; actual rows remain measured. Optional numeric `content_padding_top` and `content_padding_bottom` add 0–512 logical pixels inside the scrolling content, without adding items. `overscan_items`, `batch_items` and `retain_items` configure render-ahead. |
 
 ## Styles, lengths and colors
 
@@ -47,16 +48,19 @@ Values a style is built from; read lengths and colors from theme tokens.
 | `color(value: String) -> ColorValue` | Parses a color literal: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, a CSS basic name, `transparent`, or an `rgb()`, `hsl()` or `hwb()` form. |
 | `mix(base: ColorValue, other: ColorValue, weight: float) -> ColorValue` | Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders. |
 | `mix(base: ColorValue, other: ColorValue, weight: int) -> ColorValue` | Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders. |
+| `mix_premultiplied(base: ColorValue, other: ColorValue, weight: float) -> ColorValue` | Interpolates toward the other color by weight (0 to 1) in premultiplied encoded sRGB, returning straight RGBA. Transparent endpoints do not contribute hidden RGB. Token colors remain late-bound; mix keeps its independent-channel behavior. |
+| `mix_premultiplied(base: ColorValue, other: ColorValue, weight: int) -> ColorValue` | Interpolates toward the other color by weight (0 to 1) in premultiplied encoded sRGB, returning straight RGBA. Transparent endpoints do not contribute hidden RGB. Token colors remain late-bound; mix keeps its independent-channel behavior. |
 | `offset_px(value: float) -> SignedLength` | Creates a signed offset in logical pixels for margins and insets; any finite value, negative included. |
 | `offset_px(value: int) -> SignedLength` | Creates a signed offset in logical pixels for margins and insets; negative values are allowed. |
 | `offset_relative(fraction: float) -> SignedLength` | Creates a signed offset as a fraction of the parent's size, from -10 to 10, for margins and insets. |
 | `offset_relative(fraction: int) -> SignedLength` | Creates a signed offset as a whole multiple of the parent's size, from -10 to 10, for margins and insets. |
 | `offset_rem(value: float) -> SignedLength` | Creates a signed offset in rems for margins and insets; any finite value, negative included. |
 | `offset_rem(value: int) -> SignedLength` | Creates a signed offset in rems for margins and insets; negative values are allowed. |
+| `over(foreground: ColorValue, background: ColorValue) -> ColorValue` | Source-over composition in encoded sRGB, returning straight RGBA. Token leaves stay late-bound. For contrast calculations, composite translucent backgrounds onto their actual opaque backing first; this color expression does not implement isolated group opacity or a backdrop filter. |
 | `px(value: float) -> Length` | Creates a length in logical pixels; `value` must be finite and non-negative. |
 | `px(value: int) -> Length` | Creates a length in logical pixels; `value` must be non-negative. |
-| `readable(color: ColorValue, toward: ColorValue, background: ColorValue, ratio: float) -> ColorValue` | Moves `color` toward `toward` just far enough to reach WCAG contrast `ratio` (1 to 21) against `background`, when the node renders. |
-| `readable(color: ColorValue, toward: ColorValue, background: ColorValue, ratio: int) -> ColorValue` | Moves `color` toward `toward` just far enough to reach WCAG contrast `ratio` (1 to 21) against `background`, when the node renders. |
+| `readable(color: ColorValue, toward: ColorValue, background: ColorValue, ratio: float) -> ColorValue` | Moves `color` toward `toward` just far enough to reach RGB contrast `ratio` (1 to 21) against `background`, when the node renders. Alpha is not composited by this helper: use `over` to account for translucent colors and their known opaque backing first. |
+| `readable(color: ColorValue, toward: ColorValue, background: ColorValue, ratio: int) -> ColorValue` | Moves `color` toward `toward` just far enough to reach RGB contrast `ratio` (1 to 21) against `background`, when the node renders. Alpha is not composited by this helper: use `over` to account for translucent colors and their known opaque backing first. |
 | `relative(fraction: float) -> Length` | Creates a length as a fraction of the parent's size, from 0 to 1: `relative(0.5)` is half. |
 | `relative(fraction: int) -> Length` | Creates a length as a fraction of the parent's size; as an integer only 0 or 1, and `relative(1)` fills the parent. |
 | `rem(value: float) -> Length` | Creates a length in rems, multiples of the window's rem size; `value` must be finite and non-negative. |
@@ -71,6 +75,7 @@ Values a style is built from; read lengths and colors from theme tokens.
 | `theme_typography(role: String) -> Style` | Returns a `Style` with typography `role`, like `style().typography(role)`; the theme decides at render whether the role exists. |
 | `times(length: Length, factor: float) -> Length` | Scales `length` by a non-negative `factor`, like `length * factor`; a relative result must stay within 0 to 1. |
 | `times(length: Length, factor: int) -> Length` | Scales `length` by a non-negative integer `factor`, like `length * factor`; a relative result must stay within 0 to 1. |
+| `without_reading_scale(length: Length) -> Length` | Keeps a theme length late-bound to its token, size/density variants and explicit `times` factor, but omits the inherited reading-scale multiplier. Use for structural hairlines, not to freeze control or text sizing. Literal px/rem/relative lengths already bypass reading scale and remain unchanged. |
 
 ## Other global functions
 
@@ -78,43 +83,71 @@ Components, references, collections, timers, motion and canvas commands.
 
 | Call | Description |
 |---|---|
+| `alpha(color: PaintColor, factor: ?) -> PaintColor` | Multiplies Canvas paint alpha by factor (zero to one), retaining its deferred native foreground. Integers and floats are accepted. PaintColor is not accepted by ordinary Style or theme-color setters. |
 | `asset(id: String) -> AssetId` | Parses a logical asset ID of two or more `/`-separated segments of letters, digits, `_` or `-`, such as `"app/icons/check"`. |
 | `auto() -> AutoLength` | Returns the `auto` layout length, accepted by the size, margin and inset setters: `style().width(auto())`. |
+| `billing_schedule_projection(start: String, duration: String, lines: Array) -> ?` | Quotes a bounded billing phase with integer minor units and basis-point discounts. Returns the first invoice, discounted phase subtotal, minimum-adjusted total and optional inclusive end date. It does not execute billing. |
 | `by_env(keys: ?, table: Map) -> EnvTableSource` | Varies a theme token with the environment: `keys` is an axis name or an array of names, and `table` maps their values, nested per axis. |
 | `canvas_circle(key: String, center_x: float, center_y: float, radius: float, fill: ColorValue) -> CanvasCommand` | Creates a filled circle command centered at (`center_x`, `center_y`); `radius` must be positive and `key` unique in the scene. |
-| `canvas_circle(key: String, center_x: ?, center_y: ?, radius: ?, fill: ColorValue) -> CanvasCommand` | Creates a filled circle command centered at (`center_x`, `center_y`); `radius` must be positive and `key` unique in the scene. Numbers may be integers or floats. |
+| `canvas_circle(key: String, center_x: ?, center_y: ?, radius: ?, fill: ?) -> CanvasCommand` | Creates a filled circle command centered at (`center_x`, `center_y`); radius must be positive and key unique. Numbers may be integers or floats; fill accepts ColorValue or native PaintColor such as current_color(). |
 | `canvas_fill_path(key: String, segments: Array, fill: ColorValue) -> CanvasCommand` | Creates a path command filled with a solid color; `segments` start with `path_move` and hold 2 to 10,000 segments. |
 | `canvas_fill_path(key: String, segments: Array, gradient: LinearGradientSpec) -> CanvasCommand` | Creates a path command filled with a two-stop `linear_gradient`; `segments` start with `path_move` and hold 2 to 10,000 segments. |
+| `canvas_fill_path(key: String, segments: Array, fill: PaintColor) -> CanvasCommand` | Creates a filled path with native-context paint, such as current_color(). Segments start with path_move and hold 2 to 10,000 segments. Foreground resolution occurs during native paint, not Rhai render. |
+| `canvas_fill_path(key: String, segments: Array, paint_style: Style) -> CanvasCommand` | Uses only the Style's base background, so a theme part can own Canvas paint while geometry stays in the component. A solid or two-stop fill is supported; no background draws transparent, and layered fills are rejected. Layout, shadows, and pseudo-state styles do not affect the path. |
 | `canvas_line(key: String, from_x: float, from_y: float, to_x: float, to_y: float, width: float, color: ColorValue) -> CanvasCommand` | Creates a line command from (`from_x`, `from_y`) to (`to_x`, `to_y`), stroked `width` pixels wide (positive). |
-| `canvas_line(key: String, from_x: ?, from_y: ?, to_x: ?, to_y: ?, width: ?, color: ColorValue) -> CanvasCommand` | Creates a line command from (`from_x`, `from_y`) to (`to_x`, `to_y`), stroked `width` pixels wide (positive). Numbers may be integers or floats. |
+| `canvas_line(key: String, from_x: ?, from_y: ?, to_x: ?, to_y: ?, width: ?, color: ?) -> CanvasCommand` | Creates a line command from (from_x, from_y) to (to_x, to_y), stroked a positive width. Numbers may be integers or floats; color accepts ColorValue or native PaintColor. |
+| `canvas_morph_fill_path(key: String, from: Array, to: Array, paint: ?) -> CanvasCommand` | Builds a filled path whose two endpoints have identical command topology. Uses the Canvas node's path_progress sample for native drawing and hits. Accepts a color, contextual paint, linear gradient or a Style with a supported fill, like canvas_fill_path. |
 | `canvas_morph_stroke_path(key: String, from: Array, to: Array, width: float, color: ColorValue) -> CanvasCommand` | Creates a stroked path that morphs from `from` to `to` as its `path_progress` motion goes 0 to 1; both need the same segment kinds. |
-| `canvas_morph_stroke_path(key: String, from: Array, to: Array, width: int, color: ColorValue) -> CanvasCommand` | Creates a stroked path that morphs from `from` to `to` as its `path_progress` motion goes 0 to 1; both need the same segment kinds. |
+| `canvas_morph_stroke_path(key: String, from: Array, to: Array, width: ?, color: ?) -> CanvasCommand` | Creates a stroked path that morphs between `from` and `to` as path_progress goes zero to one; both paths need the same segment kinds. Width accepts integers/floats; color accepts ColorValue or native PaintColor. |
 | `canvas_rect(key: String, x: float, y: float, width: float, height: float, fill: ColorValue) -> CanvasCommand` | Creates a filled rectangle command with its top-left corner at (`x`, `y`); `width` and `height` must be positive. |
-| `canvas_rect(key: String, x: ?, y: ?, width: ?, height: ?, fill: ColorValue) -> CanvasCommand` | Creates a filled rectangle command with its top-left corner at (`x`, `y`); `width` and `height` must be positive. Numbers may be integers or floats. |
+| `canvas_rect(key: String, x: ?, y: ?, width: ?, height: ?, fill: ?) -> CanvasCommand` | Creates a filled rectangle at (x, y) with positive width/height. Numbers may be integers or floats; fill accepts ColorValue or native PaintColor. |
 | `canvas_scene(commands: Array) -> CanvasScene` | Builds a canvas scene from canvas commands, painted in order; every command key must be unique. |
 | `canvas_stroke_path(key: String, segments: Array, width: float, color: ColorValue) -> CanvasCommand` | Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments. |
-| `canvas_stroke_path(key: String, segments: Array, width: int, color: ColorValue) -> CanvasCommand` | Creates a path command stroked `width` pixels wide (positive); `segments` start with `path_move` and hold 2 to 10,000 segments. |
+| `canvas_stroke_path(key: String, segments: Array, width: ?, color: ?) -> CanvasCommand` | Creates a path with positive stroke width and 2 to 10,000 segments starting with path_move. Width accepts integers/floats; color accepts ColorValue or native PaintColor. |
 | `chart_validate(spec: Map, data: ?, key_dimension: ?)` | Checks that `spec` is a valid chart spec and `data` is `NativeChartData` or up to 10,000 row maps keyed by `key_dimension` or `()`. |
+| `conflict_radar_project(agent_statuses: Array, files: Array, resolutions: Map) -> ?` | Computes exact inclusive line bands covered by edits from distinct agents, validates resolution identity, and projects readiness without merging anything. |
+| `context_capacity(counts: Array, limit: int, cells: int) -> Map` | Projects token counts onto a bounded strip of cells and reports used, remaining, and overflow totals. |
+| `context_partition(counts: Array, limit: int, width: float, height: float) -> Map` | Partitions a finite viewport into context-count rectangles, returning tooltip bounds and used, free, and overflow totals. |
+| `cost_waterfall_projection(steps: Array, mode: String, collapsed: Array) -> ?` | Rolls up a bounded flat parent tree with exact integer currency micro-units and token counts. Returns one signed domain and row geometry for cost or tokens, including descendants hidden by folds. |
 | `cubic_bezier(x1: ?, y1: ?, x2: ?, y2: ?) -> String` | Returns the easing `cubic_bezier(x1, y1, x2, y2)` for a motion `easing` or a theme easing token: a CSS cubic Bézier from (0, 0) to (1, 1); `x1` and `x2` must lie in [0, 1], `y` may overshoot. Numbers may be integers or floats. |
+| `current_color() -> PaintColor` | Returns deferred paint from the owning element's actual native text color, after inherited and own state refinements. Supports alpha(), Canvas ink, Style background/border, shadow color, and layered-gradient stops. It is not an ordinary theme color. |
 | `date_checked_add_days(date: String, days: int) -> ?` | Adds signed `days` to an ISO `YYYY-MM-DD` date and returns the new ISO date, or `()` when it leaves years 1 to 9999. |
 | `date_checked_add_months(date: String, months: int) -> ?` | Adds signed `months` to an ISO date, clamping the day into the target month; returns `()` when it leaves years 1 to 9999. |
 | `date_clamp(date: String, min: ?, max: ?) -> String` | Clamps an ISO date into `min` to `max`, each an ISO date or `()` for no bound, and returns the ISO date. |
+| `date_days_between(start: String, end: String) -> int` | Returns the signed number of Gregorian days from start to end, independent of time zones. Add one for the length of an inclusive ordered range. |
 | `date_info(date: String) -> Map` | Parses an ISO `YYYY-MM-DD` date into `#{ iso, year, month, day, weekday }`, `weekday` being a lowercase English name. |
 | `date_month_grid(date: String, first_weekday: String) -> Array` | Returns the 42 cells (six weeks) of the month containing `date`, weeks starting on `first_weekday`; each is `#{ date, day, outside, weekday }`. |
 | `date_month_intersects(date: String, min: ?, max: ?) -> bool` | Returns whether any day of the month containing `date` lies within `min` to `max`, each an ISO date or `()` for no bound. |
 | `date_month_start(date: String) -> String` | Returns the ISO date of the first day of the month containing the ISO date `date`. |
 | `date_week_edge(date: String, first_weekday: String, end: bool) -> ?` | Returns the ISO date that starts (or, when `end`, ends) the week containing `date`, weeks starting on `first_weekday`, or `()` out of range. |
 | `define_component(definition: Map)` | Registers a formal component from `#{ metadata, schema, render }` at module top level; `render` must be a named, uncurried `Fn`. |
+| `diagnostic_document(value: ?) -> Map` | Formats bounded diagnostic JSON or plain text for display; marks oversized content omitted rather than returning partial text. |
+| `diff_timeline_projection(edits: Array, elapsed: ?, duration: ?) -> ?` | Projects up to 192 {file, at, added, removed} entries into stable axis bounds, visible edit source indices and guides, sampled cumulative points, and file lanes. Times are elapsed seconds; () uses the completed run and an inferred duration. |
 | `effect(key: String, dependencies: ?, start: FnPtr, cleanup: FnPtr)` | Declares effect `key` (listed in the schema) during formal render; `start(ctx, deps)` runs after commit, `cleanup` before a change or unmount. |
 | `element_ref(key: String) -> ElementRef` | Declares a component-local element ref during formal render; attach it with `with_ref` and read it with `ctx.element_bounds`. |
+| `element_ref(namespace: String, business_key: String) -> ElementRef` | Declares a ref for a role and business ID during formal render. Namespace: 1–32 ASCII letters, digits, underscores or hyphens. Business key: 1–128 UTF-8 bytes. Use the returned ref or its opaque key for focus and geometry. |
 | `event_response() -> EventResponse` | Returns a blank event response that lets the event continue, to refine with `prevent_default()`, `stop()` or `capture_pointer()`. |
+| `fallback_chain_summary(attempts: Array, now_ms: int) -> ?` | Summarizes up to 24 host-owned fallback attempts with exact signed costs and separate live and completed times. It never changes a status on timeout. |
+| `fallback_dash_route(segments: Array, on: float, off: float) -> Array` | Creates dashed Canvas branch segments with on and off lengths expressed as fractions of each path's arc length. |
+| `fallback_dot_grid(width: float, height: float, color: ColorValue) -> CanvasScene` | Builds a bounded, native dot grid with one solid Canvas path per row. Retains the supplied color and alpha without sprite tinting. |
+| `fan_out_layout(width: float, cell: int, gap: int, count: int) -> ?` | Plans up to 1,024 fixed tiles with distributed horizontal spacing. Returns cell size, column count, horizontal pitch, vertical stride and total height, in logical pixels. |
+| `fan_out_summary(tasks: Array, now_ms: int, workers: int) -> ?` | Summarizes up to 1,024 uniquely keyed tasks. Returns signed total cost, ordered failed IDs, status counts and a remaining-time estimate after three successful duration samples. Pass -1 to infer workers. |
 | `grapheme_count(text: String) -> int` | Returns the number of extended grapheme clusters, the user-perceived characters, in `text`. |
+| `grapheme_index_at_byte(text: String, byte: int, downstream: bool) -> ?` | Converts a UTF-8 character boundary to a grapheme boundary in the same text. Inside a cluster, rounds forward when downstream is true and backward otherwise; an invalid byte offset returns (). |
+| `grapheme_slice(text: String, start: int, end: int) -> ?` | Returns the substring in the half-open extended-grapheme range. Equal valid endpoints return an empty string; invalid endpoints return (). |
 | `handled() -> EventResponse` | Returns an event response that stops the event from reaching ancestor handlers. |
 | `interval(key: String, period_ms: int, paused: bool, callback: FnPtr, payload: ?)` | Declares repeating timer `key` during formal render that calls `callback(ctx, payload)` every `period_ms` (16 ms to 24 h) while not `paused`; a late tick is one call, not several. Shares keys with `timeout`. |
 | `is_native_collection(value: ?) -> bool` | Returns whether `value` is a Host-owned `NativeCollection`. |
 | `is_native_text_document(value: ?) -> bool` | Returns whether `value` is a Host-owned `NativeTextDocument`. |
-| `key_shortcut(text: String) -> ?` | Formats `text` such as `"cmd-p"` as `#{ label, keystrokes, chords }` with platform key names; text that is not keystrokes stays a plain label. |
+| `judge_bracket_project(contenders: Array, verdicts: Map, capacity: int) -> ?` | Projects ordered elimination matches, distinguishing empty seeds from unresolved opponents. Only verdicts that still match both entrants can advance a winner. |
+| `key_legend(key: String) -> ?` | Describes one named key or literal for this platform as `#{ label, spoken, glyph, platform }`. This does not parse or register a key binding. `mod` means Command on macOS and Control elsewhere; blank input stays blank. |
+| `key_legend(key: String, platform: String) -> ?` | Describes one key for explicit `platform` (`mac` or `other`); rejects other values. Named aliases and punctuation have spelled-out accessible names. |
+| `key_shortcut(text: String) -> ?` | Formats `text` such as `"cmd-p"` as `#{ label, keystrokes, chords }` with platform key names. Each chord has `key`, `modifiers` and ordered `keys` descriptors (`label`, `spoken`, `glyph`, `platform`) for custom keycaps. Text that is not keystrokes stays one literal label with no inferred key boundaries. |
+| `layered_gradient(layers: Array) -> LayeredGradient` | Creates a topmost-first stack of up to eight gradients. Each layer has 2–16 stops with ordered offsets in [0,1] and ColorValue or PaintColor inks. Optional angle, origin, clip, size and position control the gradient image; padding and border boxes are independent. Optional repeat_period (0.5–65536 logical pixels) repeats the stops by projected distance instead of stretching them. Empty clears a background. This stack is not a Canvas path paint. |
 | `linear_gradient(spec: Map) -> LinearGradientSpec` | Creates a two-stop gradient from `#{ angle, from, to }`; `angle` is in degrees (default 180) and both colors are required. |
+| `markdown_literal(text: String) -> String` | Quotes literal inline text as Markdown character references. Add paragraph separators and intended syntax separately; embedded punctuation and whitespace do not become structure. |
+| `memory_panel_normalize(text: String) -> String` | Trims and collapses whitespace in a single memory phrase, with a bounded input and output. |
+| `memory_panel_projection(items: Array, categories: Array, active_category: String, query: String) -> ?` | Validates a bounded list of memory entries and returns category counts, visible indices, total and paused count. Does not persist or inspect application data outside its arguments. |
 | `motion_delay(duration_ms: int) -> MotionTimelineStep` | Creates a timeline step that waits `duration_ms` milliseconds (non-negative). |
 | `motion_focus(source: MotionSource) -> MotionProgressBinding` | Drives `source` by focus: forward while the node is focused, back after. Takes a transition or keyframes without delay or repeat. |
 | `motion_hover(source: MotionSource) -> MotionProgressBinding` | Drives `source` by hover: forward while the pointer is over the node, back after. Takes a transition or keyframes without delay or repeat. |
@@ -122,25 +155,26 @@ Components, references, collections, timers, motion and canvas commands.
 | `motion_inertia(property: String, from: float, velocity: float, config: Map) -> MotionSource` | Creates an inertia source gliding `property` from `from` at `velocity` units/s; `config` sets `friction`, `min`, `max`, `bounce`, `snap_points`. |
 | `motion_inertia(property: String, from: ?, velocity: ?, config: Map) -> MotionSource` | Creates an inertia source gliding `property` from `from` at `velocity` units/s; `config` sets `friction`, `min`, `max`, `bounce`, `snap_points`. Numbers may be integers or floats. |
 | `motion_keyframes(property: String, frames: Array, config: Map) -> MotionSource` | Creates a keyframe source for `property` from `#{ offset, value, easing }` maps; `config` sets `duration_ms` (240), `delay_ms`, `iterations`. |
+| `motion_numbers(refs: Array) -> MotionNumbers` | Groups 1–128 distinct ElementRefs with numeric tracks from one formal component. Values and layout projections are derived from the same native frame. |
 | `motion_parallel(steps: Array) -> MotionTimelineStep` | Creates a timeline step that starts all `steps` together and ends with the longest. |
 | `motion_path_follow(scene: CanvasScene, key: String, property: String, config: Map) -> MotionSource` | Creates keyframes moving `translate_x`, `translate_y` or `rotate` along path `key` of `scene`; `config` sets `samples` (16 to 512), `duration_ms`. |
-| `motion_press(source: MotionSource) -> MotionProgressBinding` | Drives `source` by press: forward while the node is held down, back on release. Takes a transition or keyframes without delay or repeat. |
+| `motion_press(source: MotionSource) -> MotionProgressBinding` | Drives source by this node's mouse press: forward while held, back on release inside or outside its bounds. Disabling returns it to rest; retained-page hiding, suspension or removing the binding revokes the transient press lease without resetting unrelated motion clocks. Initial presentation uses the declared inactive value. Takes a transition or keyframes without delay or repeat. |
 | `motion_scroll(axis: String, source: MotionSource) -> MotionProgressBinding` | Maps `source` to the scroll position on `axis` (`"x"` or `"y"`) of the nearest scrollable node, 0 at the start to 1 at the end. |
 | `motion_sequence(steps: Array) -> MotionTimelineStep` | Creates a timeline step that runs `steps` one after another. |
 | `motion_signal(signal: NativeSignal, active_states: Array, source: MotionSource) -> MotionProgressBinding` | Drives `source` forward while a native string signal matches an active state, and back otherwise. Sampling and reversal stay native and follow Host motion policy; takes a transition or keyframes without delay or repeat. |
 | `motion_spring(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. |
 | `motion_spring(property: String, from: ?, to: ?, config: Map) -> MotionSource` | Creates a spring source from `from` to `to` on `property`; `config` sets `stiffness` (180), `damping` (24), `mass` (1), `initial_velocity`. Numbers may be integers or floats. |
 | `motion_stagger(steps: Array, interval_ms: int) -> MotionTimelineStep` | Creates a timeline step that starts each of `steps` `interval_ms` milliseconds after the previous one. |
-| `motion_text_spans(text: String, config: Map) -> Array` | Splits `text` into one fading-in span per grapheme for `text(spans)`; `config` sets `duration_ms` (180), `stagger_ms` (24), `easing`. |
+| `motion_text_spans(text: String, config: Map) -> Array` | Splits text into grapheme spans. The default reveal profile accepts duration_ms, stagger_ms and easing. profile: "sweep" makes one bounded repeating opacity sweep (at most 48 graphemes; duration_ms is one cycle). Use a decorative sweep over an independently stable readable label. |
 | `motion_timeline(name: String, root: MotionTimelineStep, config: Map) -> MotionTimeline` | Creates timeline `name` from a root step for `node.timeline`; `config` sets `autoplay` (true), `iterations`, `on_complete`, `on_cancel`. |
 | `motion_track(target: String, source: MotionSource) -> MotionTimelineStep` | Creates a timeline step that plays `source` on `target`: `"."` for the timeline's own node, or a `/`-separated path of descendant keys. |
-| `motion_transition(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`. |
+| `motion_transition(property: String, from: float, to: float, config: Map) -> MotionSource` | Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`. In normal motion, `background_position_x` moves the front layered gradient image in fractions of remaining horizontal positioning space; otherwise the authored position is kept. |
 | `motion_transition(property: String, from: ?, to: ?, config: Map) -> MotionSource` | Creates a transition of `property` from `from` to `to`; `config` sets `duration_ms` (180), `delay_ms`, `easing`, `iterations`, `intent`. Numbers may be integers or floats. |
 | `motion_viewport(source: MotionSource) -> MotionProgressBinding` | Maps `source` to the node's travel through the viewport: 0 as it enters at the bottom, 1 as it leaves at the top. |
 | `named_function(name: String) -> FnPtr` | Creates a named function pointer retaining this module's lexical environment. Fn(name) is an alias in the SDK engine; curry and synchronous call are supported. UI state ownership is assigned separately when retained as a callback. |
 | `native_fuzzy_adjacent(collection: NativeCollection, active: String, step: int) -> String` | Returns the key of the enabled row one before (`step` < 0) or after (`step` > 0) `active` in a fuzzy view, wrapping; `step` 0 returns `active` itself. An `active` that is not an enabled row counts as the first one; `""` when none is enabled. |
 | `native_fuzzy_edge(collection: NativeCollection, last: bool) -> String` | Returns the key of the first (or, when `last`, the last) enabled row of a fuzzy view, or `""` when it has none. |
-| `native_fuzzy_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a fuzzy-filtered, ranked and grouped view of a native collection for Command; `config` sets `query` and the row field names. |
+| `native_fuzzy_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a fuzzy-filtered, ranked and grouped view of a native collection for Command; config sets query and row field names. Optional hint_field contributes to search with keyword precedence. Optional icon_field/logo_field project logical asset ID strings only; they do not affect order-cache identity or load assets. Missing/null optional row fields are empty, not embedded UI nodes. |
 | `native_handler(id: String) -> NativeHandlerRef` | Resolves the Host-registered native handler `"namespace.name"` for use as a callback; fails when no handler has that ID. |
 | `native_list_neighbors(items: NativeCollection, selected_keys: Array) -> Map` | Returns enabled List navigation targets first/last/previous/next/current/current_index and the current row's has_children flag; disabled and missing selections are skipped. |
 | `native_list_view(items: NativeCollection, selected_keys: Array) -> NativeCollection` | Normalizes a List row collection natively, projecting selected flags without enumerating rows in Rhai. |
@@ -150,8 +184,11 @@ Components, references, collections, timers, motion and canvas commands.
 | `native_table_neighbors(collection: NativeCollection, selected_keys: Array) -> Map` | Returns the Table navigation keys `#{ first, last, previous, next, current, current_index }`; `current` is the first shown selected row. Non-string keys match no row. |
 | `native_table_view(collection: NativeCollection, config: Map) -> NativeCollection` | Returns a sorted, filtered, paged and grouped view of a native collection, as the Table's normalized `config` describes. |
 | `native_table_view(rows: Array, config: Map) -> NativeCollection` | Applies Table's native projection to array rows. Controlled sort names a declared column key; sort_key resolves its rank field. Null/missing values are last in both directions; ties preserve source order. |
+| `normalize_site_domain(text: String) -> ?` | Canonicalizes a site-address hostname to strict IDNA ASCII, allowing an optional HTTP(S) prefix and trailing slashes. Returns an empty string for a blank field or () for invalid input; accepts no port, path, query, fragment, credential or IP address. Does not contact the network. |
 | `optional_float_signal(key: String) -> NativeSignal` | Declares a component-local optional-float signal that starts as `()` during formal render, for example to bind as `width_override`. |
 | `outline_projection(items: Array, expanded_keys: Array) -> Array` | Flattens `#{ key, parent, label }` tree items into visible rows with `depth` and `has_children`, opening only `expanded_keys`. |
+| `parse_delimited_preview(source: String, tab_separated: bool) -> ?` | Parses a bounded rectangular CSV or TSV preview, preserving quoted values; returns null for malformed or oversized data so the caller can show the original text. |
+| `path_catmull_rom(segments: Array) -> Array` | Converts one open move/line polyline to uniform Catmull–Rom cubic segments through the same vertices. First and last tangents use repeated endpoints. Corresponding controls interpolate with the vertices for compatible morph paths. Close an area after this conversion, not before. |
 | `path_close() -> CanvasPathSegment` | Creates a path segment that closes the current subpath back to its start. |
 | `path_cubic(x: float, y: float, control_a_x: float, control_a_y: float, control_b_x: float, control_b_y: float) -> CanvasPathSegment` | Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`). |
 | `path_cubic(x: ?, y: ?, control_a_x: ?, control_a_y: ?, control_b_x: ?, control_b_y: ?) -> CanvasPathSegment` | Creates a cubic curve segment to (`x`, `y`) with control points (`control_a_x`, `control_a_y`) and (`control_b_x`, `control_b_y`). Numbers may be integers or floats. |
@@ -161,15 +198,31 @@ Components, references, collections, timers, motion and canvas commands.
 | `path_move(x: ?, y: ?) -> CanvasPathSegment` | Creates a path segment that starts a new subpath at (`x`, `y`); every path begins with one. Numbers may be integers or floats. |
 | `path_quadratic(x: float, y: float, control_x: float, control_y: float) -> CanvasPathSegment` | Creates a quadratic curve segment to (`x`, `y`) with control point (`control_x`, `control_y`); the end point comes first. |
 | `path_quadratic(x: ?, y: ?, control_x: ?, control_y: ?) -> CanvasPathSegment` | Creates a quadratic curve segment to (`x`, `y`) with control point (`control_x`, `control_y`); the end point comes first. Numbers may be integers or floats. |
+| `plan_vs_actual_projection(steps: Array, now_ms: int) -> ?` | Projects a directed dependency graph of at most 96 steps into independent plan and forecast spans, keeping observed timings intact. Returns row indices for prerequisites and dependents, signed cost sums, and a bounded time axis. |
+| `prompt_template_parts(template: String) -> Array` | Tokenizes literal text and {name} placeholders without evaluating code. Returns ordered maps with text or name. ASCII names allow letters, digits, underscore and hyphen; limits are 32 KiB, 32 distinct names and 128 uses. |
 | `propagate() -> EventResponse` | Returns an event response that lets the event continue to ancestor handlers; a handler returning any other value stops it. |
-| `shadow(spec: Map) -> ShadowSpec` | Creates a box shadow from `#{ x, y, blur, spread, color }` in pixels; only `color` is required, and `blur` and `spread` are non-negative. |
+| `rate_plan_add_slot(runs: Array, settings: Map, peak: int) -> ?` | Finds the first buffer-safe start minute for a default run, or the least-loaded valid start. Returns null when the run would not fit in the remaining window. |
+| `rate_plan_curve(samples: Array, width: ?, height: ?, ceiling: ?) -> Array` | Projects 2–1024 ordered rate-plan {at, v} samples into a positive native-sized plot and returns the shared Catmull–Rom path. The ceiling clips only the displayed loads. Keeps original points and minutes intact. |
+| `rate_plan_load_path(samples: Array, width: ?, load_unit: ?) -> Array` | Projects 2–1024 ordered rate-plan {at, v} samples across the unbroken day axis into an open polyline, with ordinate -v / load_unit. Unlike the displayed curve, does not clamp or smooth the original values, so peak ordering and warning thresholds agree. |
+| `rate_plan_read(runs: Array, settings: Map, measured: Array) -> ?` | Projects a 24-hour plan, exact minute-level peaks and overloads, a nearest safe placement, and a bounded set of chart points. Optional settings.plot_width draws on a shared grid of approximately one point per 4 logical pixels (2–1024 points), without changing the exact measured/forecast seam. Optional settings.hover is a minute offset (0–1439); the result's hover map carries value and measured from the accepted data, not from the plotted samples. Does not change the plan. |
+| `rate_plan_spread(runs: Array, settings: Map) -> Array` | Proposes deterministic near-anchor moves for future runs that do not increase the forecast peak. Running, finished, and filtered runs are left unchanged. |
+| `replace_recipient_name(text: String, previous: String, next: String) -> String` | Replaces the previous full recipient name and standalone first name in one literal, nonrecursive pass. Names are limited to 512 UTF-8 bytes, and the text and result to 64000 bytes. |
+| `root_cause_projection(causes: Array, width: float) -> ?` | Validates a bounded fault tree, lays out its branches, and projects complete AND/OR proof paths from accepted cause states. |
+| `schedule_capacity(plan: Map) -> ?` | Evaluates then proposes placements for a bounded set of tasks and capacity windows, without mutating the accepted plan. |
+| `shadow(spec: Map) -> ShadowSpec` | Creates a box shadow from `#{ x, y, blur, spread, color, inset }` in logical pixels; color is required and accepts ColorValue or PaintColor. Offsets and spread are finite/signed, blur is non-negative, and inset is a bool defaulting to false. All numbers must be representable by the backend. |
 | `signal(key: String, initial: ?) -> NativeSignal` | Declares a component-local native signal holding a bool, int, float, string or color during formal render; `initial` applies on first mount. |
 | `span(text: String) -> Span` | Creates an inline run for `text([...])`, refined with `color`, `background`, `typography`, `bold` and `italic`. |
+| `text_anchor_plan(source: String, revision: int, requests: Array) -> TextAnchorPlan` | Builds an exact text/revision/request identity for up to 32 grapheme anchors in up to 16 KiB. A map with id and start requests a caret (optional affinity); add an exclusive end for a range. |
+| `text_initial(text: String) -> String` | Returns the first Unicode letter or number, uppercased, or an empty string when absent. Skips punctuation and emoji; Unicode uppercase mappings may contain multiple characters. |
+| `text_match_ranges(text: String, terms: Array, words_only: bool) -> Array` | Finds at most 128 sorted, merged UTF-8 byte ranges in bounded literal text. Matches exact phrases, or shared case-insensitive Unicode words when words_only is true. Inputs are limited to 64 KiB per text/term collection and 128 terms. |
 | `time_local_candidates(date: String, time: String, zone: String) -> Array` | Returns ordered epoch-ms instants for a local date/time: zero in a DST gap, two in a fold, one otherwise; never guesses. |
 | `time_parts(ms: int, zone: String) -> Map` | Returns date, time, offset_minutes and zone for an epoch instant; date/time are ISO and HH:MM:SS. |
 | `time_range_error(value: Map, min: ?, max: ?, max_span_ms: ?) -> String` | Returns an empty string for a valid relative/absolute range, otherwise a validation explanation; optional epoch bounds and span use (). |
 | `time_range_resolve(value: Map, now_ms: int) -> Map` | Resolves a relative duration at query time or preserves an absolute range, returning start/end epoch milliseconds. |
 | `timeout(key: String, delay_ms: int, paused: bool, callback: FnPtr, payload: ?)` | Declares one-shot timer `key` during formal render that calls `callback(ctx, payload)` `delay_ms` (1 ms to 24 h) later, unless `paused`. |
+| `trace_waterfall_projection(spans: Array, collapsed: Array, now_ms: int, min_range_ms: int, tick_capacity: int) -> ?` | Validates a bounded flat trace and projects visible rows, nested cost and token sums, live ends, and ticks on one elapsed-time domain. Folding never changes the domain or the sums. |
+| `utf8_byte_count(text: String) -> int` | Returns a UTF-8 byte count, not a grapheme or character count. Use for documented byte ranges into native text. |
+| `validate_replay_input(input: String, format: String) -> bool` | Accepts text or strict JSON of up to 8192 UTF-8 bytes. No evaluation, authorization or tool execution is performed. |
 
 ## Context methods (`ctx`)
 
@@ -178,7 +231,7 @@ Methods of the context a view, callback or effect receives.
 | Call | Description |
 |---|---|
 | `ctx.action_enabled(action: String) -> bool` | Returns whether the action `action` (a `namespace.name` id) is registered and enabled; `false` when it is unregistered. |
-| `ctx.action_shortcut(action: String) -> ?` | Returns the key binding declared to this view for `action` as `#{ label, keystrokes, chords }`, or `()` when it has none. |
+| `ctx.action_shortcut(action: String) -> ?` | Returns the key binding declared to this view for `action` as `#{ label, keystrokes, chords }`, or `()` when it has none. Each chord contains `key`, `modifiers` and ordered `keys` display/spoken descriptors, matching `key_shortcut` without reparsing its label. |
 | `ctx.actions() -> Array` | Lists every registered action as `#{ id, enabled, shortcut }` for a command palette; `shortcut` is `()` when unbound. |
 | `ctx.calendar() -> Map` | Returns the selected locale's calendar metadata: `first_weekday`, `months`, `weekdays` and `date_patterns`. Records a locale dependency in render. |
 | `ctx.call_capability(capability: String, method: String, input: ?) -> ?` | Synchronously calls `method` of the declared capability `capability` with `input` and returns its output; not allowed during render. |
@@ -190,17 +243,23 @@ Methods of the context a view, callback or effect receives.
 | `ctx.clear_close_handler()` | Removes the current window's close handler, so a native close request closes the window again; not allowed during render. |
 | `ctx.close_window(id: String)` | Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render. |
 | `ctx.collection_follow_status(key: String) -> ?` | Reads this component's presented collection status as `#{ following, unseen }`, or `()` while absent. An event-time query, not a render dependency; use `on_follow_change` for reactive state. |
-| `ctx.component_style(part: String, base: Style) -> Style` | Returns `base` merged with the stylesheet rule, the caller's `style` (root only) and `part_styles` for the declared part `part`. |
+| `ctx.component_style(parts: Array, base: Style) -> Style` | Resolves 1..32 unique snake_case parts together, in their declared order: all preset refinements, then all application refinements, then instance root/part overrides. Prevents a later selected-state preset from overwriting an earlier common-part user override. |
+| `ctx.component_style(parts: Array, base: Style, state: Style) -> Style` | Resolves 1..32 unique parts as one cascade, inserting the controlled variant/state after all preset parts and before application and instance overrides. Parts within each layer are applied in array order. |
+| `ctx.component_style(part: String, base: Style) -> Style` | Returns `base` merged with the active preset's part recipe, application stylesheet, caller's `style` (root only) and `part_styles`. Preset reads track the scoped theme during render. |
+| `ctx.component_style(part: String, base: Style, state: Style) -> Style` | Resolves source base, preset part recipe, controlled state refinement, application stylesheet, instance root style, then instance part style. Use state for selected/invalid/variant paint so preset defaults cannot overwrite it and Host/application overrides remain final. |
 | `ctx.copy_text(text: String)` | Queues a bounded text clipboard write after commit. Requires an attached view/window and direct user input or explicit automation; rejects render, timers, effects and asynchronous callbacks, and rolls back with failed callbacks. |
 | `ctx.dispatch_action(action: String, payload: ?)` | Queues the action `action` with `payload` to run after the current callback; raises an error when it is unknown or disabled. |
-| `ctx.element_bounds(reference: ElementRef) -> ?` | Returns a ref's last committed `#{ layout, visual, clip }` window bounds, or `()` before first layout; records a dependency in render. |
+| `ctx.element_bounds(reference: ElementRef) -> ?` | Returns a ref's last committed `#{ layout, visual, clip }` window bounds, or `()` before first layout; records a dependency in render. A present clip is the visible rectangular extent, with zero area when fully clipped. |
 | `ctx.element_bounds(key: String) -> ?` | Returns the `#{ layout, visual, clip }` window bounds of a component-local ref key, or `()`; the form event callbacks use. |
 | `ctx.element_size(reference: ElementRef) -> ?` | Returns committed logical layout `#{ width, height }`, or `()` while unavailable. Render observes size and ref binding changes only; position, visual transforms and clip changes do not rerender the reader. |
 | `ctx.element_size(key: String) -> ?` | Reads logical layout `#{ width, height }` by component-local ref key, or `()` while unavailable. Render subscriptions survive pending mount and rebinding; event reads create no dependency. |
+| `ctx.element_width_class(reference: ElementRef, breakpoints: Array) -> ?` | Returns 0..=breakpoints.len for the committed layout width, or () while unbound/unmeasured. At a boundary the lower class wins. Accepts up to 32 strictly increasing, finite non-negative logical-pixel numbers. Render observes class/binding changes, not every size, position, transform or clip change; size/bounds reads remain stronger. Multiple class reads coalesce in fixed-size interval storage. This is a last-committed query, not synchronous CSS measurement. |
+| `ctx.element_width_class(key: String, breakpoints: Array) -> ?` | Reads the committed layout-width class by component-local ref key, or () while unavailable. Same bounded numeric thresholds and inclusive-boundary policy as the ElementRef overload. Render subscriptions survive mount/rebinding; event reads are untracked. |
 | `ctx.emit(event: String, payload: ?)` | Emits the declared event `event` with a schema-checked `payload`; the caller's handler runs after this callback. Not allowed during render. |
 | `ctx.event_target_bounds() -> ?` | Returns the `#{ x, y, width, height }` window bounds of the node running the current handler, or `()`; untracked, event callbacks only. |
 | `ctx.focus(reference: ElementRef)` | Queues keyboard focus for a ref's node, applied after the transaction commits; not allowed during render. |
 | `ctx.focus(key: String)` | Queues keyboard focus for the node of a component-local ref key, applied after the transaction commits; not allowed during render. |
+| `ctx.focus_descendant(scope_key: String, prefer_invalid: bool)` | Queues focus in a mounted component-local scope. Chooses an enabled editor before a heading, preferring one marked invalid (or inside an invalid field) when requested. Hidden pages, disabled subtrees and nested overlay panels are skipped. Does not move focus outside the scope. |
 | `ctx.focus_window(id: String)` | Queues activation of window `id`; needs window-command authority and is not allowed during render. |
 | `ctx.format_date(date: String, style: String) -> String` | Formats an ISO `YYYY-MM-DD` date in the selected locale; `style` is `short`, `medium` or `long`. Records a locale dependency in render. |
 | `ctx.format_duration(ms: int) -> String` | Formats a signed elapsed duration using localized compact units and digits. |
@@ -228,13 +287,16 @@ Methods of the context a view, callback or effect receives.
 | `ctx.motion_duration(role: String) -> int` | Returns the theme motion duration in milliseconds for `role`, such as `fast`; tracked in render, an error for an unknown role. |
 | `ctx.motion_easing(role: String) -> String` | Returns the theme easing for `role` as `linear`, `ease_in`, `ease_out` or `ease_in_out`; raises an error for an unknown role. |
 | `ctx.motion_handle(name: String) -> MotionHandle` | Returns a handle to the timeline `name` this component declared in the current view; raises an error when missing or duplicated. |
+| `ctx.motion_preference() -> String` | Returns the effective motion policy: normal, reduced, or none. Geometry-dependent declarations can keep their natural layout when motion is disabled. |
 | `ctx.motion_quality() -> String` | Returns the Host's motion quality tier: `low`, `medium` or `high`. |
 | `ctx.motion_spring(role: String) -> Map` | Returns the theme spring preset for `role` as `#{ stiffness, damping, mass }`; raises an error for an unknown role. |
 | `ctx.motion_stagger(role: String) -> int` | Returns the theme stagger interval in milliseconds for `role`, such as `tight`; raises an error for an unknown role. |
 | `ctx.node_factory(renderer: FnPtr) -> FnPtr` | Captures a named Node factory's module/import environment at declaration, retaining user curry across helper-module forwarding. Render-only; forwarding an already bound factory preserves its original owner and environment. Invoke with ctx.render_node. |
 | `ctx.now() -> int` | Returns epoch milliseconds from the Host wall clock, independent of animation time. |
 | `ctx.number() -> Map` | Returns the selected locale's number metadata: `digits`, separators, group sizes and `minus_sign`. Records a locale dependency in render. |
+| `ctx.number_text(value: float, digits: int, prefix: String, suffix: String, share: bool) -> UiNode` | Creates localized numeric text with 0–12 fraction digits and optional affixes. Native number motion changes the display but not the accepted accessibility value. Share formatting preserves the <1 and >99 thresholds for percentages. |
 | `ctx.open_window(id: String, title: String, width: int, height: int, focus: bool)` | Queues a new window `id` that runs the same entry, sides 200 to 4096 pixels; needs window-command authority, not during render. |
+| `ctx.parse_number(text: String) -> ?` | Parses a finite decimal using the active locale's digits, decimal mark and grouping rules. Returns unit for empty or invalid input. With no locale bundles, uses ASCII digits, a decimal point and comma grouping. |
 | `ctx.parse_time(value: String, precision: String) -> ?` | Parses localized minute/second clock text to HH:MM:SS, or returns () for incomplete or invalid text. |
 | `ctx.pause_motion(handle: MotionHandle)` | Pauses the timeline behind `handle` at its current position; raises an error for a stale handle and is not allowed during render. |
 | `ctx.pause_timeout(key: String) -> bool` | Pauses this component's declared `timeout` or `interval` `key`; returns `false` when no such timer is active. Not allowed during render. |
@@ -284,9 +346,12 @@ Methods of the context a view, callback or effect receives.
 | `ctx.t(key: String) -> String` | Returns the message `key` in the current locale, falling back to the default locale; records a locale dependency in render. |
 | `ctx.t_or(key: String, fallback: String) -> String` | Returns the message `key` as `ctx.t` does, or `fallback` when the application has no locale or no bundle defines `key`; what official components use for their built-in text. Records a locale dependency in render. |
 | `ctx.t_or(key: String, fallback: String, values: Map) -> String` | `ctx.t_or(key, fallback)` with each `{name}` in the text replaced by `values[name]`: `ctx.t_or("tag.remove", "Remove {name}", #{ name: label })`. |
+| `ctx.text_anchors(reference: ElementRef, plan: TextAnchorPlan) -> ?` | Reads the rendered anchors keyed by request ID, or `()` before presentation or when source, revision or requests differ. Records a dependency in render; each rect has layout, visual, clipped bounds and the visual quad. |
 | `ctx.text_direction() -> String` | Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render. |
 | `ctx.theme_colors(family: String, name: String) -> Map` | Returns every color of the theme variant `family`/`name`, as the token base, color expressions and Host overrides resolve them, keyed by token name (`namespace.name` for namespaced colors). Values are literal colors for any color style, so a theme picker draws swatches of variants other than the one shown; throws for an unknown variant. |
 | `ctx.theme_colors(family: String, name: String, keys: Array) -> Map` | Returns the named colors of the theme variant `family`/`name`, such as `["surface", "text_primary", "accent"]`; throws for an unknown variant or color. |
+| `ctx.theme_style(path: String) -> Style` | Reads a namespaced typed Style recipe and tracks the scoped theme. Without a theme (headless evaluation) returns an empty Style; a configured theme with a missing or mistyped recipe throws. Colors/lengths inside remain symbolic for native resolution. |
+| `ctx.theme_token(path: String) -> ?` | Reads a namespaced color, length, number, string or Style token from the scoped theme and tracks it in render; throws when missing. Lengths remain token references so descendant size/reading scale is resolved at native layout, not captured here. |
 | `ctx.theme_variant() -> ?` | Returns the resolved theme variant as `#{ family, name, mode }`, or `()` without a theme; records a theme dependency in render. |
 | `ctx.theme_variants() -> Array` | Lists every loaded theme variant as `#{ family, name, mode }`, ordered by family and name, for a theme picker. |
 | `ctx.time() -> Map` | Returns detached selected-locale time patterns, hour cycle, periods, compact units and relative phrases. |
@@ -308,7 +373,9 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.accessibility_column_index(index: int) -> UiNode` | Sets the node's 1-based column index within its table or grid. |
 | `node.accessibility_current(current: String) -> UiNode` | Marks the node as the current item of a set: `page`, `step`, `location`, `date`, `time` or `true`; other values raise an error. |
 | `node.accessibility_described_by(ids: String) -> UiNode` | Takes the accessible description from the labels or text of the nodes with these space-separated `accessibility_id`s. |
+| `node.accessibility_description(description: String) -> UiNode` | Sets a direct auxiliary description without changing the accessible name. A declared accessibility_described_by relationship takes precedence, including an empty resolved description. Useful for data-only virtual rows without creating element refs or global semantic IDs. |
 | `node.accessibility_expanded(expanded: bool) -> UiNode` | Sets whether the content the node controls, such as a menu or a disclosure panel, is expanded. |
+| `node.accessibility_hidden(hidden: bool) -> UiNode` | Excludes decorative content and descendants from the semantic tree and implicit accessible names, without hiding, unmounting or disabling the visual subtree. Do not use on focusable controls. Visual/contrast audits remain active. |
 | `node.accessibility_id(id: String) -> UiNode` | Gives the node a semantic ID, unique in the view, for `accessibility_labelled_by`, `accessibility_described_by` and automation. |
 | `node.accessibility_invalid(invalid: bool) -> UiNode` | Marks the node's value as invalid, as for a form field that fails validation. |
 | `node.accessibility_key_shortcuts(shortcuts: String) -> UiNode` | Announces the shortcuts that activate the node, in ARIA `keyshortcuts` form such as `"Meta+S"`; it binds no keys. |
@@ -335,16 +402,25 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.audit_allow(rules: Array) -> UiNode` | Exempts the node from the named composition audit rules, such as `"mixed-type-in-row"`; an unknown rule raises an error. |
 | `node.bind_parent_signal(ctx: UiContext, property: String, key: String) -> UiNode` | Drives an optional-float `property` such as `width_override` from the signal `key` of the nearest ancestor that declares it; raises when none does. |
 | `node.bind_signal(property: String, signal: NativeSignal) -> UiNode` | Drives `property` (`opacity`, `translate_x`, `width`, `background`, ...) from a native signal of its type, without a rerender. |
+| `node.canvas_peak_paint_above(limit_y: ?, foreground: ColorValue, background: ?) -> UiNode` | On an existing Canvas peak binding, set foreground and optional background (color or ()) while the sampled vertex is strictly above the authored y threshold. Tests before display projection, offset and clamping and does not change layout or schedule a script evaluation. |
+| `node.capture_text_anchors(plan: TextAnchorPlan) -> UiNode` | Projects the plan from this plain or rich text node's native paint. The node must already have an element ref and its text must match the plan source. |
 | `node.disabled(disabled: bool) -> UiNode` | Disables the node and its subtree: their handlers stop firing, `disabled` styles apply, and assistive technology reports it. |
-| `node.enter_motion(source: MotionSource) -> UiNode` | Declares a motion source that plays when the keyed node mounts or its replay key changes; the same as `motion`. |
+| `node.enter_motion(source: MotionSource) -> UiNode` | Plays when the keyed node mounts or receives a different explicit replay key. Recipe changes on an already mounted track do not restart or retarget it. |
 | `node.env(values: Map) -> UiNode` | Sets environment axes for the node and its subtree, such as `#{ density: "compact" }`, merged with earlier `env` values on the node. |
 | `node.exit_motion(source: MotionSource) -> UiNode` | Declares a motion played on a paint-only copy of the keyed node after it is removed; replaces an exit source for that property. |
+| `node.follow_canvas_peak(route: CanvasPeakRoute, offset_x: ?, offset_y: ?, bounds: Array) -> UiNode` | Translates the node to the route's highest vertex at its native path_progress sample (default 1), with any route projection applied before the supplied offsets. Bounds may be empty or [min_x, min_y, max_x, max_y]; offsets and bounds are display coordinates. |
 | `node.heading_elsewhere() -> UiNode` | Tells the composition audit that this container's heading is drawn elsewhere, such as in a host's panel header. |
+| `node.image_fallback_text(text: String) -> UiNode` | Sets non-interactive text on this image, directional image or SVG when native loading fails, not while pending. Style through image_fallback; preserves the image owner's accessible name and presentation diagnostics. Empty text hides the visual error only. Does not propagate into arbitrary child nodes or turn missing declared assets into valid preparation. |
+| `node.intrinsic_width_motion(key: String, duration_ms: int, easing: String) -> UiNode` | Glides an auto-sized node from its last presented width to the real constrained width when the content key changes. Explicit width, mount, same-key reflow and Reduced/None are not animated. |
 | `node.layout_motion(duration_ms: int, easing: String) -> UiNode` | Animates the node between committed layout positions over `duration_ms`, with `linear`, `ease_in`, `ease_out` or `ease_in_out`. |
+| `node.layout_size_motion(key: String, axis: String, duration_ms: int, easing: String) -> UiNode` | When the controlled key changes, retargets the measured width or height of this existing node from its last presented size to the new constrained layout size. Works with auto and declared lengths; siblings and hit bounds use the same intermediate layout. The first presentation and same-key reflow do not start a track. Reduced/None snap. |
+| `node.leading_float(side: String, min_column_width: ?, min_text_width: ?) -> UiNode` | Float the first child of a full-width column at logical start or end; the following prose flows beside and below it. The native layout uses the figure's presented size, the column's horizontal gap and the figure's bottom margin. Below either width limit it stacks without remounting. Each prose child must have one ordinary wrapping text leaf. |
 | `node.motion(source: MotionSource) -> UiNode` | Declares a motion source for one property of the keyed node, replacing an earlier source for it; rerenders keep its progress. |
+| `node.motion_on_change(key: String) -> UiNode` | Plays this keyed node's finite motion sources only when `key` changes. Mount/remount presents terminal values without frames. Equal keys preserve progress; source-only changes settle. Does not control timelines, exits or progress bindings. |
 | `node.motion_particle_count(count: int) -> UiNode` | Declares how many particles the node draws itself, such as Canvas circles, against the `motion_particles` budget; it draws nothing. At least 0. |
 | `node.motion_replay_key(key: String) -> UiNode` | Replays the node's unchanged motion declarations whenever `key` changes, such as when a semantically new value arrives. |
 | `node.navigation_scope(depth: int) -> UiNode` | Declares a controlled navigation scope of depth 1–128. Its navigation_back handler receives #{ depth, source }; the focus-scoped NavigateBack action and Host.navigate_back propose to the innermost focused scope, without installing key bindings. |
+| `node.number_motion_source() -> UiNode` | Marks a keyed element with an ElementRef as a producer for number_value and optional number_weight tracks. |
 | `node.on(event: String, handler: FnPtr) -> UiNode` | Appends a target-phase handler for `event` (`click`, `pointer_down`, `wheel`, `key:escape`, ...), called with `ctx` and the payload. |
 | `node.on(event: String, handler: NativeHandlerRef) -> UiNode` | Appends a Rust native handler for `event` in the target phase; the handler's descriptor must declare `event`. |
 | `node.on_bubble(event: String, handler: FnPtr) -> UiNode` | Appends a bubble-phase handler for a pointer, wheel or `key:` event, run after target handlers, from inner to outer nodes. |
@@ -360,10 +436,19 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.on_focus_within_value(handler: FnPtr, value: ?) -> UiNode` | Appends a focus-within handler whose payload is `#{ focused, value }`: `focused` is `true` when focus enters the node or anything inside it and `false` when it leaves. Other focus-within handlers keep theirs. |
 | `node.on_hover_change(handler: FnPtr) -> UiNode` | Appends a handler called with `true` when the pointer enters the node and `false` when it leaves. |
 | `node.on_hover_value(handler: FnPtr, value: ?) -> UiNode` | Appends a hover handler whose payload is `#{ hovered, value }`: `hovered` is `true` on enter and `false` on leave. Other hover handlers keep theirs. |
-| `node.on_key_value(key: String, handler: FnPtr, value: ?) -> UiNode` | Appends a handler for `key` (`escape`, `ctrl+s`, ...) pressed while focus is on or inside the node, with its own `value` as payload. |
+| `node.on_key_value(key: String, handler: FnPtr, value: ?) -> UiNode` | Appends a handler for a key pressed while focus is on or inside the node, with its own `value` as payload. Use `plain+1` for an unmodified press only, `ctrl+s` for a chord, or an unqualified key such as `escape` for a fallback. |
 | `node.on_open_change(handler: FnPtr) -> UiNode` | Appends a handler for an overlay's `open_change` event, called with the requested open state, such as `false` on dismissal. |
+| `node.overflow_summary_for(count: int) -> UiNode` | In an intrinsic overflow_row, presents this cell only when exactly count ordinary cells are omitted (0 to 1024). A zero variant reserves width even when all ordinary cells fit. Summaries never remove a required cell; supply one variant per supported count. |
+| `node.paint_transition(duration_ms: int, easing: String) -> UiNode` | Retargets paint colors on the existing native node from their displayed sample. Supports solid paint, compatible layered gradient stops and compatible shadow colors. Does not animate layout or subtree opacity. Initial presentation and Reduced/None snap. |
+| `node.paint_transition(duration_ms: int, easing: String, options: Map) -> UiNode` | Adds a bounded delay_ms and opts into group_effects for resolved opacity and grayscale. Explicit opacity or grayscale tracks retain compositing ownership. Layout is unchanged; first presentation and Reduced/None snap. |
 | `node.progress_motion(binding: MotionProgressBinding) -> UiNode` | Attaches a natively driven motion such as `motion_hover(...)` or `motion_scroll(...)`, replacing one for the same property. |
+| `node.repeat_press() -> UiNode` | A keyed click target activates on primary mouse-down, then proposes its latest committed click payload while the same mouse press stays inside. Repeats begin after 400 ms and accelerate to a 40 ms floor. Changing callback identity, a failed transaction, leaving, disabling, suspension, unmount, or window deactivation ends the press. Keyboard, a touch tap, and automation stay one-shot. |
 | `node.retained_page(visible: bool) -> UiNode` | Retains the complete native page subtree while excluding hidden content from layout, input and presented accessibility. Invisible motion freezes; hiding alone never cancels business work. |
+| `node.sample_flex_share(group: MotionNumbers, index: int, cutoff: float) -> UiNode` | Projects a lane into a box with zero flex basis and grow proportional to the share of the sampled sum. Native layout reserves gaps and minimum widths first. Fractions at or below cutoff are absent from layout; cutoff is 0 to 1. |
+| `node.sample_numbers(group: MotionNumbers, projection: String, index: int) -> UiNode` | Projects one native numerical frame as accepted-fallback text (amount, percent, sum, weighted_sum, remaining, capacity_percent) or box width (width_fraction). Lanes are zero-based. |
+| `node.sample_partition(group: MotionNumbers, index: int, width: float, height: float, gap: float, tooltip: bool) -> UiNode` | Projects a numbered lane or the unallocated lane (-1) from one joint native layout into a box. Uses its authored style before all tracks are available. Tooltip mode anchors to a business lane; both modes use the same immutable frame. |
+| `node.sample_partition_visibility(group: MotionNumbers, index: int, width: float, height: float, gap: float, min_width: float, min_height: float) -> UiNode` | Shows a decorative box only when the current lane meets both minimum dimensions after its gutter. Uses its authored visibility until tracks are sampled. |
+| `node.sample_strip_hint(group: MotionNumbers, index: int, fallback: float) -> UiNode` | Positions the single child of a full-width box at a lane's sampled midpoint along the space left after measuring the child. Uses the authored fallback fraction (0 to 1) for a missing or empty lane; direction follows the view. |
 | `node.scrollbars(horizontal: String, vertical: String) -> UiNode` | Overlays themed scrollbars on a scrollable node; each axis is `auto`, `always` or `hidden`, which changes presentation only. |
 | `node.selectable(selectable: bool) -> UiNode` | Lets the user drag-select a `text()` node and copy it with the platform copy action; `true` on other nodes raises an error. |
 | `node.shared_layout(id: String) -> UiNode` | Gives the node the shared-layout identity `id` in the group of the enclosing `motion_group`, linking its layout motion. |
@@ -382,6 +467,7 @@ Methods of `UiNode`; each returns the node, so calls chain.
 | `node.with_style(style: Style) -> UiNode` | Merges `style` over the node's style: the properties it sets override earlier ones and the rest are kept. |
 | `node.with_table_column(index: int) -> UiNode` | Places the node in the 0-based column `index` (below 256) of the enclosing table track, which sets its width. |
 | `node.with_table_track(columns: Array, width_signals: Array) -> UiNode` | Makes a box a table column plan of `#{ key, width: #{ kind, value } }` maps; `width_signals` is `[]` or one override signal per column. |
+| `node.wrap_exclusion(side: String, width: ?, height: ?) -> UiNode` | Soft-wraps the first native rows around a leading rectangle on the physical left or right. Width and height are logical pixels measured from this text; lower rows use full width. Zero clears the exclusion. Does not position the figure or change a non-wrapping or truncated text node. |
 
 ## Style methods
 
@@ -393,11 +479,15 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.active(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the pointer is pressed on the node, over `hover` and `focus` paint. |
 | `style.aspect_ratio(ratio: ?) -> Style` | Sets the positive width/height ratio for GPUI layout. Leave one size automatic, e.g. width(relative(1.0)).aspect_ratio(1) for a square; two explicit dimensions take precedence. |
 | `style.auto_grid_columns(minimum: ?, preferred: ?, maximum: ?) -> Style` | Lays out Box children in responsive equal-width columns (1 <= minimum <= preferred <= maximum <= 1000000 logical pixels). Each bound is a number of logical pixels or a Length: px, rems or a theme token such as theme_length("metrics.label_column"), resolved natively in the node's environment on every frame, so the grid follows the tokens its cards use through theme and density changes. Bounds that resolve out of order lay out at the nearest valid ones (the minimum holds) and report a presentation diagnostic. Minimum determines auto-fit breakpoints, preferred supplies the unmeasured natural width hint, and maximum caps growth. Native width refinement after mount/resize does not run Rhai. Intrinsic row heights and child aspect_ratio use GPUI; the last row keeps the same tracks. One track per child; use explicit grids for spans. Not virtualized. |
+| `style.backdrop_blur(sigma: float) -> Style` | Gaussian-blurs the already-painted destination underneath this rounded border box, in the current composition surface. Sigma is 0..=64 logical pixels. Zero clears the filter; content stays sharp. |
+| `style.backdrop_blur(sigma: int) -> Style` | Gaussian-blurs the already-painted destination underneath this rounded border box, in the current composition surface. Integer sigma is 0..=64 logical pixels. Zero clears the filter; content stays sharp. |
 | `style.background(color: ColorValue) -> Style` | Fills the node with a solid color, literal or theme token; replaces a gradient set earlier on this style. |
+| `style.background(color: PaintColor) -> Style` | Replaces the whole background with native-context ink, e.g. alpha(current_color(),0.1). |
 | `style.block() -> Style` | Uses block layout: children stack vertically in normal flow and flex alignment does not apply. |
 | `style.border(width: Length) -> Style` | Sets the border width of all four edges in px or rem, replacing per-edge widths; a `relative` length is ignored. |
 | `style.border_bottom(width: Length) -> Style` | Sets the bottom border width in px or rem; a `relative` length is ignored. |
 | `style.border_color(color: ColorValue) -> Style` | Sets one border color, literal or theme token, for every edge. |
+| `style.border_color(color: PaintColor) -> Style` | Sets the border ink from the final native text color without changing the border widths. |
 | `style.border_dashed() -> Style` | Draws the borders dashed; one line style applies to every edge. |
 | `style.border_end(width: Length) -> Style` | Sets the border width of the logical end edge (right in LTR, left in RTL); overrides the physical edge there. |
 | `style.border_left(width: Length) -> Style` | Sets the left border width in px or rem; `border_start`/`border_end` override it on that side. |
@@ -408,6 +498,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.bottom(inset: AutoLength) -> Style` | Sets the bottom inset of a positioned node to auto. |
 | `style.bottom(inset: Length) -> Style` | Sets the bottom inset of a positioned node in px, rem or a `relative` fraction of the parent's height. |
 | `style.bottom(inset: SignedLength) -> Style` | Sets the bottom inset of a positioned node to a signed `offset_*` length, which may be negative. |
+| `style.bottom_fade(start: ?, end: ?) -> Style` | Fade the composed foreground to transparent between two border-box y fractions (0 <= start < end <= 1). This is a paint-only alpha mask, not a hit-test or accessibility clip. |
 | `style.clip() -> Style` | Clips the node's children to its bounds without making it scrollable. |
 | `style.col_span(span: int) -> Style` | Makes a grid item span `span` columns, from 1 to 1024. |
 | `style.cursor_crosshair() -> Style` | Shows the crosshair cursor while the pointer is over the node. |
@@ -419,6 +510,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.cursor_resize_y() -> Style` | Shows the up-down resize cursor while the pointer is over the node. |
 | `style.cursor_text() -> Style` | Shows the text I-beam cursor while the pointer is over the node. |
 | `style.disabled(style: Style) -> Style` | Merges the nested style over the node while it or an ancestor is disabled; `hover`, `active` and `focus` paint then stop. |
+| `style.edge_fade(axis: String, leading: ?, trailing: ?) -> Style` | Apply physical x or y alpha ramps to the already-composed subtree. Each distance is a logical-pixel value, zero leaves that edge unchanged, and short boxes shrink both ramps proportionally. Replaces a lower-priority fade without clipping input. |
 | `style.flex_basis(basis: AutoLength) -> Style` | Sets the flex basis to auto: the node starts from its own size before growing or shrinking. |
 | `style.flex_basis(basis: Length) -> Style` | Sets the main-axis size the node starts from before growing or shrinking, in px, rem or a `relative` fraction. |
 | `style.flex_col() -> Style` | Makes the node a flex container that stacks its children vertically. |
@@ -428,25 +520,41 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.flex_nowrap() -> Style` | Keeps a flex container's children on one line. |
 | `style.flex_row() -> Style` | Makes the node a flex container that lays its children out in a row from the logical start, mirrored in RTL. |
 | `style.flex_shrink(shrink: bool) -> Style` | Sets whether the node may shrink below its flex basis when space runs out: `true` lets it, `false` forbids it. |
+| `style.flex_shrink_weight(weight: float) -> Style` | Sets a finite shrink factor from 0 to 1000. In an overfull flex row or column, a higher factor gives up more of this child's flex basis; zero keeps its basis. |
+| `style.flex_shrink_weight(weight: int) -> Style` | Sets a finite shrink factor from 0 to 1000. In an overfull flex row or column, a higher factor gives up more of this child's flex basis; zero keeps its basis. |
 | `style.flex_wrap() -> Style` | Lets a flex container wrap its children onto further lines. |
 | `style.flex_wrap_reverse() -> Style` | Lets a flex container wrap its children onto further lines, stacked in reverse cross-axis order. |
-| `style.focus(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the node has keyboard focus, over `hover` paint and under `active`. A focused node's border takes `focus_ring` unless this style sets a border color, also without a `focus` call; it shows only where the node has a border width. |
+| `style.focus(style: Style) -> Style` | Paints the nested style's background, border color, text color, shadow and gradient while the node has visible focus. Without an exterior focus_ring declaration or an explicit focus border color, an existing border takes the focus_ring token; no border space is added. Use focus_ring(width, offset, color) for a non-layout exterior outline instead. |
+| `style.focus_ring(width: Length, offset: Length, color: ColorValue) -> Style` | Draws a non-layout focus ring when this node owns visible focus, following the view's focus-indicator policy. Inside an active group_focus/focus_within refinement, a visual part follows that explicitly borrowed focus scope instead. Merely inheriting focus never activates a base ring on every descendant. Width/offset accept px, rem or theme lengths, not percentages. The gap remains transparent and the ring follows the node's physical/logical radii and translation. Zero width clears an inherited ring. Does not enlarge the hit area; ancestor clipping still applies. |
+| `style.focus_ring(width: Length, offset: SignedLength, color: ColorValue) -> Style` | The signed-offset focus ring: offset_px(-2) with a 2px stroke paints inside the border box, without consuming layout space or a component-specific overlay. Signed rem offsets are also supported; auto and relative offsets are invalid. Completely collapsed inset geometry emits no paint. |
 | `style.focus_within(style: Style) -> Style` | Merges the nested style over the node while it or any descendant has keyboard focus. |
 | `style.font_fallbacks(families: Array) -> Style` | Sets the ordered fallback font families, 1 to 16 unique non-empty names, used for glyphs the primary font lacks. |
 | `style.font_family(family: String) -> Style` | Sets the font family by name, a system or registered font of at most 256 bytes; overrides the typography role's family. |
 | `style.font_feature(tag: String, value: int) -> Style` | Sets an OpenType feature: `tag` is four ASCII letters or digits like `"liga"`, `value` 0 to 65535; calls accumulate. |
 | `style.font_size(size: Length) -> Style` | Sets the font size in px or rem, overriding the typography role's; a `relative` length is ignored. |
 | `style.font_weight(weight: int) -> Style` | Sets the numeric font weight, 1 to 1000 (400 regular, 700 bold), overriding the typography role's. |
-| `style.gap(gap: Length) -> Style` | Sets the space between children on both axes, in px, rem or a `relative` fraction of the container. |
+| `style.foreground_blur(sigma: float) -> Style` | Gaussian-blurs the composed foreground subtree using sigma in 0..=64 logical pixels. Zero clears the filter. Leaves layout and input bounds unchanged; does not sample the backdrop. |
+| `style.foreground_blur(sigma: int) -> Style` | Gaussian-blurs the composed foreground subtree using integer sigma in 0..=64 logical pixels. Zero clears the filter. Leaves layout and input bounds unchanged; does not sample the backdrop. |
+| `style.foreground_grayscale(amount: float) -> Style` | Desaturates the composed foreground subtree in sRGB without changing its alpha. Zero clears the filter; one applies full grayscale. Layout and input geometry stay unchanged. Apple rendering only in this candidate. |
+| `style.foreground_grayscale(amount: int) -> Style` | Clears foreground grayscale with zero or sets full grayscale with one. The effect composes once across the subtree. |
+| `style.gap(gap: Length) -> Style` | Sets spacing on both axes, clearing earlier gap_x/gap_y declarations on this layer or lower layers. Accepts px, rem, theme lengths or a relative fraction of the container. |
+| `style.gap_x(gap: Length) -> Style` | Sets only horizontal spacing (column-gap) between children, in px, rem, theme lengths or relative units. Physical axis, unchanged by RTL or flex direction. A later gap() resets both axes. Applies to flex, wrapped rows, explicit grids and auto_grid_columns. |
+| `style.gap_y(gap: Length) -> Style` | Sets only vertical spacing (row-gap), including between wrapped flex lines, in px, rem, theme lengths or relative units. A later gap() resets both axes. Applies to flex, explicit grids and auto_grid_columns. |
+| `style.glyph_ink_sweep(ink: ColorValue, half_width: ?, travel: ?, phase: ?) -> Style` | Replaces part of the original monochrome ink with a triangular highlight, interpolating premultiplied color before applying atlas coverage once. Width and travel are text-box fractions; travel must be at least 1 plus twice the half width and at most 3. Uses the same glyph_sweep animation property. Apple rendering only in this candidate. |
+| `style.glyph_sweep(ink: ColorValue, half_width: ?, phase: ?) -> Style` | Overlays a triangular tint on already-shaped monochrome glyphs, without changing base ink or layout. Half width is 0.01–0.5 of the text extent; phase runs from 0 (outside left) to 1 (outside right). Animate phase with the glyph_sweep property. Apple rendering only in this candidate. |
 | `style.grid() -> Style` | Makes the node a grid container; `grid_cols` and `grid_rows` set its tracks. |
+| `style.grid_cell(column: int, row: int) -> Style` | Places an item at a one-based grid cell (1..32767). Multiple children can share a cell; native intrinsic sizing includes all of them, allowing normal/bold labels or other overlays to reserve their maximum size. Spans may be combined with this placement. Opacity 0 retains measurement; display none does not. |
 | `style.grid_cols(columns: int) -> Style` | Makes the node a grid with `columns` equal-width columns, from 1 to 1024. |
+| `style.grid_cols_max_content(columns: int) -> Style` | Makes the node a grid with 1..1024 independently max-content-sized columns, rather than equal fractional widths. Follows native text measurement and works with grid_cell(column,row). A later grid_cols or auto_grid_columns replaces this sizing mode. |
 | `style.grid_rows(rows: int) -> Style` | Makes the node a grid with `rows` equal-height rows, from 1 to 1024. |
+| `style.grid_rows_intrinsic(rows: int) -> Style` | Makes the node a grid with 1..1024 independently content-sized rows, with a min-content floor and max-content ceiling per track. A later grid_rows restores equal fractional rows. |
 | `style.group_focus(style: Style) -> Style` | Merges the nested style over the node while its nearest focusable ancestor-or-self with a `focus` style has keyboard focus. |
 | `style.group_hover(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the nearest ancestor with a `hover` style is hovered. |
 | `style.height(length: AutoLength) -> Style` | Sets the height to auto, so content and layout decide it. |
 | `style.height(length: Length) -> Style` | Sets the height in px, rem or a `relative` fraction of the parent's height. |
 | `style.hidden() -> Style` | Removes the node from layout and paint (display none); `invisible` keeps its space instead. |
 | `style.hover(style: Style) -> Style` | Paints the nested style's background, border color, text color and opacity while the pointer is over the node; `focus` and `active` paint win over it. |
+| `style.inherit_text_color() -> Style` | Removes a lower-layer text color so this node inherits its parent's text color. A later text_color declaration replaces this reset; this is not a contextual currentColor paint or an isolated opacity group. |
 | `style.inset_end(inset: AutoLength) -> Style` | Sets the inset from the logical end edge (right in LTR, left in RTL) to auto; overrides `left`/`right` on that side. |
 | `style.inset_end(inset: Length) -> Style` | Sets the inset from the logical end edge (right in LTR, left in RTL) in px, rem or a `relative` fraction; overrides `left`/`right` there. |
 | `style.inset_end(inset: SignedLength) -> Style` | Sets the inset from the logical end edge (right in LTR, left in RTL) to a signed `offset_*` length; overrides `left`/`right`. |
@@ -454,6 +562,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.inset_start(inset: Length) -> Style` | Sets the inset from the logical start edge (left in LTR, right in RTL) in px, rem or a `relative` fraction; overrides `left`/`right` there. |
 | `style.inset_start(inset: SignedLength) -> Style` | Sets the inset from the logical start edge (left in LTR, right in RTL) to a signed `offset_*` length; overrides `left`/`right`. |
 | `style.invisible() -> Style` | Hides the node but keeps its layout space; like CSS `visibility: hidden`, its subtree also leaves the accessibility tree. `visible` undoes it. |
+| `style.isolated_opacity(enabled: bool) -> Style` | Opt this base style into applying its opacity to the composited subtree once. Does not change layout, mouse targets, keyboard focus, or descendants' own opacity. Ordinary opacity retains per-primitive semantics without this switch. |
 | `style.italic() -> Style` | Sets the italic font style. |
 | `style.items_baseline() -> Style` | In a row, sets each text child's first baseline on the baseline of the row's own text style, as words in one line are set, so a smaller key legend sits on its label's baseline; other children align to the start. |
 | `style.items_center() -> Style` | Centers children on the container's cross axis. |
@@ -464,9 +573,14 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.justify_center() -> Style` | Centers children along the main axis. |
 | `style.justify_end() -> Style` | Packs children toward the end of the main axis; in an RTL row that is the left. |
 | `style.justify_start() -> Style` | Packs children toward the start of the main axis; in an RTL row that is the right. |
+| `style.layered_gradient(gradient: LayeredGradient) -> Style` | Replaces the whole background with a premultiplied sRGB layer stack. This also works in paint-only state styles. |
 | `style.left(inset: AutoLength) -> Style` | Sets the left inset of a positioned node to auto; `inset_start`/`inset_end` win there. |
 | `style.left(inset: Length) -> Style` | Sets the left inset of a positioned node in px, rem or a `relative` fraction of the parent's width; `inset_start`/`inset_end` win there. |
 | `style.left(inset: SignedLength) -> Style` | Sets the left inset of a positioned node to a signed `offset_*` length, which may be negative; `inset_start`/`inset_end` win there. |
+| `style.letter_spacing_em(spacing: float) -> Style` | Sets signed font-relative tracking, computed at the declaring element’s final font size. |
+| `style.letter_spacing_em(spacing: int) -> Style` | Sets signed font-relative tracking, computed at the declaring element’s final font size. |
+| `style.letter_spacing_px(spacing: float) -> Style` | Sets signed tracking in logical pixels. Zero clears previously declared tracking. |
+| `style.letter_spacing_px(spacing: int) -> Style` | Sets signed tracking in logical pixels. Zero clears previously declared tracking. |
 | `style.line_clamp(lines: int) -> Style` | Limits text to `lines` lines, from 1 to 10000, and hides the rest; `text_ellipsis` marks the cut. |
 | `style.line_height(height: Length) -> Style` | Sets the line height in px or rem, overriding the typography role's; a `relative` length is ignored. |
 | `style.linear_gradient(gradient: LinearGradientSpec) -> Style` | Fills the node with a two-stop gradient from `linear_gradient(#{angle, from, to})`; replaces a background set earlier on this style. |
@@ -512,6 +626,10 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.opacity(opacity: float) -> Style` | Sets the node's opacity from 0 (transparent) to 1 (opaque); a bound signal or animation overrides it. |
 | `style.opacity(opacity: int) -> Style` | Sets the node's opacity to 0 (transparent) or 1 (opaque); a bound signal or animation overrides it. |
 | `style.overflow_hidden() -> Style` | Clips children to the node's bounds on both axes, without scrolling. |
+| `style.overflow_priority(priority: int) -> Style` | Marks an intrinsic overflow-row cell optional, with priority 0..65535. Lower priorities collapse first; equal-priority cells form an atomic cohort, useful for a whole set of page numbers. Only affects layout-bearing children of an enabled overflow_row. A later overflow_required() restores a required cell. |
+| `style.overflow_required() -> Style` | Clears a lower-layer overflow_priority; the overflow row must retain this cell even when required content cannot fit. |
+| `style.overflow_row() -> Style` | Uses a centered, nonwrapping intrinsic row for Box children. Cells keep their measured native widths/heights, not flex grow/shrink distribution. Insufficient width omits lower overflow_priority cohorts from native layout, paint, keyboard and presented semantics; required cells stay. Equal priorities collapse together. Reserves the full intrinsic line height and preserves logical ownership/state/effects; this is not a retained-page lifecycle pause. Decisions happen before paint without a Rhai resize loop. Grid, wrapping, baseline or stretching layouts override the mode. Fragment styles do not create a cell: wrap a group in row/box to give it one priority. |
+| `style.overflow_row(enabled: bool) -> Style` | Enables overflow_row, or explicitly clears a lower-layer overflow layout with false. Disabling leaves ordinary layout declarations unchanged. |
 | `style.overflow_scroll() -> Style` | Makes the node scroll on both axes, clipping its children to its bounds. |
 | `style.overflow_x_scroll() -> Style` | Makes the node scroll horizontally; wheel input stays on that axis unless the node calls `translate_wheel()`. |
 | `style.overflow_y_scroll() -> Style` | Makes the node scroll vertically; wheel input stays on that axis unless the node calls `translate_wheel()`. |
@@ -524,6 +642,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.padding_top(padding: Length) -> Style` | Sets the top padding in px, rem or a `relative` fraction. |
 | `style.padding_x(padding: Length) -> Style` | Sets the left and right padding in px, rem or a `relative` fraction; `padding_start`/`padding_end` still override. |
 | `style.padding_y(padding: Length) -> Style` | Sets the top and bottom padding in px, rem or a `relative` fraction. |
+| `style.paint_reveal_x(radius: ?, progress: ?) -> Style` | Shows a rounded left-origin fraction of composed paint. Radius is logical pixels, progress runs from 0 (empty) to 1 (ordinary paint), and animated samples use paint_reveal_x. Layout and pointer/focus geometry are unchanged. Apple renderer only in the candidate. |
 | `style.radius(radius: Length) -> Style` | Rounds all four corners in px or rem, replacing per-corner radii; a `relative` length is ignored. |
 | `style.radius_bottom_left(radius: Length) -> Style` | Rounds the bottom-left corner in px or rem; `radius_start`/`radius_end` override it on that side. |
 | `style.radius_bottom_right(radius: Length) -> Style` | Rounds the bottom-right corner in px or rem; `radius_start`/`radius_end` override it on that side. |
@@ -536,11 +655,13 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.right(inset: Length) -> Style` | Sets the right inset of a positioned node in px, rem or a `relative` fraction of the parent's width; `inset_start`/`inset_end` win there. |
 | `style.right(inset: SignedLength) -> Style` | Sets the right inset of a positioned node to a signed `offset_*` length, which may be negative; `inset_start`/`inset_end` win there. |
 | `style.row_span(span: int) -> Style` | Makes a grid item span `span` rows, from 1 to 1024. |
+| `style.scroll_edge_fade(axis: String, leading: ?, trailing: ?) -> Style` | Fade physical viewport edges only while more content is hidden in that direction. Distances are logical pixels, and the node must scroll on the selected axis. Paint follows its native scroll handle without changing layout or hit geometry. |
 | `style.self_center() -> Style` | Centers this node on its parent's cross axis, overriding the parent's `items_*`. |
 | `style.self_end() -> Style` | Aligns this node to the end of its parent's cross axis, overriding `items_*`: the bottom in a row, the logical end in a column (left in RTL). |
 | `style.self_start() -> Style` | Aligns this node to the start of its parent's cross axis, overriding `items_*`: the top in a row, the logical start in a column (right in RTL). |
 | `style.self_stretch() -> Style` | Stretches this node across its parent's cross axis, overriding the parent's `items_*`. |
-| `style.shadow(shadow: ShadowSpec) -> Style` | Sets one box shadow from `shadow(#{x, y, blur, spread, color})`, in logical pixels, replacing an earlier one. |
+| `style.shadow(shadow: ShadowSpec) -> Style` | Sets one box shadow from `shadow(#{x, y, blur, spread, color, inset})`, in logical pixels, replacing an earlier stack. |
+| `style.shadows(layers: Array) -> Style` | Replaces the shadow stack with at most 32 shadow(...) values, topmost first. Supports inset and signed spread. An empty array clears the stack. Shadows consume no layout space and work in hover/active/focus refinements. |
 | `style.text_center() -> Style` | Centers text horizontally. |
 | `style.text_color(color: ColorValue) -> Style` | Sets the text color, literal or theme token; descendants inherit it. |
 | `style.text_ellipsis() -> Style` | Truncates text that overflows the available width with an ellipsis at the end. |
@@ -551,6 +672,7 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.top(inset: AutoLength) -> Style` | Sets the top inset of a positioned node to auto. |
 | `style.top(inset: Length) -> Style` | Sets the top inset of a positioned node in px, rem or a `relative` fraction of the parent's height. |
 | `style.top(inset: SignedLength) -> Style` | Sets the top inset of a positioned node to a signed `offset_*` length, which may be negative. |
+| `style.transform(affine: Map) -> Style` | Sets a visual affine without changing layout. Options: rotate, scale_x, scale_y, skew_x, skew_y, origin_x and origin_y. Angles are degrees, origins are border-box fractions (default 0.5). An empty map clears a lower-priority transform. |
 | `style.translate_x(offset: float) -> Style` | Moves the painted node right by `offset` logical pixels (negative moves left, not mirrored in RTL); layout is unchanged. |
 | `style.translate_x(offset: int) -> Style` | Moves the painted node right by `offset` logical pixels (negative moves left, not mirrored in RTL); layout is unchanged. |
 | `style.translate_y(offset: float) -> Style` | Moves the painted node down by `offset` logical pixels (negative moves up); layout is unchanged. |
@@ -561,6 +683,11 @@ Methods of the `style()` builder; each returns the style, so calls chain.
 | `style.whitespace_nowrap() -> Style` | Keeps text on one line without wrapping. |
 | `style.width(length: AutoLength) -> Style` | Sets the width to auto, so content and layout decide it. |
 | `style.width(length: Length) -> Style` | Sets the width in px, rem or a `relative` fraction of the parent's width. |
+| `style.without_active() -> Style` | Removes a recipe's active refinement, retaining idle paint and other states. |
+| `style.without_bottom_fade() -> Style` | Clear the alpha fade (one-way or both edges) from a lower-priority style. |
+| `style.without_glyph_sweep() -> Style` | Clears a glyph sweep set by a lower style layer. |
+| `style.without_hover() -> Style` | Removes a recipe's hover refinement, retaining idle paint and other states. |
+| `style.without_paint_reveal_x() -> Style` | Clear a rounded paint reveal from a lower-priority style. |
 
 ## Methods of other values
 
@@ -571,13 +698,21 @@ Properties and methods of handles, signals, documents, collections and canvas va
 | `asset_id.to_string() -> String` | Returns the namespaced logical asset ID, such as `core/check`. |
 | `canvas_command.clip_rect(x: float, y: float, width: float, height: float) -> CanvasCommand` | Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it, replacing an earlier clip; other commands raise an error. |
 | `canvas_command.clip_rect(x: ?, y: ?, width: ?, height: ?) -> CanvasCommand` | Clips a path command to an axis-aligned Canvas-local rectangle that does not rotate with it, replacing an earlier clip; other commands raise an error. Numbers may be integers or floats. |
+| `canvas_command.peak_route() -> CanvasPeakRoute` | Extracts 2–1024 vertices of a single open polyline, including matching morph endpoints, for a retained peak placement. Selects the first highest sampled vertex, using the command transform and authored layout coordinates before any view-box projection. |
 | `canvas_command.rotate(degrees: float) -> CanvasCommand` | Sets the path's rotation in degrees about the Canvas origin, replacing an earlier one; other commands raise an error. |
 | `canvas_command.rotate(degrees: int) -> CanvasCommand` | Sets the path's rotation in degrees about the Canvas origin, replacing an earlier one; other commands raise an error. |
 | `canvas_command.scale(factor: float) -> CanvasCommand` | Sets the path's positive uniform scale, applied before rotation and translation and replacing an earlier one; other commands raise an error. |
 | `canvas_command.scale(factor: int) -> CanvasCommand` | Sets the path's positive uniform scale, applied before rotation and translation and replacing an earlier one; other commands raise an error. |
+| `canvas_command.stroke_cap(cap: String) -> CanvasCommand` | Sets both open stroke ends to butt, round or square; default butt. Applies to lines and stroked/morph paths, including the newly trimmed endpoint. Paint and hit testing share the actual native tessellation; filled-only commands and invalid names are errors. |
+| `canvas_command.stroke_dash(on: ?, off: ?) -> CanvasCommand` | Sets a repeating stroke dash in the same units as stroke width. Each length must be in [0.5, 4096]. Paint and hits share the projected, interpolated path; paths beyond the native dash-work budget are neither painted nor hit. |
+| `canvas_command.stroke_join(join: String) -> CanvasCommand` | Sets stroke corners to miter, miter_clip, round or bevel; default miter with the native default miter limit. Applies only to lines and stroked/morph paths. Paint and hit geometry use the same options; invalid names and filled-only commands are errors. |
 | `canvas_command.translate(x: float, y: float) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. |
 | `canvas_command.translate(x: ?, y: ?) -> CanvasCommand` | Sets the path's translation, applied after scale and rotation and replacing an earlier one; other commands raise an error. Numbers may be integers or floats. |
-| `element_ref.key -> String` | The component-local key the ref was declared with in `element_ref(key)`. |
+| `canvas_peak_route.project_y(source_top: ?, source_bottom: ?, display_top: ?, display_bottom: ?) -> CanvasPeakRoute` | Clamps the winning ordinate to the authored range and maps it to the display range before placement offsets. Vertex ranking and canvas_peak_paint_above still use the original coordinates; clipped values do not become ties. Ranges must be finite and ordered. |
+| `canvas_scene.path_pulse(path_key: String, radius: ?, paint: ?, hollow: bool, reverse: bool) -> CanvasScene` | Adds or replaces one decorative dot with a fading trail on a non-empty static path. The Canvas node's path_progress samples the marker by arc length in the presented projection, starting at zero if no motion is supplied. Hollow draws an outline; reverse samples the same path backward. The decoration owns no hit target. |
+| `canvas_scene.threshold_bands(polyline: CanvasCommand, limit_y: ?, paint: Style) -> CanvasScene` | Uses the node's path_progress (default one) to sample a static or morph polyline with 2–1024 stationary, increasing x coordinates. Consecutive y samples strictly below limit_y open midpoint-edged bands onto a single viewport-anchored Style background. Bands paint before commands in the fixed viewport, have no hit target, and are replaced, or cleared by a style without a background. |
+| `canvas_scene.view_box(x: ?, y: ?, width: ?, height: ?) -> CanvasScene` | Fits source coordinates into the native drawable uniformly and centered (xMidYMid meet). Paint and presented hit testing share this mapping; layout still follows Style and theme lengths. Origins and dimensions must fit f32, dimensions must be at least f32::MIN_POSITIVE, and origin+dimension must remain distinct in f64. Raw scene hit tests/path samples remain in source coordinates; clipping remains an explicit Style/path choice. |
+| `element_ref.key -> String` | The opaque component-local lookup key. Use it with `ctx.focus(key)` or geometry and scroll commands; a namespaced ref key need not equal the original business ID. |
 | `element_ref.scope -> String` | A readable `<component path>:<key>` scope label for diagnostics. Displayed paths are not a lossless identity encoding; use semantic_id for accessibility relationships. |
 | `element_ref.semantic_id -> String` | An opaque, deterministic, whitespace-free accessibility ID encoded losslessly from the typed component path and ref key. Use it for accessibility_id and labelled_by/described_by relationships; unlike diagnostic scope, embedded path delimiters cannot alias another path. |
 | `event_response.capture_pointer() -> EventResponse` | Captures the pointer for the handler's node, so its later move and up events go to that node until released. |
@@ -586,6 +721,8 @@ Properties and methods of handles, signals, documents, collections and canvas va
 | `event_response.stop() -> EventResponse` | Stops the event from reaching further nodes; the current node's remaining handlers for this phase still run. |
 | `event_response.stop_immediate() -> EventResponse` | Stops the event at once: no further handler runs, on this node or any other. |
 | `image_decode_handle.to_string() -> String` | Returns a debug label for the pending decode, `image-decode#<n>`. |
+| `motion_numbers.with_capacity(source: ElementRef) -> MotionNumbers` | Samples capacity from a separate number_motion_source in the same component. The capacity source does not contribute to the lane sum. |
+| `motion_numbers.with_capacity(capacity: float) -> MotionNumbers` | Pins a nonnegative, finite capacity to a MotionNumbers group. Width percentages divide by the greater of capacity and total usage; remaining and capacity_percent use the accepted capacity. |
 | `native_chart_data.revision -> int` | Returns the data's revision, which increases by one each time the Host replaces its datasets. |
 | `native_chart_data.len(dataset: String) -> int` | Returns the number of rows in `dataset` at the current revision, or 0 for an unknown dataset. |
 | `native_collection.key_field -> String` | The name of the row field that holds each row's unique key. |
@@ -603,9 +740,15 @@ Properties and methods of handles, signals, documents, collections and canvas va
 | `span.background(color: ColorValue) -> Span` | Paints `color` behind the span's text, as for inline code. |
 | `span.bold() -> Span` | Sets the span's text in bold. |
 | `span.color(color: ColorValue) -> Span` | Sets the span's text color. |
+| `span.ink_from(style: Style) -> Span` | Applies the style's authored text color to this inline span, if present. The paragraph still owns font size, alignment, wrapping and geometry. |
 | `span.italic() -> Span` | Sets the span's text in italic. |
 | `span.motion(source: MotionSource) -> Span` | Declares an `opacity` motion for the span, replacing an earlier one; the span needs `with_key`, and other properties are rejected. |
+| `span.strikethrough() -> Span` | Draws a strikethrough using the final span text color without changing text geometry. |
 | `span.typography(role: String) -> Span` | Sets the span's family and weight from the typography `role`, such as `code`; size and line height stay the paragraph's. |
+| `span.underline() -> Span` | Underlines the final span text without changing its layout. |
+| `span.underline(width: float, color: ColorValue) -> Span` | Underlines the span with a separate color and a finite width of 0–16 logical pixels without changing layout. |
+| `span.underline(width: float, color: ColorValue, baseline_offset: float) -> Span` | Underlines the span with its own color and a finite width of 0–16 logical pixels, at an offset of -16–32 logical pixels from every wrapped line's baseline. |
+| `span.underline_hover(duration_ms: int, easing: String) -> Span` | Transitions an explicit underline to the span's glyph color while its exact inline_prose link is hovered. Duration is 0–60000ms; the application motion preference applies. |
 | `span.with_key(key: String) -> Span` | Names the span, unique within its text, so a span `motion` can target it. |
 | `subscription_handle.to_string() -> String` | Returns a debug label, `subscription#<n>`. |
 | `task_handle.to_string() -> String` | Returns a debug label, `task#<n>`. |
@@ -678,6 +821,7 @@ Official components wrap them; application components may too.
 | `scrollbar_thumb_style` | style | — | Background override for the corresponding shared scrollbar part. |
 | `scrollbar_track_style` | style | — | Background override for the corresponding shared scrollbar part. |
 | `search_style` | style | required | Style of the find bar that Cmd-F opens. |
+| `show_gutter` | bool | `true` | Reserves and paints the line number gutter. With `false`, the text and viewport wrapping use its space. |
 | `show_line_numbers` | bool | `true` | Shows 1-based line numbers in the gutter on the first row of each line; with `false` the gutter stays, empty. |
 | `source` | string or native document | required | The document: an inline string or a `NativeTextDocument` from `ctx.get_native_text_document`. |
 | `tab_size` | integer 1–16 | `4` | Columns between tab stops; a tab expands to the next stop for display and wrapping. |
@@ -751,13 +895,14 @@ Official components wrap them; application components may too.
 
 ### DragSourcePrimitive
 
-`gpui_rhai::DragSourcePrimitive(props)` · `gpui_rhai.drag_source`. Native drag source that carries a typed payload to a `DropZonePrimitive` and reports `drag_end`; `components/drag_source` wraps it.
+`gpui_rhai::DragSourcePrimitive(props)` · `gpui_rhai.drag_source`. Native drag source that carries a typed payload to a `DropZonePrimitive` and reports `drag_start` and `drag_end` to the still-mounted source; `components/drag_source` wraps it.
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `disabled` | bool | `false` | Ignores presses and keys and removes the source from the tab order. |
 | `keyboard_target` | string or `()` | — | `target_id` of the drop zone that Enter or Space on the focused source drops onto; `()` for no keyboard drop. |
 | `on_drag_end` | callback or `()` | — | Called with the outcome when a started drag is dropped or cancelled, or a keyboard drop runs. |
+| `on_drag_start` | callback or `()` | — | Called once when a pointer drag crosses its threshold. No callback for a tap or keyboard-only drop. |
 | `operation` | `"copy"` or `"move"` | required | Whether dropping copies or moves the item; only drop zones that list it in `operations` accept the drag. |
 | `payload` | any value | required | Bounded application data the drag carries; the drop zone gets it back in its `drop` payload. |
 | `payload_type` | string | required | Type name of the payload; only drop zones that list it in `payload_types` accept the drag. |
@@ -767,6 +912,7 @@ Official components wrap them; application components may too.
 | Event | Payload | Description |
 |---|---|---|
 | `drag_end` | object | Emitted when a started drag ends or a keyboard drop runs; the payload says whether and where it was accepted, or cancelled. |
+| `drag_start` | none | Emitted when a pointer gesture becomes an active application drag. |
 
 ### DraggablePrimitive
 
@@ -818,9 +964,10 @@ Official components wrap them; application components may too.
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `extra_width` | number 0–16384 | — | Logical pixels added once to the measured width, such as room for a sort icon; 0 when omitted. |
+| `extra_width` | length or number 0–16384 | — | Additional width added once, as logical pixels or an absolute Length (including late-bound theme/reading-scale lengths); 0 when omitted. |
 | `group` | signal | required | The column's optional-float signal, shared with its `ColumnResizePrimitive`; auto-fit takes the widest measure. |
 | `horizontal_padding` | length | — | Padding added on both sides of the text, in pixels or rems, such as the cell's inset; 0 when omitted. |
+| `inline_border_width` | length | — | Total inline border width, added once after padding and extra content; pixels or rems, including late-bound theme lengths; 0 when omitted. |
 | `text` | string | required | Text measured as one line in the text style inherited here; place it inside the cell it measures. |
 
 ### MarkdownViewPrimitive
@@ -829,6 +976,9 @@ Official components wrap them; application components may too.
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `active_tag_link` | string or `()` | — | Matching tag link that uses tag_active_style. |
+| `annotation_style` | style | — | Style of the Markdown annotation part. |
+| `annotations` | array of object (at most 128) | — | Visible text UTF-8 byte ranges painted with annotation_style. No effect on parsing, hit tests, or selection. |
 | `code_block_actions` | array of `"copy"` (at most 1) | — | Code block actions; copy writes code without Markdown fences. |
 | `code_block_style` | style | required | Style of the Markdown code_block part. |
 | `error_style` | style | required | Style of the Markdown error part. |
@@ -849,6 +999,9 @@ Official components wrap them; application components may too.
 | `source` | string or native document | required | Inline Markdown or an opaque Host-owned native text document. |
 | `table_max_height` | length or `()` | — | Viewport height of a table over 1,000 cells, which scrolls with an always-shown scrollbar; smaller tables lay out in full. Absolute-resolvable (px/rem); 400 logical pixels unset. |
 | `table_style` | style | required | Style of the Markdown table part. |
+| `tag_active_style` | style | — | Style of the Markdown tag_active part. |
+| `tag_link_prefix` | string or `()` | — | Matching link destinations retain link activation but use the inline tag style. |
+| `tag_style` | style | — | Style of the Markdown tag part. |
 
 | Event | Payload | Description |
 |---|---|---|
@@ -1076,22 +1229,52 @@ Official components wrap them; application components may too.
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `autofocus` | bool | `false` | Focuses the field once when it first mounts, unless it is disabled. |
+| `code_active_style` | style | — | Outline, radius and optional halo of the active cell. |
+| `code_alphanumeric` | bool | — | Accept uppercase-normalized Latin letters as well as digits in the segmented editor. |
+| `code_caret_style` | style | — | Text color of the caret in an unfilled active cell. |
+| `code_cell_style` | style | — | Cell metrics, radius, edge, fill, shadows, and digit size. |
+| `code_centered` | bool | — | Centers cells and confirmation content inside the editor's allocated bounds. |
+| `code_discarding` | bool | — | Uses the committed primitive progress to fade a failed attempt in reverse cell order before clearing. |
+| `code_filled_style` | style | — | Paint refinement for occupied cells. |
+| `code_length` | integer 1–24 | — | Draw this many fixed-position code cells over the same editor. Constrains committed input to the configured alphabet. |
+| `code_separator` | integer 0–23 | — | Before which logical cell to draw a divider; zero or outside the current code length draws none. |
+| `code_separator_style` | style | — | Separator width, height and color. |
+| `code_success_icon_style` | style | — | Width and ink of the confirmation check. |
+| `code_success_label` | string or `()` | — | The native confirmation label used for constrained sizing; code_verified switches to the non-editable pill. |
+| `code_success_style` | style | — | Success capsule fill, edge, shape, height, text, and spacing. |
+| `code_verified` | bool | — | Presents the non-editable confirmation while keeping the measured footprint. |
 | `disabled` | bool | `false` | Blocks focus, clicks and edits and dims the field. |
+| `intrinsic_width` | bool | — | Prefer the actual shaped text width including the caret, rather than a stable 20-digit preference. Still shrinks to the allocated width. |
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
+| `on_cancel` | callback or `()` | — | Handles Escape only with an editable, nonempty, unmarked draft. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, paste, cut, undo, redo or committed IME composition. |
+| `on_decrement` | callback or `()` | — | Optional handler for native accessibility decrement. |
+| `on_empty_backspace` | callback or `()` | — | Called for Backspace in an empty editor. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
+| `on_increment` | callback or `()` | — | Optional handler for native accessibility increment. |
+| `on_move_before` | callback or `()` | — | Called on the backward logical arrow with an empty selection at offset zero. Use to move into a preceding chip or field. |
+| `on_paste` | callback or `()` | — | If set, replaces the change notification for paste with a single notification containing the raw clipboard and the resulting single-line value. |
+| `on_set_value` | callback or `()` | — | Optional override for a complete accessibility SetValue edit. |
 | `on_submit` | callback or `()` | — | Called with the current text on Enter unless disabled, read-only or composing; without it, Enter reaches the field's ancestors. |
 | `placeholder` | string or `()` | — | Hint text shown in the placeholder part color while `value` is empty. |
 | `placeholder_style` | style | — | Text color (or background) of the placeholder; falls back to theme text_muted, then inherited text color, never a fixed alpha. |
 | `read_only` | bool | `false` | Keeps focus, selection and copy but blocks every edit. |
+| `submit_on_tab` | bool | — | With on_submit, forward Tab submits nonblank text instead of traversing focus. Empty input and Shift-Tab still traverse normally. |
 | `typography` | string | required | Theme typography role, such as `control`, that sets the font family, size, weight and line height. |
 | `value` | string | required | The field's text; controlled, so store each `change` payload here or the next render restores the old text; text still being composed with an IME stays until it commits. |
 
 | Event | Payload | Description |
 |---|---|---|
 | `blur` | none | Emitted when the field loses keyboard focus; the payload is `()`. |
+| `cancel` | none | Escape when the editor has an editable draft and no IME composition. |
 | `change` | string | Emitted after each edit, undo and redo and when IME composition commits, not during it; the payload is the full new text. |
+| `decrement` | none | Native accessibility decrement. |
+| `empty_backspace` | none | Backspace when the editor has no text. |
 | `focus` | none | Emitted when the field gains keyboard focus; the payload is `()`. |
+| `increment` | none | Native accessibility increment. |
+| `move_before` | none | A logical backward move at the first insertion point, outside IME composition. |
+| `paste` | object | Raw clipboard text and the resulting single-line value after replacing the native selection. |
+| `set_value` | any value | A complete native accessibility edit, with string or numeric data. |
 | `submit` | string | Emitted when Enter is pressed in an enabled field; the payload is the current text. |
 
 ### TextareaPrimitive
@@ -1100,12 +1283,16 @@ Official components wrap them; application components may too.
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `alt_submit_key` | `"alt_enter"` or `"mod_enter"` or `()` | — | Shortcut for on_alt_submit. Defaults to Alt+Enter; mod_enter uses Cmd+Enter on macOS or Ctrl+Enter elsewhere. Must differ from submit_key. |
 | `autofocus` | bool | `false` | Focuses the field once when it first mounts, unless it is disabled. |
 | `caret_style` | style | required | Its background, or else its text color, colors the caret; theme `accent` when it sets neither. |
 | `disabled` | bool | `false` | Blocks focus, clicks and edits and dims the field. |
 | `max_length` | integer 0–1000000 or `()` | — | Most graphemes the text may hold; typing, pasting and IME commits are cut to fit, and `()` means no limit. |
 | `max_rows` | integer 1–1000 | `8` | Most visible rows when `rows` is unset, at least `min_rows`; longer text scrolls vertically. |
+| `max_viewport_height` | length or `()` | — | Optional positive pixel-resolving cap for the native scroll viewport, excluding outer editor padding and borders. |
 | `min_rows` | integer 1–1000 | `3` | Fewest visible rows when `rows` is unset; the field grows with its wrapped text from here up to `max_rows`. |
+| `min_viewport_height` | length or `()` | — | Optional positive pixel-resolving floor for the native scroll viewport, excluding outer editor padding and borders. |
+| `on_alt_submit` | callback or `()` | — | Optional alternate submission (Alt+Enter by default). Uses the same native focus and composition guards as the main submit. |
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit, newline, paste, cut, undo, redo or committed IME composition. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
@@ -1122,6 +1309,7 @@ Official components wrap them; application components may too.
 
 | Event | Payload | Description |
 |---|---|---|
+| `alt_submit` | string | Emitted by Alt+Enter only when explicitly enabled; reports the full text without changing it. |
 | `blur` | none | Emitted when the field loses keyboard focus; the payload is `()`. |
 | `change` | string | Emitted after each edit and when IME composition commits, not during it; the payload is the full new text. |
 | `focus` | none | Emitted when the field gains keyboard focus; the payload is `()`. |

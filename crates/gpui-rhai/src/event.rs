@@ -406,6 +406,10 @@ impl UiEventBinding {
         self
     }
 
+    pub(crate) fn clear_value(&mut self) {
+        self.value = None;
+    }
+
     /// The handler's own payload value, when it was declared with one.
     #[must_use]
     pub const fn value(&self) -> Option<&UiValue> {

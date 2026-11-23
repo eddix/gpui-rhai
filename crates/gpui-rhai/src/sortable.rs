@@ -416,19 +416,22 @@ fn register_pointer_source(
             focus.focus(window, cx);
         }
         let spec = drag_spec(&context, &config, view);
-        let on_tap: Option<crate::interaction::TapHandler> = config.tap.then(|| {
+        let on_tap: Option<crate::interaction::DragPhaseHandler> = config.tap.then(|| {
             let tap_context = context.clone();
             let key = config.item_key.clone();
             Rc::new(move |window: &mut Window, cx: &mut App| {
                 tap_context.propose("tap", UiValue::String(key.clone()), window, cx);
-            }) as crate::interaction::TapHandler
+            }) as crate::interaction::DragPhaseHandler
         });
         context.begin_application_drag(
             spec,
             event.position,
             config.threshold,
             |_, _, _, _| {},
-            on_tap,
+            crate::interaction::ApplicationDragPhases {
+                start: None,
+                tap: on_tap,
+            },
             window,
             cx,
         );

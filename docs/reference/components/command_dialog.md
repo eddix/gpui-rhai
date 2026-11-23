@@ -5,7 +5,7 @@
 
 Controlled modal presentation of Command without registering a global shortcut.
 
-The command fills the panel edge to edge: the panel has no padding, its search line spans the panel, and a visible title sits on the rows' inset above it.
+The command fills the dialog's content width without adding a second panel inset. The dialog owns its corner clearance; a visible title sits on the rows' text edge above it.
 
 State: caller owns open, query, and active_value.
 
@@ -25,10 +25,13 @@ command_dialog::CommandDialog(#{ key: "palette", open: open, query: query, activ
 | `dialog_part_styles` | map of style | `#{}` | Part styles for the inner Dialog, such as `panel` and `title`, merged over the edge-to-edge layout. |
 | `disabled` | bool | `false` | Disables the search field and the list's arrow, Home, End and Enter keys. |
 | `empty_text` | string | `""` | Message shown in place of the list when no command matches. Empty, the localized `command.empty` message, `No commands found` without one. |
-| `items` | array of object (at most 4096) or native collection | required | Commands to rank: item maps, or a native collection keyed by value with the same fields but no `action`. |
+| `footer` | node or `()` | — | Optional application-owned footer content for the inner Command. |
+| `footer_visible` | bool | `true` | Shows the inner Command's keyboard-hint footer. |
+| `items` | array of object (at most 4096) or native collection | required | Exactly the Command item schema, including rich labels, hints, glyphs/logo tiles and the NativeCollection data path. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Dialog title, also the accessible name of the dialog, the search field and the list. |
-| `max_visible` | integer 1–24 | `8` | Rows the list shows before it scrolls; group headings count as rows. |
+| `max_visible` | integer 1–24 | `8` | Inner Command viewport capacity in row units; headings use natural measured height. |
+| `narrow_at` | number 0–16384 | `480.0` | Forwards the inner Command's committed-card width boundary; it is independent of window viewport class. |
 | `on_action` | callback or `()` | — | Called with the command value when a row is clicked or Enter activates the highlighted command. |
 | `on_active_change` | callback or `()` | — | Called with the command value to highlight on Up, Down, Home, End or hover; store it as `active_value`. |
 | `on_escape` | callback or `()` | — | Called on Escape; when set, Escape no longer closes the dialog, so the caller can close it or go back a level. |
@@ -46,13 +49,17 @@ command_dialog::CommandDialog(#{ key: "palette", open: open, query: query, activ
 
 | Field | Type | Required or default | Description |
 |---|---|---|---|
-| `action` | string or `()` | — | Registered action dispatched on activation; it also supplies the shortcut legend and can disable the row. |
-| `disabled` | bool | `false` | Dims the command; it cannot be activated and keyboard navigation skips it. |
-| `group` | string or `()` | — | Heading the command is listed under; groups keep the source order of their first match. |
-| `keywords` | array of string (at most 32) | `[]` | Extra terms matched against the query; a keyword match ranks just below the same label match. |
-| `label` | string | required | Non-empty text ranked against the query and shown on the row. |
-| `shortcut` | string or `()` | — | Key legend shown at the row end, written like `cmd-k`; overrides the binding of `action`. |
-| `value` | string | required | Unique, non-empty id reported by `active_change` and `action`. |
+| `action` | string or `()` | — | Registered action dispatched on activation; its enabled state and shortcut are inherited. |
+| `content` | node or `()` | — | Rich visual label; ranking and accessible name still use label. |
+| `disabled` | bool | `false` | Dimmed and excluded from activation and navigation. |
+| `group` | string or `()` | — | Heading; groups preserve first matching source order. |
+| `hint` | string or `()` | — | Inline secondary text, also searched with keyword precedence. |
+| `icon` | node or string or `()` | — | Non-interactive glyph node or logical asset ID; the leading slot is reserved when empty. |
+| `keywords` | array of string (at most 32) | `[]` | Additional search terms with keyword precedence. |
+| `label` | string | required | Required searchable/accessibility text; content may replace its visual label. |
+| `logo` | node or string or `()` | — | Non-interactive logo node or logical asset ID on a tile; takes precedence over icon. |
+| `shortcut` | string or `()` | — | Row-end shortcut legend overriding a registered action binding. |
+| `value` | string | required | Unique non-empty value reported by active_change and action. |
 
 ## Events
 
@@ -64,13 +71,19 @@ command_dialog::CommandDialog(#{ key: "palette", open: open, query: query, activ
 | `open_change` | `on_open_change` | bool | Emitted when Escape, an outside click or `close_on_action` closes the dialog; the payload is `false`. |
 | `query_change` | `on_query_change` | string | Emitted on each edit of the search field; the payload is the new query. |
 
+## Slots
+
+| Slot | Required | Multiple | Description |
+|---|---|---|---|
+| `footer` | no | no | Optional content passed to the Command footer. |
+
 ## Parts
 
 Style a part with `part_styles` or in `ui/styles.rhai`: `command`, `dialog`, `root`.
 
 ## Theme
 
-- Tokens: `metrics.inset`, `radius.lg`
+- Tokens: `metrics.command_title_inset`, `metrics.inset`, `radius.lg`
 - Environment: `density`
 
 ## Dependencies

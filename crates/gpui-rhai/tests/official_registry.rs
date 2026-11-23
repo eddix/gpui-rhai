@@ -9,10 +9,11 @@ use common::{
     mount, new_runtime, official_modules, official_source, render, root_path, try_render_in,
 };
 use gpui_rhai::{
-    AssetData, ColorValue, ComponentStateSchema, InMemoryAssetProvider, ModuleId, OpaqueHandle,
-    RuntimeEngine, ScriptCallback, ScriptLifecycle, StateField, UiNodeKind, UiRuntimeState,
-    UiValue, ValueSchema, parse_component_header,
+    AssetData, BackgroundFill, ColorValue, ComponentStateSchema, InMemoryAssetProvider, ModuleId,
+    OpaqueHandle, RuntimeEngine, ScriptCallback, ScriptLifecycle, StateField, UiNodeKind,
+    UiRuntimeState, UiValue, ValueSchema, parse_component_header,
 };
+use gpui_rhai::{ThemeManager, ThemeSelection};
 use gpui_rhai_registry as registry;
 
 const DATE_PICKER_TEST_APP: &str = r#"
@@ -110,6 +111,16 @@ fn target_handler(node: &gpui_rhai::UiNode, event: &str) -> (ScriptCallback, UiV
             .unwrap(),
         node.handler_payload(event).cloned().unwrap(),
     )
+}
+
+fn command_key_scope(command: &gpui_rhai::UiNode) -> &gpui_rhai::UiNode {
+    let UiNodeKind::Box { children } = command.kind() else {
+        panic!("Command owns a container")
+    };
+    children
+        .iter()
+        .find(|child| child.key().is_some_and(|key| key.as_str() == "card"))
+        .expect("search/results key scope")
 }
 
 fn assert_table_columns_delegate_width_to_native_track(columns: &[gpui_rhai::UiNode]) {
@@ -211,9 +222,9 @@ fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode], titles: &[&str]) {
     let edge = |node: &gpui_rhai::UiNode, side: &str| {
         let style = &node.style().base;
         assert_eq!(style.position, Some(gpui_rhai::PositionMode::Absolute));
-        if side == "start" {
+        if side == "inner" {
             assert_eq!(
-                style.inset_start,
+                style.inset_end,
                 Some(gpui_rhai::LayoutLength::Signed(
                     gpui_rhai::SignedLength::Pixels(-4.0)
                 ))
@@ -227,27 +238,16 @@ fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode], titles: &[&str]) {
             );
         }
     };
-    assert_eq!(resize_handles(&headers[0]), [] as [&gpui_rhai::UiNode; 0]);
-    for (index, header) in headers.iter().enumerate().skip(1) {
+    for (index, header) in headers.iter().enumerate() {
         let handles = resize_handles(header);
         let last = index + 1 == headers.len();
-        assert_eq!(handles.len(), if last { 2 } else { 1 }, "header {index}");
-        // The handle at the left edge of cell i resizes column i - 1.
+        assert_eq!(handles.len(), 1, "header {index}");
+        // The column owns its own ref, handle, preview and commit.
         assert_eq!(
             handles[0].attributes().get("label"),
-            Some(&UiValue::String(format!(
-                "Resize {} column",
-                titles[index - 1]
-            )))
+            Some(&UiValue::String(format!("Resize {} column", titles[index])))
         );
-        edge(handles[0], "start");
-        if last {
-            assert_eq!(
-                handles[1].attributes().get("label"),
-                Some(&UiValue::String(format!("Resize {} column", titles[index])))
-            );
-            edge(handles[1], "end");
-        }
+        edge(handles[0], if last { "end" } else { "inner" });
     }
 }
 
@@ -365,6 +365,25 @@ fn find_virtual_collection_viewport(node: &gpui_rhai::UiNode) -> Option<&gpui_rh
     }
 }
 
+fn find_text<'a>(node: &'a gpui_rhai::UiNode, content: &str) -> Option<&'a gpui_rhai::UiNode> {
+    match node.kind() {
+        UiNodeKind::Text { text } | UiNodeKind::RichText { text, .. }
+            if text.as_str() == content =>
+        {
+            Some(node)
+        }
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            children.iter().find_map(|child| find_text(child, content))
+        }
+        UiNodeKind::Overlay {
+            trigger,
+            content: child,
+            ..
+        } => find_text(trigger, content).or_else(|| find_text(child, content)),
+        _ => None,
+    }
+}
+
 fn find_label<'a>(node: &'a gpui_rhai::UiNode, label: &str) -> Option<&'a gpui_rhai::UiNode> {
     if node.attributes().get("label") == Some(&UiValue::String(label.to_owned())) {
         return Some(node);
@@ -390,6 +409,30 @@ fn find_role<'a>(node: &'a gpui_rhai::UiNode, role: &str) -> Option<&'a gpui_rha
             children.iter().find_map(|child| find_role(child, role))
         }
         _ => None,
+    }
+}
+
+#[test]
+fn command_and_dialog_embed_the_same_canonical_literal_item_contract() {
+    let expected: serde_json::Value =
+        serde_json::from_str(registry::COMMAND_ITEMS_CONTRACT_JSON).unwrap();
+    let expected = UiValue::from_dynamic(rhai::serde::to_dynamic(expected).unwrap()).unwrap();
+    let mut engine = rhai::Engine::new_raw();
+    engine.set_max_operations(20_000);
+    for id in ["components/command", "components/command_dialog"] {
+        let source = official_source(id);
+        let literal = source
+            .split_once("/* @contract command-items:start */")
+            .unwrap()
+            .1
+            .split_once("/* @contract command-items:end */")
+            .unwrap()
+            .0;
+        let actual = UiValue::from_dynamic(engine.eval::<rhai::Dynamic>(literal).unwrap()).unwrap();
+        assert_eq!(
+            actual, expected,
+            "{id}: regenerate using scripts/sync-component-contracts.mjs"
+        );
     }
 }
 
@@ -518,7 +561,9 @@ fn button_and_label_compile_export_and_render_together() {
             .generation(),
         compiled.generation()
     );
-    assert_eq!(runtime.component_exports().unwrap().len(), 2);
+    // Importing Button also registers its shared activity dependency, but
+    // does not instantiate a Spinner or add a third rendered child above.
+    assert_eq!(runtime.component_exports().unwrap().len(), 3);
 }
 
 #[test]
@@ -625,7 +670,11 @@ fn unlabeled_icon_is_decorative_presentation() {
 }
 
 /// A bundled palette layered over the bundled token base, as an app loads it.
-fn load_bundled(engine: &RuntimeEngine, file: &str, source: &str) -> gpui_rhai::ThemeVariant {
+fn load_bundled(file: &str, source: &str) -> gpui_rhai::ThemeVariant {
+    // Every case models an independent view's startup. Raw Theme source
+    // helpers do not start/reset a RuntimeEngine render session themselves;
+    // don't charge one case for repeatedly loading other views' token bases.
+    let engine = RuntimeEngine::new();
     let base =
         gpui_rhai::load_token_base(engine.engine(), "tokens.rhai", registry::TOKEN_BASE_SOURCE)
             .unwrap();
@@ -641,9 +690,8 @@ fn load_bundled(engine: &RuntimeEngine, file: &str, source: &str) -> gpui_rhai::
 
 #[test]
 fn official_default_theme_pair_satisfies_one_semantic_contract() {
-    let engine = RuntimeEngine::new();
-    let light = load_bundled(&engine, "default_light.rhai", registry::DEFAULT_LIGHT_THEME);
-    let dark = load_bundled(&engine, "default_dark.rhai", registry::DEFAULT_THEME);
+    let light = load_bundled("default_light.rhai", registry::DEFAULT_LIGHT_THEME);
+    let dark = load_bundled("default_dark.rhai", registry::DEFAULT_THEME);
     assert_eq!(light.family, dark.family);
     assert_eq!(light.mode, gpui_rhai::ThemeMode::Light);
     assert_eq!(dark.mode, gpui_rhai::ThemeMode::Dark);
@@ -666,19 +714,8 @@ fn official_default_theme_pair_satisfies_one_semantic_contract() {
 fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
     use gpui_rhai::{ColorResolver, Length};
     let engine = RuntimeEngine::new();
-    let typography = [
-        ("caption", 12.0, 18.0, 400),
-        ("body_small", 13.0, 20.0, 400),
-        ("body", 14.0, 22.0, 400),
-        ("subtitle", 16.0, 24.0, 600),
-        ("title", 18.0, 26.0, 600),
-        ("heading", 20.0, 28.0, 600),
-        ("display", 24.0, 32.0, 600),
-        ("display_large", 32.0, 40.0, 600),
-        ("label", 12.0, 16.0, 400),
-        ("code", 13.0, 20.0, 400),
-    ];
-    for &(name, source) in registry::BUNDLED_THEME_SOURCES {
+    let base = load_bundled("modern_light.rhai", registry::MODERN_LIGHT_THEME);
+    for &(name, source) in registry::BUNDLED_PALETTE_SOURCES {
         let palette = gpui_rhai::load_theme_source(engine.engine(), name, source).unwrap();
         assert!(
             palette.tokens.spacing.is_empty()
@@ -687,34 +724,22 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
                 && palette.tokens.namespaces.is_empty(),
             "{name}: palettes must contain colors only"
         );
-        let theme = load_bundled(&engine, name, source);
-        // Radius follows the shape: md is a control's rounded rectangle by control height
-        // (4px up to 24px, 6px from 28px), xs a box inside it at half that, pill a marker's
-        // capsule, lg a floating surface and sm a fixed small box. Layout takes no radius
-        // role at all.
+        let theme = load_bundled(name, source);
+        // Alternate palettes use the same full Modern base. Exact Modern and
+        // Clean source measurements have a separate four-preset test matrix.
         for density in ["comfortable", "compact"] {
             for size in ["xs", "sm", "md", "lg"] {
                 let pairs = environment(&[("density", density), ("size", size)]);
-                let resolve = |token: Length| match theme.resolve_length_in(token, &pairs) {
-                    Some(Length::Pixels(value)) => value,
-                    other => panic!("{name} {density} {size}: {other:?}"),
-                };
-                let height = resolve(Length::token("metrics.control").unwrap());
-                let control = if height <= 24.0 { 4.0 } else { 6.0 };
-                for (radius, pixels) in [
-                    ("xs", control / 2.0),
-                    ("sm", 4.0),
-                    ("pill", 999.0),
-                    ("md", control),
-                    ("lg", 8.0),
-                ] {
-                    let actual = resolve(Length::theme_radius(radius).unwrap());
-                    assert!(
-                        (actual - pixels).abs() < 0.01,
-                        "{name}: radius {radius} is {actual} in a {height}px {density} {size} \
-                         control, expected {pixels}"
-                    );
-                }
+                assert_eq!(
+                    theme.tokens.length_snapshot(&pairs),
+                    base.tokens.length_snapshot(&pairs),
+                    "{name} {density} {size}"
+                );
+                assert_eq!(
+                    theme.tokens.typography_snapshot(&pairs),
+                    base.tokens.typography_snapshot(&pairs),
+                    "{name} {density} {size}"
+                );
             }
         }
         // A third surface halfway between the canvas and raised cards.
@@ -724,24 +749,14 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
             Some(colors["surface"].mix(colors["surface_raised"], 0.5)),
             "{name}: surface.chrome"
         );
-        for &(role, size, line_height, weight) in &typography {
-            let token = theme.resolve_typography(role).unwrap();
-            assert_eq!(token.size, Length::Pixels(size), "{name}:{role}");
-            assert_eq!(
-                token.line_height,
-                Length::Pixels(line_height),
-                "{name}:{role}"
-            );
-            assert_eq!(token.weight, weight, "{name}:{role}");
-        }
         let control = Length::token("metrics.control").unwrap();
-        assert_eq!(theme.resolve_length(control), Some(Length::Pixels(32.0)));
+        assert_eq!(theme.resolve_length(control), Some(Length::Pixels(36.0)));
         assert_eq!(
             theme.resolve_length_in(
                 control,
                 &environment(&[("density", "compact"), ("size", "sm")])
             ),
-            Some(Length::Pixels(24.0))
+            Some(Length::Pixels(28.0))
         );
         assert_eq!(
             theme
@@ -783,8 +798,7 @@ fn the_token_base_no_longer_declares_a_corner_style() {
 #[test]
 fn field_padding_follows_the_vertical_gap_between_frame_and_text() {
     use gpui_rhai::{ColorResolver, Length};
-    let engine = RuntimeEngine::new();
-    let theme = load_bundled(&engine, "default_light.rhai", registry::DEFAULT_LIGHT_THEME);
+    let theme = load_bundled("default_light.rhai", registry::DEFAULT_LIGHT_THEME);
     let pixels = |token: &str, pairs: &[(&str, &str)]| match theme
         .resolve_length_in(Length::token(token).unwrap(), &environment(pairs))
     {
@@ -800,41 +814,26 @@ fn field_padding_follows_the_vertical_gap_between_frame_and_text() {
         },
         None => panic!("{role}: missing"),
     };
-    // Fields have a 2px frame on each side.
-    let frame = 2.0;
+    // Field edges are painted shadows, not layout borders. Source horizontal
+    // insets are an explicit scale rather than a formula derived from the
+    // previous design's text height and 2px border.
     for density in ["comfortable", "compact"] {
-        for size in ["xs", "sm", "md", "lg"] {
+        for (index, size) in ["xs", "sm", "md", "lg"].into_iter().enumerate() {
             let pairs = [("density", density), ("size", size)];
-            let (font, _) = type_size("control", &pairs);
-            let vertical = (pixels("metrics.control", &pairs) - 2.0 * frame - font) / 2.0;
+            let (_, line_height) = type_size("control", &pairs);
+            assert!(pixels("metrics.field_h", &pairs) >= line_height);
             let pad = pixels("metrics.field_pad", &pairs);
-            // About 1.4 times the vertical gap; the nudges stay within a pixel.
-            assert!(
-                (pad - 1.4 * vertical).abs() <= 1.0,
-                "{density} {size}: field_pad {pad} for a vertical gap of {vertical}"
-            );
-            assert!(pad >= 3.0, "{density} {size}: the caret needs room");
-            assert!(
-                pad < pixels("metrics.control_pad", &pairs),
-                "{density} {size}: fields stay tighter than buttons"
-            );
-            if size == "md" {
-                let inset = pixels("metrics.inset", &pairs);
-                assert!(
-                    (frame + pad - inset).abs() < 0.01,
-                    "{density}: md field text starts at {}, rows at {inset}",
-                    frame + pad
-                );
-            }
-            // Textarea pads evenly: field_pad less the half-leading of its text role puts
-            // the first line's type as far below the frame as the column sits inside it.
-            let role = if size == "xs" { "body_small" } else { "body" };
-            let (font, line_height) = type_size(role, &pairs);
-            let expected = (pad - (line_height - font) / 2.0).round().max(0.0);
+            let expected = if density == "compact" {
+                [6.0, 8.0, 10.0, 12.0]
+            } else {
+                [8.0, 10.0, 12.0, 14.0]
+            };
+            assert_eq!(pad, expected[index], "{density} {size}");
             let multiline = pixels("metrics.multiline_pad", &pairs);
-            assert!(
-                (multiline - expected).abs() < 0.01,
-                "{density} {size}: multiline_pad {multiline}, expected {expected}"
+            assert_eq!(
+                multiline,
+                if density == "compact" { 6.0 } else { 8.0 },
+                "{density} {size}"
             );
         }
     }
@@ -868,9 +867,8 @@ fn hue_distance(left: f64, right: f64) -> f64 {
 
 #[test]
 fn bundled_palettes_meet_the_theme_authoring_constraints() {
-    let engine = RuntimeEngine::new();
-    for &(name, source) in registry::BUNDLED_THEME_SOURCES {
-        let theme = load_bundled(&engine, name, source);
+    for &(name, source) in registry::BUNDLED_PALETTE_SOURCES {
+        let theme = load_bundled(name, source);
         let color = |token: &str| theme.tokens.color(token).unwrap();
         for foreground in ["text_primary", "text_muted"] {
             for background in ["surface", "surface_raised", "surface_hover", "selection"] {
@@ -950,9 +948,8 @@ fn bundled_palettes_meet_the_theme_authoring_constraints() {
 
 #[test]
 fn the_token_base_materializes_complete_derived_palettes() {
-    let engine = RuntimeEngine::new();
     for &(name, source) in registry::BUNDLED_THEME_SOURCES {
-        let theme = load_bundled(&engine, name, source);
+        let theme = load_bundled(name, source);
         for token in [
             "syntax.comment",
             "syntax.string",
@@ -1004,7 +1001,16 @@ fn the_token_base_materializes_complete_derived_palettes() {
             );
         }
         let table_selection = theme.tokens.color("table.selection").unwrap();
-        assert_eq!(table_selection.as_rgba_hex() & 0xff, 0xff);
+        // Exact presets include translucent selection surfaces; compare the
+        // composited result, while calibrated alternate palettes stay opaque.
+        if registry::BUNDLED_PALETTE_SOURCES
+            .iter()
+            .any(|(palette, _)| *palette == name)
+        {
+            assert_eq!(table_selection.as_rgba_hex() & 0xff, 0xff);
+        } else {
+            assert_ne!(table_selection.as_rgba_hex() & 0xff, 0);
+        }
         assert_ne!(table_selection, theme.tokens.colors["surface"]);
     }
 }
@@ -1092,7 +1098,13 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
             Some(&UiValue::String("tablist".to_owned()))
         );
         let track = &tabs.style().base;
-        assert_eq!(track.background, token("surface_hover"));
+        assert_eq!(
+            track
+                .background
+                .as_deref()
+                .and_then(BackgroundFill::as_solid_value),
+            token("surface_hover").as_ref()
+        );
         assert_eq!(
             track.padding,
             EdgeLengths::all(Length::theme_spacing("xxs").unwrap())
@@ -1112,44 +1124,61 @@ fn tabs_and_table_draw_state_surfaces_from_theme_tokens() {
             panic!("the selected tab must hold its thumb");
         };
         let thumb = selected[0].style();
-        assert_eq!(thumb.base.background, token("surface_raised"));
+        assert_eq!(
+            thumb
+                .base
+                .background
+                .as_deref()
+                .and_then(BackgroundFill::as_solid_value),
+            token("surface_raised").as_ref()
+        );
         assert_eq!(
             thumb.base.radii,
             CornerLengths::all(Length::theme_radius("xs").unwrap())
         );
         assert_eq!(
             thumb.group_focus.as_ref().unwrap().border_color,
-            token("focus_ring")
+            token("focus_ring").map(Into::into)
         );
     }
 
     assert_table_state_surfaces(&children[2]);
 }
 
-/// The Table of the state-surface specimen: label-voice header, metrics.row rows, the
+/// The Table of the state-surface specimen: distinct header/row metrics, the
 /// selection tint filling the band with no indicator bar, and the cursor frame, each a
 /// part the caller can restyle.
 fn assert_table_state_surfaces(table_node: &gpui_rhai::UiNode) {
     use gpui_rhai::Length;
     let token = |name: &str| Some(ColorValue::Token(name.to_owned()));
-    let row = Length::token("metrics.row").unwrap();
+    let row = Length::token("metrics.table_row").unwrap();
+    let header = Length::token("metrics.table_header").unwrap();
     let UiNodeKind::Box { children: table } = table_node.kind() else {
         panic!("Table must be a Box composition");
     };
-    assert_eq!(table[0].style().base.height, Some(row.into()));
+    assert_eq!(table[0].style().base.height, Some(header.into()));
     let UiNodeKind::Box { children: headers } = table[0].kind() else {
         panic!("Table header must be a row");
     };
     assert_eq!(headers[0].style().base.typography.as_deref(), Some("label"));
-    assert_eq!(headers[0].style().base.height, Some(row.into()));
+    assert_eq!(headers[0].style().base.height, Some(header.into()));
     let UiNodeKind::VirtualCollection { spec } = table[1].kind() else {
         panic!("Table body must be a virtual collection");
     };
+    assert_eq!(spec.item_height, Some(row));
     let (selected, unselected) = (&spec.realized[&0], &spec.realized[&1]);
     for row_node in [selected, unselected] {
         assert_eq!(row_node.style().base.height, Some(row.into()));
     }
-    assert_eq!(selected.style().base.background, token("table.selection"));
+    assert_eq!(
+        selected
+            .style()
+            .base
+            .background
+            .as_deref()
+            .and_then(BackgroundFill::as_solid_value),
+        token("table.selection").as_ref()
+    );
     assert_eq!(selected.style().base.text_color, token("accent"));
     assert_eq!(unselected.style().base.text_color, token("text_primary"));
     let UiNodeKind::Box { children: cells } = selected.kind() else {
@@ -1162,10 +1191,17 @@ fn assert_table_state_surfaces(table_node: &gpui_rhai::UiNode) {
         "a selected row draws no indicator bar"
     );
     let cursor = &cells[cells.len() - 1].style();
-    assert_eq!(cursor.base.background, token("danger"));
+    assert_eq!(
+        cursor
+            .base
+            .background
+            .as_deref()
+            .and_then(BackgroundFill::as_solid_value),
+        token("danger").as_ref()
+    );
     assert_eq!(
         cursor.group_focus.as_ref().unwrap().border_color,
-        token("focus_ring")
+        token("focus_ring").map(Into::into)
     );
 }
 
@@ -1596,6 +1632,48 @@ fn context_menu_and_sheet_use_generic_pointer_and_edge_overlay_policies() {
 }
 
 #[test]
+fn a_long_valid_command_shortcut_has_bounded_keycap_presentation() {
+    fn labels(node: &gpui_rhai::UiNode, label: &str) -> usize {
+        let here =
+            usize::from(node.attributes().get("label") == Some(&UiValue::String(label.to_owned())));
+        here + match node.kind() {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
+                .iter()
+                .map(|child| labels(child, label))
+                .sum::<usize>(),
+            UiNodeKind::VirtualCollection { spec } => spec
+                .realized
+                .values()
+                .map(|child| labels(child, label))
+                .sum::<usize>(),
+            _ => 0,
+        }
+    }
+    let shortcut = std::iter::repeat_n("cmd-k", 600)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let label = gpui_rhai::ActionShortcut::from_text(&shortcut).label;
+    let (mut engine, compiled) = compile_official(
+        "ui/long_shortcut.rhai",
+        &format!(
+            r#"
+        import "components/command" as command;
+        fn view(ctx){{command::Command(#{{key:"long",label:"Commands",query:"",active_value:"long",
+            items:[#{{value:"long",label:"Long shortcut",shortcut:{shortcut:?}}}]}})}}
+    "#
+        ),
+    );
+    let runtime = common::new_runtime();
+    let lifecycle = common::mount(&mut engine, compiled, &runtime);
+    let root = lifecycle.root().unwrap();
+    assert_eq!(
+        labels(root, &label),
+        1,
+        "one literal cap, not 1200 native keycap nodes or an invalid grid"
+    );
+}
+
+#[test]
 fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
     let (mut engine, compiled) = compile_official(
         "ui/command.rhai",
@@ -1633,7 +1711,17 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
     assert_eq!(spec.data.len(), 2, "one group header plus one fuzzy match");
     assert_eq!(
         spec.height, None,
-        "rows size the viewport through metrics.row"
+        "the list fits measured content instead of a fixed numeric height"
+    );
+    assert_eq!(
+        spec.max_height,
+        Some(
+            gpui_rhai::Length::token("metrics.command_row")
+                .unwrap()
+                .scaled(8.0)
+                .unwrap()
+        ),
+        "max_visible bounds the native viewport in themed command-row units"
     );
     assert_eq!(
         find_virtual_collection_viewport(command)
@@ -1641,17 +1729,11 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
             .style()
             .base
             .height,
-        Some(
-            gpui_rhai::Length::token("metrics.row")
-                .unwrap()
-                .scaled(2.0)
-                .unwrap()
-                .into()
-        ),
-        "small command sets must shrink to whole rows"
+        None,
+        "the parent must not turn a natural group heading into a full command row; native tests verify its measured total"
     );
     assert_eq!(spec.reveal_key.as_deref(), Some("item:open"));
-    let (enter, payload) = target_handler(command, "key:enter");
+    let (enter, payload) = target_handler(command_key_scope(command), "key:enter");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &enter, payload)
         .unwrap();
@@ -1706,13 +1788,36 @@ fn command_array_items_keep_text_semantics_with_rich_visual_content() {
     let UiNodeKind::Box { children } = item.kind() else {
         panic!("command item must remain a composed row");
     };
-    // The label and its key legend share a baseline row; the rich content leads it.
-    let UiNodeKind::Box { children: words } = children[0].kind() else {
-        panic!("the label and legend share one row");
+    assert_eq!(
+        children[0].key().map(gpui_rhai::NodeKey::as_str),
+        Some("leading"),
+        "the leading decoration has one reserved slot, even when empty"
+    );
+    let UiNodeKind::Box { children: words } = children[1].kind() else {
+        panic!("the label and hint share one baseline row");
     };
     assert_eq!(
         words[0].key().map(gpui_rhai::NodeKey::as_str),
         Some("rich-command-content")
+    );
+}
+
+#[test]
+fn command_array_decorations_reject_paths_even_when_a_logo_would_hide_the_icon() {
+    let (mut engine, compiled) = compile_official(
+        "ui/invalid_command_asset.rhai",
+        r#"
+        import "components/command" as command;
+        fn view(ctx){command::Command(#{key:"commands",label:"Commands",query:"",active_value:"a",
+            items:[#{value:"a",label:"Alpha",icon:"../private/icon.svg",logo:text("L")}]})}
+    "#,
+    );
+    let runtime = new_runtime();
+    let mut lifecycle = lifecycle_for(&engine, compiled, &runtime);
+    let error = lifecycle.start(&mut engine).unwrap_err().to_string();
+    assert!(
+        error.contains("../private/icon.svg"),
+        "logical asset validation is not conditional on which decoration wins: {error}"
     );
 }
 
@@ -1730,8 +1835,15 @@ fn icon_button_owns_a_square_target_and_selected_icon_state() {
             }
         "#,
     );
-    let root = render(&mut engine, &compiled);
-    let control = gpui_rhai::Length::token("metrics.control").unwrap();
+    let theme = load_bundled("modern_dark.rhai", registry::MODERN_DARK_THEME);
+    let runtime = new_runtime();
+    runtime.borrow_mut().theme = Some(
+        ThemeManager::from_variants([theme.clone()], ThemeSelection::new("Modern", "Dark"))
+            .unwrap(),
+    );
+    let lifecycle = mount(&mut engine, compiled, &runtime);
+    let root = lifecycle.root().unwrap();
+    let control = gpui_rhai::Length::token("metrics.icon_button_h").unwrap();
     assert_eq!(root.style().base.width, Some(control.into()));
     assert_eq!(root.style().base.height, Some(control.into()));
     assert_eq!(
@@ -1747,20 +1859,27 @@ fn icon_button_owns_a_square_target_and_selected_icon_state() {
     );
     assert_eq!(root.attributes().get("pressed"), Some(&UiValue::Bool(true)));
     // A selected ghost IconButton fills its square with the selection block.
-    assert_eq!(
-        root.style().base.background,
-        Some(ColorValue::Token("selection".to_owned()))
-    );
-    assert_eq!(
-        root.style().base.text_color,
-        Some(ColorValue::Token("text_primary".to_owned()))
+    let gpui_rhai::ThemeTokenValue::Style(selected) =
+        theme.tokens.token("button.selected").unwrap()
+    else {
+        panic!("selected button recipe");
+    };
+    assert_eq!(root.style().base.background, selected.base.background);
+    assert_eq!(root.style().base.text_color, selected.base.text_color);
+    assert!(
+        root.style().hover.is_none(),
+        "selected button does not change its fill on hover"
     );
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("IconButton must render a centered row");
     };
-    let icon = gpui_rhai::Length::token("metrics.icon").unwrap();
-    assert_eq!(children[0].style().base.width, Some(icon.into()));
-    assert_eq!(children[0].style().base.height, Some(icon.into()));
+    let UiNodeKind::Box { children: icons } = children[0].kind() else {
+        panic!("the icon's entry animation must wrap its content");
+    };
+    let icon = gpui_rhai::Length::token("metrics.icon_button_icon").unwrap();
+    assert_eq!(icons.len(), 1);
+    assert_eq!(icons[0].style().base.width, Some(icon.into()));
+    assert_eq!(icons[0].style().base.height, Some(icon.into()));
 }
 
 #[test]
@@ -1830,7 +1949,8 @@ fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
     );
     assert_eq!(spec.reveal_key.as_deref(), Some("open"));
 
-    let (enter, payload) = target_handler(lifecycle.root().unwrap(), "key:enter");
+    let (enter, payload) =
+        target_handler(command_key_scope(lifecycle.root().unwrap()), "key:enter");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &enter, payload)
         .unwrap();
@@ -1937,7 +2057,7 @@ fn command_array_and_native_models_share_one_enabled_active_sequence() {
                     ("key:up", expected_previous),
                     ("key:down", "c"),
                 ] {
-                    let (_, payload) = target_handler(root, event);
+                    let (_, payload) = target_handler(command_key_scope(root), event);
                     assert_eq!(payload, UiValue::String(expected.to_owned()), "{event}");
                 }
             }
@@ -2132,9 +2252,13 @@ fn official_combobox_groups_and_routes_keyboard_in_rhai() {
         "ui/combobox_keyboard.rhai",
         r#"
             import "components/combobox" as combobox;
+            fn state_schema(){#{fields:#{opened:#{schema:#{type:"bool"},
+                "default":#{type:"bool",value:false}}}}}
+            fn opened(ctx, value){ ctx.set_state("opened", value); }
             fn view(ctx) {
                 combobox::Combobox(#{
-                    key: "grouped", label: "Grouped choices", open: false, selected: [], query: "",
+                    key: "grouped", label: "Grouped choices", open: ctx.get_state("opened"),
+                    on_open_change:Fn("opened"), selected: [], query: "",
                     options: [
                         #{ value: "a", label: "Alpha", group: "Second" },
                         #{ value: "b", label: "Beta", group: "First", disabled: true },
@@ -2148,7 +2272,32 @@ fn official_combobox_groups_and_routes_keyboard_in_rhai() {
     let runtime = new_runtime();
     let mut lifecycle = mount(&mut engine, compiled, &runtime);
 
-    let collection = find_virtual_collection(lifecycle.root().unwrap()).unwrap();
+    assert!(
+        find_virtual_collection(lifecycle.root().unwrap()).is_none(),
+        "closed menu does not build option rows"
+    );
+    let component = lifecycle.root().unwrap().component_root().unwrap().clone();
+    let (callback, payload) = target_handler(lifecycle.root().unwrap(), "key:down");
+    invoke_and_render(&mut lifecycle, &mut engine, &callback, payload);
+    assert_eq!(
+        runtime.borrow().component_state.get(&component, "active"),
+        Some(&UiValue::String("a".to_owned()))
+    );
+    let event = runtime
+        .borrow_mut()
+        .drain_batch()
+        .events
+        .into_iter()
+        .find(|event| {
+            event.event.name == "open_change" && event.event.payload == UiValue::Bool(true)
+        })
+        .expect("arrow down proposes opening");
+    lifecycle
+        .invoke_component_event_transactional(&engine, event)
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    let collection =
+        find_virtual_collection(lifecycle.root().unwrap()).expect("accepted opening builds rows");
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
         unreachable!()
     };
@@ -2176,18 +2325,6 @@ fn official_combobox_groups_and_routes_keyboard_in_rhai() {
             "option:d",
         ]
     );
-
-    let component = lifecycle.root().unwrap().component_root().unwrap().clone();
-    let (callback, payload) = target_handler(lifecycle.root().unwrap(), "key:down");
-    invoke_and_render(&mut lifecycle, &mut engine, &callback, payload);
-    assert_eq!(
-        runtime.borrow().component_state.get(&component, "active"),
-        Some(&UiValue::String("a".to_owned()))
-    );
-    let events = runtime.borrow_mut().drain_batch().events;
-    assert!(events.iter().any(|event| {
-        event.event.name == "open_change" && event.event.payload == UiValue::Bool(true)
-    }));
 
     let UiNodeKind::Overlay { content, .. } = lifecycle.root().unwrap().kind() else {
         unreachable!()
@@ -2425,7 +2562,7 @@ fn official_table_is_public_data_backed_rhai_composition() {
     // A selected row carries the selection tint across the band, then the keyboard cursor
     // frame after its cells; no indicator bar.
     assert!(matches!(
-        row.style().base.background.as_ref(),
+        row.style().base.background.as_deref().and_then(BackgroundFill::as_solid_value),
         Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
     ));
     assert_eq!(row_children.len(), 5);
@@ -2505,7 +2642,7 @@ fn official_table_groups_array_rows_with_controlled_collapse() {
         .find(|row| row.attributes().get("selected") == Some(&UiValue::Bool(true)))
         .expect("selected grouped row");
     assert!(matches!(
-        selected.style().base.background.as_ref(),
+        selected.style().base.background.as_deref().and_then(BackgroundFill::as_solid_value),
         Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
     ));
     let first_group = spec.realized.get(&0).expect("first group header");
@@ -2671,9 +2808,13 @@ fn official_pagination_is_pure_rhai_composition() {
     );
     let runtime = new_runtime();
     runtime.borrow_mut().locale = Some(english(&engine));
+    let theme = load_bundled("modern_dark.rhai", registry::MODERN_DARK_THEME);
+    runtime.borrow_mut().theme =
+        Some(ThemeManager::from_variants([theme], ThemeSelection::new("Modern", "Dark")).unwrap());
     let lifecycle = mount(&mut engine, compiled, &runtime);
     let root = lifecycle.root().unwrap();
     assert!(matches!(root.kind(), UiNodeKind::Box { .. }));
+    assert!(find_text(root, "2,491–2,500 of 5,000").is_some());
     assert!(contains_overlay(root));
     let page = find_label(root, "251").expect("page 251 button");
     assert_eq!(
@@ -2693,8 +2834,57 @@ fn official_pagination_is_pure_rhai_composition() {
         current.attributes().get("disabled"),
         Some(&UiValue::Bool(false))
     );
-    assert!(current.handler("click").is_none());
-    assert!(current.style().hover.is_none());
+    // The current target remains focusable and consumes activation,
+    // but it carries no page-change proposal.
+    assert!(current.handler_payload("click").is_none());
+    let rest = current
+        .style()
+        .resolve(&gpui_rhai::InteractionState::default());
+    let hovered = current
+        .style()
+        .resolve(&gpui_rhai::InteractionState::default().with(gpui_rhai::PseudoState::Hovered));
+    assert_eq!(
+        hovered.background, rest.background,
+        "the current page must not wash out on hover"
+    );
+    assert_eq!(
+        hovered.text_color, rest.text_color,
+        "current-page ink must stay selected"
+    );
+}
+
+#[test]
+fn official_pagination_summary_covers_empty_partial_and_integer_boundary_pages() {
+    for (total, page, size, summary) in [
+        (0_i64, 1_i64, 10_i64, "0 of 0"),
+        (128, 3, 10, "21–30 of 128"),
+        (128, 13, 10, "121–128 of 128"),
+        (1, 1, 10, "1–1 of 1"),
+        (10, 1, i64::MAX, "1–10 of 10"),
+        (
+            i64::MAX,
+            2,
+            i64::MAX - 1,
+            "9,223,372,036,854,775,807–9,223,372,036,854,775,807 of 9,223,372,036,854,775,807",
+        ),
+    ] {
+        let source = r#"
+            import "components/pagination" as pagination;
+            fn view(ctx){pagination::Pagination(#{key:"pages",label:"Pages",total_items:__TOTAL__,
+                current_page:__PAGE__,page_size:__SIZE__})}
+        "#
+        .replace("__TOTAL__", &total.to_string())
+        .replace("__PAGE__", &page.to_string())
+        .replace("__SIZE__", &size.to_string());
+        let (mut engine, compiled) = compile_official("ui/pagination_ranges.rhai", &source);
+        let runtime = new_runtime();
+        runtime.borrow_mut().locale = Some(english(&engine));
+        let lifecycle = mount(&mut engine, compiled, &runtime);
+        assert!(
+            find_text(lifecycle.root().unwrap(), summary).is_some(),
+            "{total}/{page}/{size}: expected {summary}"
+        );
+    }
 }
 
 #[test]
@@ -2765,13 +2955,81 @@ fn official_pagination_page_window_covers_ellipsis_transitions() {
         vec![
             vec![1],
             vec![1, 2, 3, 4, 5],
-            vec![1, 2, 0, 7],
-            vec![1, 2, 3, 4, 0, 7],
             vec![1, 2, 3, 4, 5, 6, 7],
-            vec![1, 0, 4, 5, 6, 7],
+            vec![1, 2, 3, 4, 5, 6, 7],
+            vec![1, 2, 3, 4, 5, 6, 7],
+            vec![1, 2, 3, 4, 5, 6, 7],
             vec![1, 2, 0, 48, 49, 50, 51, 52, 0, 99, 100],
         ]
     );
+}
+
+#[test]
+fn official_pagination_windows_are_bounded_complete_and_stable_at_integer_limits() {
+    let (mut engine, compiled) = compile_official(
+        "ui/pagination_window_invariants.rhai",
+        r#"
+        import "components/pagination" as pagination;
+        fn verify(total,current,boundary,sibling) {
+            let values=pagination::page_window(total,current,boundary,sibling);
+            let cap=2*boundary+2*sibling+3;
+            if values.len != if total<cap{total}else{cap} {throw "variable page slot count";}
+            if !(current in values) || !(1 in values) || !(total in values) {throw "missing required page";}
+            let previous=0;
+            let gap=false;
+            for value in values {
+                if value==0 {
+                    if previous==0 || gap {throw "invalid ellipsis";}
+                    gap=true;
+                } else {
+                    if value<1 || value>total || value<=previous {throw "unordered pages";}
+                    if previous>0 && (if gap{value-previous<3}else{value-previous!=1}) {throw "incorrect omitted range";}
+                    previous=value;gap=false;
+                }
+            }
+            if gap {throw "trailing ellipsis";}
+            for offset in 0..boundary {
+                if offset<total && (!(offset+1 in values) || !(total-offset in values)) {throw "missing boundary";}
+            }
+        }
+        fn view(ctx){
+            for boundary in 1..4 {for sibling in 0..4 {
+                for total in [1,2,5,7,8,13,32,100,9223372036854775807] {
+                    for current in [1,total/2,total-1,total] {
+                        if current>=1 {verify(total,current,boundary,sibling);}
+                    }
+                }
+            }}
+            text("verified")
+        }
+    "#,
+    );
+    assert!(find_text(&render(&mut engine, &compiled), "verified").is_some());
+}
+
+#[test]
+fn official_pagination_last_integer_page_does_not_build_an_overflowing_next_proposal() {
+    let (mut engine, compiled) = compile_official(
+        "ui/pagination_integer_page.rhai",
+        r#"
+        import "components/pagination" as pagination;
+        fn changed(ctx,value){}
+        fn view(ctx){pagination::Pagination(#{key:"last",label:"Last page",page_size:1,
+            total_items:9223372036854775807,current_page:9223372036854775807,on_change:Fn("changed")})}
+    "#,
+    );
+    let runtime = new_runtime();
+    runtime.borrow_mut().locale = Some(english(&engine));
+    let lifecycle = mount(&mut engine, compiled, &runtime);
+    let root = lifecycle.root().unwrap();
+    let next = find_label(root, "Next page").unwrap();
+    assert_eq!(
+        next.attributes().get("disabled"),
+        Some(&UiValue::Bool(true))
+    );
+    assert!(next.handler("click").is_none());
+    let previous = find_label(root, "Previous page").unwrap();
+    assert!(previous.handler("click").is_some());
 }
 
 #[test]
@@ -2803,7 +3061,24 @@ fn official_pagination_page_size_emits_one_atomic_reset() {
     let runtime = new_runtime();
     runtime.borrow_mut().locale = Some(english(&engine));
     let path = root_path();
-    let lifecycle = mount(&mut engine, compiled, &runtime);
+    let mut lifecycle = mount(&mut engine, compiled, &runtime);
+    assert!(
+        find_virtual_collection(lifecycle.root().unwrap()).is_none(),
+        "closed page-size selector is lazy"
+    );
+    let trigger =
+        find_label(lifecycle.root().unwrap(), "Items per page").expect("page-size trigger");
+    let (callback, payload) = target_handler(trigger, "key:down");
+    invoke_and_render(&mut lifecycle, &mut engine, &callback, payload);
+    for _ in 0..3 {
+        let events = runtime.borrow_mut().drain_batch().events;
+        for event in events {
+            lifecycle
+                .invoke_component_event_transactional(&engine, event)
+                .unwrap();
+        }
+        lifecycle.render_dirty(&mut engine).unwrap();
+    }
     let collection = find_virtual_collection(lifecycle.root().unwrap())
         .expect("page-size Select virtual options");
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
@@ -3438,8 +3713,13 @@ fn toast_source_builds_public_layers_and_declarative_timers() {
     };
     // A status toast leads with its square lamp, then the styled title.
     assert_eq!(
-        header[0].style().base.background,
-        Some(ColorValue::Token("success".to_owned()))
+        header[0]
+            .style()
+            .base
+            .background
+            .as_deref()
+            .and_then(BackgroundFill::as_solid_value),
+        Some(&ColorValue::Token("success".to_owned()))
     );
     assert_eq!(
         header[1]

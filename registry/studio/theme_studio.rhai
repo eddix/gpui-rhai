@@ -9,6 +9,7 @@ import "components/calendar" as calendar;
 import "components/time_input" as time_input;
 import "components/markdown_viewer" as markdown_viewer;
 import "components/time_range_picker" as time_range_picker;
+import "components/date_range_picker" as date_range_picker;
 import "components/timeline" as timeline;
 import "components/dialog" as dialog;
 import "components/divider" as divider;
@@ -42,6 +43,7 @@ import "components/selectable_list" as selectable_list;
 import "components/column_browser" as column_browser;
 import "components/selectable_card_group" as selectable_card_group;
 import "components/tabs" as tabs;
+import "components/breadcrumb" as breadcrumb;
 import "components/tab_overflow_menu" as tab_overflow_menu;
 import "components/sliding_panel" as sliding_panel;
 import "components/carousel" as carousel;
@@ -49,6 +51,87 @@ import "components/tag" as tag;
 import "components/textarea" as textarea;
 import "components/toast" as toast;
 import "components/tooltip" as tooltip;
+import "components/hover_card" as hover_card;
+import "components/number_input" as number_input;
+import "components/otp_input" as otp_input;
+import "components/tag_input" as tag_input;
+import "components/filter_menu" as filter_menu;
+import "components/stepper_form" as stepper_form;
+import "components/progress_tracker" as progress_tracker;
+import "components/setup_guide" as setup_guide;
+import "components/message_actions" as message_actions;
+import "components/reaction_bar" as reaction_bar;
+import "components/cited_answer" as cited_answer;
+import "components/ai_answer" as ai_answer;
+import "components/thinking_loader" as thinking_loader;
+import "components/thinking_state" as thinking_state;
+import "patterns/model_picker" as model_picker;
+import "patterns/run_controls" as run_controls;
+import "patterns/prompt_library" as prompt_library;
+import "patterns/integration_picker" as integration_picker;
+import "patterns/integration_settings" as integration_settings;
+import "patterns/comment_thread" as comment_thread;
+import "patterns/comments_panel" as comments_panel;
+import "patterns/writing_assistant" as writing_assistant;
+import "patterns/approval_card" as approval_card;
+import "patterns/permission_request" as permission_request;
+import "patterns/decision_card" as decision_card;
+import "patterns/decision_tree" as decision_tree;
+import "patterns/review_center" as review_center;
+import "patterns/delegate_board" as delegate_board;
+import "patterns/agent_queue" as agent_queue;
+import "patterns/agent_lanes" as agent_lanes;
+import "patterns/agent_handoff" as agent_handoff;
+import "patterns/agent_inbox" as agent_inbox;
+import "patterns/agent_plan" as agent_plan;
+import "patterns/agent_checkpoints" as agent_checkpoints;
+import "patterns/agent_trail" as agent_trail;
+import "patterns/agent_tree" as agent_tree;
+import "patterns/agent_graph" as agent_graph;
+import "patterns/agent_fleet" as agent_fleet;
+import "patterns/agent_monitor" as agent_monitor;
+import "patterns/agent_steering" as agent_steering;
+import "patterns/agent_recap" as agent_recap;
+import "patterns/agent_findings" as agent_findings;
+import "patterns/agent_ledger" as agent_ledger;
+import "patterns/agent_cursors" as agent_cursors;
+import "patterns/compact_breakdown" as compact_breakdown;
+import "patterns/usage_meter" as usage_meter;
+import "patterns/change_summary" as change_summary;
+import "patterns/tips_panel" as tips_panel;
+import "patterns/project_card" as project_card;
+import "patterns/experiment_card" as experiment_card;
+import "patterns/notification_stack" as notification_stack;
+import "patterns/away_summary" as away_summary;
+import "patterns/kpi_chart" as kpi_chart;
+import "patterns/breakdown_chart" as breakdown_chart;
+import "patterns/running_now" as running_now;
+import "patterns/scheduled_runs" as scheduled_runs;
+import "patterns/tool_call_card" as tool_call_card;
+import "patterns/tool_call_group" as tool_call_group;
+import "patterns/context_window" as context_window;
+import "patterns/context_map" as context_map;
+import "patterns/profile_menu" as profile_menu;
+import "patterns/email_draft" as email_draft;
+import "patterns/diff_timeline" as diff_timeline;
+import "patterns/cost_waterfall" as cost_waterfall;
+import "patterns/parallel_attempts" as parallel_attempts;
+import "patterns/fan_out_grid" as fan_out_grid;
+import "patterns/billing_schedule" as billing_schedule;
+import "patterns/plan_vs_actual" as plan_vs_actual;
+import "patterns/fallback_chain" as fallback_chain;
+import "patterns/memory_panel" as memory_panel;
+import "patterns/tool_access_map" as tool_access_map;
+import "patterns/trace_waterfall" as trace_waterfall;
+import "patterns/smart_recommendation" as smart_recommendation;
+import "patterns/rate_limit_planner" as rate_limit_planner;
+import "patterns/root_cause_tree" as root_cause_tree;
+import "patterns/judge_bracket" as judge_bracket;
+import "patterns/collaboration_stream" as collaboration_stream;
+import "patterns/conflict_radar" as conflict_radar;
+import "patterns/decision_inbox" as decision_inbox;
+import "patterns/approval_gates" as approval_gates;
+import "patterns/autonomy_dial" as autonomy_dial;
 import "components/alert" as alert;
 import "components/alert_dialog" as alert_dialog;
 import "components/badge" as badge;
@@ -98,10 +181,16 @@ fn color_field(name, value) {
 
 fn state_schema() {
     #{ fields: #{
+        preview_section: #{schema:#{type:"string",allowed:["controls","navigation","data","product"]},"default":#{type:"string",value:"controls"}},
         specimen_column_path: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[]}},
         specimen_card_values: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[#{type:"string",value:"east"}]}},
         specimen_clock: #{schema:#{type:"string"},"default":#{type:"string",value:""}},
+        specimen_number: #{schema:#{type:"optional",value:#{type:"number"}},"default":#{type:"integer",value:4000}},
+        specimen_otp: #{schema:#{type:"string"},"default":#{type:"string",value:""},sensitive:true},
+        specimen_tags: #{schema:#{type:"array",items:#{type:"string"}},"default":#{type:"array",value:[#{type:"string",value:"Design"}]}},
+        specimen_wizard: #{schema:#{type:"string"},"default":#{type:"string",value:"editing"}},
         specimen_time_range: #{schema:#{type:"ui_value"},"default":#{type:"map",value:#{kind:#{type:"string",value:"relative"},duration_ms:#{type:"integer",value:3600000}}}},
+        specimen_date_range: #{schema:#{type:"ui_value"},"default":#{type:"null"}},
         path: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __PATH__ } },
         family: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __FAMILY__ } },
         variant: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __VARIANT__ } },
@@ -240,10 +329,9 @@ fn state_schema() {
         p0_alert_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_ALERT__ } },
         p0_context_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         p0_context_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "copy" } },
-        gallery_theme: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __GALLERY_THEME__ } },
         gallery_theme_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         gallery_theme_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
-        gallery_category: #{ schema: #{ type: "string", allowed: ["all", "foundations", "forms", "navigation", "documents", "overlays"] },
+        gallery_category: #{ schema: #{ type: "string", allowed: ["all", "foundations", "forms", "navigation", "documents", "overlays", "product"] },
             "default": #{ type: "string", value: __GALLERY_CATEGORY__ } },
     } }
 }
@@ -267,6 +355,11 @@ fn record_value(label, ctx, value) {
     handled()
 }
 fn set_specimen_input(ctx, value) { ctx.set_state("specimen_input", value); record_value("Input", ctx, value); }
+fn set_specimen_number(ctx,value) {ctx.set_state("specimen_number",value);record_value("Number input",ctx,value);}
+fn set_specimen_otp(ctx,value) {ctx.set_state("specimen_otp",value);}
+fn set_specimen_tags(ctx,value) {ctx.set_state("specimen_tags",value);record_value("Tags",ctx,value.len);}
+fn save_specimen_wizard(ctx,payload){ctx.set_state("specimen_wizard","succeeded");}
+fn reset_specimen_wizard(ctx,payload){ctx.set_state("specimen_wizard","editing");}
 fn set_specimen_field(ctx, value) { ctx.set_state("specimen_field", value); record_value("Name", ctx, value); }
 fn set_specimen_textarea(ctx, value) { ctx.set_state("specimen_textarea", value); record_action("Notes updated", ctx, ()); }
 fn set_specimen_select(ctx, value) { if value != () { ctx.set_state("specimen_select", value); record_value("Theme", ctx, value); } }
@@ -288,6 +381,7 @@ fn set_specimen_switch_enabled(ctx, value) { ctx.set_state("specimen_switch_enab
 fn set_specimen_switch_off(ctx, value) { ctx.set_state("specimen_switch_off", value); record_value("Secondary switch", ctx, value); }
 fn set_specimen_tab_equal(ctx, value) { ctx.set_state("specimen_tab_equal", value); record_value("Equal tab", ctx, value); }
 fn set_specimen_tab_content(ctx, value) { ctx.set_state("specimen_tab_content", value); record_value("Content tab", ctx, value); }
+fn choose_specimen_ancestor(ctx, value) { record_value("Breadcrumb",ctx,value); }
 fn set_specimen_accordion(ctx, value) { ctx.set_state("specimen_accordion", value); record_action("Accordion changed", ctx, ()); }
 fn set_specimen_collapsible(ctx, value) { ctx.set_state("specimen_collapsible", value); record_value("Release details", ctx, value); }
 fn set_specimen_split_size(ctx, value) { ctx.set_state("specimen_split_size", value); record_action("Split resized", ctx, ()); }
@@ -376,25 +470,13 @@ fn open_p0_alert(ctx, payload) { ctx.set_state("p0_alert_open", true); }
 fn set_gallery_theme_open(ctx, value) { ctx.set_state("gallery_theme_open", value); }
 fn set_gallery_theme_query(ctx, value) { ctx.set_state("gallery_theme_query", value); }
 fn set_gallery_category(category, ctx, payload) { ctx.set_state("gallery_category", category); }
+fn gallery_theme_key(variant) { `${variant.family.len}:${variant.family}${variant.name}` }
 fn set_gallery_theme(ctx, values) {
     if values.len == 0 { return; }
     let value = values[0];
-    if value == "default_dark" { ctx.set_theme("Default", "Dark"); }
-    else if value == "default_light" { ctx.set_theme("Default", "Light"); }
-    else if value == "tokyo_night" { ctx.set_theme("Tokyo Night", "Night"); }
-    else if value == "tokyo_storm" { ctx.set_theme("Tokyo Night", "Storm"); }
-    else if value == "catppuccin_latte" { ctx.set_theme("Catppuccin", "Latte"); }
-    else if value == "catppuccin_mocha" { ctx.set_theme("Catppuccin", "Mocha"); }
-    else if value == "ethereal" { ctx.set_theme("Ethereal", "Dark"); }
-    else if value == "everforest" { ctx.set_theme("Everforest", "Dark"); }
-    else if value == "gruvbox" { ctx.set_theme("Gruvbox", "Dark"); }
-    else if value == "hackerman" { ctx.set_theme("Hackerman", "Dark"); }
-    else if value == "nord" { ctx.set_theme("Nord", "Dark"); }
-    else if value == "retro_82" { ctx.set_theme("Retro 82", "Dark"); }
-    else if value == "hermarchy" { ctx.set_theme("Hermarchy", "Dark"); }
-    else if value == "futurism" { ctx.set_theme("Futurism", "Dark"); }
-    else if value == "aetheria" { ctx.set_theme("Aetheria", "Dark"); }
-    ctx.set_state("gallery_theme", value);
+    for variant in ctx.theme_variants() {
+        if gallery_theme_key(variant) == value {ctx.set_theme(variant.family,variant.name);break;}
+    }
     ctx.set_state("gallery_theme_open", false);
     ctx.set_state("gallery_theme_query", "");
 }
@@ -564,6 +646,140 @@ fn specimen_inputs(ctx) {
         ]).with_style(style().gap(px(6)).flex_wrap()),
         form_field::FormField(#{ id: "specimen-name", label: "Name", required: true,
             control: field, description: "One shared field contract", error: "Example error" }),
+        number_input::NumberInput(#{key:"specimen-number",label:"Token budget",value:ctx.get_state("specimen_number"),
+            min:0,max:8000,step:100,unit:"tokens",on_change:Fn("set_specimen_number")})
+            .with_style(style().width(px(225))),
+        otp_input::OtpInput(#{key:"specimen-otp",label:"Verification code",value:ctx.get_state("specimen_otp"),
+            length:4,on_change:Fn("set_specimen_otp")}),
+        tag_input::TagInput(#{key:"specimen-tags",label:"Labels",values:ctx.get_state("specimen_tags"),max:6,
+            on_change:Fn("set_specimen_tags")}),
+        filter_menu::FilterMenu(#{key:"specimen-filters",title:"Filters",groups:[
+            #{id:"state",label:"State",options:[#{id:"active",label:"Active"},#{id:"paused",label:"Paused"}]}
+        ],default_value:#{state:["active"]},hints:false}),
+        stepper_form::StepperForm(#{key:"specimen-stepper",status:ctx.get_state("specimen_wizard"),steps:[
+            #{id:"theme",title:"Theme",content:text("Preview the active design.")},
+            #{id:"confirm",title:"Confirm",review:[#{key:"design",label:"Design",text:"Current preset",edit_step:"theme"}]},
+        ],on_submit:Fn("save_specimen_wizard"),on_reset:Fn("reset_specimen_wizard")}),
+        progress_tracker::ProgressTracker(#{key:"specimen-checklist",steps:[
+            #{id:"draft",label:"Draft",done:true},#{id:"review",label:"Review"}
+        ]}),
+        setup_guide::SetupGuide(#{key:"specimen-setup",groups:[
+            #{id:"intro",title:"First steps",tasks:[#{id:"choose",label:"Choose a color"},#{id:"preview",label:"Preview the design"}]}
+        ]}),
+        message_actions::MessageActions(#{key:"specimen-message",text:"Review the active design",versions:3}),
+        reaction_bar::ReactionBar(#{key:"specimen-reactions"}),
+        cited_answer::CitedAnswer(#{key:"specimen-cite",segments:[#{text:"Preview follows the active design.",cite:["guide"]}],
+            sources:[#{id:"guide",title:"Design guide",site:"Guide",quote:"Preview follows the active design."}]}),
+        ai_answer::AIAnswer(#{key:"specimen-answer",question:"What am I previewing?",source:"The active design.",
+            framed:true}),
+        thinking_loader::ThinkingLoader(#{key:"specimen-loader",phases:["Reviewing the palette"],phase:0}),
+        thinking_state::ThinkingState(#{key:"specimen-work",status:"done",elapsed_ms:10500,
+            steps:[#{id:"review",label:"Review theme roles"}]}),
+        model_picker::ModelPicker(#{key:"specimen-model",models:[#{id:"auto",name:"Auto",description:"Choose automatically"}]}),
+        run_controls::RunControls(#{key:"specimen-run",run_id:"theme/preview",agent_name:"Preview assistant",
+            status:"stopped",draft:"",prompt:"Review this palette",answer:"The current design is ready to review.",context:0.42}),
+        prompt_library::PromptLibrary(#{key:"specimen-prompts",templates:[
+            #{id:"review",title:"Review palette",category:"Design",body:"Write a summary for {audience}."}
+        ]}),
+        integration_picker::IntegrationPicker(#{key:"specimen-tools",integrations:[
+            #{id:"notes",name:"Team Notes",domain:"notes.local",tone:"violet",description:"Preview the integration tiles."}
+        ]}),
+        integration_settings::IntegrationSettings(#{key:"specimen-settings",integration:"notes",name:"Team Notes",meta:"Document sync",
+            value:#{enabled:true,site:"notes.example",zone:"Etc/UTC"},revision:0,
+            zones:[#{id:"Etc/UTC",label:"UTC"}],credential_present:true}),
+        comment_thread::CommentThread(#{key:"specimen-thread",title:"Review thread",draft:"",messages:[
+            #{id:"theme",author:"Casey Chen",time:"2 min ago",text:"This heading follows the active design."},
+        ]}),
+        comments_panel::CommentsPanel(#{key:"specimen-comments",title:"Team comments",draft:"",comments:[
+            #{id:"question",author:"Casey Chen",time:"5 min ago",text:"Does the new palette work here?"},
+            #{id:"draft",author:"Taylor Kim",time:"2 min ago",timestamp:1,text:"/Edit Add a note to the preview.",edit_state:"applied"},
+        ]}),
+        writing_assistant::WritingAssistant(#{key:"specimen-writer",conversation:"theme-preview",revision:0,draft:"",messages:[],
+            suggestions:[#{id:"draft",label:"Draft a reply"},#{id:"tone",label:"Fix the tone"}]}),
+        approval_card::ApprovalCard(#{key:"specimen-approval",request:"review",revision:0,title:"Review changes",risk:"medium",
+            details:[#{label:"Area",value:"Theme palette"}],remaining_ms:34000}),
+        permission_request::PermissionRequest(#{key:"specimen-request",request:"sample",revision:0,agent:"Review assistant",action:"read sample data",
+            preview:[#{id:"view",label:"Current preview"}]}),
+        decision_card::DecisionCard(#{key:"specimen-decision",decisions:[#{id:"preview",revision:0,question:"Which layout should we preview?",
+            options:[#{id:"short",title:"Compact",recommended:true},#{id:"long",title:"Expanded"}]}]}),
+        decision_tree::DecisionTree(#{key:"specimen-tree",allow_other:false,decisions:[#{id:"theme",revision:0,agent:"Theme assistant",
+            question:"Where should this theme be applied?",options:[#{id:"preview",label:"Stay in preview",effects:["No preferences change"]},
+                #{id:"later",label:"Save for later",effects:["Keep current settings"]}]}]}),
+        review_center::ReviewCenter(#{key:"specimen-reviews",now_ms:420000,reviewed:1,items:[#{id:"palette",revision:0,
+            title:"Review the palette",agent:"Theme assistant",kind:"Design",risk:"medium",confidence:0.83,created_ms:1000,
+            body:"Preview the text and borders before accepting."}]}),
+        delegate_board::DelegateBoard(#{key:"specimen-delegation",board:"studio",revision:0,now_ms:1000,
+            agents:[#{id:"lettering",name:"Typography",rate_cents:3},#{id:"preview",name:"Preview"}],
+            tasks:[#{id:"sample",title:"Verify glyph layout",estimate:6},#{id:"layout",title:"Check native layout",estimate:10,agent:"preview"}],
+            suggestion:#{task:"sample",agent:"lettering"}}),
+        agent_queue::AgentQueue(#{key:"specimen-queue",queue:"studio/queue",revision:0,now_ms:50000,backpressure:3,
+            workers:[#{id:"preview",name:"Preview worker"}],
+            jobs:[#{id:"spacing",name:"Check spacing",status:"queued",kind:"tool",enqueued_ms:35000},
+                #{id:"type",name:"Inspect typography",status:"running",kind:"human",enqueued_ms:10000,started_ms:20000,worker:"preview"}]}),
+        agent_lanes::AgentLanes(#{key:"specimen-lanes",timeline:"studio/lanes",revision:0,now_ms:300000,span_ms:300000,
+            agents:[#{id:"design",name:"Design"},#{id:"preview",name:"Preview"}],
+            tasks:[#{id:"palette",agent:"design",title:"Set palette",status:"done",start_ms:50000,end_ms:160000,handoff_to:"verify"},
+                #{id:"verify",agent:"preview",title:"Verify preview",status:"running",start_ms:160000}]}),
+        agent_handoff::AgentHandoff(#{key:"specimen-handoff",relay:"studio/relay",revision:0,
+            agents:[#{id:"design",name:"Design"},#{id:"preview",name:"Preview"}],
+            tasks:[#{id:"test",title:"Preview the palette",status:"working",agent:"preview"}],
+            handoffs:[#{id:"palette",from:"design",to:"preview",task:"test",items:[#{id:"note",label:"Contrast notes",kind:"note"}]}]}),
+        agent_inbox::AgentInbox(#{key:"specimen-agent-inbox",inbox:"studio/inbox",revision:0,now_ms:65000,
+            tasks:[#{id:"check",title:"Check component spacing",agent:"Preview assistant",status:"running",started_ms:30000},
+                #{id:"palette",title:"Review the palette",agent:"Design assistant",status:"waiting",started_ms:10000}]}),
+        agent_plan::AgentPlan(#{key:"specimen-agent-plan",plan:"studio/plan",revision:0,now_ms:10000,status:"running",title:"Validate the theme",
+            steps:[#{id:"palette",title:"Load palette",status:"done",elapsed_ms:1000},
+                #{id:"verify",title:"Check active controls",status:"active",started_ms:6000,tool:"preview"},
+                #{id:"save",title:"Review readability"}]}),
+        agent_checkpoints::AgentCheckpoints(#{key:"specimen-checkpoints",run:"studio/history",revision:0,task:"Theme preview",
+            checkpoints:[#{id:"base",title:"Load palette",files:2},#{id:"first",title:"Check the first preview",parent:"base",status:"stopped"},
+                #{id:"branch",title:"Preview the new spacing",parent:"base",status:"running",elapsed_ms:16000}]}),
+        agent_trail::AgentTrail(#{key:"specimen-trail",run:"studio/trail",revision:0,now_ms:12000,title:"Check the new skin",agent:"Preview assistant",
+            steps:[#{id:"setup",title:"Load the theme",state:"done",elapsed_ms:1000},#{id:"inspect",title:"Review controls",state:"running",started_ms:3500,
+                substeps:[#{id:"labels",title:"Review labels"},#{id:"controls",title:"Inspect focus states",state:"running"}]},
+                #{id:"approval",title:"Review example",state:"waiting"}]}),
+        agent_tree::AgentTree(#{key:"specimen-dispatch",run:"studio/agents",revision:0,now_ms:42000,root:"preview",supervisor:"observer",
+            agents:[#{id:"preview",name:"Preview",task:"Check the theme",state:"running",started_ms:10000,cost_micros:30000},
+                #{id:"contrast",parent:"preview",name:"Contrast",task:"Review the palette",state:"waiting",cost_micros:10000},
+                #{id:"observer",name:"Supervisor",task:"Watch the discussion",state:"done",cost_micros:12000}]}),
+        agent_graph::AgentGraph(#{key:"specimen-graph",run:"studio/graph",revision:0,now_ms:35000,title:"Communication sample",height:294,
+            nodes:[#{id:"lead",name:"Coordinator",kind:"agent",status:"working"},#{id:"review",name:"Review",kind:"agent",status:"waiting"},
+                #{id:"palette",name:"Palette",kind:"tool"},#{id:"observer",name:"Observer",kind:"user"}],
+            edges:[#{from:"lead",to:"review"},#{from:"lead",to:"palette"},#{from:"review",to:"observer"}]}),
+        agent_fleet::AgentFleet(#{key:"specimen-fleet",run:"studio/fleet",revision:0,now_ms:42000,
+            agents:[#{id:"lead",name:"Preview team",task:"Check the theme",state:"running",cost_micros:30000},
+                #{id:"contrast",parent:"lead",name:"Contrast reviewer",task:"Review the palette",state:"waiting",
+                    steps:[#{id:"inspect",title:"Inspect the light palette"}]},#{id:"cleanup",name:"Cleanup",task:"Archive the previews",state:"queued"}]}),
+        agent_monitor::AgentMonitor(#{key:"specimen-monitor",run:"studio/monitor",revision:0,now_ms:21000,started_ms:1000,state:"running",
+            name:"Theme preview",role:"Acceptance",cost_micros:20000,
+            steps:[#{id:"palette",label:"Load palette",state:"done",kind:"read",elapsed_ms:7000},
+                #{id:"checks",label:"Measure spacing",state:"running",kind:"run",started_ms:12000}]}),
+        agent_steering::AgentSteering(#{key:"specimen-steering",run:"studio/steering",revision:0,now_ms:42000,title:"Review the theme",
+            steps:[#{id:"setup",title:"Load preset",status:"done",elapsed_ms:10000},
+                #{id:"review",title:"Review spacing",status:"active",started_ms:22000}],
+            queue:[#{id:"read",text:"Check the focus border in narrow layouts."}],compose:false}),
+        agent_recap::AgentRecap(#{key:"specimen-recap",run:"studio/recap",revision:0,since_ms:0,until_ms:14400000,replay_ms:0,limit:1,
+            events:[#{id:"summary",at_ms:2700000,kind:"done",title:"Prepare a summary",detail:"Preview assistant",count:12},
+                #{id:"review",at_ms:5400000,kind:"needs",title:"Review the preview",detail:"Check the color palette"},
+                #{id:"build",at_ms:10800000,kind:"failed",title:"Preview build failed",detail:"Missing preview asset"}]}),
+        agent_findings::AgentFindings(#{key:"specimen-findings",run:"studio/findings",revision:0,now_ms:42000,
+            agents:[#{id:"preview",name:"Preview review",step:"Checking reading scale",done:4,total:7},
+                #{id:"design",name:"Design review",done:5,total:5}],
+            findings:[#{id:"focus",agent:"preview",title:"Focus indicator placement",severity:"warning",location:"button.rhai:34",at_ms:38000}]}),
+        agent_ledger::AgentLedger(#{key:"specimen-ledger",run:"studio/ledger",revision:0,now_ms:42000,agent:"Preview assistant",point_at:"root",
+            entries:[#{id:"root",action:"Update accent",target:"Theme",system:"Studio",at_ms:10000,change:#{before:"Blue",after:"Violet"}},
+                #{id:"page",action:"Rebuild sample",system:"Gallery",at_ms:18000,detail:"All controls",depends_on:["root"]},
+                #{id:"mail",action:"Send summary",system:"Mail",at_ms:22000,detail:"One recipient",reversible:false,depends_on:["root"]}]}),
+        agent_cursors::AgentCursors(#{key:"specimen-cursors",document:"studio/review",revision:0,height:168,
+            title:"Theme review",agents:[#{id:"preview",name:"Review assistant",cursor:#{target:"intro",at:5,select:9}}],
+            blocks:[#{id:"intro",kind:"paragraph",text:"Check the palette and text spacing in this preview."}],
+            suggestions:[#{id:"type",agent:"preview",block:"intro",at:27,remove:7,insert:"rhythm",note:"Use one term consistently."}]}),
+        decision_inbox::DecisionInbox(#{key:"specimen-inbox",decisions:[#{id:"preview",revision:0,title:"Update the sample?",
+            primary:"Update",secondary:"Wait"}]}),
+        approval_gates::ApprovalGates(#{key:"specimen-gates",run:"sample",gates:[#{id:"preview",revision:0,agent:"Review assistant",
+            kind:"message",action:"Share the preview",reason:"Check a sample update.",status:"open"}]}),
+        autonomy_dial::AutonomyDial(#{key:"specimen-dial",policy:"sample-policy",revision:0,level:"risky",pinned:[],
+            actions:[#{id:"preview",risk:"safe",label:"Read preview"},#{id:"publish",risk:"risky",label:"Update sample"}]}),
         textarea::Textarea(#{ key: "specimen-textarea", label: "Notes", value: ctx.get_state("specimen_textarea"),
             rows: 2, max_length: 120, show_count: true, on_change: Fn("set_specimen_textarea") }),
         row([
@@ -582,6 +798,123 @@ fn specimen_inputs(ctx) {
                 on_change: Fn("set_specimen_date") }),
         ]).with_style(style().gap(px(6)).flex_wrap())
     ]).with_style(style().gap(px(7)))
+}
+
+fn specimen_product_cards() {
+    column([
+        specimen_title("PRODUCT CARDS", "Live examples of product and workflow components."),
+        compact_breakdown::CompactBreakdown(#{key:"specimen-breakdown",series:"studio/cost",revision:0,title:"Infrastructure cost",
+            items:[#{id:"inference",label:"Inference",value:84.0},#{id:"storage",label:"Storage",value:12.0},
+                #{id:"compute",label:"Background compute",value:4.0}],delta:12.4,prefix:"$",period:"month",
+            periods:[#{id:"week",label:"Week"},#{id:"month",label:"Month"},#{id:"year",label:"Year"}]}),
+        usage_meter::UsageMeter(#{key:"specimen-usage",series:"studio/usage",revision:0,total:1000,
+            used:[#{id:"compute",label:"Compute",value:640},#{id:"search",label:"Search",value:180}],
+            limits:[#{id:"seats",label:"Seats",used:8,total:10},#{id:"projects",label:"Projects",used:12}]}),
+        change_summary::ChangeSummary(#{key:"specimen-changes",period:"This week",changes:[
+            #{id:"latency",label:"Latency",change:"Down 14 ms to 62 ms",tone:"good",direction:"down"},
+            #{id:"traffic",label:"Requests",change:"Within the usual range"}]}),
+        tips_panel::TipsPanel(#{key:"specimen-tips",series:"studio/tips",revision:0,tips:[
+            #{id:"keys",title:"Inspect shortcuts",description:"Use the command menu to find the current key binding.",action:"Show shortcuts"},
+            #{id:"theme",title:"Pick your theme",description:"Keep the layout and choose new colours.",action:"Choose theme",done:true}]}),
+        project_card::ProjectCard(#{key:"specimen-project",project:"preview",revision:0,title:"Improve gallery",status:"progress",due:"Oct 24",open:true,trigger:"click",
+            tasks:[#{id:"review",label:"Review examples",done:true},#{id:"build",label:"Build the preview"}]}),
+        experiment_card::ExperimentCard(#{key:"specimen-experiment",experiment:"preview",revision:0,title:"Compare onboarding",open:true,trigger:"click",
+            metrics:[#{id:"conversion",label:"Conversion",suffix:"%"}],
+            variants:[#{id:"base",short:"A",name:"Baseline",values:#{conversion:10.0}},#{id:"new",short:"B",name:"New flow",values:#{conversion:12.0}}]}),
+        notification_stack::NotificationStack(#{key:"specimen-stack",stack:"preview",revision:0,notices:[
+            #{id:"preview",badge:"Notice",title:"Theme ready",text:"Review the updated design before applying it."},
+            #{id:"later",title:"Next",text:"Queued behind the preview."}]}),
+        away_summary::AwaySummary(#{key:"specimen-away",session:"studio-preview",revision:0,since_ms:0,now_ms:8040000,items:[
+            #{id:"check",kind:"needs_you",title:"Review contrast",detail:"The new palette is ready."},
+            #{id:"load",kind:"done",title:"Loaded preview"}]}),
+        kpi_chart::KpiChart(#{key:"specimen-kpi",metric:"theme-demo",revision:0,title:"Weekly use",value:"42",delta:6,
+            samples:[#{id:"mon",label:"Mon"},#{id:"wed",label:"Wed"},#{id:"fri",label:"Fri"}],
+            series:[#{id:"runs",label:"Runs",values:[18,24,42]},#{id:"reviews",label:"Reviews",values:[12,(),29]}]}),
+        breakdown_chart::BreakdownChart(#{key:"specimen-split",dataset:"preview/workload",title:"Workload",
+            records:[#{area:"api",kind:"team"},#{area:"ops",kind:"batch"},#{area:"api",kind:"team"}],
+            dimensions:[#{id:"area",label:"Area",levels:[#{id:"api",label:"API"},#{id:"ops",label:"Operations"}]},
+                #{id:"kind",label:"Kind",levels:[#{id:"team",label:"Team"},#{id:"batch",label:"Batch"}]}],
+            measures:[#{id:"count",label:"Count",unit:"tasks"}]}),
+        running_now::RunningNow(#{key:"specimen-runs",board:"preview/runs",revision:0,
+            tasks:[#{id:"index",title:"Index documents",step:"Reading local sources",status:"running",done:1,total:4},
+                #{id:"review",title:"Review theme",step:"Needs approval",status:"needs_you",done:2,total:3}]}),
+        scheduled_runs::ScheduledRuns(#{key:"specimen-week",board:"preview/week",revision:0,mode:"manual",
+            days:[#{id:"mon",label:"Mon",date:"23"},#{id:"tue",label:"Tue",date:"24"}],
+            periods:[#{id:"am",label:"07:00",limit:100},#{id:"pm",label:"12:00",limit:100}],
+            current:#{day:"mon",period:"pm"},
+            tasks:[#{id:"verify",title:"Verify the release",units:30},#{id:"photos",title:"Transfer photos",units:65}],
+            assignments:[#{id:"sample",task:"verify",day:"mon",period:"pm",units:30,ordinal:1,origin:"booked"}]}),
+        tool_call_card::ToolCallCard(#{key:"specimen-tool",session:"preview/diagnostics",revision:0,default_open:true,now_ms:1000,
+            entry:#{id:"metadata",name:"read_metadata",status:"success",icon:"file",duration_ms:150,
+                arguments:#{source:"theme"},result:#{status:"ready",count:2}}}),
+        tool_call_group::ToolCallGroup(#{key:"specimen-tool-group",session:"preview/batch",revision:0,now_ms:1000,
+            calls:[#{id:"search",name:"search_assets",status:"running",icon:"search",started_ms:0},
+                #{id:"scan",name:"scan_palette",status:"success",duration_ms:350}]}),
+        context_window::ContextWindow(#{key:"specimen-context",context:"theme-preview",revision:0,limit:100000,cells:54,columns:18,model:"Demo model",
+            parts:[#{id:"system",label:"System",tokens:12000,locked:true},#{id:"tools",label:"Tools",tokens:16000},
+                #{id:"chat",label:"Conversation",tokens:52000}]}),
+        context_map::ContextMap(#{key:"specimen-map",context:"theme-preview",revision:0,limit:100000,model:"Demo model",
+            blocks:[#{id:"system",label:"System",kind:"system",tokens:12000},#{id:"tools",label:"Tools",kind:"tools",tokens:16000},
+                #{id:"chat",label:"Conversation",kind:"chat",tokens:52000}]}),
+        profile_menu::ProfileMenu(#{key:"specimen-profile",name:"Ada Lovelace",email:"ada@example.test",
+            setup:#{done:2,total:5,next:"Choose a profile picture"}}),
+        email_draft::EmailDraft(#{key:"specimen-email",draft:"preview/email",revision:0,reference:"SUB-1182",
+            account:"Northwind Logistics",amount:"$8,900",status:"In review",agent:"Renewal agent",
+            contacts:[#{id:"ada",name:"Ada Lovelace",email:"ada@example.test"}],
+            tones:[#{id:"friendly",label:"Friendly",body:"Hi {first}, your quote is ready to review."}]}),
+        diff_timeline::DiffTimeline(#{key:"specimen-diff",run:"theme-preview/patch",agent:#{id:"demo",name:"Patch agent"},context:"Review",
+            edits:[#{id:"a",at:4,file:"src/lib.rs",added:0,removed:10},#{id:"b",at:24,file:"src/app.rs",added:29,removed:1}]}),
+        cost_waterfall::CostWaterfall(#{key:"specimen-cost",run:"theme-preview/cost",task:"Review",
+            steps:[#{id:"a",name:"Summarize",kind:"llm",status:"done",cost_micros:29000,tokens_in:680,tokens_out:130},
+                #{id:"b",name:"Credit",kind:"tool",status:"done",cost_micros:-34000}]}),
+        parallel_attempts::ParallelAttempts(#{key:"specimen-attempts",run:"theme-preview/race",task:"Review candidates",
+            attempts:[#{id:"fixture",name:"Fixture",model:"Atlas",status:"done",score:96,cost_micros:87000,duration_ms:4820},
+                #{id:"timing",name:"Timing",model:"Vista",status:"failed",progress:0.38,cost_micros:34000,duration_ms:2270}]}),
+        fan_out_grid::FanOutGrid(#{key:"specimen-fan",run:"theme-preview/fan",job:"Index sources",now_ms:5100,
+            tasks:[#{id:"docs",label:"Docs",status:"done",cost_micros:24000,end_ms:3400},#{id:"notes",label:"Notes",status:"retrying"},
+                #{id:"assets",label:"Assets",status:"failed",error:"No manifest"},#{id:"code",label:"Code",status:"running"},
+                #{id:"archive",label:"Archive",status:"queued"}]}),
+        billing_schedule::BillingSchedule(#{key:"specimen-billing",schedule:"theme-preview/billing",
+            draft:#{phase:"Pilot",start:"2026-02-01",duration:"3m",lines:[
+                #{id:"starter",kind:"product",name:"Starter licence",repeat:"monthly",timing:"advance",price_minor:25000}]}}),
+        plan_vs_actual::PlanVsActual(#{key:"specimen-plan-diff",run:"theme-preview/plan-diff",now_ms:42000,task:"Ship a report",steps:[
+            #{id:"build",title:"Build report",planned_ms:30000,start_ms:0,spent_micros:120000},
+            #{id:"review",title:"Review and send",planned_ms:30000,depends_on:["build"],planned_micros:250000}]}),
+        fallback_chain::FallbackChain(#{key:"specimen-fallback",run:"theme-preview/fallback",now_ms:5200,route:"demo/auto",attempts:[
+            #{id:"primary",model:"Atlas",status:"failed",duration_ms:1800,reason:"Rate limited"},
+            #{id:"backup",model:"Nova",status:"trying",started_ms:3200,cost_micros:8500}]}),
+        memory_panel::MemoryPanel(#{key:"specimen-memory",workspace:"theme-preview/memory",memories:[
+            #{id:"lang",text:"Writes Rust utilities",category:"Work",source:"Added by you"},
+            #{id:"tea",text:"Prefers tea",category:"Preferences",paused:true}]}),
+        tool_access_map::ToolAccessMap(#{key:"specimen-tool-map",session:"theme-preview/calls",tools:[
+            #{id:"read",name:"Read documents"},#{id:"formats",name:"Check styles"},#{id:"notes",name:"Collect notes"}],
+            agents:[#{id:"planner",name:"Planner",model:"Atlas",status:"done",tools:[#{id:"read",calls:[
+                #{id:"open-brief",summary:"Open brief",status:"done",input:"brief.md",output:"Opened",duration_ms:130}
+            ]},#{id:"notes"}]}]}),
+        trace_waterfall::TraceWaterfall(#{key:"specimen-trace",session:"theme-preview/trace",now_ms:7800,spans:[
+            #{id:"plan",name:"Review documents",kind:"agent",status:"running",start_ms:0},
+            #{id:"outline",parent:"plan",name:"Draft outline",kind:"llm",status:"done",start_ms:640,end_ms:5200,cost_micros:23000},
+            #{id:"read",parent:"plan",name:"Read brief",kind:"tool",status:"failed",start_ms:5400,end_ms:7100}]}),
+        smart_recommendation::SmartRecommendation(#{key:"preview-recommendation",session:"preview/sync",options:[
+            #{id:"delta",label:"Incremental sync",reason:"Only transfer the changed files and keep the current index.",signal:3},
+            #{id:"all",label:"Full sync",reason:"Rebuild the workspace from its source copy.",signal:1}]}),
+        rate_limit_planner::RateLimitPlanner(#{key:"preview-rate",session:"preview/load",limit:40000,now:430,runs:[
+            #{id:"scan",name:"Index notes",at:405,peak:18000},#{id:"docs",name:"Review guides",at:500,peak:28000},
+            #{id:"digest",name:"Draft digest",at:510,peak:22000}]}),
+        root_cause_tree::RootCauseTree(#{key:"preview-root-cause",session:"theme-preview/fault",causes:[
+            #{id:"publish",title:"Could not publish report",detail:"Draft unchanged",gate:"or"},
+            #{id:"policy",title:"Publish policy",parent:"publish",status:"checking",files:["config/review.rhai"]},
+            #{id:"artifact",title:"Missing artifact",parent:"publish",status:"ruled-out"}]}),
+        judge_bracket::JudgeBracket(#{key:"preview-bracket",session:"theme-preview/bracket",contenders:[
+            #{id:"outline",name:"Concise outline",output:"Explain the change, then show an example."},
+            #{id:"check",name:"Checklist draft",output:"Check scope, links and examples."}],
+            verdicts:#{"0:0":#{a:"outline",b:"check",winner:"outline",scores:[8.3,7.4]}}}),
+        collaboration_stream::CollaborationStream(#{key:"preview-stream",session:"theme-preview/stream",agents:[#{id:"editor",name:"Editor"}],
+            messages:[#{id:"edit",from:"editor",to:["you"],kind:"question",text:"Is the summary ready?",at:"14:10"},
+                #{id:"answer",from:"you",to:["editor"],kind:"reply",reply_to:"edit",text:"Ready to review.",at:"14:12"}],max_height:190}),
+        conflict_radar::ConflictRadar(#{key:"preview-radar",session:"theme-preview/radar",agents:[#{id:"a",name:"Atlas"},#{id:"b",name:"Scribe"}],
+            files:[#{id:"guide",path:"release/guide.md",edits:[#{id:"a",agent:"a",start:10,end:16,revision:0},#{id:"b",agent:"b",start:14,end:22,revision:0}]}]}),
+    ]).with_style(style().padding(px(16)).gap(px(14)).typography("body"))
 }
 
 fn specimen_choices(ctx) {
@@ -677,6 +1010,11 @@ fn specimen_navigation(ctx) {
             #{ value: "trace", label: "详细追踪记录", content: text("No failed deliveries") },
             #{ value: "locked", label: "Locked", content: text(""), disabled: true }
         ], on_change: Fn("set_specimen_tab_content") }).with_style(style().width(px(420))),
+        breadcrumb::Breadcrumb(#{key:"specimen-breadcrumb",label:"Theme path",max_items:3,items:[
+            #{value:"work",label:"Workspace"},#{value:"themes",label:"Installed themes"},
+            #{value:"clean",label:"Clean"},#{value:"dark",label:"Dark"},
+        ],on_navigate:Fn("choose_specimen_ancestor")})
+            .with_style(style().width(px(260)).max_width(relative(1.0))),
         accordion::Accordion(#{ key: "specimen-accordion", expanded: ctx.get_state("specimen_accordion"), mode: "multiple",
             items: [
                 #{ key: "runtime", title: "Runtime", content: text("All checks pass"), content_height: 34 },
@@ -822,12 +1160,20 @@ fn set_specimen_column_path(ctx, value) { ctx.set_state("specimen_column_path", 
 fn set_specimen_card_values(ctx, value) { ctx.set_state("specimen_card_values", value); }
 fn set_specimen_clock(ctx, value) { ctx.set_state("specimen_clock", value); }
 fn set_specimen_time_range(ctx, value) { ctx.set_state("specimen_time_range", value); }
+fn set_specimen_date_range(ctx, value) { ctx.set_state("specimen_date_range", value); }
+fn specimen_date_range(ctx) {
+    let selection=ctx.get_state("specimen_date_range");
+    date_range_picker::DateRangePicker(#{key:"specimen-date-range",label:"Date range",today:"2026-10-16",
+        value:if selection==(){#{start:"2026-10-01",end:"2026-10-08"}}else{selection.range},
+        compare_mode:if selection==(){"off"}else{selection.compare_mode},on_change:Fn("set_specimen_date_range")})
+}
 fn specimen_time(ctx) {
     let clock=ctx.get_state("specimen_clock");
     column([
         calendar::Calendar(#{key:"specimen-calendar",label:"Calendar",value:ctx.get_state("specimen_date"),on_change:Fn("set_specimen_date")}),
         time_input::TimeInput(#{key:"specimen-clock",label:"Time",value:if clock==""{ctx.format_time(0,"short","UTC")}else{clock},on_change:Fn("set_specimen_clock")}),
         time_range_picker::TimeRangePicker(#{key:"specimen-time-range",label:"Query range",value:ctx.get_state("specimen_time_range"),on_change:Fn("set_specimen_time_range")}),
+        specimen_date_range(ctx),
         timeline::Timeline(#{key:"specimen-timeline",label:"Deployment",height:160,items:[
             #{key:"build",title:"Build",status:"success"},#{key:"deploy",title:"Deploy",status:"running",current:true}]}),
     ]).with_style(style().gap(theme_spacing("sm")))
@@ -975,6 +1321,10 @@ fn specimen_overlays(ctx) {
     let tooltip_node = tooltip::Tooltip(#{ key: "specimen-tooltip", label: "Example tooltip",
         trigger: button::Button(#{ text: "Tooltip", size: "sm", variant: "ghost" }),
         content: text("Delayed native tooltip"), placement: "top" });
+    let hover_node = hover_card::HoverCard(#{key:"specimen-hover-card",label:"Preview surface",
+        trigger:button::Button(#{text:"Preview",size:"sm",variant:"ghost"}),
+        content:column([text("Live themed preview"),button::Button(#{text:"Keep preview",
+            variant:"secondary",size:"sm",on_click:Fn("record_value").curry("Hover preview")})]).with_style(style().gap(px(8)))});
     let dialog_node = dialog::Dialog(#{ key: "specimen-dialog", title: "Confirm theme",
         content: text("Dialog colors come from the active draft."), open: ctx.get_state("dialog_open"),
         actions: [button::Button(#{ text: "Cancel", variant: "outline",
@@ -989,19 +1339,19 @@ fn specimen_overlays(ctx) {
     column([
         specimen_title("OVERLAYS", "Open real menu, popover, dialog, tooltip and toast surfaces."),
         row([
-            menu_node, popover_node, tooltip_node,
+            menu_node, popover_node, tooltip_node, hover_node,
             button::Button(#{ text: "Dialog", size: "sm", variant: "outline", on_click: Fn("show_dialog") }),
             button::Button(#{ text: "Toast", size: "sm", variant: "outline", on_click: Fn("show_toast") }),
-        ]).with_style(style().gap(px(5)).items_center()),
+        ]).with_style(style().gap(px(5)).items_center().flex_wrap()),
         dialog_node,
         toast::Toast(#{ key: "specimen-toasts", items: toast_items, on_dismiss: Fn("dismiss_toast") })
     ]).with_style(style().gap(px(7)))
 }
 
-fn specimen(ctx) {
+fn specimen_controls(ctx) {
     let left = column([specimen_typography(), specimen_actions(ctx), specimen_choices(ctx), specimen_status(), specimen_chrome(ctx)])
         .with_style(style().flex_grow().min_width(px(0)).gap(px(14)));
-    let right = column([specimen_inputs(ctx), specimen_navigation(ctx), specimen_overlays(ctx)])
+    let right = column([specimen_inputs(ctx)])
         .with_style(style().flex_grow().min_width(px(0)).gap(px(14)));
     let columns = if ctx.viewport_class() == "wide" {
         row([left, right]).with_style(style().gap(px(14)).items_start())
@@ -1012,46 +1362,53 @@ fn specimen(ctx) {
         row([
             column([
                 text("COMPONENT SPECIMEN").with_style(style().typography("heading")),
-                text("Every official component · one live semantic contract")
+                text("Typography, form fields and controls · live component previews")
                     .with_style(style().typography("caption").text_color(theme_color("text_muted")))
             ]).with_style(style().gap(px(2))),
             tag::Tag(#{ text: `${ctx.get_state("family")} / ${ctx.get_state("variant")}`, variant: "accent" })
         ]).with_style(style().justify_between().items_center().padding_bottom(px(8))
             .border_bottom(px(1)).border_color(theme_color("border"))),
         columns,
+        selectable_card_group::SelectableCardGroup(#{key:"specimen-cards",label:"Deployment region",
+            values:ctx.get_state("specimen_card_values"),on_change:Fn("set_specimen_card_values"),
+            items:[#{value:"east",label:"East",content:text("Healthy")},
+                #{value:"west",label:"West",content:text("Standby")}]}),
+        specimen_p0(ctx)
+    ]).with_style(style().padding(px(16)).gap(px(14)).typography("body"))
+}
+
+fn specimen_data_and_documents(ctx) {
+    column([
         specimen_data(ctx),
         specimen_columns(ctx),
         specimen_time(ctx),
         markdown_viewer::MarkdownViewer(#{key:"specimen-markdown",label:"Markdown",source:"## Native content\n\n**Readable** text and `inline code`.\n\n- A semantic list\n- Theme typography"})
             .with_style(style().height(px(200))),
-        selectable_card_group::SelectableCardGroup(#{key:"specimen-cards",label:"Deployment region",
-            values:ctx.get_state("specimen_card_values"),on_change:Fn("set_specimen_card_values"),
-            items:[#{value:"east",label:"East",content:text("Healthy")},
-                #{value:"west",label:"West",content:text("Standby")}]}),
-        specimen_documents(),
-        specimen_p0(ctx)
+        specimen_documents()
     ]).with_style(style().padding(px(16)).gap(px(14)).typography("body"))
 }
 
-fn gallery_theme_options() {
-    [
-        #{ value: "default_dark", label: "Default Dark" }, #{ value: "default_light", label: "Default Light" },
-        #{ value: "tokyo_night", label: "Tokyo Night" }, #{ value: "tokyo_storm", label: "Tokyo Storm" },
-        #{ value: "catppuccin_latte", label: "Catppuccin Latte" }, #{ value: "catppuccin_mocha", label: "Catppuccin Mocha" },
-        #{ value: "ethereal", label: "Ethereal" }, #{ value: "everforest", label: "Everforest" },
-        #{ value: "gruvbox", label: "Gruvbox" }, #{ value: "hackerman", label: "Hackerman" },
-        #{ value: "nord", label: "Nord" }, #{ value: "retro_82", label: "Retro 82" },
-        #{ value: "hermarchy", label: "Hermarchy" }, #{ value: "futurism", label: "Futurism" },
-        #{ value: "aetheria", label: "Aetheria" }
-    ]
+fn specimen_navigation_and_overlays(ctx) {
+    column([specimen_navigation(ctx), specimen_overlays(ctx)])
+        .with_style(style().padding(px(16)).gap(px(14)).typography("body"))
+}
+
+fn gallery_theme_options(ctx) {
+    let variants=ctx.theme_variants();let options=[];
+    for variant in variants {
+        let siblings=variants.filter(|other|other.family==variant.family).len;
+        options.push(#{value:gallery_theme_key(variant),label:if siblings>1{`${variant.family} · ${variant.name}`}else{variant.family}});
+    }
+    options
 }
 
 fn gallery_header(ctx) {
     let categories = [];
-    for entry in [#{ value: "all", label: "All" }, #{ value: "foundations", label: "Foundations" },
+    for entry in [#{ value: "all", label: "Overview" }, #{ value: "foundations", label: "Foundations" },
         #{ value: "forms", label: "Forms" }, #{ value: "navigation", label: "Navigation & data" },
         #{ value: "documents", label: "Code & diff" },
-        #{ value: "overlays", label: "Commands & overlays" }] {
+        #{ value: "overlays", label: "Commands & overlays" },
+        #{ value: "product", label: "Product cards" }] {
         categories.push(button::Button(#{ text: entry.label, size: "sm",
             variant: if ctx.get_state("gallery_category") == entry.value { "primary" } else { "ghost" } })
             .on_click_value(Fn("set_gallery_category").curry(entry.value), ()));
@@ -1063,8 +1420,8 @@ fn gallery_header(ctx) {
 
 fn gallery_title_bar(ctx) {
     let compact = ctx.viewport_class() == "compact";
-    let themes = combobox::Combobox(#{ key: "gallery-theme", label: "Gallery theme", options: gallery_theme_options(), mode: "single",
-            selected: [ctx.get_state("gallery_theme")], open: ctx.get_state("gallery_theme_open"),
+    let themes = combobox::Combobox(#{ key: "gallery-theme", label: "Gallery theme", options: gallery_theme_options(ctx), mode: "single",
+            selected: [gallery_theme_key(ctx.theme_variant())], open: ctx.get_state("gallery_theme_open"),
             query: ctx.get_state("gallery_theme_query"), searchable: true, placeholder: "Theme",
             width: px(if compact { 150 } else { 240 }), size: "xs",
             on_change: Fn("set_gallery_theme"), on_open_change: Fn("set_gallery_theme_open"),
@@ -1105,7 +1462,32 @@ fn gallery_content(ctx) {
     } else if category == "overlays" {
         column([specimen_overlays(ctx)])
             .with_style(style().padding(px(14)).gap(px(14)))
-    } else { specimen(ctx) }
+    } else if category == "product" {
+        specimen_product_cards()
+    } else { specimen_controls(ctx) }
+}
+
+fn set_preview_section(section, ctx, payload) { ctx.set_state("preview_section", section); }
+
+fn studio_preview(ctx) {
+    let section = ctx.get_state("preview_section");
+    let choices = [];
+    for entry in [#{value:"controls",label:"Controls"}, #{value:"navigation",label:"Navigation & overlays"},
+        #{value:"data",label:"Data & documents"}, #{value:"product",label:"Product cards"}] {
+        choices.push(button::Button(#{key:entry.value, text:entry.label, size:"sm",
+            variant:if section == entry.value {"primary"} else {"ghost"}})
+            .accessibility_pressed(section == entry.value)
+            .with_key(`preview-switch-${entry.value}`).on_click_value(Fn("set_preview_section").curry(entry.value), ()));
+    }
+    let preview = if section == "navigation" { specimen_navigation_and_overlays(ctx) }
+        else if section == "data" { specimen_data_and_documents(ctx) }
+        else if section == "product" { specimen_product_cards() }
+        else { specimen_controls(ctx) };
+    column([
+        row(choices).with_style(style().gap(px(4)).padding_x(px(14)).padding_y(px(8)).flex_shrink(false).flex_wrap()
+            .border_bottom(px(1)).border_color(theme_color("border"))),
+        column([preview]).with_key(`preview-contents-${section}`).with_style(style().flex_grow().min_height(px(0)).overflow_y_scroll())
+    ]).with_style(style().flex_grow().min_width(px(0)).min_height(px(0)))
 }
 
 fn view(ctx) {
@@ -1120,7 +1502,7 @@ fn view(ctx) {
     } else {
         row([
             editor(ctx),
-            column([specimen(ctx)]).with_style(style().flex_grow().overflow_y_scroll())
+            studio_preview(ctx)
         ]).with_style(style().width(relative(1.0)).height(relative(1.0))
             .background(theme_color("surface")))
     }

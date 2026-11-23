@@ -5,6 +5,14 @@ use thiserror::Error;
 
 use crate::{ComponentInstancePath, NodeId};
 
+fn append_hex(output: &mut String, value: &str) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in value.bytes() {
+        output.push(char::from(HEX[usize::from(byte >> 4)]));
+        output.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ElementRefId {
     component: ComponentInstancePath,
@@ -30,6 +38,33 @@ impl ElementRefId {
         {
             return Err(ElementRefError::InvalidKey(key));
         }
+        Ok(Self { component, key })
+    }
+
+    /// Construct a reference from a role namespace and a business key.
+    /// The encoded key cannot alias a plain reference or another role.
+    ///
+    /// # Errors
+    /// The namespace must be 1–32 ASCII letters, digits, underscores or
+    /// hyphens; the business key must occupy 1–128 UTF-8 bytes.
+    pub fn new_namespaced(
+        component: ComponentInstancePath,
+        namespace: &str,
+        business_key: &str,
+    ) -> Result<Self, ElementRefError> {
+        if namespace.is_empty()
+            || namespace.len() > 32
+            || !namespace
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            || business_key.is_empty()
+            || business_key.len() > 128
+        {
+            return Err(ElementRefError::InvalidBusinessKey);
+        }
+        // '#' is deliberately outside the alphabet of plain ref keys.
+        let mut key = format!("#{namespace}:");
+        append_hex(&mut key, business_key);
         Ok(Self { component, key })
     }
 
@@ -69,14 +104,6 @@ impl ElementRef {
     /// the ID, so it stays stable across reconciliation and retained hiding.
     #[must_use]
     pub fn semantic_id(&self) -> String {
-        fn append_hex(output: &mut String, value: &str) {
-            const HEX: &[u8; 16] = b"0123456789abcdef";
-            for byte in value.bytes() {
-                output.push(char::from(HEX[usize::from(byte >> 4)]));
-                output.push(char::from(HEX[usize::from(byte & 0x0f)]));
-            }
-        }
-
         let mut output = String::from("element-ref");
         // Hex alphabet excludes every structural separator. Segment boundaries,
         // component names, keys and the final ref key are therefore unambiguous.
@@ -120,12 +147,38 @@ pub struct ElementRefRegistry {
     dirty: BTreeSet<ComponentInstancePath>,
 }
 
-/// The geometry projection observed by one executable contribution. Bounds is
-/// stronger than size, so reading both coalesces to a full observation.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// Projections coalesce by coverage, not enum order. Text anchors include
+/// presentation movement; bounds dominate size;
+/// size dominates width classes, whose stable intervals intersect.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ElementRefGeometryRead {
+    WidthClass(crate::responsive::WidthClassInterval),
     LayoutSize,
     Bounds,
+    TextAnchors,
+}
+
+impl ElementRefGeometryRead {
+    pub(crate) fn covers(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::TextAnchors, _)
+            | (Self::Bounds, Self::Bounds | Self::LayoutSize | Self::WidthClass(_))
+            | (Self::LayoutSize, Self::LayoutSize | Self::WidthClass(_)) => true,
+            (Self::WidthClass(left), Self::WidthClass(right)) => left.covers(right),
+            _ => false,
+        }
+    }
+
+    fn combine(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::TextAnchors, _) | (_, Self::TextAnchors) => Self::TextAnchors,
+            (Self::Bounds, _) | (_, Self::Bounds) => Self::Bounds,
+            (Self::LayoutSize, _) | (_, Self::LayoutSize) => Self::LayoutSize,
+            (Self::WidthClass(left), Self::WidthClass(right)) => left
+                .intersection(right)
+                .map_or(Self::LayoutSize, Self::WidthClass),
+        }
+    }
 }
 
 pub(crate) type ElementRefGeometryReaders =
@@ -150,7 +203,7 @@ pub(crate) fn track_geometry_ref_reader(
 ) {
     readers
         .entry(reader)
-        .and_modify(|previous| *previous = (*previous).max(observation))
+        .and_modify(|previous| *previous = previous.combine(observation))
         .or_insert(observation);
 }
 
@@ -342,6 +395,10 @@ impl ElementRefRegistry {
 pub enum ElementRefError {
     #[error("element-ref key `{0}` must be 1-128 ASCII letters, digits, `_`, `-`, `.`, or `:`")]
     InvalidKey(String),
+    #[error(
+        "a namespaced element-ref needs an ASCII namespace of 1–32 letters, digits, '_' or '-' and a business key of 1–128 UTF-8 bytes"
+    )]
+    InvalidBusinessKey,
     #[error("element ref `{0:?}` is stale or unmounted")]
     Stale(ElementRefId),
     #[error("element ref `{0:?}` was not declared by the active formal component render")]
@@ -382,6 +439,11 @@ pub(crate) enum ElementCommand {
         window: String,
         node: NodeId,
     },
+    FocusDescendant {
+        window: String,
+        scope: NodeId,
+        prefer_invalid: bool,
+    },
     ScrollTo {
         window: String,
         node: NodeId,
@@ -402,6 +464,7 @@ impl ElementCommand {
             | Self::ScrollCollectionToKey { window, .. }
             | Self::ScrollCollection { window, .. }
             | Self::Focus { window, .. }
+            | Self::FocusDescendant { window, .. }
             | Self::ScrollTo { window, .. }
             | Self::ScrollIntoView { window, .. } => window,
         }
@@ -411,6 +474,22 @@ impl ElementCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn namespaced_business_refs_are_lossless_and_do_not_alias_plain_keys() {
+        let component = ComponentInstancePath::root("View", "one");
+        let make = |namespace: &str, business: &str| {
+            ElementRefId::new_namespaced(component.clone(), namespace, business)
+        };
+        let a = make("participant", "team/🧪").unwrap();
+        assert_eq!(a, make("participant", "team/🧪").unwrap());
+        assert_ne!(a, make("participant", "team:🧪").unwrap());
+        assert_ne!(a, make("cause", "team/🧪").unwrap());
+        assert!(ElementRefId::new(component.clone(), a.key()).is_err());
+        assert!(make("a:b", "team/🧪").is_err());
+        assert!(make("participant", &"a".repeat(129)).is_err());
+        assert!(make("participant", &"🧪".repeat(32)).is_ok());
+    }
 
     #[test]
     fn semantic_ids_encode_typed_paths_instead_of_ambiguous_display_strings() {
@@ -452,6 +531,130 @@ mod tests {
             layout: bounds,
             visual: bounds,
             clip: None,
+        }
+    }
+
+    #[test]
+    fn width_class_reads_coalesce_and_ignore_in_class_size_position_and_clip_changes() {
+        let provider = ComponentInstancePath::root("Provider", "main");
+        let owner = provider.child("Reader", "classes");
+        let reference = ElementRef::new(ElementRefId::new(provider.clone(), "field").unwrap());
+        let (node, _) = nodes();
+        let geometry = crate::GeometryRegistry::new();
+        geometry.update(node, measured(120.0));
+        let mut refs = ElementRefRegistry::new();
+        for boundaries in [&[150.0][..], &[100.0, 200.0][..]] {
+            let (_, interval) =
+                crate::responsive::classify_element_width(120.0, boundaries).unwrap();
+            refs.resolve_and_track_geometry_read(
+                &reference,
+                &owner,
+                ElementRefGeometryRead::WidthClass(interval),
+            );
+        }
+        refs.reconcile(&provider, BTreeMap::from([(reference.id().clone(), node)]));
+        geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+        refs.take_dirty();
+        geometry.take_dirty();
+        let mut changed = measured(130.0);
+        changed.layout.x = 80.0;
+        changed.layout.height = 70.0;
+        changed.visual = changed.layout;
+        changed.clip = Some(crate::GeometryBounds::new(90.0, 0.0, 40.0, 24.0).unwrap());
+        geometry.update(node, changed);
+        assert!(
+            geometry.take_dirty().is_empty(),
+            "only the queried classes are observed"
+        );
+        geometry.update(node, measured(150.0));
+        assert!(
+            geometry.take_dirty().is_empty(),
+            "the upper boundary is inclusive"
+        );
+        geometry.update(node, measured(150.5));
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner.clone()]));
+        let dependency = crate::read_dependency::ReadDependency::component(&owner);
+        refs.reset_contribution(&dependency);
+        geometry.reset_contribution(&dependency);
+        for boundaries in [&[150.0][..], &[100.0, 200.0][..]] {
+            let (_, interval) =
+                crate::responsive::classify_element_width(150.5, boundaries).unwrap();
+            refs.resolve_and_track_geometry_read(
+                &reference,
+                &owner,
+                ElementRefGeometryRead::WidthClass(interval),
+            );
+        }
+        geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+        geometry.take_dirty();
+        geometry.update(node, measured(199.0));
+        assert!(geometry.take_dirty().is_empty());
+        geometry.update(node, measured(200.5));
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner]));
+    }
+
+    #[test]
+    fn width_class_rollback_restores_the_original_binding_and_stable_interval() {
+        let provider = ComponentInstancePath::root("Provider", "main");
+        let owner = provider.child("Reader", "width");
+        let reference = ElementRef::new(ElementRefId::new(provider.clone(), "field").unwrap());
+        let (first, second) = nodes();
+        let geometry = crate::GeometryRegistry::new();
+        geometry.update(first, measured(120.0));
+        let mut refs = ElementRefRegistry::new();
+        let (_, interval) = crate::responsive::classify_element_width(120.0, &[130.0]).unwrap();
+        refs.resolve_and_track_geometry_read(
+            &reference,
+            &owner,
+            ElementRefGeometryRead::WidthClass(interval),
+        );
+        refs.reconcile(&provider, BTreeMap::from([(reference.id().clone(), first)]));
+        geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+        refs.take_dirty();
+        geometry.take_dirty();
+        let saved_refs = refs.clone();
+        let saved_geometry = geometry.snapshot();
+        let dependency = crate::read_dependency::ReadDependency::component(&owner);
+        refs.reset_contribution(&dependency);
+        geometry.reset_contribution(&dependency);
+        let (_, other) = crate::responsive::classify_element_width(200.0, &[50.0]).unwrap();
+        refs.resolve_and_track_geometry_read(
+            &reference,
+            &owner,
+            ElementRefGeometryRead::WidthClass(other),
+        );
+        refs.reconcile(
+            &provider,
+            BTreeMap::from([(reference.id().clone(), second)]),
+        );
+        geometry.sync_ref_readers(&provider, refs.geometry_bindings(&provider));
+        refs = saved_refs;
+        geometry.restore(saved_geometry);
+        assert_eq!(refs.resolve(&reference), Ok(first));
+        geometry.update(second, measured(250.0));
+        assert!(geometry.take_dirty().is_empty());
+        geometry.update(first, measured(125.0));
+        assert!(geometry.take_dirty().is_empty());
+        geometry.update(first, measured(131.0));
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([owner]));
+    }
+
+    #[test]
+    fn width_class_reads_never_weaken_size_or_bounds_in_either_order() {
+        let owner = ComponentInstancePath::root("Reader", "main");
+        let (_, interval) = crate::responsive::classify_element_width(120.0, &[150.0]).unwrap();
+        let class = ElementRefGeometryRead::WidthClass(interval);
+        for stronger in [
+            ElementRefGeometryRead::LayoutSize,
+            ElementRefGeometryRead::Bounds,
+        ] {
+            for order in [[class, stronger], [stronger, class]] {
+                let mut readers = ElementRefGeometryReaders::new();
+                for observation in order {
+                    track_geometry_ref_reader(&mut readers, (&owner).into(), observation);
+                }
+                assert_eq!(readers.values().next(), Some(&stronger));
+            }
         }
     }
 

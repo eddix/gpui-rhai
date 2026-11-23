@@ -204,6 +204,15 @@ impl Affine2D {
         )
     }
 
+    /// Map a relative displacement, without applying the translation.
+    #[must_use]
+    pub(crate) fn map_vector(self, vector: (f64, f64)) -> (f64, f64) {
+        (
+            self.m11.mul_add(vector.0, self.m21 * vector.1),
+            self.m12.mul_add(vector.0, self.m22 * vector.1),
+        )
+    }
+
     #[must_use]
     pub fn inverse(self) -> Option<Self> {
         let scale = self
@@ -306,7 +315,11 @@ impl PresentedGeometry {
         };
         let local_to_window = Affine2D::scale(scale_x, scale_y)?
             .then(Affine2D::translation(geometry.visual.x, geometry.visual.y)?)?;
-        Ok(Self {
+        Ok(Self::with_placement(geometry, local_to_window))
+    }
+
+    fn with_placement(geometry: ElementGeometry, local_to_window: Affine2D) -> Self {
+        Self {
             local: GeometryBounds {
                 x: 0.0,
                 y: 0.0,
@@ -318,7 +331,7 @@ impl PresentedGeometry {
             local_to_window,
             window_to_local: local_to_window.inverse(),
             clip: geometry.clip,
-        })
+        }
     }
 }
 
@@ -329,9 +342,32 @@ pub struct ElementGeometry {
     pub clip: Option<GeometryBounds>,
 }
 
+/// Canvas paint bounds before its own path-space motion, and the affine of
+/// the native surface that contains them. The recorded bounds are not an AABB
+/// of the transformed shape. Keeping them in the paint plane preserves the
+/// content insets, the true pivot and the relative axes used by native tools.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CanvasDrawableGeometry {
+    pub(crate) bounds: ElementGeometry,
+    pub(crate) plane_to_window: Affine2D,
+    pub(crate) viewport: Option<crate::canvas::CanvasViewport>,
+}
+
+impl CanvasDrawableGeometry {
+    pub(crate) fn local_point(self, window: (f64, f64)) -> Option<(f64, f64)> {
+        let plane = self.plane_to_window.inverse()?.map_point(window);
+        let local = (
+            plane.0 - self.bounds.visual.x,
+            plane.1 - self.bounds.visual.y,
+        );
+        (local.0.is_finite() && local.1.is_finite()).then_some(local)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct GeometryState {
     committed: BTreeMap<NodeId, ElementGeometry>,
+    placements: BTreeMap<NodeId, Affine2D>,
     presented: BTreeSet<NodeId>,
     /// Nodes presented by cache islands replayed this frame, each sorted.
     presented_islands: Vec<Rc<[NodeId]>>,
@@ -343,16 +379,33 @@ struct GeometryState {
     ref_readers: crate::element_ref::ElementRefGeometryBindings,
     dirty: BTreeSet<ComponentInstancePath>,
     layout_motion: BTreeMap<NodeId, LayoutMotionState>,
-    shared_layout: BTreeMap<(String, String), (NodeId, GeometryBounds)>,
-    motion_progress: BTreeMap<(NodeId, crate::MotionProperty), f64>,
+    presentation_frame: u64,
+    shared_layout: BTreeMap<(String, String), SharedLayoutPresentation>,
+    motion_progress: BTreeMap<(NodeId, crate::MotionProperty), ProgressMotionValue>,
     motion_trigger_targets: BTreeMap<(NodeId, crate::MotionProgressDriver), bool>,
     motion_triggers: BTreeMap<(NodeId, crate::MotionProperty), TriggerMotionState>,
     canvas_transforms: BTreeMap<NodeId, CanvasMotionTransform>,
-    canvas_drawables: BTreeMap<NodeId, ElementGeometry>,
+    canvas_drawables: BTreeMap<NodeId, CanvasDrawableGeometry>,
+    text_anchors: BTreeMap<NodeId, crate::text_anchors::TextAnchorSnapshot>,
+    pending_text_anchors: Option<BTreeMap<NodeId, crate::text_anchors::TextAnchorSnapshot>>,
     element_offsets: BTreeMap<NodeId, (f64, f64)>,
     /// This frame's hitbox of each node with an element ref, so native code
     /// can ask whether the pointer is over its visible, unoccluded part.
     hitboxes: BTreeMap<NodeId, gpui::HitboxId>,
+    /// Pointer hints only for offscreen testing. The semantic union remains
+    /// the public bounds, including for links split across several lines.
+    #[cfg(all(
+        target_os = "macos",
+        any(feature = "offscreen-pre", feature = "offscreen-fast")
+    ))]
+    pointer_aims: BTreeMap<NodeId, crate::offscreen::PointerAim>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SharedLayoutPresentation {
+    node: NodeId,
+    frame: u64,
+    bounds: GeometryBounds,
 }
 
 #[derive(Clone, Debug)]
@@ -366,10 +419,17 @@ struct LayoutMotionState {
 
 #[derive(Clone, Debug)]
 struct TriggerMotionState {
+    driver: crate::MotionProgressDriver,
     from: f64,
     to: f64,
     started: Instant,
     duration: Duration,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ProgressMotionValue {
+    driver: crate::MotionProgressDriver,
+    value: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -453,13 +513,30 @@ impl GeometryRegistry {
     }
 
     pub fn update(&self, node: NodeId, geometry: ElementGeometry) -> bool {
+        self.update_presentation(node, geometry, None)
+    }
+
+    pub(crate) fn update_presentation(
+        &self,
+        node: NodeId,
+        geometry: ElementGeometry,
+        local_to_window: Option<Affine2D>,
+    ) -> bool {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
         state.presented.insert(node);
+        // A newly painted ordinary element must not inherit its previous
+        // inline pointer hint even if it retained the same size and identity.
+        #[cfg(all(
+            target_os = "macos",
+            any(feature = "offscreen-pre", feature = "offscreen-fast")
+        ))]
+        state.pointer_aims.remove(&node);
         if let Some(record) = &mut state.island_record {
             record.push(node);
         }
-        if state.committed.get(&node) == Some(&geometry) {
+        let prior = state.placements.get(&node).copied();
+        if state.committed.get(&node) == Some(&geometry) && prior == local_to_window {
             return false;
         }
         let size_changed = state
@@ -468,6 +545,11 @@ impl GeometryRegistry {
             .map(|previous| (previous.layout.width, previous.layout.height))
             != Some((geometry.layout.width, geometry.layout.height));
         state.committed.insert(node, geometry);
+        if let Some(placement) = local_to_window {
+            state.placements.insert(node, placement);
+        } else {
+            state.placements.remove(&node);
+        }
         let owners = geometry_read_owners(state, node, size_changed);
         state.dirty.extend(owners);
         true
@@ -486,8 +568,8 @@ impl GeometryRegistry {
                 .shared_layout
                 .get(&(group.to_owned(), id.to_owned()))
                 .copied()
-                .filter(|(previous, _)| *previous != node)
-                .map(|(_, bounds)| bounds)
+                .filter(|previous| previous.node != node)
+                .map(|previous| previous.bounds)
         });
         let previous = state
             .committed
@@ -518,53 +600,68 @@ impl GeometryRegistry {
                 },
             );
         }
+        let mut result = LayoutMotionSample::default();
+        if request.preference != crate::MotionPreference::Normal || request.duration.is_zero() {
+            state.layout_motion.remove(&node);
+        } else if let Some(motion) = state.layout_motion.get(&node) {
+            let sampled = sample_layout_bounds(motion, request.now);
+            let done = request.now.saturating_duration_since(motion.started) >= motion.duration;
+            result.offset_x = sampled.x - layout.x;
+            result.offset_y = sampled.y - layout.y;
+            result.active = !done;
+            if done {
+                state.layout_motion.remove(&node);
+            }
+        }
         if let Some((group, id)) = request.shared {
-            state
-                .shared_layout
-                .insert((group.to_owned(), id.to_owned()), (node, layout));
-        }
-        if request.preference != crate::MotionPreference::Normal {
-            state.layout_motion.remove(&node);
-            return LayoutMotionSample::default();
-        }
-        let Some(motion) = state.layout_motion.get(&node) else {
-            return LayoutMotionSample::default();
-        };
-        let sampled = sample_layout_bounds(motion, request.now);
-        let done = request.now.saturating_duration_since(motion.started) >= motion.duration;
-        let result = LayoutMotionSample {
-            offset_x: sampled.x - layout.x,
-            offset_y: sampled.y - layout.y,
-            // GPUI exposes an element offset but no public arbitrary
-            // subtree scale transform. Keep visual/hit geometry honest and
-            // snap size while animating position.
-            scale_x: 1.0,
-            scale_y: 1.0,
-            active: !done,
-        };
-        if done {
-            state.layout_motion.remove(&node);
+            state.shared_layout.insert(
+                (group.to_owned(), id.to_owned()),
+                SharedLayoutPresentation {
+                    node,
+                    frame: state.presentation_frame,
+                    // The renderer translates the subtree, but snaps size.
+                    // Hand off that actual position when a second move
+                    // replaces this node before the first move completes.
+                    bounds: GeometryBounds {
+                        x: layout.x + result.offset_x,
+                        y: layout.y + result.offset_y,
+                        ..layout
+                    },
+                },
+            );
         }
         result
+    }
+
+    pub(crate) fn cancel_layout_motion(&self, node: NodeId) {
+        if !self.inner.borrow().layout_motion.contains_key(&node) {
+            return;
+        }
+        let mut current = self.inner.borrow_mut();
+        Rc::make_mut(&mut current).layout_motion.remove(&node);
     }
 
     pub(crate) fn update_motion_progress(
         &self,
         node: NodeId,
-        property: crate::MotionProperty,
+        binding: &crate::MotionProgressBinding,
         value: f64,
     ) -> bool {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
-        let key = (node, property);
-        if state
-            .motion_progress
-            .get(&key)
-            .is_some_and(|previous| (*previous - value).abs() <= f64::EPSILON)
-        {
+        let key = (node, binding.property());
+        if state.motion_progress.get(&key).is_some_and(|previous| {
+            previous.driver == binding.driver && (previous.value - value).abs() <= f64::EPSILON
+        }) {
             false
         } else {
-            state.motion_progress.insert(key, value);
+            state.motion_progress.insert(
+                key,
+                ProgressMotionValue {
+                    driver: binding.driver,
+                    value,
+                },
+            );
             true
         }
     }
@@ -572,13 +669,14 @@ impl GeometryRegistry {
     pub(crate) fn motion_progress(
         &self,
         node: NodeId,
-        property: crate::MotionProperty,
+        binding: &crate::MotionProgressBinding,
     ) -> Option<f64> {
         self.inner
             .borrow()
             .motion_progress
-            .get(&(node, property))
-            .copied()
+            .get(&(node, binding.property()))
+            .filter(|value| value.driver == binding.driver)
+            .map(|value| value.value)
     }
 
     pub(crate) fn delay_motion(&self, delay: Duration) {
@@ -600,10 +698,118 @@ impl GeometryRegistry {
         node: NodeId,
         driver: crate::MotionProgressDriver,
         active: bool,
-    ) {
+    ) -> bool {
+        if self
+            .inner
+            .borrow()
+            .motion_trigger_targets
+            .get(&(node, driver))
+            .copied()
+            .unwrap_or(false)
+            == active
+        {
+            return false;
+        }
         Rc::make_mut(&mut self.inner.borrow_mut())
             .motion_trigger_targets
             .insert((node, driver), active);
+        true
+    }
+
+    /// A suspended view has no pointer-release route. Revoke only its native
+    /// press targets; other sources and their active-time clocks stay intact.
+    pub(crate) fn cancel_press_motion_targets(&self) {
+        self.retain_press_motion_targets(|_| false);
+    }
+
+    fn retain_press_motion_targets(&self, active: impl Fn(NodeId) -> bool) {
+        let current = self.inner.borrow();
+        let obsolete_keys = current
+            .motion_triggers
+            .iter()
+            .filter_map(|(key, state)| {
+                (state.driver == crate::MotionProgressDriver::Press && !active(key.0))
+                    .then_some(*key)
+            })
+            .chain(current.motion_progress.iter().filter_map(|(key, value)| {
+                (value.driver == crate::MotionProgressDriver::Press && !active(key.0))
+                    .then_some(*key)
+            }))
+            .collect::<Vec<_>>();
+        let targets = current
+            .motion_trigger_targets
+            .keys()
+            .filter(|(node, driver)| {
+                *driver == crate::MotionProgressDriver::Press && !active(*node)
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        if obsolete_keys.is_empty() && targets.is_empty() {
+            return;
+        }
+        drop(current);
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        for key in obsolete_keys {
+            state.motion_triggers.remove(&key);
+            state.motion_progress.remove(&key);
+        }
+        for key in targets {
+            state.motion_trigger_targets.remove(&key);
+        }
+    }
+
+    /// The same property may switch drivers or lose its binding. Neither its
+    /// old normalized clock nor its last native value belongs to the new lease.
+    pub(crate) fn retain_motion_progress_bindings(
+        &self,
+        node: NodeId,
+        bindings: &[crate::MotionProgressBinding],
+    ) {
+        let mut current = self.inner.borrow_mut();
+        let obsolete_keys = current
+            .motion_triggers
+            .range((node, crate::MotionProperty::Opacity)..)
+            .take_while(|(key, _)| key.0 == node)
+            .filter_map(|(key, state)| {
+                (!bindings
+                    .iter()
+                    .any(|binding| binding.property() == key.1 && binding.driver == state.driver))
+                .then_some(*key)
+            })
+            .collect::<Vec<_>>();
+        let mut obsolete_keys = obsolete_keys;
+        obsolete_keys.extend(
+            current
+                .motion_progress
+                .range((node, crate::MotionProperty::Opacity)..)
+                .take_while(|(key, _)| key.0 == node)
+                .filter_map(|(key, value)| {
+                    (!bindings.iter().any(|binding| {
+                        binding.property() == key.1 && binding.driver == value.driver
+                    }))
+                    .then_some(*key)
+                }),
+        );
+        let targets = current
+            .motion_trigger_targets
+            .range((node, crate::MotionProgressDriver::InView)..)
+            .take_while(|(key, _)| key.0 == node)
+            .filter_map(|(key, _)| {
+                (!bindings.iter().any(|binding| binding.driver == key.1)).then_some(*key)
+            })
+            .collect::<Vec<_>>();
+        if obsolete_keys.is_empty() && targets.is_empty() {
+            return;
+        }
+        let state = Rc::make_mut(&mut current);
+        for key in obsolete_keys {
+            state.motion_triggers.remove(&key);
+            state.motion_progress.remove(&key);
+        }
+        for key in targets {
+            state.motion_trigger_targets.remove(&key);
+        }
     }
 
     pub(crate) fn update_canvas_transform(&self, node: NodeId, transform: CanvasMotionTransform) {
@@ -642,6 +848,8 @@ impl GeometryRegistry {
         node: NodeId,
         visual: GeometryBounds,
         offset: (f64, f64),
+        plane_to_window: Affine2D,
+        viewport: Option<crate::canvas::CanvasViewport>,
     ) {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
@@ -653,14 +861,18 @@ impl GeometryRegistry {
             .get(&node)
             .copied()
             .unwrap_or_default();
-        let geometry = ElementGeometry {
-            layout: GeometryBounds {
-                x: visual.x - (offset.0 - base_offset.0),
-                y: visual.y - (offset.1 - base_offset.1),
-                ..visual
+        let geometry = CanvasDrawableGeometry {
+            bounds: ElementGeometry {
+                layout: GeometryBounds {
+                    x: visual.x - (offset.0 - base_offset.0),
+                    y: visual.y - (offset.1 - base_offset.1),
+                    ..visual
+                },
+                visual,
+                clip: outer.clip,
             },
-            visual,
-            clip: outer.clip,
+            plane_to_window,
+            viewport,
         };
         if state.canvas_drawables.get(&node) != Some(&geometry) {
             state.canvas_drawables.insert(node, geometry);
@@ -671,7 +883,7 @@ impl GeometryRegistry {
         }
     }
 
-    pub(crate) fn canvas_drawable(&self, node: NodeId) -> Option<ElementGeometry> {
+    pub(crate) fn canvas_drawable(&self, node: NodeId) -> Option<CanvasDrawableGeometry> {
         self.inner.borrow().canvas_drawables.get(&node).copied()
     }
 
@@ -718,14 +930,25 @@ impl GeometryRegistry {
             .motion_triggers
             .entry(key)
             .or_insert(TriggerMotionState {
+                driver: binding.driver,
                 from: 0.0,
                 to: 0.0,
                 started: now,
                 duration,
             });
+        if trigger.driver != binding.driver {
+            *trigger = TriggerMotionState {
+                driver: binding.driver,
+                from: 0.,
+                to: 0.,
+                started: now,
+                duration,
+            };
+        }
         let sampled = sample_trigger_progress(trigger, now);
         if (trigger.to - target).abs() > f64::EPSILON {
             *trigger = TriggerMotionState {
+                driver: binding.driver,
                 from: sampled,
                 to: target,
                 started: now,
@@ -840,7 +1063,7 @@ impl GeometryRegistry {
                             .filter(|reader| {
                                 previous_readers.is_none_or(|previous| {
                                     previous.get(*reader).is_none_or(|previous_observation| {
-                                        *previous_observation < readers[*reader]
+                                        !previous_observation.covers(readers[*reader])
                                     })
                                 })
                             })
@@ -858,6 +1081,49 @@ impl GeometryRegistry {
 
     pub(crate) fn get(&self, node: NodeId) -> Option<ElementGeometry> {
         self.inner.borrow().committed.get(&node).copied()
+    }
+
+    pub(crate) fn capture_text_anchors(
+        &self,
+        node: NodeId,
+        snapshot: crate::text_anchors::TextAnchorSnapshot,
+    ) {
+        let mut current = self.inner.borrow_mut();
+        if current
+            .pending_text_anchors
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.len() < crate::text_anchors::MAX_ANCHORED_NODES
+                    || pending.contains_key(&node)
+            })
+            && let Some(pending) = &mut Rc::make_mut(&mut current).pending_text_anchors
+        {
+            pending.insert(node, snapshot);
+        }
+    }
+
+    pub(crate) fn can_capture_text_anchors(&self, node: NodeId) -> bool {
+        self.inner
+            .borrow()
+            .pending_text_anchors
+            .as_ref()
+            .is_some_and(|pending| {
+                pending.len() < crate::text_anchors::MAX_ANCHORED_NODES
+                    || pending.contains_key(&node)
+            })
+    }
+
+    pub(crate) fn text_anchors(
+        &self,
+        node: NodeId,
+        plan: &crate::text_anchors::TextAnchorPlan,
+    ) -> UiValue {
+        self.inner
+            .borrow()
+            .text_anchors
+            .get(&node)
+            .filter(|snapshot| &snapshot.plan == plan)
+            .map_or(UiValue::Null, |snapshot| snapshot.value.clone())
     }
 
     // The state is shared with the snapshot a transaction holds: each change
@@ -933,19 +1199,53 @@ impl GeometryRegistry {
     }
 
     pub(crate) fn presented(&self, node: NodeId) -> Result<PresentedGeometry, GeometryError> {
-        self.get(node)
-            .ok_or(GeometryError::Unavailable(node))
-            .and_then(PresentedGeometry::from_element)
+        let geometry = self.get(node).ok_or(GeometryError::Unavailable(node))?;
+        if let Some(placement) = self.exact_placement(node) {
+            Ok(PresentedGeometry::with_placement(geometry, placement))
+        } else {
+            PresentedGeometry::from_element(geometry)
+        }
+    }
+
+    pub(crate) fn exact_placement(&self, node: NodeId) -> Option<Affine2D> {
+        self.inner.borrow().placements.get(&node).copied()
+    }
+
+    #[cfg(all(
+        target_os = "macos",
+        any(feature = "offscreen-pre", feature = "offscreen-fast")
+    ))]
+    pub(crate) fn record_pointer_aim(&self, node: NodeId, aim: crate::offscreen::PointerAim) {
+        Rc::make_mut(&mut self.inner.borrow_mut())
+            .pointer_aims
+            .insert(node, aim);
+    }
+
+    #[cfg(all(
+        target_os = "macos",
+        any(feature = "offscreen-pre", feature = "offscreen-fast")
+    ))]
+    pub(crate) fn pointer_aim(&self, node: NodeId) -> Option<crate::offscreen::PointerAim> {
+        if !self.is_presented(node) {
+            return None;
+        }
+        self.inner.borrow().pointer_aims.get(&node).copied()
     }
 
     pub(crate) fn begin_frame(&self) {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
+        // Logical reconciliation may already have retired the node, pruning
+        // it from presented/hitbox state. Shared identities still declared
+        // by the new tree can hand off their *last presented* geometry.
+        let previous_frame = state.presentation_frame;
         state
             .shared_layout
-            .retain(|_, (node, _)| state.presented.contains(node));
+            .retain(|_, previous| previous.frame == previous_frame);
+        state.presentation_frame = previous_frame.wrapping_add(1);
         state.presented.clear();
         state.presented_islands.clear();
+        state.pending_text_anchors = Some(BTreeMap::new());
         // A node that is not drawn this frame has no hitbox.
         state.hitboxes.clear();
     }
@@ -979,9 +1279,68 @@ impl GeometryRegistry {
     pub(crate) fn finish_frame(&self) {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
-        state
-            .shared_layout
-            .retain(|_, (node, _)| state.presented.contains(node));
+        let present = &state.presented;
+        let cached = &state.presented_islands;
+        let frame = state.presentation_frame;
+        #[cfg(all(
+            target_os = "macos",
+            any(feature = "offscreen-pre", feature = "offscreen-fast")
+        ))]
+        state.pointer_aims.retain(|node, _| {
+            present.contains(node) || cached.iter().any(|nodes| nodes.binary_search(node).is_ok())
+        });
+        state.shared_layout.retain(|_, record| {
+            let visible = present.contains(&record.node)
+                || cached
+                    .iter()
+                    .any(|nodes| nodes.binary_search(&record.node).is_ok());
+            if visible {
+                record.frame = frame;
+            }
+            visible
+        });
+        if let Some(mut pending) = state.pending_text_anchors.take() {
+            // A cache hit replays actual text paint without calling the
+            // capture element. Both native view caches require the same
+            // bounds, clip and visual coordinate context, so those specific
+            // snapshots are still current. A live node that no longer
+            // captures, or an unpresented node, must not inherit its old data.
+            if !cached.is_empty() {
+                for (node, snapshot) in &state.text_anchors {
+                    if pending.len() >= crate::text_anchors::MAX_ANCHORED_NODES {
+                        break;
+                    }
+                    if !present.contains(node)
+                        && cached.iter().any(|nodes| nodes.binary_search(node).is_ok())
+                    {
+                        pending.entry(*node).or_insert_with(|| snapshot.clone());
+                    }
+                }
+            }
+            if pending != state.text_anchors {
+                let old = std::mem::replace(&mut state.text_anchors, pending);
+                let changed = old
+                    .keys()
+                    .chain(state.text_anchors.keys())
+                    .filter(|node| old.get(node) != state.text_anchors.get(node))
+                    .collect::<BTreeSet<_>>();
+                for node in changed {
+                    if let Some(refs) = state.ref_readers.get(node) {
+                        state.dirty.extend(
+                            refs.values()
+                                .flat_map(BTreeMap::iter)
+                                .filter(|(_, observation)| {
+                                    **observation
+                                        == crate::element_ref::ElementRefGeometryRead::TextAnchors
+                                })
+                                .map(|(reader, _)| reader.owner.clone()),
+                        );
+                    }
+                }
+            }
+        }
+        drop(current);
+        self.retain_press_motion_targets(|node| self.is_presented(node));
     }
 
     pub(crate) fn is_presented(&self, node: NodeId) -> bool {
@@ -1001,6 +1360,7 @@ impl GeometryRegistry {
             .map(crate::RetainedNode::id)
             .collect::<Vec<_>>();
         self.retain_nodes(|node| live.binary_search(&node).is_ok());
+        self.retain_press_motion_targets(|node| tree.is_page_visible(node));
     }
 
     /// Forgets every node for which `active` is false.
@@ -1017,6 +1377,7 @@ impl GeometryRegistry {
                     .flat_map(|nodes| nodes.iter().copied()),
             ))
             && kept(Box::new(state.readers.keys().copied()))
+            && kept(Box::new(state.placements.keys().copied()))
             && kept(Box::new(state.ref_readers.keys().copied()))
             && kept(Box::new(state.layout_motion.keys().copied()))
             && kept(Box::new(
@@ -1030,13 +1391,27 @@ impl GeometryRegistry {
             ))
             && kept(Box::new(state.canvas_transforms.keys().copied()))
             && kept(Box::new(state.canvas_drawables.keys().copied()))
+            && kept(Box::new(state.text_anchors.keys().copied()))
+            && kept(Box::new(
+                state
+                    .pending_text_anchors
+                    .iter()
+                    .flat_map(BTreeMap::keys)
+                    .copied(),
+            ))
             && kept(Box::new(state.element_offsets.keys().copied()))
             && kept(Box::new(state.hitboxes.keys().copied()));
+        #[cfg(all(
+            target_os = "macos",
+            any(feature = "offscreen-pre", feature = "offscreen-fast")
+        ))]
+        let kept = kept && state.pointer_aims.keys().copied().all(&active);
         if kept {
             return;
         }
         let state = Rc::make_mut(&mut current);
         state.committed.retain(|node, _| active(*node));
+        state.placements.retain(|node, _| active(*node));
         state.presented.retain(|node| active(*node));
         for nodes in &mut state.presented_islands {
             if nodes.iter().any(|node| !active(*node)) {
@@ -1053,8 +1428,17 @@ impl GeometryRegistry {
         state.motion_triggers.retain(|(node, _), _| active(*node));
         state.canvas_transforms.retain(|node, _| active(*node));
         state.canvas_drawables.retain(|node, _| active(*node));
+        state.text_anchors.retain(|node, _| active(*node));
+        if let Some(pending) = &mut state.pending_text_anchors {
+            pending.retain(|node, _| active(*node));
+        }
         state.element_offsets.retain(|node, _| active(*node));
         state.hitboxes.retain(|node, _| active(*node));
+        #[cfg(all(
+            target_os = "macos",
+            any(feature = "offscreen-pre", feature = "offscreen-fast")
+        ))]
+        state.pointer_aims.retain(|node, _| active(*node));
     }
 
     pub(crate) fn retain_shared_layout_ids(&self, active: &BTreeSet<(String, String)>) {
@@ -1094,8 +1478,19 @@ fn geometry_read_owners(
                 .flat_map(BTreeMap::values)
                 .flat_map(BTreeMap::iter)
                 .filter(|(_, observation)| {
-                    size_changed
-                        || **observation == crate::element_ref::ElementRefGeometryRead::Bounds
+                    use crate::element_ref::ElementRefGeometryRead;
+                    match observation {
+                        ElementRefGeometryRead::Bounds | ElementRefGeometryRead::TextAnchors => {
+                            true
+                        }
+                        ElementRefGeometryRead::LayoutSize => size_changed,
+                        ElementRefGeometryRead::WidthClass(interval) => {
+                            size_changed
+                                && state.committed.get(&node).is_none_or(|geometry| {
+                                    !interval.contains(geometry.layout.width)
+                                })
+                        }
+                    }
                 })
                 .map(|(reader, _)| reader),
         )
@@ -1183,6 +1578,155 @@ mod tests {
     use super::*;
 
     #[test]
+    fn text_anchors_publish_only_at_frame_end_and_only_for_the_exact_plan() {
+        use crate::element_ref::ElementRefGeometryRead;
+        use crate::text_anchors::{TextAnchorPlan, TextAnchorRequest, TextAnchorSnapshot};
+        use crate::text_geometry::CaretAffinity;
+
+        let plan = |source, revision, at| {
+            TextAnchorPlan::new(
+                source,
+                revision,
+                [(
+                    "cursor".to_owned(),
+                    TextAnchorRequest::Caret {
+                        at,
+                        affinity: CaretAffinity::Downstream,
+                    },
+                )],
+            )
+            .unwrap()
+        };
+        let original = plan("你好", 1, 0);
+        let moved = plan("你好", 1, 1);
+        let revised = plan("你好", 2, 0);
+        let replaced = plan("欢迎", 1, 0);
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("source")).unwrap();
+        let node = tree.root_id().unwrap();
+        let geometry = GeometryRegistry::new();
+        let owner = ComponentInstancePath::root("Document", "source");
+        let ref_id = crate::ElementRefId::new(owner.clone(), "text").unwrap();
+        let reader = ComponentInstancePath::root("Cursor", "reader");
+        let bounds_reader = ComponentInstancePath::root("Bounds", "reader");
+        geometry.read_ref_observation(
+            &ref_id,
+            node,
+            reader.clone(),
+            ElementRefGeometryRead::TextAnchors,
+        );
+        geometry.read_ref_observation(&ref_id, node, bounds_reader, ElementRefGeometryRead::Bounds);
+        let capture = |plan: &TextAnchorPlan| {
+            geometry.capture_text_anchors(
+                node,
+                TextAnchorSnapshot {
+                    plan: plan.clone(),
+                    value: UiValue::Integer(1),
+                },
+            );
+        };
+
+        geometry.begin_frame();
+        capture(&original);
+        assert_eq!(geometry.text_anchors(node, &original), UiValue::Null);
+        geometry.finish_frame();
+        geometry.finish_frame();
+        assert_eq!(geometry.text_anchors(node, &original), UiValue::Integer(1));
+        for other in [&moved, &revised, &replaced] {
+            assert_eq!(geometry.text_anchors(node, other), UiValue::Null);
+        }
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([reader.clone()]));
+
+        geometry.begin_frame();
+        capture(&original);
+        geometry.finish_frame();
+        assert!(
+            geometry.take_dirty().is_empty(),
+            "identical paint must not invalidate a reader"
+        );
+        geometry.begin_frame();
+        capture(&moved);
+        assert_eq!(geometry.text_anchors(node, &moved), UiValue::Null);
+        geometry.finish_frame();
+        assert_eq!(geometry.text_anchors(node, &original), UiValue::Null);
+        assert_eq!(geometry.text_anchors(node, &moved), UiValue::Integer(1));
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([reader.clone()]));
+
+        geometry.begin_frame();
+        geometry.finish_frame(); // source no longer paints, even when its NodeId is retained
+        assert_eq!(geometry.text_anchors(node, &moved), UiValue::Null);
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([reader]));
+    }
+
+    #[test]
+    fn disabling_layout_motion_discards_only_the_owning_program() {
+        for mode in 0..3 {
+            let mut tree = crate::RetainedUiTree::new();
+            tree.reconcile(crate::UiNode::column(vec![crate::UiNode::text("peer")]))
+                .unwrap();
+            let node = tree.root_id().unwrap();
+            let peer = tree.node(node).unwrap().children().next().unwrap().node();
+            let registry = GeometryRegistry::new();
+            let old = GeometryBounds::new(0.0, 0.0, 100.0, 20.0).unwrap();
+            let next = GeometryBounds::new(100.0, 40.0, 100.0, 20.0).unwrap();
+            let now = Instant::now();
+            let request = |duration, preference| LayoutMotionRequest {
+                shared: None,
+                duration,
+                easing: crate::MotionEasing::Linear,
+                preference,
+                now,
+            };
+            for id in [node, peer] {
+                registry.update(
+                    id,
+                    ElementGeometry {
+                        layout: old,
+                        visual: old,
+                        clip: None,
+                    },
+                );
+                assert!(
+                    registry
+                        .sample_layout_motion(
+                            id,
+                            next,
+                            request(Duration::from_millis(480), crate::MotionPreference::Normal)
+                        )
+                        .active
+                );
+            }
+            if mode == 2 {
+                registry.cancel_layout_motion(node);
+            } else {
+                let sample = registry.sample_layout_motion(
+                    node,
+                    next,
+                    request(
+                        if mode == 0 {
+                            Duration::ZERO
+                        } else {
+                            Duration::from_millis(480)
+                        },
+                        if mode == 0 {
+                            crate::MotionPreference::Normal
+                        } else {
+                            crate::MotionPreference::None
+                        },
+                    ),
+                );
+                assert!(!sample.active);
+                assert!(
+                    sample.offset_x.abs() < f64::EPSILON && sample.offset_y.abs() < f64::EPSILON
+                );
+            }
+            let state = registry.inner.borrow();
+            assert!(!state.layout_motion.contains_key(&node));
+            assert!(state.layout_motion.contains_key(&peer));
+        }
+    }
+
+    #[test]
     fn affine_inverse_is_scale_relative_and_rejects_singular_matrices() {
         for scale in [1e-200, 1e-10, 1e-5, 1.0, 1e5, 1e200] {
             let transform = Affine2D::scale(scale, scale * 2.0)
@@ -1245,6 +1789,40 @@ mod tests {
     }
 
     #[test]
+    fn exact_placement_changes_even_when_the_visual_aabb_does_not() {
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("affine")).unwrap();
+        let node = tree.root_id().unwrap();
+        let geometry = ElementGeometry {
+            layout: GeometryBounds::new(50., 60., 20., 10.).unwrap(),
+            visual: GeometryBounds::new(50., 60., 10., 20.).unwrap(),
+            clip: None,
+        };
+        let a = Affine2D::new(0., 1., -1., 0., 60., 60.).unwrap();
+        let b = Affine2D::new(0., -1., 1., 0., 50., 80.).unwrap();
+        let registry = GeometryRegistry::new();
+        assert!(registry.update_presentation(node, geometry, Some(a)));
+        let first = registry.presented(node).unwrap();
+        assert_eq!(first.local_to_window.map_point((4., 3.)), (57., 64.));
+        assert_eq!(
+            first.window_to_local.unwrap().map_point((57., 64.)),
+            (4., 3.)
+        );
+        assert!(!registry.update_presentation(node, geometry, Some(a)));
+        assert!(registry.update_presentation(node, geometry, Some(b)));
+        assert_eq!(
+            registry
+                .presented(node)
+                .unwrap()
+                .local_to_window
+                .map_point((4., 3.)),
+            (53., 76.)
+        );
+        assert!(registry.update(node, geometry));
+        assert!(registry.exact_placement(node).is_none());
+    }
+
+    #[test]
     fn changed_geometry_invalidates_exact_readers_and_snapshot_restores() {
         let mut tree = crate::RetainedUiTree::new();
         tree.reconcile(crate::UiNode::text("field")).unwrap();
@@ -1275,6 +1853,196 @@ mod tests {
         assert!(registry.take_dirty().contains(&reader));
         registry.restore(snapshot);
         assert_eq!(registry.read(node, &reader).unwrap(), initial);
+    }
+
+    #[test]
+    fn press_leases_cancel_without_resetting_peers_and_restore_transactionally() {
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::row(vec![
+            crate::UiNode::text("press"),
+            crate::UiNode::text("hover"),
+        ]))
+        .unwrap();
+        let ids = tree
+            .nodes()
+            .map(crate::RetainedNode::id)
+            .collect::<Vec<_>>();
+        let node = ids[1];
+        let peer = ids[2];
+        let binding = |driver| {
+            let mut transition =
+                crate::MotionTransition::new(crate::MotionProperty::Opacity, 0., 1., 100);
+            transition.easing = crate::MotionEasing::Linear;
+            crate::MotionProgressBinding::new(driver, crate::MotionSource::Transition(transition))
+                .unwrap()
+        };
+        let press = binding(crate::MotionProgressDriver::Press);
+        let hover = binding(crate::MotionProgressDriver::Hover);
+        let registry = GeometryRegistry::new();
+        let now = Instant::now();
+        assert!(!registry.set_motion_trigger(node, press.driver, false));
+        for (node, binding) in [(node, &press), (peer, &hover)] {
+            assert!(registry.set_motion_trigger(node, binding.driver, true));
+            assert!(!registry.set_motion_trigger(node, binding.driver, true));
+            registry.sample_motion_trigger(node, binding, crate::MotionPreference::Normal, now);
+            let sample = registry.sample_motion_trigger(
+                node,
+                binding,
+                crate::MotionPreference::Normal,
+                now + Duration::from_millis(50),
+            );
+            registry.update_motion_progress(node, binding, sample.value);
+        }
+        let checkpoint = registry.snapshot();
+        registry.cancel_press_motion_targets();
+        assert_eq!(registry.motion_progress(node, &press), None);
+        assert_eq!(registry.motion_progress(peer, &hover), Some(0.5));
+        let peer_sample = registry.sample_motion_trigger(
+            peer,
+            &hover,
+            crate::MotionPreference::Normal,
+            now + Duration::from_millis(75),
+        );
+        assert!((peer_sample.value - 0.75).abs() < f64::EPSILON);
+        registry.restore(checkpoint);
+        assert_eq!(registry.motion_progress(node, &press), Some(0.5));
+        assert_eq!(
+            registry.motion_progress(node, &hover),
+            None,
+            "one property's old driver is not another driver's value"
+        );
+        registry.retain_motion_progress_bindings(node, std::slice::from_ref(&hover));
+        assert_eq!(registry.motion_progress(node, &press), None);
+        assert!(
+            !registry
+                .inner
+                .borrow()
+                .motion_triggers
+                .contains_key(&(node, press.property()))
+        );
+        // Reduced/None produce a sampled value without a running clock too.
+        registry.update_motion_progress(node, &press, 1.);
+        registry.retain_motion_progress_bindings(node, &[]);
+        assert_eq!(registry.motion_progress(node, &press), None);
+    }
+
+    #[test]
+    fn cached_islands_keep_text_anchors_only_when_the_owner_replays() {
+        let node = NodeId::from_raw(1);
+        let registry = GeometryRegistry::new();
+        let plan = crate::text_anchors::TextAnchorPlan::new("anchor", 1, []).unwrap();
+        let snapshot = crate::text_anchors::TextAnchorSnapshot {
+            plan: plan.clone(),
+            value: UiValue::Integer(42),
+        };
+        registry.begin_frame();
+        registry.capture_text_anchors(node, snapshot);
+        registry.finish_frame();
+
+        registry.begin_frame();
+        registry.replay_presented(Rc::from([node]));
+        registry.finish_frame();
+        assert_eq!(registry.text_anchors(node, &plan), UiValue::Integer(42));
+
+        registry.begin_frame();
+        registry.finish_frame();
+        assert_eq!(registry.text_anchors(node, &plan), UiValue::Null);
+    }
+
+    #[cfg(all(
+        target_os = "macos",
+        any(feature = "offscreen-pre", feature = "offscreen-fast")
+    ))]
+    #[test]
+    fn offscreen_pointer_aim_replays_but_does_not_survive_replacement_or_removal() {
+        use crate::offscreen::PointerAim;
+
+        let node = NodeId::from_raw(1);
+        let registry = GeometryRegistry::new();
+        let bounds = ElementGeometry::default();
+        registry.begin_frame();
+        registry.update(node, bounds);
+        registry.record_pointer_aim(
+            node,
+            PointerAim::Point(gpui::point(gpui::px(7.), gpui::px(8.))),
+        );
+        registry.finish_frame();
+
+        registry.begin_frame();
+        registry.replay_presented(Rc::from([node]));
+        registry.finish_frame();
+        assert!(
+            matches!(registry.pointer_aim(node), Some(PointerAim::Point(p))
+            if p == gpui::point(gpui::px(7.), gpui::px(8.)))
+        );
+
+        registry.begin_frame();
+        registry.update(node, bounds);
+        registry.finish_frame();
+        assert!(registry.pointer_aim(node).is_none());
+
+        registry.begin_frame();
+        registry.update(node, bounds);
+        registry.record_pointer_aim(node, PointerAim::Hidden);
+        registry.finish_frame();
+        assert!(matches!(
+            registry.pointer_aim(node),
+            Some(PointerAim::Hidden)
+        ));
+        registry.retain_nodes(|_| false);
+        assert!(registry.pointer_aim(node).is_none());
+
+        registry.begin_frame();
+        registry.replay_presented(Rc::from([node]));
+        registry.finish_frame();
+        assert!(registry.pointer_aim(node).is_none());
+    }
+
+    #[test]
+    fn cached_islands_preserve_live_press_but_unpresented_owners_lose_their_lease() {
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("owner")).unwrap();
+        let node = tree.root_id().unwrap();
+        let registry = GeometryRegistry::new();
+        let binding = crate::MotionProgressBinding::new(
+            crate::MotionProgressDriver::Press,
+            crate::MotionSource::Transition(crate::MotionTransition::new(
+                crate::MotionProperty::Opacity,
+                1.,
+                0.4,
+                100,
+            )),
+        )
+        .unwrap();
+        registry.set_motion_trigger(node, binding.driver, true);
+        registry.sample_motion_trigger(
+            node,
+            &binding,
+            crate::MotionPreference::Normal,
+            Instant::now(),
+        );
+        registry.update_motion_progress(node, &binding, 0.6);
+        registry.begin_frame();
+        registry.replay_presented(Rc::from(vec![node]));
+        registry.finish_frame();
+        assert_eq!(registry.motion_progress(node, &binding), Some(0.6));
+        registry.begin_frame();
+        registry.finish_frame();
+        assert_eq!(registry.motion_progress(node, &binding), None);
+        assert!(
+            !registry
+                .inner
+                .borrow()
+                .motion_triggers
+                .contains_key(&(node, binding.property()))
+        );
+        assert!(
+            !registry
+                .inner
+                .borrow()
+                .motion_trigger_targets
+                .contains_key(&(node, binding.driver))
+        );
     }
 
     #[test]
@@ -1440,5 +2208,66 @@ mod tests {
         assert_eq!(registry.inner.borrow().shared_layout.len(), 1);
         registry.begin_frame();
         assert!(registry.inner.borrow().shared_layout.is_empty());
+    }
+
+    #[test]
+    fn shared_layout_hands_off_the_last_visible_position_after_node_retirement() {
+        let registry = GeometryRegistry::new();
+        let old = NodeId::from_raw(1);
+        let next = NodeId::from_raw(2);
+        let final_node = NodeId::from_raw(3);
+        let began = Instant::now();
+        let request = |now| LayoutMotionRequest {
+            shared: Some(("board", "task")),
+            duration: Duration::from_millis(100),
+            easing: crate::MotionEasing::Linear,
+            preference: crate::MotionPreference::Normal,
+            now,
+        };
+        let at = |x| GeometryBounds::new(x, 0., 100., 20.).unwrap();
+        let present = |node, layout, visual| {
+            registry.update(
+                node,
+                ElementGeometry {
+                    layout,
+                    visual,
+                    clip: None,
+                },
+            );
+        };
+        registry.begin_frame();
+        registry.sample_layout_motion(old, at(0.), request(began));
+        present(old, at(0.), at(0.));
+        registry.finish_frame();
+
+        registry.retain_nodes(|node| node == next);
+        assert!(
+            !registry.is_presented(old),
+            "a retired hit target is not still visible"
+        );
+        registry.begin_frame();
+        let started = registry.sample_layout_motion(next, at(200.), request(began));
+        assert!((started.offset_x + 200.).abs() < 1e-9 && started.active);
+        present(next, at(200.), at(0.));
+        registry.finish_frame();
+
+        registry.begin_frame();
+        let middle = registry.sample_layout_motion(
+            next,
+            at(200.),
+            request(began + Duration::from_millis(50)),
+        );
+        assert!((middle.offset_x + 100.).abs() < 1e-9 && middle.active);
+        present(next, at(200.), at(100.));
+        registry.finish_frame();
+
+        registry.retain_nodes(|node| node == final_node);
+        registry.begin_frame();
+        let interrupted = registry.sample_layout_motion(
+            final_node,
+            at(400.),
+            request(began + Duration::from_millis(51)),
+        );
+        assert!((interrupted.offset_x + 300.).abs() < 1e-9 && interrupted.active);
     }
 }

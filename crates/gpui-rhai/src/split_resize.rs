@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, Bounds, CursorStyle, DispatchPhase, Element, ElementId, GlobalElementId,
     Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent,
-    Pixels, Point, Style, Window, fill, point, px, relative, rgba, size,
+    Pixels, Style, Window, fill, point, px, relative, rgba, size,
 };
 
 use crate::{
@@ -306,14 +306,17 @@ fn register_pointer_listeners(
         if !crate::handle_state::over_handle(&hitbox, handle, window) {
             return;
         }
-        let Some(group) = down_events.element_bounds(&down_config.group_ref, cx) else {
+        let Some(space) = down_events
+            .element_geometry(&down_config.group_ref, cx)
+            .and_then(crate::interaction::ResizeGestureSpace::new)
+        else {
             return;
         };
         let Some(start) = down_events.element_bounds(&down_config.start_ref, cx) else {
             return;
         };
         let start_size = axis_size(start, down_config.orientation);
-        let group_size = axis_size(group, down_config.orientation);
+        let group_size = axis_value(space.size, down_config.orientation);
         let handle_size = match down_config.orientation {
             SplitOrientation::Horizontal => f64::from(handle_bounds.size.width),
             SplitOrientation::Vertical => f64::from(handle_bounds.size.height),
@@ -322,15 +325,14 @@ fn register_pointer_listeners(
         let update_events = down_events.clone();
         let update =
             move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                let group = update_events.element_geometry(&update_config.group_ref, cx);
+                let Some(delta) = space.displacement(group, gesture) else {
+                    return crate::interaction::InteractionFlow::Cancel;
+                };
                 if !gesture.moved() {
                     return crate::interaction::InteractionFlow::Continue;
                 }
-                let delta = axis_delta(
-                    gesture.start(),
-                    gesture.current(),
-                    update_config.orientation,
-                    update_config.direction,
-                );
+                let delta = axis_delta(delta, update_config.orientation, update_config.direction);
                 let size =
                     clamp_start_size(start_size + delta, group_size, handle_size, &update_config);
                 write_preview(
@@ -357,12 +359,11 @@ fn register_pointer_listeners(
                 if !gesture.moved() || group_size <= 0.0 {
                     return;
                 }
-                let delta = axis_delta(
-                    gesture.start(),
-                    gesture.current(),
-                    finish_config.orientation,
-                    finish_config.direction,
-                );
+                let group = finish_events.element_geometry(&finish_config.group_ref, cx);
+                let Some(delta) = space.displacement(group, gesture) else {
+                    return;
+                };
+                let delta = axis_delta(delta, finish_config.orientation, finish_config.direction);
                 let size =
                     clamp_start_size(start_size + delta, group_size, handle_size, &finish_config);
                 // A drag that ends where it started, or against a limit, proposes nothing.
@@ -436,27 +437,23 @@ fn same_optional_float(left: Option<f64>, right: Option<f64>) -> bool {
 }
 
 fn axis_size(bounds: crate::GeometryBounds, orientation: SplitOrientation) -> f64 {
+    axis_value((bounds.width, bounds.height), orientation)
+}
+
+fn axis_value(values: (f64, f64), orientation: SplitOrientation) -> f64 {
     match orientation {
-        SplitOrientation::Horizontal => bounds.width,
-        SplitOrientation::Vertical => bounds.height,
+        SplitOrientation::Horizontal => values.0,
+        SplitOrientation::Vertical => values.1,
     }
 }
 
-fn axis_delta(
-    start: Point<Pixels>,
-    current: Point<Pixels>,
-    orientation: SplitOrientation,
-    direction: TextDirection,
-) -> f64 {
+fn axis_delta(delta: (f64, f64), orientation: SplitOrientation, direction: TextDirection) -> f64 {
     match orientation {
-        SplitOrientation::Vertical => f64::from(current.y - start.y),
-        SplitOrientation::Horizontal => {
-            let delta = f64::from(current.x - start.x);
-            match direction {
-                TextDirection::LeftToRight => delta,
-                TextDirection::RightToLeft => -delta,
-            }
-        }
+        SplitOrientation::Vertical => delta.1,
+        SplitOrientation::Horizontal => match direction {
+            TextDirection::LeftToRight => delta.0,
+            TextDirection::RightToLeft => -delta.0,
+        },
     }
 }
 
@@ -714,23 +711,19 @@ mod tests {
 
     #[test]
     fn split_delta_and_constraints_are_directional_and_deterministic() {
-        let start = point(px(100.0), px(100.0));
-        let moved = point(px(132.0), px(118.0));
+        let delta = (32.0, 18.0);
         let ltr = axis_delta(
-            start,
-            moved,
+            delta,
             SplitOrientation::Horizontal,
             TextDirection::LeftToRight,
         );
         let rtl = axis_delta(
-            start,
-            moved,
+            delta,
             SplitOrientation::Horizontal,
             TextDirection::RightToLeft,
         );
         let vertical = axis_delta(
-            start,
-            moved,
+            delta,
             SplitOrientation::Vertical,
             TextDirection::RightToLeft,
         );

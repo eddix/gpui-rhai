@@ -22,6 +22,7 @@ popover::Popover(#{ key: "profile", label: "Profile", trigger: text("Open"), con
 | `dismiss_on_escape` | bool | `true` | Lets Escape close the popover through `on_open_change`. |
 | `dismiss_on_outside` | bool | `true` | Lets a click outside the panel and its trigger close the popover through `on_open_change`. |
 | `gap` | number ≥ 0 | `8.0` | Distance between the trigger and the panel, in logical pixels. |
+| `initial_focus` | `"panel"` or `"first"` | `"panel"` | First moves focus to the first reachable control when the popover opens. Panel preserves the default nonmodal focus behavior. |
 | `key` | string | required | Stable identity of this instance; also the overlay id a nested overlay names in `parent_overlay`. |
 | `label` | string | required | Accessible name of the popover panel. |
 | `on_open_change` | callback or `()` | — | Called with `true` when the trigger opens the popover and `false` when it is dismissed; store it as `open`. |

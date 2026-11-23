@@ -4,6 +4,9 @@ GPUI Rhai 的 Rust runtime 负责 GPUI、生命周期与安全边界；组件、
 和小型资源会复制到你的项目中，由你直接修改和维护。项目完全不依赖
 `gpui-component`。
 
+需要 Rust 1.99 或更高版本。在应用目录执行 `rustc --version`，确认 Cargo
+实际使用的编译器；SDK 仓库里的 `rust-toolchain.toml` 不会替另一个项目选择工具链。
+
 完整的使用方式、架构边界与 agent 工作规范见
 [User Guide](../USER_GUIDE.md)；这里仅保留最短上手路径。先从 crates.io
 安装与 runtime 版本匹配的 CLI：
@@ -25,8 +28,11 @@ gpui-rhai dev
 `--profile productivity` 会装上生产力工具的设计规则，`check` 会据此提示应用
 源码里写死的尺寸和颜色（不检查 `add` 装进来的官方组件）。
 
-`init` 写入的 runtime 依赖与 CLI 属于同一版本线（0.2 的 CLI 写入
-`gpui-rhai = "0.2"`）。只有在开发 runtime 本身或验收未发布提交时，才临时改成
+`init` 以 CLI 的完整版本作为 runtime 的最低版本，例如 0.4.3 的 CLI 写入
+`gpui-rhai = { version = "0.4.3", features = ["dev-reload"] }`。
+这是 Cargo 的兼容版本范围，不是精确锁定；构建助手和截图用 dev-dependency
+采用同样的最低版本。已有的应用依赖不会被覆盖，升级时应主动保持版本一致。
+只有在开发 runtime 本身或验收未发布提交时，才临时改成
 本地 checkout 或固定 Git commit；不要让应用无意中跟随不断变化的 `main`：
 
 ```toml
@@ -60,9 +66,17 @@ fn view(ctx) {
 }
 ```
 
-配色写在 `ui/theme.rhai`（主题只含颜色）；尺寸、间距、圆角和字号体系在
-token 基础层 `ui/tokens.rhai`，由 density、size 两个环境轴取值，详见
-[设计规范](design/)。针对 Button、Input 等正式组件及其公开 part 的统一覆盖写在
+当前 checkout 正在迁移到 Modern/Clean 的 Light/Dark 四套完整预设，
+尚未发布或完成整体验收。测试这轮变更时使用同一源码修订的 SDK、CLI 和 registry；
+不要用旧发布版 SDK 加载新复制的组件。剩余验收项见
+[迁移状态](design/migration-modern-clean.md)。
+
+`ui/theme.rhai` 可以是完整设计预设，不只是一张配色表：Modern/Clean 同时拥有
+配色、尺寸、字体、间距、圆角、效果和组件 part 配方；其它配色继承 Modern 的
+几何设计。`ui/tokens.rhai` 提供共享 token 基础层，density、size、reading scale
+等环境值在使用处解析，详见[设计规范](design/)。
+四套精确预设保留原始配色，已知对比度风险仍会报告，不代表所有文字都通过可读性验收。
+针对 Button、Input 等正式组件及其公开 part 的统一覆盖写在
 `ui/styles.rhai`。样式表使用同一个
 类型安全的 `style()` builder，并由 `gpui-rhai check` 校验组件 ID 和 part；
 详见[组件样式表](component-styles.md)。单个实例仍可在调用处传入

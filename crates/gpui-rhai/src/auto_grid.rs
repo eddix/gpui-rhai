@@ -245,7 +245,8 @@ pub(crate) struct AutoGridElement {
         String,
         Option<crate::NodeId>,
     )>,
-    pub gap: crate::Length,
+    pub gap_x: crate::Length,
+    pub gap_y: crate::Length,
     pub rtl: bool,
     pub children: Vec<AnyElement>,
 }
@@ -267,7 +268,7 @@ impl IntoElement for AutoGridElement {
 
 impl AutoGridElement {
     fn gap_pixels(&self, width: f64, window: &Window) -> f64 {
-        match self.gap {
+        match self.gap_x {
             crate::Length::Pixels(value) => value,
             crate::Length::Rems(value) => value * f64::from(window.rem_size()),
             crate::Length::Relative(value) => value * width,
@@ -329,12 +330,24 @@ impl Element for AutoGridElement {
                             )
                             .child(child)
                     });
-                let grid = div()
+                let mut grid = div()
                     .grid()
                     .grid_cols(plan.columns)
                     .w(px(crate::renderer::f64_to_f32(plan.width)))
-                    .gap(px(crate::renderer::f64_to_f32(gap)))
+                    .gap_x(px(crate::renderer::f64_to_f32(gap)))
                     .children(children);
+                grid = match self.gap_y {
+                    crate::Length::Pixels(value) => {
+                        grid.gap_y(px(crate::renderer::f64_to_f32(value)))
+                    }
+                    crate::Length::Rems(value) => {
+                        grid.gap_y(gpui::rems(crate::renderer::f64_to_f32(value)))
+                    }
+                    crate::Length::Relative(value) => {
+                        grid.gap_y(relative(crate::renderer::f64_to_f32(value)))
+                    }
+                    crate::Length::Token(_) => grid,
+                };
                 let mut root = div().flex().flex_col().w(relative(1.0)).min_w(px(0.0));
                 if self.rtl {
                     root = root.items_end();

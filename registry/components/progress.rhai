@@ -46,6 +46,20 @@ define_component(#{
 });
 
 fn Progress(props) { render_component("components/progress", props) }
+
+// The caller owns track geometry and paint. Some fills use the accepted
+// fraction immediately, with an independent presentation effect.
+fn fraction_fill(key, ratio, fill, children) {
+    row(children).with_key(key).with_style(fill.width(relative(ratio)))
+}
+
+// A new target retargets the retained width from its presented sample.
+fn determinate_indicator(key, ratio, fill, children, duration, easing) {
+    fraction_fill(key, ratio, fill, children)
+        .motion(motion_transition("width_fraction", 0.0, ratio,
+            #{duration_ms:duration, easing:easing, intent:"feedback"}))
+}
+
 fn render_Progress(ctx, props) {
     let max = if "max" in props { props.max } else { 100.0 };
     let value = if "value" in props { props.value } else { 0.0 };
@@ -53,27 +67,23 @@ fn render_Progress(ctx, props) {
     let indeterminate = if "indeterminate" in props { props.indeterminate } else { false };
     let width = if "width" in props { props.width * 1.0 } else { 200.0 };
     let indeterminate_width = width * 0.36;
-    let indicator = row([])
-        .with_key(`${props.key}-indicator`)
-        .with_style(ctx.component_style("indicator",
-            style().width(px(if indeterminate { indeterminate_width } else { ratio * width }))
-                .height(px(4)).radius(px(0)).background(theme_color("accent"))
-        ));
-    indicator = if indeterminate {
-        indicator.motion(motion_transition("translate_x", -indeterminate_width, width,
+    let key = `${props.key}-indicator`;
+    let fill = ctx.component_style("indicator",
+        style().height(px(4)).radius(px(0)).background(theme_color("accent")));
+    let indicator = if indeterminate {
+        row([]).with_key(key).with_style(fill.width(px(indeterminate_width)))
+            .motion(motion_transition("translate_x", -indeterminate_width, width,
             #{ duration_ms: ctx.motion_duration("ambient"), easing: ctx.motion_easing("standard"),
                 iterations: "infinite", intent: "essential" }))
     } else {
-        indicator.motion(motion_transition("width", 0.0, ratio * width,
-            #{ duration_ms: ctx.motion_duration("normal"), easing: ctx.motion_easing("entrance"),
-                intent: "feedback" }))
+        determinate_indicator(key, ratio, fill, [], ctx.motion_duration("normal"), ctx.motion_easing("entrance"))
     };
     row([indicator])
         .with_key(props.key)
-        .with_style(ctx.component_style("root", ctx.component_style("track",
+        .with_style(ctx.component_style(["root","track"],
             style().width(px(width)).height(px(4)).radius(px(0)).clip()
                 .background(theme_color("surface_hover"))
-        )))
+        ))
         .accessibility_role("progressbar")
         .accessibility_label(props.label)
         .accessibility_value(if indeterminate { ctx.t_or("progress.indeterminate", "indeterminate") } else { value })

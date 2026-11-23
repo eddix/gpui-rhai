@@ -161,6 +161,15 @@ movement does not alter the width or emit an event. The keyed Table retains the
 override when the event is unobserved; replacing that column's source width
 descriptor clears it.
 
+The drag measures displacement along the Table viewport's presented inline
+axis, including under rotation or scale. The header supplies the initial
+column width, not the coordinate boundary: previewing a new width does not
+invalidate the gesture. Moving, resizing, transforming or scrolling that
+viewport during a drag cancels its stale preview on the next pointer event.
+An automatic physical offset adjustment that preserves the RTL logical scroll
+position does not cancel it. Try the column divider on the Gallery's
+**Visual transforms** page.
+
 Double-clicking a divider auto-fits to the widest measured header or currently
 realized data cell, including the virtual collection's bounded overdraw window,
 then applies `min_width`/`max_width` and emits one ordinary `column_resize`
@@ -175,8 +184,9 @@ double-click again to fit that region. This keeps double-click work bounded by
 viewport/overdraw size rather than total collection size.
 
 Each divider is a focusable vertical separator. Logical Left/Right changes the
-width by 8px and emits the same committed event; RTL reverses physical pointer
-and arrow direction while preserving logical increase/decrease semantics.
+width by 8px and emits the same committed event. RTL changes the meaning of
+the local pointer X axis and left/right arrows while preserving logical
+increase/decrease semantics.
 
 ## Context menus
 

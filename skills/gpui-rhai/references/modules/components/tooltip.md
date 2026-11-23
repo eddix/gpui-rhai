@@ -18,7 +18,7 @@ tooltip::Tooltip(#{ key: "help", label: "Help", trigger: text("?"), content: tex
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `action` | string or `()` | — | Registered action whose bound shortcut is shown after the hint; `shortcut` takes precedence. |
-| `content` | node | required | Hint shown in the tooltip, in inverted colors and at most 320 px wide. |
+| `content` | node | required | Hint shown in the tooltip, in the preset's inverse surface and at most 240 logical pixels wide at reading scale 100. |
 | `disabled` | bool | `false` | Renders the trigger alone, with no tooltip. |
 | `hide_delay_ms` | integer ≥ 0 | `100` | Time the tooltip stays after the pointer leaves the trigger and the tooltip, in milliseconds. |
 | `key` | string | required | Stable identity of this instance among its siblings; keeps its state across renders. |
@@ -39,8 +39,8 @@ tooltip::Tooltip(#{ key: "help", label: "Help", trigger: text("?"), content: tex
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `root`, `shortcut`, `trigger`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `content_with_shortcut`, `root`, `shortcut`, `trigger`.
 
 ## Theme
 
-- Tokens: `radius.lg`, `spacing.sm`, `spacing.xxs`, `surface`, `text_primary`, `typography.caption`, `typography.label`
+- Tokens: `radius.lg`, `spacing.sm`, `spacing.xxs`, `surface`, `text_primary`, `typography.caption`, `typography.key_legend_tooltip`, `typography.label`

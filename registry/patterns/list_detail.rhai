@@ -50,6 +50,33 @@ define_component(#{
 });
 
 fn ListDetail(props) { render_component("patterns/list_detail", props) }
+// The catalog surfaces share their matching and focus order, without coupling
+// cursor movement to the application's accepted selection.
+fn catalog_opt(map,key){if key in map{map[key]}else{()}}
+fn catalog_query(query){let key=query.to_lower();key.trim();key}
+fn catalog_match(query,fields){
+    if query==""{return true;}
+    for field in fields{if field!=()&&field.to_lower().contains(query){return true;}}
+    false
+}
+fn catalog_neighbor(order,current,delta,wrap){
+    if order.len==0{return "";}
+    if delta<= -256{return order[0];}
+    if delta>=256{return order[order.len-1];}
+    let index=order.index_of(current);
+    if index<0{return if delta<0{order[order.len-1]}else{order[0]};}
+    if wrap{order[(index+order.len+delta)%order.len]}
+    else{order[min(max(index+delta,0),order.len-1)]}
+}
+fn catalog_search_icon(){
+    svg("<svg viewBox='0 0 20 20' fill='none' stroke='currentColor' stroke-width='1.65' stroke-linecap='round'><circle cx='8.4' cy='8.4' r='5.1'/><path d='m12 12 4.3 4.3'/></svg>")
+        .accessibility_hidden(true)
+}
+fn catalog_option(id,label,selected,focusable,content,paint){
+    row(content).with_key(id).accessibility_role("option").accessibility_label(label)
+        .accessibility_selected(selected).tab_stop(focusable).with_style(paint)
+        .paint_transition(155,cubic_bezier(0.22,1.0,0.36,1.0))
+}
 fn render_ListDetail(ctx, props) {
     let vertical = "orientation" in props && props.orientation == "vertical";
     let size = if "list_size" in props && props.list_size != () { props.list_size }

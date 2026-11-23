@@ -32,3 +32,11 @@ constants remain available for consumers that do not need the named catalogs.
 and `patterns/` modules; `TOKEN_BASE_SOURCE` the token base that official
 components need (a Host passes it to `token_base`); `BUNDLED_PROFILES` the
 application profiles.
+
+Shared declaration contracts are authored in `contracts/*.json` and expanded by
+`node scripts/sync-component-contracts.mjs` into marked literal blocks. Use its
+`--check` mode to detect drift. Command and CommandDialog share the item
+contract this way: their installed files stay standalone, and module-init
+purity does not need runtime helper calls or mutable exported schema maps.
+The SDK's registry tests compare both evaluated literal blocks with the bundled
+`COMMAND_ITEMS_CONTRACT_JSON` source.

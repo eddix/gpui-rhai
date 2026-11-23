@@ -83,6 +83,8 @@ define_component(#{
                         doc: "Row text, also matched by letter-key type-ahead; on a `label` row, the heading text." },
                     shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                         doc: "Key legend shown at the row end, written like `cmd-o`; overrides the binding of `action`." },
+                    prefix: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
+                        doc: "Optional decorative leading node. A checked row uses its check mark in this lane." },
                     action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
                         doc: "Registered action the row dispatches before closing the menu; it also supplies the legend and enabled state." },
                     checked: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -174,15 +176,6 @@ fn next_typeahead(items, value, key) {
 
 fn Menu(props) { render_component("components/menu", props) }
 
-// The 2px focus frame, drawn over the panel's edge while the panel itself holds focus: the
-// panel's hairline (painted over its children) turns the focus color and this frame adds
-// the inner pixel. A control inside shows its own frame instead.
-fn panel_focus_frame(ctx) {
-    row([]).with_style(ctx.component_style("focus_frame", style().absolute()
-        .left(offset_px(-1)).right(offset_px(-1)).top(offset_px(-1)).bottom(offset_px(-1))
-        .radius(theme_radius("lg")).border(px(2)).border_color(rgba(0x00000000))
-        .group_focus(style().border_color(theme_color("focus_ring")))))
-}
 fn context_request(ctx, event) {
     if event.button != "right" { return propagate(); }
     ctx.emit("context_request", event);
@@ -214,6 +207,9 @@ fn menu_item(ctx, props, item) {
             .text_color(theme_color("text.accent"))
             .opacity(if checked { 1.0 } else { 0.0 }))),
     ];
+    if !checked && "prefix" in item && item.prefix != () {
+        children[0] = item.prefix.accessibility_hidden(true);
+    }
     // The label and its key legend share one baseline, as words in one line do.
     let words = [text(label).with_style(style().flex_grow())];
     if shortcut != "" {
@@ -280,7 +276,7 @@ fn render_Menu(ctx, props) {
         } else if item.kind == "label" {
             let label = if "label" in item && item.label != () { item.label } else { "" };
             let column_spacer = row([]).with_style(style().width(theme_length("metrics.icon")));
-            children.push(row([column_spacer, text(label.to_upper())]).with_style(
+            children.push(row([column_spacer, text(label)]).with_style(
                 ctx.component_style("label", style().height(theme_length("metrics.row"))
                     .padding_x(theme_length("metrics.inset")).gap(theme_spacing("sm")).items_center()
                     .typography("label").text_color(theme_color("text_muted"))))
@@ -292,7 +288,8 @@ fn render_Menu(ctx, props) {
         }
     }
     let activation = if props.active_value != "" { menu_activation(props, items, props.active_value) } else { () };
-    children.push(panel_focus_frame(ctx));
+    let focus_frame = ctx.component_style("focus_frame", style()
+        .focus_ring(px(2), offset_px(-2), theme_color("focus_ring")));
     let content = column(children)
         .with_key(`${props.key}-content`)
         .with_style(ctx.component_style("content",
@@ -302,7 +299,7 @@ fn render_Menu(ctx, props) {
         style().relative().min_width(px(240)).padding(theme_radius("lg") * 0.5).radius(theme_radius("lg"))
                 .border(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface_raised"))
-                .focus(style().border_color(theme_color("focus_ring")))
+                .merge(focus_frame).group_focus(focus_frame)
         ))
         .tab_stop(true)
         .accessibility_role("menu")

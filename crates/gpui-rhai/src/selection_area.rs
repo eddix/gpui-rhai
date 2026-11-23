@@ -3,10 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use gpui::{
-    AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle,
-    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
-    Modifiers, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, Style, Styled,
-    Window, div, point, px, rgba, size,
+    AnyElement, App, AppContext, Bounds, Context, Entity, FocusHandle, InteractiveElement,
+    IntoElement, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, ParentElement, PathBuilder,
+    Pixels, Point, Render, Styled, Window, canvas, div, point, px, rgba, size,
 };
 
 use crate::{
@@ -48,7 +47,6 @@ struct SelectionAreaEntity {
     focus: FocusHandle,
     config: SelectionConfig,
     context: PrimitiveContext,
-    root_bounds: Option<Bounds<Pixels>>,
     marquee_window: Option<Bounds<Pixels>>,
 }
 
@@ -60,7 +58,6 @@ impl SelectionAreaEntity {
             focus,
             config,
             context,
-            root_bounds: None,
             marquee_window: None,
         }
     }
@@ -234,83 +231,63 @@ impl Render for SelectionAreaEntity {
             .track_focus(&self.focus.clone().tab_stop(!self.config.disabled))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_key_down(cx.listener(Self::key_down));
-        if let (Some(marquee), Some(root_bounds)) = (self.marquee_window, self.root_bounds) {
-            let color = self.config.accent.as_rgba_hex();
+        if let Some(marquee) = self.marquee_window {
+            let accent = self.config.accent.as_rgba_hex();
             root = root.child(
-                div()
-                    .absolute()
-                    .left(marquee.left() - root_bounds.left())
-                    .top(marquee.top() - root_bounds.top())
-                    .w(marquee.size.width)
-                    .h(marquee.size.height)
-                    .bg(rgba((color & 0xffff_ff00) | 0x20))
-                    .border_1()
-                    .border_color(rgba(color)),
+                canvas(
+                    |_, _, _| (),
+                    move |_, (), window, _| paint_marquee(marquee, accent, window),
+                )
+                .absolute()
+                .size_full()
+                .left_0()
+                .top_0(),
             );
         }
-        root.child(SelectionBoundsRecorder {
-            selection: cx.entity(),
-        })
+        root
     }
 }
 
-struct SelectionBoundsRecorder {
-    selection: Entity<SelectionAreaEntity>,
-}
-
-impl Element for SelectionBoundsRecorder {
-    type RequestLayoutState = ();
-    type PrepaintState = ();
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, ()) {
-        (window.request_layout(Style::default(), None, cx), ())
-    }
-
-    fn prepaint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        (): &mut (),
-        _: &mut Window,
-        cx: &mut App,
-    ) {
-        self.selection
-            .update(cx, |selection, _| selection.root_bounds = Some(bounds));
-    }
-
-    fn paint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
-        (): &mut (),
-        (): &mut (),
-        _: &mut Window,
-        _: &mut App,
-    ) {
-    }
-}
-
-impl IntoElement for SelectionBoundsRecorder {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
+fn paint_marquee(bounds: Bounds<Pixels>, accent: u32, window: &mut Window) {
+    let coordinates = window.visual_coordinates();
+    // The interaction and the visual outline are the same window-space
+    // rectangle. Draw its inverse polygon in this owner's paint plane so
+    // the native compositing transform cannot rotate or scale it twice.
+    let rect = |(left, top, right, bottom), color, window: &mut Window| {
+        if left >= right || top >= bottom {
+            return;
+        }
+        let corners = window_quad(point(left, top), point(right, bottom));
+        let [Some(a), Some(b), Some(c), Some(d)] =
+            corners.map(|point| coordinates.layout_point(point))
+        else {
+            return;
+        };
+        let mut path = PathBuilder::fill();
+        path.move_to(a);
+        path.line_to(b);
+        path.line_to(c);
+        path.line_to(d);
+        path.close();
+        if let Ok(path) = path.build() {
+            window.paint_path(path, rgba(color));
+        }
+    };
+    let (left, right, top, bottom) = (bounds.left(), bounds.right(), bounds.top(), bounds.bottom());
+    let edge_x = (bounds.size.width / 2.).min(px(1.));
+    let edge_y = (bounds.size.height / 2.).min(px(1.));
+    rect(
+        (left, top, right, bottom),
+        (accent & 0xffff_ff00) | 0x20,
+        window,
+    );
+    for strip in [
+        (left, top, right, top + edge_y),
+        (left, bottom - edge_y, right, bottom),
+        (left, top + edge_y, left + edge_x, bottom - edge_y),
+        (right - edge_x, top + edge_y, right, bottom - edge_y),
+    ] {
+        rect(strip, accent, window);
     }
 }
 

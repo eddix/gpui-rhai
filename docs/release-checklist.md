@@ -8,14 +8,16 @@ through 0.1.8 are in the checklist listed under [History](history.md).
 1. Treat 0.1.0 as the first public compatibility baseline. Document every later
    breaking runtime API, component schema, locale, registry, manifest, and
    generated-source change against its published predecessor.
-2. Run format, all-target/all-feature check, strict Clippy, tests, and rustdoc.
+2. Run format, all-target check, strict Clippy, tests, and rustdoc. Check
+   `gpui-pre` and `gpui-fast` in separate feature configurations; never combine
+   the mutually exclusive backends with `--all-features`.
    `scripts/release-smoke.sh` launches every example Cargo reports.
 3. Test the declared MSRV (`1.99`) and latest stable toolchains.
-4. Run `cargo package` and inspect the file list for `gpui-rhai-build`,
-   `gpui-rhai`, `gpui-rhai-registry`, and `gpui-rhai-cli`. A CLI candidate may use
-   `--no-verify` only while its exact core/registry version is not yet indexed;
-   after publishing those dependencies, its publish dry-run must perform the
-   full clean rebuild.
+4. Run `cargo package --workspace --locked` and inspect the four file lists.
+   Cargo verifies the workspace packages together, using its local packaged
+   dependencies before they are published. File-list-only `--no-verify` runs
+   are not a completed rebuild gate. Check that the registry includes native
+   UI fonts, their license, all full presets and the distributed references.
 5. Re-run the full Cargo metadata license matrix; investigate unknown licenses
    and update `THIRD_PARTY_LICENSES.md` for copied source or assets.
 6. Build every example in release mode and run `scripts/release-smoke.sh` on
@@ -42,7 +44,21 @@ through 0.1.8 are in the checklist listed under [History](history.md).
    Shared Linux CI must also run `scripts/linux-window-smoke.sh` against the
    release `phase0_probe` under both Xvfb/X11 and headless Weston/Wayland.
 9. Run CLI clean and modified-project fixtures for init/add/check/dev metadata,
-   diff/update, and embed behavior.
+   diff/update, and build-script embedding. Also install the packaged CLI into
+   an isolated prefix and initialize fresh pre/fast consumer applications
+   without reusing the repository's lockfile. Verify the generated runtime,
+   build-helper and offscreen dependency minima, all four Modern/Clean
+   appearances, font loading, state/editing/undo across design switches, and
+   readable font notices in a built macOS bundle. Run the embedded release
+   consumer without its source `ui/` tree and with an invalid debug override;
+   it must not depend on those files. Keep temporary packages/captures outside
+   the repository and record whether validation uses a local SDK candidate
+   or the published release. Do not claim a crates.io clean-install result
+   from a locally staged candidate.
+   Revised candidates must use fresh extraction paths (or deliberately
+   invalidate their old build outputs), not overwrite a previously built
+   extraction tree. Verify what the installed executable generates; matching
+   source files alone does not prove that an install rebuilt its binary.
 10. Record the exact GPUI/Rhai versions and known accessibility/platform gaps.
     When evaluating Grain, run the opt-in `grain-backend` tests and strict
     Clippy separately; a compiling feature is not production parity.

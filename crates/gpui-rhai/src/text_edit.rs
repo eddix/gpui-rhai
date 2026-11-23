@@ -283,6 +283,13 @@ impl TextBuffer {
         }
     }
 
+    pub(crate) fn cancel_composition(&mut self) {
+        if let Some(base) = self.composition_base.take() {
+            self.restore_revision(base);
+            self.last_edit = None;
+        }
+    }
+
     #[must_use]
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty() || self.composition_base.is_some()

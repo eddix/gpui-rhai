@@ -83,6 +83,10 @@ impl PresentationDiagnostics {
 }
 
 impl PresentationSink {
+    pub(crate) fn generation(&self) -> ScriptGeneration {
+        self.generation
+    }
+
     pub(crate) fn image_result(
         &self,
         path: &str,

@@ -63,6 +63,18 @@ impl FontSource {
         self.fingerprint
     }
 
+    /// Family names from the actual sfnt/collection metadata, never from the
+    /// application's label or filename. An unparseable font reports no names;
+    /// the platform remains responsible for rejecting it during installation.
+    pub(crate) fn family_names(&self) -> std::collections::BTreeSet<String> {
+        let mut database = usvg::fontdb::Database::new();
+        database.load_font_data(self.bytes.clone());
+        database
+            .faces()
+            .flat_map(|face| face.families.iter().map(|(name, _)| name.clone()))
+            .collect()
+    }
+
     pub(crate) fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
@@ -121,5 +133,52 @@ mod tests {
             FontSource::new("bad", b"woff".to_vec()),
             Err(FontError::UnsupportedFormat { .. })
         ));
+    }
+
+    #[test]
+    fn source_labels_are_not_evidence_of_an_installed_font_family() {
+        let source = FontSource::new("Inter", [b"OTTO".as_slice(), &[0, 1, 2]].concat()).unwrap();
+        assert!(source.family_names().is_empty());
+    }
+
+    #[test]
+    fn bundled_inter_weights_share_the_actual_native_family_and_keep_unique_faces() {
+        let mut database = usvg::fontdb::Database::new();
+        let mut postscript_names = std::collections::BTreeSet::new();
+        for (weight, bytes) in [
+            (
+                400,
+                include_bytes!("../../../registry/fonts/Inter-400.ttf").as_slice(),
+            ),
+            (
+                500,
+                include_bytes!("../../../registry/fonts/Inter-500.ttf").as_slice(),
+            ),
+            (
+                600,
+                include_bytes!("../../../registry/fonts/Inter-600.ttf").as_slice(),
+            ),
+        ] {
+            let source = FontSource::new(format!("Inter-{weight}"), bytes.to_vec()).unwrap();
+            assert_eq!(source.family_names(), ["Inter".to_owned()].into());
+            database.load_font_data(bytes.to_vec());
+            let face = database
+                .faces()
+                .find(|face| face.weight.0 == weight)
+                .unwrap();
+            assert!(face.families.iter().all(|(family, _)| family == "Inter"));
+            assert!(postscript_names.insert(face.post_script_name.clone()));
+        }
+        assert_eq!(database.faces().count(), 3);
+        for weight in [400, 500, 600] {
+            let matched = database
+                .query(&usvg::fontdb::Query {
+                    families: &[usvg::fontdb::Family::Name("Inter")],
+                    weight: usvg::fontdb::Weight(weight),
+                    ..Default::default()
+                })
+                .unwrap();
+            assert_eq!(database.face(matched).unwrap().weight.0, weight);
+        }
     }
 }

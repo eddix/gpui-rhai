@@ -42,7 +42,10 @@ separate viewer/message instances. Cmd/Ctrl+C copies rendered plain text;
 Alt+Cmd+C / Ctrl+Alt+C explicitly copies the original Markdown. Cmd/Ctrl+A
 selects the viewer document. Code copy actions copy only code, without fences.
 Arrow, Page Up/Down, Home and End scroll; links and code actions are native
-tab stops. Headings, paragraphs, code, inline code, quotes, tables, links,
+tab stops. A wrapped link is one keyboard target. Its focus outline and
+pointer hit regions follow the same shaped line fragments; the rest of the
+paragraph is not part of the hit target. Headings, paragraphs, code, inline
+code, quotes, tables, links,
 rules and loading/error states have component parts. Heading levels map to
 typography roles, while code blocks share the existing document monospace
 fallbacks and syntax registry, including Rhai and Host-added grammars.

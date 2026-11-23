@@ -52,7 +52,7 @@ enum Command {
     ///
     /// The steps run in order: `--size WxH` (1280x800), `--theme
     /// Family/Variant` or `--theme Variant`, `--locale ID`, `--click NAME`,
-    /// `--key CHORD` (such as `cmd-k`), `--wait MS`, `--out PATH` and `--steps
+    /// `--key CHORD` (such as `cmd-k`), `--input TEXT`, `--wait MS`, `--out PATH` and `--steps
     /// FILE` (JSON lines: automation commands plus `click`, `keys`, `wait`,
     /// `capture`, `theme` and `locale`). Example: `gpui-rhai shot --theme
     /// Nord/Dark --click Settings --out settings.png`.
@@ -106,7 +106,7 @@ enum Command {
         #[arg(long, default_value = "basic")]
         case: String,
         /// Select a bundled theme slug.
-        #[arg(long, default_value = "default-dark")]
+        #[arg(long, default_value = "modern-dark")]
         theme: String,
         /// Select en, zh-CN, or ar.
         #[arg(long, default_value = "en")]
@@ -299,7 +299,7 @@ fn main() -> ExitCode {
                         gpui_rhai_cli::acceptance::DEFAULT_PAGE,
                     ),
                     env("GPUI_RHAI_GALLERY_DENSITY", "comfortable"),
-                    env("GPUI_RHAI_GALLERY_THEME", "default-dark"),
+                    env("GPUI_RHAI_GALLERY_THEME", "modern-dark"),
                     env("GPUI_RHAI_GALLERY_LOCALE", "en"),
                     motion,
                 )

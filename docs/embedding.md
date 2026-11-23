@@ -677,3 +677,22 @@ Callback-typed custom primitive props accept the same `UiEventHandler`, so a
 Host-built TextInput does not need a Rhai adapter function. See
 `cargo run --release -p gpui-rhai --example host_owned_tree` for the complete
 Rust frame → UiNode → Host event → worker → `set_root` cycle.
+The foreground Host echoes controlled edits immediately. The worker returns
+only business state and the acknowledged edit revision; a reply for an older
+edit cannot replace the editor value or reset native undo history.
+
+`StaticUiView::with_theme(variant)` also accepts a resolved `ThemeVariant`.
+Its colors, lengths, inherited environment and typography use the same
+resolver and native primitive snapshots as script views. Call
+`set_theme(Some(variant), cx)` to switch the snapshot without reconciling the
+tree or replacing native inputs. Equal snapshots return `Ok(false)`; invalid
+snapshots return an error before mutation. `set_theme(None, cx)` returns to
+literal-only rendering, so remove symbolic values yourself if disabling themes.
+
+This is theme **data**, not a second theme runtime: the Host still owns
+selection, system-appearance changes, fonts and scheduling. A Host may build
+tokens entirely in Rust or use `load_token_base` / `load_theme_with_layers` at
+startup, then drop its parsing engine. The example loads Modern/Clean in both
+appearances once, registers the bundled font bytes using GPUI's text system,
+and switches these snapshots through a native Rust callback. No engine is
+retained for rendering or event delivery.

@@ -123,6 +123,9 @@ fn visit(
         _ => return,
     };
     if node.summary().opaque
+        || node
+            .attributes()
+            .contains_key(crate::node::LEADING_FLOAT_ATTRIBUTE)
         || node.attributes().get(crate::retained_page::PAGE_VISIBLE)
             == Some(&crate::UiValue::Bool(false))
     {

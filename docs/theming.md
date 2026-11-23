@@ -126,6 +126,14 @@ fn render_Palette(ctx, props) {
 }
 ```
 
+The same rule applies to cached Canvas paint. A rerender can update live labels
+while leaving previously resolved fill colors in a store unchanged. Declare
+the actual paint inputs as effect dependencies, clear all affected mode slots,
+and rebuild after the new selection commits. An app's picker callback is not a
+universal invalidation hook: a Host or system-following preference can change
+the theme too. Keep palette-only changes out of expensive geometry preparation
+and retain symbolic color expressions instead of resolved RGB where possible.
+
 `ctx.theme_variants()` lists every loaded variant as the same maps, ordered by
 family and name, for a theme picker; the Gallery's title bar builds its theme
 Select from it and calls `set_theme` on change. `mode` sorts them into dark and

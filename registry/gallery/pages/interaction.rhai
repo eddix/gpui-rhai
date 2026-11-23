@@ -107,6 +107,9 @@ fn pan_scene() {
 fn pan_zoom_page(h, v) {
     let home = #{ x: 0.0, y: 0.0, scale: 1.0 };
     let transform = kit::val(v, "pan.transform", home);
+    let mirrored = kit::val(v, "pan.mirrored", false);
+    let plane = style().width(px(480)).height(px(240))
+        .transform(if mirrored { #{ scale_x: -1.0 } } else { #{} });
     let readout = `x ${transform.x.round().to_int()} · y ${transform.y.round().to_int()} · ${(transform.scale * 100.0).round().to_int()}%`;
     kit::page(h, v, "pan_zoom", "PanZoom",
         "A camera over a canvas (maps, diagrams, image viewers): dragging moves the whole view, not one shape. Cmd or Ctrl with the wheel zooms at the pointer; from the keyboard, arrows pan, plus and minus zoom, 0 resets.", [
@@ -114,10 +117,12 @@ fn pan_zoom_page(h, v) {
             pan_zoom::PanZoom(#{ key: "pan-zoom", label: "Pan and zoom canvas",
                 transform: transform, min_scale: 0.5, max_scale: 3.0,
                 content: pan_scene(), on_transform_change: kit::store(h, "pan.transform") })
-                .with_style(style().width(px(480)).height(px(240))),
+                .with_style(plane),
             kit::line([
                 button::Button(#{ key: "pan-reset", text: "Reset view", variant: "outline", disabled: transform == home,
                     on_click: kit::put(h, "pan.transform", home) }),
+                button::Button(#{ key: "pan-mirror", text: if mirrored { "Restore orientation" } else { "Mirror canvas" },
+                    variant: "outline", on_click: kit::put(h, "pan.mirrored", !mirrored) }),
                 kit::note(readout).accessibility_role("status"),
             ]),
         ])),

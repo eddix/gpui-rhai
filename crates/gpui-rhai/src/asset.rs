@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, LazyLock};
 
+use crate::svg_context::{is_explicit_svg_color_value, svg_uses_external_current_color};
 use gpui::{AppContext as _, Image, ImageCacheError, ImageFormat, ImageSource, RenderImage};
 use rhai::{CustomType, TypeBuilder};
 use thiserror::Error;
@@ -223,7 +224,7 @@ struct PreparedImageData {
 
 #[derive(Clone, Debug)]
 struct StoredAssetData {
-    mime_type: String,
+    inherits_text_color: bool,
     content: StoredAssetContent,
 }
 
@@ -242,8 +243,12 @@ impl StoredAssetData {
         } else {
             StoredAssetContent::Raster
         };
+        let inherits_text_color = match &content {
+            StoredAssetContent::Svg(source) => svg_uses_external_current_color(source),
+            StoredAssetContent::Raster => false,
+        };
         Ok(Self {
-            mime_type: data.mime_type,
+            inherits_text_color,
             content,
         })
     }
@@ -260,6 +265,12 @@ impl StoredAssetData {
 struct SvgRasterSource {
     source: Arc<str>,
     color: Option<u32>,
+}
+
+#[derive(Clone, Copy)]
+enum SvgColorSource {
+    Fixed(Option<Rgba8>),
+    InheritText,
 }
 
 impl SvgRasterSource {
@@ -1060,6 +1071,45 @@ impl AssetRegistry {
         handle: &OpaqueHandle,
         color: Option<Rgba8>,
     ) -> Result<ImageSource, AssetError> {
+        self.image_source_with_color(handle, SvgColorSource::Fixed(color))
+    }
+
+    /// Resolve an image whose external SVG `currentColor` follows native text
+    /// color, including native hover/focus refinements. Raster and fixed-color
+    /// SVG retain their ordinary source. Misses use the bounded background cache.
+    ///
+    /// # Errors
+    /// Returns wrong-kind, unknown-handle or registry-borrow errors.
+    pub fn image_source_inheriting_text_color(
+        &self,
+        handle: &OpaqueHandle,
+    ) -> Result<ImageSource, AssetError> {
+        self.image_source_with_color(handle, SvgColorSource::InheritText)
+    }
+
+    /// A strong content identity for native presentation leases. Keeping the
+    /// old backing alive prevents pointer reuse from aliasing a refresh.
+    pub(crate) fn presentation_image(
+        &self,
+        handle: &OpaqueHandle,
+    ) -> Result<(Arc<Image>, ImageSource), AssetError> {
+        let source = self.image_source_inheriting_text_color(handle)?;
+        let backing = self
+            .inner
+            .try_borrow()
+            .map_err(|_| AssetError::Borrowed)?
+            .images
+            .get(&handle.id())
+            .cloned()
+            .ok_or(AssetError::UnknownHandle(handle.id()))?;
+        Ok((backing, source))
+    }
+
+    fn image_source_with_color(
+        &self,
+        handle: &OpaqueHandle,
+        color: SvgColorSource,
+    ) -> Result<ImageSource, AssetError> {
         if handle.kind() != "image" {
             return Err(AssetError::WrongHandleKind(handle.kind().to_owned()));
         }
@@ -1067,13 +1117,12 @@ impl AssetRegistry {
         let Some(data) = inner.image_data.get(&handle.id()) else {
             return Err(AssetError::UnknownHandle(handle.id()));
         };
-        if data.mime_type == "image/svg+xml"
-            && let Some(color) = color
+        if data.inherits_text_color
+            && !matches!(color, SvgColorSource::Fixed(None))
             && let Some(source) = data.svg_source()
-            && svg_uses_external_current_color(&source)
         {
             drop(inner);
-            return Ok(self.svg_variant_image_source(SvgRasterSource::new(source, Some(color))));
+            return Ok(self.svg_variant_image_source(source, color));
         }
         let image = inner
             .images
@@ -1083,13 +1132,27 @@ impl AssetRegistry {
         Ok(ImageSource::Image(image))
     }
 
-    pub(crate) fn inline_svg_source(&self, source: Arc<str>, color: Option<Rgba8>) -> ImageSource {
-        self.svg_variant_image_source(SvgRasterSource::new(source, color))
+    pub(crate) fn inline_svg_source(&self, source: &crate::InlineSvg) -> ImageSource {
+        self.svg_variant_image_source(
+            source.shared_source(),
+            if source.inherits_text_color() {
+                SvgColorSource::InheritText
+            } else {
+                SvgColorSource::Fixed(None)
+            },
+        )
     }
 
-    fn svg_variant_image_source(&self, source: SvgRasterSource) -> ImageSource {
+    fn svg_variant_image_source(&self, source: Arc<str>, color: SvgColorSource) -> ImageSource {
         let registry = self.clone();
         ImageSource::from(move |window: &mut gpui::Window, cx: &mut gpui::App| {
+            let color = match color {
+                SvgColorSource::Fixed(color) => color,
+                SvgColorSource::InheritText => {
+                    Some(Rgba8::from_native_color(window.text_style().color))
+                }
+            };
+            let source = SvgRasterSource::new(Arc::clone(&source), color);
             let access = {
                 let Ok(mut inner) = registry.inner.try_borrow_mut() else {
                     return Some(Err(ImageCacheError::Asset(
@@ -1390,71 +1453,6 @@ fn inherited_svg_color(source: &str, color: Option<Rgba8>) -> Result<String, Ass
     Ok(inherited)
 }
 
-fn svg_uses_external_current_color(source: &str) -> bool {
-    if !source
-        .as_bytes()
-        .windows(b"currentColor".len())
-        .any(|candidate| candidate.eq_ignore_ascii_case(b"currentColor"))
-    {
-        return false;
-    }
-    let Ok(document) = roxmltree::Document::parse(source) else {
-        return true;
-    };
-    let mut found_attribute_use = false;
-    for node in document.descendants().filter(roxmltree::Node::is_element) {
-        let uses_current_color = node.attributes().any(|attribute| {
-            attribute
-                .value()
-                .as_bytes()
-                .windows(b"currentColor".len())
-                .any(|candidate| candidate.eq_ignore_ascii_case(b"currentColor"))
-        });
-        if !uses_current_color {
-            continue;
-        }
-        found_attribute_use = true;
-        let mut ancestor = Some(node);
-        let mut locally_resolved = false;
-        while let Some(element) = ancestor {
-            if element_has_explicit_color(element) {
-                locally_resolved = true;
-                break;
-            }
-            ancestor = element.parent_element();
-        }
-        if !locally_resolved {
-            return true;
-        }
-    }
-    !found_attribute_use
-}
-
-fn element_has_explicit_color(node: roxmltree::Node<'_, '_>) -> bool {
-    if node
-        .attribute("color")
-        .is_some_and(is_explicit_svg_color_value)
-    {
-        return true;
-    }
-    node.attribute("style").is_some_and(|style| {
-        style.split(';').any(|declaration| {
-            let Some((name, value)) = declaration.split_once(':') else {
-                return false;
-            };
-            name.trim().eq_ignore_ascii_case("color") && is_explicit_svg_color_value(value)
-        })
-    })
-}
-
-fn is_explicit_svg_color_value(value: &str) -> bool {
-    let value = value.trim();
-    !value.eq_ignore_ascii_case("inherit")
-        && !value.eq_ignore_ascii_case("currentColor")
-        && !value.eq_ignore_ascii_case("unset")
-        && !value.eq_ignore_ascii_case("revert")
-}
-
 fn valid_segment(value: &str) -> bool {
     !value.is_empty()
         && value
@@ -1644,11 +1642,23 @@ mod tests {
             .unwrap();
         let id = AssetId::parse("app/icon").unwrap();
         let handle = registry.load_image(&id).unwrap();
+        let (before, _) = registry.presentation_image(handle.opaque()).unwrap();
+        assert!(Arc::ptr_eq(
+            &before,
+            &registry.presentation_image(handle.opaque()).unwrap().0
+        ));
         data.borrow_mut().bytes =
             br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" data-version="two"/>"#
                 .to_vec();
         assert_eq!(registry.refresh_namespace("app").unwrap(), 1);
         assert_eq!(registry.load_image(&id).unwrap(), handle);
+        assert!(
+            !Arc::ptr_eq(
+                &before,
+                &registry.presentation_image(handle.opaque()).unwrap().0
+            ),
+            "stable handles must acquire a new native content lease on refresh"
+        );
         assert_eq!(
             registry.inner.borrow().image_data[&handle.opaque.id()]
                 .svg_source()

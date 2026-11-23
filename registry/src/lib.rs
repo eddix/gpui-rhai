@@ -3,6 +3,10 @@
 //! Most users install these sources through `gpui-rhai-cli`. The constants are
 //! public so alternative tooling can consume the exact same release snapshot.
 
+/// Authoring source for the literal item contract shared by Command wrappers.
+/// Installed modules embed its expansion and need no runtime schema evaluator.
+pub const COMMAND_ITEMS_CONTRACT_JSON: &str = include_str!("../contracts/command-items.json");
+
 macro_rules! bundled_components {
     ($(($constant:ident, $id:literal, $path:literal)),+ $(,)?) => {
         $(pub const $constant: &str = include_str!($path);)+
@@ -36,8 +40,23 @@ bundled_components!(
         "../components/icon_button.rhai"
     ),
     (LABEL_SOURCE, "components/label", "../components/label.rhai"),
+    (
+        BREADCRUMB_SOURCE,
+        "components/breadcrumb",
+        "../components/breadcrumb.rhai"
+    ),
     (ICON_SOURCE, "components/icon", "../components/icon.rhai"),
     (INPUT_SOURCE, "components/input", "../components/input.rhai"),
+    (
+        OTP_INPUT_SOURCE,
+        "components/otp_input",
+        "../components/otp_input.rhai"
+    ),
+    (
+        NUMBER_INPUT_SOURCE,
+        "components/number_input",
+        "../components/number_input.rhai"
+    ),
     (
         TEXTAREA_SOURCE,
         "components/textarea",
@@ -59,6 +78,11 @@ bundled_components!(
         "../components/popover.rhai"
     ),
     (
+        HOVER_CARD_SOURCE,
+        "components/hover_card",
+        "../components/hover_card.rhai"
+    ),
+    (
         DIALOG_SOURCE,
         "components/dialog",
         "../components/dialog.rhai"
@@ -77,6 +101,11 @@ bundled_components!(
         DATE_PICKER_SOURCE,
         "components/date_picker",
         "../components/date_picker.rhai"
+    ),
+    (
+        DATE_RANGE_PICKER_SOURCE,
+        "components/date_range_picker",
+        "../components/date_range_picker.rhai"
     ),
     (
         CALENDAR_SOURCE,
@@ -204,6 +233,11 @@ bundled_components!(
     ),
     (TAG_SOURCE, "components/tag", "../components/tag.rhai"),
     (
+        TAG_INPUT_SOURCE,
+        "components/tag_input",
+        "../components/tag_input.rhai"
+    ),
+    (
         AVATAR_SOURCE,
         "components/avatar",
         "../components/avatar.rhai"
@@ -222,6 +256,56 @@ bundled_components!(
         FORM_FIELD_SOURCE,
         "components/form_field",
         "../components/form_field.rhai"
+    ),
+    (
+        FILTER_MENU_SOURCE,
+        "components/filter_menu",
+        "../components/filter_menu.rhai"
+    ),
+    (
+        STEPPER_FORM_SOURCE,
+        "components/stepper_form",
+        "../components/stepper_form.rhai"
+    ),
+    (
+        PROGRESS_TRACKER_SOURCE,
+        "components/progress_tracker",
+        "../components/progress_tracker.rhai"
+    ),
+    (
+        MESSAGE_ACTIONS_SOURCE,
+        "components/message_actions",
+        "../components/message_actions.rhai"
+    ),
+    (
+        REACTION_BAR_SOURCE,
+        "components/reaction_bar",
+        "../components/reaction_bar.rhai"
+    ),
+    (
+        CITED_ANSWER_SOURCE,
+        "components/cited_answer",
+        "../components/cited_answer.rhai"
+    ),
+    (
+        AI_ANSWER_SOURCE,
+        "components/ai_answer",
+        "../components/ai_answer.rhai"
+    ),
+    (
+        THINKING_LOADER_SOURCE,
+        "components/thinking_loader",
+        "../components/thinking_loader.rhai"
+    ),
+    (
+        THINKING_STATE_SOURCE,
+        "components/thinking_state",
+        "../components/thinking_state.rhai"
+    ),
+    (
+        SETUP_GUIDE_SOURCE,
+        "components/setup_guide",
+        "../components/setup_guide.rhai"
     ),
     (
         COLLAPSIBLE_SOURCE,
@@ -419,8 +503,31 @@ macro_rules! bundled_assets {
 }
 
 bundled_assets!(
+    (
+        COMMAND_SEARCH_MODERN_SVG,
+        "icons/command_search_modern.svg",
+        "../assets/icons/command_search_modern.svg"
+    ),
+    (
+        COMMAND_SEARCH_CLEAN_SVG,
+        "icons/command_search_clean.svg",
+        "../assets/icons/command_search_clean.svg"
+    ),
+    (
+        COMMAND_ENTER_MODERN_SVG,
+        "icons/command_enter_modern.svg",
+        "../assets/icons/command_enter_modern.svg"
+    ),
+    (
+        COMMAND_ENTER_CLEAN_SVG,
+        "icons/command_enter_clean.svg",
+        "../assets/icons/command_enter_clean.svg"
+    ),
     (CHECK_SVG, "icons/check.svg", "../assets/icons/check.svg"),
     (CLOSE_SVG, "icons/close.svg", "../assets/icons/close.svg"),
+    (MORE_SVG, "icons/more.svg", "../assets/icons/more.svg"),
+    (BRANCH_SVG, "icons/branch.svg", "../assets/icons/branch.svg"),
+    (SLASH_SVG, "icons/slash.svg", "../assets/icons/slash.svg"),
     (
         CHEVRON_LEFT_SVG,
         "icons/chevron_left.svg",
@@ -498,6 +605,274 @@ pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
         include_str!("../patterns/composer.rhai"),
     ),
     (
+        "patterns/model_picker",
+        include_str!("../patterns/model_picker.rhai"),
+    ),
+    (
+        "patterns/run_controls",
+        include_str!("../patterns/run_controls.rhai"),
+    ),
+    (
+        "patterns/prompt_library",
+        include_str!("../patterns/prompt_library.rhai"),
+    ),
+    (
+        "patterns/integration_picker",
+        include_str!("../patterns/integration_picker.rhai"),
+    ),
+    (
+        "patterns/integration_settings",
+        include_str!("../patterns/integration_settings.rhai"),
+    ),
+    (
+        "patterns/comment_thread",
+        include_str!("../patterns/comment_thread.rhai"),
+    ),
+    (
+        "patterns/comments_panel",
+        include_str!("../patterns/comments_panel.rhai"),
+    ),
+    (
+        "patterns/writing_assistant",
+        include_str!("../patterns/writing_assistant.rhai"),
+    ),
+    (
+        "patterns/approval_card",
+        include_str!("../patterns/approval_card.rhai"),
+    ),
+    (
+        "patterns/permission_request",
+        include_str!("../patterns/permission_request.rhai"),
+    ),
+    (
+        "patterns/decision_card",
+        include_str!("../patterns/decision_card.rhai"),
+    ),
+    (
+        "patterns/decision_tree",
+        include_str!("../patterns/decision_tree.rhai"),
+    ),
+    (
+        "patterns/review_center",
+        include_str!("../patterns/review_center.rhai"),
+    ),
+    (
+        "patterns/delegate_board",
+        include_str!("../patterns/delegate_board.rhai"),
+    ),
+    (
+        "patterns/agent_queue",
+        include_str!("../patterns/agent_queue.rhai"),
+    ),
+    (
+        "patterns/agent_lanes",
+        include_str!("../patterns/agent_lanes.rhai"),
+    ),
+    (
+        "patterns/agent_handoff",
+        include_str!("../patterns/agent_handoff.rhai"),
+    ),
+    (
+        "patterns/agent_inbox",
+        include_str!("../patterns/agent_inbox.rhai"),
+    ),
+    (
+        "patterns/agent_plan",
+        include_str!("../patterns/agent_plan.rhai"),
+    ),
+    (
+        "patterns/agent_checkpoints",
+        include_str!("../patterns/agent_checkpoints.rhai"),
+    ),
+    (
+        "patterns/agent_trail",
+        include_str!("../patterns/agent_trail.rhai"),
+    ),
+    (
+        "patterns/agent_tree",
+        include_str!("../patterns/agent_tree.rhai"),
+    ),
+    (
+        "patterns/agent_graph",
+        include_str!("../patterns/agent_graph.rhai"),
+    ),
+    (
+        "patterns/agent_fleet",
+        include_str!("../patterns/agent_fleet.rhai"),
+    ),
+    (
+        "patterns/agent_monitor",
+        include_str!("../patterns/agent_monitor.rhai"),
+    ),
+    (
+        "patterns/agent_steering",
+        include_str!("../patterns/agent_steering.rhai"),
+    ),
+    (
+        "patterns/agent_recap",
+        include_str!("../patterns/agent_recap.rhai"),
+    ),
+    (
+        "patterns/agent_findings",
+        include_str!("../patterns/agent_findings.rhai"),
+    ),
+    (
+        "patterns/agent_ledger",
+        include_str!("../patterns/agent_ledger.rhai"),
+    ),
+    (
+        "patterns/agent_cursors",
+        include_str!("../patterns/agent_cursors.rhai"),
+    ),
+    (
+        "patterns/compact_breakdown",
+        include_str!("../patterns/compact_breakdown.rhai"),
+    ),
+    (
+        "patterns/usage_meter",
+        include_str!("../patterns/usage_meter.rhai"),
+    ),
+    (
+        "patterns/change_summary",
+        include_str!("../patterns/change_summary.rhai"),
+    ),
+    (
+        "patterns/tips_panel",
+        include_str!("../patterns/tips_panel.rhai"),
+    ),
+    (
+        "patterns/project_card",
+        include_str!("../patterns/project_card.rhai"),
+    ),
+    (
+        "patterns/experiment_card",
+        include_str!("../patterns/experiment_card.rhai"),
+    ),
+    (
+        "patterns/notification_stack",
+        include_str!("../patterns/notification_stack.rhai"),
+    ),
+    (
+        "patterns/away_summary",
+        include_str!("../patterns/away_summary.rhai"),
+    ),
+    (
+        "patterns/kpi_chart",
+        include_str!("../patterns/kpi_chart.rhai"),
+    ),
+    (
+        "patterns/breakdown_chart",
+        include_str!("../patterns/breakdown_chart.rhai"),
+    ),
+    (
+        "patterns/running_now",
+        include_str!("../patterns/running_now.rhai"),
+    ),
+    (
+        "patterns/scheduled_runs",
+        include_str!("../patterns/scheduled_runs.rhai"),
+    ),
+    (
+        "patterns/tool_call_card",
+        include_str!("../patterns/tool_call_card.rhai"),
+    ),
+    (
+        "patterns/tool_call_group",
+        include_str!("../patterns/tool_call_group.rhai"),
+    ),
+    (
+        "patterns/context_window",
+        include_str!("../patterns/context_window.rhai"),
+    ),
+    (
+        "patterns/context_map",
+        include_str!("../patterns/context_map.rhai"),
+    ),
+    (
+        "patterns/profile_menu",
+        include_str!("../patterns/profile_menu.rhai"),
+    ),
+    (
+        "patterns/email_draft",
+        include_str!("../patterns/email_draft.rhai"),
+    ),
+    (
+        "patterns/diff_timeline",
+        include_str!("../patterns/diff_timeline.rhai"),
+    ),
+    (
+        "patterns/cost_waterfall",
+        include_str!("../patterns/cost_waterfall.rhai"),
+    ),
+    (
+        "patterns/parallel_attempts",
+        include_str!("../patterns/parallel_attempts.rhai"),
+    ),
+    (
+        "patterns/fan_out_grid",
+        include_str!("../patterns/fan_out_grid.rhai"),
+    ),
+    (
+        "patterns/billing_schedule",
+        include_str!("../patterns/billing_schedule.rhai"),
+    ),
+    (
+        "patterns/plan_vs_actual",
+        include_str!("../patterns/plan_vs_actual.rhai"),
+    ),
+    (
+        "patterns/fallback_chain",
+        include_str!("../patterns/fallback_chain.rhai"),
+    ),
+    (
+        "patterns/memory_panel",
+        include_str!("../patterns/memory_panel.rhai"),
+    ),
+    (
+        "patterns/tool_access_map",
+        include_str!("../patterns/tool_access_map.rhai"),
+    ),
+    (
+        "patterns/trace_waterfall",
+        include_str!("../patterns/trace_waterfall.rhai"),
+    ),
+    (
+        "patterns/smart_recommendation",
+        include_str!("../patterns/smart_recommendation.rhai"),
+    ),
+    (
+        "patterns/rate_limit_planner",
+        include_str!("../patterns/rate_limit_planner.rhai"),
+    ),
+    (
+        "patterns/root_cause_tree",
+        include_str!("../patterns/root_cause_tree.rhai"),
+    ),
+    (
+        "patterns/judge_bracket",
+        include_str!("../patterns/judge_bracket.rhai"),
+    ),
+    (
+        "patterns/collaboration_stream",
+        include_str!("../patterns/collaboration_stream.rhai"),
+    ),
+    (
+        "patterns/conflict_radar",
+        include_str!("../patterns/conflict_radar.rhai"),
+    ),
+    (
+        "patterns/decision_inbox",
+        include_str!("../patterns/decision_inbox.rhai"),
+    ),
+    (
+        "patterns/approval_gates",
+        include_str!("../patterns/approval_gates.rhai"),
+    ),
+    (
+        "patterns/autonomy_dial",
+        include_str!("../patterns/autonomy_dial.rhai"),
+    ),
+    (
         "patterns/navigation_stack",
         include_str!("../patterns/navigation_stack.rhai"),
     ),
@@ -532,6 +907,10 @@ pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
 /// The Gallery acceptance application (`gpui-rhai gallery`), keyed by module ID.
 /// `gallery/main` is the entry module.
 pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
+    (
+        "gallery/pages/charts",
+        include_str!("../gallery/pages/charts.rhai"),
+    ),
     ("gallery/main", include_str!("../gallery/main.rhai")),
     ("gallery/kit", include_str!("../gallery/kit.rhai")),
     (
@@ -541,6 +920,231 @@ pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
     (
         "gallery/pages/messaging",
         include_str!("../gallery/pages/messaging.rhai"),
+    ),
+    ("gallery/run_demo", include_str!("../gallery/run_demo.rhai")),
+    (
+        "gallery/integration_settings_demo",
+        include_str!("../gallery/integration_settings_demo.rhai"),
+    ),
+    (
+        "gallery/comments_demo",
+        include_str!("../gallery/comments_demo.rhai"),
+    ),
+    (
+        "gallery/writing_demo",
+        include_str!("../gallery/writing_demo.rhai"),
+    ),
+    (
+        "gallery/review_demo",
+        include_str!("../gallery/review_demo.rhai"),
+    ),
+    (
+        "gallery/decisions_demo",
+        include_str!("../gallery/decisions_demo.rhai"),
+    ),
+    (
+        "gallery/gates_demo",
+        include_str!("../gallery/gates_demo.rhai"),
+    ),
+    (
+        "gallery/decision_tree_demo",
+        include_str!("../gallery/decision_tree_demo.rhai"),
+    ),
+    (
+        "gallery/review_center_demo",
+        include_str!("../gallery/review_center_demo.rhai"),
+    ),
+    (
+        "gallery/delegate_board_demo",
+        include_str!("../gallery/delegate_board_demo.rhai"),
+    ),
+    (
+        "gallery/agent_queue_demo",
+        include_str!("../gallery/agent_queue_demo.rhai"),
+    ),
+    (
+        "gallery/agent_lanes_demo",
+        include_str!("../gallery/agent_lanes_demo.rhai"),
+    ),
+    (
+        "gallery/agent_handoff_demo",
+        include_str!("../gallery/agent_handoff_demo.rhai"),
+    ),
+    (
+        "gallery/agent_inbox_demo",
+        include_str!("../gallery/agent_inbox_demo.rhai"),
+    ),
+    (
+        "gallery/agent_plan_demo",
+        include_str!("../gallery/agent_plan_demo.rhai"),
+    ),
+    (
+        "gallery/agent_checkpoints_demo",
+        include_str!("../gallery/agent_checkpoints_demo.rhai"),
+    ),
+    (
+        "gallery/agent_trail_demo",
+        include_str!("../gallery/agent_trail_demo.rhai"),
+    ),
+    (
+        "gallery/agent_tree_demo",
+        include_str!("../gallery/agent_tree_demo.rhai"),
+    ),
+    (
+        "gallery/agent_graph_demo",
+        include_str!("../gallery/agent_graph_demo.rhai"),
+    ),
+    (
+        "gallery/agent_fleet_demo",
+        include_str!("../gallery/agent_fleet_demo.rhai"),
+    ),
+    (
+        "gallery/agent_monitor_demo",
+        include_str!("../gallery/agent_monitor_demo.rhai"),
+    ),
+    (
+        "gallery/agent_steering_demo",
+        include_str!("../gallery/agent_steering_demo.rhai"),
+    ),
+    (
+        "gallery/agent_recap_demo",
+        include_str!("../gallery/agent_recap_demo.rhai"),
+    ),
+    (
+        "gallery/agent_findings_demo",
+        include_str!("../gallery/agent_findings_demo.rhai"),
+    ),
+    (
+        "gallery/agent_ledger_demo",
+        include_str!("../gallery/agent_ledger_demo.rhai"),
+    ),
+    (
+        "gallery/agent_cursors_demo",
+        include_str!("../gallery/agent_cursors_demo.rhai"),
+    ),
+    (
+        "gallery/compact_breakdown_demo",
+        include_str!("../gallery/compact_breakdown_demo.rhai"),
+    ),
+    (
+        "gallery/usage_meter_demo",
+        include_str!("../gallery/usage_meter_demo.rhai"),
+    ),
+    (
+        "gallery/product_cards_demo",
+        include_str!("../gallery/product_cards_demo.rhai"),
+    ),
+    (
+        "gallery/comparison_cards_demo",
+        include_str!("../gallery/comparison_cards_demo.rhai"),
+    ),
+    (
+        "gallery/communication_cards_demo",
+        include_str!("../gallery/communication_cards_demo.rhai"),
+    ),
+    (
+        "gallery/kpi_chart_demo",
+        include_str!("../gallery/kpi_chart_demo.rhai"),
+    ),
+    (
+        "gallery/breakdown_chart_demo",
+        include_str!("../gallery/breakdown_chart_demo.rhai"),
+    ),
+    (
+        "gallery/running_now_demo",
+        include_str!("../gallery/running_now_demo.rhai"),
+    ),
+    (
+        "gallery/scheduled_runs_demo",
+        include_str!("../gallery/scheduled_runs_demo.rhai"),
+    ),
+    (
+        "gallery/tool_calls_demo",
+        include_str!("../gallery/tool_calls_demo.rhai"),
+    ),
+    (
+        "gallery/context_window_demo",
+        include_str!("../gallery/context_window_demo.rhai"),
+    ),
+    (
+        "gallery/context_map_demo",
+        include_str!("../gallery/context_map_demo.rhai"),
+    ),
+    (
+        "gallery/profile_menu_demo",
+        include_str!("../gallery/profile_menu_demo.rhai"),
+    ),
+    (
+        "gallery/email_draft_demo",
+        include_str!("../gallery/email_draft_demo.rhai"),
+    ),
+    (
+        "gallery/diff_timeline_demo",
+        include_str!("../gallery/diff_timeline_demo.rhai"),
+    ),
+    (
+        "gallery/cost_waterfall_demo",
+        include_str!("../gallery/cost_waterfall_demo.rhai"),
+    ),
+    (
+        "gallery/parallel_attempts_demo",
+        include_str!("../gallery/parallel_attempts_demo.rhai"),
+    ),
+    (
+        "gallery/fan_out_grid_demo",
+        include_str!("../gallery/fan_out_grid_demo.rhai"),
+    ),
+    (
+        "gallery/billing_schedule_demo",
+        include_str!("../gallery/billing_schedule_demo.rhai"),
+    ),
+    (
+        "gallery/plan_vs_actual_demo",
+        include_str!("../gallery/plan_vs_actual_demo.rhai"),
+    ),
+    (
+        "gallery/fallback_chain_demo",
+        include_str!("../gallery/fallback_chain_demo.rhai"),
+    ),
+    (
+        "gallery/memory_panel_demo",
+        include_str!("../gallery/memory_panel_demo.rhai"),
+    ),
+    (
+        "gallery/tool_access_map_demo",
+        include_str!("../gallery/tool_access_map_demo.rhai"),
+    ),
+    (
+        "gallery/trace_waterfall_demo",
+        include_str!("../gallery/trace_waterfall_demo.rhai"),
+    ),
+    (
+        "gallery/smart_recommendation_demo",
+        include_str!("../gallery/smart_recommendation_demo.rhai"),
+    ),
+    (
+        "gallery/rate_limit_planner_demo",
+        include_str!("../gallery/rate_limit_planner_demo.rhai"),
+    ),
+    (
+        "gallery/root_cause_tree_demo",
+        include_str!("../gallery/root_cause_tree_demo.rhai"),
+    ),
+    (
+        "gallery/judge_bracket_demo",
+        include_str!("../gallery/judge_bracket_demo.rhai"),
+    ),
+    (
+        "gallery/collaboration_stream_demo",
+        include_str!("../gallery/collaboration_stream_demo.rhai"),
+    ),
+    (
+        "gallery/conflict_radar_demo",
+        include_str!("../gallery/conflict_radar_demo.rhai"),
+    ),
+    (
+        "gallery/document_anchors_demo",
+        include_str!("../gallery/document_anchors_demo.rhai"),
     ),
     (
         "gallery/pages/navigation",
@@ -628,6 +1232,17 @@ pub const BUNDLED_PROFILES: &[(&str, &str)] = &[(
 
 /// The design-language token base, installed as `ui/tokens.rhai`.
 pub const TOKEN_BASE_SOURCE: &str = include_str!("../tokens.rhai");
+/// Native Inter faces, OFL-1.1. Hosts install these explicitly with `FontSource`.
+pub const BUNDLED_FONT_SOURCES: &[(&str, &[u8])] = &[
+    ("Inter-400.ttf", include_bytes!("../fonts/Inter-400.ttf")),
+    ("Inter-500.ttf", include_bytes!("../fonts/Inter-500.ttf")),
+    ("Inter-600.ttf", include_bytes!("../fonts/Inter-600.ttf")),
+];
+pub const INTER_FONT_LICENSE: &str = include_str!("../fonts/OFL.txt");
+pub const MODERN_LIGHT_THEME: &str = include_str!("../themes/modern_light.rhai");
+pub const MODERN_DARK_THEME: &str = include_str!("../themes/modern_dark.rhai");
+pub const CLEAN_LIGHT_THEME: &str = include_str!("../themes/clean_light.rhai");
+pub const CLEAN_DARK_THEME: &str = include_str!("../themes/clean_dark.rhai");
 pub const DEFAULT_THEME: &str = include_str!("../themes/default_dark.rhai");
 pub const DEFAULT_LIGHT_THEME: &str = include_str!("../themes/default_light.rhai");
 pub const TOKYO_NIGHT_THEME: &str = include_str!("../themes/tokyo_night.rhai");
@@ -1394,7 +2009,17 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
     },
 ];
 
-pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
+/// Complete geometry/type/paint presets, not palette calibration targets.
+pub const BUNDLED_DESIGN_PRESET_SOURCES: &[(&str, &str)] = &[
+    ("modern_light.rhai", MODERN_LIGHT_THEME),
+    ("modern_dark.rhai", MODERN_DARK_THEME),
+    ("clean_light.rhai", CLEAN_LIGHT_THEME),
+    ("clean_dark.rhai", CLEAN_DARK_THEME),
+];
+
+/// Alternate color palettes retain their calibrated reading margins. Their
+/// policy does not authorize recoloring the exact design presets above.
+pub const BUNDLED_PALETTE_SOURCES: &[(&str, &str)] = &[
     ("default_dark.rhai", DEFAULT_THEME),
     ("default_light.rhai", DEFAULT_LIGHT_THEME),
     ("tokyo_night.rhai", TOKYO_NIGHT_THEME),
@@ -1415,6 +2040,30 @@ pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
     ("absolutely_light.rhai", ABSOLUTELY_LIGHT_THEME),
     ("absolutely_dark.rhai", ABSOLUTELY_DARK_THEME),
 ];
+
+pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] =
+    &join_theme_sources::<{ BUNDLED_DESIGN_PRESET_SOURCES.len() + BUNDLED_PALETTE_SOURCES.len() }>(
+        BUNDLED_DESIGN_PRESET_SOURCES,
+        BUNDLED_PALETTE_SOURCES,
+    );
+
+const fn join_theme_sources<const N: usize>(
+    presets: &[(&'static str, &'static str)],
+    palettes: &[(&'static str, &'static str)],
+) -> [(&'static str, &'static str); N] {
+    assert!(N == presets.len() + palettes.len());
+    let mut sources = [("", ""); N];
+    let mut index = 0;
+    while index < N {
+        sources[index] = if index < presets.len() {
+            presets[index]
+        } else {
+            palettes[index - presets.len()]
+        };
+        index += 1;
+    }
+    sources
+}
 
 mod lucide;
 mod skills;
@@ -1438,13 +2087,18 @@ mod tests {
 
     /// Quoted strings of a `"tokens": [...]`-style list starting after `key`.
     fn declared_list(header: &str, key: &str) -> BTreeSet<String> {
-        let Some(start) = header.find(key) else {
+        // Comments/examples may use the same property with a scalar value.
+        // Only a list beginning immediately after the match is a declaration.
+        let Some(values) = header.match_indices(key).find_map(|(start, _)| {
+            header[start + key.len()..]
+                .trim_start()
+                .strip_prefix('[')?
+                .split_once(']')
+                .map(|(list, _)| list)
+        }) else {
             return BTreeSet::new();
         };
-        let rest = &header[start + key.len()..];
-        let open = rest.find('[').unwrap();
-        let close = rest.find(']').unwrap();
-        rest[open + 1..close]
+        values
             .split(',')
             .map(|item| item.trim().trim_matches('"').to_owned())
             .filter(|item| !item.is_empty())
@@ -1565,6 +2219,12 @@ mod tests {
     const VISUAL_EXCEPTIONS: &[(&str, &str)] = &[
         // The caller's inset clears the platform window buttons; it is not spacing.
         ("components/title_bar", ".padding_start(px(inset))"),
+        // Explicit per-reviewer caller data, not an authored default palette.
+        ("patterns/agent_cursors", "rgb(a.ink)"),
+        // User-supplied category color, not a built-in decorative color.
+        ("patterns/compact_breakdown", "rgb(e.color)"),
+        // The optional portfolio colour is caller data.
+        ("patterns/experiment_card", "rgb(v.color)"),
     ];
 
     /// Component contract C7 and the visual rules of docs/design/atoms.md, checked on the
@@ -1652,14 +2312,17 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 74);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 74);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 90);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 90);
+        assert_eq!(BUNDLED_LAYOUT_SOURCES_BY_ID.len(), 4);
+        assert_eq!(BUNDLED_PATTERN_SOURCES_BY_ID.len(), 77);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
-        assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
-        assert_eq!(BUNDLED_THEME_SOURCES.len(), 19);
+        // Includes the four design-specific Command search/Enter glyphs.
+        assert_eq!(BUNDLED_ASSET_SOURCES.len(), 25);
+        assert_eq!(BUNDLED_THEME_SOURCES.len(), 23);
         assert_eq!(BUNDLED_STORIES.len(), 25);
         assert!(
             BUNDLED_COMPONENT_SOURCES

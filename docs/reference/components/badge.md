@@ -1,9 +1,9 @@
 # Badge
 
-`components/badge` · export `Badge` · version 0.4.2. Generated from
+`components/badge` · export `Badge` · version 0.4.3. Generated from
 [`registry/components/badge.rhai`](../../../registry/components/badge.rhai); do not edit.
 
-Badge marks a read-only status: a square lamp followed by its label.
+Badge presents a soft status surface, optional dot/icon, or a numeric count.
 
 `emphasis: "strong"` turns the badge into a solid status block; reserve it for states that require action. Markers keep their size in both densities.
 
@@ -17,19 +17,29 @@ badge::Badge(#{ text: "Ready", variant: "success" })
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
-| `dot` | bool | `true` | Shows the 6px square lamp before the label; a `strong` badge never shows it. |
-| `emphasis` | `"subtle"` or `"strong"` | `"subtle"` | `strong` draws a solid block with a bold label and no lamp, for states that need action. |
+| `count` | integer or `()` | — | Count instead of text; negative values display as zero. |
+| `dot` | bool | `false` | Shows a circular status dot before the label; strong/count variants omit it. |
+| `emphasis` | `"subtle"` or `"strong"` | `"subtle"` | `strong` draws a solid block with a paired readable label and no lamp, for states that need action. |
+| `icon` | node or `()` | — | An icon before the label; dot/live and count take precedence. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
+| `live` | bool | `false` | Shows a native-sampled pulsing status dot; honors motion preferences. |
+| `max` | integer ≥ 0 | `99` | Counts above this value display max+. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
-| `size` | `"sm"` or `"md"` | `"md"` | Badge height: `md` is `metrics.marker`, `sm` is `metrics.marker_small`. |
+| `size` | `"sm"` or `"md"` | `"sm"` | Badge height: `md` is `metrics.marker`, `sm` is `metrics.marker_small`. |
 | `style` | style | — | Style merged over the root part. |
-| `text` | string | required | The status label; also the accessible name. |
-| `variant` | `"neutral"` or `"accent"` or `"success"` or `"warning"` or `"danger"` | `"neutral"` | Status color of the lamp, or of the block when `strong`; `neutral` is muted ink. |
+| `text` | string | `""` | The status label; also the accessible name. |
+| `variant` | `"neutral"` or `"info"` or `"accent"` or `"success"` or `"warning"` or `"danger"` or `"purple"` | `"neutral"` | Paired foreground/background tone; accent is an alias for info. |
+
+## Slots
+
+| Slot | Required | Multiple | Description |
+|---|---|---|---|
+| `icon` | no | no | Optional leading icon. |
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `label`, `lamp`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `icon`, `label`, `lamp`, `root`.
 
 ## Theme
 
-- Tokens: `accent`, `danger`, `metrics.marker`, `metrics.marker_small`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.pill`, `spacing.sm`, `spacing.xs`, `success`, `surface`, `text_muted`, `text_primary`, `typography.caption`, `warning`
+- Tokens: `badge.danger_bg`, `badge.danger_fg`, `badge.danger_strong_bg`, `badge.danger_strong_fg`, `badge.info_bg`, `badge.info_fg`, `badge.info_strong_bg`, `badge.info_strong_fg`, `badge.neutral_bg`, `badge.neutral_fg`, `badge.neutral_strong_bg`, `badge.neutral_strong_fg`, `badge.purple_bg`, `badge.purple_fg`, `badge.purple_strong_bg`, `badge.purple_strong_fg`, `badge.success_bg`, `badge.success_fg`, `badge.success_strong_bg`, `badge.success_strong_fg`, `badge.warning_bg`, `badge.warning_fg`, `badge.warning_strong_bg`, `badge.warning_strong_fg`, `metrics.badge_lead`, `metrics.marker`, `metrics.marker_small`, `radius.pill`, `spacing.xs`, `text.subtle`

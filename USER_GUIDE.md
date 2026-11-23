@@ -49,6 +49,11 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 
 ## 2. Start a project
 
+This runtime line requires Rust 1.99 or newer. Run `rustc --version` in the
+application directory to check the compiler Cargo will actually use. A
+toolchain selected inside the SDK checkout does not select it for another
+project; keep the application's toolchain configuration deliberate.
+
 Install the CLI from crates.io. Use the CLI of the runtime line you build
 against; the CLI, runtime and registry are released together:
 
@@ -78,11 +83,13 @@ cargo run -p gpui-rhai-cli -- --root /path/to/app init
 ui/
 ├─ app.toml
 ├─ main.rhai
-├─ theme.rhai        # the palette: colors only
-├─ tokens.rhai       # the token base: spacing, metrics, radius, type
+├─ theme.rhai        # full design preset or alternate palette
+├─ tokens.rhai       # shared geometry, type, motion and component recipes
 ├─ styles.rhai       # application-wide part styles for official components
 ├─ profile.rhai      # with --profile: the design rules `check` reports
 ├─ themes/
+├─ fonts/            # native UI faces; declaring a family does not install it
+├─ licenses/         # font and icon license notices
 ├─ locales/
 ├─ components/
 └─ assets/
@@ -98,12 +105,18 @@ source updates. `init` replaces the hello-world `src/main.rs` that `cargo new`
 writes; any other `src/main.rs` stays, and `init` writes
 `gpui-rhai-host-snippet.rs` for deliberate integration.
 
-`init` writes the crates.io dependency of the CLI's own runtime line, for
-example from a 0.2 CLI:
+`init` sets the crates.io dependency's minimum to the CLI's complete version,
+because installed sources can use APIs added in a patch release. For example,
+a 0.4.3 CLI writes:
 
 ```toml
-gpui-rhai = { version = "0.2", features = ["dev-reload"] }
+gpui-rhai = { version = "0.4.3", features = ["dev-reload"] }
 ```
+
+This is a normal Cargo caret requirement, not an exact pin: subsequent
+compatible patches remain eligible. The build helper and offscreen
+dev-dependency use the same minimum. `init` preserves dependencies already
+declared by the application; keep those aligned deliberately when upgrading.
 
 To upgrade an existing application, keep `gpui-rhai`, `gpui-rhai-registry`
 and `gpui-rhai-cli` on one version, run `gpui-rhai update`, review its
@@ -278,6 +291,13 @@ The component is controlled: the prop is the business value, while the native
 Input entity retains only interaction state such as focus, selection, marked
 text, undo history, and caret scrolling.
 
+For a short inline field, set `intrinsic_width: true` to prefer the actual
+shaped text width (the placeholder when empty). Give it a maximum width
+inside a row so longer text leaves room for its neighbors. An explicit
+width and the parent's layout still take precedence. Leave it off for
+ordinary forms whose fields should not resize as the user types. Try
+**Input → Fit to text** in the Gallery.
+
 Best practices:
 
 - Give every stateful or interactive component a stable semantic `key`.
@@ -325,6 +345,523 @@ elsewhere, leaving Enter as a newline. Textarea exposes the same optional
 IME confirmation never submits. Counts and `max_length` use graphemes, not
 UTF-8 bytes; `min_rows`/`max_rows` control growth before internal scrolling.
 
+`patterns/model_picker::ModelPicker` can be used as a Composer's `leading`
+control. Give it application-provided `models` with stable `id`s and display
+names. Optional ratings and latency/price are descriptive and do not affect
+selection. To own the settings, pass `value: #{model:"auto", thinking:false,
+search:false, effort:"medium"}` and accept or reject the proposed full value
+in `on_change`. The separate `open`/`on_open_change` pair controls only
+disclosure; both pairs are local if the value prop is omitted. Prefer
+`placement: "top"` for an editor anchored near the bottom of a window. The
+picker does not fetch a model list, execute a request, or modify a draft.
+
+`components/message_actions::MessageActions` attaches controls to one reply.
+Supplying `text` enables the SDK's direct-input, after-commit clipboard
+path. `on_copy` reports the version, not the text. `versions` is a count and
+`version` is a zero-based accepted index; omit the index for local navigation
+that follows newly appended versions. The app owns regeneration and speech,
+using `regenerating` and `speaking` to report their state. The feedback panel
+emits `#{version, kind, reason}` with a null kind on undo and an optional
+reason following a downvote. Choose a stable instance key per message;
+reusing the key transfers local vote and version state.
+
+`components/reaction_bar::ReactionBar` supports `like`, `comment`,
+`repost`, and `share` in the requested order. With `reactions` supplied,
+the app accepts or rejects each `on_react` proposal (`#{id,count,active}`);
+omitting it lets the bar own its counts. The count is compact on screen but
+exact in the accessible description. Neither an accepted proposal nor a
+local toggle posts, comments, or shares anything on the application's behalf.
+
+`CitedAnswer` accepts literal
+`segments: [#{text:"The test passed.", cite:["report/7"]}]` and ordered
+`sources` with unique IDs, titles and site names. Set `paragraph: true` to
+start a paragraph. Alternatively, give it a Markdown string or a Host-owned
+document as `source` and write links such as `[1](gpui-cite:1)`; the number
+addresses the 1-based position in `sources`. Other Markdown links emit
+`on_link`. Previewing does not open anything. The separate Open source
+action emits `#{id,url}`; validate the destination in the application.
+Pass `preview` (empty string for closed) to own which preview is shown.
+Quote `highlight` phrases are literal; without them, a structured answer
+can highlight words shared with the citing statements.
+
+`AIAnswer` uses that same evidence surface with a question, streaming
+status, retry, copy, feedback and follow-ups. Pass a new immutable native
+document revision as `source` while `status: "writing"`; keep its identity
+stable. `on_stop` asks your application to cancel the producer. Report
+`status: "stopped"` with the last accepted source to keep the partial reply.
+No text is generated or fetched by the component. To let Copy use text
+from an opaque native document, supply `copy_text` explicitly.
+
+`ThinkingLoader` is the lightweight activity cue used by `AIAnswer`. Supply
+ordered `phases` and a zero-based `phase` as your work changes, and set
+`done` or `stopped` from the Host. `elapsed_ms` formats a completion
+caption from an application-owned duration. `autoplay` and `repeat` are
+for visual demos: they only rotate labels when no controlled phase is
+supplied, and never complete business work. Use `variant: "plain"` inside
+an existing surface.
+
+`ThinkingState` shows **public work steps** with stable IDs and optional
+sources, not model reasoning or a hidden trace. The app controls `status`,
+the steps already received, and elapsed time. Set `extra: true` on a source
+to show it behind the step's disclosure button. `on_open_source` reports
+the step, source ID and opaque `href`; the component does not fetch or open
+it. `open` and `on_open_change` optionally control whether the work summary
+is expanded, independently of the actual run.
+
+`patterns/run_controls::RunControls` composes a transcript, accepted
+queue, native editor, context meter and run actions. Keep `key` stable to
+retain the editor; set a new `run_id` for a new run or a retry. The transcript
+follows updates only while the reader is at the end; Home and End navigate
+its focused viewport. A new run starts with a new transcript anchor.
+`log_height` sets the native viewport height, independently of the editor.
+
+Pass the accepted `draft` and store the `on_change` proposal. Enter sends
+outside a running task and steers while running. Alt+Enter queues while
+running, and Shift+Enter inserts a newline. All four draft events carry
+`#{run,text}`, and the Host alone decides whether to clear the draft. Stop,
+resume, retry and dismiss carry the run ID, so reject requests that no
+longer match your current run. Queue removal carries `#{run,id}`. A
+steering note's `at` is a Unicode scalar offset into the accepted literal
+answer; pass notes in ascending offset order.
+
+Mode and permission are values the application can choose to accept or
+reject, not execution permissions granted by this UI. The first Escape
+closes the open permission menu; Escape within the run controls can then
+request stop. Pending native IME composition does not send, queue, or stop
+work. For other native editors that need alternate submit, Textarea's
+optional `on_alt_submit` opts in without changing ordinary Enter.
+
+`patterns/prompt_library::PromptLibrary` lets users search literal
+templates and fill `{name}` variables. Variables use letters, digits,
+underscore and hyphen, expand once, and retain drafts per template ID.
+`variables` can supply a `default` and a description. Inline preview
+markers focus the corresponding native editors. Copy can preserve unfilled
+placeholders; Use is enabled only when each required value is nonblank.
+An expanded prompt over 64,000 UTF-8 bytes cannot be used or copied.
+`on_use` returns `#{id,text}`. Put that text in your own draft or other
+application state; the library never sends it, invokes a model or evaluates it.
+
+`patterns/integration_picker::IntegrationPicker` browses metadata supplied
+by the application. `value` can control which integration is selected;
+`connected` is the accepted list of IDs. `on_toggle` proposes
+`#{id,connected}` and does not make a connection. Group placement stays
+stable during a toggle; changing the search recomputes the grouping. In
+the search field, Enter toggles the accepted visible choice. If filtering
+hides that choice, Enter proposes a new selection first so it cannot modify
+an unseen integration. Escape clears the search before requesting close.
+`on_explore` returns an ID, not a URL to open.
+
+`patterns/integration_settings::IntegrationSettings` edits a sync status,
+site domain and time zone. Pass accepted `value:#{enabled,site,zone}`, an
+application-owned `revision`, and the available `zones:[#{id,label}]`.
+`on_save` proposes `#{integration,revision,site,zone}`; check the revision
+before accepting it and publish the new values on success. Set `saving`
+while the request is in flight and `save_message` to report rejection. The
+draft remains available after rejection or pausing sync. A conflicting Host
+update requires a new choice before saving. Site entries are normalized to
+ASCII DNS hostnames (including IDNA); paths, ports and IP addresses are not
+accepted. This performs no DNS lookup and grants no network permission.
+
+The API key controls are separate. `on_generate_key`, `on_copy_key`,
+and `on_reveal_key` carry a nonsecret `integration` and `version`, plus
+`visible` for reveal. The Host validates each action and owns the secret,
+including any clipboard write. Pass only status and version to the form.
+If you use `credential_preview`, mount a trusted native reveal surface and
+authorize it with `credential_visible`; do not put actual credentials in a
+Rhai text node, toast, script state or save event. The Gallery uses a
+fabricated key and an in-memory Host only.
+
+`patterns/comment_thread::CommentThread` displays accepted messages in
+order. Pass a stable `id` for each message, a caller-formatted `time` if
+needed, and `status`/`details` for an expandable result. `thinking`
+shows accepted assistant activity; it does not start work. The native
+transcript follows new messages only while at the tail.
+
+`patterns/comments_panel::CommentsPanel` adds local filters and sorting
+by caller-provided `timestamp`. Both components render `draft` as
+accepted text, emit `on_change` as it is edited and propose trimmed text
+via `on_send`. Keep it until you accept the send, or leave it unchanged
+with `message` on failure. Set `sending` during an in-flight reply to
+avoid duplicate submission.
+In CommentsPanel, supply `posted_id` for the viewer's newly accepted
+comment to reveal it in the all-comments, newest-first view. Leave it
+unchanged for other incoming comments.
+
+The panel's `on_resolve` sends `#{id,revision,resolved}`; `on_edit`
+sends `#{id,revision,action}` for `run` or `undo`. Look up the record by
+ID, check its revision and authorize the action in your Host. Publish
+accepted `resolved` and `edit_state` afterwards. A typed `/edit` is
+display and classification only: unless the Host supplies an edit
+state and callback, it cannot expose a run action. The component does
+not execute comment text or perform undo itself.
+
+`patterns/writing_assistant::WritingAssistant` combines welcome suggestions,
+a native multiline editor and a following conversation. The Host supplies
+`conversation`, `revision`, accepted messages and `draft`. Every proposal
+includes that conversation and revision. On reset, publish a different
+conversation ID and discard any late response for the old ID. Use the same
+message ID for successive text updates to one assistant answer. Enter sends;
+Shift+Enter inserts a newline. Waiting and streaming prevent a second send.
+
+For dictation, supply optional `speech` state and `on_dictate`. Check the
+`lease` on stop and discard callbacks from an obsolete take. Interim text
+is only a preview; present the final transcript as a normal editable draft
+before sending. The SDK does not open the microphone, request OS permission,
+recognize speech, send the text, or call a model. Gallery explicitly
+simulates those Host states without using a microphone or network.
+
+`patterns/approval_card::ApprovalCard` displays a request and its accepted
+receipt. `on_decision` receives `#{request,revision,action,always}`. Check the
+ID, current revision, deadline and permission policy in the Host before
+committing a decision. Increment the revision when changing the facts that
+are being reviewed or whether durable approval is offered. The card only
+displays `remaining_ms`; pointer/focus activity can pause a soft reminder,
+but never extends an authorization deadline. During an asynchronous request,
+set `busy` and leave the last accepted status unchanged until a result arrives.
+
+`patterns/permission_request::PermissionRequest` distinguishes the scope
+being proposed from the actual `grant` accepted by the Host. Timed allow
+sends the requested minutes, not a locally generated deadline. Revoke sends
+the exact accepted grant ID. For destructive requests the card never offers
+perpetual access; if an old controlled choice no longer exists, it does not
+fall back to a broader choice. The Host still validates every proposal;
+only it can grant, revoke or expire access. Both Gallery pages simulate
+requests in memory without any actual external effect.
+
+`patterns/decision_card::DecisionCard` pages through choices, visual
+picks, or approvals. It proposes `#{request,revision,kind,option,text}`.
+Remove a decision only after accepting it. Revising the decision clears
+its old draft; navigating away and back to the same revision does not.
+`Later` and Escape fold the card without an answer, and changing `reveal`
+unfolds it. When focus is on the options, use plain digits to answer,
+or move to the custom answer field; modifier chords do not answer.
+
+`patterns/decision_tree::DecisionTree` compares branching consequences.
+Each item has a stable `id`, `revision`, and options with stable IDs.
+Use `effects` for read-only evidence; a span such as
+`#{text:"about $147",note:"Two renewals are pending",source:"Draft ledger"}`
+exposes an explanation by pointer and keyboard instead of implying certainty.
+Options with `children` open another level; only leaves or a custom
+instruction propose `#{request,revision,option,text}`. Publish `busy` while
+working, `notice` for a non-final response, and `receipt: #{option,message}`
+only when the Host accepts the proposal. The Gallery demonstrates all of
+these paths without acting on a real request.
+
+`patterns/review_center::ReviewCenter` groups pending reviews by risk and
+oldest wait within each group, and filters high-risk or low-confidence items.
+Set `order` to `oldest` or `given` to use another order. Leave `filter`
+unset for local filtering, or pass it and accept proposals through
+`on_filter_change`. Pass the Host's `now_ms` for SLA and receipt expiry. Evidence can contain
+flagged text, fields, plan steps, source IDs or `#{id,name,before,after}`
+file comparisons on the native DiffViewer. Paths are labels, not file reads.
+An approval with edits includes changed plain body text and a map of changed
+field values by ID. Keep rejected proposals and their drafts visible; only
+remove a request after accepting its exact revision. Undo identifies the
+accepted receipt, not a queue index. Skip does not resolve the request.
+
+`patterns/delegate_board::DelegateBoard` presents unassigned work and
+accepted agent queues. Use a distinct `board` drag namespace for each
+board in a window; task and agent IDs may be reused on different boards.
+Move a card by dragging it, or focus the card and press Enter or Space to
+choose a destination. The owning task's first queue entry is running; its
+remaining time counts instead of its original estimate. Preview suggestions
+don't move work. Manual, Assign all and automatic mode emit the same
+`#{board,revision,kind,moves}` proposal; each move names its task, expected
+source and destination. Accept the whole batch or keep the previous model.
+Advance `revision` when the task, agent or mode model changes, not on clock ticks.
+A rejected automatic proposal
+does not retry unchanged data. The fixture assigns only sample records.
+
+`patterns/agent_queue::AgentQueue` presents a time-stamped backlog, worker
+slots, recent outcomes and a depth history from the same accepted data.
+Supply a common `now_ms`; preserve records overlapping the history window
+and provide `totals` if older outcomes have been pruned. A queued job
+contributes from enqueue until start or termination; overlaps in rate
+limits are counted once. Explicit job progress wins over estimated
+progress. Keyboard arrows move among jobs; Enter pins evidence.
+`on_action` gives the exact queue and revision for pause, resume,
+concurrency, promotion, cancellation, or retry. The component never
+starts a job or changes accepted ownership or counts.
+
+`patterns/agent_lanes::AgentLanes` shows a shared time window for an ordered
+set of agents. Overlapping and short tasks are placed on separate tracks
+when their hit areas would collide. A task can link to its successor with
+`handoff_to`; the line disappears when an endpoint leaves the window.
+Each waiting-task approval, rejection, or optional open action is a
+proposal carrying the exact timeline, revision and task ID. Selecting a
+card opens inspection without changing the accepted timeline.
+
+`patterns/agent_handoff::AgentHandoff` keeps a relay's agents, tasks, and
+historical transfers separate. The newest transfer is first for each
+adjacent pair, but older records can still be inspected. Refer to a task by
+ID, not its title. Restoring material emits a proposal with the relay,
+revision, transfer, task, and item IDs. Assignments work through a drag
+handle or a keyboard destination picker; the Host applies the new owner.
+The component does not fetch or publish the materials it displays.
+
+`patterns/agent_inbox::AgentInbox` groups waiting and failed tasks in
+Needs you, and running and done tasks in their own lanes. Board and list
+layouts reuse the task cards; a narrow board stacks without changing the
+accepted layout. Set `view` to control layout through `on_view_change`,
+or omit it for a local choice. A single `now_ms` drives active durations;
+finished cards use their fixed `elapsed_ms`. Expand a card to read up
+to four steps. Approval, rejection, retry, open, and new task actions
+are proposals with the exact inbox, revision and task identity.
+
+`patterns/agent_plan::AgentPlan` reviews an ordered draft and then shows
+Host execution. Use the grip to drag a step, or focus the grip and use
+Option/Alt with an arrow. Edit and Add hold uncommitted text locally until
+the Host accepts the proposal. Run includes the current accepted step
+order; Retry identifies the failed step. Provide `now_ms` for active
+elapsed time and a fixed `elapsed_ms` for completed steps. The component
+does not execute tools or change the accepted plan on its own.
+
+`patterns/agent_checkpoints::AgentCheckpoints` displays a run's accepted
+history, oldest first. Give each checkpoint a distinct ID and reference only
+earlier parents; omit the parent to start an independent attempt and omit
+`head` to use the latest checkpoint. Arrow keys, Home and End navigate the
+history. Rewind proposes `#{run, revision, head, checkpoint}` to `on_rewind`;
+the Host validates that snapshot and can append a new checkpoint with the
+selected checkpoint as its parent. Accepting an attempt does not require
+deleting the earlier branch. Use `busy` and `notice` to show progress or a
+refusal without moving the head.
+
+`patterns/agent_trail::AgentTrail` shows execution, not a draft plan. Pass
+the accepted `steps` and a single `now_ms`; running steps use `started_ms`
+and finished steps keep their `elapsed_ms`. Running substeps open by
+default. The view shows a bounded window around an active substep; the
+earlier and later controls reveal all items. Pass `expanded` and
+`on_expand` to control disclosure. For a waiting step, `on_decision`
+receives `#{run,revision,step,choice}`. Set `busy_step` while resolving a
+proposal; publish a new step state only when it is accepted. On refusal
+the disclosure and question stay available for retry.
+
+`patterns/agent_tree::AgentTree` shows a run's dispatch hierarchy. Pass
+a flat `agents` array with stable IDs and optional parent IDs; the order
+of siblings follows the input. An optional `supervisor` is a separate
+peer, not a child of the root. Costs are integer millionths of the
+currency unit. Folding hides cards but does not remove their costs or
+their entries in the waiting and failed review panels. Arrow keys
+navigate the tree; Left/Right follow the writing direction for folding
+or entering a branch. Supply `collapsed` and `on_collapse` to control
+folding, and apply `selected` only after accepting `on_select`. The review
+actions propose `#{run,revision,agent,action}` to `on_resolve`; publish
+`busy_agent` while resolving a proposal.
+
+`patterns/agent_graph::AgentGraph` displays arbitrary communication between
+agents, tools and people. Supply standing `edges`, chronological `calls`
+with stable IDs, and one `now_ms` clock. A newly accepted pending call sends
+a filled pulse; changing that call to `ok` or `error` sends a hollow pulse
+back along its route. Initial history is not replayed. Link width reflects
+calls in `heat_window_ms`, independent of the last-minute count. For
+inspection, focus nodes with the arrow keys or Home; Enter opens a node and
+Escape closes it. If you provide `on_select`, apply the proposed
+`#{run, revision, node}` to `selected` explicitly; an empty node requests
+dismissal.
+
+For a custom decorative pulse, add
+`scene.path_pulse(path_key, radius, paint, hollow, reverse)` to a static
+Canvas path and animate the node's `path_progress`. The marker uses the
+presented projection and does not add a hit target.
+
+`patterns/agent_fleet::AgentFleet` shows a forest of lead agents and
+the sub-agents of one open lead. Use the same flat agent IDs and
+parent links as AgentTree; the total includes every branch, including
+closed ones and negative cost credits. Use `controlled_open`, `open`
+and `on_open_change` to accept or refuse disclosure in the Host; omit
+controlled mode for local disclosure. Each sub-agent's task inspector
+can show steps, approval evidence or errors. Resolution requests use
+`#{run,revision,agent,action}` just like AgentTree; `busy_agent` disables
+the affected agent's actions until the Host answers.
+
+`patterns/agent_monitor::AgentMonitor` presents a single run. Send
+`now_ms`, an accepted state, and a Host clock snapshot. Use
+`paused_at_ms` while paused, accumulate completed intervals in
+`paused_ms` on resume, and fix `ended_ms` for a terminal run. The
+component never starts a clock or performs an action. A duration
+segment opens the matching history step; review commands and step
+output are literal evidence. Pause, Resume, Allow, Decline, Cancel,
+Retry and Open log use `on_action` with `{run,revision,action,step,request}`.
+An approval shortcut is active only on the focused request surface.
+
+`patterns/agent_steering::AgentSteering` sends notes to a run without
+changing its accepted steps or queue. Enter proposes to queue the
+draft; Cmd+Enter on macOS or Ctrl+Enter elsewhere proposes sending it
+to the active step. Shift+Enter is a native newline. A queued note can
+be applied now or withdrawn by its ID. On acceptance, move the same
+note ID into a step instead of duplicating it. Echo the action's
+`proposal` in `receipt`; only an unchanged local draft clears after a
+matching accepted receipt. A controlled `draft` always belongs to the
+Host. Use a fresh run or component key for a new acknowledgement owner.
+
+`Textarea` also accepts an `alt_submit_key` of `mod_enter` with
+`on_alt_submit`. Its default alternate shortcut remains Alt+Enter.
+
+Use `min_rows` and `max_rows` to grow a Textarea by visual lines. In an
+inline composer, `min_viewport_height` and `max_viewport_height` can
+add explicit limits to its native scroll viewport, after the row policy.
+Use positive lengths; padding and borders are outside the viewport.
+The viewport scrolls when content exceeds its height.
+
+`patterns/agent_recap::AgentRecap` shows a versioned interval of activity.
+Supply `run`, `revision`, epoch `since_ms` / `until_ms`, and keyed
+`events`. The display time zone does not change event positions. In the
+three-lane board, `limit` caps the visible cards per lane, not the
+summary or plot. Set `board: false` for a summary strip. The app changes
+event state only after accepting `on_action` proposals
+`{run, revision, event, action}`; the action is `primary`, `review`,
+`undo`, or `redo`. Keep the same card key and original kind after
+resolution. Use `replay_serial` to request another decorative replay;
+zero `replay_ms`, reduced motion and no motion show the whole interval.
+You can observe chart and card inspection with `on_inspect`.
+
+`patterns/agent_findings::AgentFindings` shows a team's verification
+progress and its newest findings. The agent filter is local; run and
+agent counts always come from the accepted snapshot, even when
+`rows` caps the feed. Findings from departed agents remain available.
+Supply `now_ms` for a reproducible Host clock; omit it for a view-owned
+relative-time refresh. A finding with no timestamp appears last. When
+present, `on_open` receives `{run, revision, finding, agent}`; validate
+the revision and open your application's detail view by ID. Without it
+the feed is read-only. Preserve IDs across updates so focus and row
+movement follow the data, not its current position.
+
+`patterns/agent_ledger::AgentLedger` presents a newest-first log of accepted
+changes. Use stable IDs and explicit `depends_on` links within the supplied
+acyclic graph. Hover or focus an Undo command to preview the same reversible
+set the command will request; irreversible descendants are shown but left
+unchanged. `on_action` receives the run, revision, command anchor, root,
+operation kind, topologically ordered `changes`, and `locked` IDs. Validate
+the revision and apply or reject the batch in the Host; the component does
+not perform an external action or commit optimistically. For Undo, process
+dependents before prerequisites when the application's transaction requires
+it. Store accepted batches in `undone_batches` and hold `busy` while awaiting
+a result. Redo restores exactly one accepted batch and is unavailable if a
+separate prerequisite batch remains undone. Omit `on_action` for read-only
+history; use `show_actions: true` when controls should not depend on hover.
+
+`patterns/agent_cursors::AgentCursors` presents a bounded, read-only document
+with live reviewers and optional review commands. Publish the accepted
+`document`, `revision`, `active_tab`, `blocks`, `agents`, `suggestions` and
+`comments`. Keep IDs stable across updates. Text offsets (including ranges
+inside a proposal's insertion) use extended graphemes, not bytes or UTF-16
+code units. Nonoverlapping suggestions decorate the current text without
+changing it; use the original grapheme offsets until the Host accepts a
+replacement. Images and table cells are independently keyed targets.
+
+On `action`, check the document, active tab and revision before applying
+a follow, tab change, suggestion decision, reply, resolution or row addition.
+Keep `busy` true while awaiting a decision. Publish a new accepted snapshot
+with rebased suggestions and cursor locations after changing text. A rejected
+reply keeps the draft; an accepted reply clears it when the reply appears
+in the published thread. Use the Gallery's AgentCursors story to try both
+outcomes, move the typing cursor, or resize a held illustration. Omitting the
+callback leaves document review and inspection available without mutation
+commands. Cursor movement follows the view's motion preference and never
+changes the accepted selection or the location of an interactive review pin.
+
+`AgentCursors` fades the sheet by default; pass `fade: false` to keep its bottom
+fully visible. This paint choice does not change the scroll range, review
+controls or accessibility geometry. Custom surfaces can use
+`style().bottom_fade(0.5, 0.97)` to fade the already-composited foreground
+between two border-box height fractions; `without_bottom_fade()` clears it.
+Use `style().edge_fade("y", 24, 24)` for transparent top and bottom edges,
+or `"x"` for left and right. Distances are logical pixels, zero disables
+that edge, and short boxes proportionally compress the ramps. The mask
+does not change hit testing, scrolling, or accessibility geometry. It
+replaces a less-specific fade, and `without_bottom_fade()` clears either
+form. For a virtual list, give the first and last rows real scrollable
+breathing room with the numeric `content_padding_top` and
+`content_padding_bottom` options; they do not add item keys.
+
+On a plain text node, `style().glyph_sweep(ink, 0.36, 0)` declares a
+highlight band. Paint phase runs from 0 (off the left edge) to 1 (off
+the right edge); the half width is a fraction of measured text width.
+Animate it with `motion_keyframes("glyph_sweep", ...)` on a keyed text
+node. The normal text remains visible, and the highlight reuses the
+glyphs' own atlas coverage. Reduced and disabled motion suppress
+the moving band. The isolated candidate currently draws this effect
+on Apple monochrome text; color glyphs and other renderers keep their
+ordinary output.
+Use `style().glyph_ink_sweep(ink, 0.25, 1.5, 0)` when the highlight
+should **replace** the original glyph ink rather than be layered on
+top. It interpolates the premultiplied ink and applies glyph coverage
+once, so a translucent highlight can also reduce opacity. Travel is a
+text-box fraction, at least `1 + 2 * half_width`; use the same
+`glyph_sweep` motion property and clear either mode with
+`without_glyph_sweep()`.
+
+Animate `background_position_x` to move only the front image of a
+`layered_gradient`. Values are fractions of the remaining horizontal
+positioning space (origin width minus image width), not pixels. This
+preserves the authored border or padding clip, rounded corners, and
+the other layers; it does not move the element or its input geometry.
+With reduced or disabled motion the image stays at its authored
+position, rather than freezing a moving highlight inside its clip.
+
+Use `style().paint_reveal_x(4, 1)` with an entry motion on
+`paint_reveal_x` from 0 to 1 to reveal a painted card from its physical
+left edge. The radius is in logical pixels and is constrained by the
+visible rectangle. Layout, keyboard focus and hit testing keep the
+original size. Progress 1 returns to ordinary unmasked paint; reduced
+and disabled motion use the authored progress.
+
+In a theme's token map, `component_styles_replace: true` declares the
+entire preset sheet. An omitted part or style property does not borrow
+one from the token base. Leave this flag unset for palette-only themes
+or partial style layers. Host, application, and component-instance
+overrides still apply above the selected preset.
+
+To animate a controlled size in a custom part, declare
+`.layout_size_motion(key, "width", 260, "ease_out")` (or `"height"`). Use a key
+that changes with the size-driving content or value, not on every render. The
+layout engine constrains the new size before interpolation; siblings, clipping
+and hit bounds see the same intermediate layout. Initial mount, same-key
+reflow, and Reduced/None do not start a track.
+
+For custom text placement, `text(...).wrap_exclusion("left", width, height)`
+reserves a rectangle beside the initial visual rows, then restores the full
+line width. Use `"right"` for the opposite physical side and pass geometry
+relative to the text's top. Plain and styled text keep a single source and
+text-anchor plan; zero width or height clears the rectangle. This method does
+not place a figure or coordinate exclusions across multiple blocks.
+
+Use `column([figure, paragraph, ...]).leading_float("start", 432, 126)`
+to coordinate one figure with several prose nodes. The figure is measured
+by the native layout, including any caption or current size animation. Each
+prose node keeps its own text and anchors. The figure stacks when there is
+too little room for the column or the text beside it. `AgentCursors` uses
+this layout for consecutive prose after a floated image; a heading, list,
+code block, or another figure ends the flow.
+
+`patterns/decision_inbox::DecisionInbox` presents two quick lanes for each
+request. Map its versioned `choice` (primary/secondary) to the intended
+action in your Host; the caption is not an action ID. Publish `busy` while
+working and a `resolved` row with a `receipt` after acceptance. You can
+retain the receipt briefly, then remove the row. A rejected proposal stays
+pending; an accepted receipt can unfold the next waiting item.
+
+`patterns/approval_gates::ApprovalGates` shows the pending stack, blocked
+steps, and accepted history of a Host run. Open gates can display caller
+text, or file comparisons with `#{name,before,after}`; the component does
+not read or modify files. Its `on_decide` includes the run, gate ID and
+accepted revision. `approve_edited` carries the reviewed text or arguments;
+`request_changes` carries feedback on a file proposal and is **not** an
+approval. Publish the receipt only after accepting the correct revision.
+
+`patterns/autonomy_dial::AutonomyDial` groups actions from the accepted
+level, the caller's pins and independent `required_confirmation` rules.
+Proposals contain the policy and revision, and change only a level or one
+pin. Keep the accepted level and groups while a proposal is pending or
+rejected. The dial is not an execution or authorization policy engine.
+
+`MarkdownViewer` also accepts paint-only `annotations` into its **visible
+plain text**, using inclusive/exclusive UTF-8 byte offsets. They do not
+change text, link hits or selection. Use `markdown_literal` for escaped
+literal inline text, `utf8_byte_count` for offsets and `text_match_ranges`
+for bounded literal matches. Do not use Markdown source offsets for
+annotations in a document containing Markdown syntax.
+
 `components/selectable_card_group::SelectableCardGroup` takes controlled
 `values` (an array even for `mode: "single"`) and keyed `items` with a textual
 `label` and presentational `content`. Use `mode: "multiple"` for checkboxes,
@@ -366,6 +903,21 @@ controlled `selected` prop: `ghost`, `outline` and `secondary` fill with
 `selection` (the glyph keeps its color), stop reacting to hover, and expose
 pressed accessibility state.
 
+`Pagination` keeps `current_page` and `page_size` controlled. Accept its single
+`#{ current_page, page_size }` proposal together; page-size changes propose page 1.
+`compact:true` omits numbers/ellipses, independently of the compact density
+preference. `disabled:true` blocks page and page-size input and closes the size
+popup, while leaving the range text undimmed. The normal number window has a
+bounded, stable count of page/ellipsis slots, including near either end.
+Page targets keep business-page keys and the current target stays focusable:
+accepting a proposal preserves native focus without a delayed focus command
+that could steal it from another control. Gallery includes interactive mode
+toggles, compact, disabled, wrapped, automatically narrow and empty examples.
+When the numeric controls cannot fit, the native overflow row hides their whole
+cohort and retains Previous/Next. Widening restores the same number targets;
+this changes presentation, not the controlled page. The `controls` and
+`page_slot` parts expose the same public overflow style mechanism to Host rules.
+
 Formal component render functions are pure automatic reuse boundaries. When
 root state changes, unchanged non-slot props and a clean component subtree let
 the runtime reuse the prior component before calling Rhai. State, dependency
@@ -382,12 +934,22 @@ The main read paths have deliberately different invalidation semantics:
 | `ctx.get_app_store_path(...)` / `get_window_store_path(...)` | Exact bounded path dependency, including keyed-array selectors |
 | `ctx.element_bounds(ref)` / `element_bounds("key")` | Tracked last-committed layout/visual/clip geometry; first render may return `()` |
 | `ctx.element_size(ref)` / `element_size("key")` | Tracked layout width/height only; position, transform and clip changes do not rerender its reader |
+| `ctx.element_width_class(ref, [480, 800])` / the ref-key overload | Committed layout-width band, `0..=2` here; only boundary/binding changes rerender the reader, unless a broader size/bounds read is also made |
 | `ctx.event_target_bounds()` | Event-only, untracked current-target visual snapshot |
 | `ctx.get_signal(...)` during render | Untracked hot value, but makes that component ineligible for render bailout |
 | `node.bind_signal(...)` | Native property sampling without a Rhai rerender |
 
 Prefer declarative props and tracked state/store reads for ordinary UI. Prefer
 signal bindings or retained native work for values that change every frame.
+
+Width-class boundaries are increasing finite non-negative logical-pixel
+numbers (at most32). At an exact boundary, the lower band wins. A missing or
+unmeasured ref returns `()` and remains subscribed during render; event reads
+are untracked. This is a last-committed measurement on the Host controller,
+not a synchronous CSS layout query. Choose a size-bounded measurement target
+whose width does not alternate as a consequence of the selected band. Multiple
+reads coalesce by intersecting their current stable intervals, without keeping
+a growing threshold history.
 
 Use `ui/styles.rhai` for coherent application-wide overrides keyed by formal
 component ID and declared part. Use instance `style`/`part_styles` for an
@@ -405,7 +967,7 @@ events, size vocabulary and style parts:
 - actions and choices: Button, IconButton, ButtonGroup, Checkbox, Radio,
   RadioGroup, Switch, Toggle, ToggleGroup, Slider, and SelectableCardGroup;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, DatePicker,
-  RangeSlider, Calendar, TimeInput, and TimeRangePicker;
+  RangeSlider, NumberInput, Calendar, TimeInput, and TimeRangePicker;
 - navigation, layout, and data: Tabs, TabOverflowMenu, Carousel, SlidingPanel,
   Accordion, Collapsible, Menu, Pagination, Table, List, ScrollArea, SplitPane,
   Resizable, Draggable, DragSource, DropZone, Sortable, PanZoom, Rotatable,
@@ -428,6 +990,17 @@ gpui-rhai gallery --page navigation_stack --density compact
 gpui-rhai gallery --page time_range_picker --theme default-light --locale zh-CN
 ```
 
+In the Gallery, press Cmd+K (Ctrl+K on other platforms) and search for a theme
+such as `Clean Light` or `Modern Dark`. This also works in a narrow window
+where the title bar does not show the theme picker.
+The same palette lists languages, searchable by names such as `Arabic` or
+`Simplified Chinese`, even when the title-bar locale picker does not fit.
+
+In a narrow window, or a medium window at 150% or larger reading size,
+**Browse pages** opens the navigation drawer without taking width from the
+main page. Select a page to close it, or press Escape to return to the previous
+control. You can also go directly to a page with the command palette.
+
 From this checkout, the matching command is
 `cargo run -p gpui-rhai-cli -- gallery --page markdown_viewer`.
 The new page IDs below describe this checkout's unreleased source; use its
@@ -440,7 +1013,7 @@ matching CLI/runtime/registry:
 | Hierarchical browsing and formatted ranking | `column_browser`, `formatted_table` |
 | Drafting and rich choices | `composer`, `selectable_card_group` |
 | Native Markdown | `markdown_viewer` |
-| Dates, clock text and ranges | `calendar`, `time_input`, `time_range_picker` |
+| Dates, clock text and ranges | `calendar`, `date_range_picker`, `time_input`, `time_range_picker` |
 | Event history | `timeline` |
 | Integrated conversation | `scene.messages` |
 
@@ -456,7 +1029,57 @@ See [Gallery and acceptance application](docs/gallery.md) for story metadata,
 Host/Rhai ownership, deterministic fixtures, lifecycle behavior, and the
 verification matrix.
 
+`IconButton` omits `selected` for an ordinary action. Pass `selected: false`
+or `true` only for a controlled toggle, which exposes the corresponding
+accessible pressed state. Its callback does not change that state itself;
+the application stores the next value and passes it back.
+
+`Kbd(#{ keys: ["mod", "shift", "p"] })` displays one combination in one
+keycap, with platform-specific glyphs and a spelled-out accessible name.
+Use `keys: "esc"` for a named single key, or `text: "F12"` for an unparsed
+literal. Empty content draws no chip. `size` is `sm` (default) or `md`;
+`platform: "mac"` / `"other"` is an optional presentation override, not a
+keyboard-binding setting. Combinations preserve input order in RTL layouts.
+Use `appearance: "inline"` for a bare legend in a menu or control.
+Use `appearance: "menu"` for a contextual20px keycap inheriting the surrounding
+ink. Its menu geometry is independent of the standalone `sm`/`md` size.
+`key_legend("mod")` exposes the same `#{ label, spoken, glyph, platform }`
+value to custom UI; the two-argument overload selects an explicit platform.
+`key_shortcut("cmd-p")` instead parses an existing GPUI shortcut for display.
+Each parsed chord exposes `key`, `modifiers`, and ordered `keys` display/spoken
+descriptors; use those to build individual keycaps, not string splitting.
+Already-formatted text such as `"⌘P"` or `"Ctrl+P"` stays one literal legend.
+Neither function installs a binding; bind the application's actual action
+through the normal Host action/keymap APIs.
+Registered action IDs use `namespace.snake_case_action`, such as
+`app.open_palette`. They are not arbitrary labels or collection keys; do not
+apply this naming restriction to business row keys or component identity keys.
+For an embedded view, `ScriptView::key_binding` supplies the approved shortcut
+metadata; the Rust Host must explicitly install it with
+`ScriptViewHost::bind_keys`. Standalone launch performs that Host step itself.
+
+Use `accessibility_hidden(true)` only for decorative duplicates whose meaning
+is already on their semantic owner. It removes the subtree from accessibility
+and implicit names, not from painting, layout or contrast audits; it does not
+disable focus or input. Do not use it to hide interactive controls.
+
+Use `accessibility_description(text)` for auxiliary plain text that should not
+replace a control's name. A declared `accessibility_described_by` relationship
+takes precedence, including an empty resolved result. Data-only virtual rows
+can use direct descriptions without declaring an ElementRef; references still
+belong to formal components, including formal children rendered inside a row.
+
 ### 5.1 Retained pages, navigation and hierarchical browsing
+
+`components/breadcrumb::Breadcrumb` presents a controlled root-to-current
+trail. Items have stable `value` keys and full `label`s; the last item is
+current and never navigates. Long trails fold their middle according to
+`max_items` and the measured width of that specific container. The accessible
+ellipsis reuses Menu for arrows, activation, dismissal, and focus restoration.
+Selecting an inline or folded ancestor emits the same string to
+`on_navigate`; your application owns the route and may reject the request.
+Use `separator_kind: "slash"` for directory paths and `overflow_label` to
+localize the ellipsis. Install it with `gpui-rhai add breadcrumb`.
 
 `Tabs` defaults to presenting only the selected panel. Set
 `keep_mounted: true` when switching away must preserve native scrolling,
@@ -558,8 +1181,9 @@ the same ratio contract. `start_collapsed`/`end_collapsed` are controlled, and
 nested SplitPane instances cover multi-panel layouts without introducing a
 docking or persistence framework.
 
-Its default square-ended grip grows smoothly from 24px to 40px on hover, focus
-or drag, using the theme's `fast` motion (120ms by default). Reduced/None motion
+Its default grip grows smoothly from 24px to 40px while dragged, using the
+theme's `fast` motion (120ms by default); hover/focus change its paint, not its
+length. Reduced/None motion
 snaps to the current state. The stable hit area does not grow with the bar.
 `grip_length` and `grip_active_length` configure the motion range; `grip: false`
 removes only the decoration. Use `handle: node` for a static replacement, or
@@ -587,6 +1211,52 @@ Command palettes separate seating, preview, and confirmation. The caller-owned
 suitable for temporary theme, font, or density previews; `on_action` is the
 Enter/click commit boundary. CommandDialog forwards both as formal component
 events, so their callbacks retain the caller's Rhai module context.
+`Command` defaults to `appearance:"panel"`, which owns its tray/card chrome.
+Use `appearance:"embedded"` when a surrounding host panel owns the edge;
+CommandDialog uses that mode automatically. These modes keep one native editor
+and the same keyed results subtree. The outer semantic group contains the
+editable field and a separate labelled listbox; it is not itself the listbox.
+`footer` accepts application-owned node content, and `footer_visible:false`
+omits its presentation. Footer controls retain their own semantics and keys:
+Command's direction/Enter handling is scoped to search/results, not those
+controls. As with other eager node props, stop constructing an effectful footer
+component in the caller if hiding it should also end its lifecycle.
+
+The `search` part owns header spacing and its separator; `search_input` owns
+editor typography and geometry, and `search_placeholder` owns its soft ink.
+`card`, `root_embedded`, `card_embedded`, `list`, `list_viewport`, `footer` and
+the icon/hint parts are separate override points. `list` padding is outside the
+measured row viewport, so it does not silently remove space from the last row.
+`max_visible` sets its cap in command-row units; group headings have independent
+typography/padding and their natural measured height. Short filtered results
+fit their actual extent, without eagerly measuring a large result set.
+The default footer describes existing arrow/Enter behavior and installs no
+global binding. The Gallery's command page demonstrates panel/embedded modes,
+observable actions and an interactive caller-owned footer.
+
+`narrow_at` defaults to480 logical pixels of the **inner card**, independently
+of window size and density. After its first measurement, narrow presentation
+uses44/40px rows in Modern/Clean, hides visual hints, keycaps and the Enter
+badge, but keeps option descriptions and real bindings. Modern retains the
+navigation footer; Clean omits its default footer. Caller-owned footer content
+stays visible when `footer_visible` allows it. `item_narrow` is an override
+part in the same common/state cascade. CommandDialog forwards `narrow_at` and
+uses exactly the shared Command item contract. The initial unmeasured layout
+uses wide presentation; transitions occur after a committed width-band change.
+Gallery's Wide/Narrow buttons exercise the same keyed control, not two mockups.
+
+Command items may also provide a secondary `hint`, a decorative `icon`, or a
+`logo` on a small tile. Array icons/logos accept a non-interactive node or a
+logical asset ID string; NativeCollection rows use asset ID strings, not UI
+nodes. `logo` takes precedence over `icon`. The leading slot remains reserved
+when both are absent, so labels align. Hints share the label's baseline, take
+part in search with keyword precedence, and describe the option without
+replacing its required textual name. `icon_slot`/`icon_slot_active`, `logo_slot`,
+`icon`, `logo`, `text`, `label` and `hint` are separate part-style override
+points. Rich `content` still replaces only the label; decorations never acquire
+their own tab stop or command handler. Referenced assets must be registered and
+prepared through the normal asset pipeline; a string is not a filesystem path
+or permission to fetch a URL.
 
 `TitleBar` and `StatusBar` are application chrome compositions, not a window
 authority escape hatch. An embedded view can render either but cannot move,
@@ -780,6 +1450,10 @@ When only dimensions matter, use `ctx.element_size(ref | "key")` instead: it
 returns `#{ width, height }` and preserves the same pending/ref-rebinding
 subscription, without waking Rhai when a native drag merely moves the element.
 
+Rust elements that need caret or selection geometry should read the same
+layout they paint. See [native text geometry](docs/text-geometry.md) for
+grapheme boundaries, visual rows, and layout-to-window coordinates.
+
 ### 6.3 Rust native handlers callable from Rhai
 
 Use a `NativeHandlerRef` when a Rhai-authored component should call trusted Rust
@@ -862,6 +1536,13 @@ Choose the smallest boundary:
 | Rust owns the whole declarative tree | `HostCallback` / `StaticUiView` |
 | New GPUI/platform mechanism | custom primitive |
 | Per-frame typed paint/layout value | `NativeSignal` or retained native subtree |
+
+Host-built `StaticUiView` trees can opt into `with_theme(ThemeVariant)` and
+`set_theme(Some(variant), cx)`. These reuse the normal token/typography resolver
+without adding a script runtime. The Host owns preset selection and font
+installation; switching the snapshot preserves keyed nodes and native input
+state. See [Host-owned trees](docs/embedding.md#host-owned-interactive-trees)
+and `cargo run --release -p gpui-rhai --example host_owned_tree`.
 
 ## 7. Rust host patterns
 
@@ -1022,6 +1703,37 @@ row([
 fixed-height Text nodes use their declarations to position their text content.
 Input and Textarea own separate native line-layout implementations.
 
+For wrapped flex and grid layouts, `.gap_x(theme_spacing("sm"))` and
+`.gap_y(theme_spacing("xs"))` control horizontal and vertical spacing
+independently. These are physical axes, not main/cross-axis or RTL aliases.
+A later `.gap(...)` resets both axes; a later axis setter changes only that
+axis. Automatic grids use the horizontal value for their column breakpoints.
+
+For a small responsive toolbar, use `.overflow_row()` on a Box row and mark
+optional children with `.overflow_priority(0)`. Equal-priority cells form one
+cohort; lower-priority cohorts collapse first. Unmarked cells are required,
+even when required content alone cannot fit. `.overflow_required()` clears a
+lower-layer optional priority, and `.overflow_row(false)` restores ordinary
+layout. Font/length/theme changes and resize use real native measurement,
+without a Rhai render loop.
+
+For a counted overflow suffix, append children marked
+`.overflow_summary_for(n)`, one for each supported omitted-cell count.
+The fitter reserves the corresponding suffix's actual measured width.
+Only the matching suffix can be presented, and it never removes a required
+child. For example, a compact strip of filter chips can display `+3` rather
+than leaving the final three chip buttons in the native focus order.
+
+This is intrinsic packing, not flex grow/shrink distribution: cells keep their
+measured sizes. The row keeps its full preferred width and line height so it
+can restore hidden cohorts when its allocation grows without vertical jitter.
+Wrap a group in `row`/`box` to make it one cell; Fragment layout styles do not
+make cells. Grid, wrapping, baseline and stretching layouts take precedence.
+Omitted cells are still measured and retain logical state/effects; they do not
+paint, receive keyboard input or appear in presented semantics. This is not
+virtualization or a retained-page lifecycle pause. Use virtual collections for
+large data, and `retained_page` for its explicit visibility/lifecycle policy.
+
 Use semantic layout directions and `margin_start`/`padding_end` where RTL must
 mirror. Avoid hard-coded left/right behavior for logical navigation.
 
@@ -1048,6 +1760,22 @@ selects the rules; `ScriptViewHandle::composition_audit` reports them at
 runtime and `gpui-rhai check` adds static warnings for literal geometry in
 application source. A node opts out of a rule with `.audit_allow([...])`.
 
+Low-contrast findings include `AuditFinding::contrast`: foreground RGBA,
+inherited element opacity, a solid backing's unquantized sRGB value (when one
+exists), ratio, required minimum and a conservative-bound flag. This is the
+declarative paint model, not a GPU pixel sample. Hidden/unpresented content is
+not a visible contrast failure; elided fragments still contribute their actual
+children. Opacity follows native per-primitive compositing, not assumed CSS
+group isolation.
+
+Modern/Clean's four exact presets retain their authored colors and report their
+readability risks; preservation is not a WCAG pass. For higher contrast, choose
+an explicit alternate palette or Host override rather than silently rewriting
+those presets. The SDK audit stays strict for every theme. In the Gallery,
+activate **Open audit report** in the status bar to read/copy the complete
+findings, including color evidence. The report updates when facts change, even
+if the finding count stays the same.
+
 Declare shared component assets in component metadata. Application assets live
 under `ui/assets` and are referenced by logical identity:
 
@@ -1055,9 +1783,10 @@ under `ui/assets` and are referenced by logical identity:
 image_source(asset("app/icons/check"))
 ```
 
-SVGs may use `currentColor`. The renderer resolves the nearest effective
-semantic text color: a color declared on the SVG wins, otherwise the value is
-inherited through its ancestors just like adjacent text. Shared icons should
+SVGs may use `currentColor`. External inheritance reads the effective native
+text color at presentation time, including native hover/focus refinements,
+without requiring a Rhai rerender. A color declared within the SVG keeps its
+own scope; fixed fills are not recolored. Shared icons should
 use a consistent 24×24 viewBox and optical center.
 
 Declared assets are synchronously validated during preparation. Dynamic
@@ -1069,6 +1798,12 @@ contract. Rust Hosts can inspect the bounded shared variant cache through
 `AssetRegistry::svg_cache_stats()`. SVG text resolves system-installed fonts and
 generic fallbacks; Host-provided in-memory `FontSource` values currently apply
 to GPUI text, not to the separate SVG font database.
+
+Rust Hosts drawing a logical image handle through GPUI can use
+`AssetRegistry::image_source_inheriting_text_color(handle)` for the same live
+foreground behavior. `image_source_tinted(handle, color)` remains an explicit
+color snapshot. Neither path rerasterizes a ready cached color on every frame;
+an unseen color is still an asynchronous variant, not a GPU color animation.
 
 See [Style](docs/style.md), [Assets](docs/assets.md),
 [mutable-image Host bridging](docs/asset-refresh-host.md), [Canvas](docs/canvas.md),
@@ -1194,6 +1929,123 @@ typing is retained rather than clamped or replaced. Parse it with
 `ctx.parse_time(value, "minute" | "second")`, which returns `()` while invalid
 or incomplete. Up/Down steps parseable values by the configured precision.
 
+`DateRangePicker` (`gpui-rhai add date_range_picker`) edits two inclusive civil
+dates, not instants or durations. Pass a controlled
+`value: #{start:"2026-10-01", end:"2026-10-08"}` and a `compare_mode` of
+`"off"`, `"previous"`, or `"year"`. A preset only edits the open draft.
+Apply emits `#{range, compare_mode, comparison}`; persist the accepted range
+and mode together. Cancel or Escape discards the draft. Increment `revision`
+to withdraw an open edit even if the committed value did not change.
+
+The previous period has the same number of days and ends the day before the
+selection. Previous year shifts both endpoints by 12 civil months, using the
+last day of the destination month if necessary. `comparison` is `()` when
+disabled, off, or outside the representable calendar. Optional inclusive
+`min_date`/`max_date` constrain the selected range; comparison dates may
+precede those limits. With `max_date` omitted, today is the last selectable
+date. Pass `today` for a reproducible comparison or reporting cutoff. The shared
+Calendar uses two months at wide sizes and one with scrolling presets in a
+narrow popover.
+
+`NumberInput` takes a controlled **number**, or `()` for an empty field.
+Install it with `gpui-rhai add number_input`. It keeps partial typing locally;
+Enter or blur emits a finite localized numeric proposal, clamped to optional
+`min`/`max`. Invalid drafts restore the controlled value; Escape cancels a
+draft. The two step buttons and arrow keys follow the same grid, based at
+`min` or zero. Hold a step button to repeat after a short pause; release,
+leaving the button, deactivating the window, or reaching the limit stops it.
+The press cadence still works with motion effects disabled.
+Page Up/Down applies a larger step. Home/End go to a bound
+when it is present. The `unit` is presentation only and isn't part of the
+value. The independent parser `ctx.parse_number(text)` returns `()` for
+invalid or empty input; grouping, digits, and separators follow the locale.
+
+`StepperForm` (`gpui-rhai add stepper_form`) presents keyed steps with
+caller-owned content, for example `FormField` and `Input` controls using your
+existing values. A step may provide an `error` message that blocks forward
+movement, and `on_invalid` lets you mark its individual fields invalid.
+The form requests focus only within the current pane. Back keeps its native
+editors, and a review row with `edit_step` returns directly to the review
+after an accepted Continue.
+
+Use local navigation or echo the proposed `step` through `on_step_change`.
+The last action's `on_submit` lets you read the app's values and start the
+operation. Set `status: "submitting"` when accepting an asynchronous
+operation, then set `"succeeded"` or `"failed"` after validating the result
+against your active request. The Stepper does not perform I/O or dispose your
+work. A failed operation preserves the draft and permits a retry.
+`on_reset` restores your data and status. At a measured width of 420px or
+less, a compact progress summary replaces the full strip without rebuilding
+the current pane.
+
+`ProgressTracker` (`gpui-rhai add progress_tracker`) presents a flat checklist
+with a progress meter. Each step has a nonempty, unique `id` and a `label`;
+`done` seeds local state and `disabled` prevents edits without excluding it
+from the total. To control the list, supply `value` (completed IDs) and update
+it in `on_change`. A rejected proposal does not change the meter. Reordering
+steps preserves completion by ID. Demonstrations may opt into `autoplay`;
+pointer input or focus within the tracker stops it without undoing progress.
+
+`SetupGuide` (`gpui-rhai add setup_guide`) uses the same contract for
+`value` and `on_change`, with tasks organized into groups. Group IDs are
+unique, and task IDs are unique across the whole guide. Only the next
+unfinished task in each open group can be checked. A completed group hands
+off to the next unfinished group once its change is accepted. Manual
+disclosure or minimization supersedes that handoff. Optional `on_edit` and
+`on_close` callbacks let the app supply those actions; minimizing leaves
+completion and the meter intact.
+
+`FilterMenu` (`gpui-rhai add filter_menu`) presents grouped multi-select
+filters. Each group has an `id`, `label`, and ordered `options` with separate
+IDs and labels. Set `value: #{status:["active"]}` and store accepted
+`on_change` maps yourself, or omit `value` for local selection beginning at
+`default_value`. Option IDs are local to a group. Disabled options remain
+visible and cannot be changed by the row, a chip, or Clear all. Opening a group
+does not propose filters. The application applies the selected IDs to its own
+data.
+
+Up/Down move through visible groups and options; Home/End go to either end.
+The forward arrow opens a group and the backward arrow folds it. Enter and
+Space toggle the focused row. Modern wraps selected chips; Clean keeps a
+measured single row and shows `+N` for the omitted chips. Every selected value
+is still reachable through its group regardless of chip overflow.
+
+`TagInput` (`gpui-rhai add tag_input`) edits a controlled ordered list of
+distinct strings. Return the accepted `on_change` list as `values`. Enter,
+forward Tab, a separator or leaving the field commits its draft. Paste a
+comma-, semicolon- or line-separated list to propose all valid additions at
+once. Unaccepted and invalid text stays editable. Set `split_on_space` for
+single words or recipient addresses, not for tags that contain spaces.
+`normalize: "lowercase"` trims and lowercases before comparing tags; the
+optional `validation: "email"` check looks for a local part and dotted domain,
+not mailbox ownership. `max` bounds additions without disabling removal.
+Two Backspaces in the empty editor remove the last chip; at the start of the
+editor, the backward arrow enters the chips in the locale's direction.
+The editor remains a single native text field, including IME and selection.
+
+`OtpInput` (`gpui-rhai add otp_input`) edits a single verification code,
+even when it draws a row of cells. Pass a controlled string so leading zeroes
+survive. Paste a complete code to replace the field; tab navigation, keyboard
+selection, and input-method composition all go through the native editor.
+`on_complete` proposes a newly entered full code; your application performs
+verification and sets `status` to `verifying`, `error`, or `success`.
+With `on_resend`, the component shows a resend action and an active-view
+cooldown. An error can propose a clear; setting a new code or status withdraws
+that pending clear. Do not log the code or place it in display labels.
+
+Modern and Clean animate newly accepted characters and the focus outline as
+paint only; keyboard, pointer, and IME positions still refer to the actual
+slots. On success, the slots keep their measured footprint, while the status
+surface converges into the confirmation pill. The text editor is no longer
+exposed as editable in that state. With motion disabled the control settles
+straight to the same result.
+
+An empty focused slot blinks only while it is actually presented in the
+active window. An opted-in error clear fades the rejected code from the
+right before the same clear event; it does not rewrite the value during the
+fade or outlive a replacement attempt. Reducing motion keeps the caret
+legible and removes the fade without changing the clear deadline.
+
 `TimeRangePicker` takes one of these controlled values:
 
 ```rhai
@@ -1226,39 +2078,53 @@ automatic query refresh.
 
 ## 9. Design tokens, themes and Theme Studio
 
-Values come from three layers, and components name roles rather than numbers:
+Components consume symbolic roles and theme-owned part recipes:
 
 | Layer | File | Holds |
 |---|---|---|
-| Palette | `ui/theme.rhai` (and `ui/themes/`) | colors only: `surface`, `text_primary`, `accent`, `focus_ring`, ... |
-| Token base | `ui/tokens.rhai` | the spacing scale, spacing relationships, radius roles, metrics and typography roles |
-| Part styles | `ui/styles.rhai` | application-wide styles for the parts of official components |
+| Shared base | `ui/tokens.rhai` | geometry, typography, motion, semantic aliases and default component recipes |
+| Full preset or palette | `ui/theme.rhai` (and `ui/themes/`) | Modern/Clean include complete geometry, type and recipes; alternate palettes change colors over the shared base |
+| Host preferences | `ThemeTokenOverrides` | deliberate preferences over every loaded variant |
+| Application styles | `ui/styles.rhai` | component/part refinements above preset recipes and below instance overrides |
 
-The token base resolves through two environment axes: `density`
-(`comfortable`, `compact`) and `size` (`xs` to `lg`). A subtree selects them
-with `.env(#{ density: "compact" })`; most controls also take a `size` prop.
+Select family `Modern` or `Clean`, variant `Light` or `Dark`. The Gallery's
+corresponding keys are `modern-light`, `modern-dark`, `clean-light`, and
+`clean-dark`. Changing the design intentionally reflows: an md Button is 40px
+in Modern and 28px in Clean; an md field is 36px and 32px respectively. Modern
+and Clean are not density aliases. A light/dark change within one design keeps
+its geometry. CLI `init` starts in Modern Dark and installs the licensed Inter
+faces under `ui/fonts/`; embedded applications register their font resources
+explicitly with `ScriptView::font_sources`.
+
+Themes may vary tokens through inherited environment axes, such as `density`
+(`comfortable`, `compact`) and `size` (`xs` to `lg`). Most controls also take a
+`size` prop. The complete presets use their explicit size steps; declaring a
+density axis alone does not promise that every theme changes geometry with it.
 A third axis, the reading scale `scale` (`"100"`, `"110"`, `"125"`, `"150"`,
-`"175"`, `"200"`), enlarges every length token and typography role together:
+`"175"`, `"200"`), enlarges ordinary length-token references and typography roles together:
 an application offers it as a reading-size setting with
 `.env(#{ scale: state.scale })` on its root, and a Host sets the default for
 every view through `ThemeTokenOverrides::environment_defaults`. Literal
 lengths such as `px(320)` keep their size.
-Radius roles follow a component's kind (layout square, controls `md`, markers
-`sm` capsules, floating surfaces `lg`), not an environment value. Write roles,
-not pixels:
+For a structural hairline, `theme_length("metrics.grid").without_reading_scale()`
+keeps theme, size/density and explicit multiplication live while skipping only
+the reading-size multiplier. It does not turn off device/display scaling.
+Corners and insets are component-specific. Nonvisual layout/interaction
+wrappers do not acquire decorative corners; Button, field, Card and overlay
+families have their own aliases. Prefer those roles over a universal
+control-height or radius-by-height formula:
 
 ```rhai
 style()
-    .min_height(theme_length("metrics.control"))   // control height for size and density
-    .padding_x(theme_length("metrics.inset"))      // the content inset of rows and panels
-    .gap(theme_length("space.related"))            // unit < related < group < section
-    .radius(theme_radius("md"))                    // a control's corners, 4 or 6 by height
+    .min_height(theme_length("metrics.field_h"))
+    .padding_x(theme_length("metrics.field_pad"))
+    .gap(theme_length("space.related"))
+    .radius(theme_length("metrics.field_radius"))
     .background(theme_color("surface_raised"))
     .typography("control")
 ```
 
-The design language behind these roles (density, the content inset, the 2px
-focus frame, marker shapes, color semantics) is specified in
+The complete geometry/type/state specification is maintained in
 [docs/design](docs/design/). An application with its own design can skip the
 token base entirely; see the `byod_treemap` example.
 
@@ -1266,18 +2132,33 @@ Rust Hosts may layer user preferences uniformly over every default, bundled,
 and user-supplied variant with
 `ScriptView::theme_token_overrides`. `ThemeTokenOverrides` partially
 merges semantic colors, spacing/radii, typography roles, motion roles, and
-namespaced tokens; it never changes theme identity. Overrides are validated on
+namespaced tokens and component recipes; it never changes theme identity. Overrides are validated on
 startup and reapplied after file-theme hot reload. Use this for preferences
 such as UI font/scale, corner scale, motion timing, and visualization palettes;
 continue to use `styles.rhai` for component-specific structure and styling.
 
+One namespaced path has one typed value. A single layer cannot declare
+`colors["brand.part"]` and a non-color `brand.part` (for example a Style) at
+the same time; this now returns a configuration error instead of dropping a
+value. Across separate base, theme and Host layers, the later layer wins even
+when it changes the kind. Consumers must still use the matching typed getter.
+
 Use `style().typography(role)` with a role of the token base (`caption`,
 `body_small`, `body`, `subtitle`, `title`, `heading`, `display`,
-`display_large`, `label`, `code`, `control`) instead of copying font sizes and
+`display_large`, `label`, `key_legend`, `code`, `control`) instead of copying font sizes and
 line heights into components. Theme values remain symbolic until
 rendering. Switching a ThemeVariant advances
 the theme generation and repaints/rerenders affected native content without
 recompiling Rhai or discarding component state.
+
+A tracked theme read rerenders a component; it does not automatically rebuild
+literal colors already stored in an application cache. If an effect prepares
+cached paint, include the palette inputs it actually uses in its explicit
+plain-data dependencies and invalidate every affected paint slot there.
+Do not rely only on the application's theme-picker callback: Host selection
+and system appearance changes can bypass it. Keep geometry caches independent
+when only paint changes, and prefer late-bound `theme_color(...)` expressions
+when the cached representation supports them. See [theme dependencies](docs/theming.md).
 
 Use `ui/styles.rhai` when the customization belongs to a formal component
 rather than a universal token. A rule targets an exact component ID and one of
@@ -1285,6 +2166,31 @@ its declared parts with the normal typed `Style` builder. File-backed views
 discover it automatically; production embedding passes
 `COMPONENT_STYLES_SOURCE` to `ScriptView::component_styles`. See
 [Component stylesheets](docs/component-styles.md).
+
+Color expressions support `foreground.over(background)` (also
+`over(foreground, background)`) for encoded-sRGB source-over composition. Unlike
+`mix`, it accounts for both alpha channels and keeps theme leaves late-bound.
+For readability calculations, first composite a translucent surface onto its
+actual opaque backing: `wash.over(theme_color("surface_raised"))`. This computes
+a color value, not a rendering group or a backdrop filter; keep the actual
+surface's transparency when painting it. See the script API's `readable` limits
+before evaluating contrast against an uncomposited translucent color.
+
+For a custom focusable UiNode, `style().focus_ring(px(2), px(2),
+theme_color("focus_ring"))` adds an exterior, non-layout indicator. It follows
+`ScriptViewConfig::focus_indicators`, leaves the offset gap transparent and
+does not change the node's bounds or hit area. Inside `group_focus` or
+`focus_within`, the ring follows that explicit focus scope instead, so a
+Checkbox box or Switch track can follow the actual owner without another
+tab stop. Merely inheriting focus does not activate every descendant's base
+ring. Use theme lengths when the ring should follow reading scale. Slider
+and RangeSlider thumb parts share this decoration while retaining their
+native focus handles; other native parts follow their handler's contract.
+`focus_ring(px(2), offset_px(-2), color)` paints inside the border box instead.
+Auto/relative offsets are invalid. `style().grid_cell(column, row)` places a
+grid item at one-based indices; several children may share a cell and reserve
+their maximum intrinsic size. Inactive measurement copies can use
+`invisible()` to keep layout without exposing duplicate semantic content.
 
 Open Theme Studio with:
 
@@ -1301,7 +2207,7 @@ Theme Studio supports:
 - contrast warnings without secret color rewriting;
 - every official component and important visual state in one specimen.
 
-The bundled catalog includes Default, Tokyo Night, Catppuccin, Ethereal,
+The bundled catalog includes Modern, Clean, Default, Tokyo Night, Catppuccin, Ethereal,
 Everforest, Gruvbox, Hackerman, Nord, Retro 82, Hermarchy, Futurism, and
 Aetheria variants. See [Bundled themes](docs/design/themes.md#6-bundled-themes),
 [Theming](docs/theming.md), and [Theme Studio](docs/theme-studio.md).
@@ -1332,9 +2238,15 @@ contracts, and the explicit deferred boundary.
 
 ## 10. Overlays, focus, and multiple views
 
-Combobox, Select, DatePicker, Menu, Popover, Dialog, and Tooltip use the generic
+Combobox, Select, DatePicker, Menu, Popover, Dialog, Tooltip, and HoverCard use the generic
 Overlay mechanism. Toast uses the generic Layer mechanism plus declarative
 timers.
+
+Use `gpui-rhai add hover_card` for an interactive preview rather than putting
+actions in a Tooltip. It opens after pointer dwell or keyboard focus without
+taking focus from the trigger. Tab enters open content; Escape leaves it.
+A press on the trigger keeps its normal action. Set `open` and
+`on_open_change` to control visibility, or omit `open` for local state.
 
 The Rust Host owns:
 
@@ -1427,6 +2339,12 @@ Guidelines:
   definite, `auto()` or signed `offset_*` values. Each divider has its own stable
   element ref for Host-native focus; its measurement ref still belongs to the
   column header.
+- Sortable headers contain independent inset buttons: the `columnheader`
+  names the column, while the `button` named `Sort {name}` owns sorting and
+  keyboard activation. Header padding and resize handles are not sort targets.
+  `header_action`, `sort_icon` and `sort_icon_active` are public parts. The
+  `table.*` paint roles are table-local; generic lists use
+  `collection.selection`, not the table's authored blue selection fill.
 - Treat `virtual_collection` as presentation-only. The owning component defines
   enabled items, keyboard navigation, the single active style, and passes its
   controlled key as `reveal_key`; sticky rows are a separate layout policy.
@@ -1555,12 +2473,27 @@ Use stable node keys and keep one source per property. Rhai declares sources,
 timelines, trigger intent, and callbacks; Rust samples frames. Do not build a
 timer loop that repeatedly calls Rhai to update an animation.
 
+Use `.motion_on_change(content_key)` for finite content entrances that should
+start at rest on mount/remount. Only a new key replays from the declared start;
+equal keys retain progress and source-only recipe changes settle without an
+entrance. `.motion_replay_key(key)` also plays on mount. The last of these
+modifiers wins. They share native sampling, budget rollback and lifecycle
+ownership; neither implements intrinsic-width morphing or text blur.
+
 Use `motion_hover`, `motion_press`, `motion_focus`, `motion_in_view`,
 `motion_viewport`, and `motion_scroll` for native trigger/progress paths. Use
 explicit timelines only when sequence/parallel/stagger, seeking, or completion
 callbacks are actually needed. Enter and exit require stable keys; exit ghosts
 are paint-only and own no callbacks or resources. Layout motion is opt-in so
 direct manipulation never lags behind the pointer.
+
+Native press feedback belongs to its declared node, not an implicit ancestor
+group. Releasing outside the node still returns it to rest; disabling cancels
+its held target. Retained-page hiding, suspension and removal of the binding revoke the
+transient press lease, so showing or re-enabling cannot revive an old mouse
+press. Unrelated sources retain their own active time. The first presentation
+uses each progress source's declared inactive value, not a one-frame style
+default. This does not add arbitrary subtree scaling to the pinned backends.
 
 Resolve timeline handles inside the declaring component callback. They are
 bound to the current view, component incarnation, script generation, and live
@@ -1580,15 +2513,352 @@ later reuse of the same window/view ID starts cleanly.
 
 Canvas morph/trim/stroke/clip and rotate/scale/skew share one presented geometry
 for paint and hit testing.
-Do not combine it with a command-level axis-aligned path clip: the runtime
-rejects that combination because GPUI cannot preserve the same transformed
-clip semantics.
+Do not combine Canvas node affine motion with a command-level axis-aligned
+path clip: the runtime rejects that combination because GPUI cannot preserve
+the same transformed clip semantics.
+
+Rotation/scale/skew are Canvas motion properties, not arbitrary SVG/Image
+element transforms. For a fixed vector design that must adapt to a theme-sized
+drawable, use the shared view-box projection instead of guessing its pixel size
+in Rhai:
+
+```rhai
+let scene = canvas_scene([
+    canvas_rect("hand", 11, 3, 2, 9, theme_color("accent"))
+]).view_box(0, 0, 24, 24);
+canvas(scene)
+    .with_style(style().width(theme_length("metrics.icon"))
+        .height(theme_length("metrics.icon")))
+    .motion(motion_transition("rotate", 0.0, 360.0,
+        #{ duration_ms: 900, easing: "linear", iterations: "infinite", intent: "decorative" }))
+```
+
+The native drawable boundary resolves size, padding and border before mapping
+the source box uniformly and centering it. Stroke widths, path clips and
+presented hits use the same mapping. Raw scene hit tests/path samples remain
+in source coordinates, and clipping is still an explicit style/path choice.
+Bounds must satisfy the limits in the generated API reference.
+
+Canvas pointer hits and SelectionArea invert the ancestor placement before
+undoing Canvas motion and view-box projection. Supply SelectionArea targets
+in the same source coordinates as its Canvas commands. The marquee is a
+window-space rectangle while it is dragged, including under rotation or
+mirroring. PanZoom proposals remain viewport-local; the wheel anchor stays
+fixed under the pointer. The Gallery's PanZoom page can mirror the canvas
+without resetting its controlled transform.
+
+Canvas solid fills and strokes also accept `current_color()`, a deferred
+`PaintColor` evaluated against the owner's actual native foreground during
+paint. It follows inherited/own hover and focus without a Rhai rerender, and
+`current_color().alpha(0.2)` multiplies the foreground's existing alpha.
+Style backgrounds, borders, shadows and layered stops accept the same paint
+type; a theme palette entry or text-color declaration does not. Rust command
+fields accept `ColorValue::… .into()` or
+`PaintColor::current_text()`. See [Canvas](docs/canvas.md#native-foreground-paint).
+
+GPUI's inherited `opacity` currently multiplies individual primitives; it is
+not CSS isolated-group compositing. Do not preblend against a guessed parent
+color to emulate an opacity group. Group-opacity and other rendering gaps are
+tracked explicitly during the design migration.
 
 Theme motion values come from `ctx.motion_duration`, `motion_easing`,
 `motion_spring`, `motion_distance`, and `motion_stagger`. Hosts set the upper
 bound with `MotionPreference` and the effect tier with `MotionQuality`; scripts
 may classify intent but cannot relax Host policy. See [Motion Runtime
 2](docs/motion.md) for the complete Rhai and Rust APIs.
+
+`width_fraction` samples a layout width between zero and the containing
+block's full width. Unlike `width` (logical pixels), it follows a resize
+without restarting its motion. Use `style().clip()` when it acts as a reveal.
+
+`ctx.number_text(value, digits, prefix, suffix, share)` creates a localized
+text node for a floating-point number, with at most `digits` fraction digits
+and optional affixes. Attach a `number_value` transition to sample the
+displayed number natively without rerunning Rhai. The accessible text is the
+accepted value, not the transient sample. Set `share` for percentages with
+`<1` and `>99` thresholds; pass percentages in units of 0–100 and include
+`"%"` as the suffix. Other uses pass `false`.
+
+`patterns/compact_breakdown::CompactBreakdown` compares the total and ranked
+parts of an accepted snapshot. Keep `series` and each category's `id` stable
+across periods. To enable switching, pass `periods`, the accepted `period`
+and `on_period_change`. The callback receives `{series, revision, from, to}`;
+the Host should validate both identity and revision, then publish the accepted
+period, items and delta together. Keep the original snapshot on refusal. The
+Gallery's CompactBreakdown story demonstrates both outcomes and the narrow
+layout.
+
+`patterns/usage_meter::UsageMeter` displays a finite accepted quota, its
+category breakdown, optional daily values, and capped or unlimited plan
+limits. A present daily zero means that day was observed; omit its `value`
+if it has not been recorded. Omit a sub-limit's `total` for unlimited,
+but pass 0 for a real zero capacity. Keep category/day/limit IDs stable.
+It uses the same versioned period proposal as CompactBreakdown. Its
+`on_action` receives `{series, revision, period, state, kind}`, where
+`kind` is `upgrade` or `top_up`. Validate the request in the Host; no
+quota update or purchase happens inside the widget. The daily activity
+supports arrow-key inspection, Home/End and Escape.
+
+`patterns/change_summary::ChangeSummary` compares a list of accepted
+metric changes. Give each change a stable `id`, a display `label` and its
+formatted `change` text. `tone` describes whether the result is favourable,
+and `direction` describes the physical change; for example, improved
+latency uses `tone:"good", direction:"down"`. Equal display labels may
+belong to different metrics. Narrow cards stack label and detail.
+
+`patterns/tips_panel::TipsPanel` keeps the header and optional Close
+action outside a capped scrollable grid. Give each tip an ID, plain
+description and action label; a formatted `detail` node can include Kbd.
+`on_action` emits `{series, revision, id}`; `on_close` emits
+`{series, revision}`. Use `pending` for an in-flight tip, and publish
+`done:true` only when it succeeds. Keep the previous snapshot on refusal.
+The Host owns dismissal and completed state, including across reopen.
+
+`patterns/project_card::ProjectCard` shows an expandable project,
+its members and one ring segment for each task. Keep task and member IDs
+stable, and use the member ID in `assignee`. A ring segment and its
+keyboard-accessible task row propose the same `task_change` payload
+`{project, revision, id, done}`. `status_change` proposes a status with
+the same project and revision. Neither alters the accepted snapshot.
+Omit `open` for local disclosure, or handle `open_change` to control it.
+Use `trigger:"click"` if pointer hover should not open the card.
+
+`patterns/experiment_card::ExperimentCard` compares readings against a
+single baseline. Omit an unknown reading rather than substituting zero.
+Relative change is undefined without a nonzero baseline; direction and
+`lower_is_better` are evaluated separately. `metric_change` and
+`winner_change` nominate values for the Host to accept. An accepted
+candidate enables a separate `action` proposal with the candidate and
+metric in the current revision. Visitor counts and confidence are
+caller-provided facts, not inferred by this component.
+
+`patterns/notification_stack::NotificationStack` presents the first
+notice in an accepted queue. The cards behind it are decorative; their
+links and dismiss buttons are not mounted. Handle `on_dismiss` with the
+proposal `{stack, revision, id}` and remove that notice only after
+acceptance. A notice's optional `action.id` comes back in `on_action`;
+the Host owns navigation, including external links.
+
+`patterns/away_summary::AwaySummary` is an inline recap, normally placed
+in a conversation. Provide `since_ms`, an interval `session` and accepted
+items with stable IDs. New tasks are first grouped by initial priority;
+changing a task to done does not move it. Use `pending` for in-flight
+actions and `on_action` to receive `{session, revision, id, kind}`.
+`on_collapsed_change` carries `{session, revision, collapsed}` and can act
+as acknowledgement when the person closes the summary.
+
+`patterns/kpi_chart::KpiChart` compares up to six series over 96 labeled
+samples on a single card. Give each sample a stable ID and an optional
+long label. Each series takes one value per sample in the same order:
+`()` means missing and breaks the path; zero is a valid observation.
+Choose number, percentage-point, or fractional-percent labels explicitly.
+Update `revision` when the data changes to draw the new paths; retain
+`metric` while refreshing the same metric, and change it when replacing one.
+The chart's pointer and keyboard readouts do not mutate the Host data.
+
+`patterns/breakdown_chart::BreakdownChart` groups row maps by a dimension
+and optionally subdivides each group by a second dimension. Levels have
+ordered IDs and labels; unknown or missing dimension values do not match a
+level. A measure without a field counts matching records. A measure with a
+field sums finite signed values, treating a missing field as zero.
+The chart and detail table share one rollup. Legend controls hide segments
+from the chart and totals, but preserve the original data in the table.
+Local choices and focus survive record updates for the same `dataset` ID.
+
+`patterns/running_now::RunningNow` summarizes running, waiting and
+paused tasks in an anchored popover. The caller owns task status and progress.
+`on_action` supplies `{board, revision, id, kind}` for pause or resume; use
+`pending` to suppress repeated mutations until the Host acknowledges.
+`on_open_task` and `on_open_all` are separate navigation intents.
+The popover can be locally managed or controlled with `open`.
+
+`patterns/scheduled_runs::ScheduledRuns` shows a weekly backlog and
+accepted placements using stable day, session, task and piece IDs.
+Provide capacities in integer usage units. The supplied current session
+marks which earlier cells are read-only. Auto offers a chronological
+first fit; a task larger than one session can split, but every piece
+must be placed. A targeted placement starts at the specified session.
+Moving a booked piece preserves the other pieces.
+
+`on_propose` receives the complete candidate set, the requested mode,
+backlog IDs, the board and its current revision. Accept by publishing a
+new snapshot, together with a new revision. Set `pending` while deciding.
+The component does not execute jobs or silently schedule on mount.
+Manual mode returns exclusively automatic tasks to the backlog, and
+does not unbook only part of an accepted task.
+
+`patterns/tool_call_card::ToolCallCard` displays an accepted tool
+invocation, not an executable tool. Pass its stable ID and status in
+`entry`. Arguments and results may be structured JSON, JSON text or
+plain text. The expanded card wraps and highlights the data in a
+bounded read-only CodeViewer. “Copy” uses the entire displayed
+document, not just the visible rows. Content above 128 KiB is explicitly
+omitted instead of copying a partial document. `on_copy` reports only
+the session, revision, call ID and section.
+
+`on_retry` asks the Host to retry. Publish a new accepted status and
+revision when appropriate, passing `pending` while deciding. For a
+batch, `patterns/tool_call_group::ToolCallGroup` accepts the same
+invocations in `calls` and shares one view clock. The group does not
+mount closed code viewers; it remembers each child's disclosure
+choice by ID. `now_ms` can be injected for deterministic elapsed time.
+
+Embedded `CodeViewer` surfaces can set `show_gutter: false` to reclaim
+the line number gutter. `show_line_numbers: false` by itself still
+leaves an empty gutter for layouts that intentionally reserve it.
+
+`patterns/context_window::ContextWindow` shows accepted token usage
+as an ordered field. A part's supplied `items` array takes precedence
+over its aggregate `tokens`, even if the array is empty. Totals and
+overflow text use exact counts. The grid rounds cumulative boundaries,
+so a very small part can still appear in the list without occupying
+an entire cell. A zero `limit` means the limit is unknown.
+
+Remove and Compact emit a single `on_request` receipt containing
+`context`, `revision`, `kind`, `part`, and `item`. Pass `pending` while
+deciding, then publish accepted counts with a new revision. The widget
+never compacts or removes data itself. If the Host reports
+`saved_tokens` and `compacted`, the card can acknowledge these without
+guessing from an unrelated change in usage.
+
+`patterns/memory_panel::MemoryPanel` manages the presentation of saved
+memories, not the application's storage or policy. Call it with a stable
+`key`, a `workspace` ID and a `memories` array of `id`, `text` and
+`category` records. Optional `source`, `date` and `paused` fields are
+display metadata. Without an `on_change` handler, the array seeds local
+state for the current workspace.
+
+When `on_change` is set, the Host owns the accepted list. Each proposal
+contains `workspace`, `revision`, `kind`, `id`, `entry` and `memories`.
+Validate workspace and revision, then return an incremented revision
+with the accepted list, or the unchanged list to decline. Keep the proposed
+ID when accepting an add. A confirmed removal offers a time-limited Undo;
+restoring the item is a separate proposal. The independent `enabled` and
+`on_enabled_change` pair controls use of memory without deleting records.
+Memory values and the proposal's data fields are marked sensitive in the
+component's diagnostics. Switch to the MemoryPanel page in Gallery to
+try Host acceptance, refusal, and the narrow layout.
+
+`patterns/tool_access_map::ToolAccessMap` displays which tools the
+current agent can access and the calls already recorded by the Host.
+Pass `agents` and optionally a complete ordered `tools` catalog;
+unlisted tools are not accessible to that agent. Provide a stable
+`session` and advance `revision` when publishing a newer snapshot.
+An `agent` prop controls selection; otherwise selection is local.
+
+The inspector is read-only unless you supply `on_replay`. It emits only
+an explicit request for a finished call: `session`, `revision`, `agent`,
+`tool`, `call_id`, `format`, `input`, and `edited`. `input` is the
+original or edited text (up to 8 KiB). Structured input is checked as
+strict JSON and sent as JSON text. The Host must verify that the run,
+revision and call are still current, recheck permission and validate
+the arguments before deciding whether to act. Gallery shows both
+acceptance and refusal without executing any tool.
+
+`patterns/trace_waterfall::TraceWaterfall` presents an execution trace
+on one elapsed-time axis. Pass an ordered, flat `spans` array with stable
+`id` and optional `parent` IDs, plus `name`, `kind`, `status` and
+`start_ms`. A nonempty trace must have exactly one root. Supply
+`end_ms` for known completion times; only running spans without a
+known end follow the clock. `now_ms` injects a deterministic clock.
+Alternatively `started_at_ms` enables elapsed wall time while the run
+is active; without either, elapsed time stops at the latest supplied time.
+
+Costs are integer `cost_micros` in the declared `currency`; each span
+reports its own cost and token counts. Parent rows sum the entire subtree.
+Folding does not change those totals, the time domain, or which finished
+call was slowest. Supplying `collapsed` and/or `open_id` makes those
+controls Host-owned (an explicit null `open_id` closes the inspector).
+Their proposals carry the `session` and `revision`. Optional input,
+output, error and detail text is sensitive in diagnostics.
+
+`patterns/smart_recommendation::SmartRecommendation` presents a ranked
+set of options. Supply a stable `session`, and for each option an `id`,
+`label`, `reason` (text or a UI node), and `signal` from 0 to 3. The
+first option is the default recommendation. Choosing an alternative
+only changes what is shown; it does not accept or execute anything.
+
+Without `accepted_id`, the card can record and undo acceptance locally.
+To control the result, pass `accepted_id` (explicit null for none)
+and `on_accept` / `on_undo`. The callbacks receive only `session`,
+`revision`, and the option's stable `id`. Set `pending` while the Host
+decides and publish the confirmed ID or null in the next snapshot.
+Leaving the accepted ID unchanged refuses the proposal. The framework
+never performs the recommended operation, and the private reason is not
+included in either event.
+
+`patterns/rate_limit_planner::RateLimitPlanner` forecasts a shared
+tokens-per-minute budget over a 24-hour work window. `start`, `now`,
+and every run's `at` are minutes after midnight. `actual` is a
+minute-indexed sample array from the start of the window, distinct
+from the forecast. The peak and overload intervals use a
+minute-resolution model, even when the chart draws fewer points.
+
+Runs that have already started cannot be moved, edited, or removed.
+Drag previews are native; releasing proposes an accepted-plan
+replacement once. `on_runs_change` receives `session`, `revision`,
+`operation`, optional `id` and `runs`. In controlled mode, validate
+that revision and publish the accepted snapshot yourself. The
+planner never executes a task or changes a provider quota. To allow
+purely local planning, set `controlled: false`.
+
+`patterns/root_cause_tree::RootCauseTree` displays a fault tree and its
+accepted evidence. Pass an ordered `causes` array with unique `id`
+values and `parent` references. Exactly one cause has no parent; it
+represents the failure. Use an `and` gate when every child must be
+proven, or use `or` when any one child is sufficient. A non-root
+internal cause must also be confirmed by the Host. A ruled-out branch
+never belongs to a proof, even if one of its descendants is confirmed.
+
+The component displays the investigation but does not perform one.
+It offers Fix and Retry only for confirmed leaves on a complete proof
+path, and only when `on_action` is supplied. The callback receives
+`session`, `revision`, `id`, and `kind`, not the evidence or paths.
+Set `pending` while deciding, then publish a new accepted snapshot.
+
+`patterns/judge_bracket::JudgeBracket` shows up to sixteen contenders
+and compares their outputs. Pass contenders in seed order and accepted
+verdicts keyed by zero-based `round:match` (for example, `"0:0"`).
+Each verdict contains the current ordered entrant IDs `a` and `b`,
+and a `winner` ID. If an earlier decision changes the pairing, the
+old verdict and scores no longer count. Empty seed positions can
+produce byes; unresolved matches cannot. Use `capacity` to preserve a
+2-, 4-, 8-, or 16-slot bracket before all entrants arrive.
+
+The comparison never runs or applies a draft. When `on_pick` is
+supplied, the champion button emits only `session`, `revision`, `id`,
+and `match_id`. Validate that proposal in the Host and set `pending`
+while waiting for a decision. Match selection can remain local or be
+controlled through `selected_match` and `on_selection_change`.
+
+`patterns/collaboration_stream::CollaborationStream` presents a
+chronological conversation. Supply stable `session`, participant IDs,
+and message IDs. The reserved IDs `you` and `all` represent the local
+reader and all recipients, respectively. `live` starts with the newest
+message; scrolling back or opening a quote keeps the reader's place when
+new messages arrive. The unread button resumes native tail following.
+
+Pass `on_send` to show a composer and `on_change` to accept draft
+edits (the callback receives `{ text }`). The send proposal contains
+`session`, `revision`, `text`, `to`, and optional `reply_to`. Accept
+it by publishing the new message and clearing the draft, or leave the
+draft as-is on rejection. An attachment preview uses only supplied text;
+its label never opens a path, web link, or tool.
+
+`patterns/conflict_radar::ConflictRadar` displays branch activity by
+file and agent. Edits have stable IDs, revisions, and inclusive one-based
+`start` and `end` lines. Only edits from distinct agents can overlap.
+Separate bands in a file are resolved independently; the component
+does not widen overlaps into the surrounding edits.
+
+For controlled resolution, pass `resolved: #{}` and accept proposals
+by storing `{ agent, witness }` under their `overlap` ID. A witness
+becomes stale if a contributing edit changes its revision or range, or
+if the file path changes.
+`on_merge` receives `session` and `revision` only when there are edits,
+all overlaps are accepted, all agents are done, and the Host is not
+pending. Validate the latest snapshot before acting. The component does
+not open file paths or merge branches.
 
 ## 12. Hot reload, errors, and production
 
@@ -1621,9 +2891,10 @@ that component's state snapshot. Sensitive fields are redacted before the
 snapshot leaves the runtime. Ordinary `Display`/error-banner text remains the
 human message and never appends the structured payload.
 
-The default runtime-error banner uses compact monospace text and the same native
-drag-selection/`Cmd-C` path as `text(...).selectable(true)`. A Host that owns a
-better error surface may mount with
+The default runtime-error banner overlays the last committed view without
+moving it or invalidating an active gesture. It uses compact monospace text
+and the same native drag-selection/`Cmd-C` path as `text(...).selectable(true)`.
+A Host that owns a better error surface may mount with
 `ScriptViewConfig::new(id).show_error_banner(false)`; standalone applications
 use `ScriptApplication::show_error_banner(false)`. Disabling the banner never
 clears `last_error`, so the Host remains responsible for making the failure
@@ -1733,7 +3004,7 @@ Also exercise:
 
 Visual baselines supplement interaction tests; they do not replace them.
 `gpui-rhai shot` takes an application's screenshots offscreen on macOS, after
-steps such as `--theme`, `--click` and `--key`; see
+steps such as `--theme`, `--hover`, `--click`, `--key` and `--input`; see
 [application shots](docs/visual-testing.md#shots-of-an-application).
 
 ## 15. Agent playbook

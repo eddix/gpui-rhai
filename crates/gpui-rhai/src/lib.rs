@@ -9,38 +9,67 @@ pub extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
 pub extern crate gpui_fast_platform as gpui_platform;
 
+mod billing_schedule;
 pub mod column_resize;
 pub mod component;
 pub mod component_styles;
 pub mod composition_audit;
+mod conflict_radar;
 pub mod context;
+mod context_capacity;
+mod context_partition;
+mod cost_waterfall;
 pub mod date;
+mod delimited_preview;
 pub mod dependency;
 pub mod devtools;
 pub mod diagnostic;
+mod diagnostic_document;
+mod diff_timeline;
 pub mod document;
 pub mod document_view;
 pub mod drag_drop;
 pub mod draggable;
 pub mod effect;
 pub mod element_ref;
+mod element_transform;
 mod embedded_ui;
 pub mod engine;
 mod environment_dependency;
 pub mod event;
+mod fallback_chain;
+mod fan_out;
+mod inline_link;
+mod inline_prose;
+mod judge_bracket;
+mod memory_panel;
+mod plan_vs_actual;
+mod prompt_template;
+mod rate_limit_planner;
+mod root_cause_tree;
+mod site_domain;
+mod trace_waterfall;
+pub use element_transform::ElementTransform;
+mod focus_ring;
 pub mod font;
 pub mod geometry;
 mod handle_state;
 pub mod host_slot;
+mod hover_card;
+mod inherited_text;
 pub mod inline_svg;
 mod interaction;
 mod intrinsic;
+mod key_legend;
+mod svg_context;
+pub use key_legend::{KeyLegend, KeyLegendError, KeyLegendPlatform};
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
 mod markdown;
 mod markdown_preparation;
 pub mod markdown_view;
+mod schedule_capacity;
 pub mod system;
 pub use markdown_preparation::{
     MarkdownPreparation, MarkdownPreparationCache, MarkdownPreparationKey, PreparedMarkdown,
@@ -48,11 +77,13 @@ pub use markdown_preparation::{
 pub use markdown_view::{
     MarkdownViewerPrimitiveHandler, init_markdown_view, markdown_viewer_primitive_descriptor,
 };
+mod image_element;
 pub mod native_collection;
 pub mod native_handler;
 pub mod node;
 pub mod overlay;
 mod overlay_element;
+mod paint_motion;
 pub mod pan_zoom;
 mod presentation_diagnostic;
 pub mod primitive;
@@ -81,11 +112,20 @@ pub mod split_resize;
 pub mod state;
 pub mod store;
 pub mod style;
+mod style_fill;
+pub use style_fill::{
+    BackgroundFill, FillBox, GradientError, GradientLayer, GradientStop, LayeredGradient,
+};
+mod segmented_entry;
+mod segmented_motion;
 mod table_layout;
+pub mod text_anchors;
 pub mod text_area;
 mod text_edit;
+pub mod text_geometry;
 pub mod text_input;
 pub mod theme;
+mod theme_export;
 mod theme_source;
 pub mod time;
 pub mod timer;
@@ -101,6 +141,7 @@ pub mod chart;
 pub mod accessibility;
 pub mod action;
 mod auto_grid;
+mod overflow_row;
 pub use auto_grid::AutoGridColumns;
 pub mod app;
 pub mod asset;
@@ -115,6 +156,7 @@ pub mod clock;
 mod collection_projection;
 mod island;
 pub mod motion;
+pub mod number_motion;
 #[cfg(any(feature = "offscreen-pre", feature = "offscreen-fast"))]
 pub mod offscreen;
 
@@ -179,8 +221,9 @@ pub use automation::{
 };
 pub use budget::{RuntimeBudgetError, RuntimeBudgets};
 pub use canvas::{
-    CanvasClipRect, CanvasCommand, CanvasError, CanvasFill, CanvasPathSample, CanvasPathSegment,
-    CanvasScene, CanvasTransform,
+    CanvasClipRect, CanvasCommand, CanvasError, CanvasFill, CanvasLineCap, CanvasLineJoin,
+    CanvasPathSample, CanvasPathSegment, CanvasPeakRoute, CanvasScene, CanvasStrokeDash,
+    CanvasStrokeStyle, CanvasTransform, PaintColor,
 };
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,
@@ -199,7 +242,8 @@ pub use component::{
 };
 pub use component_styles::{ComponentStyleError, ComponentStyleSheet, load_component_styles};
 pub use composition_audit::{
-    AuditFinding, AuditRule, AuditRules, Profile, STATIC_RULES, load_profile_source,
+    AuditContrastEvidence, AuditFinding, AuditRule, AuditRules, Profile, STATIC_RULES,
+    load_profile_source,
 };
 pub use context::{
     ComponentIncarnation, ExecutionPhase, PendingEvent, SemanticDispatchOwner, UiContext,
@@ -261,6 +305,7 @@ pub use locale::{
     CalendarMetadata, CalendarNames, DatePatterns, DateStyle, LocaleBundle, LocaleError,
     LocaleManager, NumberFormatOptions, NumberMetadata, TextDirection, format_date_with_metadata,
     format_integer_with_metadata, format_number_with_metadata, load_locale_source,
+    parse_number_with_metadata,
 };
 pub use motion::{
     MotionEasing, MotionError, MotionFrame, MotionHandle, MotionInertia, MotionIntent, MotionKey,
@@ -278,15 +323,16 @@ pub use native_handler::{
     NativeHandlerRegistry,
 };
 pub use node::{
-    ImageSourceSpec, LayerNodeSpec, LayerPlacement, NodeKey, OverlayDismissPolicy,
-    OverlayInitialFocus, OverlayNodeSpec, OverlayWidthPolicy, SourceLocation, Span, TooltipDelays,
-    UiNode, UiNodeKind, UiNodeKindTag,
+    ImageFallbackError, ImageSourceSpec, LayerNodeSpec, LayerPlacement, LeadingFloatError, NodeKey,
+    OverlayDismissPolicy, OverlayInitialFocus, OverlayNodeSpec, OverlayWidthPolicy, SourceLocation,
+    Span, TextExclusionError, TooltipDelays, UiNode, UiNodeKind, UiNodeKindTag,
 };
 pub use overlay::{
     DismissReport, FocusToken, OpenOverlay, OverlayAlign, OverlayBounds, OverlayError, OverlayId,
     OverlayKind, OverlayLookupError, OverlayManager, OverlayPlacement, OverlaySpec,
     PlacementResult, TooltipScheduler, TooltipTransition,
 };
+pub use paint_motion::LayoutSizeAxis;
 pub use pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 pub use primitive::{
     EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveContext,
@@ -337,10 +383,11 @@ pub use state::{
 };
 pub use store::{StoreError, StoreId, StoreReadSession, StoreRegistry, StoreScope, StoreSnapshot};
 pub use style::{
-    Align, AutoLength, BorderLineStyle, ColorParseError, ColorValue, CornerLengths, CursorKind,
-    DisplayMode, EdgeLengths, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior,
-    InteractionState, Justify, LayoutEdgeLengths, LayoutLength, Length, LengthError,
-    LinearGradientSpec, OverflowMode, PositionMode, PseudoState, Rgba8, ShadowSpec, SignedLength,
+    Align, AutoLength, BorderLineStyle, BottomFade, ColorParseError, ColorValue, CornerLengths,
+    CursorKind, DisplayMode, EdgeFadeAxis, EdgeLengths, FlexDirection, FlexWrapMode, FocusRingSpec,
+    FontSlant, GlyphSweep, HitTestBehavior, InteractionState, Justify, LayoutEdgeLengths,
+    LayoutLength, Length, LengthError, LetterSpacing, LinearGradientSpec, OverflowMode,
+    OverflowPriority, PaintRevealX, PositionMode, PseudoState, Rgba8, ShadowSpec, SignedLength,
     Style, StyleProperties, StyleValueError, TextAlignMode, WhiteSpaceMode,
 };
 pub use text_area::{TextAreaPrimitiveHandler, init_text_area, text_area_primitive_descriptor};
@@ -355,6 +402,7 @@ pub use theme::{
     ThemeVariant, ThemeVariantInfo, TokenLayer, TypographyRole, TypographyToken, contrast_ratio,
     load_theme_source, load_theme_with_layers, load_token_base,
 };
+pub use theme_export::export_theme_source;
 pub use theme_source::EnvTableSource;
 pub use time::{
     TimeError, TimeMetadata, TimeParts, TimeRange, TimeZone, WallClock, WallClockSource,

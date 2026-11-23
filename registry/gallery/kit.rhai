@@ -38,8 +38,12 @@ fn page(h, v, id, title, description, sections) {
         variant: "ghost", size: "sm", action: "gallery.toggle_source" });
     let body = stack::Stack(#{ gap: "section", children: sections });
     let scroller = column([body]).with_key(`${id}-scroll`)
-        .with_style(style().flex_col().flex_grow().min_height(px(0)).overflow_y_scroll());
-    region::Region(#{ label: title, title: heading(title, description), actions: [toggle], body: scroller })
+        // Keep the content gutter *inside* the scroll clip. Padding a parent
+        // outside it cuts off the first specimen's exterior focus decoration.
+        .with_style(style().flex_col().flex_grow().min_height(px(0))
+            .padding(theme_spacing("lg")).overflow_y_scroll());
+    region::Region(#{ label: title, title: heading(title, description), actions: [toggle], body: scroller,
+        part_styles:#{header:style().padding(theme_spacing("lg")),body:style().padding(px(0))} })
         .with_key(`page-${id}`)
 }
 
@@ -55,7 +59,7 @@ fn line_top(items) { inline::Inline(#{ children: items, wrap: true, align: "star
 
 // Specimen rows that compare sizes or variants side by side do so on purpose; they
 // opt out of the rules that would otherwise flag exactly that comparison.
-fn sizes(items) { line(items).audit_allow(["row-height-mismatch", "mixed-type-in-row"]) }
+fn sizes(items) { line(items).audit_allow(["row-height-mismatch", "mixed-type-in-row", "multiple-solid-actions"]) }
 fn variants(items) { line(items).audit_allow(["multiple-solid-actions"]) }
 
 // Specimens stacked `related` apart.
@@ -86,11 +90,22 @@ fn scales(specimens) {
 }
 fn density_column(density, content) {
     column([
-        text(density.to_upper()).with_style(style().typography("label").text_color(theme_color("text_muted")))
+        text(if density == "compact" { "Compact" } else { "Comfortable" }).with_style(style().typography("label").text_color(theme_color("text_muted")))
             .accessibility_role("heading").accessibility_level(3),
         content,
     ]).with_style(style().flex_col().gap(theme_spacing("sm")).min_width(px(0))).env(#{ density: density })
 }
 
 // A muted caption under a specimen.
-fn note(content) { text(content).with_style(style().typography("caption").text_color(theme_color("text_muted"))) }
+fn note(content) { text(content).with_style(style().typography("caption").text_color(theme_color("collection.metadata"))) }
+
+// These Clean boards leave their surrounding paper to the host. Keep the
+// specimen's paper outside the SDK component and off other Gallery pages.
+fn board_stage(ctx, base) {
+    let theme = ctx.theme_variant();
+    if theme != () && ctx.theme_token("design.name") == "clean" {
+        base.background(if theme.mode == "dark" { rgb(0x111113) } else { rgb(0xf3f3f4) })
+    } else {
+        base
+    }
+}

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use rhai::{Dynamic, Engine, Map, Scope};
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::{ComponentRegistry, ModuleId, Style};
@@ -13,12 +14,44 @@ const MAX_STYLED_PARTS: usize = 4_096;
 /// Rules contain the same typed [`Style`] values accepted by per-instance
 /// `style`/`part_styles`. They are merged after component source defaults and
 /// before explicit instance overrides.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct ComponentStyleSheet {
     rules: BTreeMap<ModuleId, BTreeMap<String, Style>>,
 }
 
 impl ComponentStyleSheet {
+    pub(crate) fn validate_parts(
+        &self,
+        component: &ModuleId,
+        declared: &std::collections::BTreeSet<String>,
+    ) -> Result<(), ComponentStyleError> {
+        if let Some(parts) = self.component(component) {
+            for part in parts.keys() {
+                if !declared.contains(part) {
+                    return Err(ComponentStyleError::UnknownPart {
+                        component: component.clone(),
+                        part: part.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+    /// Overlay rules part by part, preserving unspecified declarations.
+    #[must_use]
+    pub fn merged(mut self, overlay: &Self) -> Self {
+        for (id, parts) in &overlay.rules {
+            let target = self.rules.entry(id.clone()).or_default();
+            for (part, style) in parts {
+                target
+                    .entry(part.clone())
+                    .or_default()
+                    .merge_in_place(style);
+            }
+        }
+        self
+    }
+
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()
@@ -32,6 +65,12 @@ impl ComponentStyleSheet {
     #[must_use]
     pub fn component(&self, id: &ModuleId) -> Option<&BTreeMap<String, Style>> {
         self.rules.get(id)
+    }
+
+    /// Iterate validated component/part recipes without depending on their
+    /// serialized representation.
+    pub fn iter(&self) -> impl Iterator<Item = (&ModuleId, &BTreeMap<String, Style>)> {
+        self.rules.iter()
     }
 
     fn new(
@@ -84,10 +123,24 @@ pub fn load_component_styles(
     let raw: Dynamic = engine
         .call_fn(&mut Scope::new(), &ast, "component_styles", ())
         .map_err(|error| ComponentStyleError::Script(error.to_string()))?;
+    let sheet = decode_component_styles(raw)?;
+    ComponentStyleSheet::new(sheet.rules, components)
+}
+
+/// Theme presets can describe modules not imported by a particular app. Decode
+/// their bounded, typed rules here; the active module validates its parts when
+/// the preset is used, rather than requiring every module to be imported.
+pub(crate) fn decode_component_styles(
+    raw: Dynamic,
+) -> Result<ComponentStyleSheet, ComponentStyleError> {
     let root = raw
         .try_cast::<Map>()
         .ok_or(ComponentStyleError::RootNotMap)?;
+    if root.len() > MAX_STYLED_COMPONENTS {
+        return Err(ComponentStyleError::TooManyComponents(root.len()));
+    }
     let mut rules = BTreeMap::new();
+    let mut part_count = 0;
     for (raw_id, raw_parts) in root {
         let id = ModuleId::parse(raw_id.as_str()).map_err(|source| {
             ComponentStyleError::InvalidComponentId {
@@ -100,6 +153,13 @@ pub fn load_component_styles(
             .ok_or_else(|| ComponentStyleError::ComponentNotMap(id.clone()))?;
         let mut decoded = BTreeMap::new();
         for (part, value) in parts {
+            part_count += 1;
+            if part_count > MAX_STYLED_PARTS {
+                return Err(ComponentStyleError::TooManyParts(part_count));
+            }
+            if !crate::token::valid_token_segment(&part) {
+                return Err(ComponentStyleError::InvalidPartName(part.to_string()));
+            }
             if !value.is::<Style>() {
                 return Err(ComponentStyleError::PartNotStyle {
                     component: id,
@@ -110,11 +170,13 @@ pub fn load_component_styles(
         }
         rules.insert(id, decoded);
     }
-    ComponentStyleSheet::new(rules, components)
+    Ok(ComponentStyleSheet { rules })
 }
 
 #[derive(Debug, Error)]
 pub enum ComponentStyleError {
+    #[error("component style part `{0}` must be a snake_case name")]
+    InvalidPartName(String),
     #[error("component stylesheet script failed: {0}")]
     Script(String),
     #[error("component_styles() must return a map")]
@@ -228,6 +290,110 @@ mod tests {
                 .unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
         }
+    }
+
+    #[test]
+    fn multipart_state_keeps_the_cascade_global_to_instance_order() {
+        let mut engine = crate::RuntimeEngine::new();
+        let compiled = engine.compile(r#"
+            define_component(#{metadata:#{id:"components/button","export":"Button",version:"0.1.0",
+                runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
+                schema:#{props:#{},state:#{fields:#{}},events:#{},slots:#{},parts:["root","label"]},render:Fn("render_Button")});
+            fn Button(props){render_component("components/button",props)}
+            fn render_Button(ctx,props){text("Button").with_style(ctx.component_style(["root","label"],
+                style().height(px(24)).radius(px(0)),style().height(px(20)).radius(px(0))))}
+            fn view(ctx){column([Button(#{key:"app"}),Button(#{key:"instance",style:style().height(px(40))}),
+                Button(#{key:"parts",style:style().height(px(40)),part_styles:#{label:style().height(px(42))}})])}
+        "#).unwrap();
+        let theme = crate::load_theme_source(engine.engine(), "preset", r#"fn theme(){#{family:"Test",name:"Dark",mode:"dark",tokens:#{
+            component_styles:#{"components/button":#{root:style().height(px(28)).radius(px(8)),label:style().height(px(29))}}
+        }}}"#).unwrap();
+        let sheet = load_component_styles(
+            engine.engine(),
+            "styles",
+            r#"fn component_styles(){#{"components/button":#{
+            root:style().height(px(34)),label:style().radius(px(6))}}}"#,
+            &registry(),
+        )
+        .unwrap();
+        let mut runtime = UiRuntimeState::new();
+        runtime.theme = Some(
+            crate::ThemeManager::from_variants([theme], crate::ThemeSelection::new("Test", "Dark"))
+                .unwrap(),
+        );
+        runtime.replace_component_styles_from_host(sheet);
+        let context = UiContext::new(
+            Rc::new(RefCell::new(runtime)),
+            ComponentInstancePath::root("App", "multi"),
+            None,
+            ExecutionPhase::Render,
+            BTreeMap::new(),
+        )
+        .with_generation(compiled.generation());
+        let root = engine.render_with_context(&compiled, context).unwrap();
+        let crate::UiNodeKind::Box { children } = root.kind() else {
+            panic!("column");
+        };
+        for (child, height) in children.iter().zip([34.0, 40.0, 42.0]) {
+            assert_eq!(
+                child.style().base.height,
+                Some(crate::Length::Pixels(height).into())
+            );
+            assert_eq!(
+                child.style().base.radii.top_left,
+                Some(crate::Length::Pixels(6.0))
+            );
+        }
+    }
+
+    #[test]
+    fn multipart_names_are_bounded_typed_unique_and_nonempty() {
+        let engine = crate::RuntimeEngine::new();
+        let context = UiContext::new(
+            Rc::new(RefCell::new(UiRuntimeState::new())),
+            ComponentInstancePath::root("App", "parts"),
+            None,
+            ExecutionPhase::Event,
+            BTreeMap::new(),
+        );
+        let mut scope = Scope::new();
+        scope.push("ctx", context);
+        for parts in ["[]", "[0]", "[\"root\",\"root\"]", "[\"bad-name\"]"] {
+            assert!(
+                engine
+                    .engine()
+                    .eval_with_scope::<Style>(
+                        &mut scope,
+                        &format!("ctx.component_style({parts},style(),style())")
+                    )
+                    .is_err()
+            );
+        }
+        let many = (0..33)
+            .map(|i| format!("\"part_{i}\""))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert!(
+            engine
+                .engine()
+                .eval_with_scope::<Style>(
+                    &mut scope,
+                    &format!("ctx.component_style([{many}],style())")
+                )
+                .is_err()
+        );
+        assert_eq!(
+            engine
+                .engine()
+                .eval_with_scope::<Style>(
+                    &mut scope,
+                    "ctx.component_style([\"root\"],style().height(px(10)))"
+                )
+                .unwrap()
+                .base
+                .height,
+            Some(crate::Length::Pixels(10.0).into())
+        );
     }
 
     #[test]

@@ -6,17 +6,16 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": [
-    "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
-    "disabled", "metrics.control", "metrics.field_pad", "metrics.inset", "radius.md",
-    "typography.control"
-  ],
+  "tokens": ["border","control.border","danger","disabled","field.embedded","field.invalid","field.normal","field.placeholder","field.read_only_recipe","focus_ring","metrics.control","metrics.field_h","metrics.field_pad","metrics.field_radius","metrics.inset","radius.md","surface_raised","text_muted","text_primary","typography.control"],
   "environment": ["size", "density"]
 }
 */
 // Input is a controlled single-line native text input.
 //
 // State: native keyed TextInput Entity.
+// Without an explicit width the native editor prefers 20 zero-character
+// advances in its active font. This is not a minimum: it still stretches in a
+// column and shrinks in a constrained row, without resizing when the value changes.
 //
 // `appearance: "embedded"` is the search or filter line that heads a panel or a list and
 // keeps focus while it is open: no frame or well of its own, the container's edges and a
@@ -32,11 +31,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
-        tokens: [
-            "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
-            "disabled", "metrics.control", "metrics.field_pad", "metrics.inset", "radius.md",
-            "typography.control"
-        ],
+        tokens: ["border","control.border","danger","disabled","field.embedded","field.invalid","field.normal","field.placeholder","field.read_only_recipe","focus_ring","metrics.control","metrics.field_h","metrics.field_pad","metrics.field_radius","metrics.inset","radius.md","surface_raised","text_muted","text_primary","typography.control"],
         environment: ["size", "density"],
     },
     schema: #{
@@ -129,6 +124,13 @@ define_component(#{
                 "default": #{ type: "string", value: "field" },
                 doc: "`field` is a framed well; `embedded` is the frameless search or filter line that heads a panel or list.",
             },
+            intrinsic_width: #{
+                schema: #{ type: "bool" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "bool", value: false },
+                doc: "Prefer the shaped text width (or placeholder when empty). Parent layout and explicit width or min/max styles still constrain the field.",
+            },
         },
         state: #{ fields: #{} },
         events: #{
@@ -161,7 +163,8 @@ fn render_Input(ctx, props) {
         disabled: disabled,
         read_only: read_only,
         typography: "control",
-        placeholder_style: ctx.component_style("placeholder", style().text_color(theme_color("text_muted"))),
+        intrinsic_width: props.intrinsic_width,
+        placeholder_style: ctx.component_style("placeholder", style().text_color(theme_color("field.placeholder"))),
         autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
         on_submit: optional_prop(props, "on_submit"),
@@ -170,10 +173,11 @@ fn render_Input(ctx, props) {
     });
     let embedded = optional_prop(props, "appearance") == "embedded";
     let field = style()
-        .min_height(theme_length("metrics.control"))
+        .min_height(theme_length("metrics.field_h"))
         .items_center()
-        .text_color(if read_only { theme_color("text_muted") } else { theme_color("text_primary") })
+        .text_color(theme_color("text_primary"))
         .typography("control");
+    let state_style = ctx.theme_style("field.normal");
     if embedded {
         // The container frames it and the hairline separates it from the rows. It holds
         // focus for as long as its panel is open, so a focus color here would never turn
@@ -182,20 +186,19 @@ fn render_Input(ctx, props) {
             .padding_x(theme_length("metrics.inset"))
             .border_bottom(px(1))
             .border_color(if error { theme_color("danger") } else { theme_color("border") });
+        state_style = ctx.theme_style("field.embedded");
     } else {
         // Fields are framed wells: things you type into have a frame. The focus color
         // owns the frame while focused; an error frame returns on blur.
         field = field
             .padding_x(theme_length("metrics.field_pad"))
-            .radius(theme_radius("md"))
-            .border(px(2))
-            .border_color(if error { theme_color("danger") } else { theme_color("control.border") })
-            .background(theme_color("surface_raised"))
-            .focus(style().border_color(theme_color("focus_ring")));
+            .radius(theme_length("metrics.field_radius"));
+        if error { state_style = state_style.merge(ctx.theme_style("field.invalid")); }
+        if read_only || disabled { state_style = state_style.merge(ctx.theme_style("field.read_only_recipe")); }
     }
-    field = field.disabled(style().text_color(theme_color("disabled")).opacity(0.72));
+    state_style = state_style.disabled(style().opacity(0.55));
     input = input
-        .with_style(ctx.component_style("root", ctx.component_style("input", field)))
+        .with_style(ctx.component_style(["root","input"], field, state_style))
         .disabled(disabled)
         .accessibility_role("text_field")
         .accessibility_label(props.label)

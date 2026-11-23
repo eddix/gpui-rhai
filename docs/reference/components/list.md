@@ -84,7 +84,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `badge`, `cursor`, `empt
 
 ## Theme
 
-- Tokens: `border`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.row`, `radius.md`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `spacing.sm`, `spacing.xs`, `surface_hover`, `table.selection`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`
+- Tokens: `border`, `collection.selection`, `disabled`, `focus_ring`, `metrics.inset`, `metrics.row`, `radius.md`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `spacing.sm`, `spacing.xs`, `surface_hover`, `text_muted`, `text_primary`, `typography.body`, `typography.caption`
 - Environment: `density`, `size`
 
 ## Dependencies

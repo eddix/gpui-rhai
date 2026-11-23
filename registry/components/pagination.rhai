@@ -4,31 +4,32 @@
   "export": "Pagination",
   "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
-  "dependencies": ["components/button", "components/icon", "components/select"],
+  "dependencies": ["components/button", "components/icon_button", "components/icon", "components/select"],
   "capabilities": {},
   "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"],
   "tokens": [
-    "selection", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
-    "typography.body"
+    "pagination.active", "pagination.ink", "pagination.muted", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+    "typography.body", "typography.pagination", "metrics.pagination_h", "metrics.pagination_pad", "metrics.pagination_icon"
   ],
   "environment": ["size", "density"]
 }
 */
-// Pagination is a stateless Rhai composition for one-based controlled page state.
+// Pagination composes one-based controlled page state; only popup state is local.
 //
 // Example: Pagination(#{ key: "users-pages", label: "Users pagination", total_items: 128, current_page: 3, page_size: 10, on_change: Fn("page_changed") })
 
 import "components/button" as button;
+import "components/icon_button" as icon_button;
 import "components/icon" as icon;
 import "components/select" as select;
 
 define_component(#{
     metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
+        dependencies: ["components/button", "components/icon_button", "components/icon", "components/select"], capabilities: #{},
         tokens: [
-            "selection", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
-            "typography.body"
+            "pagination.active", "pagination.ink", "pagination.muted", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+            "typography.body", "typography.pagination", "metrics.pagination_h", "metrics.pagination_pad", "metrics.pagination_icon"
         ],
         environment: ["size", "density"],
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"] },
@@ -51,10 +52,16 @@ define_component(#{
                 "default": #{ type: "integer", value: 1 }, doc: "Pages always shown at each end of the range." },
             sibling_count: #{ schema: #{ type: "integer", min: 0, max: 3 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 1 },
-                doc: "Pages shown on each side of the current page; a gap of more than one page becomes an ellipsis." },
+                doc: "Pages beside the current page. Near an end, spare slots show adjacent pages; the page/ellipsis slot count is stable." },
+            compact: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false },
+                doc: "Shows only Previous/Next beside the range and optional page-size field, omitting page numbers and ellipses. Independent of the compact density preference." },
+            disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false },
+                doc: "Disables page and page-size interaction without dimming the range text; closes the size popup." },
             show_summary: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true },
-                doc: "Shows the item count and the current page out of the page count before the controls." },
+                doc: "Shows the visible item range and total, e.g. 21–30 of 128; an empty collection shows 0 of 0." },
             size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false,
                 doc: "Size of the buttons and the per-page Select; `()` follows the `size` environment." },
@@ -72,7 +79,8 @@ define_component(#{
                 doc: "Page size to show; differs from the prop only after a page-size change." },
         } }, doc: "Emitted when a page, Previous, Next or a page size is picked; the payload carries the next page and page size together." } },
         slots: #{},
-        parts: ["root", "summary", "controls", "previous", "next", "page", "page_current", "ellipsis", "page_size", "page_size_label"],
+        effects: ["page_size_state"],
+        parts: ["root", "info", "summary", "controls", "previous", "previous_icon", "next", "next_icon", "page_slot", "page", "page_current", "ellipsis", "page_size_control", "page_size", "page_size_trigger", "page_size_indicator", "page_size_value", "page_size_label"],
     },
     render: Fn("render_Pagination")
 });
@@ -86,61 +94,80 @@ fn total_pages(total_items, page_size) {
     if pages < 1 { 1 } else { pages }
 }
 
-fn add_page(pages, page, total) {
-    if page >= 1 && page <= total && !(page in pages) { pages.push(page); }
-    pages
-}
-
 fn page_window(total, current, boundary, sibling) {
-    let pages = [];
-    for page in 1..(boundary + 1) { pages = add_page(pages, page, total); }
-    let start = if current - sibling < 1 { 1 } else { current - sibling };
-    let end = if current + sibling > total { total } else { current + sibling };
-    if start <= end {
-        for page in start..(end + 1) { pages = add_page(pages, page, total); }
+    if total < 1 || current < 1 || current > total || boundary < 1 || boundary > 3 || sibling < 0 || sibling > 3 {
+        throw "Pagination page_window requires a valid page and bounded window counts";
     }
-    let tail = if total - boundary + 1 < 1 { 1 } else { total - boundary + 1 };
-    if tail <= total {
-        for page in tail..(total + 1) { pages = add_page(pages, page, total); }
-    }
-    pages.sort();
+    let count = 2 * boundary + 2 * sibling + 3;
     let result = [];
-    let previous = 0;
-    for page in pages {
-        if previous > 0 {
-            let gap = page - previous;
-            if gap == 2 { result.push(previous + 1); }
-            else if gap > 2 { result.push(0); }
-        }
-        result.push(page);
-        previous = page;
+    if total <= count {
+        for page in 1..(total + 1) { result.push(page); }
+    } else if current <= boundary + sibling + 2 {
+        for page in 1..(count - boundary) { result.push(page); }
+        result.push(0);
+        for offset in 0..boundary { result.push(total - boundary + 1 + offset); }
+    } else if current >= total - boundary - sibling - 1 {
+        for page in 1..(boundary + 1) { result.push(page); }
+        result.push(0);
+        let tail = count - boundary - 1;
+        for offset in 0..tail { result.push(total - tail + 1 + offset); }
+    } else {
+        for page in 1..(boundary + 1) { result.push(page); }
+        result.push(0);
+        for offset in 0..(2 * sibling + 1) { result.push(current - sibling + offset); }
+        result.push(0);
+        for offset in 0..boundary { result.push(total - boundary + 1 + offset); }
     }
     result
 }
 
+// A current target consumes activation without proposing a page change.
+fn current_page(ctx, event) {}
 fn pagination_emit(ctx, state) { ctx.emit("change", state); }
 fn pagination_size(ctx, value) {
     ctx.emit("change", #{ current_page: 1, page_size: parse_int(value) });
 }
+fn page_size_state(ctx, enabled) {
+    if !enabled {
+        if ctx.get_state("page_size_open") { ctx.set_state("page_size_open", false); }
+        if ctx.get_state("page_size_query") != "" { ctx.set_state("page_size_query", ""); }
+    }
+}
+fn page_size_cleanup(ctx, enabled) {}
 
-fn page_button(ctx, page, current, page_size, size, callback) {
+fn page_button(ctx, page, pages, current, page_size, size, callback, disabled) {
     let selected = page == current;
     // The current page is a selection block, not a primary action.
     let current_style = if selected {
-        style().background(theme_color("selection")).border_color(theme_color("selection"))
+        style().background(theme_color("pagination.active")).text_color(theme_color("pagination.ink")).font_weight(500)
     } else { style() };
-    let node = button::Button(#{
+    let parts = if selected { ["page", "page_current"] } else { ["page"] };
+    let base = style().typography("pagination").font_feature("tnum", 1);
+    let node = button::Button(#{ key: `page-${page}`,
         text: `${page}`, size: size, variant: "ghost",
-        hoverable: !selected,
-    }).with_style(ctx.component_style(if selected { "page_current" } else { "page" },
-        current_style.font_feature("tnum", 1)));
-    if selected { node.tab_stop(false).accessibility_current("page") }
-    else if callback == () { node }
-    else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: page_size }) }
+        hoverable: !selected && !disabled, disabled: disabled,
+    }).with_key(`number-${page}`).with_style(ctx.component_style(parts, base, current_style));
+    // Key by business page, not its changing window index. Native focus then
+    // stays with that same target, without post-commit imperative focus work.
+    node = if selected { node.on_click(Fn("current_page")).tab_stop(true).accessibility_current("page") }
+    else if callback == () || disabled { node }
+    else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: page_size }) };
+    // Reserve the longest number at both weights in the same native grid cell.
+    // This uses real font advances rather than a guessed 1ch pixel conversion.
+    let children = [node.with_style(style().grid_cell(1,1))];
+    for names in [["page"], ["page", "page_current"]] {
+        children.push(text(`${pages}`).with_style(ctx.component_style(names, base)
+            .grid_cell(1,1).invisible()));
+    }
+    let root = box(children).with_key(`page-slot-${page}`)
+        .with_style(ctx.component_style("page_slot",style().grid_cols(1).overflow_priority(0)));
+    if size == () { root } else { root.env(#{ size: size }) }
 }
 
 fn Pagination(props) { render_component("components/pagination", props) }
-fn page_size_open(ctx, open) { ctx.set_state("page_size_open", open); }
+fn page_size_open(ctx, open) {
+    ctx.set_state("page_size_open", open);
+}
 fn page_size_query(ctx, query) { ctx.set_state("page_size_query", query); }
 fn render_Pagination(ctx, props) {
     if props.key == "" { throw "Pagination key cannot be empty"; }
@@ -160,74 +187,106 @@ fn render_Pagination(ctx, props) {
         throw "Pagination page_size_options must contain page_size";
     }
     let size = prop_or(props, "size", ());
+    let compact = prop_or(props, "compact", false);
+    let disabled = prop_or(props, "disabled", false);
     let callback = if "on_change" in props { props.on_change } else { () };
+    effect("page_size_state", options.len > 0 && !disabled, Fn("page_size_state"), Fn("page_size_cleanup"));
     let controls = [];
     let previous_icon = icon::Icon(#{
         source: asset("app/icons/chevron_left"),
         rtl_source: asset("app/icons/chevron_right"), size: size,
-        label: ctx.t_or("pagination.previous", "Previous page")
     });
-    let previous = button::Button(#{
-        text: ctx.t_or("pagination.previous", "Previous page"), prefix: previous_icon,
-        size: size, variant: "ghost", disabled: props.current_page == 1,
+    let previous = icon_button::IconButton(#{
+        label: ctx.t_or("pagination.previous", "Previous page"), icon: previous_icon,
+        size: size, variant: "ghost", disabled: disabled || props.current_page == 1,
+        part_styles: #{icon:ctx.component_style("previous_icon",style()
+            .width(theme_length("metrics.pagination_icon")).height(theme_length("metrics.pagination_icon")))},
     }).with_style(ctx.component_style("previous", style()));
-    controls.push(if callback == () { previous } else {
+    controls.push(if callback == () || disabled || props.current_page == 1 { previous } else {
         previous.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page - 1, page_size: props.page_size })
     });
-    for page in page_window(
+    let numbers = if compact { [] } else { page_window(
         pages, props.current_page,
         prop_or(props, "boundary_count", 1),
         prop_or(props, "sibling_count", 1)
-    ) {
+    ) };
+    for page in numbers {
         if page == 0 {
             controls.push(row([text("…")]).with_style(ctx.component_style("ellipsis",
-            style().items_center().padding_x(theme_spacing("xs")))));
+            style().items_center().padding_x(theme_spacing("xs")).overflow_priority(0))));
         } else {
-            controls.push(page_button(ctx, page, props.current_page, props.page_size, size, callback));
+            controls.push(page_button(ctx, page, pages, props.current_page, props.page_size, size, callback, disabled));
         }
     }
     let next_icon = icon::Icon(#{
         source: asset("app/icons/chevron_right"),
         rtl_source: asset("app/icons/chevron_left"), size: size,
-        label: ctx.t_or("pagination.next", "Next page")
     });
-    let next = button::Button(#{
-        text: ctx.t_or("pagination.next", "Next page"), suffix: next_icon,
-        size: size, variant: "ghost", disabled: props.current_page == pages,
+    let next = icon_button::IconButton(#{
+        label: ctx.t_or("pagination.next", "Next page"), icon: next_icon,
+        size: size, variant: "ghost", disabled: disabled || props.current_page == pages,
+        part_styles: #{icon:ctx.component_style("next_icon",style()
+            .width(theme_length("metrics.pagination_icon")).height(theme_length("metrics.pagination_icon")))},
     }).with_style(ctx.component_style("next", style()));
-    controls.push(if callback == () { next } else {
+    controls.push(if callback == () || disabled || props.current_page == pages { next } else {
         next.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page + 1, page_size: props.page_size })
     });
 
-    let children = [];
-    if prop_or(props, "show_summary", true) {
-        children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t_or("pagination.items", "items")} · ${ctx.t_or("pagination.page", "Page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
-            .with_style(ctx.component_style("summary", style()
-                .typography("body").font_feature("tnum", 1).text_color(theme_color("text_muted")))));
-    }
-    children.push(row(controls).with_style(ctx.component_style("controls",
-        style().gap(theme_spacing("xxs")).items_center())));
+    let info = [];
     if options.len > 0 {
         let select_options = [];
         for option in options {
             select_options.push(#{ value: `${option}`, label: `${option}` });
         }
-        children.push(row([
+        info.push(row([
             text(ctx.t_or("pagination.per_page", "Items per page")).with_style(ctx.component_style("page_size_label", style())),
             select::Select(#{
                 key: `${props.key}-page-size`, label: ctx.t_or("pagination.per_page", "Items per page"), options: select_options,
-                value: `${props.page_size}`, open: ctx.get_state("page_size_open"),
-                query: ctx.get_state("page_size_query"), size: size, width: px(96),
+                value: `${props.page_size}`, clearable:false, open: !disabled && ctx.get_state("page_size_open"), disabled:disabled,
+                part_styles:#{
+                    trigger:ctx.component_style("page_size_trigger",style().min_height(px(0)).height(theme_length("metrics.pagination_h"))),
+                    indicator:ctx.component_style("page_size_indicator",style()),
+                    value:ctx.component_style("page_size_value",style()),
+                },
+                query: ctx.get_state("page_size_query"), size: size, width: "content",
                 on_change: Fn("pagination_size"), on_open_change: Fn("page_size_open"),
                 on_query_change: Fn("page_size_query")
             }).with_style(ctx.component_style("page_size", style()))
-        ]).with_style(style().gap(theme_spacing("sm")).items_center()
-            .text_color(theme_color("text_muted"))));
+        ]).with_style(ctx.component_style("page_size_control", style()
+            .gap(theme_spacing("sm")).items_center().flex_shrink(false)
+            .text_color(theme_color("text_muted")))).disabled(disabled));
     }
+    if prop_or(props, "show_summary", true) {
+        let range = "0";
+        if props.total_items > 0 {
+            let first = (props.current_page - 1) * props.page_size + 1;
+            // Avoid overflowing current_page * page_size on a partial last page.
+            let remaining = props.total_items - first;
+            let tail = if remaining < props.page_size - 1 { remaining } else { props.page_size - 1 };
+            range = `${ctx.format_number(first)}–${ctx.format_number(first + tail)}`;
+        }
+        info.push(text([
+            span(`${range} `),
+            span(ctx.t_or("pagination.of", "of")).color(theme_color("pagination.muted")),
+            span(` ${ctx.format_number(props.total_items)}`),
+        ]).with_style(ctx.component_style("summary", style()
+            .typography("body").font_feature("tnum", 1).whitespace_nowrap()
+            .text_color(theme_color("text_muted")))));
+    }
+    let children = [];
+    if info.len > 0 {
+        children.push(row(info).with_style(ctx.component_style("info", style()
+            .items_center().min_width(px(0)).gap(theme_length("space.group")))));
+    }
+    children.push(row(controls).with_style(ctx.component_style("controls",
+        style().overflow_row().gap(theme_spacing("xxs")).items_center().justify_end()
+            .max_width(relative(1.0)).min_width(px(0)).flex_shrink(true)
+            .margin_start(auto()))).disabled(disabled));
     row(children).with_key(props.key)
         .with_style(ctx.component_style("root", style()
             .items_center().justify_between().gap(theme_length("space.group"))
             .typography("body")))
         .accessibility_role("navigation")
         .accessibility_label(props.label)
+        .disabled(disabled)
 }

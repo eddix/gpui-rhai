@@ -3,14 +3,15 @@
 use std::collections::BTreeMap;
 
 use gpui::{
-    AnyElement, App, AppContext, Bounds, Context, CursorStyle, Element, ElementId, Entity,
-    FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    AnyElement, App, AppContext, Context, CursorStyle, Entity, FocusHandle, InteractiveElement,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
     Role, StatefulInteractiveElement, Styled, Window, div, px, relative,
 };
 
+use crate::interaction::{GestureUpdate, InteractionFlow, NativeGesture};
 use crate::range_input::{
-    RangeOrientation, fraction_f32, horizontal_thumb_ratio, normalize_value, range_value_at,
+    PresentedRangeTrack, RangeOrientation, fraction_f32, horizontal_thumb_ratio, normalize_value,
+    range_track_recorder,
 };
 use crate::{
     ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
@@ -60,7 +61,7 @@ struct RangeSliderEntity {
     disabled: bool,
     dragging: bool,
     active: RangeThumb,
-    bounds: Option<Bounds<Pixels>>,
+    track: Option<PresentedRangeTrack>,
     events: PrimitiveContext,
     interaction_key: String,
     low_label: String,
@@ -93,7 +94,7 @@ impl RangeSliderEntity {
             disabled: config.disabled,
             dragging: false,
             active: RangeThumb::Low,
-            bounds: None,
+            track: None,
             events,
             interaction_key,
             low_label: config.low_label,
@@ -119,6 +120,7 @@ impl RangeSliderEntity {
             || self.step.to_bits() != config.step.to_bits()
             || self.minimum_gap.to_bits() != config.minimum_gap.to_bits()
             || self.orientation != config.orientation
+            || self.theme.direction() != config.theme.direction()
             || self.disabled != config.disabled;
         if changed {
             self.revision = self.revision.saturating_add(1);
@@ -151,18 +153,28 @@ impl RangeSliderEntity {
         ((value - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
     }
 
-    fn value_at(&self, position: Point<Pixels>) -> f64 {
-        self.bounds.map_or(self.preview.low, |bounds| {
-            range_value_at(
-                bounds,
-                position,
-                self.orientation,
-                self.theme.direction(),
-                self.min,
-                self.max,
-                self.step,
-            )
-        })
+    fn value_at(&self, track: PresentedRangeTrack, position: Point<Pixels>) -> Option<f64> {
+        track.value_at(
+            position,
+            self.orientation,
+            self.theme.direction(),
+            self.min,
+            self.max,
+            self.step,
+        )
+    }
+
+    fn drag_value(
+        &self,
+        track: PresentedRangeTrack,
+        revision: u64,
+        position: Point<Pixels>,
+    ) -> Option<f64> {
+        if self.disabled || !self.dragging || self.revision != revision || self.track != Some(track)
+        {
+            return None;
+        }
+        self.value_at(track, position)
     }
 
     fn nearest_thumb(&self, value: f64) -> RangeThumb {
@@ -206,7 +218,12 @@ impl RangeSliderEntity {
         if self.disabled {
             return;
         }
-        let value = self.value_at(event.position);
+        let Some(track) = self.track else {
+            return;
+        };
+        let Some(value) = self.value_at(track, event.position) else {
+            return;
+        };
         self.active = self.nearest_thumb(value);
         match self.active {
             RangeThumb::Low => self.low_focus.focus(window, cx),
@@ -215,41 +232,41 @@ impl RangeSliderEntity {
         self.dragging = true;
         let revision = self.revision;
         self.set_active_value(value);
-        let entity = cx.entity();
+        let entity = cx.weak_entity();
         let update_entity = entity.clone();
-        let update =
-            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
-                let current = update_entity.update(cx, |slider, cx| {
-                    if slider.disabled || slider.revision != revision {
+        let update = move |gesture: GestureUpdate, _: &mut Window, cx: &mut App| {
+            let current = update_entity
+                .update(cx, |slider, cx| {
+                    let Some(value) = slider.drag_value(track, revision, gesture.current()) else {
                         return false;
-                    }
-                    slider.set_active_value(slider.value_at(gesture.current()));
+                    };
+                    slider.set_active_value(value);
                     cx.notify();
                     true
-                });
-                if current {
-                    crate::interaction::InteractionFlow::Continue
-                } else {
-                    crate::interaction::InteractionFlow::Cancel
-                }
-            };
+                })
+                .unwrap_or(false);
+            if current {
+                InteractionFlow::Continue
+            } else {
+                InteractionFlow::Cancel
+            }
+        };
         let finish_entity = entity.clone();
-        let finish =
-            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
-                finish_entity.update(cx, |slider, cx| {
-                    if !slider.disabled && slider.revision == revision {
-                        slider.set_active_value(slider.value_at(gesture.current()));
-                        if slider.preview != slider.controlled {
-                            slider.emit_change(window, cx);
-                        }
+        let finish = move |gesture: GestureUpdate, window: &mut Window, cx: &mut App| {
+            let _ = finish_entity.update(cx, |slider, cx| {
+                if let Some(value) = slider.drag_value(track, revision, gesture.current()) {
+                    slider.set_active_value(value);
+                    if slider.preview != slider.controlled {
+                        slider.emit_change(window, cx);
                     }
-                    slider.dragging = false;
-                    slider.preview = slider.controlled;
-                    cx.notify();
-                });
-            };
+                }
+                slider.dragging = false;
+                slider.preview = slider.controlled;
+                cx.notify();
+            });
+        };
         let cancel = move |_: &mut Window, cx: &mut App| {
-            entity.update(cx, |slider, cx| {
+            let _ = entity.update(cx, |slider, cx| {
                 slider.dragging = false;
                 slider.preview = slider.controlled;
                 cx.notify();
@@ -257,7 +274,7 @@ impl RangeSliderEntity {
         };
         let owner = self.events.interaction_owner(&self.interaction_key);
         self.events.begin_interaction(
-            crate::interaction::NativeGesture::new(
+            NativeGesture::new(
                 owner,
                 event.position,
                 cx.entity_id(),
@@ -374,6 +391,10 @@ impl Render for RangeSliderEntity {
                 track.child(fill).child(low_thumb).child(high_thumb)
             }
         };
+        let slider = cx.entity();
+        let track = track.child(range_track_recorder(move |frame, cx| {
+            slider.update(cx, |slider, _| slider.track = frame);
+        }));
         div()
             .id("gpui-rhai-range-slider")
             .relative()
@@ -388,9 +409,6 @@ impl Render for RangeSliderEntity {
             })
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .child(track)
-            .child(RangeSliderBoundsRecorder {
-                slider: cx.entity(),
-            })
             .opacity(if self.disabled { 0.62 } else { 1.0 })
     }
 }
@@ -407,13 +425,14 @@ impl RangeSliderEntity {
             RangeThumb::Low => (&self.low_focus, self.low_label.clone(), self.preview.low),
             RangeThumb::High => (&self.high_focus, self.high_label.clone(), self.preview.high),
         };
+        let thumb_state = crate::renderer::part_interaction(
+            self.events.focus_indicators() && focus.is_focused(window),
+            self.disabled,
+        );
         let element = crate::renderer::apply_style_override_in(
             div().flex_none(),
             &self.thumb_style,
-            &crate::renderer::part_interaction(
-                self.events.focus_indicators() && focus.is_focused(window),
-                self.disabled,
-            ),
+            &thumb_state,
             &self.theme,
             self.theme.direction(),
         );
@@ -448,77 +467,14 @@ impl RangeSliderEntity {
                     slider.keyboard(thumb, event, window, cx);
                 });
             });
+        let element = crate::renderer::decorate_part_focus(
+            element,
+            &self.thumb_style,
+            &thumb_state,
+            &self.theme,
+            self.theme.direction(),
+        );
         crate::renderer::centered_on_anchor(anchor, element)
-    }
-}
-
-struct RangeSliderBoundsRecorder {
-    slider: Entity<RangeSliderEntity>,
-}
-
-impl Element for RangeSliderBoundsRecorder {
-    type RequestLayoutState = AnyElement;
-    type PrepaintState = ();
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, Self::RequestLayoutState) {
-        let mut child = div()
-            .absolute()
-            .top(px(0.0))
-            .right(px(0.0))
-            .bottom(px(0.0))
-            .left(px(0.0))
-            .into_any_element();
-        let layout = child.request_layout(window, cx);
-        (layout, child)
-    }
-
-    fn prepaint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        child: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        child.prepaint(window, cx);
-        self.slider
-            .update(cx, |slider, _| slider.bounds = Some(bounds));
-    }
-
-    fn paint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
-        child: &mut Self::RequestLayoutState,
-        (): &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        child.paint(window, cx);
-    }
-}
-
-impl IntoElement for RangeSliderBoundsRecorder {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
     }
 }
 

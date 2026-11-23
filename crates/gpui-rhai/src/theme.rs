@@ -60,6 +60,12 @@ pub struct ThemeTokens {
     pub motion: ThemeMotion,
     pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
     pub environment: EnvironmentDeclarations,
+    /// Preset-owned component/part recipes, below application and instance
+    /// overrides. These are ordinary public Style values, not native painters.
+    pub component_styles: crate::ComponentStyleSheet,
+    /// This document owns the whole preset sheet. Stored so preview/save
+    /// cannot accidentally fill omitted properties from another design.
+    pub component_styles_replace: bool,
 }
 
 /// Host-owned token preferences applied uniformly to every loaded theme.
@@ -78,6 +84,7 @@ pub struct ThemeTokenOverrides {
     /// Replaces declared environment defaults, for example a compact density
     /// preference on small screens.
     pub environment_defaults: BTreeMap<String, String>,
+    pub component_styles: crate::ComponentStyleSheet,
 }
 
 /// Partial host preferences for the shared typography system.
@@ -126,6 +133,7 @@ impl Default for ThemeMotion {
                 ("normal".to_owned(), 180),
                 ("slow".to_owned(), 320),
                 ("ambient".to_owned(), 1_100),
+                ("thinking_sweep".to_owned(), 1_800),
             ]),
             easings: BTreeMap::from([
                 ("standard".to_owned(), crate::MotionEasing::EaseInOut),
@@ -282,6 +290,9 @@ pub enum ThemeTokenValue {
     Length(ThemeLength),
     Number(f64),
     String(String),
+    /// A complete style recipe, including pseudo states, consumed by source
+    /// components through the same typed API as application-owned styles.
+    Style(Box<crate::Style>),
 }
 
 impl ThemeTokens {
@@ -339,7 +350,8 @@ impl ThemeTokens {
 
     /// Resolve a length against the inherited environment. Literal lengths
     /// pass through; scaled tokens multiply their resolved value, and a
-    /// pixel or rem token takes the environment's reading scale.
+    /// pixel or rem token takes the environment's reading scale unless the
+    /// reference explicitly opts out for a structural stroke.
     #[must_use]
     pub fn resolve_length(&self, length: Length, environment: &Environment) -> Option<Length> {
         let Length::Token(token) = length else {
@@ -348,7 +360,11 @@ impl ThemeTokens {
         let value = *self
             .length_token(&token.path().as_str())?
             .resolve(environment, &self.environment)?;
-        let reading = self.reading_scale(environment);
+        let reading = if token.scales_with_reading() {
+            self.reading_scale(environment)
+        } else {
+            1.0
+        };
         let scale = token.scale();
         match value {
             Length::Pixels(value) => Some(Length::Pixels(value * scale * reading)),
@@ -527,7 +543,8 @@ impl ThemeTokens {
                     }
                     ThemeTokenValue::Color(_)
                     | ThemeTokenValue::Number(_)
-                    | ThemeTokenValue::String(_) => {}
+                    | ThemeTokenValue::String(_)
+                    | ThemeTokenValue::Style(_) => {}
                 }
             }
         }
@@ -847,6 +864,8 @@ impl ThemeTokenOverrides {
             namespaces: self.namespaces,
             environment: BTreeMap::new(),
             environment_defaults: self.environment_defaults,
+            component_styles: self.component_styles,
+            component_styles_replace: false,
         };
         layer.normalize_colors();
         layer
@@ -879,9 +898,31 @@ pub struct TokenLayer {
     pub(crate) namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
     pub(crate) environment: BTreeMap<String, EnvironmentDeclaration>,
     pub(crate) environment_defaults: BTreeMap<String, String>,
+    pub(crate) component_styles: crate::ComponentStyleSheet,
+    pub(crate) component_styles_replace: bool,
 }
 
 impl TokenLayer {
+    pub(crate) fn validate_color_paths(&self) -> Result<(), ThemeError> {
+        for path in self.colors.keys() {
+            if let Some((namespace, name)) = path.split_once('.')
+                && let Some(value) = self
+                    .namespaces
+                    .get(namespace)
+                    .and_then(|tokens| tokens.get(name))
+                && !matches!(value, ThemeTokenValue::Color(_))
+            {
+                return Err(ThemeError::InvalidTokenValue {
+                    token: path.clone(),
+                    reason:
+                        "the same layer declares this path as both a color and a non-color token"
+                            .to_owned(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     /// Move namespaced literal colors into the color map under their dotted
     /// path, so precedence between layers and expression references work
     /// the same for every color.
@@ -901,7 +942,21 @@ impl TokenLayer {
     }
 
     fn merge(&mut self, other: Self) {
-        self.colors.extend(other.colors);
+        if other.component_styles_replace {
+            self.component_styles = other.component_styles;
+            self.component_styles_replace = true;
+        } else {
+            self.component_styles =
+                std::mem::take(&mut self.component_styles).merged(&other.component_styles);
+        }
+        for (path, value) in other.colors {
+            if let Some((namespace, name)) = path.split_once('.')
+                && let Some(tokens) = self.namespaces.get_mut(namespace)
+            {
+                tokens.remove(name);
+            }
+            self.colors.insert(path, value);
+        }
         self.spacing.extend(other.spacing);
         self.radii.extend(other.radii);
         if other.typography_family.is_some() {
@@ -917,14 +972,19 @@ impl TokenLayer {
         self.motion.distances.extend(other.motion.distances);
         self.motion.staggers_ms.extend(other.motion.staggers_ms);
         for (namespace, tokens) in other.namespaces {
+            for name in tokens.keys() {
+                self.colors.remove(&format!("{namespace}.{name}"));
+            }
             self.namespaces.entry(namespace).or_default().extend(tokens);
         }
+        self.namespaces.retain(|_, tokens| !tokens.is_empty());
         self.environment.extend(other.environment);
         self.environment_defaults.extend(other.environment_defaults);
     }
 
     /// Evaluate color expressions and produce the final token set.
     fn finalize(mut self) -> Result<ThemeTokens, ThemeError> {
+        self.validate_color_paths()?;
         // Every token base reads at a reading scale, which it need not declare.
         self.environment
             .entry(SCALE_ENVIRONMENT.to_owned())
@@ -1005,6 +1065,8 @@ impl TokenLayer {
             motion,
             namespaces,
             environment,
+            component_styles: self.component_styles,
+            component_styles_replace: self.component_styles_replace,
         })
     }
 }
@@ -1632,7 +1694,9 @@ pub fn load_theme_with_layers(
     let theme = crate::theme_source::decode_theme(engine, source_name, source)?;
     let mut layer = base.cloned().unwrap_or_default();
     layer.merge(theme.tokens);
-    layer.merge(overrides.clone().into_layer());
+    let overrides = overrides.clone().into_layer();
+    overrides.validate_color_paths()?;
+    layer.merge(overrides);
     let variant = ThemeVariant {
         family: theme.family,
         name: theme.name,
@@ -1744,6 +1808,114 @@ pub enum ThemeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_layer_rejects_a_color_and_noncolor_at_the_same_path() {
+        let engine = engine();
+        for value in ["style().height(px(24))", "px(24)", "1.25"] {
+            let source =
+                r#"fn tokens(){#{colors:#{"brand.slot":rgb(0x123456)},brand:#{slot:__VALUE__}}}"#
+                    .replace("__VALUE__", value);
+            let error = load_token_base(engine.engine(), "duplicate.rhai", &source).unwrap_err();
+            assert!(
+                matches!(error,ThemeError::InvalidTokenValue{ref token,..} if token=="brand.slot"),
+                "{error:?}"
+            );
+        }
+        let source = r#"fn theme(){#{family:"Probe",name:"Dark",mode:"dark",tokens:#{}}}"#;
+        let overrides = ThemeTokenOverrides {
+            colors: [("brand.slot".to_owned(), Rgba8::from_rgb_hex(0x0012_3456))].into(),
+            namespaces: [(
+                "brand".to_owned(),
+                [(
+                    "slot".to_owned(),
+                    ThemeTokenValue::Style(Box::new(crate::Style::new())),
+                )]
+                .into(),
+            )]
+            .into(),
+            ..Default::default()
+        };
+        assert!(
+            matches!(load_theme_with_layers(engine.engine(),None,"override.rhai",source,&overrides),Err(ThemeError::InvalidTokenValue{ref token,..}) if token=="brand.slot")
+        );
+    }
+
+    #[test]
+    fn namespaced_token_kind_obeys_base_theme_and_host_order_in_both_directions() {
+        let engine = engine();
+        for base_color in [false, true] {
+            let color = r#"colors:#{"brand.slot":rgb(0x123456)}"#;
+            let style = "brand:#{slot:style().height(px(24))}";
+            let base = load_token_base(
+                engine.engine(),
+                "base.rhai",
+                &format!(
+                    "fn tokens(){{#{{{}}}}}",
+                    if base_color { color } else { style }
+                ),
+            )
+            .unwrap();
+            let source = format!(
+                r#"fn theme(){{#{{family:"Probe",name:"Dark",mode:"dark",tokens:#{{{}}}}}}}"#,
+                if base_color { style } else { color }
+            );
+            let first = load_theme_with_layers(
+                engine.engine(),
+                Some(&base),
+                "theme.rhai",
+                &source,
+                &ThemeTokenOverrides::default(),
+            )
+            .unwrap();
+            assert_eq!(
+                matches!(
+                    first.tokens.namespaces["brand"]["slot"],
+                    ThemeTokenValue::Color(_)
+                ),
+                !base_color
+            );
+            let mut overrides = ThemeTokenOverrides::default();
+            if base_color {
+                overrides
+                    .colors
+                    .insert("brand.slot".to_owned(), Rgba8::from_rgb_hex(0x0065_4321));
+            } else {
+                let replacement = crate::Style::new().height(Length::Pixels(36.0));
+                overrides.namespaces.insert(
+                    "brand".to_owned(),
+                    [(
+                        "slot".to_owned(),
+                        ThemeTokenValue::Style(Box::new(replacement)),
+                    )]
+                    .into(),
+                );
+            }
+            let last = load_theme_with_layers(
+                engine.engine(),
+                Some(&base),
+                "theme.rhai",
+                &source,
+                &overrides,
+            )
+            .unwrap();
+            assert_eq!(
+                matches!(
+                    last.tokens.namespaces["brand"]["slot"],
+                    ThemeTokenValue::Color(_)
+                ),
+                base_color
+            );
+            if base_color {
+                assert_eq!(
+                    last.tokens.color("brand.slot"),
+                    Some(Rgba8::from_rgb_hex(0x0065_4321))
+                );
+            } else {
+                assert!(last.tokens.color("brand.slot").is_none());
+            }
+        }
+    }
 
     fn tokens(accent: u32) -> ThemeTokens {
         ThemeTokens {
@@ -2082,6 +2254,24 @@ mod tests {
         let theme = layered();
         let control = Length::token("metrics.control").unwrap();
         assert_eq!(theme.resolve_length(control), Some(Length::Pixels(32.0)));
+        let stroke = control.without_reading_scale();
+        let large = environment(&[("scale", "125")]);
+        assert_eq!(
+            theme.resolve_length_in(stroke, &large),
+            Some(Length::Pixels(32.0))
+        );
+        assert_eq!(
+            theme.resolve_length_in(stroke.scaled(0.5).unwrap(), &large),
+            Some(Length::Pixels(16.0))
+        );
+        assert_eq!(
+            theme.resolve_length_in(
+                stroke,
+                &environment(&[("scale", "150"), ("density", "compact"), ("size", "sm")])
+            ),
+            Some(Length::Pixels(24.0)),
+            "opting out of reading scale must not freeze the other environment axes"
+        );
         assert_eq!(
             theme.resolve_length_in(
                 control,

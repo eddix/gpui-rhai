@@ -8,7 +8,7 @@
   "capabilities": {},
   "tokens": [
     "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg", "typography.caption",
-    "typography.label"
+    "typography.label", "typography.key_legend_tooltip"
   ],
   "environment": []
 }
@@ -24,7 +24,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg",
-            "typography.caption", "typography.label"
+            "typography.caption", "typography.label", "typography.key_legend_tooltip"
         ],
         environment: [],
     },
@@ -36,7 +36,7 @@ define_component(#{
             trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false,
                 doc: "Element whose hover shows the tooltip after `show_delay_ms`." },
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false,
-                doc: "Hint shown in the tooltip, in inverted colors and at most 320 px wide." },
+                doc: "Hint shown in the tooltip, in the preset's inverse surface and at most 240 logical pixels wide at reading scale 100." },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "top" },
                 doc: "Preferred side of the trigger the tooltip appears on." },
@@ -59,7 +59,7 @@ define_component(#{
             trigger: #{ required: true, multiple: false, doc: "Element whose hover shows the tooltip." },
             content: #{ required: true, multiple: false, doc: "Hint shown in the tooltip." },
         },
-        parts: ["root", "trigger", "content", "shortcut"],
+        parts: ["root", "trigger", "content", "content_with_shortcut", "shortcut"],
     },
     render: Fn("render_Tooltip")
 });
@@ -77,13 +77,13 @@ fn render_Tooltip(ctx, props) {
     let children = [props.content];
     if shortcut != "" {
         children.push(text(shortcut).with_style(ctx.component_style("shortcut",
-            style().typography("label").opacity(0.7))));
+            style().typography("key_legend_tooltip"))));
     }
-    // Tooltips invert ink and paper; a key legend follows the hint. A one-line tooltip is
-    // about 22px tall, so it rounds like a control of that height (half of radius.lg)
-    // rather than like a panel, which at this height would read as a marker's capsule.
-    let content = row(children).with_style(ctx.component_style("content",
-        style().max_width(px(320)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xxs"))
+    // The preset owns inverse surface/type and the optional key treatment. Its
+    // color already contains the authored alpha; do not dim it a second time.
+    let content_parts = if shortcut == "" { ["content"] } else { ["content", "content_with_shortcut"] };
+    let content = row(children).with_style(ctx.component_style(content_parts,
+        style().max_width(px(240)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xxs"))
             .gap(theme_spacing("sm")).items_center()
             .radius(theme_radius("lg") * 0.5).typography("caption")
             .background(theme_color("text_primary"))

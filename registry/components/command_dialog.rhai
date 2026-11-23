@@ -6,14 +6,14 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/command", "components/dialog"],
   "capabilities": {},
-  "tokens": ["metrics.inset", "radius.lg"],
+  "tokens": ["metrics.inset", "metrics.command_title_inset", "radius.lg"],
   "environment": ["density"]
 }
 */
 // Controlled modal presentation of Command without registering a global shortcut.
 //
-// The command fills the panel edge to edge: the panel has no padding, its search line spans
-// the panel, and a visible title sits on the rows' inset above it.
+// The command fills the dialog's content width without adding a second panel inset. The
+// dialog owns its corner clearance; a visible title sits on the rows' text edge above it.
 //
 // State: caller owns open, query, and active_value.
 // Example: CommandDialog(#{ key: "palette", open: open, query: query, active_value: active, label: "Commands", items: items, on_open_change: Fn("opened"), on_query_change: Fn("queried"), on_active_change: Fn("preview"), on_action: Fn("run") })
@@ -25,10 +25,14 @@ define_component(#{
     metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/command", "components/dialog"], capabilities: #{},
-        tokens: ["metrics.inset", "radius.lg"],
+        tokens: ["metrics.inset", "metrics.command_title_inset", "radius.lg"],
         environment: ["density"] },
     schema: #{
         props: #{
+            footer_visible: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:true},
+                doc:"Shows the inner Command's keyboard-hint footer."},
+            footer: #{schema:#{type:"optional",value:#{type:"node"}},required:false,sensitive:false,
+                doc:"Optional application-owned footer content for the inner Command."},
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false,
                 doc: "Whether the dialog is shown; the caller stores the `open_change` payload and passes it back." },
@@ -38,30 +42,8 @@ define_component(#{
                 doc: "Highlighted command value; the caller stores the `active_change` payload. Other values show the first enabled match." },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
                 doc: "Dialog title, also the accessible name of the dialog, the search field and the list." },
-            items: #{ schema: #{ type: "one_of", variants: [
-                #{ type: "array", max_items: 4096, items: #{
-                    type: "object", allow_unknown: false, fields: #{
-                        value: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                            doc: "Unique, non-empty id reported by `active_change` and `action`." },
-                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false,
-                            doc: "Non-empty text ranked against the query and shown on the row." },
-                        keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
-                            required: false, sensitive: false, "default": #{ type: "array", value: [] },
-                            doc: "Extra terms matched against the query; a keyword match ranks just below the same label match." },
-                        group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                            doc: "Heading the command is listed under; groups keep the source order of their first match." },
-                        shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                            doc: "Key legend shown at the row end, written like `cmd-k`; overrides the binding of `action`." },
-                        action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                            doc: "Registered action dispatched on activation; it also supplies the shortcut legend and can disable the row." },
-                        disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                            "default": #{ type: "bool", value: false },
-                            doc: "Dims the command; it cannot be activated and keyboard navigation skips it." },
-                    }
-                } },
-                #{ type: "collection" }
-            ] }, required: true, sensitive: false,
-                doc: "Commands to rank: item maps, or a native collection keyed by value with the same fields but no `action`." },
+            items: #{ schema: /* @contract command-items:start */ #{"type": "one_of", "variants": [#{"type": "array", "max_items": 4096, "items": #{"type": "object", "allow_unknown": false, "fields": #{"value": #{"schema": #{"type": "string"}, "required": true, "sensitive": false, "doc": "Unique non-empty value reported by active_change and action."}, "label": #{"schema": #{"type": "string"}, "required": true, "sensitive": false, "doc": "Required searchable/accessibility text; content may replace its visual label."}, "content": #{"schema": #{"type": "optional", "value": #{"type": "node"}}, "required": false, "sensitive": false, "doc": "Rich visual label; ranking and accessible name still use label."}, "hint": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Inline secondary text, also searched with keyword precedence."}, "icon": #{"schema": #{"type": "optional", "value": #{"type": "one_of", "variants": [#{"type": "node"}, #{"type": "string"}]}}, "required": false, "sensitive": false, "doc": "Non-interactive glyph node or logical asset ID; the leading slot is reserved when empty."}, "logo": #{"schema": #{"type": "optional", "value": #{"type": "one_of", "variants": [#{"type": "node"}, #{"type": "string"}]}}, "required": false, "sensitive": false, "doc": "Non-interactive logo node or logical asset ID on a tile; takes precedence over icon."}, "keywords": #{"schema": #{"type": "array", "max_items": 32, "items": #{"type": "string"}}, "required": false, "sensitive": false, "default": #{"type": "array", "value": []}, "doc": "Additional search terms with keyword precedence."}, "group": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Heading; groups preserve first matching source order."}, "shortcut": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Row-end shortcut legend overriding a registered action binding."}, "action": #{"schema": #{"type": "optional", "value": #{"type": "string"}}, "required": false, "sensitive": false, "doc": "Registered action dispatched on activation; its enabled state and shortcut are inherited."}, "disabled": #{"schema": #{"type": "bool"}, "required": false, "sensitive": false, "default": #{"type": "bool", "value": false}, "doc": "Dimmed and excluded from activation and navigation."}}}}, #{"type": "collection"}]} /* @contract command-items:end */, required: true, sensitive: false,
+                doc: "Exactly the Command item schema, including rich labels, hints, glyphs/logo tiles and the NativeCollection data path." },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" },
                 doc: "Hint shown in the empty search field. Empty, the localized `command.placeholder` message, `Type a command` without one." },
@@ -70,7 +52,7 @@ define_component(#{
                 doc: "Message shown in place of the list when no command matches. Empty, the localized `command.empty` message, `No commands found` without one." },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 },
-                doc: "Rows the list shows before it scrolls; group headings count as rows." },
+                doc: "Inner Command viewport capacity in row units; headings use natural measured height." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Disables the search field and the list's arrow, Home, End and Enter keys." },
@@ -82,6 +64,8 @@ define_component(#{
                 doc: "Shows `label` as a title above the search; when hidden, the label still names the dialog." },
             width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
                 doc: "Panel width in place of the dialog's 420 px; the overlay still caps it at 90% of the window." },
+            narrow_at: #{schema:#{type:"number",min:0.0,max:16384.0},required:false,sensitive:false,
+                "default":#{type:"float",value:480.0},doc:"Forwards the inner Command's committed-card width boundary; it is independent of window viewport class."},
             command_part_styles: #{ schema: #{ type: "map", values: #{ type: "style" } },
                 required: false, sensitive: false, "default": #{ type: "map", value: #{} },
                 doc: "Part styles for the inner Command, such as `search`, `item` and `item_active`." },
@@ -111,7 +95,7 @@ define_component(#{
             escape: #{ payload: #{ type: "null" },
                 doc: "Emitted on Escape inside the command while `on_escape` is set; the payload is `()`." },
         },
-        slots: #{}, parts: ["root", "dialog", "command"],
+        slots: #{footer:#{required:false,multiple:false,doc:"Optional content passed to the Command footer."}}, parts: ["root", "dialog", "command"],
     },
     render: Fn("render_CommandDialog")
 });
@@ -136,6 +120,7 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 
 fn render_CommandDialog(ctx, props) {
     let list = command::Command(#{ key: `${props.key}-command`, label: props.label,
+        appearance:"embedded",footer_visible:props.footer_visible,footer:prop_or(props,"footer",()),narrow_at:props.narrow_at,
         query: props.query, active_value: props.active_value, items: props.items,
         placeholder: localized_prop(ctx, props, "placeholder", "command.placeholder", "Type a command"),
         empty_text: localized_prop(ctx, props, "empty_text", "command.empty", "No commands found"),
@@ -146,21 +131,21 @@ fn render_CommandDialog(ctx, props) {
         on_active_change: Fn("active_action"),
         on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)),
         part_styles: prop_or(props, "command_part_styles", #{}) })
-        .with_style(ctx.component_style("command", style().border(px(0)).padding(px(0))));
+        .with_style(ctx.component_style("command", style()));
     let escape = "on_escape" in props && props.on_escape != ();
     if escape { list = list.on_key_value("escape", Fn("escape_action"), ()); }
     let dialog_parts = prop_or(props, "dialog_part_styles", #{});
-    // Half of radius.lg on every side clears the corner, as Command's own panel does; the
-    // title and the Command inside then share one text edge.
+    // The Dialog owns the one surrounding inset. The embedded command owns
+    // search/list spacing; its title follows the same leading-content grid.
     let panel = style().padding(theme_radius("lg") * 0.5).gap(px(0));
     if "panel" in dialog_parts { panel = panel.merge(dialog_parts.panel); }
     if "width" in props && props.width != () { panel = panel.width(props.width); }
     dialog_parts.panel = panel;
-    let title = style().padding_x(theme_length("metrics.inset")).padding_top(theme_length("metrics.inset"));
+    let title = style().padding_x(theme_length("metrics.command_title_inset")).padding_top(theme_length("metrics.inset"));
     dialog_parts.title = if "title" in dialog_parts { title.merge(dialog_parts.title) } else { title };
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.label,
         title_visible: prop_or(props, "title_visible", true), dismiss_on_escape: !escape,
         content: list, initial_focus: "first", on_open_change: Fn("open_action"),
         part_styles: dialog_parts })
-        .with_style(ctx.component_style("dialog", ctx.component_style("root", style())))
+        .with_style(ctx.component_style(["root","dialog"], style()))
 }

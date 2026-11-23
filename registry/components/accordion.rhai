@@ -91,6 +91,7 @@ fn Accordion(props) { render_component("components/accordion", props) }
 // declared, so a panel mounted open does not grow in; toggles animate from the current
 // height.
 fn disclosure_panel(ctx, key, open, height, content) {
+    let animate = ctx.motion_preference() == "normal";
     let children = [];
     let target = ();
     // Only a measured panel owns an element ref, so a fixed height renders without a lifecycle.
@@ -106,15 +107,16 @@ fn disclosure_panel(ctx, key, open, height, content) {
         children.push(row([]).with_key(`${key}-measure`).with_ref(measure)
             .with_style(style().absolute().top(px(0)).left(px(0)).width(px(0)).height(height)));
     }
-    if target == () {
-        let bounds = ctx.element_bounds(measure);
-        if bounds != () { target = bounds.layout.height; }
+    if target == () && animate {
+        let dimensions = ctx.element_size(measure);
+        if dimensions != () { target = dimensions.height; }
     }
     let panel_style = style().clip().relative();
     if !open { panel_style = panel_style.height(px(0)); }
     else if target != () { panel_style = panel_style.height(px(target)); }
+    else if height != () { panel_style = panel_style.height(height); }
     let panel = column(children).with_key(`${key}-content`).with_style(panel_style);
-    if target == () { return panel; }
+    if !animate || target == () { return panel; }
     let end = if open { target } else { 0.0 };
     panel.motion(motion_transition("clip_height", end, end,
         #{ duration_ms: ctx.motion_duration("fast"), easing: ctx.motion_easing("entrance"),

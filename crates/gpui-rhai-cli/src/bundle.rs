@@ -9,12 +9,15 @@
 //! identifier = "com.example.disktree"
 //! icon = "bundle/AppIcon.png"
 //! binaries = ["disktree", "disktree-helper"]
-//! resources = [{ from = "licenses", to = "licenses" }]
+//! resources = [
+//!     { from = "licenses", to = "licenses" },
+//!     { from = "ui/licenses", to = "ui/licenses" },
+//! ]
 //! ```
 //!
 //! Command-line options take precedence. The first binary is the bundle's
-//! executable; `licenses/` at the project root goes into the bundle's
-//! resources unless the configuration lists resources of its own.
+//! executable. Existing `licenses/` and `ui/licenses/` directories go into
+//! the bundle's resources unless the application lists resources of its own.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -176,13 +179,13 @@ impl BundlePlan {
             config.binaries
         };
         let resources = config.resources.unwrap_or_else(|| {
-            root.join("licenses")
-                .is_dir()
-                .then(|| BundleResource {
-                    from: PathBuf::from("licenses"),
-                    to: PathBuf::from("licenses"),
-                })
+            ["licenses", "ui/licenses"]
                 .into_iter()
+                .filter(|directory| root.join(directory).is_dir())
+                .map(|directory| BundleResource {
+                    from: PathBuf::from(directory),
+                    to: PathBuf::from(directory),
+                })
                 .collect()
         });
         Ok(Self {
@@ -285,9 +288,7 @@ impl BundlePlan {
         if let Some(icon) = &self.icon {
             icns(&root.join(icon), &resources.join("AppIcon.icns"), &app)?;
         }
-        for resource in &self.resources {
-            copy_tree(&root.join(&resource.from), &resources.join(&resource.to))?;
-        }
+        self.copy_resources(root, &resources)?;
         run(
             Command::new("codesign")
                 .args(["--force", "--deep", "--sign", &self.sign])
@@ -301,6 +302,13 @@ impl BundlePlan {
             "codesign --verify",
         )?;
         Ok(app)
+    }
+
+    fn copy_resources(&self, root: &Path, destination: &Path) -> Result<(), ProjectError> {
+        for resource in &self.resources {
+            copy_tree(&root.join(&resource.from), &destination.join(&resource.to))?;
+        }
+        Ok(())
     }
 }
 
@@ -514,5 +522,96 @@ mod tests {
             .unwrap_err()
             .contains("unknown field")
         );
+    }
+
+    #[test]
+    fn default_resources_copy_readable_ui_and_application_licenses_when_present() {
+        for (application, ui) in [(false, false), (true, false), (false, true), (true, true)] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path();
+            if application {
+                std::fs::create_dir(root.join("licenses")).unwrap();
+                std::fs::write(
+                    root.join("licenses/application.txt"),
+                    b"application notices",
+                )
+                .unwrap();
+            }
+            if ui {
+                std::fs::create_dir_all(root.join("ui/licenses")).unwrap();
+                std::fs::write(
+                    root.join("ui/licenses/Inter-OFL-1.1.txt"),
+                    gpui_rhai_registry::INTER_FONT_LICENSE,
+                )
+                .unwrap();
+            }
+            let plan = BundlePlan::from_package(
+                root,
+                &package(
+                    &serde_json::json!({"identifier":"com.example.notices"}),
+                    &["demo"],
+                ),
+                root.join("target"),
+                &BundleOptions::default(),
+            )
+            .unwrap();
+            assert_eq!(
+                plan.resources.len(),
+                usize::from(application) + usize::from(ui)
+            );
+            let resources = root.join("bundle/Contents/Resources");
+            plan.copy_resources(root, &resources).unwrap();
+            assert_eq!(
+                resources.join("licenses/application.txt").exists(),
+                application
+            );
+            if application {
+                assert_eq!(
+                    std::fs::read(resources.join("licenses/application.txt")).unwrap(),
+                    b"application notices"
+                );
+            }
+            assert_eq!(resources.join("ui/licenses/Inter-OFL-1.1.txt").exists(), ui);
+            if ui {
+                assert_eq!(
+                    std::fs::read_to_string(resources.join("ui/licenses/Inter-OFL-1.1.txt"))
+                        .unwrap(),
+                    gpui_rhai_registry::INTER_FONT_LICENSE
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_resources_remain_application_owned_even_when_default_notices_exist() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        for path in ["licenses", "ui/licenses", "custom-notices"] {
+            std::fs::create_dir_all(root.join(path)).unwrap();
+        }
+        std::fs::write(root.join("custom-notices/notice.txt"), b"custom notices").unwrap();
+        for resources in [
+            serde_json::json!([]),
+            serde_json::json!([{"from":"custom-notices","to":"notices"}]),
+        ] {
+            let plan = BundlePlan::from_package(
+                root,
+                &package(
+                    &serde_json::json!({"identifier":"com.example.notices","resources":resources}),
+                    &["demo"],
+                ),
+                root.join("target"),
+                &BundleOptions::default(),
+            )
+            .unwrap();
+            let output = tempfile::tempdir().unwrap();
+            plan.copy_resources(root, output.path()).unwrap();
+            assert!(!output.path().join("licenses").exists());
+            assert!(!output.path().join("ui").exists());
+            assert_eq!(
+                output.path().join("notices/notice.txt").exists(),
+                !plan.resources.is_empty()
+            );
+        }
     }
 }

@@ -1,0 +1,32 @@
+{
+  "type": "one_of",
+  "variants": [
+    {"type": "array", "max_items": 4096, "items": {
+      "type": "object", "allow_unknown": false, "fields": {
+        "value": {"schema": {"type": "string"}, "required": true, "sensitive": false,
+          "doc": "Unique non-empty value reported by active_change and action."},
+        "label": {"schema": {"type": "string"}, "required": true, "sensitive": false,
+          "doc": "Required searchable/accessibility text; content may replace its visual label."},
+        "content": {"schema": {"type": "optional", "value": {"type": "node"}}, "required": false, "sensitive": false,
+          "doc": "Rich visual label; ranking and accessible name still use label."},
+        "hint": {"schema": {"type": "optional", "value": {"type": "string"}}, "required": false, "sensitive": false,
+          "doc": "Inline secondary text, also searched with keyword precedence."},
+        "icon": {"schema": {"type": "optional", "value": {"type": "one_of", "variants": [{"type": "node"}, {"type": "string"}]}}, "required": false, "sensitive": false,
+          "doc": "Non-interactive glyph node or logical asset ID; the leading slot is reserved when empty."},
+        "logo": {"schema": {"type": "optional", "value": {"type": "one_of", "variants": [{"type": "node"}, {"type": "string"}]}}, "required": false, "sensitive": false,
+          "doc": "Non-interactive logo node or logical asset ID on a tile; takes precedence over icon."},
+        "keywords": {"schema": {"type": "array", "max_items": 32, "items": {"type": "string"}}, "required": false, "sensitive": false,
+          "default": {"type": "array", "value": []}, "doc": "Additional search terms with keyword precedence."},
+        "group": {"schema": {"type": "optional", "value": {"type": "string"}}, "required": false, "sensitive": false,
+          "doc": "Heading; groups preserve first matching source order."},
+        "shortcut": {"schema": {"type": "optional", "value": {"type": "string"}}, "required": false, "sensitive": false,
+          "doc": "Row-end shortcut legend overriding a registered action binding."},
+        "action": {"schema": {"type": "optional", "value": {"type": "string"}}, "required": false, "sensitive": false,
+          "doc": "Registered action dispatched on activation; its enabled state and shortcut are inherited."},
+        "disabled": {"schema": {"type": "bool"}, "required": false, "sensitive": false,
+          "default": {"type": "bool", "value": false}, "doc": "Dimmed and excluded from activation and navigation."}
+      }
+    }},
+    {"type": "collection"}
+  ]
+}

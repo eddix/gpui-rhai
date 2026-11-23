@@ -48,6 +48,11 @@ define_component(#{
                                 schema: #{ type: "string" }, required: true, sensitive: false,
                                 doc: "Text beside the option's circle; also its accessible name.",
                             },
+                            leading: #{
+                                schema: #{ type: "optional", value: #{ type: "node" } },
+                                required: false, sensitive: false,
+                                doc: "Decorative element before the option label.",
+                            },
                             disabled: #{
                                 schema: #{ type: "bool" }, required: false, sensitive: false,
                                 "default": #{ type: "bool", value: false },
@@ -65,6 +70,11 @@ define_component(#{
                 "default": #{ type: "string", value: "vertical" },
                 doc: "Stacks options in a column, or lays them in a row spaced by `space.group`.",
             },
+            appearance: #{
+                schema: #{ type: "string", allowed: ["indicator", "chip"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "indicator" },
+                doc: "Renders circle indicators or chips without a separate mark, with the same native keyboard group behavior.",
+            },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
@@ -79,7 +89,7 @@ define_component(#{
         state: #{ fields: #{} },
         events: #{ change: #{ payload: #{ type: "string" },
             doc: "Emitted when an option is clicked or an arrow key selects the previous or next enabled one; the payload is the new value." } },
-        slots: #{}, parts: ["root", "option"],
+        slots: #{}, parts: ["root", "option", "option_selected"],
     },
     render: Fn("render_RadioGroup")
 });
@@ -130,15 +140,18 @@ fn render_RadioGroup(ctx, props) {
     }
     let options = [];
     for option in props.options {
+        let selected=option.value==props.value;
         options.push(
             radio::Radio(#{
                 value: option.value,
-                selected: option.value == props.value,
+                selected: selected,
                 label: option.label,
+                leading: if "leading" in option {option.leading}else{()},
+                appearance: props.appearance,
                 disabled: disabled || option_disabled(option),
                 focus_mark: option.value == cursor,
                 on_select: if callback == () { () } else { Fn("change_action") },
-            }).with_style(ctx.component_style("option", style())).tab_stop(false)
+            }).with_style(ctx.component_style(if selected{["option","option_selected"]}else{["option"]},style())).tab_stop(false)
         );
     }
     let horizontal = orientation == "horizontal";
@@ -148,6 +161,7 @@ fn render_RadioGroup(ctx, props) {
             .gap(if horizontal { theme_length("space.group") } else { px(0) })
             .focus(style())))
         .accessibility_role("radiogroup")
+        .accessibility_orientation(orientation)
         .accessibility_label(props.label)
         .accessibility_value(props.value);
     if !disabled && callback != () {

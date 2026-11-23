@@ -20,16 +20,18 @@ gpui-rhai shot --locale ar --out ar.png --key cmd-k --wait 300 --out palette.png
 
 The steps run in order: `--size WxH` (1280x800 by default, before the view
 mounts), `--theme Family/Variant` or `--theme Variant` in the current family,
-`--locale ID`, `--click NAME` (the node whose accessible name is NAME, else the
+`--locale ID`, `--hover NAME` / `--click NAME` (the node whose accessible name is NAME, else the
 first whose name starts with it), `--key CHORD` (GPUI syntax, space-separated
-for several), `--wait MS` (advances the view's clock, so timers fire), `--out
+for several), `--input TEXT` (types literal characters into the focused editor),
+`--wait MS` (advances the view's clock, so timers fire), `--out
 PATH` and `--steps FILE`. A steps file holds one JSON request per line in the
 [automation protocol](automation.md#json-lines-protocol), plus the shot
-commands `click` (`name`, or an automation `locator`), `keys`, `wait`
+commands `hover` / `click` (`name`, or an automation `locator`), `keys`, `input` (`text`), `wait`
 (`millis`), `capture` (`path`), `theme` and `locale`:
 
 ```json
 {"id":"open","command":"click","locator":{"kind":"role_name","role":"button","name":"Settings"}}
+{"command":"hover","name":"Save"}
 {"command":"capture","path":"settings.png"}
 {"id":"q1","command":"query","locator":{"kind":"test_id","id":"theme-select"}}
 ```
@@ -67,8 +69,8 @@ its public props, semantics, and style parts.
 
 Maintain one contextual specimen containing:
 
-- Tabs with the first, middle, and last item selected; the track inset remains
-  the resolved `spacing.xxs` at every outer edge, with no dividers or selected rail;
+- Tabs with the first, middle, and last item selected; track/selection insets
+  follow the active design's named metrics and concentric geometry;
 - content-width and equal-width Tabs, unequal English/CJK labels, icons with
   text and icon-only headers, horizontal/vertical and LTR/RTL layouts;
 - underline Tabs with and without a panel and inside a Card: the hairline
@@ -76,16 +78,18 @@ Maintain one contextual specimen containing:
   the keyboard focus frame does not touch the label;
 - bar Tabs over a panel: the selected tab is square and covers the strip's
   line; closable and dirty tabs keep their width as the close button appears;
-- count capsules and tone lamps in every look: the capsule is
-  exactly the label's line height, its figures sit centred, and `99+` fits;
+- counter chips and tone lamps in every look: use their own type/height/radius
+  metrics rather than equating their height with the tab label's line box;
+  figures sit centered and `99+` fits;
   an add button after the last tab and slots on the content edge;
 - normal, focused, hovered, disabled, scrolling, interrupted transition, and
   Reduced/None states; focus must not obscure persistent selection;
 - Button and Badge using the same text and color treatment, including a
   filled Badge; their density difference must survive removing color cues.
 
-Capture Default Light/Dark, Tokyo Night/Storm, and Catppuccin Latte/Mocha at
-settled frames. Inspect the remaining bundled themes in the same specimen.
+Capture Modern Light/Dark and Clean Light/Dark at settled frames. Review the
+alternate palettes separately in the same specimen: they inherit geometry,
+and are not extra exact-color reference configurations.
 Record logical bounds as well as 1x/2x screenshots so text/line-height and
 track-inset assertions do not depend on screenshot scaling. Mounted tests must
 cover controlled-value rejection, keyboard/disabled behavior, local overflow
@@ -99,7 +103,7 @@ Also mount the specimen with deliberately different valid Host spacing/radius
 overrides and larger typography. Verify all four track insets, text containment,
 theme-responsive Button/Badge density, square and rounded rectangular surfaces,
 native/virtualized token parity, and theme switching with preserved state.
-Testing only bundled themes with identical spacing and zero radii cannot detect
+Testing only related palettes with identical geometry cannot detect
 literal-token substitution. Color checks must use the actual foreground/surface
 pair for every state, including enabled but unselected Tabs.
 

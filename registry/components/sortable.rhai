@@ -96,9 +96,11 @@ fn Sortable(props) { render_component("components/sortable", props) }
 fn sortable_commit(ctx, value) { ctx.emit("reorder", value); }
 fn sortable_disabled(item) { "disabled" in item && item.disabled }
 
-fn sortable_item_node(ctx,list_id,collection_id,item,previous_key,next_key,first_key,last_key,direction,threshold,all_disabled){
-    let disabled=all_disabled||sortable_disabled(item);let ref_key=`${list_id}-item-${item.key}`;
-    let item_ref=element_ref(ref_key);let native=#{key:`${list_id}-${item.key}-sort`,list_id:list_id,collection_id:collection_id,
+fn sortable_item_node(ctx,list_id,collection_id,item,index,previous_key,next_key,first_key,last_key,direction,threshold,all_disabled){
+    let disabled=all_disabled||sortable_disabled(item);let row_key=`${list_id}-item-${item.key}`;
+    // A ref measures a presentation slot during prepaint. Gesture ownership,
+    // retained identity and reorder payloads still use the exact business key.
+    let item_ref=element_ref("item-"+index.to_string());let native=#{key:`${list_id}-${item.key}-sort`,list_id:list_id,collection_id:collection_id,
         item_key:item.key,previous_key:previous_key,next_key:next_key,first_key:first_key,last_key:last_key,
         direction:direction,threshold:threshold,disabled:disabled,item_ref:item_ref,on_reorder:Fn("sortable_commit")};
     let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${item.key}-interaction`)
@@ -116,7 +118,7 @@ fn sortable_item_node(ctx,list_id,collection_id,item,previous_key,next_key,first
     if disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
     row([handle,item.content.with_key(`${list_id}-${item.key}-content`)
         .with_style(ctx.component_style("content",style().min_width(px(0)).flex_grow()))])
-        .with_key(ref_key).with_ref(item_ref).with_style(resolved)
+        .with_key(row_key).with_ref(item_ref).with_style(resolved)
         .accessibility_role("listitem").accessibility_label(item.label)
 }
 
@@ -144,8 +146,6 @@ fn sortable_virtual_row(list_id,collection_id,label_key,direction,threshold,disa
 }
 
 fn render_Sortable(ctx, props) {
-    let list_ref=element_ref(`${props.key}-virtual`);
-    let collection_id=list_ref.scope;
     let has_items="items" in props&&props.items!=();let has_virtual="virtual_data" in props&&props.virtual_data!=();
     if has_items==has_virtual{throw "Sortable requires exactly one of items or virtual_data";}
     if has_virtual{
@@ -153,7 +153,12 @@ fn render_Sortable(ctx, props) {
         if ("height" in props&&props.height!=())==props.fill_height{
             throw "virtual Sortable requires exactly one of height or fill_height";
         }
-        let config=#{key:`${props.key}-virtual`,label:props.label,data:props.virtual_data,
+        // Virtual gestures pin a realization through this exact registered
+        // collection ID. Keep its key and the scope suffix in sync.
+        let virtual_key=`${props.key}-virtual`;
+        let list_ref=element_ref(virtual_key);
+        let collection_id=list_ref.scope;
+        let config=#{key:virtual_key,label:props.label,data:props.virtual_data,
             estimated_height:props.estimated_row_height};
         if "height" in props&&props.height!=(){config.height=props.height;}else{config.fill_height=true;}
         return virtual_collection(config,Fn("sortable_virtual_row").curry(props.key,collection_id,props.label_key,
@@ -161,6 +166,8 @@ fn render_Sortable(ctx, props) {
             .with_style(ctx.component_style("root",style().gap(theme_spacing("xs"))))
             .accessibility_role("list").accessibility_label(props.label);
     }
+    let list_ref=element_ref("sortable-list");
+    let collection_id=list_ref.scope;
     let count = props.items.len;
     let nodes = [];
     let seen = #{};
@@ -173,7 +180,7 @@ fn render_Sortable(ctx, props) {
             seen[item.key] = true;
             let previous_key = if index > 0 { props.items[index - 1].key } else { () };
             let next_key = if index + 1 < count { props.items[index + 1].key } else { () };
-            nodes.push(sortable_item_node(ctx,props.key,collection_id,item,previous_key,next_key,first_key,last_key,
+            nodes.push(sortable_item_node(ctx,props.key,collection_id,item,index,previous_key,next_key,first_key,last_key,
                 props.direction,props.threshold,props.disabled));
         }
     }

@@ -2,16 +2,12 @@
 {
   "id": "components/textarea",
   "export": "Textarea",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "assets": [],
-  "tokens": [
-    "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
-    "text.danger", "disabled", "selection", "accent", "metrics.field_pad", "metrics.multiline_pad", "spacing.xxs",
-    "radius.md", "typography.body", "typography.body_small", "typography.caption"
-  ],
+  "tokens": ["accent","border","control.border","danger","disabled","field.counter_full","field.invalid","field.placeholder","field.read_only_recipe","focus_ring","metrics.field_pad","metrics.multiline_pad","metrics.multiline_radius","radius.md","selection","spacing.xxs","surface_raised","text_muted","text_primary","typography.body","typography.body_small","typography.caption"],
   "environment": ["size", "density"]
 }
 */
@@ -22,15 +18,10 @@
 
 define_component(#{
     metadata: #{
-        id: "components/textarea", "export": "Textarea", version: "0.4.0",
+        id: "components/textarea", "export": "Textarea", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
-        tokens: [
-            "surface_raised", "border", "control.border", "danger", "focus_ring", "text_primary", "text_muted",
-            "text.danger", "disabled", "selection", "accent", "metrics.field_pad",
-            "metrics.multiline_pad", "spacing.xxs", "radius.md", "typography.body", "typography.body_small",
-            "typography.caption"
-        ],
+        tokens: ["accent","border","control.border","danger","disabled","field.counter_full","field.invalid","field.placeholder","field.read_only_recipe","focus_ring","metrics.field_pad","metrics.multiline_pad","metrics.multiline_radius","radius.md","selection","spacing.xxs","surface_raised","text_muted","text_primary","typography.body","typography.body_small","typography.caption"],
         environment: ["size", "density"], assets: [],
     },
     schema: #{
@@ -65,11 +56,15 @@ define_component(#{
                 doc: "Most visual (wrapped) lines the field grows to before it scrolls inside." },
             rows: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 1, max: 1000 } }, required: false, sensitive: false,
                 doc: "Fixed height in visual lines; the field scrolls inside it and stops auto-growing between `min_rows` and `max_rows`." },
+            min_viewport_height: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "Floor for the native scroll viewport after row sizing. Must resolve to positive pixels; editor padding and borders are outside it." },
+            max_viewport_height: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false,
+                doc: "Cap for the native scroll viewport after row sizing. Must resolve to positive pixels and not be less than the floor." },
             max_length: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 0, max: 1000000 } }, required: false, sensitive: false,
                 doc: "Most characters (grapheme clusters) typing or paste can reach; the controlled `value` must not exceed it." },
             show_count: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Shows the character count under the field, as `count / max_length` with a limit; it turns `text.danger` at the limit." },
+                doc: "Shows the grapheme count under the field. A full valid value uses the `limit` part, not error paint; controlled values above max_length are rejected." },
             autofocus: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Focuses the field once, when its editor first mounts; ignored while `disabled`." },
@@ -79,6 +74,10 @@ define_component(#{
                 doc: "With on_submit: `enter` submits and Shift+Enter inserts a native newline; `mod_enter` submits with Cmd+Enter on macOS or Ctrl+Enter elsewhere. Unset keeps Enter as a newline." },
             on_submit: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called with the full text without clearing it. Disabled, read-only and IME-composing fields never submit." },
+            alt_submit_key: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["alt_enter", "mod_enter"] } }, required: false, sensitive: false,
+                doc: "With on_alt_submit: Alt+Enter by default, or the platform modifier with Enter. Must differ from submit_key." },
+            on_alt_submit: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
+                doc: "Opt in to a separate submit callback; the same disabled, read-only and IME guards apply." },
             on_focus: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Called when the field gains keyboard focus." },
             on_blur: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
@@ -88,6 +87,7 @@ define_component(#{
         events: #{
             change: #{ payload: #{ type: "string" }, doc: "Emitted after each edit; the payload is the full new text." },
             submit: #{ payload: #{ type: "string" }, doc: "Emitted by the configured submit key with the full text; the caller owns clearing value." },
+            alt_submit: #{ payload: #{ type: "string" }, doc: "Emitted with the full text by the opted-in alternate shortcut; does not clear the value." },
             focus: #{ payload: #{ type: "null" }, doc: "Emitted when the field gains keyboard focus." },
             blur: #{ payload: #{ type: "null" }, doc: "Emitted when the field loses keyboard focus." },
         },
@@ -120,15 +120,17 @@ fn render_Textarea(ctx, props) {
         read_only: read_only,
         min_rows: if "min_rows" in props { props.min_rows } else { 3 },
         max_rows: if "max_rows" in props { props.max_rows } else { 8 },
-        typography: textarea_typography(size),
+        typography: "textarea",
         autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
         on_submit: optional_prop(props, "on_submit"),
+        on_alt_submit: optional_prop(props, "on_alt_submit"),
+        alt_submit_key: optional_prop(props, "alt_submit_key"),
         submit_key: optional_prop(props, "submit_key"),
         on_focus: optional_prop(props, "on_focus"),
         on_blur: optional_prop(props, "on_blur"),
         placeholder_style: ctx.component_style("placeholder",
-            style().text_color(theme_color("text_muted"))),
+            style().text_color(theme_color("field.placeholder"))),
         selection_style: ctx.component_style("selection",
             style().background(theme_color("selection"))),
         caret_style: ctx.component_style("caret",
@@ -136,22 +138,23 @@ fn render_Textarea(ctx, props) {
         scroll_style: ctx.component_style("scroll", style()),
     };
     if "rows" in props && props.rows != () { config.rows = props.rows; }
+    for name in ["min_viewport_height", "max_viewport_height"] {
+        let height = optional_prop(props, name);
+        if height != () { config[name] = height; }
+    }
     if "max_length" in props && props.max_length != () { config.max_length = props.max_length; }
 
-    let border = if error { theme_color("danger") } else { theme_color("control.border") };
+    let state_style = style();
+    if error { state_style = ctx.theme_style("field.invalid"); }
+    if read_only || disabled { state_style = state_style.merge(ctx.theme_style("field.read_only_recipe")); }
+    state_style = state_style.disabled(style().opacity(0.55));
     let editor = gpui_rhai::TextareaPrimitive(config)
         .with_style(ctx.component_style("editor",
-            // The text column matches Input: 2px frame plus the field padding.
             style()
                 .padding_x(theme_length("metrics.field_pad"))
                 .padding_y(theme_length("metrics.multiline_pad"))
-                .radius(theme_radius("md"))
-                .border(px(2))
-                .border_color(border)
-                .background(theme_color("surface_raised"))
-                .text_color(if read_only { theme_color("text_muted") } else { theme_color("text_primary") })
-                .focus(style().border_color(theme_color("focus_ring")))
-                .disabled(style().text_color(theme_color("disabled")).opacity(0.72))
+                .radius(theme_length("metrics.multiline_radius"))
+                .text_color(theme_color("text_primary")), state_style
         ))
         .disabled(disabled)
         .accessibility_role("text_field")
@@ -174,13 +177,10 @@ fn render_Textarea(ctx, props) {
             `${ctx.format_number(count)} / ${ctx.format_number(max)}`
         };
         let reached = max != () && count >= max;
-        let counter_style = ctx.component_style("counter",
-            style().typography("caption")
-                .text_color(theme_color("text_muted")));
-        let counter_style = if reached {
-            ctx.component_style("limit", counter_style.text_color(theme_color("text.danger")))
-        } else { counter_style };
-        children.push(row([text(label)]).with_style(counter_style.justify_end()));
+        let counter_style = ctx.component_style(if reached {["counter","limit"]}else{["counter"]},
+            style().typography("caption").text_color(theme_color("field.placeholder")),
+            if reached {style().text_color(theme_color("field.counter_full"))}else{style()});
+        children.push(row([text(label)]).with_key("counter").with_style(counter_style.justify_end()));
     }
     let root = column(children)
         .with_key(props.key)

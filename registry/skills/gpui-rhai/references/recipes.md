@@ -29,7 +29,7 @@ fn state_schema() {
                 schema: #{ type: "array", max_items: 1, items: #{ type: "string" } },
                 "default": #{
                     type: "array",
-                    value: [#{ type: "string", value: "default-dark" }]
+                    value: [#{ type: "string", value: "modern-dark" }]
                 },
             },
             theme_open: #{
@@ -69,7 +69,11 @@ fn choose_theme(ctx, values) {
     ctx.set_state("theme_open", false);
     if values.len == 0 { return; }
     let choice = values[0];
-    if choice == "default-light" { ctx.set_theme("Default", "Light"); }
+    if choice == "modern-light" { ctx.set_theme("Modern", "Light"); }
+    else if choice == "modern-dark" { ctx.set_theme("Modern", "Dark"); }
+    else if choice == "clean-light" { ctx.set_theme("Clean", "Light"); }
+    else if choice == "clean-dark" { ctx.set_theme("Clean", "Dark"); }
+    else if choice == "default-light" { ctx.set_theme("Default", "Light"); }
     else if choice == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if choice == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if choice == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }
@@ -90,7 +94,7 @@ fn set_theme_open(ctx, open) { ctx.set_state("theme_open", open); }
 fn set_theme_query(ctx, query) { ctx.set_state("theme_query", query); }
 fn set_help_open(ctx, open) { ctx.set_state("help_open", open); }
 fn open_help(ctx, payload) { ctx.set_state("help_open", true); }
-fn reset_theme(ctx, payload) { choose_theme(ctx, ["default-dark"]); }
+fn reset_theme(ctx, payload) { choose_theme(ctx, ["modern-dark"]); }
 fn set_language(ctx, values) {
     if values.len == 0 { return; }
     ctx.set_locale(values[0]);
@@ -101,12 +105,16 @@ fn set_density(ctx, value) { ctx.set_state("density", value); }
 fn set_expanded(ctx, values) { ctx.set_state("expanded", values); }
 
 fn init(ctx) {
-    choose_theme(ctx, ["default-dark"]);
+    choose_theme(ctx, ["modern-dark"]);
     ctx.set_locale("en");
 }
 
 fn theme_options() {
     [
+        #{ value: "modern-light", label: "Modern Light", keywords: ["light", "design"] },
+        #{ value: "modern-dark", label: "Modern Dark", keywords: ["dark", "design"] },
+        #{ value: "clean-light", label: "Clean Light", keywords: ["light", "design"] },
+        #{ value: "clean-dark", label: "Clean Dark", keywords: ["dark", "design"] },
         #{ value: "default-light", label: "Default Light", keywords: ["light"] },
         #{ value: "default-dark", label: "Default Dark", keywords: ["dark"] },
         #{ value: "tokyo-night", label: "Tokyo Night", keywords: ["dark", "blue"] },
@@ -272,8 +280,12 @@ fn confirm(ctx, payload) {
 fn dismiss_toast(ctx, id) { ctx.set_state("toast_visible", false); }
 
 fn init(ctx) {
-    let theme = "default-dark";
-    if theme == "default-light" { ctx.set_theme("Default", "Light"); }
+    let theme = "modern-dark";
+    if theme == "modern-light" { ctx.set_theme("Modern", "Light"); }
+    else if theme == "modern-dark" { ctx.set_theme("Modern", "Dark"); }
+    else if theme == "clean-light" { ctx.set_theme("Clean", "Light"); }
+    else if theme == "clean-dark" { ctx.set_theme("Clean", "Dark"); }
+    else if theme == "default-light" { ctx.set_theme("Default", "Light"); }
     else if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if theme == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if theme == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }
@@ -507,8 +519,12 @@ fn toggle_group_rows(ctx, group) {
 }
 
 fn init(ctx) {
-    let theme = "default-dark";
-    if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
+    let theme = "modern-dark";
+    if theme == "modern-light" { ctx.set_theme("Modern", "Light"); }
+    else if theme == "modern-dark" { ctx.set_theme("Modern", "Dark"); }
+    else if theme == "clean-light" { ctx.set_theme("Clean", "Light"); }
+    else if theme == "clean-dark" { ctx.set_theme("Clean", "Dark"); }
+    else if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if theme == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if theme == "catppuccin-mocha" { ctx.set_theme("Catppuccin", "Mocha"); }
     else { ctx.set_theme("Default", "Light"); }
@@ -614,8 +630,12 @@ fn set_profile_open(ctx, open) { ctx.set_state("profile_open", open); }
 fn ignore(ctx, value) { () }
 
 fn init(ctx) {
-    let theme = "default-dark";
-    if theme == "default-light" { ctx.set_theme("Default", "Light"); }
+    let theme = "modern-dark";
+    if theme == "modern-light" { ctx.set_theme("Modern", "Light"); }
+    else if theme == "modern-dark" { ctx.set_theme("Modern", "Dark"); }
+    else if theme == "clean-light" { ctx.set_theme("Clean", "Light"); }
+    else if theme == "clean-dark" { ctx.set_theme("Clean", "Dark"); }
+    else if theme == "default-light" { ctx.set_theme("Default", "Light"); }
     else if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if theme == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if theme == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }

@@ -258,6 +258,7 @@ const NAMED_FROM_CONTENT: &[&str] = &[
     "columnheader",
     "gridcell",
     "heading",
+    "link",
     "menuitem",
     "option",
     "radio",
@@ -283,7 +284,7 @@ fn content_name(tree: &RetainedUiTree, node: &RetainedNode) -> String {
         let Some(child) = tree.node(link.node()) else {
             continue;
         };
-        if child.invisible() {
+        if child.invisible() || bool_attribute(child, "accessibility_hidden") {
             continue;
         }
         if let Some(label) = string_attribute(child, "label") {
@@ -318,7 +319,7 @@ fn visit_retained(
     // As CSS `visibility: hidden`: an invisible subtree keeps its place in
     // layout (a width probe, for instance) but is not there for assistive
     // technology or automation.
-    if retained.invisible() {
+    if retained.invisible() || bool_attribute(retained, "accessibility_hidden") {
         return Ok(());
     }
     // A node is disabled when it or any retained ancestor is disabled.
@@ -431,7 +432,12 @@ fn semantic_node_from_attributes(
         parent,
         role,
         name,
-        description: referenced_text(node, "described_by", labels).unwrap_or_default(),
+        description: string_attribute(node, "described_by")
+            // A declared relationship takes precedence even when its resolved
+            // text is empty; do not resurrect a lower-priority description.
+            .map(|_| referenced_text(node, "described_by", labels).unwrap_or_default())
+            .or_else(|| string_attribute(node, "description"))
+            .unwrap_or_default(),
         semantic_id: string_attribute(node, "semantic_id"),
         test_id: string_attribute(node, "test_id"),
         value: node.attributes().get("value").cloned(),
@@ -528,6 +534,7 @@ pub(crate) fn native_role(role: &str) -> Result<Option<gpui::Role>, Accessibilit
         // direct value, populated by `apply_native_semantics`, rather than a
         // value-less TextRun that native consumers cannot traverse safely.
         "label" | "text" => Some(Role::Label),
+        "link" => Some(Role::Link),
         "list" => Some(Role::List),
         "listbox" => Some(Role::ListBox),
         "listitem" => Some(Role::ListItem),
@@ -544,6 +551,7 @@ pub(crate) fn native_role(role: &str) -> Result<Option<gpui::Role>, Accessibilit
         "rowheader" => Some(Role::RowHeader),
         "separator" => Some(Role::Splitter),
         "slider" => Some(Role::Slider),
+        "spinbutton" => Some(Role::SpinButton),
         "status" | "statusbar" => Some(Role::Status),
         "switch" => Some(Role::Switch),
         "tab" => Some(Role::Tab),
@@ -641,6 +649,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decorative_subtrees_are_not_independent_semantics_or_implicit_names() {
+        for hidden in [false, true] {
+            let mut retained = RetainedUiTree::new();
+            retained
+                .reconcile(
+                    crate::UiNode::row(vec![
+                        crate::UiNode::text("Open"),
+                        crate::UiNode::row(vec![crate::UiNode::text("Command K")])
+                            .with_attribute("accessibility_hidden", UiValue::Bool(hidden)),
+                    ])
+                    .with_attribute("role", UiValue::String("button".into())),
+                )
+                .unwrap();
+            let tree = AccessibilityTree::build(&retained).unwrap();
+            assert_eq!(
+                tree.nodes()
+                    .find(|node| node.role == "button")
+                    .unwrap()
+                    .name,
+                if hidden { "Open" } else { "Open Command K" }
+            );
+            assert_eq!(tree.nodes().any(|node| node.name == "Command K"), !hidden);
+            assert_eq!(
+                retained.len(),
+                4,
+                "semantic hiding must not discard the visual subtree"
+            );
+        }
+    }
+
+    #[test]
     fn committed_frame_rejects_unknown_native_roles_before_presentation() {
         let mut retained = RetainedUiTree::new();
         retained
@@ -683,6 +722,34 @@ mod tests {
             tree.find_by_semantic_id("project-label").unwrap().name,
             "Project name"
         );
+    }
+
+    #[test]
+    fn direct_description_preserves_the_name_and_defers_to_declared_relationships() {
+        for (relationship, expected) in [
+            (None, "Auxiliary"),
+            (Some("details"), "Related"),
+            (Some("missing"), ""),
+            (Some(""), ""),
+        ] {
+            let details = crate::UiNode::text("Related")
+                .with_attribute("semantic_id", UiValue::String("details".into()));
+            let mut button = crate::UiNode::text("Visible content")
+                .with_attribute("role", UiValue::String("button".into()))
+                .with_attribute("label", UiValue::String("Run".into()))
+                .with_attribute("description", UiValue::String("Auxiliary".into()));
+            if let Some(ids) = relationship {
+                button = button.with_attribute("described_by", UiValue::String(ids.into()));
+            }
+            let mut retained = RetainedUiTree::new();
+            retained
+                .reconcile(crate::UiNode::column(vec![details, button]))
+                .unwrap();
+            let tree =
+                AccessibilityTree::from_retained(&retained, &GeometryRegistry::new()).unwrap();
+            let button = tree.find_by_role_and_name("button", "Run").next().unwrap();
+            assert_eq!(button.description, expected, "{relationship:?}");
+        }
     }
 
     #[test]

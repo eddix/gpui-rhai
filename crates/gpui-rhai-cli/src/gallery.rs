@@ -22,6 +22,15 @@ use gpui_rhai_registry::{
 
 pub const DEFAULT_STORY: &str = "components/button";
 
+pub(crate) fn gallery_fonts() -> Result<Vec<gpui_rhai::FontSource>, String> {
+    gpui_rhai_registry::BUNDLED_FONT_SOURCES
+        .iter()
+        .map(|&(name, bytes)| {
+            gpui_rhai::FontSource::new(name, bytes.to_vec()).map_err(|error| error.to_string())
+        })
+        .collect()
+}
+
 const COMPONENT_CATALOG_COLOR_TOKENS: &[&str] = &[
     "surface",
     "surface_raised",
@@ -57,7 +66,7 @@ impl Default for GalleryLaunch {
         Self {
             story: DEFAULT_STORY.to_owned(),
             case: "basic".to_owned(),
-            theme: "default-dark".to_owned(),
+            theme: "modern-dark".to_owned(),
             locale: "en".to_owned(),
             motion: gpui_rhai::MotionPreference::Normal,
         }
@@ -199,7 +208,6 @@ fn materialize_story_source(
             ("__STATUS__", json("Component Catalog")?),
             ("__PREVIEW_FAMILY__", json(&selected.family)?),
             ("__PREVIEW_VARIANT__", json(&selected.name)?),
-            ("__GALLERY_THEME__", json(&launch.theme.replace('-', "_"))?),
             ("__GALLERY_CATEGORY__", json(category)?),
         ] {
             source = source.replace(placeholder, &value);
@@ -575,6 +583,12 @@ struct ChartCatalogFixture {
     stream: NativeChartData,
 }
 
+pub(crate) fn gallery_chart_fixture() -> Result<impl ScriptViewExtension, String> {
+    Ok(ChartCatalogFixture {
+        stream: chart_catalog_stream(128)?,
+    })
+}
+
 impl ScriptViewExtension for ChartCatalogFixture {
     fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
         let map = ChartGeoMap::from_geojson(
@@ -774,6 +788,7 @@ fn build_view(
     };
     let entry = ModuleId::parse(story.source_module).map_err(|error| error.to_string())?;
     let mut view = ScriptView::sources(entry.clone(), story_scripts(story, source)?, primary_theme)
+        .font_sources(gallery_fonts()?)
         .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources(
             BUNDLED_THEME_SOURCES
@@ -863,6 +878,7 @@ pub fn host_resident_view(launch: &GalleryLaunch) -> Result<ScriptView, String> 
     modules.insert(entry.clone(), source);
     Ok(
         ScriptView::sources(entry, EmbeddedScriptSource::new(modules), primary_theme)
+            .font_sources(gallery_fonts()?)
             .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
             .theme_sources(
                 BUNDLED_THEME_SOURCES

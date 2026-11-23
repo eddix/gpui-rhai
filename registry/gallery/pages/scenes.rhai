@@ -25,6 +25,7 @@ import "components/tag" as tag;
 import "components/badge" as badge;
 import "components/toggle" as toggle;
 import "components/pagination" as pagination;
+import "gallery/document_anchors_demo" as document_anchors;
 
 fn pages() {
     [
@@ -32,6 +33,7 @@ fn pages() {
         #{ id: "scene.data", title: "Data browser", group: "Scenes" },
         #{ id: "scene.form", title: "Form", group: "Scenes" },
         #{ id: "scene.settings", title: "Settings", group: "Scenes" },
+        #{ id: "scene.document_anchors", title: "Document anchors", group: "Scenes" },
     ]
 }
 
@@ -40,6 +42,9 @@ fn view(ctx, h, v, id) {
     else if id == "scene.data" { data_browser(h, v) }
     else if id == "scene.form" { form(h, v) }
     else if id == "scene.settings" { settings(h, v) }
+    else if id == "scene.document_anchors" { kit::page(h,v,id,"Document anchors","A document's accepted text, review cursor and comment share the same native text layout.",[
+        kit::sec("Native text anchors",document_anchors::DocumentAnchorsDemo(#{key:"anchors-demo"})),
+    ]) }
     else { () }
 }
 
@@ -102,7 +107,7 @@ fn operations(h, v) {
         filters: [input::Input(#{ key: "ops-filter", label: "Filter hosts", value: filter, placeholder: "Filter hosts",
             on_change: kit::store(h, "ops.filter") }).with_style(style().width(px(220)))],
         actions: [button::Button(#{ key: "ops-export", text: "Export", variant: "ghost", on_click: h.noop }),
-            button::Button(#{ key: "ops-refresh", text: "Refresh", on_click: h.noop })],
+            button::Button(#{ key: "ops-refresh", text: "Refresh", variant: "secondary", on_click: h.noop })],
         primary: button::Button(#{ key: "ops-deploy", text: "Deploy", variant: "primary", on_click: h.noop }) });
     let figures = stat::stats([#{ label: "Hosts", value: "3" }, #{ label: "Healthy", value: "2" },
         #{ label: "Needs attention", value: "1", tone: "warning", delta: "edge-03" }]);

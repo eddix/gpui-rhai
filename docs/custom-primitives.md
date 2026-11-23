@@ -21,6 +21,23 @@ and typography roles. It changes on the next render after a live theme switch.
 Use `PrimitiveTheme::typography(role)` for native text shaping so custom
 primitives share the same family, fallback stack, size, line height, and weight.
 
+For an inheritable native editor, put its default role or appearance in the
+optional `PrimitiveHandler::style_defaults(&PrimitiveProps)` hook instead of
+forcing those properties inside its Entity. The renderer merges these pure
+defaults below the hosting UiNode's authored styles, then resolves symbolic
+tokens in the node's actual theme/environment scope. Props include inherited
+disabled state. Errors and panics use the normal primitive boundary fallback.
+The hook must not mount resources, mutate native state or perform I/O.
+
+An editor then reads `window.text_style()` and `window.line_height()` while
+measuring and shaping. Retain the resulting presented layout for caret,
+selection, hit testing and IME geometry, rather than reading a second cached
+font configuration. Input and Textarea share this path. Do not apply disabled
+opacity a second time inside the Entity: it already belongs to the styled
+hosting node. A compound native control may explicitly style its own search
+chrome before adding the editor, as CodeViewer/DiffViewer do, without changing
+the document's independent code typography.
+
 ```rust
 engine.register_primitive(
     PrimitiveDescriptor {
@@ -174,6 +191,15 @@ backstop also releases it when a window goes away. The scrollbar never takes
 focus or claims Home/End: keyboard behavior belongs to the viewport/component.
 Wheel input over its track drives that viewport, not an enclosing scroller.
 
+For a transformed viewport, pointer hit testing and thumb travel use the
+same presented track. The grab offset is preserved, including on release.
+If the source presents a different track, transform or scroll range during
+a drag, the next pointer event ends the capture without sending a stale
+offset; previous native movement remains applied. Wheel hit testing uses
+each participating viewport's own presented geometry. Transforms do not
+rotate or magnify wheel deltas; the existing wheel-axis policy is independent
+of hit testing.
+
 Track wheel routing consumes the actual clamped movement per axis, then sends
 only residual delta through the SDK ancestor chain. Unsupported axes and fully
 unconsumed boundary input bubble normally. For a native hierarchy, add its
@@ -190,14 +216,21 @@ For a native viewport whose automatic GPUI wheel listener would otherwise
 reapply the same delta to an ancestor, opt in with
 `element_with_wheel_routing(id, source_handle, spec)` in place of `element`.
 Keep that `ScrollbarSourceHandle` alongside the native viewport and pass the
-same retained handle to each child's `with_scroll_parent`. The coordinator
+same retained handle to each child's `with_scroll_parent`. An explicit
+identified ancestor must present that handle through its scrollbar factory to
+receive residual movement, but it may use ordinary `element` to do so without
+claiming wheel input over its body. An anonymous raw Host source has no identity
+or transform metadata and must report bounds in the window input plane.
+Inherited SDK scroll owners use their committed layout-to-window geometry.
+The coordinator
 selects the innermost clipped, unoccluded registered viewport before GPUI's
 automatic scrolling. Explicit native parent links take precedence over overlay
 paint order; unrelated overlapping regions use front-to-back paint priority.
 The selected viewport applies the existing per-axis/residual algorithm once;
 fully unconsumed input still propagates. A normal hitbox leaves click,
 selection, focus and keyboard ownership unchanged. Registration lasts only for
-the current input event: replayed capture listeners register its regions, then
+the current input event: replayed capture listeners register eligible
+track, body, and residual-only regions, then
 the first Host bubble boundary chooses and drains all participating Hosts'
 regions before native automatic bubbling. A short-lived App-owned per-window
 input collection joins multiple overlapping Hosts; deferred epoch-checked

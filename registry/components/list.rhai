@@ -7,7 +7,7 @@
   "dependencies": ["components/badge", "components/selectable_list"],
   "capabilities": {},
   "tokens": [
-    "table.selection", "surface_hover", "focus_ring", "border", "text_primary",
+    "collection.selection", "surface_hover", "focus_ring", "border", "text_primary",
     "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
     "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover", "radius.md"
   ],
@@ -36,7 +36,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge", "components/selectable_list"], capabilities: #{},
         tokens: [
-            "table.selection", "surface_hover", "focus_ring", "border", "text_primary",
+            "collection.selection", "surface_hover", "focus_ring", "border", "text_primary",
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
             "typography.body", "typography.caption", "scrollbar.thumb", "scrollbar.thumb_hover", "radius.md"
         ],
@@ -194,7 +194,7 @@ fn render_list_row(active, below, dividers, badge_slot, context, total, mode, se
     } else if badge != () { children.push(badge); }
     let title = text(item.title).with_key(`${payload.key}-title`)
         .with_style(ctx.component_style("title", style().min_width(px(0)).whitespace_nowrap()
-            .text_ellipsis().typography("body")
+            .text_ellipsis().typography("body"), style()
             .text_color(if item.disabled { theme_color("disabled") } else { theme_color("text_primary") })));
     let label = item.title;
     // On the selection tint the supporting text takes the title's color: text_muted is
@@ -207,7 +207,7 @@ fn render_list_row(active, below, dividers, badge_slot, context, total, mode, se
         // line box; below it, it is a caption line.
         let secondary = text(item.secondary).with_key(`${payload.key}-secondary`)
             .with_style(ctx.component_style("secondary", style().min_width(px(0)).whitespace_nowrap()
-                .text_ellipsis().typography(if below { "caption" } else { "body" })
+                .text_ellipsis(), style().typography(if below { "caption" } else { "body" })
                 .text_color(supporting)));
         if below {
             children.push(column([title, secondary]).with_key(`${payload.key}-text`)
@@ -226,11 +226,11 @@ fn render_list_row(active, below, dividers, badge_slot, context, total, mode, se
         label = `${label}, ${item.meta}`;
         children.push(text(item.meta).with_key(`${payload.key}-meta`)
             .with_style(ctx.component_style("meta", style().flex_shrink(false).whitespace_nowrap()
-                .typography("body").font_feature("tnum", 1).text_color(supporting))));
+                .typography("body").font_feature("tnum", 1), style().text_color(supporting))));
     }
     if item.has_children {
         children.push(text(if is_rtl(ctx) { "‹" } else { "›" })
-            .with_style(style().flex_shrink(false).text_color(theme_color("text_muted"))));
+            .with_style(style().flex_shrink(false).text_color(supporting)));
     }
     selectable_list::row_frame(ctx, item, payload, children, label, #{ dividers: dividers, below: below,
         chrome: true, context: context, mode: mode, selected: selected, focus: focus, total: total })

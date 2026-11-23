@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "table.selection", "surface_hover", "focus_ring", "border", "text_muted", "metrics.row",
+    "collection.selection", "surface_hover", "focus_ring", "border", "text_muted", "metrics.row",
     "metrics.inset", "spacing.xs", "spacing.sm", "typography.body", "scrollbar.thumb",
     "scrollbar.thumb_hover", "radius.md"
   ],
@@ -38,7 +38,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
-            "table.selection", "surface_hover", "focus_ring", "border", "text_muted", "metrics.row",
+            "collection.selection", "surface_hover", "focus_ring", "border", "text_muted", "metrics.row",
             "metrics.inset", "spacing.xs", "spacing.sm", "typography.body", "scrollbar.thumb",
             "scrollbar.thumb_hover", "radius.md"
         ],
@@ -240,7 +240,7 @@ fn context_keys(node, target) {
 // the row's accessibility and its pointer handlers. `opts`: dividers, below (the row takes its
 // content's height from metrics.row up), chrome, context, mode, selected, focus, total.
 fn row_frame(ctx, item, payload, children, label, opts) {
-    // Selection is the table selection tint; while the list has keyboard focus the selected
+    // Selection is the collection's tint; while the list has keyboard focus the selected
     // row also shows the focus frame. Rows between dividers fill the band edge to edge, like
     // Table rows; without dividers a row is a pressable block with a control's corners,
     // spacing.xs in from the list's sides so the corners stay clear of its edge.
@@ -259,7 +259,7 @@ fn row_frame(ctx, item, payload, children, label, opts) {
     if opts.chrome {
         if spaced { base = base.gap(theme_spacing("sm")); }
         base = base.padding_x(theme_length("metrics.inset")).radius(corner)
-            .background(if item.selected { theme_color("table.selection") } else { rgba(0x00000000) });
+            .background(if item.selected { theme_color("collection.selection") } else { rgba(0x00000000) });
         base = if dividers { base.width(relative(1.0)) } else { base.margin_x(theme_spacing("xs")) };
         base = if opts.below { base.padding_y(theme_spacing("xs")).min_height(theme_length("metrics.row")) }
             else { base.height(theme_length("metrics.row")) };
@@ -270,7 +270,7 @@ fn row_frame(ctx, item, payload, children, label, opts) {
     }
     let node = row(children).with_key(payload.key);
     node = node
-        .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
+        .with_style(ctx.component_style(if item.selected { ["row","row_selected"] } else { ["row"] }, base))
         .disabled(item.disabled)
         .accessibility_role(if opts.mode != "none" { "option" } else { "listitem" })
         .accessibility_label(label)

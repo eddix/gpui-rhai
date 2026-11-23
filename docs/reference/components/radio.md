@@ -15,10 +15,12 @@ radio::Radio(#{ value: "team", selected: true, label: "Team", on_select: Fn("sel
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `appearance` | `"indicator"` or `"chip"` | `"indicator"` | The ordinary radio mark or a chip without a separate mark. Both retain radio semantics and controlled selection. |
 | `disabled` | bool | `false` | Blocks clicks and shows the disabled style. |
 | `focus_mark` | bool | `true` | Whether focus shows the ring on this option's circle; RadioGroup sets it only on its keyboard cursor. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Text beside the circle; also the accessible name. |
+| `leading` | node or `()` | — | Decorative element before the label. The label remains the only accessible name. |
 | `on_select` | callback or `()` | — | Called with `value` when the option is clicked, even if it is already selected. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `selected` | bool | required | Whether this is the chosen option; the caller derives it from the value it stores. |
@@ -33,9 +35,9 @@ radio::Radio(#{ value: "team", selected: true, label: "Team", on_select: Fn("sel
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `indicator`, `label`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `chip`, `chip_selected`, `control`, `dot`, `indicator`, `label`, `root`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.mark`, `spacing.sm`, `surface_hover`, `surface_raised`, `text_primary`, `typography.control`
+- Tokens: `accent`, `border`, `choice.checked`, `choice.fill`, `choice.on_fill`, `choice.unchecked`, `control.border`, `disabled`, `focus_ring`, `metrics.choice_line`, `metrics.control`, `metrics.mark`, `space.spacing_unit`, `space.unit`, `spacing.sm`, `surface_hover`, `surface_raised`, `text_primary`, `typography.control`
 - Environment: `density`, `size`

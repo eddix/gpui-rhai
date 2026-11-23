@@ -58,13 +58,23 @@ fn button_page(h, v) {
         btn(h, "btn-success", "Approve", "success"), btn(h, "btn-warning", "Force sync", "warning"),
         btn(h, "btn-danger", "Delete", "danger"),
     ]);
-    let states = kit::line([
+    let states = kit::variants([
         button::Button(#{ key: "btn-disabled", text: "Disabled", disabled: true }),
         button::Button(#{ key: "btn-loading", text: "Save", loading: true, loading_text: "Saving…" }),
         button::Button(#{ key: "btn-shortcut", text: "Search", shortcut: "⌘K", on_click: h.noop }),
         button::Button(#{ key: "btn-cjk", text: "部署到生产", on_click: h.noop }),
     ]);
+    let loading = kit::val(v, "button.live_loading", false);
+    let live = kit::line([
+        button::Button(#{key:"btn-live-query",text:"Run query",prefix:icon("search"),
+            loading:loading,loading_text:"Querying…",on_click:kit::put(h,"button.live_loading",true)}),
+        button::Button(#{key:"btn-live-complete",text:"Finish query",variant:"secondary",disabled:!loading,
+            on_click:kit::put(h,"button.live_loading",false)}),
+        text(if loading { "Query is running" } else { "Query is idle" }).with_style(style().typography("caption"))
+            .accessibility_role("status").accessibility_label(if loading { "Query is running" } else { "Query is idle" }),
+    ]);
     kit::page(h, v, "button", "Button", "A desktop action: a block with a centered label. One solid button per group.", [
+        kit::sec("Controlled loading", kit::pile([live,kit::note("Run, switch design or appearance, then finish. The prefix is replaced in place; the native clock owns rotation.")])),
         kit::sec("Variants", kit::pile([variants, kit::note("Verdict buttons are the group's solid action."), verdicts])
             .audit_allow(["multiple-solid-actions"])),
         kit::sec("Sizes", button_sizes(h, "sizes")),
@@ -86,7 +96,21 @@ fn icon_buttons(h, suffix) {
 }
 
 fn icon_button_page(h, v) {
+    let searching = kit::val(v, "icon_button.searching", false);
+    let details = kit::val(v, "icon_button.details", false);
+    let live = kit::line([
+        icon_button::IconButton(#{key:"ib-live-search",icon:icon("search"),label:"Search records",loading:searching,
+            on_click:kit::put(h,"icon_button.searching",true)}),
+        icon_button::IconButton(#{key:"ib-live-details",icon:icon("info"),label:"Toggle details",selected:details,
+            on_click:kit::put(h,"icon_button.details",!details)}),
+        button::Button(#{key:"ib-live-finish",text:"Finish icon search",variant:"secondary",disabled:!searching,
+            on_click:kit::put(h,"icon_button.searching",false)}),
+        text(if searching {"Search running"}else{"Search idle"}).test_id("icon-button-search-status")
+            .with_style(style().typography("caption")).accessibility_role("status"),
+    ]);
     kit::page(h, v, "icon_button", "IconButton", "A square action target with one icon and an accessible label.", [
+        kit::sec("Controlled actions",kit::pile([live,
+            kit::note(if details {"Panel details are visible"}else{"Panel details are hidden"})])),
         kit::sec("Variants", icon_buttons(h, "variants")),
         kit::sec("Density", kit::densities(icon_buttons(h, "c"), icon_buttons(h, "k"))),
         kit::sec("States", kit::line([
@@ -117,7 +141,7 @@ fn toggle_group_page(h, v) {
     let single = kit::val(v, "tgroup.view", ["list"]);
     let multi = kit::val(v, "tgroup.format", ["b"]);
     let format_items = [#{ value: "b", label: "Bold" }, #{ value: "i", label: "Italic" }, #{ value: "u", label: "Underline" }];
-    kit::page(h, v, "toggle_group", "ToggleGroup", "Segments joined in one frame. Arrows move between segments; Space presses.", [
+    kit::page(h, v, "toggle_group", "ToggleGroup", "A tonal track with stable-width selection surfaces. Arrows move between segments; Space presses.", [
         kit::sec("Single", kit::line([toggle_group::ToggleGroup(#{ key: "tgroup-view", label: "View", values: single,
             items: view_items(), on_change: kit::store(h, "tgroup.view") })])),
         kit::sec("Multiple", kit::line([toggle_group::ToggleGroup(#{ key: "tgroup-format", label: "Format", mode: "multiple",
@@ -131,7 +155,7 @@ fn toggle_group_page(h, v) {
 }
 
 fn button_group_page(h, v) {
-    kit::page(h, v, "button_group", "ButtonGroup", "Related actions joined with a 2px seam; each keeps its own focus frame.", [
+    kit::page(h, v, "button_group", "ButtonGroup", "Related actions share outer corners; each keeps an unclipped inset focus cue.", [
         kit::sec("Variants", kit::line([
             button_group::ButtonGroup(#{ label: "Pager", buttons: [btn(h, "bg-prev", "Previous", "secondary"),
                 btn(h, "bg-next", "Next", "secondary")] }),
@@ -142,19 +166,25 @@ fn button_group_page(h, v) {
 }
 
 fn badge_page(h, v) {
-    kit::page(h, v, "badge", "Badge", "A read-only status: a square lamp and a label. Strong emphasis only when action is needed.", [
+    kit::page(h, v, "badge", "Badge", "Paired soft surfaces and text, with optional dots, icons, live motion and numeric counts.", [
         kit::sec("Subtle", kit::line([
             badge::Badge(#{ text: "Idle" }), badge::Badge(#{ text: "Queued", variant: "accent" }),
             badge::Badge(#{ text: "Healthy", variant: "success" }), badge::Badge(#{ text: "Degraded", variant: "warning" }),
-            badge::Badge(#{ text: "Down", variant: "danger" }), badge::Badge(#{ text: "运行中", variant: "success" }),
+            badge::Badge(#{ text: "Down", variant: "danger" }), badge::Badge(#{ text: "Beta", variant: "purple" }),
+            badge::Badge(#{ text: "运行中", variant: "info", live: true }),
         ])),
         kit::sec("Strong", kit::line([
             badge::Badge(#{ text: "Needs review", variant: "warning", emphasis: "strong" }),
             badge::Badge(#{ text: "Blocked", variant: "danger", emphasis: "strong" }),
             badge::Badge(#{ text: "Draft", emphasis: "strong" }),
         ])),
-        kit::sec("Sizes", kit::line([badge::Badge(#{ text: "Medium" }), badge::Badge(#{ text: "Small", size: "sm" }),
+        kit::sec("Sizes", kit::line([badge::Badge(#{ text: "Medium",size:"md" }), badge::Badge(#{ text: "Small", size: "sm" }),
             badge::Badge(#{ text: "Text only", dot: false })])),
+        kit::sec("Leading marks and counts",kit::line([
+            badge::Badge(#{text:"Active",variant:"success",dot:true}),
+            badge::Badge(#{text:"Review",variant:"warning",icon:image_source(asset("app/icons/warning"))}),
+            badge::Badge(#{count:3,variant:"info"}),badge::Badge(#{count:123,variant:"purple"}),
+        ])),
     ])
 }
 
@@ -162,7 +192,7 @@ fn tag_page(h, v) {
     let removed = kit::val(v, "tag.removed", ()) != ();
     let removable = if removed { kit::note("Removed.") }
         else { tag::Tag(#{ text: "可移除", closable: true, on_close: kit::store(h, "tag.removed") }) };
-    kit::page(h, v, "tag", "Tag", "A category label on a flat tape, optionally with a facet segment.", [
+    kit::page(h, v, "tag", "Tag", "A removable chip with an optional paired-tone facet; text and fill stay readable together.", [
         kit::sec("Categories", kit::line([
             tag::Tag(#{ text: "frontend" }), tag::Tag(#{ text: "accent", variant: "accent" }),
             tag::Tag(#{ text: "success", variant: "success" }), tag::Tag(#{ text: "warning", variant: "warning" }),
@@ -171,16 +201,28 @@ fn tag_page(h, v) {
         kit::sec("Facets", kit::line([
             tag::Tag(#{ facet: "team", text: "infra" }), tag::Tag(#{ facet: "env", text: "staging", variant: "warning" }),
             tag::Tag(#{ facet: "region", text: "us-east", variant: "accent" }),
+            tag::Tag(#{ facet: "lang", text: "rust", variant: "success" }),
+            tag::Tag(#{ facet: "scope", text: "private", variant: "danger" }),
         ])),
-        kit::sec("States", kit::line([removable, tag::Tag(#{ text: "disabled", disabled: true })])),
+        kit::sec("States", kit::line([removable, tag::Tag(#{ text: "disabled", disabled: true,
+            closable: true, on_close: h.noop })])),
     ])
 }
 
 fn kbd_page(h, v) {
-    kit::page(h, v, "kbd", "Kbd", "Key legends: framed keycaps, or an inline legend inside menus and buttons.", [
-        kit::sec("Keycaps", kit::line([kbd::Kbd(#{ text: "Esc" }), kbd::Kbd(#{ text: "↵" }),
-            kbd::Kbd(#{ keys: ["⌘", "⇧", "P"], label: "Command Shift P" })])),
+    kit::page(h, v, "kbd", "Kbd", "One key or a whole combination in one chip, with platform glyphs and readable key names.", [
+        kit::sec("Named keys", kit::line([kbd::Kbd(#{ keys: "esc" }), kbd::Kbd(#{ keys: "enter" }),
+            kbd::Kbd(#{ keys: "tab" }),kbd::Kbd(#{ keys: "backspace" }),kbd::Kbd(#{ keys: "up" }),
+            kbd::Kbd(#{ keys: "?" })])),
+        kit::sec("Platform combinations", kit::line([
+            kbd::Kbd(#{ keys: ["mod","shift","p"], platform: "mac" }),
+            kbd::Kbd(#{ keys: ["mod","shift","p"], platform: "other" })])),
+        kit::sec("Sizes", kit::line([kbd::Kbd(#{ keys: ["mod","k"], size:"sm" }),
+            kbd::Kbd(#{ keys: ["mod","k"], size:"md" })])),
         kit::sec("Inline", kit::line([kbd::Kbd(#{ text: "⌘K", appearance: "inline" }),
-            kbd::Kbd(#{ text: "Ctrl+Shift+K", appearance: "inline" })])),
+            kbd::Kbd(#{ keys: ["mod","shift","k"], platform:"other", appearance: "inline" })])),
+        kit::sec("Literal legend", kit::line([kbd::Kbd(#{text:"F12"}),kbd::Kbd(#{text:"Ctrl+K",label:"Control K"})])),
+        kit::sec("Contextual menu keycaps", kit::line([kbd::Kbd(#{keys:"mod",appearance:"menu"}),
+            kbd::Kbd(#{keys:"shift",appearance:"menu"}),kbd::Kbd(#{keys:"p",appearance:"menu"})])),
     ])
 }

@@ -529,11 +529,81 @@ impl CustomType for NativeTextDocument {
     }
 }
 
+fn grapheme_slice(text: &str, start: i64, end: i64) -> Dynamic {
+    let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+        return Dynamic::UNIT;
+    };
+    if start > end || end > text.len() {
+        return Dynamic::UNIT;
+    }
+    let mut offsets = text
+        .grapheme_indices(true)
+        .map(|(byte, _)| byte)
+        .chain(std::iter::once(text.len()));
+    let Some(left) = offsets.nth(start) else {
+        return Dynamic::UNIT;
+    };
+    let right = if end == start {
+        left
+    } else if let Some(right) = offsets.nth(end - start - 1) {
+        right
+    } else {
+        return Dynamic::UNIT;
+    };
+    Dynamic::from(ImmutableString::from(&text[left..right]))
+}
+
+fn grapheme_index_at_byte(text: &str, byte: i64, downstream: bool) -> Dynamic {
+    let Ok(byte) = usize::try_from(byte) else {
+        return Dynamic::UNIT;
+    };
+    if byte > text.len() || !text.is_char_boundary(byte) {
+        return Dynamic::UNIT;
+    }
+    let mut previous = 0;
+    for (index, boundary) in text
+        .grapheme_indices(true)
+        .map(|(offset, _)| offset)
+        .chain(std::iter::once(text.len()))
+        .enumerate()
+    {
+        if boundary >= byte {
+            return Dynamic::from_int(
+                i64::try_from(if downstream || boundary == byte {
+                    index
+                } else {
+                    previous
+                })
+                .unwrap_or(i64::MAX),
+            );
+        }
+        previous = index;
+    }
+    Dynamic::UNIT
+}
+
 pub(crate) fn register_document_api(engine: &mut Engine) {
     engine.build_type::<NativeTextDocument>();
     FuncRegistration::new("is_native_text_document")
         .in_global_namespace()
         .register_into_engine(engine, |value: Dynamic| value.is::<NativeTextDocument>());
+    FuncRegistration::new("markdown_literal")
+        .in_global_namespace()
+        .register_into_engine(engine, crate::markdown::inline_literal);
+    FuncRegistration::new("utf8_byte_count")
+        .in_global_namespace()
+        .register_into_engine(engine, |text: &str| {
+            i64::try_from(text.len()).unwrap_or(i64::MAX)
+        });
+    FuncRegistration::new("text_match_ranges")
+        .in_global_namespace()
+        .register_into_engine(engine, crate::markdown::text_match_ranges);
+    FuncRegistration::new("grapheme_slice")
+        .in_global_namespace()
+        .register_into_engine(engine, grapheme_slice);
+    FuncRegistration::new("grapheme_index_at_byte")
+        .in_global_namespace()
+        .register_into_engine(engine, grapheme_index_at_byte);
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1672,6 +1742,24 @@ pub enum DocumentError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grapheme_slices_and_joined_boundaries_match_painted_text_indices() {
+        let text = "A👩‍👧e\u{301}中";
+        assert_eq!(
+            grapheme_slice(text, 1, 3).into_string().unwrap(),
+            "👩‍👧e\u{301}"
+        );
+        assert_eq!(grapheme_slice(text, 4, 4).into_string().unwrap(), "");
+        assert!(grapheme_slice(text, 5, 5).is_unit());
+        assert!(grapheme_slice(text, 3, 1).is_unit());
+        assert!(grapheme_slice(text, -1, 1).is_unit());
+        let joined = "e\u{301}!";
+        assert_eq!(grapheme_index_at_byte(joined, 1, false).as_int(), Ok(0));
+        assert_eq!(grapheme_index_at_byte(joined, 1, true).as_int(), Ok(1));
+        assert_eq!(grapheme_index_at_byte(joined, 4, true).as_int(), Ok(2));
+        assert!(grapheme_index_at_byte(joined, 2, true).is_unit());
+    }
 
     fn descriptor(text: &str, language: &str) -> DocumentDescriptor {
         DocumentDescriptor {

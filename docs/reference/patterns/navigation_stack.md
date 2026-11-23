@@ -55,4 +55,4 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `actions`, `back`, `brea
 
 ## Dependencies
 
-[`components/button`](../components/button.md), [`components/menu`](../components/menu.md)
+[`components/breadcrumb`](../components/breadcrumb.md), [`components/button`](../components/button.md)

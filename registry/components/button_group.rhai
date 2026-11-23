@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["spacing.xxs", "radius.md"],
+  "tokens": ["spacing.xxs", "metrics.button_radius"],
   "environment": ["size", "density"]
 }
 */
@@ -16,7 +16,7 @@
 define_component(#{
     metadata: #{ id: "components/button_group", "export": "ButtonGroup", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["spacing.xxs", "radius.md"], environment: ["size", "density"] },
+        tokens: ["spacing.xxs", "metrics.button_radius"], environment: ["size", "density"] },
     schema: #{
         props: #{
             buttons: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
@@ -43,7 +43,7 @@ fn render_ButtonGroup(ctx, props) {
     if props.buttons.len == 0 { throw "button group requires at least one button"; }
     let vertical = "orientation" in props && props.orientation == "vertical";
     // Only the group's outer corners round, with a control's corners in either orientation.
-    let corner = theme_radius("md");
+    let corner = theme_length("metrics.button_radius");
     let items = [];
     for index in 0..props.buttons.len {
         let first = index == 0;
@@ -57,16 +57,17 @@ fn render_ButtonGroup(ctx, props) {
             if last { joined = joined.radius_end(corner); }
         }
         // Every button is an `item`; a lone button is both `first` and `last`.
-        let resolved = ctx.component_style("item", joined);
-        if first { resolved = ctx.component_style("first", resolved); }
-        if last { resolved = ctx.component_style("last", resolved); }
+        let parts=["item"];
+        if first {parts.push("first");}
+        if last {parts.push("last");}
+        let resolved = ctx.component_style(parts, joined);
         items.push(props.buttons[index].with_style(resolved));
     }
-    // Joined blocks keep a 2px seam, so each button keeps its own focus border and
-    // outline frames never double up.
+    // The derived joined treatment uses an inset focus ring, so neighboring
+    // buttons cannot cover it. The group itself must not clip decorations.
     let root = if vertical { column(items) } else { row(items) };
     root = root.with_style(ctx.component_style("root", style()
-        .gap(theme_spacing("xxs")).clip().radius(corner)))
+        .gap(theme_spacing("xxs")).radius(corner)))
         .accessibility_role("group").accessibility_label(props.label);
     if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }
 }

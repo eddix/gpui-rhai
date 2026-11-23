@@ -52,6 +52,7 @@ app_shell::AppShell(#{ key: "app", label: "Workbench", title_bar: #{ title: "Wor
 | `center` | array of node (at most 8) | `[]` | Nodes centered in the bar. |
 | `end` | array of node (at most 8) | `[]` | Nodes at the end edge; they keep their width while the title truncates. |
 | `inset_start` | integer 0–256 | `0` | Logical pixels kept free at the start edge, room for the macOS window buttons. |
+| `part_styles` | map of style | — | Per-instance styles for the corresponding TitleBar parts. |
 | `start` | array of node (at most 8) | `[]` | Nodes before the title, at the start edge. |
 | `subtitle` | string or node or `()` | — | Muted text or node on the title's line; it truncates first. |
 | `title` | string or node | required | Title text, or a node such as a breadcrumb; a string is set semibold and the subtitle truncates before it. |
