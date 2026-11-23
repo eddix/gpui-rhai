@@ -2,30 +2,45 @@
 //! digest of one can be checked against the other: the A/B harness that proves
 //! a faster render path draws what the plain one does.
 
+use std::time::{Duration, Instant};
+
 use gpui::{Pixels, Size, TestAppContext, VisualTestContext};
-use gpui_rhai::{ScriptViewFrameDigest, ScriptViewHandle};
+use gpui_rhai::{ManualRuntimeClock, ScriptViewFrameDigest, ScriptViewHandle};
 
 use super::{Mount, Step, painted_quads, settle};
 
 pub(crate) struct Lockstep {
     sides: Vec<(VisualTestContext, ScriptViewHandle)>,
+    clock: ManualRuntimeClock,
 }
 
 impl Lockstep {
     /// Mounts `a` and `b` in windows of `size` and lets both settle. Both keep
     /// the view ID of their mount, so their component paths match.
     pub(crate) fn mount(cx: &mut TestAppContext, a: Mount, b: Mount, size: Size<Pixels>) -> Self {
+        let clock = ManualRuntimeClock::new(Instant::now());
         let sides = [a.ids("lockstep-a", "view"), b.ids("lockstep-b", "view")]
             .into_iter()
             .map(|mount| {
-                let (window, view) = mount.mount_window(cx);
+                let motion_clock = clock.clock();
+                let (window, view) = mount
+                    .with(move |view| view.runtime_clock(motion_clock))
+                    .mount_window(cx);
                 let mut visual = VisualTestContext::from_window(*window, cx);
                 visual.simulate_resize(size);
                 settle(&mut visual, Step::Tick, 2);
                 (visual, view)
             })
             .collect();
-        Self { sides }
+        Self { sides, clock }
+    }
+
+    /// Advance the shared motion time once, then present both sides at that
+    /// instant. Executor timers used by `act` can run in either order;
+    /// their wall time must not advance one side's animation.
+    pub(crate) fn advance_motion(&mut self, duration: Duration) {
+        self.clock.advance(duration);
+        self.act(|visual, _| settle(visual, Step::Refresh, 2));
     }
 
     /// Runs `action` on each window, A first.
@@ -58,6 +73,12 @@ impl Lockstep {
     pub(crate) fn assert_same(&mut self, label: &str) {
         let a = self.digest(0);
         let b = self.digest(1);
+        assert!(
+            a.last_error.is_none() && b.last_error.is_none(),
+            "{label}: unexpected script errors in A/B: {:?} vs {:?}",
+            a.last_error,
+            b.last_error
+        );
         if a != b {
             let difference = first_difference(&a, &b);
             panic!("{label}: the windows differ: {difference}");

@@ -216,7 +216,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -227,7 +227,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -333,9 +333,9 @@ dependencies = [
 
 [[package]]
 name = "async-executor"
-version = "1.14.0"
+version = "1.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c96bf972d85afc50bf5ab8fe2d54d1586b4e0b46c97c50a0c9e71e2f7bcd812a"
+checksum = "f426a31126c735126297bc5ea7a521263c9faff4f63ca415267ee625651c4f37"
 dependencies = [
  "async-task",
  "concurrent-queue",
@@ -1638,7 +1638,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2919,8 +2919,10 @@ dependencies = [
  "gpui-fast-platform",
  "gpui-pre",
  "gpui-pre-platform",
+ "idna",
  "image",
  "jiff",
+ "lyon",
  "notify",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -2937,6 +2939,7 @@ dependencies = [
  "syntect",
  "thiserror 2.0.20",
  "toml 0.8.23",
+ "unicode-bidi",
  "unicode-segmentation",
  "usvg 0.45.1",
 ]
@@ -2951,6 +2954,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "similar",
  "thiserror 2.0.20",
  "toml 0.8.23",
  "toml_edit 0.22.27",
@@ -2961,8 +2965,10 @@ name = "gpui-rhai-native-keyboard-tests"
 version = "0.0.0"
 dependencies = [
  "gpui-fast",
+ "gpui-fast-apple",
  "gpui-fast-platform",
  "gpui-pre",
+ "gpui-pre-apple",
  "gpui-pre-platform",
  "gpui-rhai",
  "gpui-rhai-cli",
@@ -2971,6 +2977,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -5465,7 +5472,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6110,7 +6117,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6419,7 +6426,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7056,7 +7063,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

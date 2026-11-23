@@ -12,7 +12,6 @@ extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast_platform as gpui_platform;
 
-
 #[cfg(not(target_os = "macos"))]
 fn main() {
     eprintln!("the Gallery profile requires macOS");
@@ -37,8 +36,8 @@ mod profile {
     use std::time::{Duration, Instant};
 
     use gpui::{
-        AnyWindowHandle, Modifiers, MouseMoveEvent, ScrollDelta, ScrollEvent,
-        VisualTestAppContext, point, px,
+        AnyWindowHandle, Modifiers, MouseMoveEvent, ScrollDelta, ScrollEvent, VisualTestAppContext,
+        point, px,
     };
     use gpui_rhai::{
         AutomationCommand, ExecutionOperation, MotionPreference, ScriptViewHandle, UiValue,

@@ -130,12 +130,59 @@ fn unrelated_script_state_update_keeps_active_native_preview(cx: &mut TestAppCon
 
 #[gpui::test]
 fn rolled_back_source_update_does_not_cancel_active_native_preview(cx: &mut TestAppContext) {
-    let (mut visual, view) = Mount::components(SPLIT).id("contract-rollback").mount(cx);
-    let (at, _) = press_split(&mut visual, &view);
+    rollback_preview(cx, true);
+}
+
+#[gpui::test]
+fn rolled_back_source_update_without_banner_keeps_active_native_preview(cx: &mut TestAppContext) {
+    rollback_preview(cx, false);
+}
+
+fn rollback_preview(cx: &mut TestAppContext, show_error_banner: bool) {
+    let (mut visual, view) = Mount::components(SPLIT)
+        .config(move |config| config.show_error_banner(show_error_banner))
+        .id(&format!("contract-rollback-{show_error_banner}"))
+        .mount(cx);
+    let (at, before) = press_split(&mut visual, &view);
     move_split(&mut visual, at, 20.0);
-    assert!(dispatch(&mut visual, &view, by_test_id("reject"), "click").is_err());
+    let before_error = bounds(&mut visual, &view, "separator", "Resize panels");
+    let preview = |visual: &mut VisualTestContext| {
+        bounds(visual, &view, "separator", "Resize panels").x - before
+    };
+    assert!(
+        (preview(&mut visual) - 20.0).abs() < 1.0,
+        "the gesture must have an active preview before rejection"
+    );
+    let failure = dispatch(&mut visual, &view, by_test_id("reject"), "click").unwrap_err();
+    assert!(
+        failure.to_string().contains("rejected source update"),
+        "{failure}"
+    );
     settle(&mut visual, Step::Tick, 4);
+    let banner = if show_error_banner {
+        "gpui-rhai-error-banner:contract-rollback-true"
+    } else {
+        "gpui-rhai-error-banner:contract-rollback-false"
+    };
+    assert_eq!(
+        visual.debug_bounds(banner).is_some(),
+        show_error_banner,
+        "the geometry contract must hold with the error visibly presented"
+    );
+    assert_eq!(
+        bounds(&mut visual, &view, "separator", "Resize panels"),
+        before_error,
+        "the diagnostic is not a layout change"
+    );
+    assert!(
+        (preview(&mut visual) - 20.0).abs() < 1.0,
+        "a rejected callback must keep its last presented native preview"
+    );
     move_split(&mut visual, at, 60.0);
+    assert!(
+        (preview(&mut visual) - 60.0).abs() < 1.0,
+        "the active gesture must still accept movement after rollback"
+    );
     release_split(&mut visual, at, 60.0);
     assert_eq!(text_of(&mut visual, &view, "commits"), "1");
 }

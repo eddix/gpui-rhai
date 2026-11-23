@@ -20,7 +20,10 @@ fn view(ctx){{ column([{body}]).with_style(style().width(px(600)).padding(px(16)
 
 #[gpui::test]
 fn a_fitting_row_is_reachable(cx: &mut TestAppContext) {
-    let found = findings(cx, r#"row([b("a"), b("b")]).with_style(style().gap(px(8)))"#);
+    let found = findings(
+        cx,
+        r#"row([b("a"), b("b")]).with_style(style().gap(px(8)))"#,
+    );
     assert!(found.is_empty(), "{found:?}");
 }
 
@@ -28,11 +31,14 @@ fn a_fitting_row_is_reachable(cx: &mut TestAppContext) {
 fn a_control_cut_off_where_nothing_scrolls_is_found(cx: &mut TestAppContext) {
     let found = findings(
         cx,
-        r#"row([b("a"), b("b").with_style(style().flex_shrink(false))])
+        r#"row([b("a").with_style(style().width(px(72)).flex_shrink(false)),
+            b("b").with_style(style().width(px(72)).flex_shrink(false))])
             .with_style(style().width(px(120)).gap(px(8)).clip())"#,
     );
     assert!(
-        found.iter().any(|finding| finding.contains("cut off")),
+        found
+            .iter()
+            .any(|finding| finding.contains("Action b is cut off by 32.0px")),
         "{found:?}"
     );
 }
@@ -57,4 +63,3 @@ fn controls_laid_over_one_another_are_found(cx: &mut TestAppContext) {
         "{found:?}"
     );
 }
-

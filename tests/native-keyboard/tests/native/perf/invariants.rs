@@ -104,3 +104,116 @@ fn quiet_scroll_frames_replay_the_cold_filler(cx: &mut TestAppContext) {
     }
     assert!(quiet >= 15, "{quiet} quiet steps");
 }
+#[cfg(feature = "gpui-fast")]
+#[gpui::test]
+fn repeating_fill_period_changes_the_promoted_tiles_without_moving_the_scroll(
+    cx: &mut gpui::TestAppContext,
+) {
+    use gpui::{
+        BackgroundLayer, BackgroundStop, Context, InteractiveElement, IntoElement,
+        LayeredBackground, ParentElement, Render, ScrollDelta, ScrollEvent, ScrollHandle,
+        StatefulInteractiveElement, Styled, TouchPhase, VisualTestContext, Window, div, point, px,
+        rgb, rgba, size,
+    };
+
+    struct RepeatPage {
+        period: f32,
+        scroll: ScrollHandle,
+    }
+    impl Render for RepeatPage {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let mut sheet = div().w(px(220.)).h(px(1600.)).flex_shrink_0();
+            let layer = BackgroundLayer::new(
+                135.,
+                vec![
+                    BackgroundStop {
+                        offset: 0.,
+                        color: rgba(0xc0607099),
+                    },
+                    BackgroundStop {
+                        offset: 1.,
+                        color: rgba(0x2bad78cc),
+                    },
+                ],
+            )
+            .repeating(Some(self.period));
+            sheet.style().background = Some(LayeredBackground::new(vec![layer]).unwrap().into());
+            div()
+                .id("repeat-scroller")
+                .w(px(220.))
+                .h(px(180.))
+                .overflow_y_scroll()
+                .track_scroll(&self.scroll)
+                .bg(rgb(0x202025))
+                .child(sheet)
+        }
+    }
+    let scroll = ScrollHandle::new();
+    let handle = scroll.clone();
+    let window = cx.add_window(move |_, _| RepeatPage {
+        period: 7.,
+        scroll: handle,
+    });
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(280.), px(240.)));
+    settle(&mut visual, Step::Frame, 2);
+
+    let layer = |v: &mut VisualTestContext| {
+        v.update(|window, _| {
+            window
+                .painted_scene()
+                .layers
+                .frames
+                .iter()
+                .find(|frame| {
+                    frame.tile_size > 0
+                        && frame.content.scenes().any(|scene| {
+                            scene.layered_fills.iter().any(|fill| {
+                                fill.layers
+                                    .iter()
+                                    .any(|layer| layer.repeat_period.is_some())
+                            })
+                        })
+                })
+                .map(|frame| (frame.key, frame.generation, frame.dirty_tiles.len()))
+        })
+    };
+    for _ in 0..8 {
+        visual.simulate_event(ScrollEvent {
+            position: point(px(40.), px(40.)),
+            delta: ScrollDelta::Pixels(point(px(0.), px(-20.))),
+            touch_phase: TouchPhase::Moved,
+            ..ScrollEvent::default()
+        });
+        settle(&mut visual, Step::Frame, 1);
+        if layer(&mut visual).is_some() {
+            break;
+        }
+    }
+    let initial = layer(&mut visual).expect("real Fast scroll promotes the repeating fill");
+    let offset = scroll.offset();
+    assert!(offset.y < px(0.));
+    let repaint = |visual: &mut VisualTestContext, period: f32| {
+        window
+            .update(visual, |page, _, cx| {
+                page.period = period;
+                cx.notify();
+            })
+            .unwrap();
+        settle(visual, Step::Frame, 1);
+        layer(visual).expect("scroll layer remains promoted after repaint")
+    };
+    let same = repaint(&mut visual, 7.);
+    assert_eq!(initial.0, same.0);
+    assert!(
+        same.1 == initial.1 || same.2 == 0,
+        "equal paint has no new dirty tiles"
+    );
+    let changed = repaint(&mut visual, 17.);
+    assert_eq!(same.0, changed.0);
+    assert!(
+        changed.1 > same.1 && changed.2 > 0,
+        "changing only the repeated distance dirties tiles"
+    );
+    assert_eq!(scroll.offset(), offset);
+}

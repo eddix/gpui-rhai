@@ -1,6 +1,6 @@
 //! The panels of transient lists (Select and Combobox options, Menu, Command) pad every side
-//! by what their corner needs: half of `radius.lg`, so the square row blocks clear the
-//! rounded corner. The padding is the same on all four sides.
+//! by their preset's content inset. The decorative shadow edge does not add layout
+//! thickness. CommandDialog owns its inset once, rather than nesting another Command inset.
 
 use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::{AccessibilityNode, GeometryBounds, MotionPreference, ScriptViewHandle};
@@ -40,7 +40,7 @@ const MENU: &str = r#"menu::Menu(#{ key: "file", label: "File menu", trigger: te
 
 const COMMAND: &str = r#"command::Command(#{ key: "palette", label: "Commands", query: "",
     active_value: "deploy", items: [#{ label: "Deploy", value: "deploy" },
-    #{ label: "Roll back", value: "rollback" }] })"#;
+    #{ label: "Roll back", value: "rollback" }] }).test_id("command-panel")"#;
 
 const COMMAND_DIALOG: &str = r#"command_dialog::CommandDialog(#{ key: "go", label: "Go to",
     open: true, query: "", active_value: "deploy", items: [#{ label: "Deploy", value: "deploy" },
@@ -85,8 +85,8 @@ fn assert_insets(what: &str, actual: [f64; 4], expected: f64) {
     }
 }
 
-/// The 1px hairline plus half of `radius.lg` (8).
-const EXPECTED: f64 = 5.0;
+/// Modern standalone list panels use a 4px inset, with a non-layout shadow edge.
+const EXPECTED: f64 = 4.0;
 
 #[gpui::test]
 fn select_options_pad_every_side_by_the_corner(cx: &mut TestAppContext) {
@@ -112,11 +112,24 @@ fn menu_items_pad_every_side_by_the_corner(cx: &mut TestAppContext) {
 fn command_pads_its_search_and_rows_by_the_corner(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, script(COMMAND).as_str());
     let nodes = nodes(&mut visual, &view);
-    let panel = bounds(&nodes, "listbox", "Commands");
+    let panel = nodes
+        .iter()
+        .find(|node| node.test_id.as_deref() == Some("command-panel"))
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let viewport = bounds(&nodes, "listbox", "Commands");
     let search = bounds(&nodes, "text_field", "Commands");
     let last = bounds(&nodes, "option", "Roll back");
-    // The search line heads the panel, so it carries the top inset.
-    assert_insets("Command", insets(panel, search, last), EXPECTED);
+    // Tray, search chrome, row viewport and footer have different owners.
+    // In particular the icon/text/hint editor is not the panel's outer edge.
+    assert!((search.x - panel.x - 48.0).abs() < 0.5);
+    assert!((search.y - panel.y - 19.5).abs() < 0.5);
+    assert!((viewport.x - panel.x - 10.0).abs() < 0.5);
+    assert!((panel.x + panel.width - viewport.x - viewport.width - 10.0).abs() < 0.5);
+    assert!((last.x - viewport.x).abs() < 0.5);
+    assert!((panel.y + panel.height - last.y - last.height - 50.0).abs() < 0.5);
 }
 
 #[gpui::test]
@@ -126,8 +139,15 @@ fn command_dialog_pads_its_panel_and_not_the_command_inside(cx: &mut TestAppCont
     let panel = bounds(&nodes, "dialog", "Go to");
     let search = bounds(&nodes, "text_field", "Go to");
     let last = bounds(&nodes, "option", "Roll back");
-    // The title heads the dialog; the sides and the bottom carry the corner padding once,
-    // on the dialog panel, not again on the Command inside it.
+    // Embedded Command has no second tray/card inset. Its own list padding and
+    // keyboard footer are still present inside the Dialog's one 8px inset.
     let [start, _, end, bottom] = insets(panel, search, last);
-    assert_insets("CommandDialog", [start, EXPECTED, end, bottom], EXPECTED);
+    let dialog_inset = 8.0;
+    assert!(
+        (start - 52.0).abs() < 0.5 && (end - 24.0).abs() < 0.5,
+        "the default 420px dialog is narrow: leading icon remains, Enter hint is hidden: {start}/{end}"
+    );
+    assert!((last.x - panel.x - dialog_inset - 6.0).abs() < 0.5);
+    assert!((panel.x + panel.width - last.x - last.width - dialog_inset - 6.0).abs() < 0.5);
+    assert!((bottom - 54.0).abs() < 0.5);
 }

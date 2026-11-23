@@ -91,7 +91,9 @@ pub(crate) fn dispatch_script_button(
 
 pub(crate) fn node_texts(node: &UiNode, output: &mut Vec<String>) {
     match node.kind() {
-        gpui_rhai::UiNodeKind::Text { text } => output.push(text.to_string()),
+        gpui_rhai::UiNodeKind::Text { text } | gpui_rhai::UiNodeKind::RichText { text, .. } => {
+            output.push(text.to_string());
+        }
         gpui_rhai::UiNodeKind::Box { children } | gpui_rhai::UiNodeKind::Fragment { children } => {
             for child in children {
                 node_texts(child, output);

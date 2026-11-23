@@ -10,8 +10,7 @@ use gpui::{
     TestAppContext, VisualTestContext, div, point, px,
 };
 use gpui_rhai::{
-    EmbeddedScriptSource, ScriptView, HostSlotRegistry, ModuleId, ScriptViewConfig,
-    ScriptViewHost,
+    EmbeddedScriptSource, HostSlotRegistry, ModuleId, ScriptView, ScriptViewConfig, ScriptViewHost,
 };
 
 #[gpui::test]

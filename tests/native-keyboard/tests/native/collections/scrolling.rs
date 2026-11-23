@@ -608,11 +608,8 @@ fn view(ctx){column([text(`Notified ${ctx.get_state("notified")}`),
     );
 }
 
-#[gpui::test]
-fn scroll_track_routes_unsupported_axes_and_only_boundary_residual_to_sdk_ancestors(
-    cx: &mut TestAppContext,
-) {
-    let main = r#"
+fn residual_scroll_fixture() -> &'static str {
+    r#"
 define_component(#{metadata:#{id:"tests/residual_scroll","export":"ResidualScroll",version:"0.0.1",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{}},
     schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
@@ -632,7 +629,14 @@ fn render_scroll(ctx,props){
 }
 fn view(ctx){render_component("tests/residual_scroll",#{key:"chain"})}
 
-"#;
+"#
+}
+
+#[gpui::test]
+fn scroll_track_routes_unsupported_axes_and_only_boundary_residual_to_sdk_ancestors(
+    cx: &mut TestAppContext,
+) {
+    let main = residual_scroll_fixture();
     let (mut visual, view) = Mount::new(main).id("residual-scroll-chain").mount(cx);
     settle(&mut visual, Step::Tick, 10);
     let track_wheel = |visual: &mut VisualTestContext, x: f32, y: f32| {
@@ -706,6 +710,65 @@ fn view(ctx){render_component("tests/residual_scroll",#{key:"chain"})}
     assert!(
         (after - before + 25.0).abs() < 1.0,
         "the inner consumes only its last 10px; parent receives 25px, not another full 35px"
+    );
+}
+
+#[gpui::test]
+fn transformed_nested_wheel_preserves_residual_in_a_retained_sdk_parent(cx: &mut TestAppContext) {
+    let source=residual_scroll_fixture()
+        .replace(".width(px(180))", ".width(px(220))")
+        .replace(".with_key(\"outer\")", ".with_key(\"outer\").test_id(\"outer-viewport\").accessibility_role(\"region\").accessibility_label(\"Fixture outer\")")
+        .replace(".height(px(160)).overflow_scroll()", ".height(px(160)).overflow_scroll().transform(#{rotate:90,scale_x:1.5,scale_y:0.75})")
+        .replace("overflow_scroll().transform(#{rotate:90,scale_x:1.5,scale_y:0.75}))])",
+            "overflow_scroll().transform(#{rotate:90,scale_x:1.5,scale_y:0.75}))]).with_style(style().padding_left(px(140)).padding_top(px(180)))");
+    let (mut v, view) = Mount::new(source).id("residual-transformed-sdk").mount(cx);
+    v.simulate_resize(gpui::size(px(1000.), px(820.)));
+    settle(&mut v, Step::Tick, 10);
+    assert_eq!(crate::support::last_error(&mut v, &view), None);
+    let root = crate::support::node_by_test_id(&mut v, &view, "outer-viewport")
+        .geometry
+        .unwrap();
+    assert!(
+        root.visual.height > 340. && root.layout.height < 170.,
+        "{root:?}"
+    );
+    let origin = crate::support::center(root.visual);
+    let inner = v.debug_bounds("virtual-list:inner").unwrap();
+    #[allow(clippy::cast_possible_truncation)]
+    let local_x =
+        f32::from(inner.right() - px(6.)) - (root.layout.x + root.layout.width / 2.) as f32;
+    #[allow(clippy::cast_possible_truncation)]
+    let local_y =
+        f32::from(inner.top() + px(48.)) - (root.layout.y + root.layout.height / 2.) as f32;
+    let pointer = point(origin.x - px(local_y * 0.75), origin.y + px(local_x * 1.5));
+    assert!(
+        f64::from(pointer.y) > root.layout.y + root.layout.height,
+        "{pointer:?} must not accidentally hit the raw outer box"
+    );
+    let id = metrics(&mut v, &view).id;
+    let handle = v.update(|_, cx| view.collection_scroll_handle(&id, cx).unwrap().unwrap());
+    v.update(|_, cx| handle.scroll_to_end(cx));
+    settle(&mut v, Step::Tick, 8);
+    v.update(|_, cx| handle.scroll_by(px(-10.), cx));
+    settle(&mut v, Step::Tick, 8);
+    let marker = |v: &mut VisualTestContext| {
+        crate::support::node_by_test_id(v, &view, "outer-marker")
+            .geometry
+            .unwrap()
+            .visual
+            .x
+    };
+    let before = marker(&mut v);
+    v.simulate_event(ScrollEvent {
+        position: pointer,
+        delta: ScrollDelta::Pixels(point(px(0.), px(-35.))),
+        ..Default::default()
+    });
+    settle(&mut v, Step::Tick, 8);
+    let moved = marker(&mut v) - before;
+    assert!(
+        (moved - 18.75).abs() < 1.5,
+        "unconsumed 25px maps to +18.75 visual X; actual {moved}"
     );
 }
 

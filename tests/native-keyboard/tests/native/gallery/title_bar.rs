@@ -147,7 +147,7 @@ fn the_title_bar_fits_narrow_windows(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn the_window_buttons_sit_in_the_middle_of_the_bar_in_either_density(cx: &mut TestAppContext) {
-    for (density, height, y) in [("comfortable", 36.0, 11.0), ("compact", 32.0, 9.0)] {
+    for (density, height, y) in [("comfortable", 40.0, 13.0), ("compact", 36.0, 11.0)] {
         let launch = AcceptanceLaunch {
             density: density.to_owned(),
             ..AcceptanceLaunch::default()

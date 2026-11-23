@@ -6,4 +6,6 @@ mod document_viewers;
 mod markdown_preparation;
 mod markdown_tables;
 mod markdown_viewer;
+mod modern_clean_documents;
 mod selectable_text;
+mod text_geometry;

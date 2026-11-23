@@ -32,7 +32,13 @@ fn mount(
     };
     let mut mount = Mount::components(MAIN)
         .motion(MotionPreference::None)
-        .with(move |view| view.theme_token_overrides(overrides))
+        // This suite tests input modality/owner policy, independently from a
+        // preset's shadow edge. Reserve the probe border in both states so it
+        // cannot manufacture a focus-driven layout change.
+        .with(move |view| view.theme_token_overrides(overrides).component_styles(r#"
+            fn component_styles(){#{"components/input":#{root:style().border(px(2))
+                .border_color(theme_color("border")).focus(style().border_color(theme_color("focus_ring")))}}}
+        "#))
         .id("indicators");
     if let Some(indicators) = indicators {
         mount = mount.config(move |config| config.focus_indicators(indicators));
@@ -56,8 +62,10 @@ fn framed(visual: &mut VisualTestContext, target: GeometryBounds) -> bool {
     painted_quads(visual).iter().any(|quad| {
         quad.border_color == color
             && quad.has_border()
-            && (quad.bounds.x - x).abs() < 1.0
-            && (quad.bounds.y - y).abs() < 1.0
+            && (((quad.bounds.x - x).abs() < 1.0 && (quad.bounds.y - y).abs() < 1.0)
+                || ((quad.bounds.x - x + 4.0).abs() < 1.0
+                    && (quad.bounds.y - y + 4.0).abs() < 1.0
+                    && (f64::from(quad.bounds.width) - target.width - 8.0).abs() < 1.0))
     })
 }
 

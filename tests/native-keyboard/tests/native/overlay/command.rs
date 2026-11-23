@@ -2,10 +2,142 @@
 //! first reveal, and manual scroll against a controlled active item.
 
 use crate::support::{Mount, bounds, by_role, center, palette_texts, snapshot};
-use gpui::{
-    Modifiers, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
-};
+use gpui::{Modifiers, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::{UiRuntimeState, UiValue};
+
+#[derive(Clone)]
+struct KeycapCommandData;
+
+impl gpui_rhai::ScriptViewExtension for KeycapCommandData {
+    fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+        let rows = [
+            ("bound", "Run bound action", "cmd-shift-k"),
+            ("literal", "Literal legend", "Ctrl+K"),
+        ]
+        .into_iter()
+        .map(|(value, label, shortcut)| {
+            std::collections::BTreeMap::from([
+                ("value".into(), UiValue::String(value.into())),
+                ("label".into(), UiValue::String(label.into())),
+                ("shortcut".into(), UiValue::String(shortcut.into())),
+            ])
+        });
+        runtime
+            .native_collections
+            .register(
+                "keycap-commands",
+                gpui_rhai::NativeCollection::new("value", rows)
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[gpui::test]
+fn command_keycaps_share_host_bindings_without_duplicating_semantics_or_activation(
+    cx: &mut TestAppContext,
+) {
+    for &(name, theme) in gpui_rhai_registry::BUNDLED_DESIGN_PRESET_SOURCES {
+        for native in [false, true] {
+            let items = if native {
+                r#"ctx.get_native_collection("keycap-commands")"#
+            } else {
+                r#"[#{value:"bound",label:"Run bound action",action:"demo.run"},#{value:"literal",label:"Literal legend",shortcut:"Ctrl+K"}]"#
+            };
+            let binding = gpui_rhai::KeyBindingSpec::new(
+                "cmd-shift-k",
+                gpui_rhai::ActionId::parse("demo.run").unwrap(),
+                None,
+            )
+            .unwrap();
+            let label = binding.shortcut().label;
+            let main = r#"
+                import "components/command" as command;
+                fn state_schema(){#{fields:#{
+                    ran:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},
+                    action:#{schema:#{type:"string"},"default":#{type:"string",value:"none"}},
+                    active:#{schema:#{type:"string"},"default":#{type:"string",value:"bound"}}
+                }}}
+                fn init(ctx){ctx.register_action("demo.run",Fn("ran"));}
+                fn ran(ctx,payload){ctx.set_state("ran",ctx.get_state("ran")+1);}
+                fn changed(ctx,value){ctx.set_state("active",value);}
+                fn acted(ctx,value){ctx.set_state("action",value);}
+                fn noop(ctx,value){}
+                fn view(ctx){column([
+                    command::Command(#{key:"commands",label:"Keycap commands",query:"",autofocus:true,
+                        active_value:ctx.get_state("active"),items:__ITEMS__,
+                        on_active_change:Fn("changed"),on_query_change:Fn("noop"),on_action:Fn("acted")}),
+                    text(`${ctx.get_state("ran")}/${ctx.get_state("action")}`).test_id("command-result")
+                ]).with_style(style().width(px(480)).padding(px(20)))}
+            "#.replace("__ITEMS__",items);
+            let host_binding = binding.clone();
+            let (window, view) = Mount::components(main)
+                .theme(theme)
+                .with(move |view| view.key_binding(binding).extension(KeycapCommandData))
+                .id("command-keycaps")
+                .mount_window(cx);
+            // Embedded views declare shortcut metadata, but only the Rust Host
+            // is authorized to install App-wide bindings. Standalone launch
+            // does this itself; this fixture intentionally uses embed/mount.
+            window
+                .update(cx, move |root, _, cx| {
+                    root.host.bind_keys([host_binding], cx)
+                })
+                .unwrap()
+                .unwrap();
+            let mut visual = VisualTestContext::from_window(*window, cx);
+            crate::support::settle(&mut visual, crate::support::Step::Frame, 3);
+            let tree = snapshot(&mut visual, &view);
+            assert_eq!(
+                tree.find_by_role_and_name("option", "Run bound action")
+                    .next()
+                    .unwrap()
+                    .key_shortcuts
+                    .as_deref(),
+                Some(label.as_str()),
+                "{name}/{native}"
+            );
+            assert_eq!(
+                tree.find_by_role_and_name("option", "Literal legend")
+                    .next()
+                    .unwrap()
+                    .key_shortcuts
+                    .as_deref(),
+                Some("Ctrl+K")
+            );
+            assert!(
+                !tree.nodes().any(|node| node.role == "text"
+                    && ["Command", "Shift", "K", "Ctrl+K"].contains(&node.name.as_str())),
+                "decorative caps must not duplicate the option's shortcut semantics"
+            );
+            visual.update(|window, _| window.activate_window());
+            let field = bounds(&mut visual, &view, "text_field", "Keycap commands");
+            visual.simulate_click(center(field), Modifiers::none());
+            crate::support::settle(&mut visual, crate::support::Step::Frame, 2);
+            visual.simulate_keystrokes("cmd-shift-k");
+            crate::support::settle(&mut visual, crate::support::Step::Frame, 2);
+            assert_eq!(
+                crate::support::text_of(&mut visual, &view, "command-result"),
+                "1/none"
+            );
+            visual.simulate_keystrokes("enter");
+            // NativeCollection's documented path supplies a shortcut plus
+            // on_action, not an automatic per-row registered action.
+            crate::support::settle(&mut visual, crate::support::Step::Frame, 2);
+            assert_eq!(
+                crate::support::text_of(&mut visual, &view, "command-result"),
+                if native { "1/bound" } else { "2/bound" }
+            );
+            visual.simulate_keystrokes("down enter");
+            crate::support::settle(&mut visual, crate::support::Step::Frame, 2);
+            assert_eq!(
+                crate::support::text_of(&mut visual, &view, "command-result"),
+                if native { "1/literal" } else { "2/literal" }
+            );
+            assert!(crate::support::last_error(&mut visual, &view).is_none());
+        }
+    }
+}
 
 #[gpui::test]
 fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut TestAppContext) {

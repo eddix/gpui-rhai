@@ -3,11 +3,13 @@
 //!
 //! Run one area or file with a filter: `cargo test table::keyboard`.
 
+// Standalone reference programs are included as independent test fixtures.
+#![allow(clippy::duplicate_mod)]
+
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast_platform as gpui_platform;
-
 
 mod support;
 

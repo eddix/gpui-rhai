@@ -112,11 +112,17 @@ fn view(ctx){tabs::Tabs(#{label:"Sections",value:"one",tabs:[
 ]})}
 "#;
     let overrides = ThemeTokenOverrides {
-        spacing: BTreeMap::from([("xxs".to_owned(), Length::Pixels(8.0))]),
+        namespaces: BTreeMap::from([(
+            "metrics".to_owned(),
+            BTreeMap::from([(
+                "segment_pad".to_owned(),
+                ThemeTokenValue::Length(Variable::Fixed(Length::Pixels(8.0))),
+            )]),
+        )]),
         typography: ThemeTypographyOverrides {
-            // Tab labels use the control role; overriding its line box grows the slot.
+            // Tab labels use the segment role; the track has its own inset metric.
             roles: BTreeMap::from([(
-                "control_regular".to_owned(),
+                "segment_regular".to_owned(),
                 TypographyToken::new(Length::Pixels(24.0), Length::Pixels(36.0), 400),
             )]),
             ..Default::default()
@@ -158,17 +164,17 @@ fn view(ctx) { row([
     let tree = snapshot(&mut visual, &view);
     let button = bounds_in(&tree, "button", "Density");
     let badge = bounds_in(&tree, "status", "Density");
-    // A md Button is metrics.control; a Badge is a 20px marker in every density.
-    assert_eq!(button.height, 32.0);
-    assert_eq!(badge.height, 20.0);
+    // Distinct Modern families: md Button 40, ordinary md Badge 22.
+    assert_eq!(button.height, 40.0);
+    assert_eq!(badge.height, 22.0);
     assert!(
         button.width >= badge.width + 12.0,
         "button={button:?}, badge={badge:?}"
     );
     let cjk_button = bounds_in(&tree, "button", "中文");
     let cjk_badge = bounds_in(&tree, "status", "中文");
-    assert_eq!(cjk_button.height, 24.0);
-    assert_eq!(cjk_badge.height, 18.0);
+    assert_eq!(cjk_button.height, 28.0);
+    assert_eq!(cjk_badge.height, 20.0);
     let large_button = bounds_in(&tree, "button", "Large line");
     let large_badge = bounds_in(&tree, "status", "Large line");
     // Minimum heights are lower bounds: larger type grows both markers.
@@ -205,15 +211,15 @@ fn view(ctx){column([
         .filter(|node| node.role == "tab")
         .collect::<Vec<_>>();
     assert_eq!(tabs.len(), 3);
-    assert_eq!(list.height, 32.0);
+    assert_eq!(list.height, 36.0);
     let bounds = tabs
         .iter()
         .map(|tab| tab.geometry.unwrap().visual)
         .collect::<Vec<_>>();
-    assert_eq!(bounds[0].y - list.y, 2.0);
-    assert_eq!(bounds[0].height, 28.0);
-    assert_eq!(bounds[0].x - list.x, 2.0);
-    assert!((list.x + list.width - (bounds[2].x + bounds[2].width) - 2.0).abs() < 0.01);
+    assert_eq!(bounds[0].y - list.y, 3.0);
+    assert_eq!(bounds[0].height, 30.0);
+    assert_eq!(bounds[0].x - list.x, 3.0);
+    assert!((list.x + list.width - (bounds[2].x + bounds[2].width) - 3.0).abs() < 0.01);
     assert!(
         (bounds[0].width - bounds[1].width).abs() <= 0.5,
         "list={list:?}, tabs={bounds:?}"
@@ -304,9 +310,9 @@ fn view(ctx){column([
             .iter()
             .all(|tab| (tab.width - vertical_tabs[0].width).abs() < 0.01)
     );
-    assert_eq!(vertical_tabs[0].y - vertical_list.y, 2.0);
+    assert_eq!(vertical_tabs[0].y - vertical_list.y, 3.0);
     let last = vertical_tabs.last().unwrap();
-    assert!((vertical_list.y + vertical_list.height - (last.y + last.height) - 2.0).abs() < 0.01);
+    assert!((vertical_list.y + vertical_list.height - (last.y + last.height) - 3.0).abs() < 0.01);
 }
 
 /// The tab slots of the first tablist in `tree`, in order.
@@ -353,16 +359,16 @@ fn view(ctx){column([tabs::Tabs(#{label:"Sections",value:"two",variant:"underlin
     // start on the edge (their spacing.xs padding is the label's inset) and sit
     // control_pad / 2 apart.
     let root = bounds_in(&tree, "group", "Sections");
-    assert_eq!((root.width, list.height), (420.0, 32.0));
+    assert_eq!((root.width, list.height), (420.0, 36.0));
     assert!(list.width < 420.0, "the list fits its tabs: {list:?}");
-    assert_eq!((tabs[0].x, tabs[0].height), (list.x, 32.0));
+    assert_eq!((tabs[0].x, tabs[0].height), (list.x, 36.0));
     assert!(
-        (tabs[1].x - (tabs[0].x + tabs[0].width) - 8.0).abs() < 0.01,
+        (tabs[1].x - (tabs[0].x + tabs[0].width) - 20.0).abs() < 0.01,
         "{tabs:?}"
     );
     // The hairline separates the panel, which sits only space.related (8px) below it.
     let panel = bounds_in(&tree, "tabpanel", "Much longer");
-    assert_eq!(panel.y - (list.y + list.height), 8.0);
+    assert_eq!(panel.y - (list.y + list.height), 12.0);
 
     let quads = painted_quads(&mut visual);
     let line_fill: Background = rgba(0x0000_ffff).into();
@@ -453,7 +459,7 @@ fn view(ctx){column([tabs::Tabs(#{label:"Workspace",value:"two",variant:"chip",p
     let tree = snapshot(&mut visual, &view);
     let tabs = tab_slots(&tree);
     assert_eq!(tabs.len(), 3);
-    assert!(tabs.iter().all(|tab| near(32.0, tab.height)), "{tabs:?}");
+    assert!(tabs.iter().all(|tab| near(30.0, tab.height)), "{tabs:?}");
     assert!(
         tabs[1].x > tabs[0].x + tabs[0].width,
         "separate chips: {tabs:?}"
@@ -683,7 +689,9 @@ fn view(ctx) { column([
     checkbox::Checkbox(#{ checked: false, label: "Audit box", on_change: Fn("toggled") }),
     input_group::InputGroup(#{ label: "Audit group", prefix: text("https://"),
         control: input::Input(#{ key: "grouped", label: "Grouped input",
-            value: ctx.get_state("value"), on_change: Fn("changed") }) })
+            value: ctx.get_state("value"), on_change: Fn("changed") }),
+        part_styles: #{root:style().focus_within(style()
+            .focus_ring(px(2), offset_px(-2), theme_color("focus_ring")))} })
         .with_style(style().width(px(260))),
 ]).with_style(style().gap(px(12)).padding(px(12))) }
 "#;
@@ -699,8 +707,8 @@ fn view(ctx) { column([
         "nothing is focused yet"
     );
 
-    // Keyboard focus on the Checkbox row paints the ink frame on its 16px box only
-    // (group_focus), never around the row, so the box stays on the content edge.
+    // Keyboard focus on the Checkbox row decorates its 16px mark with a 2px ring
+    // and a 2px gap (24px outer box), never the whole label row.
     let tree = snapshot(&mut visual, &view);
     let row = bounds_in(&tree, "checkbox", "Audit box");
     visual.update(|window, cx| view.focus(window, cx)).unwrap();
@@ -712,7 +720,7 @@ fn view(ctx) { column([
     assert!(
         focused
             .iter()
-            .all(|(width, height)| (width - 16.0).abs() < 0.5 && (height - 16.0).abs() < 0.5),
+            .all(|(width, height)| (width - 24.0).abs() < 0.5 && (height - 24.0).abs() < 0.5),
         "focus frame must be the box, not the row {row:?}: {focused:?}"
     );
 
@@ -745,7 +753,9 @@ fn state_schema() { #{ fields: #{ value: #{ schema: #{ type: "string" },
     "default": #{ type: "string", value: "initial" } } } } }
 fn changed(ctx, value) { ctx.set_state("value", value); }
 fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_state("value"),
-    on_change:Fn("changed")}).with_style(style().width(px(220))) }
+    on_change:Fn("changed"), part_styles: #{root:style().focus(style()
+        .focus_ring(px(2), offset_px(-2), theme_color("focus_ring")))}
+    }).with_style(style().width(px(220))) }
 "#;
     let overrides = ThemeTokenOverrides {
         colors: BTreeMap::from([
@@ -776,6 +786,10 @@ fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_stat
     assert!(
         green_borders > 0,
         "native focus did not reach wrapper style"
+    );
+    assert_eq!(
+        crate::support::bounds(&mut visual, &view, "text_field", "Audit input"),
+        bounds
     );
     let tree = snapshot(&mut visual, &view);
     assert_eq!(

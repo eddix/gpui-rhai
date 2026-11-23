@@ -7,19 +7,20 @@ use std::rc::{Rc, Weak};
 use gpui::prelude::FluentBuilder as _;
 
 use gpui::{
-    AnyElement, App, AppContext as _, Bounds, Context, InteractiveElement, IntoElement,
-    IsZero as _, ListAlignment, ListState, Modifiers, MouseButton, ParentElement, Pixels, Point,
-    Render, ScrollDelta, ScrollHandle, ScrollEvent, StatefulInteractiveElement, Styled,
-    TestAppContext, VisualTestContext, Window, div, list, point, px,
+    AnyElement, App, AppContext as _, Bounds, Context, Element, ElementId, GlobalElementId,
+    InspectorElementId, InteractiveElement, IntoElement, IsZero as _, LayoutId, ListAlignment,
+    ListState, Modifiers, MouseButton, ParentElement, Pixels, Point, Render, ScrollDelta,
+    ScrollEvent, ScrollHandle, StatefulInteractiveElement, Styled, TestAppContext,
+    TransformationMatrix, VisualTestContext, Window, div, list, point, px, size,
 };
 use gpui_rhai::{
-    ColorValue, ComponentStateSchema, PrimitiveContext, PrimitiveDescriptor, PrimitiveHandler,
-    PrimitiveId, PrimitiveInstance, PrimitiveTheme, Rgba8, RuntimeEngine, ScriptViewConfig,
-    ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ScrollbarSource, ScrollbarSourceHandle,
-    ScrollbarSpec, Style,
+    AutomationCommand, ColorValue, ComponentStateSchema, PrimitiveContext, PrimitiveDescriptor,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveTheme, Rgba8, RuntimeEngine,
+    ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ScrollbarSource,
+    ScrollbarSourceHandle, ScrollbarSpec, Style,
 };
 
-use crate::support::{ActiveHost, Mount, Step, filled, settle};
+use crate::support::{ActiveHost, Mount, Step, filled, live_fills, settle};
 
 const THUMB: u32 = 0xea00_eaff;
 
@@ -32,6 +33,8 @@ struct Probe {
     source_slot: RefCell<Weak<RefCell<ScrollbarSourceHandle>>>,
     bubbled_wheels: Cell<usize>,
     route_body: Cell<bool>,
+    writes: Cell<usize>,
+    last_requested: Cell<Option<Point<Pixels>>>,
 }
 
 #[derive(Clone)]
@@ -51,6 +54,8 @@ impl ScrollbarSource for Source {
         self.0.scroll.max_offset_for_scrollbar()
     }
     fn set_offset(&self, offset: Point<Pixels>) {
+        self.0.writes.set(self.0.writes.get() + 1);
+        self.0.last_requested.set(Some(offset));
         self.0.scroll.set_offset_from_scrollbar(offset);
     }
     fn drag_started(&self) {
@@ -134,6 +139,26 @@ impl ScriptViewExtension for Extension {
 }
 
 fn mount(cx: &mut TestAppContext, id: &str) -> (VisualTestContext, ScriptViewHandle, Rc<Probe>) {
+    mount_scene(
+        cx,
+        id,
+        r#"
+fn state_schema(){#{fields:#{tick:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn refresh(ctx,value){ctx.set_state("tick",ctx.get_state("tick")+1);}
+fn view(ctx){column([text(`Refresh ${ctx.get_state("tick")}`).with_key("refresh")
+    .accessibility_role("button").accessibility_label("Refresh").on_click(Fn("refresh")),
+    test::ScrollProbe(#{key:"probe"}).with_key("probe")])}
+"#,
+        false,
+    )
+}
+
+fn mount_scene(
+    cx: &mut TestAppContext,
+    id: &str,
+    script: &str,
+    routed: bool,
+) -> (VisualTestContext, ScriptViewHandle, Rc<Probe>) {
     let probe = Rc::new(Probe {
         scroll: ListState::new(50, ListAlignment::Top, px(80.0)).with_uniform_item_height(px(40.0)),
         height: Cell::new(40.0),
@@ -142,21 +167,15 @@ fn mount(cx: &mut TestAppContext, id: &str) -> (VisualTestContext, ScriptViewHan
         viewport_override: Cell::new(None),
         source_slot: RefCell::new(Weak::new()),
         bubbled_wheels: Cell::new(0),
-        route_body: Cell::new(false),
+        route_body: Cell::new(routed),
+        writes: Cell::new(0),
+        last_requested: Cell::new(None),
     });
     let source = Rc::clone(&probe);
-    let prepared = Mount::new(
-        r#"
-fn state_schema(){#{fields:#{tick:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
-fn refresh(ctx,value){ctx.set_state("tick",ctx.get_state("tick")+1);}
-fn view(ctx){column([text(`Refresh ${ctx.get_state("tick")}`).with_key("refresh")
-    .accessibility_role("button").accessibility_label("Refresh").on_click(Fn("refresh")),
-    test::ScrollProbe(#{key:"probe"}).with_key("probe")])}
-"#,
-    )
-    .with(move |view| view.extension(Extension(source)))
-    .prepare()
-    .unwrap();
+    let prepared = Mount::new(script)
+        .with(move |view| view.extension(Extension(source)))
+        .prepare()
+        .unwrap();
     let captured = Rc::new(RefCell::new(None));
     let capture = Rc::clone(&captured);
     let id = id.to_owned();
@@ -193,6 +212,149 @@ fn begin_drag(visual: &mut VisualTestContext, probe: &Probe) -> Point<Pixels> {
     position
 }
 
+const ROTATED: &str = r#"
+fn state_schema(){#{fields:#{changed:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}}}}}
+fn init(ctx){ctx.register_action("test.rotate",Fn("rotate"));}
+fn rotate(ctx,p){ctx.set_state("changed",true);}
+fn view(ctx){
+    let angle=if ctx.get_state("changed"){38}else{90};
+    column([test::ScrollProbe(#{key:"probe"}).with_key("probe").with_style(
+        style().width(px(300)).height(px(200)).transform(#{rotate:angle,scale_x:1.5,scale_y:0.75})
+    )]).with_style(style().padding_top(px(185)).padding_left(px(160)))
+}
+"#;
+
+fn rotated_thumb(v: &mut VisualTestContext, probe: &Probe) -> (Point<Pixels>, f32) {
+    let fills = live_fills(v, THUMB);
+    assert_eq!(fills.len(), 1, "{fills:?}");
+    let t = fills[0];
+    assert!(
+        t.width > t.height * 2.,
+        "native paint must be rotated: {t:?}"
+    );
+    let center = point(px(t.x + t.width / 2.), px(t.y + t.height / 2.));
+    // The viewport has a real (possibly not fully measured) native extent.
+    // Read painted length in layout units and restore the two 3px gutters.
+    let length = t.width / 0.75 + 6.;
+    let travel = f32::from(probe.scroll.viewport_bounds().size.height) - length;
+    assert!(travel > 12., "needs a scrollable rail, thumb={t:?}");
+    (center, travel)
+}
+
+fn rotated_point(probe: &Probe, from_left: f32, from_top: f32) -> Point<Pixels> {
+    let bounds = probe.scroll.viewport_bounds();
+    let center = bounds.origin + point(bounds.size.width / 2., bounds.size.height / 2.);
+    // A 90° rotation after nonuniform scaling: local Y maps to visual -X.
+    center + point(px(-(from_top - 100.) * 0.75), px((from_left - 150.) * 1.5))
+}
+
+fn near_fraction(probe: &Probe, expected: f32) {
+    let ratio = -probe.scroll.scroll_px_offset_for_scrollbar().y
+        / probe.scroll.max_offset_for_scrollbar().y;
+    assert!(
+        (ratio - expected).abs() < 0.015,
+        "{ratio} != {expected}; requested={:?}, actual={:?}, max={:?}, viewport={:?}, starts={}, ends={}",
+        probe.last_requested.get(),
+        probe.scroll.scroll_px_offset_for_scrollbar(),
+        probe.scroll.max_offset_for_scrollbar(),
+        probe.scroll.viewport_bounds(),
+        probe.starts.get(),
+        probe.ends.get()
+    );
+}
+
+#[gpui::test]
+fn rotated_scrollbar_uses_thumb_grab_offset_through_release_and_track_click(
+    cx: &mut TestAppContext,
+) {
+    let (mut v, _, probe) = mount_scene(cx, "scroll-affine-drag", ROTATED, false);
+    let (start, travel) = rotated_thumb(&mut v, &probe);
+    let end = |delta: f32| start + point(px(-delta * 0.75), px(0.));
+    v.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+    assert!(
+        probe.scroll.is_scrollbar_dragging(),
+        "painted thumb starts a native drag"
+    );
+    near_fraction(&probe, 0.);
+    let frozen = probe.scroll.max_offset_for_scrollbar().y;
+    v.simulate_mouse_move(end(travel * 0.25), MouseButton::Left, Modifiers::none());
+    near_fraction(&probe, 0.25);
+    v.simulate_mouse_up(end(travel * 0.5), MouseButton::Left, Modifiers::none());
+    let expected = -frozen * 0.5;
+    let actual = probe.last_requested.get().unwrap().y;
+    assert!(
+        (actual - expected).abs() <= frozen * 0.015,
+        "{actual:?} != {expected:?}"
+    );
+    assert_eq!(probe.scroll.scroll_px_offset_for_scrollbar().y, actual);
+    assert_eq!((probe.starts.get(), probe.ends.get()), (1, 1));
+    settle(&mut v, Step::Tick, 3);
+    let limit = probe.scroll.max_offset_for_scrollbar().y;
+    let track = rotated_point(&probe, 294., 198.);
+    v.simulate_click(track, Modifiers::none());
+    assert_eq!(probe.last_requested.get().unwrap().y, -limit);
+    assert_eq!(
+        (probe.starts.get(), probe.ends.get()),
+        (1, 1),
+        "not a new thumb grab"
+    );
+}
+
+#[gpui::test]
+fn rotated_scrollbar_ends_a_stale_drag_without_applying_its_last_pointer(cx: &mut TestAppContext) {
+    let (mut v, view, probe) = mount_scene(cx, "scroll-affine-cancel", ROTATED, false);
+    let (start, travel) = rotated_thumb(&mut v, &probe);
+    let moved = start + point(px(-travel * 0.25 * 0.75), px(0.));
+    v.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+    v.simulate_mouse_move(moved, MouseButton::Left, Modifiers::none());
+    near_fraction(&probe, 0.25);
+    let before = probe.scroll.scroll_px_offset_for_scrollbar();
+    let writes = probe.writes.get();
+    v.update(|window, cx| {
+        view.automate(
+            AutomationCommand::Action {
+                id: "test.rotate".into(),
+                payload: None,
+            },
+            window,
+            cx,
+        )
+    })
+    .unwrap();
+    settle(&mut v, Step::Tick, 4);
+    v.simulate_mouse_up(
+        moved + point(px(-40.), px(60.)),
+        MouseButton::Left,
+        Modifiers::none(),
+    );
+    assert_eq!(probe.scroll.scroll_px_offset_for_scrollbar(), before);
+    assert_eq!(probe.writes.get(), writes);
+    assert_eq!((probe.starts.get(), probe.ends.get()), (1, 1));
+    assert!(!probe.scroll.is_scrollbar_dragging());
+}
+
+#[gpui::test]
+fn rotated_scrollbar_body_hit_uses_presented_bounds_for_wheel_admission(cx: &mut TestAppContext) {
+    let (mut v, _, probe) = mount_scene(cx, "scroll-affine-wheel", ROTATED, true);
+    let position = rotated_point(&probe, 270., 100.);
+    assert!(
+        !probe.scroll.viewport_bounds().contains(&position),
+        "not in the untransformed box"
+    );
+    v.simulate_event(ScrollEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.), px(-40.))),
+        ..Default::default()
+    });
+    assert_eq!(
+        probe.writes.get(),
+        1,
+        "explicit owner consumes exactly one wheel delta"
+    );
+    assert_eq!(probe.scroll.scroll_px_offset_for_scrollbar().y, px(-40.));
+    assert_eq!(probe.bubbled_wheels.get(), 0);
+}
+
 #[gpui::test]
 fn scrollbar_freezes_native_measurements_and_releases_on_mouse_up_and_escape(
     cx: &mut TestAppContext,
@@ -214,12 +376,18 @@ fn scrollbar_freezes_native_measurements_and_releases_on_mouse_up_and_escape(
         MouseButton::Left,
         Modifiers::default(),
     );
+    let writes_after_move = probe.writes.get();
     visual.simulate_mouse_up(
         position + point(px(0.0), px(70.0)),
         MouseButton::Left,
         Modifiers::default(),
     );
     assert!(!probe.scroll.is_scrollbar_dragging());
+    assert_eq!(
+        probe.writes.get(),
+        writes_after_move,
+        "release at the same sample does not repeat the source action"
+    );
     assert_eq!((probe.starts.get(), probe.ends.get()), (1, 1));
     settle(&mut visual, Step::Tick, 4);
     begin_drag(&mut visual, &probe);
@@ -373,6 +541,14 @@ struct NestedBodyHost {
 
 impl NestedBodyHost {
     fn content(&self) -> AnyElement {
+        self.content_with_surfaces(None, Some(true))
+    }
+
+    fn content_with_surfaces(
+        &self,
+        inner_transform: Option<TransformationMatrix>,
+        outer_body: Option<bool>,
+    ) -> AnyElement {
         let theme = PrimitiveTheme::default();
         let bars = self.host.scrollbars("nested-body", &theme).unwrap();
         let spec = ScrollbarSpec::new("hidden", "hidden").unwrap();
@@ -381,6 +557,34 @@ impl NestedBodyHost {
             .with_scroll_axis(Some(gpui::Axis::Vertical))
             .with_scroll_parent(self.outer_source.clone(), Some(gpui::Axis::Vertical))
             .element_with_wheel_routing("inner", self.inner_source.clone(), spec);
+        let inner = div()
+            .relative()
+            .w(px(240.0))
+            .h(px(160.0))
+            .flex_none()
+            .child(
+                div()
+                    .id("body-inner")
+                    .size_full()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.inner)
+                    .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
+            )
+            .child(inner)
+            .into_any_element();
+        let inner = if let Some(transform) = inner_transform {
+            AffineWheelLayer::wrap(inner, transform)
+        } else {
+            inner
+        };
+        let outer_context = bars.with_scroll_axis(Some(gpui::Axis::Vertical));
+        let outer = outer_body.map(|body| {
+            if body {
+                outer_context.element_with_wheel_routing("outer", self.outer_source.clone(), spec)
+            } else {
+                outer_context.element("outer", self.outer_source.clone(), spec)
+            }
+        });
         div()
             .relative()
             .w(px(300.0))
@@ -392,33 +596,190 @@ impl NestedBodyHost {
                     .size_full()
                     .overflow_y_scroll()
                     .track_scroll(&self.outer)
-                    .child(
-                        div()
-                            .relative()
-                            .w(px(240.0))
-                            .h(px(160.0))
-                            .flex_none()
-                            .child(
-                                div()
-                                    .id("body-inner")
-                                    .size_full()
-                                    .overflow_y_scroll()
-                                    .track_scroll(&self.inner)
-                                    .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
-                            )
-                            .child(inner),
-                    )
+                    .child(inner)
                     .child(div().w(px(200.0)).h(px(600.0)).flex_none()),
             )
             // Deliberately later-painted than the nested body router.
-            .child(
-                bars.with_scroll_axis(Some(gpui::Axis::Vertical))
-                    .element_with_wheel_routing("outer", self.outer_source.clone(), spec),
-            )
+            .when_some(outer, |root, outer| root.child(outer))
             .when(self.occluded.get(), |root| {
                 root.child(div().absolute().inset_0().occlude())
             })
             .into_any_element()
+    }
+}
+
+struct AffineWheelLayer {
+    child: Option<AnyElement>,
+    transform: TransformationMatrix,
+}
+
+impl AffineWheelLayer {
+    fn wrap(child: AnyElement, transform: TransformationMatrix) -> AnyElement {
+        Self {
+            child: Some(child),
+            transform,
+        }
+        .into_any_element()
+    }
+}
+
+impl IntoElement for AffineWheelLayer {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for AffineWheelLayer {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let mut child = self.child.take().unwrap();
+        let layout = child.request_layout(window, cx);
+        (layout, child)
+    }
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        child: &mut AnyElement,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        window
+            .with_composited_transform(self.transform, |window| child.prepaint(window, cx))
+            .unwrap();
+    }
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        child: &mut AnyElement,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        window
+            .with_composited_transform(self.transform, |window| child.paint(window, cx))
+            .unwrap();
+    }
+}
+
+struct AffineWheelHost {
+    surface: NestedBodyHost,
+    outer_body: Option<bool>,
+}
+
+impl Render for AffineWheelHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let child = self.surface.content_with_surfaces(
+            Some(TransformationMatrix {
+                rotation_scale: [[0.75, 0.], [0., 1.25]],
+                translation: [30., 28.],
+            }),
+            self.outer_body,
+        );
+        self.surface.host.container(AffineWheelLayer::wrap(
+            child,
+            TransformationMatrix {
+                rotation_scale: [[0., -1.], [1., 0.]],
+                translation: [520., 60.],
+            },
+        ))
+    }
+}
+
+#[gpui::test]
+fn transformed_nested_wheel_routes_residual_to_the_parent_own_presented_viewport(
+    cx: &mut TestAppContext,
+) {
+    for outer_body in [Some(true), Some(false), None] {
+        let outer = ScrollHandle::new();
+        let inner = ScrollHandle::new();
+        let (a, b) = (outer.clone(), inner.clone());
+        let window = cx.add_window(move |_, cx| AffineWheelHost {
+            surface: NestedBodyHost {
+                host: ScriptViewHost::new(
+                    if outer_body == Some(true) {
+                        "affine-wheel-body"
+                    } else {
+                        "affine-wheel-passive"
+                    },
+                    cx,
+                )
+                .unwrap(),
+                outer_source: ScrollbarSourceHandle::new(a.clone()),
+                inner_source: ScrollbarSourceHandle::new(b.clone()),
+                outer: a,
+                inner: b,
+                occluded: Rc::new(Cell::new(false)),
+            },
+            outer_body,
+        });
+        let mut v = VisualTestContext::from_window(*window, cx);
+        v.simulate_resize(size(px(850.), px(600.)));
+        settle(&mut v, Step::Tick, 4);
+        assert!(outer.max_offset().y > px(24.) && inner.max_offset().y > px(24.));
+        let visual = point(px(392.), px(180.)); // (120,80) -> (120,128) -> (392,180).
+        assert!(!outer.bounds().contains(&visual));
+        assert!(!inner.bounds().contains(&visual));
+        let wheel = |position| ScrollEvent {
+            position,
+            delta: ScrollDelta::Pixels(point(px(0.), px(-24.))),
+            ..Default::default()
+        };
+        v.simulate_event(wheel(visual));
+        assert_eq!(inner.offset().y, px(-24.));
+        assert_eq!(
+            outer.offset().y,
+            px(0.),
+            "parent may not take consumed input"
+        );
+        inner.set_offset(point(px(0.), -inner.max_offset().y + px(8.)));
+        v.update(|window, _| window.refresh());
+        settle(&mut v, Step::Tick, 3);
+        let residual_pointer = if outer_body.is_some() {
+            visual
+        } else {
+            // Still hits the child's transformed viewport, but also falls in
+            // the unregistered parent's old raw bounds. The raw bounds are
+            // not authority to move that identified source.
+            let point = point(px(294.5), px(180.));
+            assert!(outer.bounds().contains(&point));
+            point
+        };
+        v.simulate_event(wheel(residual_pointer));
+        assert_eq!(inner.offset().y, -inner.max_offset().y);
+        assert_eq!(
+            outer.offset().y,
+            if outer_body.is_some() {
+                px(-16.)
+            } else {
+                px(0.)
+            },
+            "only a presented parent can receive residual: body={outer_body:?}"
+        );
+        let before = (inner.offset(), outer.offset());
+        v.simulate_event(wheel(point(px(150.), px(70.))));
+        assert_eq!(
+            (inner.offset(), outer.offset()),
+            before,
+            "raw boxes are not hits"
+        );
     }
 }
 

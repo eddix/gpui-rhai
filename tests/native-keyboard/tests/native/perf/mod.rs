@@ -6,8 +6,8 @@ mod invariants;
 mod lockstep;
 // Cache islands are off on the gpui-fast backend; these cover nothing else.
 #[cfg(feature = "gpui-pre")]
-mod islands;
+mod coverage;
 #[cfg(feature = "gpui-pre")]
 mod host_width;
 #[cfg(feature = "gpui-pre")]
-mod coverage;
+mod islands;

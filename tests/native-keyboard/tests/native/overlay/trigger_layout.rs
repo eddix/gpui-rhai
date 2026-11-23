@@ -47,7 +47,10 @@ fn a_row_in_a_context_menu_fills_its_column_and_truncates(cx: &mut TestAppContex
     let short = visual_of(&mut visual, "row-short");
     let wrapped = visual_of(&mut visual, "row-wrapped");
     let title = visual_of(&mut visual, "title-wrapped");
-    assert!((plain.width - sidebar.width).abs() < 0.5, "{plain:?} {sidebar:?}");
+    assert!(
+        (plain.width - sidebar.width).abs() < 0.5,
+        "{plain:?} {sidebar:?}"
+    );
     assert!(
         (short.width - plain.width).abs() < 0.5,
         "a short wrapped row stretches as the plain one does: {short:?} {plain:?}"
@@ -59,5 +62,44 @@ fn a_row_in_a_context_menu_fills_its_column_and_truncates(cx: &mut TestAppContex
     assert!(
         title.x + title.width <= sidebar.x + sidebar.width + 0.5,
         "the title truncates inside the sidebar: {title:?} {sidebar:?}"
+    );
+}
+
+#[gpui::test]
+fn an_overlay_shell_allows_its_trigger_to_shrink_in_a_bounded_row(cx: &mut TestAppContext) {
+    let (mut v, view) = Mount::new(
+        r#"
+fn view(ctx) {
+    let trigger = row([
+        text("A long recipient name must shorten inside the available row")
+            .with_style(style().whitespace_nowrap().text_ellipsis().min_width(px(0))),
+        text("v").with_style(style().flex_shrink(false)),
+    ]).with_style(style().min_width(px(0)).gap(px(4)).items_center())
+        .accessibility_role("button").accessibility_label("Recipient").test_id("trigger");
+    let portal = overlay(trigger, text("Options"), #{id:"picker",kind:"popover",open:false})
+      .with_style(style().flex_row().min_width(px(0)));
+    row([text("To").with_style(style().width(px(36)).flex_shrink(false)), portal])
+        .with_style(style().width(px(156)).gap(px(8)).clip())
+        .accessibility_role("group").accessibility_label("Address row").test_id("row")
+}"#,
+    )
+    .motion(MotionPreference::None)
+    .mount(cx);
+    crate::support::settle(&mut v, crate::support::Step::Tick, 4);
+    assert_eq!(last_error(&mut v, &view), None);
+    let row = node_by_test_id(&mut v, &view, "row")
+        .geometry
+        .unwrap()
+        .visual;
+    let trigger = node_by_test_id(&mut v, &view, "trigger").geometry.unwrap();
+    assert!(
+        (trigger.visual.x - row.x - 44.).abs() < 1.
+            && (trigger.visual.width - (row.width - 44.)).abs() < 1.,
+        "{row:?} {trigger:?}"
+    );
+    let unreachable = v.update(|_, cx| view.debug_unreachable_controls(cx).unwrap());
+    assert!(
+        !unreachable.iter().any(|issue| issue.contains("Recipient")),
+        "{unreachable:?}"
     );
 }

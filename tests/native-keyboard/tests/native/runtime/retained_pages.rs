@@ -328,7 +328,7 @@ fn navigation_breadcrumb_overflow_and_pointer_back_emit_controlled_depths(cx: &m
         .motion(MotionPreference::None)
         .mount(cx);
     settle(&mut visual, Step::Frame, 4);
-    let overflow = bounds(&mut visual, &view, "button", "…");
+    let overflow = bounds(&mut visual, &view, "button", "Earlier pages");
     crate::support::click_center(&mut visual, overflow);
     settle(&mut visual, Step::Frame, 4);
     let earlier = bounds(&mut visual, &view, "menuitem", "Visit 1");

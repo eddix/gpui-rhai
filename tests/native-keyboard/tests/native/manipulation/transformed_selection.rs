@@ -1,11 +1,11 @@
 use gpui::{
-    Context, IntoElement, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext,
-    Window, WindowHandle, point, px,
+    Context, IntoElement, Modifiers, MouseButton, Pixels, Point, Render, ScrollDelta, ScrollEvent,
+    TestAppContext, VisualTestContext, Window, WindowHandle, point, px,
 };
 use gpui_rhai::*;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::support::{Mount, ReplaceOnce, bounds, snapshot};
+use crate::support::{Mount, ReplaceOnce, bounds, center, snapshot};
 
 /// Renders nothing while the view is suspended.
 struct Host {
@@ -209,4 +209,258 @@ fn view(ctx){column([text(`${ctx.get_state("commits")}`).accessibility_role("sta
         );
         assert_eq!(status(&mut v, &view), "0");
     }
+}
+
+fn relative_point(origin: Point<Pixels>, delta: (f64, f64)) -> Point<Pixels> {
+    point(origin.x + px(delta.0 as f32), origin.y + px(delta.1 as f32))
+}
+
+#[gpui::test]
+fn pan_zoom_uses_the_inverse_plane_for_drag_and_wheel_anchor(cx: &mut TestAppContext) {
+    let script = r#"
+import "components/pan_zoom" as pan;
+fn state_schema(){#{fields:#{
+    x:#{schema:#{type:"number"},"default":#{type:"float",value:0.0}},
+    y:#{schema:#{type:"number"},"default":#{type:"float",value:0.0}},
+    scale:#{schema:#{type:"number"},"default":#{type:"float",value:1.0}},
+    commits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}
+}}}
+fn changed(ctx,val){ctx.set_state("x",val.x);ctx.set_state("y",val.y);ctx.set_state("scale",val.scale);
+    ctx.set_state("commits",ctx.get_state("commits")+1);}
+fn view(ctx){
+    let x=ctx.get_state("x"); let y=ctx.get_state("y"); let s=ctx.get_state("scale");
+    let content=pan::PanZoom(#{key:"pan", label:"Mapped viewport",transform:#{x:x,y:y,scale:s},
+        wheel_zoom:"always",content:canvas(canvas_scene([canvas_rect("marker",125,70,20,20,rgba(0xfe0000ff))])),
+        on_transform_change:Fn("changed")})
+        .with_style(style().width(px(300)).height(px(180)).border(px(0))
+            .transform(#{scale_x:1.5,scale_y:0.75,rotate:90}));
+    column([text(`${x},${y},${s},${ctx.get_state("commits")}`).accessibility_role("status"),content])
+        .with_style(style().padding_top(px(100)).padding_left(px(200)))
+}
+"#;
+    let (w, view) = mount(cx, script, "affine-pan");
+    let mut visual = VisualTestContext::from_window(*w, cx);
+    let b = bounds(&mut visual, &view, "region", "Mapped viewport");
+    assert!(b.height > 440. && b.width < 140., "{b:?}");
+    let center = center(b);
+    // x=96 in the draw plane appears y=144 from the window center. This
+    // point is intentionally outside the original unrotated Y bounds.
+    let start = relative_point(center, (0., 144.));
+    let end = relative_point(start, (-12., -45.));
+    let mouse = Modifiers::default();
+    visual.simulate_mouse_down(start, MouseButton::Left, mouse);
+    visual.simulate_mouse_move(end, MouseButton::Left, mouse);
+    visual.run_until_parked();
+    let preview_x = signal_value(&mut visual, &view, SignalProperty::TranslateX);
+    let preview_y = signal_value(&mut visual, &view, SignalProperty::TranslateY);
+    visual.simulate_mouse_up(end, MouseButton::Left, mouse);
+    visual.run_until_parked();
+    let numeric = |s: String| {
+        s.split(',')
+            .map(|v| v.parse::<f64>().unwrap())
+            .collect::<Vec<_>>()
+    };
+    let pan = numeric(status(&mut visual, &view));
+    assert!(
+        (preview_x + 30.).abs() < 0.03 && (preview_y - 16.).abs() < 0.03,
+        "preview ({preview_x}, {preview_y}), commit {pan:?}, b={b:?}, s={start:?}, e={end:?}, error={:?}",
+        crate::support::last_error(&mut visual, &view)
+    );
+    let close =
+        |got: f64, expected: f64| assert!((got - expected).abs() < 0.03, "{got} != {expected}");
+    close(pan[0], -30.);
+    close(pan[1], 16.);
+    assert_eq!(&pan[2..], &[1., 1.]);
+
+    // A wheel anchor (60,-32) from the drawable center is (24,90)
+    // from the center in window space; it must not be interpreted as
+    // that raw pixel offset. Factor and fixed-point formula are independent.
+    visual.simulate_event(ScrollEvent {
+        position: relative_point(center, (24., 90.)),
+        delta: ScrollDelta::Lines(point(0.0, -4.0)),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    let zoom = numeric(status(&mut visual, &view));
+    let ratio = 0.16_f64.exp();
+    close(zoom[0], (1. - ratio) * 60. + ratio * -30.);
+    close(zoom[1], (1. - ratio) * -32. + ratio * 16.);
+    close(zoom[2], ratio);
+    assert_eq!(zoom[3], 2.);
+    visual.simulate_event(ScrollEvent {
+        position: relative_point(center, (24., 90.)),
+        delta: ScrollDelta::Lines(point(0.0, -4.0)),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    let second = numeric(status(&mut visual, &view));
+    close(second[0], (1. - ratio) * 60. + ratio * zoom[0]);
+    close(second[1], (1. - ratio) * -32. + ratio * zoom[1]);
+    close(second[2], ratio * ratio);
+    assert_eq!(second[3], 3.);
+}
+
+#[gpui::test]
+fn marquee_matches_window_rectangle_and_inverts_view_box_before_selecting(cx: &mut TestAppContext) {
+    let script = select_script(true)
+        .replace_once("theme_color(\"accent\"))])),on_selection_change",
+            "theme_color(\"accent\"))]).view_box(0,0,130,60)),on_selection_change")
+        .replace_once("height(px(120)))])", "height(px(120)).border(px(0)).transform(#{scale_x:-1.25,scale_y:0.9,rotate:30}))]).with_style(style().padding_top(px(120)).padding_left(px(120)))");
+    let (w, view) = mount(cx, &script, "affine-selection");
+    let mut visual = VisualTestContext::from_window(*w, cx);
+    let window_center = center(bounds(&mut visual, &view, "grid", "Selection"));
+    let (sin, cos) = 30_f64.to_radians().sin_cos();
+    let map = |x: f64, y: f64| {
+        let (a, b) = (-1.25 * (x * 2. - 130.), 0.9 * (y * 2. - 60.));
+        relative_point(window_center, (cos * a - sin * b, sin * a + cos * b))
+    };
+    let target = map(40., 40.);
+    let start = relative_point(target, (-11., -13.));
+    let end = relative_point(target, (11., 13.));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let painted = visual.update(|window, _| {
+        let scale = window.scale_factor();
+        window.visual_probe_with_painted_scene(|scene| {
+            let mut points = Vec::new();
+            marquee_vertices(scene, gpui::TransformationMatrix::unit(), &mut points);
+            for (x, y) in &mut points {
+                *x /= scale;
+                *y /= scale;
+            }
+            points
+        })
+    });
+    assert!(!painted.is_empty(), "marquee must actually paint");
+    for (x, y) in [
+        (f32::from(start.x), f32::from(start.y)),
+        (f32::from(end.x), f32::from(start.y)),
+        (f32::from(end.x), f32::from(end.y)),
+        (f32::from(start.x), f32::from(end.y)),
+    ] {
+        assert!(
+            painted
+                .iter()
+                .any(|p| (p.0 - x).abs() < 0.1 && (p.1 - y).abs() < 0.1),
+            "missing corner ({x},{y}): {painted:?}"
+        );
+    }
+    assert_eq!(
+        status(&mut visual, &view),
+        "[]",
+        "preview is not a proposal"
+    );
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual, &view), "[\"a\"]");
+}
+
+fn marquee_vertices(
+    scene: &gpui::Scene,
+    transform: gpui::TransformationMatrix,
+    vertices: &mut Vec<(f32, f32)>,
+) {
+    for path in &scene.paths {
+        if !path
+            .color
+            .as_solid()
+            .is_some_and(|ink| (ink.a - (32. / 255.)).abs() < 0.001)
+        {
+            continue;
+        }
+        let [[a, b], [c, d]] = transform.rotation_scale;
+        let [tx, ty] = transform.translation;
+        vertices.extend(path.vertices.iter().map(|v| {
+            let x = v.xy_position.x.0;
+            let y = v.xy_position.y.0;
+            (a * x + b * y + tx, c * x + d * y + ty)
+        }));
+    }
+    for group in &scene.isolated_groups {
+        marquee_vertices(
+            group.source(),
+            transform.compose(group.transform()),
+            vertices,
+        );
+    }
+    #[cfg(feature = "gpui-fast")]
+    for child in scene.layers.frames.iter().flat_map(|f| f.content.scenes()) {
+        marquee_vertices(child, transform, vertices);
+    }
+}
+
+#[gpui::test]
+fn rotatable_reads_angles_before_the_ancestor_reflection_and_skew(cx: &mut TestAppContext) {
+    let (w, view) = mount(
+        cx,
+        r#"
+import "components/rotatable" as rot;
+fn state_schema(){#{fields:#{angle:#{schema:#{type:"number"},"default":#{type:"float",value:0.0}}}}}
+fn changed(ctx,value){ctx.set_state("angle",value);}
+fn view(ctx){let a=ctx.get_state("angle");
+    column([text(`${a}`).accessibility_role("status"),
+        rot::Rotatable(#{key:"rot",label:"Mapped rotation",angle:a,pivot:#{x:105.0,y:60.0},
+            content:canvas(canvas_scene([canvas_rect("marker",180,80,8,8,rgba(0xdd1122ff))])),
+            on_rotate:Fn("changed")}).with_style(style().width(px(260)).height(px(140)).border(px(0))
+                .transform(#{scale_x:-1.4,scale_y:0.8,skew_x:15,rotate:25}))
+    ]).with_style(style().padding_top(px(90)).padding_left(px(160)))
+}
+"#,
+        "affine-rotate",
+    );
+    let mut visual = VisualTestContext::from_window(*w, cx);
+    let center = center(bounds(&mut visual, &view, "slider", "Mapped rotation"));
+    let map = |x, y| {
+        let b = y * 0.8;
+        let a = -1.4 * x + b * 15_f64.to_radians().tan();
+        let (sin, cos) = 25_f64.to_radians().sin_cos();
+        relative_point(center, (cos * a - sin * b, sin * a + cos * b))
+    };
+    let start = map(-25. + 55., -10. + 12.);
+    let end = map(-25. + 20., -10. + 45.);
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let preview = signal_value(&mut visual, &view, SignalProperty::Rotate);
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let actual = status(&mut visual, &view).parse::<f64>().unwrap();
+    let expected = 45_f64.atan2(20.).to_degrees() - 12_f64.atan2(55.).to_degrees();
+    assert!(
+        (preview - expected).abs() < 0.1,
+        "preview {preview} != {expected}"
+    );
+    assert!((actual - expected).abs() < 0.1, "{actual} != {expected}");
+}
+
+#[gpui::test]
+fn canvas_pointer_payload_hits_the_painted_shape_inside_a_transformed_parent(
+    cx: &mut TestAppContext,
+) {
+    let (w, view) = mount(
+        cx,
+        r#"
+fn state_schema(){#{fields:#{hit:#{schema:#{type:"string"},"default":#{type:"string",value:"unseen"}}}}}
+fn hit(ctx,event){ctx.set_state("hit",if event.canvas_key==(){"none"}else{event.canvas_key});}
+fn view(ctx){column([text(ctx.get_state("hit")).accessibility_role("status"),
+    column([canvas(canvas_scene([canvas_rect("shape",10,8,12,12,theme_color("accent"))])
+        .view_box(0,0,100,60)).with_key("canvas")
+        .with_style(style().width(px(200)).height(px(120)))
+        .accessibility_role("button").accessibility_label("Mapped vector").on("pointer_down",Fn("hit"))])
+    .with_style(style().width(px(200)).height(px(120)).transform(#{scale_x:-1.0,rotate:90}))
+]).with_style(style().padding_top(px(120)).padding_left(px(150)))}
+"#,
+        "affine-canvas-payload",
+    );
+    let mut visual = VisualTestContext::from_window(*w, cx);
+    let center = center(bounds(&mut visual, &view, "button", "Mapped vector"));
+    // source (16,14) -> drawable (32,28), relative (-68,-32),
+    // reflected across X then rotated clockwise -> (+32,+68).
+    visual.simulate_click(relative_point(center, (32., 68.)), Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual, &view), "shape");
+    visual.simulate_click(relative_point(center, (-32., -68.)), Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual, &view), "none");
 }

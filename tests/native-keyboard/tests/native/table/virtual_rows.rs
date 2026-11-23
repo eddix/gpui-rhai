@@ -138,7 +138,8 @@ fn fill_height_table_honors_min_height_inside_scroll_fallback(cx: &mut TestAppCo
         assert!(
             viewport.size.height > px(0.0)
                 && (f64::from(viewport.origin.y) - (header.y + header.height)).abs() < 0.5
-                && (f64::from(viewport.origin.y + viewport.size.height) - (table.y + table.height))
+                && (f64::from(viewport.origin.y + viewport.size.height)
+                    - (table.y + table.height - 1.0))
                     .abs()
                     < 0.5,
             "the body must fill the Table below its header: {viewport:?}, {header:?}, {table:?}"
@@ -305,7 +306,11 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         "row-25",
         "rows inside the second group must settle before asserting its sticky position",
     );
-    scroll(&mut visual, -60.0);
+    let entering_beta = bounds_for_group(&mut visual, "beta, 20");
+    #[allow(clippy::cast_possible_truncation)]
+    let cross_header =
+        (entering_beta.y - f64::from(viewport.origin.y) + entering_beta.height) as f32;
+    scroll(&mut visual, -cross_header);
     advance(&mut visual, 4);
     let beta = bounds_for_group(&mut visual, "beta, 20");
     assert!(

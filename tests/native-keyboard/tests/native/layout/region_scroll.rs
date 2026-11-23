@@ -3,8 +3,7 @@
 //! (the control); the wheel precondition shows the body is a viewport.
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext,
-    point, px,
+    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
 };
 use gpui_rhai::{MotionPreference, ScriptViewHandle};
 use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID};

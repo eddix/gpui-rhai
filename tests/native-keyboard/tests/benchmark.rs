@@ -1,4 +1,3 @@
-
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]

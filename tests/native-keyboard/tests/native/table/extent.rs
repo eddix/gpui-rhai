@@ -165,10 +165,24 @@ fn mount_with_styles(
     cx: &mut TestAppContext,
     source: String,
     name: &str,
-    overrides: ThemeTokenOverrides,
+    mut overrides: ThemeTokenOverrides,
     styles: &str,
 ) -> (WindowHandle<Host>, ScriptViewHandle) {
-    let styles = styles.to_owned();
+    // These probes specify a 300px *client* viewport and a 12px cell inset;
+    // decorative preset frames and a new design's inset must not change their
+    // percentage/flex arithmetic. Actual preset geometry has its own matrix.
+    overrides
+        .namespaces
+        .entry("metrics".into())
+        .or_default()
+        .entry("table_pad".into())
+        .or_insert(ThemeTokenValue::Length(Variable::Fixed(Length::Pixels(
+            12.0,
+        ))));
+    let styles = format!(
+        "{}\nfn component_styles(){{let sheet=probe_styles();let parts=if \"components/table\" in sheet{{sheet[\"components/table\"]}}else{{#{{}}}};parts.root=style().border(px(0));sheet[\"components/table\"]=parts;sheet}}",
+        styles.replace("fn component_styles", "fn probe_styles")
+    );
     let mount = table(source)
         .locale("en.rhai", EN_LOCALE)
         .locale("ar.rhai", AR_LOCALE)
@@ -411,12 +425,12 @@ fn theme_insets_are_in_the_shared_column_plan_and_real_extent(cx: &mut TestAppCo
             .into_iter()
             .enumerate()
         {
-            // Cell text starts at metrics.inset; overriding it moves every cell edge.
+            // Cell text starts at metrics.table_pad; overriding it moves every cell edge.
             let overrides = ThemeTokenOverrides {
                 namespaces: BTreeMap::from([(
                     "metrics".into(),
                     BTreeMap::from([(
-                        "inset".into(),
+                        "table_pad".into(),
                         ThemeTokenValue::Length(Variable::Fixed(spacing)),
                     )]),
                 )]),
@@ -447,7 +461,7 @@ fn theme_insets_are_in_the_shared_column_plan_and_real_extent(cx: &mut TestAppCo
                 Length::Pixels(value) => 2.0 * value,
                 Length::Rems(value) => 2.0 * value * f64::from(window.rem_size()),
                 _ => unreachable!(),
-            });
+            }) + 1.0; // The shared Modern vertical grid is a real border.
             assert_width(&mut v, &view, "A", "Alpha", 350.0);
             assert_width(&mut v, &view, "B", "Beta", 150.0);
             assert_width(&mut v, &view, "C", "Gamma", minimum);
@@ -634,8 +648,9 @@ fn four_column_registry_width_descriptors_share_the_actual_native_plan(cx: &mut 
             let mut v = VisualTestContext::from_window(*window, cx);
             settle(&mut v);
             assert_width(&mut v, &view, "Name", "Alpha", 120.0);
-            // Score's flex share is exhausted; its floor is the two cell insets.
-            assert_width(&mut v, &view, "Score", "Beta", 24.0);
+            // Score's flex share is exhausted; its floor includes both insets
+            // and the shared Modern vertical-grid border.
+            assert_width(&mut v, &view, "Score", "Beta", 25.0);
             assert_width(&mut v, &view, "Joined", "Gamma", 90.0);
             assert_width(&mut v, &view, "Status", "row-0", 90.0);
             let table = bounds(&mut v, &view, "table", "Extent Table");

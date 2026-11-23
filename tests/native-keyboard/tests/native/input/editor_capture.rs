@@ -79,7 +79,10 @@ fn a_completion_list_takes_the_arrows_and_enter_from_a_textarea(cx: &mut TestApp
     visual.simulate_input("!");
     visual.run_until_parked();
     assert_eq!(trace(&mut visual, &view), "UED");
-    assert_eq!(field(&mut visual, &view, "Draft"), UiValue::String("one\ntwo!".into()));
+    assert_eq!(
+        field(&mut visual, &view, "Draft"),
+        UiValue::String("one\ntwo!".into())
+    );
 
     // With the list closed the handlers still see the keys, and the editor acts on them.
     // An automation click leaves the focus in the editor.
@@ -90,7 +93,11 @@ fn a_completion_list_takes_the_arrows_and_enter_from_a_textarea(cx: &mut TestApp
     visual.run_until_parked();
     assert_eq!(trace(&mut visual, &view), "UEDU");
     let value = field(&mut visual, &view, "Draft");
-    assert_ne!(value, UiValue::String("one\ntwo!^".into()), "Up moved the caret: {value:?}");
+    assert_ne!(
+        value,
+        UiValue::String("one\ntwo!^".into()),
+        "Up moved the caret: {value:?}"
+    );
 }
 
 #[gpui::test]

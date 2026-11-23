@@ -86,10 +86,7 @@ fn a_root_background_covers_the_editor(cx: &mut TestAppContext) {
     let field = r#"composer::Composer(#{ key: "prompt", label: "Prompt", value: "",
         on_change: Fn("changed"), part_styles: #{ root: style().background(rgba(0x00ff00ff)) } })"#;
     let overrides = ThemeTokenOverrides {
-        colors: BTreeMap::from([(
-            "surface_raised".to_owned(),
-            Rgba8::from_rgba_hex(RAISED),
-        )]),
+        colors: BTreeMap::from([("surface_raised".to_owned(), Rgba8::from_rgba_hex(RAISED))]),
         ..Default::default()
     };
     let (mut visual, view) = Mount::components(SOURCE.replace_once("FIELD", field))

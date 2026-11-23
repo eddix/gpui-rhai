@@ -102,7 +102,7 @@ fn a_code_column_reaches_only_its_cells(cx: &mut TestAppContext) {
         );
         assert!(group.iter().all(|role| role != "code"), "{group:?}");
         assert!(
-            group.iter().filter(|role| *role == "body").count() == 2,
+            group.iter().filter(|role| *role == "table_body").count() == 2,
             "{group:?}"
         );
     }

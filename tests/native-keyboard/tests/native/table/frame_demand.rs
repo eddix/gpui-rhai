@@ -15,6 +15,9 @@ fn view(ctx){column([
         columns:[#{key:"a",title:"A",width:#{kind:"fixed",value:120.0}},
                  #{key:"b",title:"B",width:#{kind:"percent",value:50.0}},
                  #{key:"c",title:"C",width:#{kind:"flex",value:1.0}}]})
+        // This scheduling probe defines a 300px client box, independently of
+        // decorative preset borders. Full preset geometry is tested separately.
+        .with_style(style().border(px(0)))
 ]).with_style(style().width(px(ctx.get_state("viewport"))))}
 "#;
 

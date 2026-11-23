@@ -3,6 +3,35 @@ use crate::support::{Mount, Step, bounds, last_error, settle};
 use gpui::{TestAppContext, px, size};
 
 #[gpui::test]
+fn intrinsic_grid_rows_take_each_clipped_childs_natural_height(cx: &mut TestAppContext) {
+    let source = r#"
+        fn track(caption, height, index) {
+            column([box([]).with_style(style().height(px(height)))])
+                .accessibility_role("group").accessibility_label(caption)
+                .with_style(style().grid_cell(1,index).clip())
+        }
+        fn grid(prefix, intrinsic) {
+            let rows = if intrinsic {style().grid_rows_intrinsic(2)} else {style().grid_rows(2)};
+            box([track(prefix+" short",26,1), track(prefix+" tall",72,2)])
+                .with_style(rows.grid_cols(1).width(px(150)).gap_y(px(4)))
+        }
+        fn view(ctx) { column([grid("Intrinsic",true),grid("Fractional",false)]) }
+    "#;
+    let (mut visual, view) = Mount::new(source).mount(cx);
+    settle(&mut visual, Step::Tick, 4);
+    assert_eq!(last_error(&mut visual, &view), None);
+    let short = bounds(&mut visual, &view, "group", "Intrinsic short");
+    let tall = bounds(&mut visual, &view, "group", "Intrinsic tall");
+    assert!((short.height - 26.).abs() < 0.5, "{short:?}");
+    assert!((tall.height - 72.).abs() < 0.5, "{tall:?}");
+    assert!((tall.y - short.y - short.height - 4.).abs() < 0.5);
+    let equal_short = bounds(&mut visual, &view, "group", "Fractional short");
+    let equal_tall = bounds(&mut visual, &view, "group", "Fractional tall");
+    assert!((equal_short.height - equal_tall.height).abs() < 0.5);
+    assert!(equal_short.height > short.height + 20.);
+}
+
+#[gpui::test]
 fn responsive_tracks_are_equal_bounded_and_square_through_resize(cx: &mut TestAppContext) {
     let source = r#"
         fn view(ctx){let tiles=[];
@@ -84,7 +113,7 @@ fn automatic_rows_keep_intrinsic_content_heights(cx: &mut TestAppContext) {
 }
 
 /// Tiles in a 600px grid whose minimum track is a density token (24px or
-/// 16px times six), so comfortable lays out four columns and compact six.
+/// 20px times six), so comfortable lays out four columns and compact five.
 const TOKEN_GRID: &str = r#"
     fn state_schema(){#{fields:#{compact:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}}}}}
     fn toggle(ctx,payload){ctx.set_state("compact",!ctx.get_state("compact"));}
@@ -115,7 +144,7 @@ fn token_tracks_follow_the_density_they_resolve_in(cx: &mut TestAppContext) {
     crate::support::click_center(&mut visual, toggle);
     settle(&mut visual, Step::Frame, 5);
     let tile = bounds(&mut visual, &view, "group", "Tile 0");
-    assert!((tile.width - 100.0).abs() < 1.0, "compact: {tile:?}");
+    assert!((tile.width - 120.0).abs() < 1.0, "compact: {tile:?}");
     assert_eq!(last_error(&mut visual, &view), None);
 }
 
@@ -148,12 +177,20 @@ fn token_tracks_out_of_order_lay_out_adjusted_and_report_it(cx: &mut TestAppCont
     visual.simulate_resize(size(px(1000.0), px(600.0)));
     settle(&mut visual, Step::Frame, 5);
     let tile = bounds(&mut visual, &view, "group", "Tile 0");
-    assert!((tile.width - 480.0).abs() < 1.0, "the maximum rises to the minimum: {tile:?}");
+    assert!(
+        (tile.width - 480.0).abs() < 1.0,
+        "the maximum rises to the minimum: {tile:?}"
+    );
     let reports = reports.borrow();
     assert_eq!(reports.len(), 1, "{reports:?}");
-    assert_eq!(reports[0].domain, gpui_rhai::ScriptErrorDomain::Presentation);
+    assert_eq!(
+        reports[0].domain,
+        gpui_rhai::ScriptErrorDomain::Presentation
+    );
     assert!(
-        reports[0].message.contains("auto_grid_columns resolved to minimum 480"),
+        reports[0]
+            .message
+            .contains("auto_grid_columns resolved to minimum 480"),
         "{}",
         reports[0].message
     );

@@ -60,7 +60,7 @@ fn component_catalog_story_switches_categories_and_live_themes(cx: &mut TestAppC
         .clone();
     assert_eq!(
         trigger.value,
-        Some(UiValue::String("Default Dark".to_owned()))
+        Some(UiValue::String("Modern · Dark".to_owned()))
     );
     click_center(&mut visual, trigger.geometry.unwrap().visual);
     visual.run_until_parked();
@@ -76,5 +76,35 @@ fn component_catalog_story_switches_categories_and_live_themes(cx: &mut TestAppC
         .unwrap()
         .clone();
     assert_eq!(trigger.value, Some(UiValue::String("Nord".to_owned())));
+    assert_eq!(
+        visual.update(|_, cx| view.theme_snapshot(cx).unwrap().variant.family),
+        "Nord"
+    );
+    for (family, mode) in [
+        ("Modern", "Light"),
+        ("Modern", "Dark"),
+        ("Clean", "Light"),
+        ("Clean", "Dark"),
+    ] {
+        let trigger = bounds(&mut visual, &view, "combobox", "Gallery theme");
+        click_center(&mut visual, trigger);
+        let search = bounds(&mut visual, &view, "text_field", "Gallery theme");
+        click_center(&mut visual, search);
+        visual.simulate_input(family);
+        visual.run_until_parked();
+        dispatch(
+            &mut visual,
+            &view,
+            by_role("option", &format!("{family} · {mode}")),
+            "click",
+        )
+        .unwrap();
+        visual.run_until_parked();
+        let selected = visual.update(|_, cx| view.theme_snapshot(cx).unwrap().variant);
+        assert_eq!(
+            (selected.family.as_str(), selected.name.as_str()),
+            (family, mode)
+        );
+    }
     assert!(last_error(&mut visual, &view).is_none());
 }

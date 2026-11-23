@@ -119,7 +119,7 @@ fn view(ctx) {{ column([table::Table(#{{ key: "t", label: "Items", {TABLE_ROWS},
     let center = |bounds: GeometryBounds| bounds.x + bounds.width / 2.0;
     let end = |bounds: GeometryBounds| bounds.x + bounds.width;
     let header = bounds(&mut visual, &view, "columnheader", "Name");
-    let title = bounds(&mut visual, &view, "text", "NAME");
+    let title = bounds(&mut visual, &view, "text", "Name");
     let cell = bounds(&mut visual, &view, "text", "Alpha");
     assert!(
         (center(title) - center(header)).abs() < 1.0,
@@ -127,7 +127,7 @@ fn view(ctx) {{ column([table::Table(#{{ key: "t", label: "Items", {TABLE_ROWS},
     );
     assert!((center(title) - center(cell)).abs() < 1.0, "cell {cell:?}");
     // An end column already followed its alignment; it keeps doing so.
-    let count = bounds(&mut visual, &view, "text", "COUNT");
+    let count = bounds(&mut visual, &view, "text", "Count");
     let number = bounds(&mut visual, &view, "text", "1");
     assert!(
         (end(count) - end(number)).abs() < 1.0,
@@ -242,15 +242,72 @@ const BORDER: u32 = 0x7080_90ff;
 const SELECTION: u32 = 0xa0b0_c0ff;
 const TEXT_MUTED: u32 = 0xc0d0_e0ff;
 
+#[gpui::test]
+fn icon_button_routes_registered_actions_from_pointer_and_keyboard(cx: &mut TestAppContext) {
+    use crate::support::{settle, snapshot};
+
+    let (mut visual, view) = Mount::new(
+        r#"
+        import "components/icon_button" as icons;
+        fn state_schema() { #{ fields: #{ hits: #{ schema: #{ type: "integer" },
+            "default": #{ type: "integer", value: 0 } } } } }
+        fn init(ctx) {
+            ctx.register_action("fixture.run", Fn("run_action"));
+            ctx.register_action("fixture.disabled", Fn("run_action"));
+            ctx.set_action_enabled("fixture.disabled", false);
+        }
+        fn run_action(ctx, payload) { ctx.set_state("hits", ctx.get_state("hits") + 1); }
+        fn must_not_run(ctx, payload) { ctx.set_state("hits", 100); }
+        fn view(ctx) {
+            row([
+                icons::IconButton(#{ key:"run", label:"Run registered action", icon:text("R"),
+                    action:"fixture.run", on_click:Fn("must_not_run") }),
+                icons::IconButton(#{ key:"disabled", label:"Unavailable action", icon:text("X"),
+                    action:"fixture.disabled" }),
+                text(`Hits ${ctx.get_state("hits")}`)
+            ])
+        }
+    "#,
+    )
+    .registry("components/icon_button")
+    .mount(cx);
+    visual.update(|window, _| window.activate_window());
+    settle(&mut visual, Step::Tick, 3);
+    let has_hits = |visual: &mut VisualTestContext, count: i32| {
+        snapshot(visual, &view)
+            .find_by_role_and_name("text", &format!("Hits {count}"))
+            .next()
+            .is_some()
+    };
+    assert!(has_hits(&mut visual, 0));
+    let run = bounds(&mut visual, &view, "button", "Run registered action");
+    click_center(&mut visual, run);
+    settle(&mut visual, Step::Frame, 3);
+    assert!(has_hits(&mut visual, 1));
+    visual.simulate_keystrokes("enter");
+    settle(&mut visual, Step::Frame, 3);
+    assert!(has_hits(&mut visual, 2));
+    let unavailable = snapshot(&mut visual, &view)
+        .find_by_role_and_name("button", "Unavailable action")
+        .next()
+        .unwrap()
+        .clone();
+    assert!(unavailable.disabled);
+    click_center(&mut visual, unavailable.geometry.unwrap().visual);
+    assert!(has_hits(&mut visual, 2));
+    assert_eq!(last_error(&mut visual, &view), None);
+}
+
 fn icon_button_quads(
     cx: &mut TestAppContext,
     props: &str,
+    disabled: bool,
 ) -> Vec<(gpui::Background, gpui::Hsla, f32)> {
     let (mut visual, view) = mount_with(
         cx,
         &format!(
             r#"import "components/icon_button" as icon_button;
-fn view(ctx) {{ row([icon_button::IconButton(#{{ icon: box([]), label: "Tool", disabled: true, {props} }})]) }}"#
+fn view(ctx) {{ row([icon_button::IconButton(#{{ icon: box([]), label: "Tool", disabled: {disabled}, hoverable:false, {props} }})]) }}"#
         ),
         "fn component_styles() { #{} }",
         colors(&[
@@ -261,47 +318,36 @@ fn view(ctx) {{ row([icon_button::IconButton(#{{ icon: box([]), label: "Tool", d
         ]),
     );
     assert_eq!(last_error(&mut visual, &view), None);
+    visual.simulate_mouse_move(
+        gpui::point(gpui::px(1000.0), gpui::px(1000.0)),
+        None,
+        gpui::Modifiers::none(),
+    );
+    settle(&mut visual);
     quads(&mut visual)
 }
 
 #[gpui::test]
 fn a_disabled_icon_button_keeps_the_variant_silhouette(cx: &mut TestAppContext) {
-    // D27, as on Button: blocks become a neutral block, outline keeps only its frame and
-    // ghost stays bare, whatever the enabled fill and frame were.
-    let fill = |hex: u32| -> gpui::Background { hsla(hex).into() };
-    let primary = icon_button_quads(cx, r#"variant: "primary""#);
-    assert!(
-        primary.iter().any(|(bg, ..)| *bg == fill(SURFACE_HOVER)),
-        "{primary:?}"
-    );
-    assert!(
-        primary
-            .iter()
-            .any(|(_, border, width)| *border == hsla(SURFACE_HOVER) && *width > 0.0),
-        "{primary:?}"
-    );
-    assert!(
-        !primary.iter().any(|(_, border, _)| *border == hsla(ACCENT)),
-        "{primary:?}"
-    );
-    let outline = icon_button_quads(cx, r#"variant: "outline""#);
-    assert!(
-        outline
-            .iter()
-            .any(|(_, border, width)| *border == hsla(BORDER) && *width > 0.0),
-        "{outline:?}"
-    );
-    assert!(
-        !outline.iter().any(|(bg, ..)| *bg == fill(SURFACE_HOVER)),
-        "{outline:?}"
-    );
-    let selected = icon_button_quads(cx, r#"variant: "ghost", selected: true"#);
-    assert!(
-        !selected
-            .iter()
-            .any(|(bg, border, _)| *border == hsla(SELECTION) || *bg == fill(SELECTION)),
-        "{selected:?}"
-    );
+    // Disabled is the same recipe at 40% opacity, not an unrelated neutral block.
+    // Compare actual painted gradients and outlines, including selected ghost actions.
+    for props in [
+        r#"variant:"primary""#,
+        r#"variant:"secondary""#,
+        r#"variant:"outline""#,
+        r#"variant:"ghost""#,
+        r#"variant:"ghost",selected:true"#,
+    ] {
+        let enabled = icon_button_quads(cx, props, false);
+        let disabled = icon_button_quads(cx, props, true);
+        let dimmed = enabled
+            .into_iter()
+            .map(|(background, border, width)| {
+                (background.opacity(0.4), border.opacity(0.4), width)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(disabled, dimmed, "{props}: opacity must apply exactly once");
+    }
 }
 
 #[gpui::test]

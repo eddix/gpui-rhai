@@ -78,7 +78,10 @@ fn a_script_notification_reaches_the_platform_and_its_click_comes_back(cx: &mut 
     });
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     while text_of(&mut visual, &view, "clicked") != "clicked waiting:approve" {
-        assert!(std::time::Instant::now() < deadline, "the click never came back");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the click never came back"
+        );
         std::thread::sleep(std::time::Duration::from_millis(20));
         settle(&mut visual, Step::Tick, 1);
     }

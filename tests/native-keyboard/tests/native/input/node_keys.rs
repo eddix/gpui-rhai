@@ -175,6 +175,33 @@ fn raw_key_matching_ignores_modifiers_but_not_key_char(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
+fn exact_plain_shortcuts_and_implicit_activation_skip_modifier_chords(cx: &mut TestAppContext) {
+    let window = mount(
+        cx,
+        r#"text("Target").on_click(Fn("clicked")).on("key:plain+1",Fn("h"))"#,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.update(|window, cx| window.focus_next(cx));
+    let control = Modifiers {
+        control: true,
+        ..Default::default()
+    };
+    let function = Modifiers {
+        function: true,
+        ..Default::default()
+    };
+    key(&mut visual, "1", control, None);
+    key(&mut visual, "1", function, None);
+    key(&mut visual, "enter", control, None);
+    key(&mut visual, "space", function, None);
+    assert_eq!(status(cx, window), "0:0:");
+    key(&mut visual, "1", Modifiers::none(), None);
+    key(&mut visual, "enter", Modifiers::none(), None);
+    assert_eq!(status(cx, window), "1:1:");
+    cleanup(cx, window);
+}
+
+#[gpui::test]
 fn enter_and_space_click_only_when_their_key_handler_is_absent(cx: &mut TestAppContext) {
     for explicit in [false, true] {
         let target = if explicit {

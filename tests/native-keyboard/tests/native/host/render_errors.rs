@@ -4,7 +4,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use crate::support::{Mount, by_role, dispatch, last_error, node_texts};
+use crate::support::{Mount, bounds, by_role, dispatch, last_error, node_texts};
 use gpui::{Modifiers, MouseButton, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::UiValue;
 
@@ -84,6 +84,7 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
 
     let mut visual = VisualTestContext::from_window(*window, cx);
     assert_eq!(last_error(&mut visual, &view), None);
+    let committed = bounds(&mut visual, &view, "button", "Recover");
     let automation_error = dispatch(
         &mut visual,
         &view,
@@ -124,6 +125,7 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
     let banner = visual
         .debug_bounds("gpui-rhai-error-banner:failure-view")
         .expect("default runtime error banner must remain visible");
+    assert_eq!(bounds(&mut visual, &view, "button", "Recover"), committed);
     let start = point(banner.origin.x + px(10.0), banner.origin.y + px(10.0));
     let end = point(
         banner.origin.x + banner.size.width - px(10.0),
@@ -168,6 +170,7 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
             .debug_bounds("gpui-rhai-error-banner:failure-view")
             .is_none()
     );
+    assert_eq!(bounds(&mut visual, &view, "button", "Recover"), committed);
 }
 
 #[gpui::test]

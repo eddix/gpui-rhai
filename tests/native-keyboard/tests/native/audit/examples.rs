@@ -28,7 +28,7 @@ mod data_table;
 
 #[allow(dead_code)]
 #[path = "../../../../../crates/gpui-rhai/examples/embedded_views.rs"]
-mod embedded_views;
+pub(super) mod embedded_views;
 
 /// The bundled productivity profile.
 fn productivity() -> &'static str {
@@ -50,11 +50,11 @@ fn rules() -> AuditRules {
     .unwrap()
 }
 
-fn findings(
+fn mounted(
     cx: &mut TestAppContext,
     prepared: PreparedScriptView,
     (width, height): (f32, f32),
-) -> Vec<String> {
+) -> (VisualTestContext, ScriptViewHandle) {
     cx.update(gpui_rhai::install);
     let captured = Rc::new(RefCell::new(None));
     let capture = captured.clone();
@@ -71,6 +71,15 @@ fn findings(
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.simulate_resize(gpui::size(gpui::px(width), gpui::px(height)));
     settle(&mut visual, Step::Refresh, 3);
+    (visual, view)
+}
+
+fn findings(
+    cx: &mut TestAppContext,
+    prepared: PreparedScriptView,
+    size: (f32, f32),
+) -> Vec<String> {
+    let (mut visual, view) = mounted(cx, prepared, size);
     if let Some(error) = last_error(&mut visual, &view) {
         return vec![format!("render error: {error}")];
     }
@@ -89,8 +98,78 @@ fn audited(view: ScriptView) -> PreparedScriptView {
 }
 
 #[gpui::test]
+fn reference_examples_mount_complete_designs_and_keep_all_four_available(cx: &mut TestAppContext) {
+    type Factory = fn(&str) -> ScriptView;
+    let examples: [(&str, Factory, (f32, f32)); 4] = [
+        (
+            "settings",
+            |theme| settings_panel::view(theme, "en"),
+            settings_panel::WINDOW,
+        ),
+        (
+            "dashboard",
+            |theme| dashboard_layout::view(theme, "en"),
+            dashboard_layout::WINDOW,
+        ),
+        (
+            "form",
+            |theme| form_showcase::view(theme, "en", "default"),
+            form_showcase::WINDOW,
+        ),
+        (
+            "table",
+            |theme| data_table::view(theme, "en", "default"),
+            data_table::WINDOW,
+        ),
+    ];
+    let presets = [
+        ("modern-light", "Modern", "Light"),
+        ("modern-dark", "Modern", "Dark"),
+        ("clean-light", "Clean", "Light"),
+        ("clean-dark", "Clean", "Dark"),
+        ("", "Modern", "Dark"),
+    ];
+    for (name, factory, size) in examples {
+        for (slug, family, variant) in presets {
+            let (mut visual, view) = mounted(
+                cx,
+                factory(slug)
+                    .motion_preference(MotionPreference::None)
+                    .prepare()
+                    .unwrap(),
+                size,
+            );
+            let theme = visual.update(|_, cx| view.theme_snapshot(cx).unwrap());
+            assert_eq!(
+                (theme.variant.family.as_str(), theme.variant.name.as_str()),
+                (family, variant),
+                "{name}/{slug}: init must select the full design, not fall back to a legacy palette"
+            );
+            for (_, family, variant) in &presets[..4] {
+                visual
+                    .update(|_, cx| view.select_theme(family, variant, cx))
+                    .unwrap();
+                settle(&mut visual, Step::Frame, 2);
+                let theme = visual.update(|_, cx| view.theme_snapshot(cx).unwrap());
+                assert_eq!(
+                    (theme.variant.family.as_str(), theme.variant.name.as_str()),
+                    (*family, *variant)
+                );
+                assert!(
+                    last_error(&mut visual, &view).is_none(),
+                    "{name}/{slug} -> {family}/{variant}"
+                );
+            }
+        }
+    }
+}
+
+#[gpui::test]
 fn examples_pass_the_productivity_audit(cx: &mut TestAppContext) {
     let mut failures = Vec::new();
+    // These example states exercise readable alternate palettes and the
+    // embedded widget. Require a raw clean report. Positive controls for
+    // preserved, source-exact palette risks live in the Gallery matrix.
     let mut check = |name: &str, prepared: PreparedScriptView, size: (f32, f32)| {
         for finding in findings(cx, prepared, size) {
             failures.push(format!("{name}: {finding}"));

@@ -84,7 +84,7 @@ fn array_and_native_headers_cycle_on_display_key_and_keep_missing_ranks_last(
             dispatch(
                 &mut visual,
                 &view,
-                by_role("columnheader", "Duration"),
+                by_role("button", "Sort Duration"),
                 "click",
             )
             .unwrap();

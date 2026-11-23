@@ -5,6 +5,7 @@ mod command_dialog_options;
 mod dialog_size;
 mod focus;
 mod host_open_overlays;
+mod hover_card;
 mod identity;
 mod layer_tab_navigation;
 mod list_panel_padding;

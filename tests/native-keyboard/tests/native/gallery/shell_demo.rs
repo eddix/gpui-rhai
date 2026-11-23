@@ -23,9 +23,10 @@ fn the_responsive_shell_follows_its_frame(cx: &mut TestAppContext) {
     .motion_preference(MotionPreference::None)
     .prepare()
     .unwrap();
-    let (window, view) = mount_prepared(cx, prepared, ("shell", "shell-view"), true, |host, view| {
-        Host { host, view }
-    });
+    let (window, view) =
+        mount_prepared(cx, prepared, ("shell", "shell-view"), true, |host, view| {
+            Host { host, view }
+        });
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.simulate_resize(size(px(1600.0), px(1000.0)));
     settle(&mut visual, Step::Tick, 5);

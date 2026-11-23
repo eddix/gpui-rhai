@@ -57,7 +57,10 @@ fn cli_gallery_split_pane_mounts_default_static_and_factory_grips(cx: &mut TestA
     ] {
         let separator = bounds(&mut visual, &view, "separator", label);
         assert!(separator.height > 100.0, "{label}: {separator:?}");
-        assert!((separator.width - width).abs() < 0.5, "{label}: {separator:?}");
+        assert!(
+            (separator.width - width).abs() < 0.5,
+            "{label}: {separator:?}"
+        );
     }
     assert_eq!(last_error(&mut visual, &view), None);
 }

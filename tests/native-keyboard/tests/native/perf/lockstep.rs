@@ -2,9 +2,12 @@
 //! scrolling, selection, keyboard focus and hover: window A renders every
 //! frame in full, window B replays its cache islands.
 
-use gpui::{Modifiers, ScrollDelta, ScrollEvent, TestAppContext, point, px, size};
+use std::time::Duration;
 
-use crate::support::{Lockstep, Mount, Step, bounds, center, settle};
+use gpui::{Modifiers, ScrollDelta, ScrollEvent, TestAppContext, point, px, size};
+use gpui_rhai::MotionPreference;
+
+use crate::support::{Lockstep, Mount, Step, bounds, center, settle, snapshot};
 
 /// A 400-row Table followed by 330 rows of plain filler.
 const TABLE_AND_FILLER: &str = r#"import "components/table" as table;
@@ -93,7 +96,7 @@ import "components/checkbox" as checkbox;
 import "components/tabs" as tabs;
 fn state_schema(){#{fields:#{tab:#{schema:#{type:"string"},"default":#{type:"string",value:"one"}}}}}
 fn noop(ctx,payload){()}
-fn pick(ctx,payload){ctx.set_state("tab",payload.value);}
+fn pick(ctx,value){ctx.set_state("tab",value);}
 fn view(ctx){
     column([
         button::Button(#{key:"save",text:"Save",variant:"primary",on_click:Fn("noop")}),
@@ -107,10 +110,11 @@ fn view(ctx){
 #[gpui::test]
 fn focus_and_hover_keep_the_windows_identical(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
+    let controls = || Mount::components(CONTROLS).motion(MotionPreference::Normal);
     let mut sides = Lockstep::mount(
         cx,
-        full_frames(Mount::components(CONTROLS)),
-        Mount::components(CONTROLS),
+        full_frames(controls()),
+        controls(),
         size(px(600.0), px(400.0)),
     );
     sides.assert_same("mounted");
@@ -141,12 +145,40 @@ fn focus_and_hover_keep_the_windows_identical(cx: &mut TestAppContext) {
         });
         sides.assert_same(&format!("hover {index}"));
     }
+    // A solid ghost-button wash makes the paint transition observable even
+    // when the primary action uses the separate layered-fill primitive.
+    let hover_start = sides.quads(0);
+    sides.advance_motion(Duration::from_millis(48));
+    sides.assert_same("hover at the same intermediate motion instant");
+    let hover_between = sides.quads(0);
+    assert_ne!(hover_start, hover_between, "hover must animate, not freeze");
+    sides.advance_motion(Duration::from_millis(240));
+    sides.assert_same("hover at rest");
+    assert_ne!(
+        hover_between,
+        sides.quads(0),
+        "intermediate frame must not be the endpoint"
+    );
     sides.act(|visual, view| {
         let tab = bounds(visual, view, "tab", "Two");
         visual.simulate_click(center(tab), Modifiers::none());
         settle(visual, Step::Tick, 2);
     });
-    sides.assert_same("picked a tab");
+    sides.assert_same("picked a tab at the same start instant");
+    sides.advance_motion(Duration::from_millis(48));
+    sides.assert_same("picked a tab with animations in flight");
+    sides.advance_motion(Duration::from_millis(320));
+    sides.assert_same("picked a tab at rest");
+    sides.act(|visual, view| {
+        assert_eq!(
+            snapshot(visual, view)
+                .find_by_role_and_name("tab", "Two")
+                .next()
+                .unwrap()
+                .selected,
+            Some(true)
+        );
+    });
 }
 
 /// Cold rows with hover and focus styles, below a control that commits.

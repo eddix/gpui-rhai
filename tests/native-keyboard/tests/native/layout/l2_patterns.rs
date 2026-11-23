@@ -12,6 +12,53 @@ use gpui_rhai_registry::{
 
 use crate::support::{Host, Mount, bounds, last_error, painted_quads};
 
+#[gpui::test]
+fn description_list_spacing_keeps_column_and_stacked_relationships(cx: &mut TestAppContext) {
+    for &(name, theme) in gpui_rhai_registry::BUNDLED_DESIGN_PRESET_SOURCES {
+        for density in ["comfortable", "compact"] {
+            let compact = density == "compact";
+            let density = density.to_owned();
+            let (mut visual,view)=Mount::new(r#"
+                import "patterns/description_list" as list;
+                fn view(ctx){row([
+                    column([
+                        list::DescriptionList(#{label:"Columns",items:[
+                            #{label:"Column first",value:"One"},#{label:"Column second",value:"Two"}]}),
+                        text("Next related group")
+                    ]).with_style(style().gap(theme_length("space.related"))),
+                    list::DescriptionList(#{label:"Stacked",layout:"stacked",items:[
+                        #{label:"Stack first",value:"Three"},#{label:"Stack second",value:"Four"}]})
+                ]).with_style(style().gap(theme_length("space.group")))}
+            "#).registry("patterns/description_list").theme(theme).motion(MotionPreference::None).with(move |view|view
+                .profile_source("fn profile(){#{name:\"spacing\",audit:[\"spacing-not-nested\"]}}")
+                .theme_token_overrides(ThemeTokenOverrides{
+                    environment_defaults:[("density".to_owned(),density.clone())].into(),..Default::default()
+                })).mount(cx);
+            crate::support::settle(&mut visual, crate::support::Step::Frame, 3);
+            let first = bounds(&mut visual, &view, "group", "Column first");
+            let second = bounds(&mut visual, &view, "group", "Column second");
+            let stacked_first = bounds(&mut visual, &view, "group", "Stack first");
+            let stacked_second = bounds(&mut visual, &view, "group", "Stack second");
+            assert!(
+                (second.y - first.y - first.height - if compact { 6.0 } else { 8.0 }).abs() < 0.5,
+                "{name}: column pair separation"
+            );
+            assert!(
+                (stacked_second.y
+                    - stacked_first.y
+                    - stacked_first.height
+                    - if compact { 12.0 } else { 16.0 })
+                .abs()
+                    < 0.5,
+                "{name}: stacked groups must retain the group step"
+            );
+            let findings = visual.update(|_, cx| view.composition_audit(cx).unwrap());
+            assert!(findings.is_empty(), "{name}: {findings:?}");
+            assert_eq!(last_error(&mut visual, &view), None);
+        }
+    }
+}
+
 const SHELL: &str = r#"
 import "patterns/app_shell" as app_shell;
 import "patterns/data_view" as data_view;

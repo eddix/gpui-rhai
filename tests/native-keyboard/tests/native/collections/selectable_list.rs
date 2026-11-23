@@ -5,8 +5,7 @@
 //! application and keeps its own tab stop, and rows realized after a scroll behave the same.
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext,
-    point, px,
+    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
 };
 use gpui_rhai::*;
 
@@ -164,7 +163,15 @@ fn a_control_in_a_row_keeps_its_own_tab_stop(cx: &mut TestAppContext) {
     settle(&mut visual, Step::Tick, 3);
     // Tab leaves the list for the rows' controls in row order; Shift+Tab comes back to
     // the list, whose Enter still opens the selected row.
-    for step in ["tab", "enter", "tab", "enter", "shift-tab", "shift-tab", "enter"] {
+    for step in [
+        "tab",
+        "enter",
+        "tab",
+        "enter",
+        "shift-tab",
+        "shift-tab",
+        "enter",
+    ] {
         keys(&mut visual, step);
     }
     assert_eq!(

@@ -1,7 +1,8 @@
 //! Labels and defaults of the official components follow their schema docs: a loading Button
-//! shows and announces its loading text and a spinner (in place of its prefix, or before the
-//! label), IconButton swaps its icon for the spinner, Avatar derives uppercased initials
-//! by grapheme, Spinner turns on the theme's `ambient` duration unless given a speed, the
+//! shows and announces its loading text, replacing an existing prefix with a
+//! spinner without synthesizing a new prefix, IconButton swaps its icon for the
+//! spinner, Avatar derives uppercased initials
+//! by grapheme, a headless Spinner defaults to a 750ms turn unless given a speed, the
 //! Select and Combobox clear buttons share the localized `common.clear` name, and built-in
 //! text reads in the application's locale, or in English without one.
 
@@ -13,7 +14,10 @@ use gpui::{TestAppContext, VisualTestContext};
 use gpui_rhai::*;
 use gpui_rhai_registry::{AR_LOCALE, EN_LOCALE, ZH_CN_LOCALE};
 
-use crate::support::{Mount, Step, click_center, last_error, nodes, registry_source, text_of};
+use crate::support::{
+    Mount, Step, click_center, last_error, logical_paint_rect, nodes, registry_source, text_of,
+    walk_live_paint,
+};
 
 fn mount(cx: &mut TestAppContext, main: &str) -> (VisualTestContext, ScriptViewHandle) {
     let (mut visual, view) = Mount::components(main)
@@ -87,7 +91,7 @@ fn view(ctx) { row([button::Button(#{ text: "Deploy", loading: true, loading_tex
 }
 
 #[gpui::test]
-fn a_loading_button_adds_a_spinner_to_the_width_of_its_idle_label(cx: &mut TestAppContext) {
+fn loading_replaces_existing_icon_slots_without_widening_the_control(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(
         cx,
         r#"import "components/button" as button;
@@ -108,23 +112,55 @@ fn view(ctx) { column([
 ]) }"#,
     );
     assert_eq!(last_error(&mut visual, &view), None);
-    let spinners = bounds_of(&mut visual, &view, "presentation", "");
-    let icon_slot = |bounds: &GeometryBounds| bounds.width > 10.0 && bounds.width < 20.0;
-    let slots: Vec<_> = spinners.iter().filter(|bounds| icon_slot(bounds)).collect();
-    assert_eq!(
-        slots.len(),
-        5,
-        "one spinner per loading button: {spinners:?}"
+    let sync = bounds_of(&mut visual, &view, "button", "Sync");
+    let refresh = bounds_of(&mut visual, &view, "button", "Refresh");
+    let paths = visual.update(|window, _| {
+        let scale = window.scale_factor();
+        window.visual_probe_with_painted_scene(|scene| {
+            let mut paths = Vec::new();
+            walk_live_paint(
+                scene,
+                gpui::TransformationMatrix::unit(),
+                &mut |scene, transform| {
+                    paths.extend(
+                        scene
+                            .paths
+                            .iter()
+                            .map(|path| logical_paint_rect(path.bounds, transform, scale)),
+                    );
+                },
+            );
+            paths
+        })
+    });
+    // Idle icons are asset sprites. Only two buttons paint native paths:
+    // their actual loading marks. Presentation wrappers have no meaning here.
+    let contains = |owner: GeometryBounds, path: &crate::support::Rect| {
+        f64::from(path.x) >= owner.x - 0.5
+            && f64::from(path.right()) <= owner.x + owner.width + 0.5
+            && f64::from(path.y) >= owner.y - 0.5
+            && f64::from(path.bottom()) <= owner.y + owner.height + 0.5
+    };
+    assert!(
+        paths
+            .iter()
+            .all(|path| contains(sync[1], path) || contains(refresh[1], path)),
+        "{paths:?}"
     );
-    let slot = slots[0].width;
-
-    // The spinner and the gap after it are what loading adds; the label keeps the wider of
-    // the idle and loading texts, centered.
+    let sync_paths = paths
+        .iter()
+        .filter(|path| contains(sync[1], path))
+        .collect::<Vec<_>>();
+    assert!(
+        !sync_paths.is_empty() && paths.iter().any(|path| contains(refresh[1], path)),
+        "{paths:?}"
+    );
+    // No synthetic prefix or invisible idle label reserves extra width. A new
+    // loading label participates in the same native intrinsic-size layout.
     let idle = bounds(&mut visual, &view, "button", "Publish release");
     let shorter = bounds(&mut visual, &view, "button", "Saving");
-    let added = shorter.width - idle.width;
     assert!(
-        added > slot && added < slot + 12.0,
+        shorter.width < idle.width,
         "idle {idle:?}, loading {shorter:?}"
     );
     assert!(
@@ -133,22 +169,29 @@ fn view(ctx) { column([
     );
     let wider = bounds_of(&mut visual, &view, "button", "Working on it");
     assert_eq!(wider.len(), 2, "{wider:?}");
-    assert!(
-        (wider[1].width - wider[0].width - added).abs() < 0.5,
-        "{wider:?}"
-    );
+    assert!((wider[1].width - wider[0].width).abs() < 0.5, "{wider:?}");
     let plain = bounds_of(&mut visual, &view, "button", "Save");
     assert_eq!(plain.len(), 2, "{plain:?}");
-    assert!(
-        (plain[0].width - plain[1].width - added).abs() < 0.5,
-        "{plain:?}"
-    );
+    assert!((plain[0].width - plain[1].width).abs() < 0.5, "{plain:?}");
     // The spinner sits before the label.
-    let text = bounds(&mut visual, &view, "text", "Saving");
+    let text = bounds_of(&mut visual, &view, "text", "Sync")[1];
     assert!(
-        slots[0].x + slots[0].width <= text.x,
-        "{:?} {text:?}",
-        slots[0]
+        sync_paths
+            .iter()
+            .all(|path| f64::from(path.right()) <= text.x),
+        "{sync_paths:?} {text:?}"
+    );
+    let top = sync_paths
+        .iter()
+        .map(|path| f64::from(path.y))
+        .fold(f64::INFINITY, f64::min);
+    let bottom = sync_paths
+        .iter()
+        .map(|path| f64::from(path.bottom()))
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        (f64::midpoint(top, bottom) - sync[1].y - sync[1].height / 2.0).abs() < 0.5,
+        "the icon slot stays vertically centered"
     );
 
     // In place of a prefix icon, or of an IconButton's icon, the width holds.
@@ -204,7 +247,7 @@ fn view(ctx) { row([
 }
 
 #[test]
-fn a_spinner_without_speed_turns_on_the_ambient_duration() {
+fn a_headless_spinner_uses_modern_speed_unless_given_a_speed() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([(
         ModuleId::parse("components/spinner").unwrap(),
         registry_source("components/spinner").to_owned(),
@@ -231,7 +274,6 @@ fn view(ctx) { column([
             BTreeMap::new(),
         )
     };
-    let ambient = context().motion_duration("ambient").unwrap();
     let root = engine.render_with_context(&compiled, context()).unwrap();
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("the spinners compose into a column");
@@ -245,7 +287,7 @@ fn view(ctx) { column([
             other => panic!("a spinner turns with a rotate transition, not {other:?}"),
         })
         .collect::<Vec<_>>();
-    assert_eq!(durations, [ambient, ambient, 600]);
+    assert_eq!(durations, [750, 750, 600]);
 }
 
 #[gpui::test]
