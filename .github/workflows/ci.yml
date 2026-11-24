@@ -111,6 +111,7 @@ jobs:
       fail-fast: false
       matrix:
         mode: [standard, aggressive]
+        shard: [0, 1]
     env: *cargo-env
     steps:
       - uses: actions/checkout@v5
@@ -123,17 +124,25 @@ jobs:
       # `gpui_rhai::offscreen`, for an application's examples/shot.rs. Its
       # renderer is macOS-only; Linux checks the rest.
       - name: Offscreen feature
-        if: matrix.mode == 'standard'
+        if: matrix.mode == 'standard' && matrix.shard == 0
         run: |
           cargo clippy -p gpui-rhai --all-targets --locked --features offscreen-pre -- -D warnings
           cargo test -p gpui-rhai --lib --locked --features offscreen-pre offscreen
       - name: Native keyboard test support
         if: matrix.mode == 'standard'
-        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+        run: |
+          if [ "${{ matrix.shard }}" = "0" ]; then
+            cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+          else
+            cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --test native
+          fi
         env:
           # Large Gallery compile/mount matrices are CPU-bound in unoptimized
           # builds. Keep debug assertions while making the native suite tractable.
           CARGO_PROFILE_TEST_OPT_LEVEL: "1"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: node ${{ github.workspace }}/scripts/native-test-shard.mjs
+          GPUI_RHAI_NATIVE_SHARD: ${{ matrix.shard }}
+          GPUI_RHAI_NATIVE_SHARDS: "2"
       # Every subtree of one node or more becomes a cache island, every view
       # anchors its width and a cached render that lays out differently
       # panics, so each native test also tests the islands.
@@ -143,8 +152,11 @@ jobs:
         env:
           GPUI_RHAI_RENDER_ISLANDS: aggressive
           CARGO_PROFILE_TEST_OPT_LEVEL: "1"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: node ${{ github.workspace }}/scripts/native-test-shard.mjs
+          GPUI_RHAI_NATIVE_SHARD: ${{ matrix.shard }}
+          GPUI_RHAI_NATIVE_SHARDS: "2"
       - name: Mounted hot reload
-        if: matrix.mode == 'standard'
+        if: matrix.mode == 'standard' && matrix.shard == 0
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --features dev-reload --test token_reload
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: "1"
@@ -173,11 +185,31 @@ jobs:
           cargo clippy -p gpui-rhai --all-targets --locked --no-default-features --features offscreen-fast -- -D warnings
       - name: Test
         run: cargo test --workspace --lib --bins --tests --no-default-features --features gpui-rhai/gpui-fast,gpui-rhai/charts,gpui-rhai/dev-reload
+
+  fast-native:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    env: *cargo-env
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+      - *sccache
+      - *linux-test-deps
       - name: Native tests
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --no-default-features --features gpui-fast --test native
         env:
           GPUI_SCROLL_LAYERS: "0"
           CARGO_PROFILE_TEST_OPT_LEVEL: "1"
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: node ${{ github.workspace }}/scripts/native-test-shard.mjs
+          GPUI_RHAI_NATIVE_SHARD: ${{ matrix.shard }}
+          GPUI_RHAI_NATIVE_SHARDS: "2"
 
   release:
     if: github.event_name != 'schedule'
@@ -248,6 +280,7 @@ jobs:
       fail-fast: false
       matrix:
         backend: [pre, fast]
+        shard: [0, 1]
     env:
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -258,6 +291,7 @@ jobs:
         with:
           toolchain: 1.99.0
       - name: Check the vendor graph
+        if: matrix.shard == 0
         run: |
           bash scripts/with-vendor-gpui.sh sdk ${{ matrix.backend }} tree -p gpui-rhai --depth 1
           bash scripts/with-vendor-gpui.sh sdk ${{ matrix.backend }} check -p gpui-rhai-cli
@@ -265,8 +299,11 @@ jobs:
         run: bash scripts/with-vendor-gpui.sh native ${{ matrix.backend }} test --test native
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: "1"
+          CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER: node ${{ github.workspace }}/scripts/native-test-shard.mjs
+          GPUI_RHAI_NATIVE_SHARD: ${{ matrix.shard }}
+          GPUI_RHAI_NATIVE_SHARDS: "2"
       - name: Check the repository app under vendor Pre
-        if: matrix.backend == 'pre'
+        if: matrix.backend == 'pre' && matrix.shard == 0
         run: bash scripts/with-vendor-gpui.sh apps pre test
 
   # The latest stable toolchain and the opt-in Grain backend. A new stable
@@ -303,7 +340,7 @@ jobs:
   # changing the repository settings. A job skipped by its own `if` passes.
   ci-ok:
     if: always()
-    needs: [portable, native, fast, release, apps, stable, vendor]
+    needs: [portable, native, fast, fast-native, release, apps, stable, vendor]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
