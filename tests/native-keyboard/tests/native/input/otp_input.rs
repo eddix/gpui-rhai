@@ -118,7 +118,7 @@ fn otp_input_normalizes_paste_and_replaces_the_clicked_cell(cx: &mut TestAppCont
         visual.update(|_, cx| {
             cx.write_to_clipboard(ClipboardItem::new_string("０９-٨７ ６５".into()))
         });
-        visual.simulate_keystrokes("cmd-v");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
         refresh(&mut visual);
         assert_eq!(text_of(&mut visual, &view, "code"), "098765");
         assert_eq!(text_of(&mut visual, &view, "complete"), "1");
@@ -174,7 +174,7 @@ fn otp_input_verifying_and_error_use_the_same_editor_and_never_clear_a_replaceme
         visual.update(|window, app| window.focused(app)),
         Some(focus)
     );
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("654321");
     refresh(&mut visual);
     assert_eq!(text_of(&mut visual, &view, "code"), "123456");

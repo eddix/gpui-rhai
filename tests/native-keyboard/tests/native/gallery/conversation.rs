@@ -242,7 +242,7 @@ fn gallery_cited_answer_opens_inline_source_and_copies_literal_quote(cx: &mut Te
     for _ in 0..20 {
         let target = bounds(&mut visual, &view, "document", "Evidence excerpt");
         click_center(&mut visual, target);
-        visual.simulate_keystrokes("alt-cmd-c");
+        visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
         let contents = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
         if contents.is_some_and(|text| text.starts_with("The&#32;first&#32;attempt")) {
             ready_excerpt = true;
@@ -779,7 +779,7 @@ fn gallery_prompt_library_retains_literal_variables_and_only_fills_the_draft(
     for _ in 0..20 {
         let preview = bounds(&mut visual, &view, "document", "Prompt preview");
         click_center(&mut visual, preview);
-        visual.simulate_keystrokes("alt-cmd-c");
+        visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
         if visual
             .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
             .is_some_and(|raw| raw.contains("gpui-prompt:1"))
@@ -800,7 +800,7 @@ fn gallery_prompt_library_retains_literal_variables_and_only_fills_the_draft(
     );
     assert!(node(&mut visual, &view, "button", "Send").disabled);
     click(&mut visual, &view, "text_field", "audience");
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("Operators");
     visual.simulate_keystrokes("enter");
     ready(&mut visual, &view);
@@ -858,7 +858,7 @@ fn gallery_integration_picker_only_toggles_accepted_selection_and_preserves_grou
             .nodes()
             .any(|n| n.role == "option" && n.name == "Secure Archive")
     );
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("archive.workspace");
     ready(&mut visual, &view);
     visual.simulate_keystrokes("enter");
@@ -910,7 +910,7 @@ fn gallery_integration_settings_validates_and_retries_without_erasing_drafts(
     let edit = |visual: &mut VisualTestContext, text: &str| {
         click(visual, &view, "text_field", "Site address");
         visual.update(|_, cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.into())));
-        visual.simulate_keystrokes("cmd-a cmd-v");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-v"));
         ready(visual, &view);
     };
     edit(&mut visual, "https://shop.example/settings");
@@ -964,13 +964,13 @@ fn gallery_integration_settings_validates_and_retries_without_erasing_drafts(
 fn gallery_integration_settings_conflict_pause_and_discard(cx: &mut TestAppContext) {
     let (mut visual, view) = gallery(cx, "integration_settings", "clean-dark");
     click(&mut visual, &view, "text_field", "Site address");
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("draft.example");
     ready(&mut visual, &view);
     click(&mut visual, &view, "button", "Change site on Host");
     assert!(node(&mut visual, &view, "button", "Save").disabled);
     click(&mut visual, &view, "text_field", "Site address");
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("edited.example");
     ready(&mut visual, &view);
     assert!(node(&mut visual, &view, "button", "Save").disabled);
@@ -1269,7 +1269,7 @@ fn gallery_writing_assistant_streams_accepted_text_and_reset_cancels_old_answer(
             "Next draft while writing".into(),
         ));
     });
-    visual.simulate_keystrokes("cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
     ready(&mut visual, &view);
     assert_eq!(
         node(&mut visual, &view, "text_field", "Message").value,

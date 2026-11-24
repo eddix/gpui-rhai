@@ -27,7 +27,7 @@ fn later(visual: &mut VisualTestContext, view: &ScriptViewHandle) {
 }
 fn replace_text(visual: &mut VisualTestContext, view: &ScriptViewHandle, content: &str) {
     visual.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(content.into())));
-    visual.simulate_keystrokes("cmd-a cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-v"));
     ready(visual, view);
 }
 const FIRST: &str = "Collect evidence";

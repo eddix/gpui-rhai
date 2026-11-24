@@ -191,7 +191,7 @@ fn retained_empty_valued_panel_preserves_native_editor_selection_and_undo(cx: &m
     visual.simulate_input("Q");
     settle(&mut visual, Step::Frame, 3);
     assert_eq!(text_of(&mut visual, &view, "draft-value"), "abQ");
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     settle(&mut visual, Step::Frame, 3);
     assert_eq!(text_of(&mut visual, &view, "draft-value"), "abcd");
     assert_eq!(last_error(&mut visual, &view), None);

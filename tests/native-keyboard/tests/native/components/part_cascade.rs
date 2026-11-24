@@ -48,7 +48,7 @@ fn input_intrinsic_width_tracks_text_but_obeys_its_flex_allocation(cx: &mut Test
             visual.update(|window, cx| window.focused(cx)),
             Some(focus.clone())
         );
-        visual.simulate_keystrokes("cmd-a");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         visual.simulate_input("Z");
         settle(&mut visual, Step::Refresh, 3);
         assert!((bounds(&mut visual, &view, "text_field", "Fit").width - short.width).abs() <= 1.);
@@ -187,7 +187,7 @@ fn input_part_overrides_reach_hover_focus_and_incremental_controlled_updates(
             visual.update(|window, cx| window.focused(cx)),
             Some(owner.clone())
         );
-        visual.simulate_keystrokes("cmd-a");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         visual.simulate_input("Edited");
         settle(&mut visual, Step::Frame, 3);
         assert_eq!(text_of(&mut visual, &view, "value"), "Edited");

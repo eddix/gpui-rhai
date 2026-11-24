@@ -151,7 +151,7 @@ fn gallery_decision_tree_draft_reflows_and_submits_as_a_custom_instruction(
             "  Check the ledger first  ".into(),
         ));
     });
-    visual.simulate_keystrokes("cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
     ready(&mut visual, &view);
     assert_eq!(
         node(&mut visual, &view, "text_field", "Custom instruction").value,

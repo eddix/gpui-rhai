@@ -303,7 +303,7 @@ fn escape_closes_an_open_overlay_with_focus_in_a_layer(cx: &mut TestAppContext) 
     assert_eq!(popover_open(&mut visual, &view), "open=false");
 }
 
-/// Copy (`cmd-c`, bound in the view's key context) copies text selected in a
+/// Platform copy, bound in the view's key context, copies text selected in a
 /// layer while focus is on a control in that layer.
 #[gpui::test]
 fn copy_runs_with_focus_in_a_layer(cx: &mut TestAppContext) {
@@ -339,7 +339,7 @@ fn copy_runs_with_focus_in_a_layer(cx: &mut TestAppContext) {
         settle(&mut visual);
     }
     assert_eq!(focused(&mut visual), Some(first), "Tab reaches First");
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     settle(&mut visual);
     assert_eq!(
         visual

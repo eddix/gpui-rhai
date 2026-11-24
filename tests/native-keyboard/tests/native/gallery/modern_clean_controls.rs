@@ -211,7 +211,7 @@ fn gallery_editable_input_sizes_and_error_state_keep_real_edits(cx: &mut TestApp
             "real visible target: {label}: {area:?}"
         );
         click_center(&mut visual, area);
-        visual.simulate_keystrokes("cmd-a");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         visual.simulate_input(value);
         settle(&mut visual, Step::Tick, 4);
         assert_eq!(
@@ -262,7 +262,7 @@ fn gallery_editable_input_sizes_and_error_state_keep_real_edits(cx: &mut TestApp
         }
         assert_eq!(last_error(&mut visual, &view), None);
     }
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     settle(&mut visual, Step::Tick, 4);
     assert_eq!(
         snapshot(&mut visual, &view)

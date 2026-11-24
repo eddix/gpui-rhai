@@ -774,7 +774,7 @@ fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_stat
         ),
         Modifiers::none(),
     );
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("focused and editable");
     visual.update(|window, _| window.refresh());
     visual.run_until_parked();

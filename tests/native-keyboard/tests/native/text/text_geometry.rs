@@ -298,7 +298,7 @@ fn selectable_text_drag_uses_actual_right_aligned_glyphs(cx: &mut TestAppContext
     visual.run_until_parked();
     visual.simulate_mouse_up(end, gpui::MouseButton::Left, gpui::Modifiers::none());
     visual.run_until_parked();
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     visual.run_until_parked();
     assert_eq!(
         cx.read_from_clipboard().and_then(|item| item.text()),

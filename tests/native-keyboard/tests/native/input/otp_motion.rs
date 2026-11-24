@@ -198,7 +198,7 @@ fn otp_input_discard_staggers_without_writing_or_clearing_a_new_attempt(cx: &mut
         let last_cell = *cells(&mut visual, &view, 48.).last().expect("last slot");
         click_center(&mut visual, editor);
         visual.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string("123456".into())));
-        visual.simulate_keystrokes("cmd-v");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
         refresh(&mut visual);
         animate(&mut visual, &clock, 600);
         let previous = text_of(&mut visual, &view, "changes");
@@ -268,7 +268,7 @@ fn otp_input_staggers_glyphs_and_retargets_one_ring_without_moving_the_input(
     let start = ring_x(&mut visual);
     assert!((start - cells_before[0].x).abs() < 0.55);
     visual.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string("123".into())));
-    visual.simulate_keystrokes("cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
     refresh(&mut visual);
     assert_eq!(text_of(&mut visual, &view, "code"), "123");
     assert_eq!(digit_blurs(&mut visual), 0);

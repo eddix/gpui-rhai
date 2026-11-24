@@ -64,7 +64,7 @@ fn view(ctx) { markdown::MarkdownViewer(#{key:"reply",label:"Ready reply",source
     settle(&mut visual, Step::Frame, 1);
     let rect = bounds(&mut visual, &view, "document", "Ready reply");
     click_center(&mut visual, rect);
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     let copied = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert_eq!(copied.as_deref(), Some(document(0, 7).text()));
     assert_eq!(

@@ -54,6 +54,8 @@ actions!(
 );
 
 pub fn init_text_area(cx: &mut App) {
+    use crate::native_shortcut::platform_binding;
+    const EDITOR: &str = "GPUIRhaiTextarea";
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, Some("GPUIRhaiTextarea")),
         KeyBinding::new("delete", Delete, Some("GPUIRhaiTextarea")),
@@ -65,12 +67,12 @@ pub fn init_text_area(cx: &mut App) {
         KeyBinding::new("shift-right", SelectRight, Some("GPUIRhaiTextarea")),
         KeyBinding::new("shift-up", SelectUp, Some("GPUIRhaiTextarea")),
         KeyBinding::new("shift-down", SelectDown, Some("GPUIRhaiTextarea")),
-        KeyBinding::new("cmd-a", SelectAll, Some("GPUIRhaiTextarea")),
-        KeyBinding::new("cmd-v", Paste, Some("GPUIRhaiTextarea")),
-        KeyBinding::new("cmd-c", Copy, Some("GPUIRhaiTextarea")),
-        KeyBinding::new("cmd-x", Cut, Some("GPUIRhaiTextarea")),
-        KeyBinding::new("cmd-z", Undo, Some("GPUIRhaiTextarea")),
-        KeyBinding::new("shift-cmd-z", Redo, Some("GPUIRhaiTextarea")),
+        platform_binding(cx, "secondary-a", SelectAll, EDITOR),
+        platform_binding(cx, "secondary-v", Paste, EDITOR),
+        platform_binding(cx, "secondary-c", Copy, EDITOR),
+        platform_binding(cx, "secondary-x", Cut, EDITOR),
+        platform_binding(cx, "secondary-z", Undo, EDITOR),
+        platform_binding(cx, "shift-secondary-z", Redo, EDITOR),
         KeyBinding::new("home", Home, Some("GPUIRhaiTextarea")),
         KeyBinding::new("end", End, Some("GPUIRhaiTextarea")),
         KeyBinding::new("enter", Newline, Some("GPUIRhaiTextarea")),
@@ -81,23 +83,17 @@ pub fn init_text_area(cx: &mut App) {
             AltSubmit,
             Some("GPUIRhaiTextarea && alt_submit"),
         ),
-        KeyBinding::new(
-            if cfg!(target_os = "macos") {
-                "cmd-enter"
-            } else {
-                "ctrl-enter"
-            },
+        platform_binding(
+            cx,
+            "secondary-enter",
             AltSubmit,
-            Some("GPUIRhaiTextarea && alt_mod_submit"),
+            "GPUIRhaiTextarea && alt_mod_submit",
         ),
-        KeyBinding::new(
-            if cfg!(target_os = "macos") {
-                "cmd-enter"
-            } else {
-                "ctrl-enter"
-            },
+        platform_binding(
+            cx,
+            "secondary-enter",
             Submit,
-            Some("GPUIRhaiTextarea && submit_mod_enter"),
+            "GPUIRhaiTextarea && submit_mod_enter",
         ),
         KeyBinding::new(
             "ctrl-cmd-space",

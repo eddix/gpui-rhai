@@ -45,6 +45,7 @@ mod inline_link;
 mod inline_prose;
 mod judge_bracket;
 mod memory_panel;
+mod native_shortcut;
 mod plan_vs_actual;
 mod prompt_template;
 mod rate_limit_planner;

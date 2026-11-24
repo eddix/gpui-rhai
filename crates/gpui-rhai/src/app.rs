@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "dev-reload")]
 use gpui::KeyBinding;
 use gpui::actions;
 use gpui::{
@@ -88,10 +89,11 @@ pub fn install(cx: &mut App) {
     init_text_area(cx);
     crate::init_document_view(cx);
     crate::markdown_view::init_markdown_view(cx);
-    cx.bind_keys([KeyBinding::new(
-        "cmd-c",
+    cx.bind_keys([crate::native_shortcut::platform_binding(
+        cx,
+        "secondary-c",
         CopySelectedText,
-        Some(HOST_KEY_CONTEXT),
+        HOST_KEY_CONTEXT,
     )]);
     cx.set_global(ScriptRuntimeInstallation::default());
 }

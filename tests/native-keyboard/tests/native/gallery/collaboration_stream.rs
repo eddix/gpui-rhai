@@ -574,7 +574,7 @@ fn collaboration_stream_composer_uses_the_authored_height_range(cx: &mut TestApp
             .collect::<Vec<_>>()
             .join("\n");
         v.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(draft.clone())));
-        v.simulate_keystrokes("cmd-v");
+        v.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
         ready(&mut v, &view);
         let overflow = node(&mut v, &view, "text_field", label);
         let rect = overflow.geometry.unwrap().visual;
@@ -630,7 +630,7 @@ fn collaboration_stream_composer_uses_the_authored_height_range(cx: &mut TestApp
         let scaled = bounds(&mut v, &view, "text_field", label);
         assert!((scaled.height - 180.).abs() < 1., "{theme}: {scaled:?}");
         assert_eq!(node(&mut v, &view, "text_field", label).id, before.id);
-        v.simulate_keystrokes("cmd-a");
+        v.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         v.simulate_input("A");
         ready(&mut v, &view);
         assert!((bounds(&mut v, &view, "text_field", label).height - 60.).abs() < 1.);

@@ -42,6 +42,10 @@ the Host and use node handlers for unconsumed single-key events.
 Register an app action once (normally only when `ctx.window_id() == "main"`) so
 opening another script window does not redefine policy accidentally.
 
+Built-in editors and document viewers use Cmd on macOS and Ctrl on Linux
+and Windows for native editing and document shortcuts. The examples below
+use macOS names; Option is Alt elsewhere.
+
 CodeViewer and DiffViewer install only focus-scoped GPUI actions. `Cmd+F`,
 `Cmd+G`, `Shift+Cmd+G`, `Escape`, `Enter`, and copy apply inside the focused
 document surface. Diff additionally binds `Option+Up`/`Option+Down` for hunks,

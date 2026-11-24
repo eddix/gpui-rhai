@@ -79,7 +79,7 @@ fn reply_source(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Stri
         }
         click_center(visual, rect);
         settle(visual, Step::Frame, 1);
-        visual.simulate_keystrokes("alt-cmd-c");
+        visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
         if let Some(text) =
             visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
             && text != "pending parse"
@@ -94,7 +94,7 @@ fn reply_source(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Stri
 fn gallery_conversation_sends_keeps_drafting_and_stops_native_streaming(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, "scene.messages");
     click(&mut visual, &view, "text_field", "Message");
-    visual.simulate_keystrokes("cmd-a backspace");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a backspace"));
     visual.simulate_input("   ");
     visual.simulate_keystrokes("enter");
     settle(&mut visual, Step::Frame, 2);
@@ -104,7 +104,7 @@ fn gallery_conversation_sends_keeps_drafting_and_stops_native_streaming(cx: &mut
             .any(|node| node.role == "listitem")
     );
 
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("Investigate the rollout");
     visual.simulate_keystrokes("enter");
     settle(&mut visual, Step::Tick, 4);

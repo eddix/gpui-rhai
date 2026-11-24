@@ -55,7 +55,7 @@ fn gallery_approval_gates_preserves_edited_evidence_on_host_rejection(cx: &mut T
     let revised = "{\"audience\":\"team\",\"length\":\"one sentence\"}";
     click(&mut visual, &view, "text_field", "Edit request");
     visual.update(|_, cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string(revised.into())));
-    visual.simulate_keystrokes("cmd-a cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-v"));
     ready(&mut visual, &view);
     assert_eq!(
         node(&mut visual, &view, "text_field", "Edit request").value,

@@ -57,7 +57,7 @@ fn textarea_paste_reveals_the_caret_using_the_new_scroll_extent(cx: &mut TestApp
                 .collect::<Vec<_>>()
                 .join("\n");
             v.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(text)));
-            v.simulate_keystrokes("cmd-a cmd-v");
+            v.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-v"));
             settle(&mut v, Step::Frame, 6);
             let rect = bounds(&mut v, &view, "text_field", "Draft");
             assert!((rect.height - cap).abs() <= 0.5, "{limits}: {rect:?}");
@@ -204,7 +204,7 @@ fn native_visual_defaults_do_not_enlarge_every_recursive_render_frame(cx: &mut T
         let field = bounds(&mut visual, &view, "text_field", "Nested field");
         assert!((field.width - 240.0).abs() < 0.5);
         click_center(&mut visual, field);
-        visual.simulate_keystrokes("cmd-a");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         visual.simulate_input("Edited");
         settle(&mut visual, Step::Frame, 3);
         assert_eq!(text_of(&mut visual, &view, "value"), "Edited");

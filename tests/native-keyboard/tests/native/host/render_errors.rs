@@ -137,7 +137,7 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
     visual.run_until_parked();
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    cx.simulate_keystrokes(*window, "cmd-c");
+    cx.simulate_keystrokes(*window, &crate::support::primary_keys("secondary-c"));
     cx.run_until_parked();
     let copied = cx
         .read_from_clipboard()

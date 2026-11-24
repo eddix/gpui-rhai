@@ -239,24 +239,25 @@ pub enum DiffSide {
 }
 
 pub fn init_document_view(cx: &mut App) {
+    use crate::native_shortcut::platform_binding;
     cx.bind_keys([
-        KeyBinding::new("cmd-f", Find, Some(CODE_CONTEXT)),
-        KeyBinding::new("cmd-g", FindNext, Some(CODE_CONTEXT)),
-        KeyBinding::new("shift-cmd-g", FindPrevious, Some(CODE_CONTEXT)),
+        platform_binding(cx, "secondary-f", Find, CODE_CONTEXT),
+        platform_binding(cx, "secondary-g", FindNext, CODE_CONTEXT),
+        platform_binding(cx, "shift-secondary-g", FindPrevious, CODE_CONTEXT),
         KeyBinding::new("escape", CloseFind, Some(CODE_CONTEXT)),
-        KeyBinding::new("cmd-c", CopyDocumentSelection, Some(CODE_CONTEXT)),
+        platform_binding(cx, "secondary-c", CopyDocumentSelection, CODE_CONTEXT),
         KeyBinding::new("enter", ActivateDocumentLocation, Some(CODE_CONTEXT)),
-        KeyBinding::new("cmd-f", Find, Some(DIFF_CONTEXT)),
-        KeyBinding::new("cmd-g", FindNext, Some(DIFF_CONTEXT)),
-        KeyBinding::new("shift-cmd-g", FindPrevious, Some(DIFF_CONTEXT)),
+        platform_binding(cx, "secondary-f", Find, DIFF_CONTEXT),
+        platform_binding(cx, "secondary-g", FindNext, DIFF_CONTEXT),
+        platform_binding(cx, "shift-secondary-g", FindPrevious, DIFF_CONTEXT),
         KeyBinding::new("escape", CloseFind, Some(DIFF_CONTEXT)),
-        KeyBinding::new("cmd-c", CopyDocumentSelection, Some(DIFF_CONTEXT)),
+        platform_binding(cx, "secondary-c", CopyDocumentSelection, DIFF_CONTEXT),
         KeyBinding::new("enter", ActivateDocumentLocation, Some(DIFF_CONTEXT)),
         KeyBinding::new("alt-down", NextChange, Some(DIFF_CONTEXT)),
         KeyBinding::new("alt-up", PreviousChange, Some(DIFF_CONTEXT)),
-        KeyBinding::new("shift-cmd-e", ExpandAll, Some(DIFF_CONTEXT)),
-        KeyBinding::new("shift-cmd-c", CollapseAll, Some(DIFF_CONTEXT)),
-        KeyBinding::new("alt-cmd-c", CopyUnifiedDiff, Some(DIFF_CONTEXT)),
+        platform_binding(cx, "shift-secondary-e", ExpandAll, DIFF_CONTEXT),
+        platform_binding(cx, "shift-secondary-c", CollapseAll, DIFF_CONTEXT),
+        platform_binding(cx, "alt-secondary-c", CopyUnifiedDiff, DIFF_CONTEXT),
     ]);
 }
 

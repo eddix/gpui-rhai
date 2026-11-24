@@ -149,7 +149,7 @@ fn scrollable_markdown_consumes_only_keys_that_move_its_native_reader(cx: &mut T
     let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     let raw = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .expect("prepared source for the native keyboard fixture");
@@ -207,7 +207,7 @@ fn copy_visible_markdown_line(
     let end = point(start.x + px(180.0), start.y);
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     let copied = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .expect("visible native text selection");
@@ -249,7 +249,7 @@ fn one_wrapped_markdown_item_keeps_end_and_up_positions_inside_its_viewport(
     let position = point(px((rect.x + 22.0) as f32), px((rect.y + 28.0) as f32));
     let initial = copy_visible_markdown_line(&mut visual, position);
     assert!(initial.contains("000"), "initial top line: {initial:?}");
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     let raw = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert_eq!(
         raw.as_deref(),
@@ -657,7 +657,7 @@ fn view(ctx) {
         let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
         visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
         visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-        visual.simulate_keystrokes("cmd-a cmd-c");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-c"));
         let copied = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
         assert_eq!(copied.as_deref(), Some("Fixture alt"));
         assert_eq!(
@@ -690,7 +690,7 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{ key: "message", label: "Reply", sou
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     settle(&mut visual, Step::Frame, 1);
     let selected = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert!(
@@ -699,8 +699,8 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{ key: "message", label: "Reply", sou
             && text.contains("Second")),
         "cross-block pointer selection: {selected:?}"
     );
-    visual.simulate_keystrokes("cmd-a");
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     let plain = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .unwrap();
@@ -709,7 +709,7 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{ key: "message", label: "Reply", sou
         "{plain:?}"
     );
     assert!(!plain.contains("**") && !plain.contains("```"));
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     let raw = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert_eq!(raw.as_deref(), Some(source));
 }
@@ -767,7 +767,7 @@ fn view(ctx) {
     let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-a cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-c"));
     let copied = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .unwrap();
@@ -1006,8 +1006,8 @@ fn view(ctx) { row([
         let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
         visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
         visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-        visual.simulate_keystrokes("cmd-a");
-        visual.simulate_keystrokes("cmd-c");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
         let copied = visual
             .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
             .unwrap();
@@ -1199,8 +1199,8 @@ fn view(ctx) { markdown::MarkdownViewer(#{ key: "large", label: "Large native Ma
     let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-a");
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     let plain = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .unwrap();

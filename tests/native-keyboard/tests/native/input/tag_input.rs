@@ -77,7 +77,7 @@ fn draft(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> (String, bo
 
 fn paste(visual: &mut VisualTestContext, view: &ScriptViewHandle, value: &str) {
     visual.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(value.into())));
-    visual.simulate_keystrokes("cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
     ready(visual, view);
 }
 

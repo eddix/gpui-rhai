@@ -36,29 +36,12 @@ gpui::actions!(
 
 /// Install focus-scoped native Markdown commands.
 pub fn init_markdown_view(cx: &mut App) {
+    use crate::native_shortcut::platform_binding;
+    const VIEWER: &str = "GPUIRhaiMarkdownViewer";
     cx.bind_keys([
-        gpui::KeyBinding::new(
-            "cmd-c",
-            CopyMarkdownSelection,
-            Some("GPUIRhaiMarkdownViewer"),
-        ),
-        gpui::KeyBinding::new(
-            "ctrl-c",
-            CopyMarkdownSelection,
-            Some("GPUIRhaiMarkdownViewer"),
-        ),
-        gpui::KeyBinding::new(
-            "alt-cmd-c",
-            CopyMarkdownSource,
-            Some("GPUIRhaiMarkdownViewer"),
-        ),
-        gpui::KeyBinding::new(
-            "ctrl-alt-c",
-            CopyMarkdownSource,
-            Some("GPUIRhaiMarkdownViewer"),
-        ),
-        gpui::KeyBinding::new("cmd-a", SelectAllMarkdown, Some("GPUIRhaiMarkdownViewer")),
-        gpui::KeyBinding::new("ctrl-a", SelectAllMarkdown, Some("GPUIRhaiMarkdownViewer")),
+        platform_binding(cx, "secondary-c", CopyMarkdownSelection, VIEWER),
+        platform_binding(cx, "alt-secondary-c", CopyMarkdownSource, VIEWER),
+        platform_binding(cx, "secondary-a", SelectAllMarkdown, VIEWER),
     ]);
 }
 

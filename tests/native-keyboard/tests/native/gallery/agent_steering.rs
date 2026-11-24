@@ -20,7 +20,7 @@ fn later(visual: &mut VisualTestContext, view: &ScriptViewHandle) {
 fn replace(v: &mut VisualTestContext, view: &ScriptViewHandle, text: &str) {
     click(v, view, "text_field", "Steer the agent");
     v.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(text.into())));
-    v.simulate_keystrokes("cmd-a cmd-v");
+    v.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-v"));
     ready(v, view);
 }
 fn draft(v: &mut VisualTestContext, view: &ScriptViewHandle, expected: &str) {

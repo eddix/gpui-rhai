@@ -145,7 +145,7 @@ fn overflow_cohorts_keep_logical_identity_and_restore_interactive_state(cx: &mut
     settle(&mut visual, Step::Frame, 3);
     let field = bounds(&mut visual, &view, "text_field", "Field");
     crate::support::click_center(&mut visual, field);
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     settle(&mut visual, Step::Frame, 3);
     assert_eq!(crate::support::text_of(&mut visual, &view, "value"), "");
     assert_eq!(last_error(&mut visual, &view), None);

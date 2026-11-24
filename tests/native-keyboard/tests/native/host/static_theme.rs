@@ -223,14 +223,14 @@ fn static_theme_changes_keep_native_input_focus_selection_and_undo(cx: &mut Test
         "ac",
         "selection must survive every theme change"
     );
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     visual.run_until_parked();
     assert_eq!(
         changes.borrow().last().unwrap(),
         "ab",
         "native edit history must survive"
     );
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     visual.run_until_parked();
     assert_eq!(
         changes.borrow().last().unwrap(),

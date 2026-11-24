@@ -135,7 +135,7 @@ fn native_continuity(cx: &mut TestAppContext, source: &str) {
         "abQ",
         "native caret/selection survived"
     );
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     settle(&mut visual, Step::Frame, 2);
     assert_eq!(
         text_of(&mut visual, &view, "value"),
@@ -592,7 +592,7 @@ fn view(ctx) { column([
     visual.simulate_mouse_down(start, gpui::MouseButton::Left, gpui::Modifiers::none());
     visual.simulate_mouse_move(end, gpui::MouseButton::Left, gpui::Modifiers::none());
     visual.simulate_mouse_up(end, gpui::MouseButton::Left, gpui::Modifiers::none());
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     let selected = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .unwrap();
@@ -601,14 +601,14 @@ fn view(ctx) { column([
     visual.update(|_, cx| {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string("sentinel".to_owned()))
     });
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     assert_eq!(
         visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text())),
         Some("sentinel".to_owned()),
         "copy cannot expose text retained in an invisible page"
     );
     action(&mut visual, &view, "toggle");
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     assert_eq!(
         visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text())),
         Some(selected),

@@ -33,6 +33,7 @@ it; search and `RevealDocumentLine` expand a containing fold before navigation.
 `Option-Up`/`Option-Down` selects the previous/next hunk. `Shift+Cmd+E` expands
 all, `Shift+Cmd+C` collapses all, and `Cmd+F` searches both complete documents,
 including currently folded text.
+On Linux and Windows, use Ctrl for Cmd and Alt for Option.
 
 Selection stays within one side and ordinary copy returns original source text.
 `Option+Cmd+C` explicitly interprets left as the source and right as the target

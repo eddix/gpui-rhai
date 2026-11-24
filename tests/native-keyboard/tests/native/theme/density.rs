@@ -30,7 +30,7 @@ fn compact_reflows_the_same_editor_without_losing_focus_selection_or_undo(cx: &m
         click_center(&mut visual, comfortable);
         visual.simulate_input("hello");
         settle(&mut visual, Step::Frame, 2);
-        visual.simulate_keystrokes("cmd-a");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         dispatch(&mut visual, &view, by_role("button", "Compact"), "click").unwrap();
         settle(&mut visual, Step::Frame, 2);
         let compact = bounds(&mut visual, &view, "text_field", "Draft");
@@ -47,7 +47,7 @@ fn compact_reflows_the_same_editor_without_losing_focus_selection_or_undo(cx: &m
             "x",
             "{name}: retained selection and focus"
         );
-        visual.simulate_keystrokes("cmd-z");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
         settle(&mut visual, Step::Frame, 2);
         assert_eq!(
             node_by_test_id(&mut visual, &view, "draft").name,

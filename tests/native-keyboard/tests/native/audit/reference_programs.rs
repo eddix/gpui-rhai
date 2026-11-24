@@ -408,7 +408,7 @@ fn both_hello_programs_keep_real_edits_focus_and_undo_across_designs(cx: &mut Te
             assert_eq!(input.value, Some(UiValue::String("Migration".into())));
             assert_eq!(visual.update(|window, cx| window.focused(cx)), focus);
         }
-        visual.simulate_keystrokes("cmd-z");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
         settle(&mut visual, Step::Tick, 2);
         assert_eq!(
             landmark(&mut visual, &view, "text_field", "Name").value,
@@ -659,7 +659,7 @@ fn rust_owned_program_switches_real_themes_without_losing_worker_state_or_undo(
         ),
         gpui::Modifiers::none(),
     );
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     settle(&mut visual, Step::Tick, 2);
     assert_eq!(host_owned_tree::inspect(&window, &visual).1, "");
     window
@@ -722,9 +722,9 @@ fn rust_owned_program_never_replaces_a_newer_native_edit_with_a_delayed_worker_f
     );
 
     // A delayed clear must not erase text restored by native undo either.
-    visual.simulate_keystrokes("cmd-a backspace");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a backspace"));
     assert_eq!(host_owned_tree::inspect(&window, &visual).1, "");
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     assert_eq!(host_owned_tree::inspect(&window, &visual).1, "First later");
     assert!(worker.publish_next(), "worker processes the former clear");
     settle(&mut visual, Step::Tick, 3);

@@ -29,6 +29,19 @@ pub(crate) use query::{
 };
 pub(crate) use settle::{Step, settle};
 
+/// Translate GPUI's platform-neutral spelling before passing explicit
+/// keystrokes to the native test context.
+pub(crate) fn primary_keys(chords: &str) -> String {
+    chords.replace(
+        "secondary-",
+        if cfg!(target_os = "macos") {
+            "cmd-"
+        } else {
+            "ctrl-"
+        },
+    )
+}
+
 /// Builds fixture variants by replacing exact places in the source.
 ///
 /// A variant built with `str::replace` silently becomes the base case when the fixture text

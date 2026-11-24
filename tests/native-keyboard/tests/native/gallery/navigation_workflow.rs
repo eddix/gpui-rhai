@@ -63,7 +63,7 @@ fn click(visual: &mut VisualTestContext, view: &ScriptViewHandle, role: &str, na
 
 fn write(visual: &mut VisualTestContext, view: &ScriptViewHandle, name: &str, value: &str) {
     click(visual, view, "text_field", name);
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input(value);
     settle(visual, Step::Frame, 3);
     assert_eq!(

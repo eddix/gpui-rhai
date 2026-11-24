@@ -24,7 +24,7 @@ fn later(visual: &mut VisualTestContext, view: &ScriptViewHandle) {
 
 fn paste(visual: &mut VisualTestContext, view: &ScriptViewHandle, value: &str) {
     visual.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(value.into())));
-    visual.simulate_keystrokes("cmd-a cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-v"));
     ready(visual, view);
 }
 
@@ -64,7 +64,7 @@ fn gallery_review_center_prioritizes_filters_and_file_evidence(cx: &mut TestAppC
         "document",
         "Before compared with Proposed",
     );
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     ready(&mut visual, &view);
     let patch = visual.update(|_, app| app.read_from_clipboard().and_then(|item| item.text()));
     assert!(

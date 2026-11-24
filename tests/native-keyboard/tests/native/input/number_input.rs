@@ -311,7 +311,7 @@ fn key(visual: &mut VisualTestContext, keys: &str) {
 }
 
 fn edit(visual: &mut VisualTestContext, value: &str) {
-    key(visual, "cmd-a");
+    key(visual, &crate::support::primary_keys("secondary-a"));
     if value.is_empty() {
         key(visual, "backspace");
     } else {

@@ -16,7 +16,7 @@ fn choose(v: &mut VisualTestContext, view: &ScriptViewHandle, trigger: &str, opt
 
 fn edit(v: &mut VisualTestContext, view: &ScriptViewHandle, name: &str, value: &str) {
     click(v, view, "spinbutton", name);
-    v.simulate_keystrokes("cmd-a");
+    v.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     v.simulate_input(value);
     ready(v, view);
     v.simulate_keystrokes("enter");
@@ -25,7 +25,7 @@ fn edit(v: &mut VisualTestContext, view: &ScriptViewHandle, name: &str, value: &
 
 fn replace_phase(v: &mut VisualTestContext, view: &ScriptViewHandle, text: &str) {
     v.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string(text.into())));
-    v.simulate_keystrokes("cmd-a cmd-v");
+    v.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-v"));
     ready(v, view);
 }
 
@@ -73,7 +73,7 @@ fn billing_schedule_phase_fits_text_and_preserves_the_native_editor_when_wrappin
         click(&mut v, &view, "text_field", "Phase name");
         let initial = node(&mut v, &view, "text_field", "Phase name").id;
         let focus = v.update(|window, cx| window.focused(cx)).unwrap();
-        v.simulate_keystrokes("cmd-a");
+        v.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         v.simulate_input("Q");
         ready(&mut v, &view);
         let short = bounds(&mut v, &view, "text_field", "Phase name");
@@ -171,7 +171,7 @@ fn billing_schedule_reflows_at_the_reading_scale_without_clipping_or_remounting(
         let focus = v
             .update(|window, cx| window.focused(cx))
             .expect("editor has focus");
-        v.simulate_keystrokes("cmd-a");
+        v.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         v.simulate_input("1234.56");
         ready(&mut v, &view);
         v.update(|window, cx| {
@@ -315,7 +315,7 @@ fn billing_schedule_number_editor_survives_rejected_proposal_and_native_resize(
         let key = node(&mut v, &view, "spinbutton", "Set-up fee price").id;
         let wide = bounds(&mut v, &view, "table", "Billing lines");
         let focus = v.update(|window, cx| window.focused(cx)).unwrap();
-        v.simulate_keystrokes("cmd-a");
+        v.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
         v.simulate_input("1234.56");
         ready(&mut v, &view);
         v.simulate_resize(size(px(720.), px(960.)));

@@ -173,7 +173,7 @@ fn gallery_tag_input_accepts_paste_and_remove_in_the_real_page(cx: &mut TestAppC
     visual.update(|_, cx| {
         cx.write_to_clipboard(ClipboardItem::new_string("Review\nAccessibility".into()));
     });
-    visual.simulate_keystrokes("cmd-v");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-v"));
     settle(&mut visual, Step::Tick, 4);
     let remove = bounds(&mut visual, &view, "button", "Remove Review");
     click_center(&mut visual, remove);
@@ -270,7 +270,7 @@ fn gallery_stepper_form_validates_edits_and_saves_the_real_workflow(cx: &mut Tes
     press(&mut visual, "Continue");
     press(&mut visual, "Continue");
     press(&mut visual, "Edit Workspace name");
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("Design Lab");
     settle(&mut visual, Step::Tick, 6);
     press(&mut visual, "Back to Review");
@@ -1199,6 +1199,16 @@ fn gallery_palette_exposes_all_six_reading_scales(cx: &mut TestAppContext) {
     no_error(&mut visual, &view);
 }
 
+fn reading_scale_failure(failures: &mut Vec<String>, failure: String) {
+    if std::env::var_os("CI").is_some() {
+        use std::io::Write as _;
+        // Bypass libtest's per-test output buffer: a terminated CI runner can
+        // otherwise lose the offending scale and page before the final report.
+        let _ = writeln!(std::io::stderr().lock(), "Gallery reading scale: {failure}");
+    }
+    failures.push(failure);
+}
+
 /// At every reading scale the Gallery offers, each page passes the audit and
 /// keeps every control whole and apart: none cut off where nothing scrolls,
 /// none laid over another.
@@ -1209,6 +1219,10 @@ fn every_gallery_page_reads_at_each_scale(cx: &mut TestAppContext) {
     let mut visual = VisualTestContext::from_window(*window, cx);
     visual.update(|window, cx| view.focus(window, cx)).unwrap();
     let scales = offered_reading_scales(&mut visual, &view);
+    let mut failures = Vec::new();
+    if scales != ["100", "110", "125", "150", "175", "200"] {
+        reading_scale_failure(&mut failures, format!("palette exposed {scales:?}"));
+    }
     assert_eq!(scales, ["100", "110", "125", "150", "175", "200"]);
     // A focused local diagnostic can reproduce a single scale; ordinary
     // CI always exercises the entire presented set and every stock witness.
@@ -1221,7 +1235,6 @@ fn every_gallery_page_reads_at_each_scale(cx: &mut TestAppContext) {
         eprintln!("Focused Gallery audit: {scale}%");
     }
     let rules = rules();
-    let mut failures = Vec::new();
     let mut risks = PresetRisks::new();
     for scale in scales
         .into_iter()
@@ -1240,21 +1253,27 @@ fn every_gallery_page_reads_at_each_scale(cx: &mut TestAppContext) {
                 "gallery.go",
                 UiValue::String(page.clone()),
             ) {
-                failures.push(format!("{scale}/{page}: {error}"));
+                reading_scale_failure(&mut failures, format!("{scale}/{page}: {error}"));
                 continue;
             }
             if let Some(error) = visual.update(|_, cx| view.last_error(cx).unwrap()) {
-                failures.push(format!("{scale}/{page}: render error: {error}"));
+                reading_scale_failure(
+                    &mut failures,
+                    format!("{scale}/{page}: render error: {error}"),
+                );
                 continue;
             }
             let theme = visual.update(|_, cx| view.theme_snapshot(cx).unwrap().variant);
             for finding in visual.update(|_, cx| view.composition_audit_with(&rules, cx).unwrap()) {
                 if !risks.record(&theme, &finding) {
-                    failures.push(format!("{scale}/{page}: {finding}"));
+                    reading_scale_failure(
+                        &mut failures,
+                        format!("{scale}/{page}: {finding}; evidence={:?}", finding.contrast),
+                    );
                 }
             }
             for finding in visual.update(|_, cx| view.debug_unreachable_controls(cx).unwrap()) {
-                failures.push(format!("{scale}/{page}: {finding}"));
+                reading_scale_failure(&mut failures, format!("{scale}/{page}: {finding}"));
             }
         }
     }
@@ -1454,7 +1473,10 @@ fn palette_theme_switch_in_a_narrow_window_preserves_editor_and_scroll(cx: &mut 
     visual.update(|_, cx| {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string("alpha beta".to_owned()));
     });
-    keys(&mut visual, "cmd-a cmd-v");
+    keys(
+        &mut visual,
+        &crate::support::primary_keys("secondary-a secondary-v"),
+    );
     keys(&mut visual, "shift-left shift-left shift-left shift-left");
     let editor_focus = visual.update(|window, cx| window.focused(cx)).unwrap();
     let stable = read(&mut visual);
@@ -1500,12 +1522,12 @@ fn palette_theme_switch_in_a_narrow_window_preserves_editor_and_scroll(cx: &mut 
         read(&mut visual).value,
         Some(UiValue::String("alpha Z".into()))
     );
-    keys(&mut visual, "cmd-z");
+    keys(&mut visual, &crate::support::primary_keys("secondary-z"));
     assert_eq!(
         read(&mut visual).value,
         Some(UiValue::String("alpha beta".into()))
     );
-    keys(&mut visual, "cmd-z");
+    keys(&mut visual, &crate::support::primary_keys("secondary-z"));
     assert_eq!(read(&mut visual).value, Some(old_value.clone()));
     keys(&mut visual, "cmd-k");
     typed(&mut visual, "Modern Dark");

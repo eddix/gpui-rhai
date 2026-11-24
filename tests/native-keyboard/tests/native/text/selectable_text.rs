@@ -77,7 +77,7 @@ fn selectable_text_uses_native_selection_and_copy_semantics(cx: &mut TestAppCont
     node_texts(&root, &mut texts);
     assert!(texts.contains(&"clicks: 0".to_owned()), "{texts:?}");
 
-    cx.simulate_keystrokes(*window, "cmd-c");
+    cx.simulate_keystrokes(*window, &crate::support::primary_keys("secondary-c"));
     cx.run_until_parked();
     assert_eq!(
         cx.read_from_clipboard().and_then(|item| item.text()),

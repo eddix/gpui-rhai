@@ -48,6 +48,8 @@ actions!(
 );
 
 pub fn init_text_input(cx: &mut App) {
+    use crate::native_shortcut::platform_binding;
+    const EDITOR: &str = "GPUIRhaiTextInput";
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, Some("GPUIRhaiTextInput")),
         KeyBinding::new("delete", Delete, Some("GPUIRhaiTextInput")),
@@ -55,12 +57,12 @@ pub fn init_text_input(cx: &mut App) {
         KeyBinding::new("right", Right, Some("GPUIRhaiTextInput")),
         KeyBinding::new("shift-left", SelectLeft, Some("GPUIRhaiTextInput")),
         KeyBinding::new("shift-right", SelectRight, Some("GPUIRhaiTextInput")),
-        KeyBinding::new("cmd-a", SelectAll, Some("GPUIRhaiTextInput")),
-        KeyBinding::new("cmd-v", Paste, Some("GPUIRhaiTextInput")),
-        KeyBinding::new("cmd-c", Copy, Some("GPUIRhaiTextInput")),
-        KeyBinding::new("cmd-x", Cut, Some("GPUIRhaiTextInput")),
-        KeyBinding::new("cmd-z", Undo, Some("GPUIRhaiTextInput")),
-        KeyBinding::new("shift-cmd-z", Redo, Some("GPUIRhaiTextInput")),
+        platform_binding(cx, "secondary-a", SelectAll, EDITOR),
+        platform_binding(cx, "secondary-v", Paste, EDITOR),
+        platform_binding(cx, "secondary-c", Copy, EDITOR),
+        platform_binding(cx, "secondary-x", Cut, EDITOR),
+        platform_binding(cx, "secondary-z", Undo, EDITOR),
+        platform_binding(cx, "shift-secondary-z", Redo, EDITOR),
         KeyBinding::new("home", Home, Some("GPUIRhaiTextInput")),
         KeyBinding::new("end", End, Some("GPUIRhaiTextInput")),
         KeyBinding::new("up", Home, Some("GPUIRhaiCodeEntry")),

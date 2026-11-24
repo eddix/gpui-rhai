@@ -57,11 +57,11 @@ fn composer_enter_shift_enter_busy_stop_and_native_undo(cx: &mut TestAppContext)
         "busy cannot resubmit"
     );
     assert_eq!(text_of(&mut visual, &view, "draft"), "one\ntwo!");
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     // Submission does not insert an edit-history boundary: ordinary adjacent
     // typing remains coalesced exactly as in the native Textarea.
     assert_eq!(text_of(&mut visual, &view, "draft"), "one\n");
-    visual.simulate_keystrokes("shift-cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("shift-secondary-z"));
     assert_eq!(text_of(&mut visual, &view, "draft"), "one\ntwo!");
     let stop_bounds = bounds(&mut visual, &view, "button", "Stop");
     click_center(&mut visual, stop_bounds);
