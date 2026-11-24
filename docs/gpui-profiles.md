@@ -28,6 +28,9 @@ of the available profiles, not a controlled performance benchmark.
 | Transformed interactive subtrees | Remain in the ordinary layout plane so pointer, focus and editing do not diverge from paint. Canvas retains its command-space transforms. |
 
 Use Rust's `gpui_rhai::EXTENDED_RENDERING` to distinguish the profiles.
+Contrast audits follow the selected paint model for opacity and grayscale:
+the public profile evaluates separate alpha draws, while the vendor profile
+can composite the isolated group first. The original preset colors are unchanged.
 VoiceOver announcement and system IME candidate-window anchoring are manual
 acceptance items; compiling or drawing an offscreen frame does not prove them.
 

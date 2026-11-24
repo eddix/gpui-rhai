@@ -818,12 +818,9 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
         {
             return NodeSummary::default();
         }
-        let grayscale = if cfg!(target_os = "macos") {
-            style.foreground_grayscale.unwrap_or_default()
-        } else {
-            0.
-        };
-        if self.inputs.rules.contains(AuditRule::LowContrastText)
+        let grayscale = style.foreground_grayscale.unwrap_or_default();
+        if crate::EXTENDED_RENDERING
+            && self.inputs.rules.contains(AuditRule::LowContrastText)
             && (style.isolated_opacity == Some(true) || grayscale > 0.)
         {
             self.paint_path_base.get_or_insert(scope.background);

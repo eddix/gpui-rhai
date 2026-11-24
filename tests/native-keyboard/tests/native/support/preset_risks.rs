@@ -23,6 +23,7 @@ struct Paper {
 #[derive(Clone, Copy, Debug)]
 struct IsolatedPaper {
     token: &'static str,
+    underlay: Option<&'static str>,
     grayscale: f64,
     wash: Option<u32>,
 }
@@ -80,9 +81,18 @@ impl PaintWitness {
         self.opacity = opacity;
         self.isolated_paper = Some(IsolatedPaper {
             token,
+            underlay: None,
             grayscale: 0.0,
             wash: None,
         });
+        self
+    }
+
+    fn with_isolated_underlay(mut self, token: &'static str) -> Self {
+        self.isolated_paper
+            .as_mut()
+            .expect("a group backing")
+            .underlay = Some(token);
         self
     }
 
@@ -102,12 +112,43 @@ impl PaintWitness {
             backing(theme, &self.papers)?
         };
         if let Some(group) = self.isolated_paper {
-            let [r, g, b, a] = theme.tokens.color(group.token)?.as_rgba_hex().to_be_bytes();
+            let group_paper = theme.tokens.color(group.token)?;
+            let underlay = if let Some(token) = group.underlay {
+                Some(theme.tokens.color(token)?)
+            } else {
+                None
+            };
+            if !gpui_rhai::EXTENDED_RENDERING {
+                // Without the group compositor each constituent draw takes
+                // the opacity independently and keeps its original hue.
+                let backing =
+                    underlay.map_or(backing, |paper| rgba_over(paper, self.opacity, backing));
+                let mut background = rgba_over(group_paper, self.opacity, backing);
+                if let Some(wash) = group.wash {
+                    background = rgba_over(
+                        gpui_rhai::Rgba8::from_rgba_hex(wash),
+                        self.opacity,
+                        background,
+                    );
+                }
+                return Some((
+                    background,
+                    contrast_on_opacity(foreground, self.opacity, background),
+                ));
+            }
+            let [r, g, b, a] = group_paper.as_rgba_hex().to_be_bytes();
             // The source paper can itself be translucent. Compose the
             // glyph into its premultiplied tile before fading the group
             // onto the host surface, not the other way around.
             let mut a = f64::from(a) / 255.0;
             let mut paper = [r, g, b].map(|v| f64::from(v) / 255.0 * a);
+            if let Some(underlay) = underlay {
+                let [r, g, b, alpha] = underlay.as_rgba_hex().to_be_bytes();
+                let alpha = f64::from(alpha) / 255.;
+                let behind = [r, g, b].map(|v| f64::from(v) / 255. * alpha);
+                paper = std::array::from_fn(|i| paper[i] + behind[i] * (1. - a));
+                a += alpha * (1. - a);
+            }
             if let Some(wash) = group.wash {
                 let [r, g, b, alpha] = wash.to_be_bytes();
                 let alpha = f64::from(alpha) / 255.;
@@ -1689,9 +1730,11 @@ fn reviewed_fallback_chain(stock: &ThemeVariant, parts: &[&str]) -> Option<Paint
             PaintWitness::new("fallback_chain.text", &paper)
                 .isolated_on("fallback_chain.fill", 0.6),
         ),
-        ["logo", "number", "0"] if attempt == "sprout" => {
-            Some(PaintWitness::new(muted, &paper).isolated_on(card, 0.6))
-        }
+        ["logo", "number", "0"] if attempt == "sprout" => Some(
+            PaintWitness::new(muted, &paper)
+                .isolated_on(card, 0.6)
+                .with_isolated_underlay("fallback_chain.fill"),
+        ),
         _ => None,
     }
 }
@@ -2883,7 +2926,7 @@ fn reviewed_scheduled_runs(stock: &ThemeVariant, parts: &[&str]) -> Option<Paint
         let historical = |ink| bare(ink).isolated_on(card, 0.45);
         return match role {
             ["title-line", "title"] | ["title-line", "0", "0"] => {
-                Some(historical("scheduled_runs.ink"))
+                Some(historical("scheduled_runs.ink").with_isolated_underlay(card))
             }
             ["summary"] => Some(historical(muted)),
             ["stats", "usage-pill", "percentage"] => Some(
@@ -3262,6 +3305,7 @@ fn reviewed_ledger(stock: &ThemeVariant, parts: &[&str]) -> Option<PaintWitness>
                     witness.opacity = 0.5;
                     witness.isolated_paper = Some(IsolatedPaper {
                         token: "agent_ledger.icon",
+                        underlay: None,
                         grayscale: 1.0,
                         wash: None,
                     });
@@ -3619,12 +3663,12 @@ fn trace_special_states_require_the_exact_ink_and_fixture_branch() {
 }
 
 #[test]
-fn ledger_risk_matches_reference_ink_and_isolated_grayscale_not_unfiltered_layers() {
+fn ledger_risk_matches_the_selected_profile_and_rejects_the_other_paint_model() {
     use gpui_rhai::{AuditContrastEvidence, Rgba8};
     let mut policy = PresetRisks::new();
     // Browser-resolved inks and paper, projected independently from the
     // fixture policy and the SDK audit. Alpha is encoded in nearest RGBA8.
-    for (family, appearance, ink, paper, ratio) in [
+    for (family, appearance, ink, vendor_paper, vendor_ratio) in [
         (
             "Modern",
             "Light",
@@ -3668,6 +3712,23 @@ fn ledger_risk_matches_reference_ink_and_isolated_grayscale_not_unfiltered_layer
             .find(|theme| theme.family == family && theme.name == appearance)
             .unwrap()
             .clone();
+        let released = match (family, appearance) {
+            ("Modern", "Dark") => (
+                [38.5 / 255., 38.5 / 255., 42. / 255.],
+                2.527_530_361_627_965_4,
+            ),
+            ("Clean", "Dark") => (
+                [31.5 / 255., 31.5 / 255., 34.5 / 255.],
+                2.799_649_252_492_378_6,
+            ),
+            _ => (vendor_paper, vendor_ratio),
+        };
+        let vendor = (vendor_paper, vendor_ratio);
+        let ((paper, ratio), other) = if gpui_rhai::EXTENDED_RENDERING {
+            (vendor, released)
+        } else {
+            (released, vendor)
+        };
         let mut finding = AuditFinding {
             rule: AuditRule::LowContrastText,
             node: None,
@@ -3688,22 +3749,14 @@ fn ledger_risk_matches_reference_ink_and_isolated_grayscale_not_unfiltered_layer
         assert!(!policy.record(&stock, &not_the_mark));
         if appearance == "Dark" {
             let evidence = finding.contrast.as_mut().unwrap();
-            evidence.background_srgb = Some(if family == "Modern" {
-                [38.5 / 255., 38.5 / 255., 42. / 255.]
-            } else {
-                [31.5 / 255., 31.5 / 255., 34.5 / 255.]
-            });
+            evidence.background_srgb = Some(other.0);
+            evidence.ratio = other.1;
             assert!(
                 !policy.record(&stock, &finding),
-                "unfiltered paper is not the approved witness"
+                "a witness from the other painter is not admissible"
             );
+            finding.contrast.as_mut().unwrap().ratio = ratio;
             finding.contrast.as_mut().unwrap().background_srgb = Some(paper);
-            finding.contrast.as_mut().unwrap().ratio =
-                contrast_on_opacity(Rgba8::from_rgba_hex(ink), 0.5, paper);
-            assert!(
-                !policy.record(&stock, &finding),
-                "separate primitive fade is not the approved witness"
-            );
         }
         let mut changed = stock.clone();
         std::sync::Arc::make_mut(&mut changed.tokens).colors.insert(
