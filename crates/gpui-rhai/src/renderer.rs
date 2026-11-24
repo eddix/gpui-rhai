@@ -860,10 +860,9 @@ impl PointerPayloadContext {
                                 (window_x - bounds.visual.x, window_y - bounds.visual.y),
                             )
                         };
-                        let transform = self
-                            .node
-                            .map(|node| self.geometry.canvas_transform(node))
-                            .unwrap_or_default();
+                        let transform = self.node.map_or_else(Default::default, |node| {
+                            self.geometry.canvas_transform(node)
+                        });
                         scene.hit_test_presented(
                             x,
                             y,
@@ -4448,8 +4447,9 @@ fn render_island_boundary<C: ColorResolver>(
         .focus_path
         .iter()
         .position(|node| *node == id)
-        .map(|position| environment.focus_path[..=position].to_vec())
-        .unwrap_or_default();
+        .map_or_else(Default::default, |position| {
+            environment.focus_path[..=position].to_vec()
+        });
     let capture = crate::island::IslandCapture {
         node: node.clone(),
         root: id,
@@ -5306,23 +5306,22 @@ impl RetainedChildIds {
         Self {
             tree: tree
                 .and_then(|tree| tree.node(parent))
-                .map(|node| {
+                .map_or_else(Default::default, |node| {
                     node.children()
                         .filter(in_group)
                         .map(crate::RetainedChildLink::node)
                         .collect()
-                })
-                .unwrap_or_default(),
-            links: links
-                .and_then(|links| links.get(&parent))
-                .map(|children| {
+                }),
+            links: links.and_then(|links| links.get(&parent)).map_or_else(
+                Default::default,
+                |children| {
                     children
                         .iter()
                         .filter(in_group)
                         .map(crate::RetainedChildLink::node)
                         .collect()
-                })
-                .unwrap_or_default(),
+                },
+            ),
         }
     }
 
@@ -6758,8 +6757,8 @@ fn native_virtual_collection_element<C: ColorResolver>(
     path: &str,
     retained_id: Option<NodeId>,
 ) -> VirtualListEntityElement {
-    let retained_roots: BTreeMap<String, NodeId> = retained_id
-        .map(|node| {
+    let retained_roots: BTreeMap<String, NodeId> =
+        retained_id.map_or_else(Default::default, |node| {
             retained_children(environment.retained, environment.retained_links, node)
                 .into_iter()
                 .filter(|child| child.group() == "items")
@@ -6769,8 +6768,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
                         .map(|key| (format!("item:{key}"), child.node()))
                 })
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     let runtime = owned_slot_runtime(environment, path, retained_roots);
     let mut content = spec.clone();
     content.item_height = spec

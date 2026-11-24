@@ -136,7 +136,7 @@ impl SlotSkin {
         #[cfg(feature = "vendor-gpui")]
         let native_shadows = self.shadows.resolve(|| window.text_style().color);
         #[cfg(feature = "vendor-gpui")]
-        let shadows = native_shadows.as_slice();
+        let shadows = native_shadows.as_ref();
         #[cfg(not(feature = "vendor-gpui"))]
         let shadows = self.shadows.as_slice();
         #[cfg(feature = "vendor-gpui")]

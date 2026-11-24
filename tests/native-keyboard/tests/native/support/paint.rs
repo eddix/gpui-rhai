@@ -56,7 +56,13 @@ pub(crate) fn walk_live_paint(
         .frames
         .iter()
         .filter(|layer| layer.tile_size == 0)
-        .flat_map(|layer| layer.content.scenes())
+        .flat_map(|layer| {
+            #[cfg(feature = "vendor-gpui")]
+            let scenes = layer.content.scenes();
+            #[cfg(not(feature = "vendor-gpui"))]
+            let scenes = layer.content.scene();
+            scenes
+        })
     {
         walk_live_paint(child, placement, visit);
     }

@@ -2344,8 +2344,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
                 .borrow()
                 .entries
                 .get(&self.node.primitive)
-                .map(|entry| entry.descriptor.events.clone())
-                .unwrap_or_default(),
+                .map_or_else(Default::default, |entry| entry.descriptor.events.clone()),
             callbacks,
             dispatcher: self.runtime.dispatcher,
             interactions: self.runtime.interactions,

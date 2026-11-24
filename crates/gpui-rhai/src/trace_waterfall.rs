@@ -337,7 +337,7 @@ fn encode_projection(
             ])
         })
         .collect();
-    let s = root.map(|i| sum[i]).unwrap_or_default();
+    let s = root.map_or_else(Default::default, |i| sum[i]);
     map([
         ("range", range.into()),
         ("latest", latest.into()),

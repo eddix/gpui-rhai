@@ -1487,10 +1487,10 @@ impl UiContext {
         {
             runtime.ensure_presentation(window);
         }
-        let incarnation = runtime
-            .try_borrow_mut()
-            .map(|mut runtime| runtime.ensure_component_incarnation(&component))
-            .unwrap_or_default();
+        let incarnation = runtime.try_borrow_mut().map_or_else(
+            |_| Default::default(),
+            |mut runtime| runtime.ensure_component_incarnation(&component),
+        );
         let read_dependency = crate::read_dependency::ReadDependency::component(&component);
         let context = Self {
             runtime,
@@ -1554,11 +1554,10 @@ impl UiContext {
         component: ComponentInstancePath,
         events: BTreeMap<String, EventSchema>,
     ) -> Self {
-        let incarnation = self
-            .runtime
-            .try_borrow_mut()
-            .map(|mut runtime| runtime.ensure_component_incarnation(&component))
-            .unwrap_or_default();
+        let incarnation = self.runtime.try_borrow_mut().map_or_else(
+            |_| Default::default(),
+            |mut runtime| runtime.ensure_component_incarnation(&component),
+        );
         let read_dependency = crate::read_dependency::ReadDependency::component(&component);
         let context = Self {
             runtime: Rc::clone(&self.runtime),
@@ -4043,7 +4042,7 @@ impl UiContext {
         runtime
             .theme
             .as_ref()
-            .map(|theme| {
+            .map_or_else(Default::default, |theme| {
                 theme
                     .variants()
                     .map(|variant| crate::ThemeVariantInfo {
@@ -4053,7 +4052,6 @@ impl UiContext {
                     })
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     /// Every color of the theme variant `family`/`name` (as the token base,

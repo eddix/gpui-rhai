@@ -634,8 +634,7 @@ impl RetainedUiTree {
     pub(crate) fn summary(&self) -> SubtreeSummary {
         self.root_id
             .and_then(|id| self.node(id))
-            .map(RetainedNode::summary)
-            .unwrap_or_default()
+            .map_or_else(Default::default, RetainedNode::summary)
     }
 
     #[must_use]

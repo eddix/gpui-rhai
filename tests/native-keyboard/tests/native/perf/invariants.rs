@@ -104,7 +104,7 @@ fn quiet_scroll_frames_replay_the_cold_filler(cx: &mut TestAppContext) {
     }
     assert!(quiet >= 15, "{quiet} quiet steps");
 }
-#[cfg(feature = "gpui-fast")]
+#[cfg(all(feature = "gpui-fast", feature = "vendor-gpui"))]
 #[gpui::test]
 fn repeating_fill_period_changes_the_promoted_tiles_without_moving_the_scroll(
     cx: &mut gpui::TestAppContext,

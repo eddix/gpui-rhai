@@ -5233,8 +5233,7 @@ fn component_part_styles(props: &Map) -> BTreeMap<String, crate::Style> {
     props
         .get("part_styles")
         .filter(|value| value.is::<Map>())
-        .map(Dynamic::clone_cast::<Map>)
-        .unwrap_or_default()
+        .map_or_else(Default::default, Dynamic::clone_cast::<Map>)
         .into_iter()
         .filter_map(|(name, value)| {
             value

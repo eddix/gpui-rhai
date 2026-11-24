@@ -6630,8 +6630,7 @@ impl ScriptHostView {
         let local_themes = runtime
             .theme
             .as_ref()
-            .map(|themes| themes.local_themes(appearance))
-            .unwrap_or_default();
+            .map_or_else(Default::default, |themes| themes.local_themes(appearance));
         let direction = runtime
             .locale
             .as_ref()
@@ -6931,15 +6930,14 @@ impl ScriptHostView {
         let Some(target) = target else {
             return false;
         };
-        let handlers = self
-            .lifecycle
-            .retained()
-            .node(target.node)
-            .map(|node| {
-                node.event_handlers(crate::retained_page::NAVIGATION_BACK)
-                    .to_vec()
-            })
-            .unwrap_or_default();
+        let handlers =
+            self.lifecycle
+                .retained()
+                .node(target.node)
+                .map_or_else(Default::default, |node| {
+                    node.event_handlers(crate::retained_page::NAVIGATION_BACK)
+                        .to_vec()
+                });
         let payload = UiValue::Map(BTreeMap::from([
             (
                 "depth".to_owned(),

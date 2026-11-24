@@ -26,11 +26,11 @@ fn find_bar(scene: &gpui::Scene, mid_y: f32, scale: f32) -> Option<(f32, f32)> {
     }
     #[cfg(feature = "gpui-fast")]
     for layer in scene.layers.frames.iter().filter(|l| l.tile_size == 0) {
-        if let Some(bar) = layer
-            .content
-            .scenes()
-            .find_map(|s| find_bar(s, mid_y, scale))
-        {
+        #[cfg(feature = "vendor-gpui")]
+        let mut scenes = layer.content.scenes();
+        #[cfg(not(feature = "vendor-gpui"))]
+        let mut scenes = layer.content.scene().into_iter();
+        if let Some(bar) = scenes.find_map(|s| find_bar(s, mid_y, scale)) {
             return Some(bar);
         }
     }

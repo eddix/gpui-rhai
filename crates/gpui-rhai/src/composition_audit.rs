@@ -2284,10 +2284,9 @@ pub fn load_profile_source(
             .transpose()
             .map(Option::unwrap_or_default)
     };
-    let name = map
-        .remove("name")
-        .map(|name| name.into_string().unwrap_or_default())
-        .unwrap_or_default();
+    let name = map.remove("name").map_or_else(Default::default, |name| {
+        name.into_string().unwrap_or_default()
+    });
     let audit = strings(map.remove("audit"), "audit")?;
     let audit = AuditRules::from_ids(audit.iter().map(String::as_str))
         .map_err(|id| format!("{source_name}: unknown audit rule `{id}`"))?;
