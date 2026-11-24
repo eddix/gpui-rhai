@@ -1488,7 +1488,7 @@ impl UiContext {
             runtime.ensure_presentation(window);
         }
         let incarnation = runtime.try_borrow_mut().map_or_else(
-            |_| Default::default(),
+            |_| crate::ComponentIncarnation::default(),
             |mut runtime| runtime.ensure_component_incarnation(&component),
         );
         let read_dependency = crate::read_dependency::ReadDependency::component(&component);
@@ -1555,7 +1555,7 @@ impl UiContext {
         events: BTreeMap<String, EventSchema>,
     ) -> Self {
         let incarnation = self.runtime.try_borrow_mut().map_or_else(
-            |_| Default::default(),
+            |_| crate::ComponentIncarnation::default(),
             |mut runtime| runtime.ensure_component_incarnation(&component),
         );
         let read_dependency = crate::read_dependency::ReadDependency::component(&component);
