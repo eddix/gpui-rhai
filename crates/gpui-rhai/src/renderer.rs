@@ -3530,19 +3530,41 @@ impl GpuiNodeRenderer {
             element
         };
         let ancestor_disabled = disabled && !is_disabled(node);
-        let persistent_focus = retained_id
-            .and_then(|id| environment.focus_handles.get(&id))
-            .filter(|_| {
-                !matches!(node.kind(), UiNodeKind::Overlay { .. })
-                    && !matches!(node.kind(), UiNodeKind::Custom { primitive }
+        let node_focus = retained_id.and_then(|id| environment.focus_handles.get(&id));
+        let persistent_focus = node_focus.filter(|_| {
+            !matches!(node.kind(), UiNodeKind::Overlay { .. })
+                && !matches!(node.kind(), UiNodeKind::Custom { primitive }
                     if environment.primitives.uses_primary_focus(&primitive.primitive))
-            });
+        });
         // Key handlers on a container that holds focusable children route keys
         // bubbling from those children (roving groups, overlay roots); only a
         // click target or a key target without focusable content is a stop.
         let implicit_tab_stop =
             click.is_some() || !key_handlers.is_empty() && !children_take_focus(node, disabled);
         let element = if native_editor_owns_semantics(node) {
+            // Padding and the spare width of an intrinsic editor are part
+            // of the field's pointer target, even though only the inner
+            // editor participates in GPUI's focus traversal.
+            let element = if !disabled
+                && let UiNodeKind::Custom { primitive } = node.kind()
+                && primitive.props.boolean("disabled") != Some(true)
+                && primitive.props.boolean("code_verified") != Some(true)
+                && let Some(focus) = node_focus.cloned()
+            {
+                let projection = inline_projection.clone();
+                element.on_any_mouse_down(move |event, window, cx| {
+                    if !window.default_prevented()
+                        && projection
+                            .as_ref()
+                            .is_none_or(|(frame, slot)| frame.allows(*slot, event.position, window))
+                    {
+                        focus.focus(window, cx);
+                        window.prevent_default();
+                    }
+                })
+            } else {
+                element
+            };
             if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
                 element
                     .tab_index(node_tab_index(node))
