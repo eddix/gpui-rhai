@@ -84,8 +84,10 @@ for (const [id, source] of modules) {
   const target = `${baseline}/${id}.rhai`;
   if (exists(target)) copy(source, target);
 }
-for (const name of ["modern_light", "modern_dark", "clean_light", "clean_dark"]) {
-  copy(`registry/themes/${name}.rhai`, `${baseline}/themes/${name === "modern_dark" ? "default_dark" : name}.rhai`);
+// The application's active default is Modern, but the separately installed
+// legacy default_dark theme still has its own registry identity and baseline.
+for (const name of ["modern_light", "clean_light", "clean_dark", "default_dark"]) {
+  copy(`registry/themes/${name}.rhai`, `${baseline}/themes/${name}.rhai`);
 }
 const manifest = "apps/disktree/.gpui-rhai/manifest.toml";
 const input = bytes(manifest).toString();
