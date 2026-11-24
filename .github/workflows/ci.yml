@@ -35,7 +35,10 @@ jobs:
       # Compiled library crates live in the Actions cache, not on the runner's
       # disk. Pull requests read the entries main's runs wrote.
       SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
+      SCCACHE_IGNORE_SERVER_IO_ERROR: "1"
+      # Native sharding can run for longer than the daemon's idle limit
+      # before Cargo starts another target in the same job.
+      SCCACHE_IDLE_TIMEOUT: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -44,6 +47,7 @@ jobs:
           components: clippy,rustfmt
       - &sccache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        continue-on-error: true
       - &linux-test-deps
         name: Install native Linux test dependencies
         uses: ./.github/actions/apt-install
@@ -59,6 +63,14 @@ jobs:
             mesa-vulkan-drivers
             weston
             xvfb
+      - &select-rust-cache
+        name: Use compiler cache when available
+        run: |
+          if sccache "$(rustup which rustc)" -vV >/dev/null; then
+            echo 'RUSTC_WRAPPER=sccache' >> "$GITHUB_ENV"
+          else
+            echo '::warning::Compiler cache is unavailable; compiling directly.'
+          fi
       - name: Reject gpui-component dependencies
         run: |
           if cargo tree --workspace | grep -q 'gpui-component'; then
@@ -121,6 +133,7 @@ jobs:
           components: clippy
       - *sccache
       - *linux-test-deps
+      - *select-rust-cache
       # `gpui_rhai::offscreen`, for an application's examples/shot.rs. Its
       # renderer is macOS-only; Linux checks the rest.
       - name: Offscreen feature
@@ -179,6 +192,7 @@ jobs:
           components: clippy
       - *sccache
       - *linux-test-deps
+      - *select-rust-cache
       - name: Clippy
         run: |
           cargo clippy --workspace --all-targets --no-default-features --features gpui-rhai/gpui-fast,gpui-rhai/charts,gpui-rhai/dev-reload -- -D warnings
@@ -202,6 +216,7 @@ jobs:
           toolchain: 1.99.0
       - *sccache
       - *linux-test-deps
+      - *select-rust-cache
       - name: Native tests
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --no-default-features --features gpui-fast --test native
         env:
@@ -223,6 +238,7 @@ jobs:
           toolchain: 1.99.0
       - *sccache
       - *linux-test-deps
+      - *select-rust-cache
       - name: Release build
         run: |
           # The examples CI launches: the Linux window smoke and the artifact audit.
@@ -242,18 +258,14 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
+    env: *cargo-env
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.0
           components: clippy,rustfmt
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - *sccache
       - name: Install native Linux build dependencies
         uses: ./.github/actions/apt-install
         with:
@@ -264,6 +276,7 @@ jobs:
             libx11-xcb-dev
             libxkbcommon-dev
             libxkbcommon-x11-dev
+      - *select-rust-cache
       - name: Format
         run: cargo fmt --manifest-path apps/Cargo.toml --all -- --check
       - name: Clippy
