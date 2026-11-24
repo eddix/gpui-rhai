@@ -3370,6 +3370,7 @@ impl GpuiNodeRenderer {
             retained_id,
             hit_test,
             inherited_text,
+            resolved_style,
         ) {
             Wrapped::Interactive(element) => Self::populate(
                 element,
@@ -3407,7 +3408,7 @@ impl GpuiNodeRenderer {
     /// Attach the node's handlers, focus and semantics, or return the element
     /// unchanged when the node needs no interaction wrapper.
     #[inline(never)]
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn wrap_interactions<C: ColorResolver>(
         element: Div,
         node: &UiNode,
@@ -3416,8 +3417,18 @@ impl GpuiNodeRenderer {
         retained_id: Option<NodeId>,
         hit_test: Option<HitTestBehavior>,
         inherited_text: bool,
+        resolved_style: &StyleProperties,
     ) -> Wrapped {
         let disabled = environment.inherited_disabled;
+        #[cfg(not(feature = "vendor-gpui"))]
+        let contextual = PublicContextualPaint::from_style(resolved_style);
+        #[cfg(not(feature = "vendor-gpui"))]
+        let contextual_paint = contextual.is_present();
+        #[cfg(feature = "vendor-gpui")]
+        let contextual_paint = {
+            let _ = resolved_style;
+            false
+        };
         let repeat_owner = retained_id.and_then(|id| repeat_press_owner(node, id, environment));
         let repeat_pressed = repeat_owner
             .as_ref()
@@ -3461,7 +3472,14 @@ impl GpuiNodeRenderer {
                 )
             })) << 4
             | u8::from(semantic.is_some()) << 5;
-        if !node_needs_interaction_wrapper(node, needs, disabled) {
+        // A static ElementRef can still be the target of scroll_into_view.
+        // Attach its native anchor even when it has no events or focus.
+        let owns_scroll_anchor =
+            retained_id.is_some_and(|id| environment.scroll_anchors.contains_key(&id));
+        if !contextual_paint
+            && !owns_scroll_anchor
+            && !node_needs_interaction_wrapper(node, needs, disabled)
+        {
             return Wrapped::Plain(element);
         }
 
@@ -3651,16 +3669,24 @@ impl GpuiNodeRenderer {
         } else {
             apply_environment_raw_pointer(element, node, retained_id, environment)
         };
-        if inherited_text {
-            let style = node.style().clone();
-            let colors = OwnedColorResolver::capture(&environment.resolver());
-            let focused =
-                retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref();
-            let indicators = environment.focus_indicators;
-            let group = environment.hover_group.map(hover_group_name);
+        if inherited_text || contextual_paint {
+            let inherited_paint = inherited_text.then(|| {
+                (
+                    node.style().clone(),
+                    OwnedColorResolver::capture(&environment.resolver()),
+                    retained_id.is_some() && environment.focus_path.first() == retained_id.as_ref(),
+                    environment.focus_indicators,
+                    environment.hover_group.map(hover_group_name),
+                )
+            });
             Wrapped::Inherited(crate::inherited_text::InheritedTextElement::new(
                 element,
                 move |element, color| {
+                    #[cfg(not(feature = "vendor-gpui"))]
+                    let element = contextual.apply(element, color);
+                    let Some((style, colors, focused, indicators, group)) = inherited_paint else {
+                        return element;
+                    };
                     let mut element = apply_pseudo_backgrounds(
                         element,
                         &style,
@@ -8304,6 +8330,46 @@ fn semantic_color(colors: &impl ColorResolver, token: &str, fallback: u32) -> Rg
     colors
         .resolve(&ColorValue::Token(token.to_owned()))
         .unwrap_or_else(|| Rgba8::from_rgb_hex(fallback))
+}
+
+/// A solid or border using currentColor on the released backend. Refine only
+/// the nodes which need a contextual color, while the actual parent ink is
+/// active in GPUI's layout stack.
+#[cfg(not(feature = "vendor-gpui"))]
+#[derive(Clone, Copy)]
+struct PublicContextualPaint {
+    background: Option<crate::presentation_backend::PaintInk>,
+    border: Option<crate::presentation_backend::PaintInk>,
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+impl PublicContextualPaint {
+    fn from_style(style: &StyleProperties) -> Self {
+        let contextual = |ink: &crate::PaintColor| ink.native_ink(&mut |_| None);
+        Self {
+            background: match style.background.as_deref() {
+                Some(crate::BackgroundFill::Solid(ink)) => contextual(ink),
+                _ => None,
+            },
+            border: style.border_color.as_ref().and_then(contextual),
+        }
+    }
+
+    fn is_present(self) -> bool {
+        self.background.is_some() || self.border.is_some()
+    }
+
+    fn apply(self, mut element: Stateful<Div>, inherited: gpui::Hsla) -> Stateful<Div> {
+        let refinements = element.style();
+        let foreground = refinements.text.color.unwrap_or(inherited);
+        if let Some(background) = self.background {
+            refinements.background = Some(background.resolve_hsla(foreground).into());
+        }
+        if let Some(border) = self.border {
+            refinements.border_color = Some(border.resolve_hsla(foreground));
+        }
+        element
+    }
 }
 
 #[derive(Clone, Default)]

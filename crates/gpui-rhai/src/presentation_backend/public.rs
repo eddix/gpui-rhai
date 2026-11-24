@@ -1,7 +1,7 @@
 //! Fallbacks for presentation operations not exposed by the published backends.
 //! The visual profile in Gallery explains which compositing contracts are omitted.
 
-use gpui::{Bounds, BoxShadow, Fill, Hsla, Pixels, Point, Rgba, TransformationMatrix, Window, px};
+use gpui::{Bounds, BoxShadow, Fill, Hsla, Pixels, Point, Rgba, TransformationMatrix, Window};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum PaintInk {
@@ -71,7 +71,26 @@ pub(crate) struct TextExclusion {
 
 /// Only the untransformed logical plane is presented in the stock preview.
 #[derive(Clone, Default)]
-pub(crate) struct VisualCoordinates(Option<Bounds<Pixels>>);
+pub(crate) struct VisualCoordinates(Clip);
+
+#[derive(Clone, Default)]
+enum Clip {
+    #[default]
+    Unbounded,
+    Bounds(Bounds<Pixels>),
+    Empty,
+}
+
+// GPUI's Bounds::intersect clamps disjoint bounds to a degenerate rectangle.
+// Here that would create a phantom caret at the edge of an unrelated clip.
+fn intersect(a: Bounds<Pixels>, b: Bounds<Pixels>) -> Option<Bounds<Pixels>> {
+    let left = a.left().max(b.left());
+    let top = a.top().max(b.top());
+    let right = a.right().min(b.right());
+    let bottom = a.bottom().min(b.bottom());
+    (left <= right && top <= bottom)
+        .then(|| Bounds::from_corners(gpui::point(left, top), gpui::point(right, bottom)))
+}
 
 // Keep the same call shape as the vendored coordinate adapter. The public
 // profile deliberately presents only an untransformed coordinate plane.
@@ -90,19 +109,29 @@ impl VisualCoordinates {
         self.visual_point(point)
     }
     pub(crate) fn accepts_visual_point(&self, point: Point<Pixels>) -> bool {
-        self.visual_point(point).is_some() && self.0.is_none_or(|bounds| bounds.contains(&point))
+        self.visual_point(point).is_some()
+            && match self.0 {
+                Clip::Unbounded => true,
+                Clip::Bounds(clip) => clip.contains(&point),
+                Clip::Empty => false,
+            }
     }
     pub(crate) fn visual_bounds(&self, bounds: Bounds<Pixels>) -> Option<Bounds<Pixels>> {
         Some(bounds)
     }
     pub(crate) fn clipped_visual_bounds(&self, bounds: Bounds<Pixels>) -> Option<Bounds<Pixels>> {
-        let rect = self.0.map_or(bounds, |clip| clip.intersect(&bounds));
-        (rect.size.width > px(0.) && rect.size.height > px(0.)).then_some(rect)
+        match self.0 {
+            Clip::Unbounded => Some(bounds),
+            Clip::Bounds(clip) => intersect(bounds, clip),
+            Clip::Empty => None,
+        }
     }
     pub(crate) fn clipped_to(&self, bounds: Bounds<Pixels>) -> Self {
-        Self(Some(
-            self.0.map_or(bounds, |other| other.intersect(&bounds)),
-        ))
+        Self(match self.0 {
+            Clip::Unbounded => Clip::Bounds(bounds),
+            Clip::Bounds(clip) => intersect(clip, bounds).map_or(Clip::Empty, Clip::Bounds),
+            Clip::Empty => Clip::Empty,
+        })
     }
     #[cfg(all(
         target_os = "macos",
@@ -113,6 +142,30 @@ impl VisualCoordinates {
     }
     pub(crate) fn transformed(self, _: TransformationMatrix) -> Result<Self, &'static str> {
         Ok(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VisualCoordinates;
+    use gpui::{Bounds, point, px, size};
+
+    #[test]
+    fn caret_rectangles_survive_a_mask_but_do_not_reappear_through_disjoint_masks() {
+        let rect =
+            |x, y, width, height| Bounds::new(point(px(x), px(y)), size(px(width), px(height)));
+        let coordinates = VisualCoordinates::default().clipped_to(rect(2., 2., 10., 10.));
+        assert_eq!(
+            coordinates.clipped_visual_bounds(rect(4., 0., 0., 6.)),
+            Some(rect(4., 2., 0., 4.))
+        );
+        assert_eq!(
+            coordinates.clipped_visual_bounds(rect(0., 0., 0., 6.)),
+            None
+        );
+        let empty = coordinates.clipped_to(rect(20., 2., 10., 10.));
+        assert_eq!(empty.clipped_visual_bounds(rect(20., 4., 0., 6.)), None);
+        assert!(!empty.accepts_visual_point(point(px(20.), px(4.))));
     }
 }
 
