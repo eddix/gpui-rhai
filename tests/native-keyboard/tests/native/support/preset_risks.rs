@@ -2925,7 +2925,8 @@ fn reviewed_scheduled_runs(stock: &ThemeVariant, parts: &[&str]) -> Option<Paint
     {
         let historical = |ink| bare(ink).isolated_on(card, 0.45);
         return match role {
-            ["title-line", "title"] | ["title-line", "0", "0"] => {
+            ["title-line", "title"] => Some(historical("scheduled_runs.ink")),
+            ["title-line", "0", "0"] => {
                 Some(historical("scheduled_runs.ink").with_isolated_underlay(card))
             }
             ["summary"] => Some(historical(muted)),
