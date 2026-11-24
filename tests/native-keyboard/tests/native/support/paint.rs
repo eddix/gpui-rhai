@@ -219,6 +219,14 @@ pub(crate) fn glyph_rects_with_ink(
                     }
                 },
             );
+            // Atlas batches can reorder equal glyph multisets between frames.
+            // Preserve every rectangle but compare geometry in a stable order.
+            visible.sort_by(|a, b| {
+                a.x.total_cmp(&b.x)
+                    .then_with(|| a.y.total_cmp(&b.y))
+                    .then_with(|| a.width.total_cmp(&b.width))
+                    .then_with(|| a.height.total_cmp(&b.height))
+            });
             visible
         })
     })
