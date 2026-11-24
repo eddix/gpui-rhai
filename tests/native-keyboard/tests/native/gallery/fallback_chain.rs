@@ -58,7 +58,7 @@ fn fallback_chain_progress_fits_the_native_strip_and_preserves_the_fraction(
     cx: &mut TestAppContext,
 ) {
     use super::acceptance::action;
-    use crate::support::{logical_paint_rect, walk_live_paint};
+    use crate::support::paint::live_painted_quads;
     use gpui_rhai::UiValue;
     let (mut v, view) = gallery(cx, "fallback_chain", "modern-dark");
     v.simulate_resize(size(px(1380.), px(1080.)));
@@ -89,50 +89,28 @@ fn fallback_chain_progress_fits_the_native_strip_and_preserves_the_fraction(
             let left = card.x + 46. * factor;
             let right = card.x + card.width - 12. * factor;
             let expected = ((right - left + gap) / (chip + gap) + 0.001).floor();
-            let dots = v.update(|window, _| {
-                let native_scale = window.scale_factor();
-                window.visual_probe_with_painted_scene(|scene| {
-                    let mut dots = Vec::new();
-                    walk_live_paint(
-                        scene,
-                        gpui::TransformationMatrix::default(),
-                        &mut |scene, pose| {
-                            for q in &scene.quads {
-                                let Some(color) = q.background.as_solid() else {
-                                    continue;
-                                };
-                                let rgb = color.to_rgb();
-                                let active = rgb.b > 0.95
-                                    && (rgb.g - 176. / 255.).abs() < 0.012
-                                    && (rgb.r - 79. / 255.).abs() < 0.012;
-                                let idle = (rgb.r - 44. / 255.).abs() < 0.012
-                                    && (rgb.g - 44. / 255.).abs() < 0.012
-                                    && (rgb.b - 48. / 255.).abs() < 0.012;
-                                if !(active || idle) {
-                                    continue;
-                                }
-                                let rect = logical_paint_rect(q.bounds, pose, native_scale);
-                                if (f64::from(rect.height) - chip).abs() > 0.55
-                                    || (f64::from(rect.width) - chip).abs() > 0.55
-                                    || f64::from(rect.y) < card.y + card.height * 0.5
-                                    || f64::from(rect.bottom()) > card.y + card.height + 0.5
-                                    || f64::from(rect.x) < left - 0.5
-                                {
-                                    continue;
-                                }
-                                let clip =
-                                    logical_paint_rect(q.content_mask.bounds, pose, native_scale);
-                                if rect.right().min(clip.right()) - rect.x.max(clip.x) <= 0. {
-                                    continue;
-                                }
-                                dots.push((rect, clip, active));
-                            }
-                        },
-                    );
-                    dots.sort_by(|a, b| a.0.x.total_cmp(&b.0.x));
-                    dots
+            let mut dots = live_painted_quads(&mut v)
+                .into_iter()
+                .filter_map(|q| {
+                    let rgb = q.background.as_solid()?.to_rgb();
+                    let active = rgb.b > 0.95
+                        && (rgb.g - 176. / 255.).abs() < 0.012
+                        && (rgb.r - 79. / 255.).abs() < 0.012;
+                    let idle = (rgb.r - 44. / 255.).abs() < 0.012
+                        && (rgb.g - 44. / 255.).abs() < 0.012
+                        && (rgb.b - 48. / 255.).abs() < 0.012;
+                    let rect = q.bounds;
+                    ((active || idle)
+                        && (f64::from(rect.height) - chip).abs() <= 0.55
+                        && (f64::from(rect.width) - chip).abs() <= 0.55
+                        && f64::from(rect.y) >= card.y + card.height * 0.5
+                        && f64::from(rect.bottom()) <= card.y + card.height + 0.5
+                        && f64::from(rect.x) >= left - 0.5
+                        && q.visible().width > 0.)
+                        .then_some((rect, q.mask, active))
                 })
-            });
+                .collect::<Vec<_>>();
+            dots.sort_by(|a, b| a.0.x.total_cmp(&b.0.x));
             assert!(
                 (f64::from(u32::try_from(dots.len()).unwrap()) - expected).abs() < 0.1,
                 "{narrow}/{scale}: {card:?}, {left}..{right}: {dots:#?}"

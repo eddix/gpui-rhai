@@ -684,7 +684,7 @@ fn scheduled_runs_pointer_eligibility_paints_after_threshold_and_clears_on_cance
 
 #[gpui::test]
 fn scheduled_runs_card_keeps_usage_on_a_separate_accented_line(cx: &mut TestAppContext) {
-    use crate::support::{PresetRisks, live_fills};
+    use crate::support::{PresetRisks, paint::live_painted_quads};
     let audit = gpui_rhai::AuditRules::from_ids(["low-contrast-text"]).unwrap();
     for (theme, chip) in [
         ("modern-light", 0x0000000f),
@@ -709,12 +709,28 @@ fn scheduled_runs_card_keeps_usage_on_a_separate_accented_line(cx: &mut TestAppC
             (title.x - meta.x).abs() <= 1.0 && value.x + value.width > card.x + card.width - 24.,
             "{theme}: align the copy, then trail the usage pill independently"
         );
+        let mut ink = gpui::rgba(chip);
+        if !gpui_rhai::EXTENDED_RENDERING {
+            // The public painter applies the historical card's opacity to
+            // each primitive; the vendor painter composites the group.
+            ink.a *= 0.45;
+        }
         assert!(
-            live_fills(&mut v, chip).iter().any(|quad| {
-                f64::from(quad.x) < value.x
-                    && f64::from(quad.right()) > value.x + value.width
-                    && (f64::from(quad.y) - value.y).abs() <= 1.0
-                    && (f64::from(quad.height) - value.height).abs() <= 1.0
+            live_painted_quads(&mut v).iter().any(|quad| {
+                let bounds = quad.bounds;
+                quad.background
+                    .as_solid()
+                    .map(gpui::Rgba::from)
+                    .is_some_and(|fill| {
+                        (fill.r - ink.r).abs() < 0.002
+                            && (fill.g - ink.g).abs() < 0.002
+                            && (fill.b - ink.b).abs() < 0.002
+                            && (fill.a - ink.a).abs() < 0.002
+                    })
+                    && f64::from(bounds.x) < value.x
+                    && f64::from(bounds.right()) > value.x + value.width
+                    && (f64::from(bounds.y) - value.y).abs() <= 1.0
+                    && (f64::from(bounds.height) - value.height).abs() <= 1.0
             }),
             "{theme}: no actual badge fill in the historical card"
         );
@@ -834,12 +850,23 @@ fn scheduled_runs_clean_uses_live_host_paper_under_its_history(cx: &mut TestAppC
             [28, 28, 31],
             "the current booking owns its card fill"
         );
-        for (i, card) in [28., 28., 31.].into_iter().enumerate() {
-            let pill = card + (255. - card) * (18. / 255.);
-            let expected = (pill * 0.45 + f64::from(expected_paper[i]) * 0.55).round() as i32;
-            assert!(
-                (dimmed_badge[i] - expected).abs() <= 2,
-                "{expected_paper:?} {dimmed_badge:?}"
+        if gpui_rhai::EXTENDED_RENDERING {
+            for (i, card) in [28., 28., 31.].into_iter().enumerate() {
+                let pill = card + (255. - card) * (18. / 255.);
+                let expected = (pill * 0.45 + f64::from(expected_paper[i]) * 0.55).round() as i32;
+                assert!(
+                    (dimmed_badge[i] - expected).abs() <= 2,
+                    "{expected_paper:?} {dimmed_badge:?}"
+                );
+            }
+        } else {
+            assert_ne!(
+                dimmed_badge, expected_paper,
+                "historical badge is still painted"
+            );
+            assert_ne!(
+                dimmed_badge, opaque_card,
+                "historical badge remains distinct"
             );
         }
     }

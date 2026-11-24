@@ -172,36 +172,29 @@ fn collaboration_stream_fallback_shapes_follow_business_id_not_roster_order(
 }
 
 fn writing_dots(visual: &mut VisualTestContext) -> Vec<(f32, f32, f32)> {
-    visual.update(|window, _| {
-        let scale = window.scale_factor();
-        window.visual_probe_with_painted_scene(|scene| {
-            let ink = gpui::rgb(0x0060e2);
-            let mut dots = Vec::new();
-            crate::support::walk_live_paint(
-                scene,
-                gpui::TransformationMatrix::default(),
-                &mut |scene, pose| {
-                    for quad in &scene.quads {
-                        let Some(color) = quad.background.as_solid().map(gpui::Rgba::from) else {
-                            continue;
-                        };
-                        let rect = crate::support::logical_paint_rect(quad.bounds, pose, scale);
-                        if (rect.width - 3.).abs() <= 0.5
-                            && (rect.height - 3.).abs() <= 0.5
-                            && (color.r - ink.r).abs() < 0.002
-                            && (color.g - ink.g).abs() < 0.002
-                            && (color.b - ink.b).abs() < 0.002
-                        {
-                            assert!((quad.corner_radii.top_left.0 / scale - 0.75).abs() < 0.01);
-                            dots.push((rect.x, rect.y, color.a));
-                        }
-                    }
-                },
-            );
-            dots.sort_by(|(x, y, _), (u, v, _)| y.total_cmp(v).then_with(|| x.total_cmp(u)));
-            dots
+    let ink = gpui::rgb(0x0060e2);
+    let mut dots = crate::support::paint::live_painted_quads(visual)
+        .into_iter()
+        .filter_map(|quad| {
+            let color = quad.background.as_solid().map(gpui::Rgba::from)?;
+            let rect = quad.bounds;
+            if (rect.width - 3.).abs() <= 0.5
+                && (rect.height - 3.).abs() <= 0.5
+                && (color.r - ink.r).abs() < 0.002
+                && (color.g - ink.g).abs() < 0.002
+                && (color.b - ink.b).abs() < 0.002
+                && quad.visible().width > 0.
+            {
+                let radius = quad.corner_radii[0];
+                assert!((radius - 0.75).abs() < 0.01, "radius {radius}");
+                Some((rect.x, rect.y, color.a))
+            } else {
+                None
+            }
         })
-    })
+        .collect::<Vec<_>>();
+    dots.sort_by(|(x, y, _), (u, v, _)| y.total_cmp(v).then_with(|| x.total_cmp(u)));
+    dots
 }
 
 #[gpui::test]

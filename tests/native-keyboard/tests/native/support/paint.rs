@@ -270,6 +270,39 @@ pub(crate) fn painted_quads_including_rounded_clips(
     quad_snapshot(visual, true)
 }
 
+/// Logical draw witnesses across the same live layers and groups as the
+/// compositor. Packet-splitting on public GPUI is not extra painted dots.
+pub(crate) fn live_painted_quads(visual: &mut VisualTestContext) -> Vec<PaintedQuad> {
+    visual.update(|window, _| {
+        let scale = window.scale_factor();
+        let collect = |scene: &gpui::Scene| {
+            let mut result = Vec::new();
+            walk_live_paint(
+                scene,
+                gpui::TransformationMatrix::default(),
+                &mut |scene, pose| {
+                    let pieces = scene.quads.iter().map(|quad| {
+                        quad_witness(
+                            quad,
+                            |bounds| logical_paint_rect(bounds, pose, scale),
+                            scale,
+                        )
+                    });
+                    #[cfg(feature = "vendor-gpui")]
+                    result.extend(pieces);
+                    #[cfg(not(feature = "vendor-gpui"))]
+                    result.extend(coalesce_public_fragments(pieces.collect()));
+                },
+            );
+            result
+        };
+        #[cfg(feature = "vendor-gpui")]
+        return window.visual_probe_with_painted_scene(collect);
+        #[cfg(not(feature = "vendor-gpui"))]
+        collect(window.rendered_scene())
+    })
+}
+
 fn quad_snapshot(visual: &mut VisualTestContext, include_rounded_clips: bool) -> Vec<PaintedQuad> {
     visual.update(|window, _| {
         let scale = window.scale_factor();

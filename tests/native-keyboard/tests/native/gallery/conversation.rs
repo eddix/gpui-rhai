@@ -450,7 +450,9 @@ fn thinking_loader_animates_constrained_width_without_rerunning_rhai(cx: &mut Te
     click(&mut visual, &view, "button", "Next");
     let target = "Searching the rollout logs";
     let start = bounds(&mut visual, &view, "status", target).width;
-    assert!((first - start).abs() < 0.5, "first={first}, start={start}");
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!((first - start).abs() < 0.5, "first={first}, start={start}");
+    }
     let revision = visual.update(|_, cx| view.committed_revision(cx).unwrap());
     manual.advance(Duration::from_millis(150));
     settle(&mut visual, Step::Refresh, 4);
@@ -458,10 +460,12 @@ fn thinking_loader_animates_constrained_width_without_rerunning_rhai(cx: &mut Te
     manual.advance(Duration::from_millis(350));
     settle(&mut visual, Step::Refresh, 4);
     let end = bounds(&mut visual, &view, "status", target).width;
-    assert!(
-        first < mid && mid < end && end <= 230.5,
-        "{first}, {mid}, {end}"
-    );
+    assert!(first < end && end <= 230.5, "{first}, {mid}, {end}");
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(first < mid && mid < end, "{first}, {mid}, {end}");
+    } else {
+        assert!((start - end).abs() < 0.5 && (mid - end).abs() < 0.5);
+    }
     assert_eq!(
         visual.update(|_, cx| view.committed_revision(cx).unwrap()),
         revision

@@ -230,7 +230,7 @@ fn recipient_arrow(ctx,open){
             style().text_color(theme_color("text_muted")).transform(#{rotate:angle})))
         .motion(motion_transition("rotate",angle,angle,#{duration_ms:220,easing:ease(),intent:"feedback"}))
 }
-fn meta(ctx,p,m,compact,clean){
+fn meta(ctx,p,m,compact,clean,stacked){
     let to_label=label(ctx,"to_label",tx(ctx,"to","to"),quiet().flex_shrink(false)).accessibility_role("label");
     let to=if m.contact==(){address(ctx,tx(ctx,"no_recipient","No recipient"))}else{
         let c=m.contact;
@@ -262,7 +262,8 @@ fn meta(ctx,p,m,compact,clean){
         if m.attached{
             let rm=tx(ctx,"remove","Remove")+" "+m.file.label;
             let remove_icon=mark(ctx,"M7 7l10 10M17 7 7 17").with_style(ctx.component_style("remove_icon",style()));
-            let remove=paint_ease(button(ctx,"remove","remove",rm,[remove_icon],m.live,Fn("change").curry(m.base,"drop",m.file.id)));
+            let remove=paint_ease(button(ctx,"remove","remove",rm,[remove_icon],m.live,Fn("change").curry(m.base,"drop",m.file.id)))
+                .with_style(style().flex_shrink(false));
             out.push(row([icon,label(ctx,"file_name",file_name,quiet()),remove]).with_key("file")
                 .with_style(ctx.component_style("attachment",style().min_width(px(0)).items_center().gap(sp(1))
                     .text_color(theme_color("email_draft.file")))));
@@ -273,8 +274,8 @@ fn meta(ctx,p,m,compact,clean){
     }
     // The header paints into its own grid band. The recipient menu itself
     // is a native Popover portal, not overflow from the header's inline paint.
-    row(out).with_key("meta").with_style(ctx.component_style("meta",style().flex_wrap().items_center().justify_between()
-        .min_width(px(0)).gap(sp(1.5)).padding(sp(2)).clip()))
+    let rail=style().items_center().justify_between().min_width(px(0)).gap(sp(1.5)).padding(sp(2)).clip();
+    row(out).with_key("meta").with_style(ctx.component_style("meta",if stacked{rail.flex_wrap()}else{rail}))
 }
 fn body(ctx,p,m,clean){
     let children=[];
@@ -387,10 +388,29 @@ fn shortcut(ctx){
         .with_key("shortcut").with_style(ctx.component_style("hint_rail",style().min_width(px(0)).justify_end()
             .items_center().padding(sp(2))))
 }
+fn card_layer(ctx){
+    box([]).with_key("card").accessibility_hidden(true)
+        .with_style(ctx.component_style("card",style().min_width(px(0)).background(theme_color("email_draft.card"))
+            .radius(theme_radius("lg"))))
+}
+fn stacked_draft(ctx,p,m,clean,narrow){
+    // A single column has no cells to align across. Let the wrapped header and
+    // actions take their actual heights, with the same keyed children as the
+    // grid so changing width doesn't remount recipient, editor or buttons.
+    let card=card_layer(ctx).with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)));
+    let footer=footer_words(ctx,p,!(clean&&narrow))
+        .with_style(ctx.component_style("footer",style().background(theme_color("email_draft.tray"))));
+    let children=[card,meta(ctx,p,m,true,clean,true),body(ctx,p,m,clean),tuning(ctx,p,m)];
+    let buttons=decisions(ctx,p,m);
+    if clean{children.push(footer);children.push(buttons);}
+    else{children.push(buttons);children.push(footer);}
+    box(children).with_key("draft-grid").with_style(style().flex_col().min_width(px(0)).width(relative(1.0)))
+}
 fn surface(ctx,p,m,open,clean,width){
     let compact=width!=()&&width<=2;
     let narrow=width!=()&&width<=1;
     let split=open&&!(if clean{width==0}else{narrow});
+    if open&&!split{return stacked_draft(ctx,p,m,clean,narrow);}
     let cols=if split{2}else{1};
     let rtl=ctx.text_direction()=="rtl";
     let lead=if rtl{cols}else{1};
@@ -401,14 +421,12 @@ fn surface(ctx,p,m,open,clean,width){
     if open{
         // Surfaces span the same grid as their single, keyed content owners.
         // In particular, moving "buttons" to the footer does not reparent them.
-        children.push(at(box([]).with_key("card").accessibility_hidden(true)
-            .with_style(ctx.component_style("card",style().min_width(px(0)).background(theme_color("email_draft.card"))
-                .radius(theme_radius("lg")))),1,1,cols,footer_y-1));
+        children.push(at(card_layer(ctx),1,1,cols,footer_y-1));
     }
     children.push(at(box([]).with_key("footer").accessibility_hidden(true)
         .with_style(ctx.component_style("footer",style().min_width(px(0)))),1,footer_y,cols,footer_rows));
     if open{
-        children.push(at(meta(ctx,p,m,compact,clean),1,1,cols,1));
+        children.push(at(meta(ctx,p,m,compact,clean,false),1,1,cols,1));
         children.push(at(body(ctx,p,m,clean),1,2,cols,1));
         let full_tuning=clean&&compact;
         children.push(at(tuning(ctx,p,m),if full_tuning{1}else{lead},3,if full_tuning{cols}else{1},1));

@@ -132,11 +132,15 @@ fn context_map_capacity_readout_interpolates_its_author_paint(cx: &mut TestAppCo
         click(&mut v, &view, "button", "Grow context");
     }
     let area = bounds(&mut v, &view, "text", "82%");
+    let target = gpui::rgba(0xffecd6ff).into();
+    if !gpui_rhai::EXTENDED_RENDERING {
+        assert_eq!(capacity_paint(&mut v, area).0, target);
+        return;
+    }
     assert_eq!(capacity_paint(&mut v, area).0, neutral);
     clock.advance(Duration::from_millis(150));
     ready(&mut v, &view);
     let intermediate = capacity_paint(&mut v, area).0;
-    let target = gpui::rgba(0xffecd6ff).into();
     assert!(intermediate != neutral && intermediate != target);
     clock.advance(Duration::from_millis(180));
     ready(&mut v, &view);
@@ -389,7 +393,7 @@ fn context_map_free_tile_uses_its_own_ink_without_losing_the_caption_fade(cx: &m
 }
 
 #[gpui::test]
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "vendor-gpui"))]
 fn context_map_free_hatch_keeps_its_period_when_the_viewport_grows(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast::metal_renderer::MetalRenderer;
@@ -440,7 +444,7 @@ fn context_map_free_hatch_keeps_its_period_when_the_viewport_grows(cx: &mut Test
 }
 
 #[gpui::test]
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "vendor-gpui"))]
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn context_map_free_ink_has_real_low_contrast_on_the_hatched_paper(_: &mut TestAppContext) {
     use crate::support::PresetRisks;

@@ -1933,12 +1933,18 @@ fn pan_zoom_page_drags_accumulate_and_reset(cx: &mut TestAppContext) {
     drag(&mut visual, (start.0 + 80.0, start.1 + 40.0), (20.0, 10.0));
     no_error(&mut visual, &view);
     assert!(shows(&mut visual, &view, "x 100 · y 50 · 100%"));
-    let mirror = bounds_of(&mut visual, &view, "button", "Mirror canvas");
-    click_at(&mut visual, mirror);
-    assert!(shows(&mut visual, &view, "x 100 · y 50 · 100%"));
-    assert!(shows(&mut visual, &view, "Restore orientation"));
-    drag(&mut visual, start, (40.0, 20.0));
-    assert!(shows(&mut visual, &view, "x 60 · y 70 · 100%"));
+    if gpui_rhai::EXTENDED_RENDERING {
+        let mirror = bounds_of(&mut visual, &view, "button", "Mirror canvas");
+        click_at(&mut visual, mirror);
+        assert!(shows(&mut visual, &view, "x 100 · y 50 · 100%"));
+        assert!(shows(&mut visual, &view, "Restore orientation"));
+        drag(&mut visual, start, (40.0, 20.0));
+        assert!(shows(&mut visual, &view, "x 60 · y 70 · 100%"));
+    } else {
+        assert!(!shows(&mut visual, &view, "Mirror canvas"));
+        drag(&mut visual, start, (40.0, 20.0));
+        assert!(shows(&mut visual, &view, "x 140 · y 70 · 100%"));
+    }
     no_error(&mut visual, &view);
     let reset = bounds_of(&mut visual, &view, "button", "Reset view");
     drag(&mut visual, (reset.x + 8.0, reset.y + 8.0), (0.0, 0.0));
@@ -2176,26 +2182,30 @@ fn gallery_theme_picker_lists_loaded_themes_and_switches(cx: &mut TestAppContext
     assert!(shows(&mut visual, &view, "Theme Catppuccin Mocha"));
 }
 
-/// Visible quads `width` x `height` logical pixels painted within `area`.
+/// Visible quads `width` x `height` logical pixels over the hovered divider center.
 fn quads_sized(
     visual: &mut VisualTestContext,
     area: GeometryBounds,
     width: f32,
     height: f32,
-) -> usize {
+) -> Vec<crate::support::paint::PaintedQuad> {
     crate::support::painted_quads(visual)
-        .iter()
+        .into_iter()
         .filter(|quad| {
-            let x = f64::from(quad.bounds.x);
+            let painted = quad.visible();
+            let hover_x = area.x + area.width / 2.0;
+            let hover_y = area.y + area.height / 2.0;
             quad.background
                 .as_solid()
                 .is_some_and(|color| color.a > 0.0)
-                && x >= area.x - 8.0
-                && x <= area.x + area.width + 8.0
+                && f64::from(painted.x) <= hover_x
+                && f64::from(painted.right()) > hover_x
+                && f64::from(painted.y) <= hover_y
+                && f64::from(painted.bottom()) > hover_y
                 && (quad.bounds.width - width).abs() < 0.01
                 && (quad.bounds.height - height).abs() < 0.01
         })
-        .count()
+        .collect()
 }
 
 #[gpui::test]
@@ -2211,11 +2221,8 @@ fn the_source_sits_beside_the_page_and_resizes(cx: &mut TestAppContext) {
         "page {page:?}, divider {divider:?}, source {source:?}"
     );
     // The divider's bar shows only under the pointer.
-    assert_eq!(
-        quads_sized(&mut visual, divider, 4.0, 24.0),
-        0,
-        "a bar at rest"
-    );
+    let at_rest = quads_sized(&mut visual, divider, 4.0, 24.0);
+    assert!(at_rest.is_empty(), "a bar at rest: {at_rest:?}");
     let center = (
         divider.x + divider.width / 2.0,
         divider.y + divider.height / 2.0,
@@ -2228,11 +2235,8 @@ fn the_source_sits_beside_the_page_and_resizes(cx: &mut TestAppContext) {
     );
     visual.update(|window, _| window.refresh());
     visual.run_until_parked();
-    assert_eq!(
-        quads_sized(&mut visual, divider, 4.0, 24.0),
-        1,
-        "no bar under the pointer"
-    );
+    let hovered = quads_sized(&mut visual, divider, 4.0, 24.0);
+    assert_eq!(hovered.len(), 1, "hovered divider marks: {hovered:?}");
     // Dragging it left widens the source; the page keeps its start edge.
     drag(&mut visual, center, (-120.0, 0.0));
     no_error(&mut visual, &view);

@@ -220,6 +220,14 @@ fn agent_cursors_review_tab_hover_retargets_from_the_painted_midpoint(cx: &mut T
     assert!(glyphs_with_ink(&mut v, area, resting) >= 5);
     v.simulate_mouse_move(center(area), None, Modifiers::none());
     ready(&mut v, &view);
+    if !gpui_rhai::EXTENDED_RENDERING {
+        // Public GPUI applies both authored endpoints immediately.
+        assert!(glyphs_with_ink(&mut v, area, hover) >= 5);
+        v.simulate_mouse_move(point(px(1.), px(1.)), None, Modifiers::none());
+        ready(&mut v, &view);
+        assert!(glyphs_with_ink(&mut v, area, resting) >= 5);
+        return;
+    }
     assert!(glyphs_with_ink(&mut v, area, resting) >= 5, "start");
     clock.advance(Duration::from_millis(80));
     ready(&mut v, &view);
@@ -618,8 +626,13 @@ fn agent_cursors_leading_float_keeps_paragraph_owners_across_narrow_resize(
     );
     let first_box = first.geometry.unwrap().visual;
     let second_box = second.geometry.unwrap().visual;
-    assert!((first_box.y - wide.y).abs() < 1.0, "{wide:?} {first_box:?}");
-    assert!(second_box.y < wide.y + wide.height && first_box.y < second_box.y);
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!((first_box.y - wide.y).abs() < 1.0, "{wide:?} {first_box:?}");
+        assert!(second_box.y < wide.y + wide.height);
+    } else {
+        assert!(first_box.y > wide.y + wide.height, "{wide:?} {first_box:?}");
+    }
+    assert!(first_box.y < second_box.y);
     visual.simulate_resize(size(px(700.), px(950.)));
     ready(&mut visual, &view);
     let narrow = bounds(
@@ -643,10 +656,12 @@ fn agent_cursors_leading_float_keeps_paragraph_owners_across_narrow_resize(
     let wide_again = paragraph(&mut visual, "Start with a small audience.");
     assert_eq!(wide_again.id, first.id);
     assert!((wide_again.geometry.unwrap().visual.y - first_box.y).abs() < 1.0);
-    assert!(
-        (wide.x - first_box.x).abs() < 1.0,
-        "logical start must be left in LTR"
-    );
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(
+            (wide.x - first_box.x).abs() < 1.0,
+            "logical start must be left in LTR"
+        );
+    }
     visual.update(|_, cx| view.select_locale("ar", cx)).unwrap();
     ready(&mut visual, &view);
     let rtl_text = paragraph(&mut visual, "Start with a small audience.");
@@ -658,11 +673,15 @@ fn agent_cursors_leading_float_keeps_paragraph_owners_across_narrow_resize(
     );
     let rtl_box = rtl_text.geometry.unwrap().visual;
     assert_eq!(rtl_text.id, first.id);
-    assert!((rtl_media.y - rtl_box.y).abs() < 1.0);
-    assert!(
-        (rtl_media.x + rtl_media.width - rtl_box.x - rtl_box.width).abs() < 1.0,
-        "logical start must be right in RTL: {rtl_media:?} {rtl_box:?}"
-    );
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!((rtl_media.y - rtl_box.y).abs() < 1.0);
+        assert!(
+            (rtl_media.x + rtl_media.width - rtl_box.x - rtl_box.width).abs() < 1.0,
+            "logical start must be right in RTL: {rtl_media:?} {rtl_box:?}"
+        );
+    } else {
+        assert!(rtl_box.y > rtl_media.y + rtl_media.height);
+    }
 }
 
 #[gpui::test]
@@ -670,6 +689,16 @@ fn agent_cursors_motion_resizes_real_figure_and_its_held_corner(cx: &mut TestApp
     let (mut visual, view, clock) = gallery_clock(cx);
     let start = held_image(&mut visual, &view);
     click(&mut visual, &view, "button", "Resize illustration");
+    if !gpui_rhai::EXTENDED_RENDERING {
+        let resized = held_image(&mut visual, &view);
+        assert!((resized.width - start.width).abs() > 20.0);
+        assert!((resized.width / resized.height - 1.875).abs() < 0.03);
+        click(&mut visual, &view, "button", "Resize illustration");
+        let restored = held_image(&mut visual, &view);
+        assert!((restored.width - resized.width).abs() > 20.0);
+        assert!((restored.width / restored.height - 1.875).abs() < 0.03);
+        return;
+    }
     assert!((held_image(&mut visual, &view).width - start.width).abs() < 1.0);
     clock.advance(Duration::from_millis(130));
     ready(&mut visual, &view);
@@ -698,13 +727,18 @@ fn agent_cursors_leading_float_reflows_real_review_anchors(cx: &mut TestAppConte
     settle(&mut visual, Step::Tick, 14);
     ready(&mut visual, &view);
     let label = "Inspect suggestion · rollout_note";
-    let initial = bounds(&mut visual, &view, "button", label);
+    let pin = node(&mut visual, &view, "button", label);
+    let initial = pin.geometry.unwrap().visual;
     click(&mut visual, &view, "button", "Resize illustration");
-    let reflow = bounds(&mut visual, &view, "button", label);
-    assert!(
-        (initial.x - reflow.x).abs() + (initial.y - reflow.y).abs() > 14.,
-        "the actual suggestion pin should move with the text: {initial:?} {reflow:?}"
-    );
+    let resized_pin = node(&mut visual, &view, "button", label);
+    assert_eq!(resized_pin.id, pin.id);
+    let reflow = resized_pin.geometry.unwrap().visual;
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(
+            (initial.x - reflow.x).abs() + (initial.y - reflow.y).abs() > 14.,
+            "the actual suggestion pin should move with the text: {initial:?} {reflow:?}"
+        );
+    }
     click(&mut visual, &view, "button", label);
     node(&mut visual, &view, "group", "Suggested edit");
     click(&mut visual, &view, "button", "Accept suggestion");

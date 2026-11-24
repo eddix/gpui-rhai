@@ -60,8 +60,7 @@ impl Default for AcceptanceLaunch {
 }
 
 /// The launch map in `registry/gallery/main.rhai` that the Host replaces.
-const LAUNCH_DEFAULT: &str =
-    r#"#{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0 }"#;
+const LAUNCH_DEFAULT: &str = r#"#{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0, extended_rendering: false }"#;
 
 /// On macOS the Gallery window has no platform title bar: its own `TitleBar`
 /// moves the window and leaves this much room for the window buttons, which
@@ -275,10 +274,11 @@ fn theme_file(slug: &str) -> Result<(&'static str, &'static str), String> {
 fn launch_map(launch: &AcceptanceLaunch, titlebar_inset: u32) -> Result<String, String> {
     let quoted = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
     Ok(format!(
-        "#{{ page: {}, density: {}, locale: {}, titlebar_inset: {titlebar_inset} }}",
+        "#{{ page: {}, density: {}, locale: {}, titlebar_inset: {titlebar_inset}, extended_rendering: {} }}",
         quoted(&launch.page)?,
         quoted(&launch.density)?,
         quoted(&launch.locale)?,
+        gpui_rhai::EXTENDED_RENDERING,
     ))
 }
 

@@ -6,9 +6,17 @@ use gpui_rhai::{AuditRule, AutomationCommand, ElementGeometry, UiValue};
 use super::conversation::{click, gallery, node, ready};
 use crate::support::center;
 
+fn specimen_basis() -> (f32, f32) {
+    if gpui_rhai::EXTENDED_RENDERING {
+        12.0_f32.to_radians().sin_cos()
+    } else {
+        (0., 1.)
+    }
+}
+
 fn drag(visual: &mut VisualTestContext, target: ElementGeometry, delta: (f32, f32)) {
     let start = center(target.visual);
-    let (sin, cos) = 12.0_f32.to_radians().sin_cos();
+    let (sin, cos) = specimen_basis();
     let end = point(
         start.x + px(delta.0 * cos - delta.1 * sin),
         start.y + px(delta.0 * sin + delta.1 * cos),
@@ -53,10 +61,14 @@ fn gallery_affine_resize_controls_keep_distinct_accepted_state_after_a_theme_swi
     let start = start_pane(&mut visual);
     let old_card = card(&mut visual);
     let split = split_grip(&mut visual);
-    assert!(
-        split.visual.width > 20. && split.layout.width < 2.,
-        "{split:?}"
-    );
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(
+            split.visual.width > 20. && split.layout.width < 2.,
+            "{split:?}"
+        );
+    } else {
+        near(split.visual.width, split.layout.width);
+    }
     drag(&mut visual, split, (24., 0.));
     ready(&mut visual, &view);
     near(
@@ -102,7 +114,11 @@ fn gallery_affine_table_commits_a_column_width_and_preserves_it_when_straightene
     let start = width(&mut visual);
     let width_of_neighbor = geom(&mut visual, "columnheader", "State").layout.width;
     let grip = geom(&mut visual, "separator", "Resize Task column");
-    assert!(grip.visual.width > grip.layout.width + 4., "{grip:?}");
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(grip.visual.width > grip.layout.width + 4., "{grip:?}");
+    } else {
+        near(grip.visual.width, grip.layout.width);
+    }
     drag(&mut visual, grip, (24., 0.));
     ready(&mut visual, &view);
     near(width(&mut visual), start + 24.);
@@ -163,7 +179,7 @@ fn gallery_affine_sliders_commit_on_the_short_rail_and_keep_values_across_preset
     };
     let click_value = |v: &mut VisualTestContext, target: ElementGeometry, value: f32| {
         let origin = center(target.visual);
-        let (sin, cos) = 12.0_f32.to_radians().sin_cos();
+        let (sin, cos) = specimen_basis();
         let dx = 156. * (value / 100. - 0.5);
         v.simulate_click(
             point(origin.x + px(dx * cos), origin.y + px(dx * sin)),
@@ -171,7 +187,11 @@ fn gallery_affine_sliders_commit_on_the_short_rail_and_keep_values_across_preset
         );
     };
     let target = level(&mut visual).geometry.unwrap();
-    assert!(target.visual.height > target.layout.height + 20.);
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(target.visual.height > target.layout.height + 20.);
+    } else {
+        near(target.visual.height, target.layout.height);
+    }
     click_value(&mut visual, target, 85.);
     ready(&mut visual, &view);
     let target = span(&mut visual).geometry.unwrap();
@@ -206,7 +226,7 @@ fn gallery_affine_scrollbar_moves_real_content_and_preserves_offset_on_theme_swi
     };
     assert_eq!(offset(&mut visual), [0., 0.]);
     let origin = center(geom.visual);
-    let (sin, cos) = 12.0_f32.to_radians().sin_cos();
+    let (sin, cos) = specimen_basis();
     #[allow(clippy::cast_possible_truncation)]
     let half = (
         geom.layout.width as f32 * 0.5,

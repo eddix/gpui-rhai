@@ -54,7 +54,14 @@ fn document_anchors_follow_transform_clip_and_source_lifecycle(cx: &mut TestAppC
     let upright = flag(&mut v, &view);
     click(&mut v, &view, "button", "Tilt document text");
     let rotated = flag(&mut v, &view);
-    assert!(rotated.y > upright.y + 5.0, "{upright:?} {rotated:?}");
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(rotated.y > upright.y + 5.0, "{upright:?} {rotated:?}");
+    } else {
+        assert!(
+            (rotated.y - upright.y).abs() < 1.0,
+            "{upright:?} {rotated:?}"
+        );
+    }
     let viewport = bounds(&mut v, &view, "group", "Document viewport");
     v.simulate_event(ScrollEvent {
         position: center(viewport),

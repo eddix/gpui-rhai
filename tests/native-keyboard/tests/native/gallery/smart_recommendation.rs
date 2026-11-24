@@ -148,10 +148,15 @@ fn smart_recommendation_disclosure_moves_the_footer_on_native_frames(cx: &mut Te
     clock.advance(Duration::from_millis(360));
     ready(&mut v, &view);
     let end = bounds(&mut v, &view, "group", "Strong signal").y;
-    assert!(
-        start > middle + 2. && middle > end + 2.,
-        "footer y at 0ms/80ms/440ms: {start}, {middle}, {end}"
-    );
+    assert!(start > end + 2., "footer must move: {start} → {end}");
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert!(
+            start > middle + 2. && middle > end + 2.,
+            "footer y at 0ms/80ms/440ms: {start}, {middle}, {end}"
+        );
+    } else {
+        assert!((middle - end).abs() < 1., "{middle} → {end}");
+    }
     assert!(
         v.update(|_, cx| view.take_performance_snapshot(cx))
             .unwrap()

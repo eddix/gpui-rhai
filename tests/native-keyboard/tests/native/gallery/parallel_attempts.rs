@@ -358,6 +358,11 @@ fn parallel_attempts_best_badge_scales_once_per_mount(cx: &mut TestAppContext) {
         let badge = |v: &mut VisualTestContext| node(v, &view, "text", "Best");
         let check = |v: &mut VisualTestContext, expected: f64| {
             let g = badge(v).geometry.unwrap();
+            let expected = if gpui_rhai::EXTENDED_RENDERING {
+                expected
+            } else {
+                1.
+            };
             let sx = g.visual.width / g.layout.width;
             let sy = g.visual.height / g.layout.height;
             assert!(

@@ -59,7 +59,7 @@ fn state_schema() {
 // The Host replaces this map with the launch selection (page, density, locale) and, when
 // the window has no platform title bar, the room its window buttons need. The launch
 // theme is the Host's primary theme.
-fn launch() { #{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0 } }
+fn launch() { #{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0, extended_rendering: false } }
 
 fn init(ctx) {
     let start = launch();
@@ -527,6 +527,7 @@ fn title_bar(ctx, page, class, drawer_layout) {
 fn view(ctx) {
     let page = ctx.get_state("page");
     let v = ctx.get_state("values");
+    v["render.extended"] = launch().extended_rendering;
     let h = handlers();
     let class = ctx.viewport_class();
     let drawer_layout = navigation_uses_drawer(class, ctx.get_state("scale"));

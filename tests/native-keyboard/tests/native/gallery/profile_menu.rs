@@ -228,6 +228,24 @@ fn profile_menu_setup_starts_at_first_exposure_not_while_mounted_offscreen(
     click(&mut v, &view, "button", "Expose card");
     let track = bounds(&mut v, &view, "progressbar", "Profile setup");
     assert!(track.y < 260.0 && track.width > 150.0, "{track:?}");
+    if !gpui_rhai::EXTENDED_RENDERING {
+        let exposed = f64::from(fill(&mut v));
+        assert!(
+            (exposed - track.width * 0.6).abs() < 1.5,
+            "{exposed}, {track:?}"
+        );
+        click(&mut v, &view, "button", "Advance setup");
+        assert_eq!(
+            node(&mut v, &view, "progressbar", "Profile setup").value,
+            Some(UiValue::Integer(80))
+        );
+        let accepted = f64::from(fill(&mut v));
+        assert!(
+            (accepted - track.width * 0.8).abs() < 1.5,
+            "{accepted}, {track:?}"
+        );
+        return;
+    }
     assert!(
         fill(&mut v) < 1.0,
         "first exposure must not jump to an offscreen-completed fill"

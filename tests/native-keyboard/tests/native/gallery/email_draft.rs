@@ -50,7 +50,7 @@ fn underline_at_link(v: &mut VisualTestContext, area: gpui_rhai::GeometryBounds)
 }
 
 #[gpui::test]
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "vendor-gpui"))]
 fn email_draft_hover_uses_native_underline_motion_without_rerunning_rhai(cx: &mut TestAppContext) {
     use crate::support::center;
     #[cfg(feature = "gpui-fast")]
@@ -145,26 +145,40 @@ fn adjacent_equal_underline_styles_keep_independent_hover_owners(cx: &mut TestAp
     use crate::support::{Mount, center};
     use gpui::Modifiers;
     let (mut v, view) = Mount::new(r#"
+        fn state_schema() {
+            #{fields:#{selected:#{schema:#{type:"string"},"default":#{type:"string",value:""}}}}
+        }
+        fn select_link(name,ctx,event) { ctx.set_state("selected", name); }
         fn view(ctx){
             let a=span("first").color(rgb(0x222222)).underline(1.0,rgba(0x22222244)).underline_hover(0,"linear");
             let b=span("second").color(rgb(0x222222)).underline(1.0,rgba(0x22222244)).underline_hover(0,"linear");
-            inline_prose(text([a,b]).with_style(style().font_size(px(16)).line_height(px(22))),[
-                #{start:0,end:5,node:box([]).with_key("first").accessibility_role("link").accessibility_label("First")},
-                #{start:5,end:11,node:box([]).with_key("second").accessibility_role("link").accessibility_label("Second")}
+            column([
+                inline_prose(text([a,b]).with_style(style().font_size(px(16)).line_height(px(22))),[
+                    #{start:0,end:5,node:box([]).with_key("first").accessibility_role("link").accessibility_label("First")
+                        .on_click(Fn("select_link").curry("First"))},
+                    #{start:5,end:11,node:box([]).with_key("second").accessibility_role("link").accessibility_label("Second")
+                        .on_click(Fn("select_link").curry("Second"))}
+                ]),
+                text("Selected " + ctx.get_state("selected")).accessibility_role("status")
             ])
         }
     "#).motion(MotionPreference::None).mount(cx);
     ready(&mut v, &view);
     let [first, second] = ["First", "Second"].map(|name| bounds(&mut v, &view, "link", name));
-    for (target, other) in [(first, second), (second, first)] {
-        v.simulate_mouse_move(center(target), None, Modifiers::none());
-        ready(&mut v, &view);
-        assert!(underline_at_link(&mut v, target) > 0.99);
-        assert!((underline_at_link(&mut v, other) - 68. / 255.).abs() < 0.01);
+    for (name, target, other) in [("First", first, second), ("Second", second, first)] {
+        if gpui_rhai::EXTENDED_RENDERING {
+            v.simulate_mouse_move(center(target), None, Modifiers::none());
+            ready(&mut v, &view);
+            assert!(underline_at_link(&mut v, target) > 0.99);
+            assert!((underline_at_link(&mut v, other) - 68. / 255.).abs() < 0.01);
+        }
+        click(&mut v, &view, "link", name);
+        node(&mut v, &view, "status", &format!("Selected {name}"));
     }
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn wrapped_link_hover_ignores_the_blank_area_of_its_semantic_union(cx: &mut TestAppContext) {
     use crate::support::{Mount, center};
     use gpui::Modifiers;
@@ -572,6 +586,12 @@ fn email_draft_receipt_and_restore_retarget_the_same_native_height(cx: &mut Test
     let before = h(&mut v);
     click(&mut v, &view, "button", "Discard");
     node(&mut v, &view, "status", "Draft discarded");
+    if !gpui_rhai::EXTENDED_RENDERING {
+        assert!(h(&mut v) < before - 10.0);
+        click(&mut v, &view, "button", "Undo");
+        assert!((h(&mut v) - before).abs() < 1.5);
+        return;
+    }
     assert!((h(&mut v) - before).abs() < 1.5);
     clock.advance(Duration::from_millis(80));
     ready(&mut v, &view);
@@ -1086,54 +1106,56 @@ fn email_draft_switches_action_bands_without_restarting_the_editor_or_request(
 #[gpui::test]
 fn email_draft_recipient_fits_the_clipped_header_at_large_reading_sizes(cx: &mut TestAppContext) {
     let (mut v, view) = gallery(cx, "email_draft", "modern-dark");
-    for (family, appearance) in [("Modern", "Dark"), ("Clean", "Light")] {
-        v.update(|_, cx| view.select_theme(family, appearance, cx))
-            .unwrap();
-        super::acceptance::action(
-            &mut v,
-            &view,
-            "gallery.set_scale",
-            UiValue::String("200".into()),
-        );
-        ready(&mut v, &view);
-        let id = node(&mut v, &view, "button", "Recipient").id;
-        for narrow in [false, true] {
-            if narrow {
-                click(&mut v, &view, "button", "Narrow draft");
-            }
-            let recipient = node(&mut v, &view, "button", "Recipient");
-            assert_eq!(recipient.id, id);
-            let bounds = recipient.geometry.unwrap();
-            let card = crate::support::bounds(&mut v, &view, "group", "Email draft");
-            assert!(
-                bounds.clip.is_none_or(|clip| {
-                    clip.x <= bounds.visual.x + 1.
-                        && clip.x + clip.width + 1. >= bounds.visual.x + bounds.visual.width
-                }),
-                "{family}/{appearance}/{narrow}: {bounds:?}, card {card:?}"
+    for scale in ["175", "200"] {
+        for (family, appearance) in [("Modern", "Dark"), ("Clean", "Light")] {
+            v.update(|_, cx| view.select_theme(family, appearance, cx))
+                .unwrap();
+            super::acceptance::action(
+                &mut v,
+                &view,
+                "gallery.set_scale",
+                UiValue::String(scale.into()),
             );
-            let bad = v.update(|_, cx| view.debug_unreachable_controls(cx).unwrap());
-            assert!(
-                !bad.iter().any(|f| [
-                    "Recipient",
-                    "Remove Renewal-quote.pdf",
-                    "Formal",
-                    "Discard",
-                    "Edit text",
-                    "Send email"
-                ]
-                .iter()
-                .any(|control| f.contains(control))),
-                "{family}/{appearance}/{narrow}: {bad:?}, recipient {bounds:?}, card {card:?}"
-            );
-            assert!(recipient.description.contains("@example.test"));
-            click(&mut v, &view, "button", "Recipient");
-            node(&mut v, &view, "option", "Lena Hart");
-            v.simulate_keystrokes("escape");
             ready(&mut v, &view);
-            assert_eq!(node(&mut v, &view, "button", "Recipient").id, id);
+            let id = node(&mut v, &view, "button", "Recipient").id;
+            for narrow in [false, true] {
+                if narrow {
+                    click(&mut v, &view, "button", "Narrow draft");
+                }
+                let recipient = node(&mut v, &view, "button", "Recipient");
+                assert_eq!(recipient.id, id);
+                let bounds = recipient.geometry.unwrap();
+                let card = crate::support::bounds(&mut v, &view, "group", "Email draft");
+                assert!(
+                    bounds.clip.is_none_or(|clip| {
+                        clip.x <= bounds.visual.x + 1.
+                            && clip.x + clip.width + 1. >= bounds.visual.x + bounds.visual.width
+                    }),
+                    "{scale}/{family}/{appearance}/{narrow}: {bounds:?}, card {card:?}"
+                );
+                let bad = v.update(|_, cx| view.debug_unreachable_controls(cx).unwrap());
+                assert!(
+                    !bad.iter().any(|f| [
+                        "Recipient",
+                        "Remove Renewal-quote.pdf",
+                        "Formal",
+                        "Discard",
+                        "Edit text",
+                        "Send email"
+                    ]
+                    .iter()
+                    .any(|control| f.contains(control))),
+                    "{scale}/{family}/{appearance}/{narrow}: {bad:?}, recipient {bounds:?}, card {card:?}"
+                );
+                assert!(recipient.description.contains("@example.test"));
+                click(&mut v, &view, "button", "Recipient");
+                node(&mut v, &view, "option", "Lena Hart");
+                v.simulate_keystrokes("escape");
+                ready(&mut v, &view);
+                assert_eq!(node(&mut v, &view, "button", "Recipient").id, id);
+            }
+            click(&mut v, &view, "button", "Wide draft");
         }
-        click(&mut v, &view, "button", "Wide draft");
     }
 }
 

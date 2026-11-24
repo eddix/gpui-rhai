@@ -137,11 +137,16 @@ fn fan_out_grid_filters_without_moving_and_retries_only_accepted_failures(cx: &m
             Some(false)
         );
         let g = node(&mut v, &view, "gridcell", "Task 2").geometry.unwrap();
-        assert!(
-            g.visual.x < g.layout.x - 1.0,
-            "attention expands native geometry"
-        );
-        let exposed = (g.visual.x + g.layout.x) * 0.5;
+        let exposed = if gpui_rhai::EXTENDED_RENDERING {
+            assert!(
+                g.visual.x < g.layout.x - 1.0,
+                "attention expands native geometry"
+            );
+            (g.visual.x + g.layout.x) * 0.5
+        } else {
+            assert!((g.visual.x - g.layout.x).abs() < 1.0);
+            g.visual.x + g.visual.width * 0.5
+        };
         v.simulate_click(
             point(
                 px(exposed as f32),
