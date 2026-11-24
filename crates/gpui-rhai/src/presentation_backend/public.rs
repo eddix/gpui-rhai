@@ -145,30 +145,6 @@ impl VisualCoordinates {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::VisualCoordinates;
-    use gpui::{Bounds, point, px, size};
-
-    #[test]
-    fn caret_rectangles_survive_a_mask_but_do_not_reappear_through_disjoint_masks() {
-        let rect =
-            |x, y, width, height| Bounds::new(point(px(x), px(y)), size(px(width), px(height)));
-        let coordinates = VisualCoordinates::default().clipped_to(rect(2., 2., 10., 10.));
-        assert_eq!(
-            coordinates.clipped_visual_bounds(rect(4., 0., 0., 6.)),
-            Some(rect(4., 2., 0., 4.))
-        );
-        assert_eq!(
-            coordinates.clipped_visual_bounds(rect(0., 0., 0., 6.)),
-            None
-        );
-        let empty = coordinates.clipped_to(rect(20., 2., 10., 10.));
-        assert_eq!(empty.clipped_visual_bounds(rect(20., 4., 0., 6.)), None);
-        assert!(!empty.accepts_visual_point(point(px(20.), px(4.))));
-    }
-}
-
 pub(crate) trait PreviewWindowExt {
     fn visual_coordinates(&self) -> VisualCoordinates;
     fn event_position_in_layout(&self, point: Point<Pixels>) -> Option<Point<Pixels>>;
@@ -213,5 +189,29 @@ impl PreviewWindowExt for Window {
         if opacity > 0. {
             f(self);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::VisualCoordinates;
+    use gpui::{Bounds, point, px, size};
+
+    #[test]
+    fn caret_rectangles_survive_a_mask_but_do_not_reappear_through_disjoint_masks() {
+        let rect =
+            |x, y, width, height| Bounds::new(point(px(x), px(y)), size(px(width), px(height)));
+        let coordinates = VisualCoordinates::default().clipped_to(rect(2., 2., 10., 10.));
+        assert_eq!(
+            coordinates.clipped_visual_bounds(rect(4., 0., 0., 6.)),
+            Some(rect(4., 2., 0., 4.))
+        );
+        assert_eq!(
+            coordinates.clipped_visual_bounds(rect(0., 0., 0., 6.)),
+            None
+        );
+        let empty = coordinates.clipped_to(rect(20., 2., 10., 10.));
+        assert_eq!(empty.clipped_visual_bounds(rect(20., 4., 0., 6.)), None);
+        assert!(!empty.accepts_visual_point(point(px(20.), px(4.))));
     }
 }
