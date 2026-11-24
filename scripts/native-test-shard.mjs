@@ -6,8 +6,9 @@ import {basename} from "node:path";
 const [exe, ...args] = process.argv.slice(2);
 if (!exe) throw new Error("Expected a Cargo test executable");
 
-function run(args, testThreads) {
-  const env = testThreads ? {...process.env, RUST_TEST_THREADS: testThreads} : process.env;
+function run(args, testThreads, extraEnv = {}) {
+  const env = {...process.env, ...extraEnv};
+  if (testThreads) env.RUST_TEST_THREADS = testThreads;
   const result = spawnSync(exe, args, {stdio: "inherit", env});
   if (result.error) throw result.error;
   if (result.signal) console.error(`Test executable terminated by ${result.signal}`);
@@ -42,15 +43,21 @@ if (!/^native-[0-9a-f]+(?:\.exe)?$/.test(basename(exe))) {
       || name.startsWith("gallery::module_coverage::")
       || name === "gallery::stories::every_gallery_story_case_mounts_draws_and_presents_semantics"
       || name === "gallery::acceptance::gallery_reviewed_text_aligns_in_every_preset_and_density";
-    const regular = tests.filter(name => !exhaustive(name));
+    // The ordinary Fast suite disables scroll layers while the SDK owns the
+    // virtual rows; this direct renderer contract intentionally needs them on.
+    const layerContract = "perf::invariants::repeating_fill_period_changes_the_promoted_tiles_without_moving_the_scroll";
+    const regular = tests.filter(name => !exhaustive(name) && name !== layerContract);
     const batches = tests.filter(exhaustive).map(name => ({tests: [name], threads: "1"}));
+    if (tests.includes(layerContract)) {
+      batches.push({tests: [layerContract], threads: "1", env: {GPUI_SCROLL_LAYERS: "1"}});
+    }
     for (let from = 0; from < regular.length; from += 48) {
       batches.push({tests: regular.slice(from, from + 48), threads: "2"});
     }
     let failed = false;
     for (const [i, batch] of batches.entries()) {
       console.log(`Native shard ${shard + 1}/${count}, batch ${i + 1}/${batches.length}`);
-      if (run([...args, "--exact", ...batch.tests], batch.threads) !== 0) failed = true;
+      if (run([...args, "--exact", ...batch.tests], batch.threads, batch.env) !== 0) failed = true;
     }
     process.exitCode = failed ? 1 : 0;
   }
