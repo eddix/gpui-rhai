@@ -311,7 +311,7 @@ fn key(visual: &mut VisualTestContext, keys: &str) {
 }
 
 fn edit(visual: &mut VisualTestContext, value: &str) {
-    key(visual, &crate::support::primary_keys("secondary-a"));
+    key(visual, "secondary-a");
     if value.is_empty() {
         key(visual, "backspace");
     } else {
@@ -352,11 +352,25 @@ fn number_input_commits_draft_steps_and_preserves_single_focus_owner(cx: &mut Te
         edit(&mut visual, "22");
         key(&mut visual, "tab");
         assert_eq!(text_of(&mut visual, &view, "value"), "10", "{name}");
-        assert_ne!(visual.update(|w, a| w.focused(a)), Some(focus.clone()));
+        let read_only = crate::support::snapshot(&mut visual, &view)
+            .nodes()
+            .find(|node| node.role == "spinbutton" && node.name == "Read only")
+            .unwrap()
+            .id;
+        let path =
+            visual.update(|window, cx| view.debug_frame_digest(window, cx).unwrap().focus_path);
+        assert!(
+            path.contains(&read_only),
+            "{name}: Tab should enter the read-only editor: {path:?}"
+        );
         key(&mut visual, "up");
         assert_eq!(text_of(&mut visual, &view, "value"), "10", "{name}");
         key(&mut visual, "shift-tab");
-        assert_eq!(visual.update(|w, a| w.focused(a)), Some(focus));
+        assert_eq!(
+            visual.update(|window, cx| window.focused(cx)),
+            Some(focus),
+            "{name}: Shift+Tab must return to Budget without visiting the same editor twice",
+        );
         key(&mut visual, "home");
         assert_eq!(text_of(&mut visual, &view, "value"), "0", "{name}");
         key(&mut visual, "end");
@@ -482,17 +496,20 @@ fn number_input_steps_replay_at_the_actual_value_and_leave_the_steppers_still(
 fn number_input_advertises_first_frame_spinbutton_actions_but_not_when_read_only(
     cx: &mut TestAppContext,
 ) {
-    let (mut visual, _) = setup(cx, gpui_rhai_registry::MODERN_LIGHT_THEME);
+    let (mut visual, view) = setup(cx, gpui_rhai_registry::MODERN_LIGHT_THEME);
     visual.update(|window, _| window.visual_probe_activate_a11y());
     settle(&mut visual, Step::TickRefresh, 3);
-    let tree: serde_json::Value = visual.update(|window, _| {
-        serde_json::from_str(
-            &window
-                .debug_a11y_tree_json()
-                .expect("native accessibility frame"),
-        )
-        .unwrap()
-    });
+    let read_tree = |visual: &mut VisualTestContext| -> serde_json::Value {
+        visual.update(|window, _| {
+            serde_json::from_str(
+                &window
+                    .debug_a11y_tree_json()
+                    .expect("native accessibility frame"),
+            )
+            .unwrap()
+        })
+    };
+    let tree = read_tree(&mut visual);
     let semantics = |label| {
         tree["nodes"]
             .as_object()
@@ -537,4 +554,11 @@ fn number_input_advertises_first_frame_spinbutton_actions_but_not_when_read_only
             .any(|action| action == "Click"),
         "the repeating pointer path must not remove one-shot accessibility click: {button}"
     );
+
+    let editor = bounds(&mut visual, &view, "spinbutton", "Budget");
+    click_center(&mut visual, editor);
+    settle(&mut visual, Step::TickRefresh, 3);
+    let tree = read_tree(&mut visual);
+    let platform_focus = tree["gpui_focus"].as_str().expect("platform focus node");
+    assert_eq!(tree["nodes"][platform_focus]["aria"]["label"], "Budget");
 }

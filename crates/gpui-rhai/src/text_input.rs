@@ -113,6 +113,7 @@ pub(crate) struct TextInputIntents {
 
 pub(crate) struct TextInputEntity {
     focus: FocusHandle,
+    surface: Option<crate::renderer::NativeEditorSurface>,
     buffer: TextBuffer,
     placeholder: SharedString,
     placeholder_color: Option<Rgba8>,
@@ -309,6 +310,7 @@ impl TextInputEntity {
     ) -> Self {
         Self {
             focus: cx.focus_handle().tab_stop(!config.disabled),
+            surface: None,
             buffer: TextBuffer::new(&config.value),
             placeholder: config.placeholder.into(),
             placeholder_color: config.placeholder_color,
@@ -337,7 +339,11 @@ impl TextInputEntity {
         cx: &mut Context<Self>,
     ) {
         sync_controlled(&mut self.buffer, &config.value);
-        self.focus = self.focus.clone().tab_stop(!config.disabled);
+        self.focus = crate::renderer::configure_editor_focus(
+            &self.focus,
+            self.surface.as_ref(),
+            config.disabled,
+        );
         self.placeholder = config.placeholder.clone().into();
         self.placeholder_color = config.placeholder_color;
         self.disabled = config.disabled;
@@ -1194,7 +1200,7 @@ impl Render for TextInputEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::app::read_host_frame_epoch(cx);
         let submit_enabled = self.callbacks.submit.is_some();
-        div()
+        let element = div()
             .flex()
             .h_full()
             .when(
@@ -1235,7 +1241,12 @@ impl Render for TextInputEntity {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .child(TextElement { input: cx.entity() })
+            .child(TextElement { input: cx.entity() });
+        if let Some(surface) = &self.surface {
+            surface.decorate(element)
+        } else {
+            element.into_any_element()
+        }
     }
 }
 
@@ -1447,6 +1458,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
                     .get_mut()
                     .stop(input.code_driver.as_ref(), window);
             }
+            input.surface = events.editor_surface();
             input.configure_primitive(
                 code,
                 &config,

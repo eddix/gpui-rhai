@@ -158,6 +158,7 @@ impl TextAreaConfig {
 
 pub(crate) struct TextAreaEntity {
     focus: FocusHandle,
+    surface: Option<crate::renderer::NativeEditorSurface>,
     buffer: TextBuffer,
     config: TextAreaConfig,
     callbacks: TextInputCallbacks,
@@ -182,6 +183,7 @@ impl TextAreaEntity {
         buffer.set_max_length(config.max_length);
         Ok(Self {
             focus: cx.focus_handle().tab_stop(!config.disabled),
+            surface: None,
             buffer,
             measured_rows: config.min_rows,
             caret_reveal_pending: false,
@@ -207,7 +209,11 @@ impl TextAreaEntity {
             self.buffer.set_controlled(value);
         }
         self.buffer.set_max_length(config.max_length);
-        self.focus = self.focus.clone().tab_stop(!config.disabled);
+        self.focus = crate::renderer::configure_editor_focus(
+            &self.focus,
+            self.surface.as_ref(),
+            config.disabled,
+        );
         self.config = config;
         self.callbacks = callbacks;
         cx.notify();
@@ -1088,7 +1094,7 @@ impl Render for TextAreaEntity {
             (_, _, Some("mod_enter")) => "GPUIRhaiTextarea alt_mod_submit",
             _ => "GPUIRhaiTextarea",
         };
-        div()
+        let element = div()
             .flex()
             .key_context(key_context)
             .track_focus(&self.focus)
@@ -1147,7 +1153,12 @@ impl Render for TextAreaEntity {
                         scroll.bg(rgba(color.as_rgba_hex()))
                     })
                     .child(TextAreaElement { input: cx.entity() }),
-            )
+            );
+        if let Some(surface) = &self.surface {
+            surface.decorate(element)
+        } else {
+            element.into_any_element()
+        }
     }
 }
 
@@ -1283,6 +1294,7 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
             entity
         };
         entity.update(cx, |input, cx| {
+            input.surface = events.editor_surface();
             input.update_props(&value, config, callbacks, cx)
         })?;
         Ok(entity.into_any_element())

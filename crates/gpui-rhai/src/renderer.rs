@@ -3446,19 +3446,9 @@ impl GpuiNodeRenderer {
             )
         });
         let key_handlers = key_handler_bindings(node, disabled);
-        let semantic = environment
-            .a11y_active
-            .then(|| {
-                retained_id.and_then(|id| environment.semantics.and_then(|frame| frame.node(id)))
-            })
-            .flatten()
-            .filter(|semantic| {
-                crate::accessibility::native_role(&semantic.role)
-                    .ok()
-                    .flatten()
-                    .is_some()
-            })
-            .cloned();
+        let semantic = (!native_editor_owns_semantics(node))
+            .then(|| native_semantics(environment, retained_id))
+            .flatten();
         let needs = u8::from(click.is_some())
             | u8::from(hover.is_some()) << 1
             | u8::from(!key_handlers.is_empty()) << 2
@@ -3525,12 +3515,12 @@ impl GpuiNodeRenderer {
             disabled || inherited_text,
             None,
         );
-        let element = apply_native_semantics(element, semantic.as_ref());
+        let element = apply_native_semantics(element, semantic);
         let element = apply_primitive_accessibility_actions(
             element,
             node,
             retained_id,
-            semantic.as_ref(),
+            semantic,
             environment,
         );
         let element = apply_hit_test(element, hit_test);
@@ -3552,13 +3542,24 @@ impl GpuiNodeRenderer {
         // click target or a key target without focusable content is a stop.
         let implicit_tab_stop =
             click.is_some() || !key_handlers.is_empty() && !children_take_focus(node, disabled);
-        let element = apply_tab_behavior(
-            element,
-            node,
-            implicit_tab_stop,
-            ancestor_disabled,
-            persistent_focus,
-        );
+        let element = if native_editor_owns_semantics(node) {
+            if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
+                element
+                    .tab_index(node_tab_index(node))
+                    .tab_stop(false)
+                    .tab_group()
+            } else {
+                element
+            }
+        } else {
+            apply_tab_behavior(
+                element,
+                node,
+                implicit_tab_stop,
+                ancestor_disabled,
+                persistent_focus,
+            )
+        };
         let element = apply_environment_scroll(element, node, retained_id, environment);
         // A disabled node keeps its paint, so pointer-driven motions stay put.
         let element = if disabled {
@@ -3913,6 +3914,7 @@ impl GpuiNodeRenderer {
                         }))
                         .with_intrinsic_size(environment.intrinsic_size.cloned())
                         .with_focus_indicators(environment.focus_indicators)
+                        .with_editor_surface(native_editor_surface(node, retained_id, environment))
                         .with_host_focus(
                             (!environment
                                 .primitives
@@ -4008,6 +4010,9 @@ fn apply_node_focus_tracking(
     let Some(handle) = handle else {
         return element;
     };
+    if native_editor_owns_semantics(node) {
+        return element;
+    }
     if node
         .attributes()
         .contains_key(crate::retained_page::PAGE_VISIBLE)
@@ -4028,6 +4033,98 @@ fn apply_node_focus_tracking(
     } else {
         element.track_focus(handle)
     }
+}
+
+fn native_editor_owns_semantics(node: &UiNode) -> bool {
+    matches!(node.kind(), UiNodeKind::Custom { primitive } if matches!(
+        primitive.primitive.as_str(),
+        "gpui_rhai.text_input" | "gpui_rhai.textarea"
+    ))
+}
+
+fn native_semantics<'a, C>(
+    environment: &RenderEnvironment<'a, C>,
+    retained_id: Option<NodeId>,
+) -> Option<&'a crate::AccessibilityNode> {
+    if !environment.a11y_active {
+        return None;
+    }
+    environment
+        .semantics?
+        .node(retained_id?)
+        .filter(|semantic| {
+            crate::accessibility::native_role(&semantic.role)
+                .ok()
+                .flatten()
+                .is_some()
+        })
+}
+
+type DecorateEditor = dyn Fn(Stateful<Div>) -> Stateful<Div>;
+
+/// The native editor owns key dispatch, traversal and the platform focus
+/// projection. Registering its shared handle on a second Div can add the same
+/// focus id twice to GPUI's tab sequence.
+#[derive(Clone)]
+pub(crate) struct NativeEditorSurface {
+    tab_stop: bool,
+    tab_index: isize,
+    decorate: Option<Rc<DecorateEditor>>,
+}
+
+pub(crate) fn configure_editor_focus(
+    focus: &FocusHandle,
+    surface: Option<&NativeEditorSurface>,
+    disabled: bool,
+) -> FocusHandle {
+    let focus = focus.clone();
+    match surface {
+        Some(surface) => focus
+            .tab_index(surface.tab_index)
+            .tab_stop(surface.tab_stop && !disabled),
+        None => focus.tab_stop(!disabled),
+    }
+}
+
+impl NativeEditorSurface {
+    pub(crate) fn decorate(&self, element: Div) -> AnyElement {
+        let element = element.id("native-editor");
+        if let Some(decorate) = &self.decorate {
+            decorate(element).into_any_element()
+        } else {
+            element.into_any_element()
+        }
+    }
+}
+
+fn native_editor_surface<C: ColorResolver>(
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    environment: &RenderEnvironment<'_, C>,
+) -> Option<NativeEditorSurface> {
+    if !native_editor_owns_semantics(node) {
+        return None;
+    }
+    let decorate = native_semantics(environment, retained_id)
+        .cloned()
+        .map(|semantic| {
+            let actions =
+                primitive_accessibility_actions(node, retained_id, &semantic, environment);
+            let registry = environment.primitives.weak_lookup();
+            Rc::new(move |element| {
+                let element = apply_native_semantics(element, Some(&semantic));
+                if let Some(registry) = registry() {
+                    attach_primitive_accessibility_actions(element, &registry, actions.as_ref())
+                } else {
+                    element
+                }
+            }) as Rc<DecorateEditor>
+        });
+    Some(NativeEditorSurface {
+        tab_stop: node_tab_stop(node) && !environment.inherited_disabled,
+        tab_index: node_tab_index(node),
+        decorate,
+    })
 }
 
 fn primitive_focus_owner(
@@ -4876,6 +4973,9 @@ enum Wrapped {
 fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> bool {
     needs & 0b10_1000 != 0
         || is_window_drag_area(node)
+        // Keep the native editor's element path stable even when the platform
+        // accessibility tree is activated after mounting.
+        || native_editor_owns_semantics(node)
         // An overlay keeps its element path whether or not its key handlers come
         // and go with `open`, so its focus state survives opening and closing.
         || matches!(node.kind(), UiNodeKind::Overlay { .. })
@@ -5052,27 +5152,36 @@ fn apply_native_semantic_flags(
 }
 
 fn apply_primitive_accessibility_actions<C: ColorResolver>(
-    mut element: Stateful<Div>,
+    element: Stateful<Div>,
     node: &UiNode,
     retained_id: Option<NodeId>,
     semantic: Option<&crate::AccessibilityNode>,
     environment: &RenderEnvironment<'_, C>,
 ) -> Stateful<Div> {
-    let Some(semantic) = semantic else {
-        return element;
-    };
+    let actions = semantic.and_then(|semantic| {
+        primitive_accessibility_actions(node, retained_id, semantic, environment)
+    });
+    attach_primitive_accessibility_actions(element, environment.primitives, actions.as_ref())
+}
+
+fn primitive_accessibility_actions<C: ColorResolver>(
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    semantic: &crate::AccessibilityNode,
+    environment: &RenderEnvironment<'_, C>,
+) -> Option<(crate::PrimitiveInstanceId, Vec<gpui::AccessibleAction>)> {
     if semantic.disabled {
-        return element;
+        return None;
     }
     let (UiNodeKind::Custom { primitive }, Some(node), Some(key)) =
         (node.kind(), retained_id, node.key())
     else {
-        return element;
+        return None;
     };
     let props = &primitive.props;
     let instance =
         crate::PrimitiveInstanceId::new(primitive.primitive.clone(), key.as_str().to_owned(), node);
-    for action in environment
+    let actions = environment
         .primitives
         .accessibility_actions(&instance, props)
         .into_iter()
@@ -5085,8 +5194,20 @@ fn apply_primitive_accessibility_actions<C: ColorResolver>(
                         | gpui::AccessibleAction::Decrement
                 ))
         })
-    {
-        let registry = environment.primitives.clone();
+        .collect();
+    Some((instance, actions))
+}
+
+fn attach_primitive_accessibility_actions(
+    mut element: Stateful<Div>,
+    registry: &PrimitiveRegistry,
+    actions: Option<&(crate::PrimitiveInstanceId, Vec<gpui::AccessibleAction>)>,
+) -> Stateful<Div> {
+    let Some((instance, actions)) = actions else {
+        return element;
+    };
+    for &action in actions {
+        let registry = registry.clone();
         let instance = instance.clone();
         element = element.on_a11y_action(action, move |data, window, cx| {
             // Stale and disabled native instances intentionally reject the

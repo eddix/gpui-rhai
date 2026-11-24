@@ -868,6 +868,7 @@ pub struct PrimitiveContext {
     intrinsic_generation: ScriptGeneration,
     intrinsic_lease: Option<Weak<RefCell<PrimitiveResourceState>>>,
     native_motion: Option<crate::renderer::NativeNodeMotion>,
+    editor_surface: Option<crate::renderer::NativeEditorSurface>,
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
     retained_node: Option<crate::NodeId>,
@@ -911,6 +912,10 @@ fn mounted_primitive_is_current(
 }
 
 impl PrimitiveContext {
+    pub(crate) fn editor_surface(&self) -> Option<crate::renderer::NativeEditorSurface> {
+        self.editor_surface.clone()
+    }
+
     pub(crate) fn native_motion(&self) -> Option<crate::renderer::NativeNodeMotion> {
         self.native_motion.clone()
     }
@@ -1785,6 +1790,11 @@ impl PrimitiveRegistry {
         })
     }
 
+    pub(crate) fn weak_lookup(&self) -> impl Fn() -> Option<Self> + use<> {
+        let registry = Rc::downgrade(&self.inner);
+        move || registry.upgrade().map(|inner| Self { inner })
+    }
+
     pub(crate) fn perform_accessibility_action(
         &self,
         instance: &PrimitiveInstanceId,
@@ -2225,6 +2235,7 @@ pub(crate) struct PrimitiveWindowContext {
     key_captures: Vec<crate::renderer::KeyCaptureScope>,
     intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     native_motion: Option<crate::renderer::NativeNodeMotion>,
+    editor_surface: Option<crate::renderer::NativeEditorSurface>,
     view_id: String,
     focus_indicators: bool,
     /// The focus handle of the node that hosts a primitive without a primary
@@ -2253,6 +2264,7 @@ impl PrimitiveWindowContext {
             key_captures: Vec::new(),
             intrinsic_size: None,
             native_motion: None,
+            editor_surface: None,
             view_id: view_id.into(),
             focus_indicators: true,
             host_focus: None,
@@ -2261,6 +2273,14 @@ impl PrimitiveWindowContext {
 
     pub(crate) fn with_focus_indicators(mut self, shown: bool) -> Self {
         self.focus_indicators = shown;
+        self
+    }
+
+    pub(crate) fn with_editor_surface(
+        mut self,
+        surface: Option<crate::renderer::NativeEditorSurface>,
+    ) -> Self {
+        self.editor_surface = surface;
         self
     }
 
@@ -2336,6 +2356,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             .collect();
         let events = PrimitiveContext {
             native_motion: self.runtime.native_motion,
+            editor_surface: self.runtime.editor_surface,
             assets: self.runtime.assets,
             registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
@@ -3065,6 +3086,7 @@ mod tests {
         let weak = Rc::downgrade(&registry.inner);
         let emitter = PrimitiveContext {
             native_motion: None,
+            editor_surface: None,
             assets: None,
             registry: Rc::downgrade(&registry.inner),
             primitive: PrimitiveId::parse("my_app.editor").unwrap(),
