@@ -6,16 +6,17 @@ import {basename} from "node:path";
 const [exe, ...args] = process.argv.slice(2);
 if (!exe) throw new Error("Expected a Cargo test executable");
 
-function run(args) {
-  const result = spawnSync(exe, args, {stdio: "inherit"});
+function run(args, testThreads) {
+  const env = testThreads ? {...process.env, RUST_TEST_THREADS: testThreads} : process.env;
+  const result = spawnSync(exe, args, {stdio: "inherit", env});
   if (result.error) throw result.error;
-  if (result.signal) throw new Error(`Test executable terminated by ${result.signal}`);
-  process.exitCode = result.status ?? 1;
+  if (result.signal) console.error(`Test executable terminated by ${result.signal}`);
+  return result.status ?? 1;
 }
 
 if (!/^native-[0-9a-f]+(?:\.exe)?$/.test(basename(exe))) {
   // The standard shard zero also runs the non-native test targets.
-  run(args);
+  process.exitCode = run(args);
 } else {
   const shard = Number(process.env.GPUI_RHAI_NATIVE_SHARD);
   const count = Number(process.env.GPUI_RHAI_NATIVE_SHARDS);
@@ -32,5 +33,24 @@ if (!/^native-[0-9a-f]+(?:\.exe)?$/.test(basename(exe))) {
   const tests = inventory.filter((_, i) => i % count === shard);
   if (tests.length === 0) throw new Error(`Native test shard ${shard} is empty`);
   console.log(`Native shard ${shard + 1}/${count}: ${tests.length}/${inventory.length} tests`);
-  run([...args, "--exact", ...tests]);
+  if (args.includes("--list")) {
+    process.exitCode = run([...args, "--exact", ...tests]);
+  } else {
+    // Exhaustive Gallery audits build hundreds of views in one test. Give
+    // them their own process, and recycle the allocator between other batches.
+    const exhaustive = name => name.startsWith("gallery::acceptance::every_gallery_page_")
+      || name.startsWith("gallery::module_coverage::")
+      || name === "gallery::acceptance::gallery_reviewed_text_aligns_in_every_preset_and_density";
+    const regular = tests.filter(name => !exhaustive(name));
+    const batches = tests.filter(exhaustive).map(name => ({tests: [name], threads: "1"}));
+    for (let from = 0; from < regular.length; from += 48) {
+      batches.push({tests: regular.slice(from, from + 48), threads: "2"});
+    }
+    let failed = false;
+    for (const [i, batch] of batches.entries()) {
+      console.log(`Native shard ${shard + 1}/${count}, batch ${i + 1}/${batches.length}`);
+      if (run([...args, "--exact", ...batch.tests], batch.threads) !== 0) failed = true;
+    }
+    process.exitCode = failed ? 1 : 0;
+  }
 }
