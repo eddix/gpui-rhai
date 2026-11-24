@@ -109,6 +109,7 @@ pub(crate) fn live_fills(visual: &mut VisualTestContext, color: u32) -> Vec<Rect
                 scene,
                 gpui::TransformationMatrix::default(),
                 &mut |scene, pose| {
+                    #[cfg(feature = "vendor-gpui")]
                     for quad in scene.quads.iter().filter(|quad| quad.background == fill) {
                         let rect = logical_paint_rect(quad.bounds, pose, scale);
                         let clip = logical_paint_rect(quad.content_mask.bounds, pose, scale);
@@ -124,6 +125,22 @@ pub(crate) fn live_fills(visual: &mut VisualTestContext, color: u32) -> Vec<Rect
                                 height,
                             });
                         }
+                    }
+                    #[cfg(not(feature = "vendor-gpui"))]
+                    {
+                        let rect = |bounds| logical_paint_rect(bounds, pose, scale);
+                        let quads = scene
+                            .quads
+                            .iter()
+                            .map(|quad| quad_witness(quad, rect, scale))
+                            .collect();
+                        result.extend(
+                            coalesce_public_fragments(quads)
+                                .into_iter()
+                                .filter(|quad| quad.background == fill)
+                                .map(|quad| quad.visible())
+                                .filter(|rect| rect.width > 0. && rect.height > 0.),
+                        );
                     }
                 },
             );
@@ -262,28 +279,129 @@ fn quad_snapshot(visual: &mut VisualTestContext, include_rounded_clips: bool) ->
             width: bounds.size.width.0 / scale,
             height: bounds.size.height.0 / scale,
         };
-        window_quads(window, include_rounded_clips)
+        let pieces: Vec<_> = window_quads(window, include_rounded_clips)
             .iter()
-            .map(|quad| PaintedQuad {
-                bounds: rect(quad.bounds),
-                mask: rect(quad.content_mask.bounds),
-                background: quad.background,
-                border_color: quad.border_color,
-                border_widths: [
-                    quad.border_widths.top.0 / scale,
-                    quad.border_widths.right.0 / scale,
-                    quad.border_widths.bottom.0 / scale,
-                    quad.border_widths.left.0 / scale,
-                ],
-                corner_radii: [
-                    quad.corner_radii.top_left.0 / scale,
-                    quad.corner_radii.top_right.0 / scale,
-                    quad.corner_radii.bottom_right.0 / scale,
-                    quad.corner_radii.bottom_left.0 / scale,
-                ],
-            })
-            .collect()
+            .map(|quad| quad_witness(quad, rect, scale))
+            .collect();
+        #[cfg(feature = "vendor-gpui")]
+        return pieces;
+        #[cfg(not(feature = "vendor-gpui"))]
+        coalesce_public_fragments(pieces)
     })
+}
+
+fn quad_witness(
+    quad: &gpui::Quad,
+    rect: impl Fn(gpui::Bounds<gpui::ScaledPixels>) -> Rect,
+    scale: f32,
+) -> PaintedQuad {
+    PaintedQuad {
+        bounds: rect(quad.bounds),
+        mask: rect(quad.content_mask.bounds),
+        background: quad.background,
+        border_color: quad.border_color,
+        border_widths: [
+            quad.border_widths.top.0 / scale,
+            quad.border_widths.right.0 / scale,
+            quad.border_widths.bottom.0 / scale,
+            quad.border_widths.left.0 / scale,
+        ],
+        corner_radii: [
+            quad.corner_radii.top_left.0 / scale,
+            quad.corner_radii.top_right.0 / scale,
+            quad.corner_radii.bottom_right.0 / scale,
+            quad.corner_radii.bottom_left.0 / scale,
+        ],
+    }
+}
+
+/// Public GPUI splits an authored quad into an interior and up to four
+/// disjoint clipped strips. Observe its logical bounds and border without
+/// counting strips as independent fills. Overlapping masks are deliberately
+/// never merged, so a test can still catch an accidental duplicate paint.
+#[cfg(not(feature = "vendor-gpui"))]
+fn coalesce_public_fragments(pieces: Vec<PaintedQuad>) -> Vec<PaintedQuad> {
+    let overlap = |a: Rect, b: Rect| {
+        a.right().min(b.right()) > a.x.max(b.x) && a.bottom().min(b.bottom()) > a.y.max(b.y)
+    };
+    let mut result = Vec::new();
+    let mut cursor = 0;
+    while let Some(first) = pieces.get(cursor) {
+        let mut end = cursor + 1;
+        let border = Background::from(first.border_color);
+        while end - cursor < 5
+            && let Some(next) = pieces.get(end)
+            && next.bounds == first.bounds
+            && next.border_color == first.border_color
+            && (next.background == first.background || next.background == border)
+            && pieces[cursor..end]
+                .iter()
+                .all(|part| !overlap(part.visible(), next.visible()))
+        {
+            end += 1;
+        }
+        let mut quad = *first;
+        let mut any_interior = false;
+        for part in &pieces[cursor..end] {
+            let edge = plain_border_strip(*part);
+            if edge == [0.; 4] {
+                any_interior = true;
+                quad.background = part.background;
+            }
+            for i in 0..4 {
+                quad.border_widths[i] = quad.border_widths[i]
+                    .max(part.border_widths[i])
+                    .max(edge[i]);
+                quad.corner_radii[i] = quad.corner_radii[i].max(part.corner_radii[i]);
+            }
+            let a = quad.visible();
+            let b = part.visible();
+            let x = a.x.min(b.x);
+            let y = a.y.min(b.y);
+            quad.mask = Rect {
+                x,
+                y,
+                width: a.right().max(b.right()) - x,
+                height: a.bottom().max(b.bottom()) - y,
+            };
+        }
+        if !any_interior {
+            quad.background = Background::default();
+        }
+        result.push(quad);
+        cursor = end;
+    }
+    result
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+fn plain_border_strip(quad: PaintedQuad) -> [f32; 4] {
+    if quad.has_border()
+        || quad.border_color.is_transparent()
+        || quad.background != quad.border_color.into()
+    {
+        return [0.; 4];
+    }
+    let outer = quad.bounds;
+    let rect = quad.visible();
+    let near = |a: f32, b: f32| (a - b).abs() <= 0.001;
+    if rect.height < outer.height / 2. && rect.width >= outer.width / 2. {
+        if near(rect.y, outer.y) {
+            return [rect.height, 0., 0., 0.];
+        }
+        if near(rect.bottom(), outer.bottom()) {
+            return [0., 0., rect.height, 0.];
+        }
+    }
+    if rect.width < outer.width / 2. && rect.height >= outer.height / 2. {
+        if near(rect.x, outer.x) {
+            return [0., 0., 0., rect.width];
+        }
+        if near(rect.right(), outer.right()) {
+            return [0., rect.width, 0., 0.];
+        }
+    }
+    [0.; 4]
 }
 
 #[cfg(not(feature = "gpui-fast"))]

@@ -62,6 +62,7 @@ fn view(ctx) {
 
 #[cfg(target_os = "macos")]
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn isolated_group_contrast_matches_metal_instead_of_double_fading_ink(cx: &mut TestAppContext) {
     use crate::support::{Step, node_by_test_id, settle};
     #[cfg(feature = "gpui-fast")]

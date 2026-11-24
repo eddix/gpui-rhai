@@ -714,6 +714,7 @@ fn scroll_track_routes_unsupported_axes_and_only_boundary_residual_to_sdk_ancest
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn transformed_nested_wheel_preserves_residual_in_a_retained_sdk_parent(cx: &mut TestAppContext) {
     let source=residual_scroll_fixture()
         .replace(".width(px(180))", ".width(px(220))")

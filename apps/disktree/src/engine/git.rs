@@ -194,18 +194,16 @@ mod tests {
 
     #[test]
     fn a_checkout_reports_state_and_a_plain_dir_does_not() {
-        // The app lives below the top of the gpui-rhai checkout.
-        let top = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .find(|dir| is_checkout(dir))
-            .expect("the app lives in a checkout");
-        let state = state(top).expect("git answers for a checkout");
-        assert!(state.changed.is_some());
-        assert!(
-            state.summary().contains("changed") || state.summary().contains("clean"),
-            "summary: {}",
-            state.summary()
-        );
-        assert!(!is_checkout(Path::new("/tmp")));
+        let plain = tempfile::tempdir().unwrap();
+        let checkout = plain.path().join("checkout");
+        std::fs::create_dir(&checkout).unwrap();
+        let initialized = git(&checkout, &["init", "--template="]).expect("git init");
+        assert!(initialized.status.success());
+        assert!(is_checkout(&checkout));
+        assert_eq!(state(&checkout).expect("clean checkout").changed, Some(0));
+        std::fs::write(checkout.join("untracked.txt"), "local fixture").unwrap();
+        assert_eq!(state(&checkout).expect("dirty checkout").changed, Some(1));
+        assert!(!is_checkout(plain.path()));
+        assert!(state(plain.path()).is_none());
     }
 }

@@ -124,6 +124,10 @@ jobs:
           cargo test -p gpui-rhai --lib --locked --features offscreen-pre offscreen
       - name: Native keyboard test support
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+        env:
+          # Large Gallery compile/mount matrices are CPU-bound in unoptimized
+          # builds. Keep debug assertions while making the native suite tractable.
+          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
       # Every subtree of one node or more becomes a cache island, every view
       # anchors its width and a cached render that lays out differently
       # panics, so each native test also tests the islands.
@@ -131,8 +135,11 @@ jobs:
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --test native
         env:
           GPUI_RHAI_RENDER_ISLANDS: aggressive
+          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
       - name: Mounted hot reload
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --features dev-reload --test token_reload
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
 
   # The gpui-fast backend (gpui-rhai's `gpui-fast` feature, instead of the
   # default gpui-pre). Its scroll layers composite list rows without rendering
@@ -162,6 +169,7 @@ jobs:
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --no-default-features --features gpui-fast --test native
         env:
           GPUI_SCROLL_LAYERS: "0"
+          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
 
   release:
     if: github.event_name != 'schedule'
@@ -243,8 +251,10 @@ jobs:
           toolchain: 1.99.0
       - name: Check the vendor graph
         run: bash scripts/with-vendor-gpui.sh sdk ${{ matrix.backend }} check -p gpui-rhai-cli
-      - name: Mount the shared Gallery on the vendor backend
+      - name: Native and Gallery contracts on the vendor backend
         run: bash scripts/with-vendor-gpui.sh native ${{ matrix.backend }} test --test native
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
       - name: Check the repository app under vendor Pre
         if: matrix.backend == 'pre'
         run: bash scripts/with-vendor-gpui.sh apps pre test

@@ -264,6 +264,7 @@ fn near_fraction(probe: &Probe, expected: f32) {
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn rotated_scrollbar_uses_thumb_grab_offset_through_release_and_track_click(
     cx: &mut TestAppContext,
 ) {
@@ -301,6 +302,7 @@ fn rotated_scrollbar_uses_thumb_grab_offset_through_release_and_track_click(
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn rotated_scrollbar_ends_a_stale_drag_without_applying_its_last_pointer(cx: &mut TestAppContext) {
     let (mut v, view, probe) = mount_scene(cx, "scroll-affine-cancel", ROTATED, false);
     let (start, travel) = rotated_thumb(&mut v, &probe);
@@ -334,6 +336,7 @@ fn rotated_scrollbar_ends_a_stale_drag_without_applying_its_last_pointer(cx: &mu
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn rotated_scrollbar_body_hit_uses_presented_bounds_for_wheel_admission(cx: &mut TestAppContext) {
     let (mut v, _, probe) = mount_scene(cx, "scroll-affine-wheel", ROTATED, true);
     let position = rotated_point(&probe, 270., 100.);

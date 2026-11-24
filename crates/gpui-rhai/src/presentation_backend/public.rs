@@ -134,7 +134,10 @@ pub(crate) trait PreviewWindowExt {
 
 impl PreviewWindowExt for Window {
     fn visual_coordinates(&self) -> VisualCoordinates {
-        VisualCoordinates(Some(self.content_mask().bounds))
+        // Input dispatch runs outside every draw phase. The stock profile
+        // has no transform stack; paint callers that need a clip already
+        // pass their mask or viewport to `clipped_to`.
+        VisualCoordinates::default()
     }
     fn event_position_in_layout(&self, point: Point<Pixels>) -> Option<Point<Pixels>> {
         self.visual_coordinates().layout_point(point)
