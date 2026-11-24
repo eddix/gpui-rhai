@@ -307,6 +307,8 @@ fn fan_out_grid_1024_cells_stay_mounted_and_use_business_identity(cx: &mut TestA
     node(&mut v, &view, "tooltip", "Item 1023");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn fan_out_grid_shine_frames_do_not_evaluate_rhai(cx: &mut TestAppContext) {
     let manual = ManualRuntimeClock::new(Instant::now());
@@ -373,3 +375,6 @@ fn fan_out_grid_shine_frames_do_not_evaluate_rhai(cx: &mut TestAppContext) {
             .is_empty()
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

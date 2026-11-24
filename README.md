@@ -27,6 +27,8 @@ Light/Dark presets. This work is **unreleased and not fully accepted**; use
 matching SDK, CLI and registry source revisions when testing it, not an older
 published SDK with newly copied components. See the
 [migration status and remaining gates](docs/design/migration-modern-clean.md).
+The [public and vendor build profiles](docs/gpui-profiles.md) use the same
+Gallery, so you can compare rendering and interaction with the same preset.
 
 ## Quick start
 

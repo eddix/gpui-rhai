@@ -25,6 +25,7 @@ struct NativeSize {
 
 struct NativeHeight(Rc<NativeSize>);
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for NativeHeight {
     type Element = Self;
     fn into_element(self) -> Self {

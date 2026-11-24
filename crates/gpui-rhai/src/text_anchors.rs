@@ -1,5 +1,7 @@
 //! Opt-in, versioned queries of one rendered text node's grapheme geometry.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::{collections::BTreeMap, fmt, ops::Range, rc::Rc};
 
 use gpui::{Bounds, Pixels, Point, TextLayout, Window, px, size};
@@ -174,7 +176,10 @@ impl TextAnchorPlan {
     }
 }
 
-fn rect_value(bounds: Bounds<Pixels>, coords: &gpui::VisualCoordinates) -> UiValue {
+fn rect_value(
+    bounds: Bounds<Pixels>,
+    coords: &crate::presentation_backend::VisualCoordinates,
+) -> UiValue {
     let quad = [
         gpui::point(bounds.left(), bounds.top()),
         gpui::point(bounds.right(), bounds.top()),

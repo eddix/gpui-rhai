@@ -339,6 +339,8 @@ fn collaboration_stream_writing_marks_twinkle_in_diagonals_on_the_runtime_clock(
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn collaboration_stream_tab_fades_follow_the_native_horizontal_boundaries(cx: &mut TestAppContext) {
     let (mut v, view) = participant_strip_fixture(cx);
@@ -562,6 +564,8 @@ fn collaboration_stream_recipient_summary_fits_without_changing_send_targets(
     node(&mut v, &view, "text", "a,b,c,d,e");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn collaboration_stream_composer_uses_the_authored_height_range(cx: &mut TestAppContext) {
     for theme in ["clean-light", "modern-dark"] {
@@ -693,6 +697,8 @@ fn collaboration_stream_attachment_and_reply_paint_the_body_ink_in_all_presets(
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn glyph_band_count(scene: &gpui::Scene) -> usize {
     let count: usize = scene
         .isolated_groups
@@ -719,6 +725,7 @@ fn glyph_band_count(scene: &gpui::Scene) -> usize {
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn thinking_labels_share_glyph_paint_and_end_when_the_host_finishes_or_stops(
     cx: &mut TestAppContext,
 ) {
@@ -805,6 +812,7 @@ fn collaboration_stream_only_follows_the_tail_while_the_reader_is_there(cx: &mut
         "Atlas: Should we keep the quick-start example?",
     );
     assert!(viewport.y + viewport.height - last.y - last.height >= 20.);
+    #[cfg(feature = "vendor-gpui")]
     assert!(v.update(|window, _| window.visual_probe_with_painted_scene(has_vertical_edges)));
     let list = v
         .debug_bounds("virtual-list:transcript:editorial:0")
@@ -832,6 +840,8 @@ fn collaboration_stream_only_follows_the_tail_while_the_reader_is_there(cx: &mut
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn has_vertical_edges(scene: &gpui::Scene) -> bool {
     let drawn = scene.isolated_groups.iter().any(|group| {
         let ramps = group.alpha_ramps();
@@ -848,6 +858,7 @@ fn has_vertical_edges(scene: &gpui::Scene) -> bool {
     drawn
 }
 
+#[cfg(feature = "vendor-gpui")]
 pub(super) fn glyph_band_center(scene: &gpui::Scene) -> Option<f32> {
     for g in &scene.isolated_groups {
         let ramps = g.alpha_ramps();
@@ -874,6 +885,7 @@ pub(super) fn glyph_band_center(scene: &gpui::Scene) -> Option<f32> {
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn collaboration_stream_glyph_band_uses_the_native_clock_and_respects_motion_policy(
     cx: &mut TestAppContext,
 ) {
@@ -1099,3 +1111,6 @@ fn collaboration_stream_keyboard_reaches_a_previously_unrealized_message(cx: &mu
     );
     assert_eq!(selected.pressed, Some(true));
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

@@ -176,6 +176,7 @@ fn context_map_capacity_uses_semantic_surfaces_in_alternate_palettes(cx: &mut Te
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn context_map_used_count_has_native_shine_without_changing_the_accepted_total(
     cx: &mut TestAppContext,
 ) {
@@ -265,6 +266,8 @@ fn context_map_used_count_has_native_shine_without_changing_the_accepted_total(
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn context_map_tile_keeps_title_ink_and_fades_its_secondary_line(cx: &mut TestAppContext) {
     use crate::support::{glyph_rects_with_ink, logical_paint_rect, walk_live_paint};
@@ -1167,3 +1170,6 @@ fn context_map_gallery_capacity_and_ordinary_removal_retarget_without_stale_hits
         "settled exits release their retained labels"
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

@@ -1,5 +1,7 @@
 //! Retained native `CodeViewer` and `DiffViewer` surfaces.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -1398,6 +1400,7 @@ impl Element for DocumentBoundsRecorder {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for DocumentBoundsRecorder {
     type Element = Self;
 
@@ -1533,6 +1536,7 @@ impl Element for CodeContentMeasure {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for CodeContentMeasure {
     type Element = Self;
 
@@ -2022,6 +2026,7 @@ impl Element for InteractiveDocumentText {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for InteractiveDocumentText {
     type Element = Self;
 
@@ -3838,6 +3843,7 @@ impl Element for DiffBoundsRecorder {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for DiffBoundsRecorder {
     type Element = Self;
 

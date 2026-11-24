@@ -4,6 +4,8 @@
 compile_error!("features `gpui-pre` and `gpui-fast` are mutually exclusive");
 #[cfg(not(any(feature = "gpui-pre", feature = "gpui-fast")))]
 compile_error!("enable exactly one GPUI backend feature: `gpui-pre` or `gpui-fast`");
+#[cfg(all(feature = "vendor-gpui", not(target_os = "macos")))]
+compile_error!("the vendored compositor is currently validated for macOS");
 #[cfg(feature = "gpui-fast")]
 pub extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
@@ -84,6 +86,9 @@ pub mod node;
 pub mod overlay;
 mod overlay_element;
 mod paint_motion;
+mod presentation_backend;
+/// Whether the build includes the alternate GPUI composition extensions.
+pub const EXTENDED_RENDERING: bool = cfg!(feature = "vendor-gpui");
 pub mod pan_zoom;
 mod presentation_diagnostic;
 pub mod primitive;

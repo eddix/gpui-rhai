@@ -1,5 +1,7 @@
 //! Generic retained single-value range-input behavior for styled Rhai components.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::collections::BTreeMap;
 
 use gpui::{
@@ -471,6 +473,7 @@ impl<F: FnMut(Option<PresentedRangeTrack>, &mut App) + 'static> Element for Rang
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl<F: FnMut(Option<PresentedRangeTrack>, &mut App) + 'static> IntoElement
     for RangeTrackRecorder<F>
 {

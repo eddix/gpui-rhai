@@ -476,6 +476,8 @@ fn number_input_steps_replay_at_the_actual_value_and_leave_the_steppers_still(
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn number_input_advertises_first_frame_spinbutton_actions_but_not_when_read_only(
     cx: &mut TestAppContext,

@@ -1,16 +1,20 @@
 //! Lay out one real rich-text paragraph, then place ordinary retained
 //! semantic controls at its text ranges without measuring or painting again.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::{cell::RefCell, ops::Range, rc::Rc};
 
 use gpui::{
-    AnyElement, App, AvailableSpace, Bounds, ComputedPaint, DispatchPhase, Element, ElementId,
-    FocusHandle, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement,
-    LayoutId, MouseMoveEvent, ParentElement as _, Pixels, Point, SharedString, Styled as _,
-    StyledText, Window, div, size,
+    AnyElement, App, AvailableSpace, Bounds, Element, ElementId, FocusHandle, GlobalElementId,
+    Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement, LayoutId, ParentElement as _,
+    Pixels, Point, SharedString, Styled as _, StyledText, Window, div, size,
 };
+#[cfg(feature = "vendor-gpui")]
+use gpui::{DispatchPhase, MouseMoveEvent};
 
 use crate::inline_link::{InlineLinkFrame, paint_outline};
+use crate::presentation_backend::ComputedPaint;
 
 #[derive(Clone)]
 pub(crate) struct InlineProjection {
@@ -24,9 +28,12 @@ pub(crate) type InlinePaintDriver =
 
 pub(crate) struct InlineTargetPaint {
     pub(crate) enabled: bool,
+    // The public renderer draws the ordinary static underline.
+    #[cfg_attr(not(feature = "vendor-gpui"), allow(dead_code))]
     pub(crate) animate: Option<Rc<InlinePaintDriver>>,
 }
 
+#[cfg_attr(not(feature = "vendor-gpui"), allow(dead_code))]
 pub(crate) struct HoverUnderline {
     slot: usize,
     idle: Option<Hsla>,
@@ -90,6 +97,7 @@ pub(crate) struct InlineSource {
     pub(crate) hover: Vec<HoverUnderline>,
 }
 
+#[cfg(feature = "vendor-gpui")]
 fn hovered_slot(hitboxes: &[(usize, Hitbox)], window: &Window) -> Option<usize> {
     hitboxes
         .iter()
@@ -97,6 +105,7 @@ fn hovered_slot(hitboxes: &[(usize, Hitbox)], window: &Window) -> Option<usize> 
         .find_map(|(slot, hitbox)| hitbox.is_hovered(window).then_some(*slot))
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for InlineSource {
     type Element = Self;
     fn into_element(self) -> Self {
@@ -169,38 +178,45 @@ impl Element for InlineSource {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if self.hover.is_empty() {
+        #[cfg(not(feature = "vendor-gpui"))]
+        {
+            let _ = hitboxes;
             self.text
                 .paint(id, inspector, bounds, state, &mut (), window, cx);
-            return;
         }
-        let hovered = hovered_slot(hitboxes, window);
-        let fallback = window.text_style().color;
-        let mut strokes = [None; 32];
-        for underline in &self.hover {
-            let glyph = underline.glyph.unwrap_or(fallback);
-            let mut ink = if hovered == Some(underline.slot) {
-                glyph
-            } else {
-                underline.idle.unwrap_or(glyph)
-            };
-            if let Some(animate) = self
-                .projection
-                .target_paint
-                .get(underline.slot)
-                .and_then(|target| target.animate.as_ref())
-            {
-                let mut paint = ComputedPaint {
-                    text_color: Some(ink),
-                    ..Default::default()
-                };
-                animate(&mut paint, underline.transition, window);
-                ink = paint.text_color.unwrap_or(ink);
+        #[cfg(feature = "vendor-gpui")]
+        {
+            if self.hover.is_empty() {
+                self.text
+                    .paint(id, inspector, bounds, state, &mut (), window, cx);
+                return;
             }
-            strokes[underline.slot] = Some(ink);
-        }
-        let _ =
-            self.text.paint_with_underline_handler(
+            let hovered = hovered_slot(hitboxes, window);
+            let fallback = window.text_style().color;
+            let mut strokes = [None; 32];
+            for underline in &self.hover {
+                let glyph = underline.glyph.unwrap_or(fallback);
+                let mut ink = if hovered == Some(underline.slot) {
+                    glyph
+                } else {
+                    underline.idle.unwrap_or(glyph)
+                };
+                if let Some(animate) = self
+                    .projection
+                    .target_paint
+                    .get(underline.slot)
+                    .and_then(|target| target.animate.as_ref())
+                {
+                    let mut paint = ComputedPaint {
+                        text_color: Some(ink),
+                        ..Default::default()
+                    };
+                    animate(&mut paint, underline.transition, window);
+                    ink = paint.text_color.unwrap_or(ink);
+                }
+                strokes[underline.slot] = Some(ink);
+            }
+            let _ = self.text.paint_with_underline_handler(
                 window,
                 cx,
                 |bytes, origin, width, style, window| {
@@ -220,18 +236,19 @@ impl Element for InlineSource {
                     window.paint_underline(origin, width, &stroke);
                 },
             );
-        if !hitboxes.is_empty() {
-            let hitboxes = std::mem::take(hitboxes);
-            let mut previous = hovered;
-            window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, _| {
-                if phase == DispatchPhase::Capture {
-                    let next = hovered_slot(&hitboxes, window);
-                    if next != previous {
-                        previous = next;
-                        window.refresh();
+            if !hitboxes.is_empty() {
+                let hitboxes = std::mem::take(hitboxes);
+                let mut previous = hovered;
+                window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, _| {
+                    if phase == DispatchPhase::Capture {
+                        let next = hovered_slot(&hitboxes, window);
+                        if next != previous {
+                            previous = next;
+                            window.refresh();
+                        }
                     }
-                }
-            });
+                });
+            }
         }
     }
 }
@@ -258,6 +275,7 @@ pub(crate) struct InlineProse {
     pub(crate) focus_color: Option<Hsla>,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for InlineProse {
     type Element = Self;
     fn into_element(self) -> Self {

@@ -33,6 +33,7 @@ pub enum FillBox {
     Padding,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl From<FillBox> for gpui::BackgroundBox {
     fn from(value: FillBox) -> Self {
         match value {
@@ -82,12 +83,12 @@ impl From<LayeredGradient> for Vec<GradientLayer> {
 impl TryFrom<Vec<GradientLayer>> for LayeredGradient {
     type Error = GradientError;
     fn try_from(mut layers: Vec<GradientLayer>) -> Result<Self, Self::Error> {
-        if layers.len() > gpui::BACKGROUND_LAYER_CAP {
+        if layers.len() > 8 {
             return Err(GradientError::TooManyLayers);
         }
         for layer in &mut layers {
             if layer.repeat_period.is_some_and(|period| {
-                let bounds = gpui::BACKGROUND_REPEAT_PERIOD_LIMITS;
+                let bounds = 0.5_f32..=65536_f32;
                 !(f64::from(*bounds.start())..=f64::from(*bounds.end())).contains(&period)
             }) {
                 return Err(GradientError::RepeatPeriod);
@@ -102,7 +103,7 @@ impl TryFrom<Vec<GradientLayer>> for LayeredGradient {
                 return Err(GradientError::Geometry);
             }
             layer.angle = layer.angle.rem_euclid(360.);
-            if !(2..=gpui::BACKGROUND_STOP_CAP).contains(&layer.stops.len()) {
+            if !(2..=16).contains(&layer.stops.len()) {
                 return Err(GradientError::StopCount);
             }
             let mut previous: Option<(f64, f32)> = None;
@@ -150,6 +151,7 @@ impl LayeredGradient {
         &self.0
     }
 
+    #[cfg(feature = "vendor-gpui")]
     pub(crate) fn native(
         &self,
         mut resolve: impl FnMut(&ColorValue) -> Option<Rgba8>,
@@ -165,7 +167,10 @@ impl LayeredGradient {
                     .iter()
                     .map(|stop| {
                         let color = stop.color.native_ink(&mut resolve)?;
-                        contextual |= matches!(color, gpui::PaintInk::CurrentText { .. });
+                        contextual |= matches!(
+                            color,
+                            crate::presentation_backend::PaintInk::CurrentText { .. }
+                        );
                         Some(gpui::BackgroundStop {
                             offset: f(stop.offset),
                             color,
@@ -196,6 +201,52 @@ impl LayeredGradient {
                 .map(gpui::Fill::Layers)
         }
     }
+
+    #[cfg(not(feature = "vendor-gpui"))]
+    pub(crate) fn native(
+        &self,
+        mut resolve: impl FnMut(&ColorValue) -> Option<Rgba8>,
+    ) -> Option<gpui::Fill> {
+        let Some(layer) = self.0.first() else {
+            return Some(gpui::transparent_black().into());
+        };
+        let mut colors = layer
+            .stops
+            .iter()
+            .map(|stop| {
+                stop.color
+                    .native_ink(&mut resolve)
+                    .map(|ink| ink.resolve(gpui::Hsla::default()))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if let Some(period) = layer.repeat_period {
+            let stripe = colors
+                .into_iter()
+                .max_by(|a, b| a.a.total_cmp(&b.a))
+                .unwrap_or_default();
+            return Some(
+                gpui::pattern_slash(
+                    stripe,
+                    1.0,
+                    crate::renderer::f64_to_f32((period - 1.0).max(1.0)),
+                )
+                .into(),
+            );
+        }
+        let from = colors[0];
+        let mut to = colors.pop()?;
+        if from == to && colors.len() > 1 {
+            to = colors[colors.len() / 2];
+        }
+        Some(
+            gpui::linear_gradient(
+                crate::renderer::f64_to_f32(layer.angle),
+                gpui::linear_color_stop(from, 0.0),
+                gpui::linear_color_stop(to, 1.0),
+            )
+            .into(),
+        )
+    }
 }
 
 type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
@@ -222,7 +273,7 @@ pub(crate) fn paint_color(value: Dynamic) -> RhaiResult<PaintColor> {
 }
 
 pub(crate) fn layered_gradient(values: Array) -> RhaiResult<LayeredGradient> {
-    if values.len() > gpui::BACKGROUND_LAYER_CAP {
+    if values.len() > 8 {
         return Err(invalid(GradientError::TooManyLayers.to_string()));
     }
     let layers = values
@@ -235,7 +286,7 @@ pub(crate) fn layered_gradient(values: Array) -> RhaiResult<LayeredGradient> {
                 .remove("stops")
                 .and_then(Dynamic::try_cast::<Array>)
                 .ok_or_else(|| invalid("gradient layer requires a stops array"))?;
-            if !(2..=gpui::BACKGROUND_STOP_CAP).contains(&stops.len()) {
+            if !(2..=16).contains(&stops.len()) {
                 return Err(invalid(GradientError::StopCount.to_string()));
             }
             let stops = stops

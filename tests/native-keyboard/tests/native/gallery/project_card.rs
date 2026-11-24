@@ -6,6 +6,8 @@ use gpui_rhai::{GeometryBounds, UiValue};
 use super::conversation::{click, gallery, node, ready};
 use crate::support::{bounds, center, click_center, snapshot};
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn has_inset_shadow(
     visual: &mut gpui::VisualTestContext,
     owner: GeometryBounds,
@@ -52,6 +54,8 @@ fn has_inset_shadow(
     })
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn project_status_and_picker_use_distinct_native_paints_in_each_design(cx: &mut TestAppContext) {
     use crate::support::{glyphs_with_ink, live_fills};
@@ -332,3 +336,6 @@ fn project_card_hover_disclosure_and_pinned_member_are_distinct(cx: &mut TestApp
         Some(false)
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

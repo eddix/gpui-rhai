@@ -91,6 +91,7 @@ impl Element for InheritedTextElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for InheritedTextElement {
     type Element = Self;
     fn into_element(self) -> Self::Element {

@@ -1582,15 +1582,17 @@ impl BottomFade {
         }
     }
 
-    pub(crate) const fn into_native(self) -> gpui::BottomFade {
+    pub(crate) const fn into_native(self) -> crate::presentation_backend::BottomFade {
         match self {
-            Self::Off => gpui::BottomFade::Off,
-            Self::Linear { start, end } => gpui::BottomFade::Linear { start, end },
+            Self::Off => crate::presentation_backend::BottomFade::Off,
+            Self::Linear { start, end } => {
+                crate::presentation_backend::BottomFade::Linear { start, end }
+            }
             Self::Edges {
                 horizontal,
                 leading,
                 trailing,
-            } => gpui::BottomFade::Edges {
+            } => crate::presentation_backend::BottomFade::Edges {
                 horizontal,
                 leading,
                 trailing,
@@ -1599,7 +1601,7 @@ impl BottomFade {
                 horizontal,
                 leading,
                 trailing,
-            } => gpui::BottomFade::ScrollEdges {
+            } => crate::presentation_backend::BottomFade::ScrollEdges {
                 horizontal,
                 leading,
                 trailing,
@@ -1783,11 +1785,11 @@ impl PaintRevealX {
         })
     }
 
-    pub(crate) const fn into_native(self) -> gpui::PaintRevealX {
+    pub(crate) const fn into_native(self) -> crate::presentation_backend::PaintRevealX {
         match self {
-            Self::Off => gpui::PaintRevealX::Off,
+            Self::Off => crate::presentation_backend::PaintRevealX::Off,
             Self::FromLeft { radius, progress } => {
-                gpui::PaintRevealX::FromLeft { radius, progress }
+                crate::presentation_backend::PaintRevealX::FromLeft { radius, progress }
             }
         }
     }

@@ -655,6 +655,7 @@ impl Element for ScriptLayerElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ScriptLayerElement {
     type Element = Self;
 
@@ -1151,7 +1152,10 @@ impl ScriptOverlayElement {
         }
 
         if let Some(reveal) = &self.reveal {
-            panel.style().isolated_opacity = Some(true);
+            #[cfg(feature = "vendor-gpui")]
+            {
+                panel.style().isolated_opacity = Some(true);
+            }
             let visual = panel
                 .opacity(crate::renderer::f64_to_f32(reveal.phase))
                 .into_any_element();
@@ -1478,6 +1482,7 @@ fn bounds_to_overlay(bounds: Bounds<Pixels>) -> OverlayBounds {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ScriptOverlayElement {
     type Element = Self;
 

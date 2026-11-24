@@ -6,7 +6,7 @@
 mod differential;
 mod host;
 mod mount;
-mod paint;
+pub(crate) mod paint;
 mod preset_risks;
 mod query;
 mod settle;

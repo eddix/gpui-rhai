@@ -417,3 +417,6 @@ fn trace_waterfall_rescales_in_native_frames_without_reexecuting_rhai(cx: &mut T
             .is_empty()
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

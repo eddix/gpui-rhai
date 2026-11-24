@@ -277,3 +277,6 @@ fn no_profile_means_no_design_rules(cx: &mut TestAppContext) {
     let findings = visual.update(|_, cx| view.composition_audit(cx).unwrap());
     assert!(findings.is_empty(), "{findings:?}");
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

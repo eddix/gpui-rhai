@@ -11,6 +11,8 @@ const MONTH_STORAGE: &str = "Storage, $1,740, 12%";
 const WEEK_INFERENCE: &str = "Inference, $642.5, 41%";
 const WEEK_STORAGE: &str = "Storage, $720, 46%";
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn compact_breakdown_delta_uses_the_signed_surface_and_an_isolated_affine_entry(
     cx: &mut TestAppContext,
@@ -311,3 +313,6 @@ fn compact_breakdown_hover_peeks_and_narrow_keeps_accessible_shares(cx: &mut Tes
     );
     assert!(bounds(&mut visual, &view, "listitem", MONTH_INFERENCE).width < inference.width);
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

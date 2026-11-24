@@ -464,3 +464,6 @@ fn view(ctx){column([text(ctx.get_state("hit")).accessibility_role("status"),
     visual.run_until_parked();
     assert_eq!(status(&mut visual, &view), "none");
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

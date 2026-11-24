@@ -71,6 +71,8 @@ struct WritingBand {
     opacity: f32,
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn writing_bands(scene: &gpui::Scene, bands: &mut Vec<WritingBand>) {
     for fill in &scene.layered_fills {
         if let [front, tint, _card] = &*fill.layers
@@ -100,6 +102,8 @@ fn writing_bands(scene: &gpui::Scene, bands: &mut Vec<WritingBand>) {
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn partial_reveals(scene: &gpui::Scene) -> usize {
     let count: usize = scene
         .isolated_groups
@@ -124,6 +128,8 @@ fn partial_reveals(scene: &gpui::Scene) -> usize {
     count
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn conflict_radar_moves_only_the_writing_band_without_rescheduling_rhai(cx: &mut TestAppContext) {
     for (key, policy) in [
@@ -333,3 +339,6 @@ fn conflict_radar_reveals_actual_edit_ranges_on_native_hover(cx: &mut TestAppCon
         "Atlas: Conflict · Lines 18–24 · Lines 70–84",
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

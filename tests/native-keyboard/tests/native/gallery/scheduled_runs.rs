@@ -204,6 +204,8 @@ fn scheduled_runs_expands_the_selected_name_without_replacing_its_avatar(cx: &mu
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn repeating_period_at(
     v: &mut VisualTestContext,
     view: &ScriptViewHandle,
@@ -551,6 +553,8 @@ fn scheduled_runs_native_drag_places_and_then_moves_a_booked_part(cx: &mut TestA
     held(&mut v, &view, "Wed 12:00", 35);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn scheduled_runs_keyboard_uses_same_proposal_and_blanks_ineligible_windows(
     cx: &mut TestAppContext,
@@ -600,6 +604,8 @@ fn scheduled_runs_keyboard_uses_same_proposal_and_blanks_ineligible_windows(
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn scheduled_runs_pointer_eligibility_paints_after_threshold_and_clears_on_cancel_or_drop(
     cx: &mut TestAppContext,
@@ -927,6 +933,8 @@ fn scheduled_runs_advancing_the_session_retires_a_keyboard_pickup(cx: &mut TestA
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn scheduled_runs_past_keeps_chips_and_meter_opacity_on_their_own_surfaces(
     cx: &mut TestAppContext,
@@ -1061,3 +1069,6 @@ fn scheduled_runs_past_keeps_chips_and_meter_opacity_on_their_own_surfaces(
         node(&mut v, &view, "dialog", "Reindex archive");
     }
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

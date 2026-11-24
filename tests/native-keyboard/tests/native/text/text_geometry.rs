@@ -374,3 +374,6 @@ fn wrap_exclusion_uses_real_font_rows_and_preserves_graphemes(cx: &mut TestAppCo
     }
     assert_eq!(left.grapheme_count(), right.grapheme_count());
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

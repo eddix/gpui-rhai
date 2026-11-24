@@ -1961,6 +1961,8 @@ fn rotatable_page_turns_from_anywhere_in_the_area(cx: &mut TestAppContext) {
     assert_eq!(value, Some(UiValue::Float(30.0)));
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn backdrop_foundation_combines_parent_read_group_opacity_and_foreground_blur(
     cx: &mut TestAppContext,
@@ -2043,6 +2045,8 @@ fn backdrop_foundation_combines_parent_read_group_opacity_and_foreground_blur(
     no_error(&mut visual, &view);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[cfg(target_os = "macos")]
 #[gpui::test]
 fn backdrop_foundation_transmission_recovers_after_budget_failure(cx: &mut TestAppContext) {
@@ -2247,3 +2251,6 @@ fn the_source_sits_beside_the_page_and_resizes(cx: &mut TestAppContext) {
         "{wider:?} -> {again:?}"
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

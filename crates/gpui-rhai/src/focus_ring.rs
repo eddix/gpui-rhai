@@ -183,6 +183,7 @@ impl Element for FocusRingElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for FocusRingElement {
     type Element = Self;
     fn into_element(self) -> Self {

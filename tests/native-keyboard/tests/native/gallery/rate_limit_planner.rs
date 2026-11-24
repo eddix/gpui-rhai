@@ -66,6 +66,8 @@ fn rate_limit_planner_hover_reads_exact_minutes_and_insets_at_the_trailing_edge(
     assert!(tip(&mut v).is_none(), "leaving the plot clears the readout");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn rate_limit_planner_distinguishes_history_forecast_and_over_limit_stroke(
     cx: &mut TestAppContext,
@@ -170,6 +172,8 @@ fn rate_limit_planner_distinguishes_history_forecast_and_over_limit_stroke(
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn rate_limit_planner_warning_enters_with_the_forecast_not_at_its_final_value(
     cx: &mut TestAppContext,
@@ -458,6 +462,8 @@ fn rate_limit_planner_warning_enters_with_the_forecast_not_at_its_final_value(
     assert!(!paint(&mut v).0);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn rate_limit_planner_running_sheen_tracks_actual_bar_width_without_script_frames(
     cx: &mut TestAppContext,
@@ -625,6 +631,8 @@ fn rate_limit_planner_keeps_the_focused_slider_through_a_responsive_resize(
     assert!(moved.description.contains("07:15"));
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn rate_limit_planner_places_time_flags_and_quiets_only_the_label(cx: &mut TestAppContext) {
     use crate::support::{Rect, glyph_rects_with_ink, logical_paint_rect, walk_live_paint};
@@ -771,6 +779,8 @@ fn rate_limit_planner_places_time_flags_and_quiets_only_the_label(cx: &mut TestA
     clear_of_header(&mut v, &enlarged_ink);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn rate_limit_planner_late_clock_keeps_flags_separate_and_marks_the_planned_peak(
     cx: &mut TestAppContext,
@@ -856,6 +866,8 @@ fn rate_limit_planner_late_clock_keeps_flags_separate_and_marks_the_planned_peak
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn rate_limit_planner_overflow_uses_native_hatches_with_independent_periods(
     cx: &mut TestAppContext,
@@ -1266,3 +1278,6 @@ fn rate_limit_planner_narrow_edit_and_add_use_real_controls(cx: &mut TestAppCont
     node(&mut v, &view, "slider", "New run");
     node(&mut v, &view, "dialog", "Edit New run");
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

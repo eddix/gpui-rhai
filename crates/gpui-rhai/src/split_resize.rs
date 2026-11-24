@@ -84,6 +84,7 @@ struct SplitResizeHandle {
     events: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for SplitResizeHandle {
     type Element = Self;
 

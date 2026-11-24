@@ -122,12 +122,23 @@ fn view(ctx) { column([
                 scene,
                 gpui::TransformationMatrix::unit(),
                 &mut |scene, transform| {
+                    #[cfg(feature = "vendor-gpui")]
                     paths.extend(
                         scene
                             .paths
                             .iter()
                             .map(|path| logical_paint_rect(path.bounds, transform, scale)),
                     );
+                    #[cfg(not(feature = "vendor-gpui"))]
+                    for path in &scene.paths {
+                        let mut paints = Vec::new();
+                        path.append_to(&mut paints, &mut Vec::new(), &mut Vec::new());
+                        paths.extend(
+                            paints
+                                .iter()
+                                .map(|paint| logical_paint_rect(paint.bounds, transform, scale)),
+                        );
+                    }
                 },
             );
             paths
@@ -407,3 +418,6 @@ fn built_in_text_reads_in_english_without_a_locale(cx: &mut TestAppContext) {
         ]
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

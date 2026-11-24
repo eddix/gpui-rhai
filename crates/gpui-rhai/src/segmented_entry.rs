@@ -1,6 +1,8 @@
 //! Discrete presentation of one native `TextBuffer`. The separators never exist
 //! in text, clipboard payloads or the UTF-16 domain.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::ops::Range;
 
 use gpui::{
@@ -89,7 +91,7 @@ struct SlotSkin {
     edge: Hsla,
     edge_width: Pixels,
     radius: Pixels,
-    shadows: gpui::ShadowStack,
+    shadows: crate::presentation_backend::ShadowStack,
 }
 
 impl SlotSkin {
@@ -131,13 +133,21 @@ impl SlotSkin {
 
     fn paint_radius(&self, bounds: Bounds<Pixels>, radius: Pixels, window: &mut Window) {
         let corners = gpui::Corners::all(radius);
-        let shadows = self.shadows.resolve(|| window.text_style().color);
+        #[cfg(feature = "vendor-gpui")]
+        let native_shadows = self.shadows.resolve(|| window.text_style().color);
+        #[cfg(feature = "vendor-gpui")]
+        let shadows = native_shadows.as_slice();
+        #[cfg(not(feature = "vendor-gpui"))]
+        let shadows = self.shadows.as_slice();
+        #[cfg(feature = "vendor-gpui")]
         window.paint_drop_shadows_with_clip(
             bounds,
             corners,
-            &shadows,
+            shadows,
             gpui::OuterShadowClip::BorderBox,
         );
+        #[cfg(not(feature = "vendor-gpui"))]
+        window.paint_drop_shadows(bounds, corners, shadows);
         window.paint_quad(quad(
             bounds,
             corners,
@@ -146,7 +156,7 @@ impl SlotSkin {
             self.edge,
             gpui::BorderStyle::default(),
         ));
-        window.paint_inset_shadows(bounds, corners, &shadows);
+        window.paint_inset_shadows(bounds, corners, shadows);
     }
 }
 
@@ -243,6 +253,7 @@ impl SuccessSkin {
         let run = |text: &str| TextRun {
             len: text.len(),
             font: style.font(),
+            #[cfg(feature = "vendor-gpui")]
             letter_spacing: style.letter_spacing,
             color: self.ink.unwrap_or(style.color),
             background_color: None,
@@ -630,6 +641,7 @@ fn shape_digit(
         &[TextRun {
             len: value.len(),
             font: style.font(),
+            #[cfg(feature = "vendor-gpui")]
             letter_spacing: style.letter_spacing,
             color: style.color,
             background_color: None,
@@ -637,7 +649,9 @@ fn shape_digit(
             underline: marked.then_some(UnderlineStyle {
                 color: None,
                 thickness: px(1.),
+                #[cfg(feature = "vendor-gpui")]
                 paint_tag: None,
+                #[cfg(feature = "vendor-gpui")]
                 baseline_offset: None,
                 wavy: false,
             }),

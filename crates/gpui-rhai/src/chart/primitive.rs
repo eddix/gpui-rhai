@@ -2051,6 +2051,7 @@ impl Element for ChartBoundsRecorder {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ChartBoundsRecorder {
     type Element = Self;
     fn into_element(self) -> Self::Element {

@@ -911,6 +911,7 @@ impl Element for ScriptViewHostFrame {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ScriptViewHostFrame {
     type Element = Self;
 
@@ -985,6 +986,7 @@ impl Element for SharedLayerPortalElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for SharedLayerPortalElement {
     type Element = Self;
 
@@ -2298,6 +2300,7 @@ impl Element for ReanchoredContent {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ReanchoredContent {
     type Element = Self;
 
@@ -2306,6 +2309,7 @@ impl IntoElement for ReanchoredContent {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for MeasuredScriptViewElement {
     type Element = Self;
 
@@ -6120,7 +6124,7 @@ impl ScriptHostView {
     ) -> impl Fn(
         &str,
         crate::NodeId,
-        &mut gpui::ComputedPaint,
+        &mut crate::presentation_backend::ComputedPaint,
         crate::paint_motion::PaintTransition,
         Instant,
         &mut Window,

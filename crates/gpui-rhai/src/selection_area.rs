@@ -1,5 +1,7 @@
 //! Controlled Canvas object selection with native click/range/marquee preview.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::collections::{BTreeMap, BTreeSet};
 
 use gpui::{

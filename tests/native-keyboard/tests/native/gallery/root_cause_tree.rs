@@ -8,6 +8,7 @@ use gpui_rhai::{
 use gpui_rhai_cli::acceptance::{self, AcceptanceLaunch};
 
 use super::acceptance::action;
+#[cfg(feature = "vendor-gpui")]
 use super::collaboration_stream::glyph_band_center;
 use super::conversation::{click, gallery, node, ready};
 use crate::support::{Host, Mount, PresetRisks, bounds, live_fills, snapshot};
@@ -388,6 +389,8 @@ fn root_cause_tree_navigation_and_identities_survive_reflow(cx: &mut TestAppCont
     node(&mut v, &view, "heading", "Role not granted evidence");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn proof_extent(scene: &gpui::Scene) -> f32 {
     let mut h = 0.;
     for p in &scene.paths {
@@ -411,6 +414,7 @@ fn proof_extent(scene: &gpui::Scene) -> f32 {
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn root_cause_tree_accepted_path_draws_on_the_native_clock(cx: &mut TestAppContext) {
     let clock = ManualRuntimeClock::new(Instant::now());
     let prepared = acceptance::view(&AcceptanceLaunch {
@@ -454,6 +458,7 @@ fn root_cause_tree_accepted_path_draws_on_the_native_clock(cx: &mut TestAppConte
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn root_cause_tree_checking_uses_a_glyph_sweep_and_clears_it_on_proof(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -517,3 +522,6 @@ fn root_cause_tree_checking_uses_a_glyph_sweep_and_clears_it_on_proof(cx: &mut T
         assert_eq!(sample(&mut v), None);
     }
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

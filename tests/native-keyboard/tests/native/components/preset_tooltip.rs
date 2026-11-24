@@ -89,6 +89,8 @@ fn assert_shortcut_alpha(
     });
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn tooltip_presets_keep_inverse_polarity_and_single_authored_shortcut_alpha(
     cx: &mut TestAppContext,
@@ -178,3 +180,6 @@ fn tooltip_presets_keep_inverse_polarity_and_single_authored_shortcut_alpha(
         }
     }
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

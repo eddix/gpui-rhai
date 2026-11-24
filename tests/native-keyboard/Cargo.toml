@@ -9,16 +9,16 @@ autotests = false
 [workspace]
 
 [dependencies]
-gpui = { package = "gpui-pre", version = "=0.3.11", default-features = false, features = ["font-kit", "test-support"], optional = true }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11", "test-support"], optional = true }
-gpui-fast = { package = "gpui-fast", version = "=0.1.13", default-features = false, features = ["font-kit", "wayland", "x11", "test-support"], optional = true }
-gpui-fast-platform = { package = "gpui-fast-platform", version = "=0.1.13", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11", "test-support"], optional = true }
+gpui = { package = "gpui-pre", version = "=0.3.14", default-features = false, features = ["font-kit", "test-support", "bench-support"], optional = true }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11", "test-support"], optional = true }
+gpui-fast = { package = "gpui-fast", version = "=0.1.19", default-features = false, features = ["font-kit", "wayland", "x11", "test-support", "bench-support"], optional = true }
+gpui-fast-platform = { package = "gpui-fast-platform", version = "=0.1.19", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11", "test-support"], optional = true }
 gpui-rhai = { path = "../../crates/gpui-rhai", default-features = false, features = ["charts"] }
 gpui-rhai-cli = { path = "../../crates/gpui-rhai-cli", default-features = false, features = ["test-support"] }
 gpui-rhai-registry = { path = "../../registry" }
 image = { version = "0.25", default-features = false, features = ["png"] }
-apple_pre = { package = "gpui-pre-apple", version = "=0.3.11", default-features = false, features = ["font-kit", "runtime_shaders"], optional = true }
-apple_fast = { package = "gpui-fast-apple", version = "=0.1.13", default-features = false, features = ["font-kit", "runtime_shaders"], optional = true }
+apple_pre = { package = "gpui-pre-apple", version = "=0.3.14", default-features = false, features = ["font-kit", "runtime_shaders"], optional = true }
+apple_fast = { package = "gpui-fast-apple", version = "=0.1.19", default-features = false, features = ["font-kit", "runtime_shaders"], optional = true }
 semver = "1"
 serde_json = "1"
 
@@ -28,6 +28,7 @@ tempfile = "3"
 
 [features]
 default = ["gpui-pre"]
+vendor-gpui = ["gpui-rhai/vendor-gpui", "gpui-rhai-cli/vendor-gpui"]
 gpui-pre = ["dep:gpui", "dep:gpui_platform", "gpui-rhai/offscreen-pre", "gpui-rhai-cli/gpui-pre", "dep:apple_pre"]
 gpui-fast = ["dep:gpui-fast", "dep:gpui-fast-platform", "gpui-rhai/offscreen-fast", "gpui-rhai-cli/gpui-fast", "dep:apple_fast"]
 # Mounted hot-reload tests: `cargo test --features dev-reload --test token_reload`.

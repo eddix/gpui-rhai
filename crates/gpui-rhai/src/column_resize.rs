@@ -105,6 +105,7 @@ struct ColumnResizeHandle {
     measurements: ColumnMeasurementRegistry,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ColumnResizeHandle {
     type Element = Self;
 
@@ -461,6 +462,7 @@ struct IntrinsicTextMeasureElement {
     measurements: ColumnMeasurementRegistry,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for IntrinsicTextMeasureElement {
     type Element = Self;
 

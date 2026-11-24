@@ -16,4 +16,6 @@ mod tab_stops;
 mod tag_input;
 mod text_fields;
 mod textarea_counter;
+// Requires the vendor's transform/shaping probe.
+#[cfg(feature = "vendor-gpui")]
 mod transformed_geometry;

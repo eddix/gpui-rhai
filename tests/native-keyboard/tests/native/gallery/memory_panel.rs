@@ -121,6 +121,8 @@ fn memory_panel_footer_action_keeps_its_preset_size_and_body_ink(cx: &mut TestAp
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn horizontal_fades(visual: &mut gpui::VisualTestContext) -> usize {
     visual.update(|window, _| {
         window.visual_probe_with_painted_scene(|scene| {
@@ -276,6 +278,7 @@ fn view(ctx) {
     let before = end.geometry.unwrap();
     assert!((before.visual.y - all.y).abs() <= 0.5);
     assert!(before.clip.is_some_and(|g| g.width < 0.5), "{before:?}");
+    #[cfg(feature = "vendor-gpui")]
     assert_eq!(
         horizontal_fades(&mut v),
         1,
@@ -301,6 +304,7 @@ fn view(ctx) {
             .is_none_or(|g| g.width >= after.visual.width - 0.5),
         "{after:?}"
     );
+    #[cfg(feature = "vendor-gpui")]
     assert_eq!(
         horizontal_fades(&mut v),
         0,
@@ -311,6 +315,7 @@ fn view(ctx) {
     let returned = node(&mut v, &view, "radio", "All");
     assert_eq!(returned.checked, Some(UiValue::Bool(true)));
     assert!((returned.geometry.unwrap().visual.x - all.x).abs() <= 0.5);
+    #[cfg(feature = "vendor-gpui")]
     assert_eq!(
         horizontal_fades(&mut v),
         1,
@@ -325,7 +330,10 @@ fn view(ctx) {
             ..Default::default()
         });
         ready(&mut v, &view);
+        #[cfg(feature = "vendor-gpui")]
         assert_eq!(horizontal_fades(&mut v), expected, "wheel delta {dx}");
+        #[cfg(not(feature = "vendor-gpui"))]
+        let _ = expected;
         assert_eq!(
             node(&mut v, &view, "radio", "All").checked,
             Some(UiValue::Bool(true))
@@ -448,3 +456,6 @@ fn memory_panel_adds_via_native_editor_and_can_switch_categories(cx: &mut TestAp
         "Edit memory: Prefers natural light",
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

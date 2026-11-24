@@ -345,6 +345,8 @@ fn agent_cursors_table_commands_and_comment_reply_are_live(cx: &mut TestAppConte
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn agent_cursors_away_follows_the_host_without_losing_its_group_fade(cx: &mut TestAppContext) {
     use crate::support::{logical_paint_rect, walk_live_paint};
@@ -466,6 +468,8 @@ fn agent_cursors_follow_reveals_a_later_target_without_a_document_edit(cx: &mut 
     node(&mut visual, &view, "button", "Follow Mira");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn native_fades(scene: &gpui::Scene) -> usize {
     let groups = scene
         .isolated_groups
@@ -489,9 +493,11 @@ fn agent_cursors_page_fade_preserves_scroll_identity_and_review_hits(cx: &mut Te
     let (mut visual, view) = gallery(cx, "agent_cursors", "modern-dark");
     visual.simulate_resize(size(px(1150.0), px(940.0)));
     ready(&mut visual, &view);
+    #[cfg(feature = "vendor-gpui")]
     let inspect = |visual: &mut VisualTestContext| {
         visual.update(|window, _| window.visual_probe_with_painted_scene(native_fades))
     };
+    #[cfg(feature = "vendor-gpui")]
     assert_eq!(inspect(&mut visual), 1);
     let heading = node(&mut visual, &view, "heading", "Launch brief");
     let before = heading.geometry.unwrap().visual;
@@ -504,11 +510,13 @@ fn agent_cursors_page_fade_preserves_scroll_identity_and_review_hits(cx: &mut Te
     let scrolled = bounds(&mut visual, &view, "heading", "Launch brief");
     assert!(scrolled.y < before.y - 15.0);
     click(&mut visual, &view, "button", "Disable page fade");
+    #[cfg(feature = "vendor-gpui")]
     assert_eq!(inspect(&mut visual), 0);
     let real = node(&mut visual, &view, "heading", "Launch brief");
     assert_eq!(real.id, heading.id);
     assert!((real.geometry.unwrap().visual.y - scrolled.y).abs() < 1.0);
     click(&mut visual, &view, "button", "Enable page fade");
+    #[cfg(feature = "vendor-gpui")]
     assert_eq!(inspect(&mut visual), 1);
     assert!((bounds(&mut visual, &view, "heading", "Launch brief").y - scrolled.y).abs() < 1.0);
     click(&mut visual, &view, "button", "Open comment · notice/thread");
@@ -715,3 +723,6 @@ fn agent_cursors_leading_float_reflows_real_review_anchors(cx: &mut TestAppConte
     );
     assert!(!published.nodes().any(|n| n.name == label));
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

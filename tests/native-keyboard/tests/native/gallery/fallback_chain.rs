@@ -156,6 +156,7 @@ fn fallback_chain_progress_fits_the_native_strip_and_preserves_the_fraction(
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn fallback_chain_running_numbers_sweep_then_rest_without_advancing_the_host(
     cx: &mut TestAppContext,
 ) {
@@ -349,6 +350,8 @@ fn fallback_chain_retry_needs_host_acceptance_and_the_narrow_tree_keeps_response
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn fallback_chain_pulse_uses_native_frames_and_not_a_second_script_clock(cx: &mut TestAppContext) {
     let clock = ManualRuntimeClock::new(Instant::now());
@@ -438,3 +441,6 @@ fn fallback_chain_24_attempts_fit_an_embedded_mount(cx: &mut TestAppContext) {
     );
     node(&mut v, &view, "status", "Waiting · 0ms · $0");
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

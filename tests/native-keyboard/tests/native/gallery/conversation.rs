@@ -577,11 +577,15 @@ fn gallery_run_controls_policy_is_controlled_and_escape_closes_menu_first(cx: &m
     assert!(text_of(&mut visual, &view, "run-host-progress").starts_with("stopped"));
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn textarea_alt_submit_does_not_commit_marked_input(cx: &mut TestAppContext) {
     verify_textarea_alternate_composition(cx, "alt_enter", "alt-enter");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn textarea_modifier_alt_submit_does_not_commit_marked_input(cx: &mut TestAppContext) {
     verify_textarea_alternate_composition(
@@ -595,6 +599,8 @@ fn textarea_modifier_alt_submit_does_not_commit_marked_input(cx: &mut TestAppCon
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn verify_textarea_alternate_composition(cx: &mut TestAppContext, mode: &str, key: &str) {
     let source = r#"
         import "components/textarea" as area;

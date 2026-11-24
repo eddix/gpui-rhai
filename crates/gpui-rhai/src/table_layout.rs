@@ -6,9 +6,11 @@
 
 use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
+#[cfg(feature = "vendor-gpui")]
+use gpui::IntoElement;
 use gpui::{
-    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, Pixels, ScrollHandle, SharedString, Window, point, px,
+    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, LayoutId,
+    Pixels, ScrollHandle, SharedString, Window, point, px,
 };
 use rhai::{Array, EvalAltResult, FLOAT, INT, Map, Position};
 
@@ -370,6 +372,7 @@ impl TableViewportElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for TableViewportElement {
     type Element = Self;
     fn into_element(self) -> Self {

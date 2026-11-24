@@ -27,6 +27,8 @@ fn absent(v: &mut VisualTestContext, view: &ScriptViewHandle, name: &str) -> boo
         .is_none()
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[cfg(target_os = "macos")]
 fn grayscale_samples(v: &mut VisualTestContext) -> Vec<(f32, f32)> {
     fn collect(scene: &gpui::Scene, samples: &mut Vec<(f32, f32)>) {
@@ -53,6 +55,8 @@ fn grayscale_samples(v: &mut VisualTestContext) -> Vec<(f32, f32)> {
     })
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[cfg(target_os = "macos")]
 fn grayscale_marks(v: &mut VisualTestContext) -> usize {
     let samples = grayscale_samples(v);
@@ -63,6 +67,8 @@ fn grayscale_marks(v: &mut VisualTestContext) -> usize {
     samples.len()
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[cfg(target_os = "macos")]
 #[gpui::test]
 fn gallery_agent_ledger_staggers_accepted_marks_and_fades_on_restore(cx: &mut TestAppContext) {
@@ -157,6 +163,8 @@ fn gallery_agent_ledger_previews_transitive_and_irreversible_dependents_without_
     assert_eq!(bounds(&mut v, &view, "listitem", PAGE), before);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn gallery_agent_ledger_pending_and_refused_batches_preserve_state_and_redo_is_exact(
     cx: &mut TestAppContext,
@@ -339,3 +347,6 @@ fn agent_ledger_checks_all_sixty_four_graph_bits_and_fails_cycles_before_present
     let parent = bounds(&mut v, &view, "listitem", "Change 63").y;
     assert!(parent < bounds(&mut v, &view, "listitem", "Change 62").y);
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

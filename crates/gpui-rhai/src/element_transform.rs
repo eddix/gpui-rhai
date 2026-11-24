@@ -1,4 +1,6 @@
 //! One sampled element affine for presentation and native input coordinates.
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use crate::{Affine2D, StyleValueError, renderer::f64_to_f32};
 use gpui::{
     AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
@@ -126,6 +128,7 @@ struct AffineElement {
     affine: AffineSource,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for AffineElement {
     type Element = Self;
 

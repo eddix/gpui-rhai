@@ -49,6 +49,7 @@ struct RotationElement {
     context: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for RotationElement {
     type Element = Self;
 

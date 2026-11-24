@@ -223,6 +223,32 @@ jobs:
       - name: Test
         run: cargo test --manifest-path apps/Cargo.toml --locked
 
+  # Native extensions are opt-in; the public jobs above use released GPUI.
+  vendor:
+    if: github.event_name != 'schedule'
+    runs-on: macos-15
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [pre, fast]
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      GPUI_SCROLL_LAYERS: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+      - name: Check the vendor graph
+        run: bash scripts/with-vendor-gpui.sh sdk ${{ matrix.backend }} check -p gpui-rhai-cli
+      - name: Mount the shared Gallery on the vendor backend
+        run: bash scripts/with-vendor-gpui.sh native ${{ matrix.backend }} test --test native
+      - name: Check the repository app under vendor Pre
+        if: matrix.backend == 'pre'
+        run: bash scripts/with-vendor-gpui.sh apps pre test
+
   # The latest stable toolchain and the opt-in Grain backend. A new stable
   # release can break them without any change here, so they also run weekly.
   stable:
@@ -257,7 +283,7 @@ jobs:
   # changing the repository settings. A job skipped by its own `if` passes.
   ci-ok:
     if: always()
-    needs: [portable, native, fast, release, apps, stable]
+    needs: [portable, native, fast, release, apps, stable, vendor]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

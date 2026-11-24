@@ -1,3 +1,5 @@
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::rc::Rc;
@@ -858,6 +860,7 @@ struct TextAreaPrepaint {
     selection: Vec<PaintQuad>,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for TextAreaElement {
     type Element = Self;
 
@@ -922,6 +925,7 @@ impl Element for TextAreaElement {
         let base = TextRun {
             len: content.len(),
             font: text_style.font(),
+            #[cfg(feature = "vendor-gpui")]
             letter_spacing: text_style.letter_spacing,
             color,
             background_color: None,
@@ -1043,7 +1047,9 @@ fn marked_runs(base: &TextRun, marked: Option<&Range<usize>>, len: usize) -> Vec
             underline: Some(UnderlineStyle {
                 color: Some(base.color),
                 thickness: px(1.0),
+                #[cfg(feature = "vendor-gpui")]
                 paint_tag: None,
+                #[cfg(feature = "vendor-gpui")]
                 baseline_offset: None,
                 wavy: false,
             }),

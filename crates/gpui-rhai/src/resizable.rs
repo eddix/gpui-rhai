@@ -176,6 +176,7 @@ struct ResizableHandleElement {
     events: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ResizableHandleElement {
     type Element = Self;
 

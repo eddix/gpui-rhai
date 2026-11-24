@@ -46,6 +46,8 @@ fn judge_bracket_answer_metadata_uses_the_quiet_11px_recipe(cx: &mut TestAppCont
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn active_glyph_ink(scene: &gpui::Scene, positions: &mut Vec<f32>) {
     for group in &scene.isolated_groups {
         let ink = group.glyph_ink();
@@ -69,6 +71,8 @@ fn active_glyph_ink(scene: &gpui::Scene, positions: &mut Vec<f32>) {
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn judge_bracket_replaces_ink_only_in_the_active_match(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
@@ -254,6 +258,8 @@ fn judge_bracket_bye_navigation_and_match_identity_survive_reflow(cx: &mut TestA
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn winner_path_extent(scene: &gpui::Scene) -> f32 {
     let h = scene
         .paths
@@ -280,6 +286,7 @@ fn winner_path_extent(scene: &gpui::Scene) -> f32 {
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn judge_bracket_draws_the_accepted_champion_path_on_the_runtime_clock(cx: &mut TestAppContext) {
     let clock = ManualRuntimeClock::new(Instant::now());
     let prepared = acceptance::view(&AcceptanceLaunch {
@@ -316,3 +323,6 @@ fn judge_bracket_draws_the_accepted_champion_path_on_the_runtime_clock(cx: &mut 
     let end = measure(&mut v);
     assert!(part > 0. && end > part + 7., "{part} to {end}");
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

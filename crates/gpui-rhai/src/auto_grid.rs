@@ -259,6 +259,7 @@ pub(crate) struct Frame {
     count: usize,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for AutoGridElement {
     type Element = Self;
     fn into_element(self) -> Self {

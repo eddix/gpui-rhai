@@ -1,3 +1,5 @@
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -74,7 +76,7 @@ struct RepeatClickBinding {
 type PaintMotionFn = dyn Fn(
     &str,
     NodeId,
-    &mut gpui::ComputedPaint,
+    &mut crate::presentation_backend::ComputedPaint,
     crate::paint_motion::PaintTransition,
     Instant,
     &mut Window,
@@ -198,7 +200,7 @@ impl NodeEventDispatcher {
         driver: impl Fn(
             &str,
             NodeId,
-            &mut gpui::ComputedPaint,
+            &mut crate::presentation_backend::ComputedPaint,
             crate::paint_motion::PaintTransition,
             Instant,
             &mut Window,
@@ -1559,6 +1561,7 @@ impl Element for PointerCaptureRouterElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for PointerCaptureRouterElement {
     type Element = Self;
 
@@ -4258,6 +4261,7 @@ fn text_node_content<C: ColorResolver>(
             }
             .into_any_element();
         }
+        #[cfg(feature = "vendor-gpui")]
         if let Some(exclusion) = node.wrap_exclusion() {
             return StyledText::new(text.to_owned())
                 .with_prefix_exclusion(exclusion)
@@ -4296,6 +4300,7 @@ struct GlyphSweepElement {
     travel: Option<f32>,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for GlyphSweepElement {
     type Element = Self;
     fn into_element(self) -> Self {
@@ -4346,6 +4351,12 @@ impl Element for GlyphSweepElement {
         window: &mut Window,
         cx: &mut App,
     ) {
+        #[cfg(not(feature = "vendor-gpui"))]
+        {
+            let _ = (self.travel, self.phase, self.half_width, self.color, bounds);
+            text.paint(window, cx);
+        }
+        #[cfg(feature = "vendor-gpui")]
         if let Some(travel) = self.travel {
             window.with_glyph_ink_sweep(
                 bounds,
@@ -4363,12 +4374,18 @@ impl Element for GlyphSweepElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 fn render_wrap_exclusion(text: StyledText, node: &UiNode) -> StyledText {
     if let Some(exclusion) = node.wrap_exclusion() {
         text.with_prefix_exclusion(exclusion)
     } else {
         text
     }
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+fn render_wrap_exclusion(text: StyledText, _: &UiNode) -> StyledText {
+    text
 }
 
 fn render_virtual_collection<C: ColorResolver>(
@@ -5382,15 +5399,23 @@ fn styled_text(
                 let mut paint = gpui::UnderlineStyle {
                     thickness: px(1.0),
                     color: None,
+                    #[cfg(feature = "vendor-gpui")]
                     paint_tag: None,
+                    #[cfg(feature = "vendor-gpui")]
                     baseline_offset: None,
                     wavy: false,
                 };
                 if let Some(decoration) = span.underline_paint() {
                     paint.thickness = px(to_f32(decoration.width));
-                    paint.paint_tag = decoration.hover.and_then(|_| u32::try_from(start).ok());
-                    paint.baseline_offset =
-                        decoration.baseline_offset.map(|offset| px(to_f32(offset)));
+                    #[cfg(feature = "vendor-gpui")]
+                    {
+                        paint.paint_tag = decoration.hover.and_then(|_| u32::try_from(start).ok());
+                    }
+                    #[cfg(feature = "vendor-gpui")]
+                    {
+                        paint.baseline_offset =
+                            decoration.baseline_offset.map(|offset| px(to_f32(offset)));
+                    }
                     paint.color = colors
                         .resolve(&decoration.color)
                         .map(|color| rgba(color.as_rgba_hex()).into());
@@ -5595,6 +5620,7 @@ fn paint_canvas_scene(
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 fn paint_canvas_bands(
     frame: &CanvasDrawState,
     viewport: crate::CanvasClipRect,
@@ -5636,6 +5662,39 @@ fn paint_canvas_bands(
                 );
             }
             _ => unreachable!("foreground was resolved"),
+        });
+    });
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+fn paint_canvas_bands(
+    frame: &CanvasDrawState,
+    viewport: crate::CanvasClipRect,
+    bands: &crate::canvas::CanvasThresholdBands,
+    colors: &impl ColorResolver,
+    window: &mut Window,
+) {
+    let Some(fill) = resolve_background(&bands.fill, colors) else {
+        return;
+    };
+    let bounds = frame.fixed_rect(viewport);
+    bands.for_each_span(frame.motion.path_progress.unwrap_or(1.), |left, right| {
+        let left = left.max(viewport.x);
+        let right = right.min(viewport.x + viewport.width);
+        if right <= left {
+            return;
+        }
+        let mask = ContentMask {
+            bounds: frame.fixed_rect(crate::CanvasClipRect {
+                x: left,
+                width: right - left,
+                ..viewport
+            }),
+        };
+        window.with_content_mask(Some(mask), |window| {
+            if let Some(color) = fill.color() {
+                window.paint_quad(gpui::fill(bounds, color));
+            }
         });
     });
 }
@@ -5821,6 +5880,7 @@ fn populate_box<C: ColorResolver>(
     path: &str,
     retained_id: Option<NodeId>,
 ) -> AnyElement {
+    #[cfg(feature = "vendor-gpui")]
     if let Some(flow) = node.leading_float(environment.direction)
         && children.len() > 1
     {
@@ -7485,6 +7545,7 @@ struct AnchoredText {
     capture: TextAnchorCapture,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for AnchoredText {
     type Element = Self;
 
@@ -7731,6 +7792,7 @@ impl Element for SelectableText {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for SelectableText {
     type Element = Self;
 
@@ -7782,6 +7844,7 @@ struct GeometryTrackedElement {
     translate_fraction: Point<f32>,
     affine: Option<crate::ElementTransform>,
     layout_motion: Option<LayoutMotionRenderSpec>,
+    #[cfg_attr(not(feature = "vendor-gpui"), allow(dead_code))]
     size_motion: Option<LayoutSizeMotionBinding>,
     progress_motions: Vec<crate::MotionProgressBinding>,
     press_motion_enabled: bool,
@@ -7792,6 +7855,7 @@ struct GeometryTrackedElement {
     motion_preference: crate::MotionPreference,
 }
 
+#[cfg_attr(not(feature = "vendor-gpui"), allow(dead_code))]
 struct LayoutSizeMotionBinding {
     driver: Rc<LayoutSizeMotionFn>,
     path: String,
@@ -7850,6 +7914,7 @@ impl Element for GeometryTrackedElement {
     ) -> (LayoutId, Self::RequestLayoutState) {
         let mut child = self.child.take().expect("tracked element renders once");
         let layout = child.request_layout(window, cx);
+        #[cfg(feature = "vendor-gpui")]
         if let Some(binding) = &self.size_motion {
             let spec = crate::paint_motion::LayoutSizeTransition {
                 key: &binding.content,
@@ -8168,6 +8233,7 @@ impl Element for GeometryTrackedElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for GeometryTrackedElement {
     type Element = Self;
 
@@ -8227,6 +8293,7 @@ impl Element for TranslatedElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for TranslatedElement {
     type Element = Self;
 
@@ -8244,16 +8311,16 @@ fn semantic_color(colors: &impl ColorResolver, token: &str, fallback: u32) -> Rg
 #[derive(Clone, Default)]
 struct PseudoPaint {
     background: Option<gpui::Fill>,
-    border: Option<gpui::PaintInk>,
+    border: Option<crate::presentation_backend::PaintInk>,
     text: Option<Rgba8>,
     inherited_text: bool,
     opacity: Option<f32>,
-    bottom_fade: Option<gpui::BottomFade>,
-    paint_reveal_x: Option<gpui::PaintRevealX>,
+    bottom_fade: Option<crate::presentation_backend::BottomFade>,
+    paint_reveal_x: Option<crate::presentation_backend::PaintRevealX>,
     foreground_blur: Option<f32>,
     foreground_grayscale: Option<f32>,
     backdrop_blur: Option<f32>,
-    shadows: Option<gpui::ShadowStack>,
+    shadows: Option<crate::presentation_backend::ShadowStack>,
 }
 
 impl PseudoPaint {
@@ -8330,7 +8397,15 @@ fn apply_pseudo_paint(
         style = native_shadows(style, shadows.clone());
     }
     if let Some(color) = paint.border {
-        style.style().border_color = Some(color);
+        #[cfg(feature = "vendor-gpui")]
+        {
+            style.style().border_color = Some(color);
+        }
+        #[cfg(not(feature = "vendor-gpui"))]
+        {
+            style.style().border_color =
+                Some(color.resolve_hsla(inherited.unwrap_or_else(|| rgba(0x1717_17ff).into())));
+        }
     }
     if paint.inherited_text
         && let Some(color) = inherited
@@ -8342,18 +8417,23 @@ fn apply_pseudo_paint(
     if let Some(opacity) = paint.opacity {
         style = style.opacity(opacity);
     }
+    #[cfg(feature = "vendor-gpui")]
     if let Some(sigma) = paint.foreground_blur {
         style.style().foreground_blur = Some(sigma);
     }
+    #[cfg(feature = "vendor-gpui")]
     if let Some(amount) = paint.foreground_grayscale {
         style.style().foreground_grayscale = Some(amount);
     }
+    #[cfg(feature = "vendor-gpui")]
     if let Some(fade) = paint.bottom_fade {
         style.style().bottom_fade = Some(fade);
     }
+    #[cfg(feature = "vendor-gpui")]
     if let Some(reveal) = paint.paint_reveal_x {
         style.style().paint_reveal_x = Some(reveal);
     }
+    #[cfg(feature = "vendor-gpui")]
     if let Some(sigma) = paint.backdrop_blur {
         style.style().backdrop_blur = Some(sigma);
     }
@@ -8412,7 +8492,7 @@ fn apply_pseudo_backgrounds(
             .as_ref()
             .is_none_or(|state| state.focus_ring.is_none())
     {
-        focus.border = Some(gpui::PaintInk::Literal(rgba(
+        focus.border = Some(crate::presentation_backend::PaintInk::Literal(rgba(
             semantic_color(colors, "focus_ring", 0x003b_82f6).as_rgba_hex(),
         )));
     }
@@ -8568,9 +8648,11 @@ fn prepare_node_element<C: ColorResolver>(
     if let Some(opacity) = signals.opacity.or(animation.opacity) {
         element = element.opacity(f64_to_f32(opacity.clamp(0.0, 1.0)));
     }
+    #[cfg(feature = "vendor-gpui")]
     if let Some(sigma) = animation.foreground_blur {
         element.style().foreground_blur = Some(f64_to_f32(sigma.clamp(0., 64.)));
     }
+    #[cfg(feature = "vendor-gpui")]
     if let Some(amount) = animation.foreground_grayscale {
         element.style().foreground_grayscale = Some(f64_to_f32(amount.clamp(0., 1.)));
     }
@@ -8583,6 +8665,7 @@ fn prepare_node_element<C: ColorResolver>(
 // Keep native builder temporaries outside recursive rendering. A hot node
 // captures one immutable frame time, shared with its view's scalar sampler.
 #[inline(never)]
+#[cfg(feature = "vendor-gpui")]
 fn bind_presented_paint<C: ColorResolver>(
     mut element: Div,
     node: &UiNode,
@@ -8642,13 +8725,28 @@ fn bind_presented_paint<C: ColorResolver>(
             move_front_background(fill, position);
         }
         if let Some(sample) = reveal
-            && let gpui::PaintRevealX::FromLeft { progress, .. } = &mut paint.paint_reveal_x
+            && let crate::presentation_backend::PaintRevealX::FromLeft { progress, .. } =
+                &mut paint.paint_reveal_x
         {
             *progress = sample;
         }
     })
 }
 
+#[cfg(not(feature = "vendor-gpui"))]
+fn bind_presented_paint<C: ColorResolver>(
+    element: Div,
+    node: &UiNode,
+    path: &str,
+    owner: Option<NodeId>,
+    environment: &RenderEnvironment<'_, C>,
+    animation: &NodeMotionValues,
+) -> Div {
+    let _ = (node, path, owner, environment, animation);
+    element
+}
+
+#[cfg(feature = "vendor-gpui")]
 fn move_front_background(fill: &mut gpui::Fill, position: f32) {
     fn set<C>(layers: &mut [gpui::BackgroundLayer<C>], x: f32) -> bool {
         let Some(layer) = layers.first_mut() else {
@@ -9051,7 +9149,7 @@ fn apply_layout_dimensions(mut element: Div, style: &StyleProperties) -> Div {
         if style.grid_rows_are_intrinsic() {
             element.style().grid_rows = Some(gpui::GridTemplate {
                 repeat: rows,
-                min_size: gpui::GridTemplateMinSize::Intrinsic,
+                min_size: crate::presentation_backend::INTRINSIC_ROWS,
             });
         } else {
             element = element.grid_rows(rows);
@@ -9157,13 +9255,33 @@ fn apply_paint_and_text(
 ) -> Div {
     let element = apply_paint(element, style, colors, direction);
     let element = apply_typography(element, style, direction);
-    let mut element = apply_shadows(element, style, colors);
-    element.style().isolated_opacity = style.isolated_opacity;
-    element.style().bottom_fade = style.bottom_fade.map(crate::BottomFade::into_native);
-    element.style().paint_reveal_x = style.paint_reveal_x.map(crate::PaintRevealX::into_native);
-    element.style().foreground_blur = style.foreground_blur.map(f64_to_f32);
-    element.style().foreground_grayscale = style.foreground_grayscale.map(f64_to_f32);
-    element.style().backdrop_blur = style.backdrop_blur.map(f64_to_f32);
+    let element = apply_shadows(element, style, colors);
+    #[cfg(feature = "vendor-gpui")]
+    let mut element = element;
+    #[cfg(feature = "vendor-gpui")]
+    {
+        element.style().isolated_opacity = style.isolated_opacity;
+    }
+    #[cfg(feature = "vendor-gpui")]
+    {
+        element.style().bottom_fade = style.bottom_fade.map(crate::BottomFade::into_native);
+    }
+    #[cfg(feature = "vendor-gpui")]
+    {
+        element.style().paint_reveal_x = style.paint_reveal_x.map(crate::PaintRevealX::into_native);
+    }
+    #[cfg(feature = "vendor-gpui")]
+    {
+        element.style().foreground_blur = style.foreground_blur.map(f64_to_f32);
+    }
+    #[cfg(feature = "vendor-gpui")]
+    {
+        element.style().foreground_grayscale = style.foreground_grayscale.map(f64_to_f32);
+    }
+    #[cfg(feature = "vendor-gpui")]
+    {
+        element.style().backdrop_blur = style.backdrop_blur.map(f64_to_f32);
+    }
     element
 }
 
@@ -9227,7 +9345,16 @@ fn apply_paint(
         .as_ref()
         .and_then(|color| color.native_ink(&mut |value| colors.resolve(value)))
     {
-        element.style().border_color = Some(color);
+        #[cfg(feature = "vendor-gpui")]
+        {
+            element.style().border_color = Some(color);
+        }
+        #[cfg(not(feature = "vendor-gpui"))]
+        {
+            element.style().border_color = Some(color.resolve_hsla(
+                rgba(semantic_color(colors, "text_primary", 0x0017_1717).as_rgba_hex()).into(),
+            ));
+        }
     }
     if let Some(border_style) = style.border_style {
         match border_style {
@@ -9279,6 +9406,7 @@ fn apply_paint(
 }
 
 fn apply_typography(mut element: Div, style: &StyleProperties, direction: TextDirection) -> Div {
+    #[cfg(feature = "vendor-gpui")]
     if let Some(spacing) = style.letter_spacing {
         element.text_style().letter_spacing = Some(match spacing {
             crate::LetterSpacing::Pixels(value) => {
@@ -9348,9 +9476,19 @@ fn apply_shadows(mut element: Div, style: &StyleProperties, colors: &impl ColorR
 // Both ordinary and pseudo-state SDK shadow stacks describe an outer shape,
 // not shadow color underneath a translucent fill. Keep this at the shared
 // bridge; do not compensate separately in Button/Input/overlay painters.
-fn native_shadows<S: Styled>(mut element: S, shadows: gpui::ShadowStack) -> S {
+#[cfg(feature = "vendor-gpui")]
+fn native_shadows<S: Styled>(
+    mut element: S,
+    shadows: crate::presentation_backend::ShadowStack,
+) -> S {
     element.style().box_shadow = Some(shadows);
     element.outer_shadow_clip(gpui::OuterShadowClip::BorderBox)
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+fn native_shadows<S: Styled>(mut element: S, shadows: Vec<gpui::BoxShadow>) -> S {
+    element.style().box_shadow = Some(shadows);
+    element
 }
 
 fn resolve_gradient(
@@ -9366,6 +9504,7 @@ fn resolve_gradient(
     ))
 }
 
+#[cfg(feature = "vendor-gpui")]
 fn resolve_background(
     fill: &crate::BackgroundFill,
     colors: &impl ColorResolver,
@@ -9374,7 +9513,7 @@ fn resolve_background(
     match fill {
         BackgroundFill::Solid(ink) => {
             Some(match ink.native_ink(&mut |color| colors.resolve(color))? {
-                gpui::PaintInk::Literal(color) => color.into(),
+                crate::presentation_backend::PaintInk::Literal(color) => color.into(),
                 ink => gpui::Fill::Contextual(ink),
             })
         }
@@ -9385,10 +9524,33 @@ fn resolve_background(
     }
 }
 
+#[cfg(not(feature = "vendor-gpui"))]
+fn resolve_background(
+    fill: &crate::BackgroundFill,
+    colors: &impl ColorResolver,
+) -> Option<gpui::Fill> {
+    use crate::BackgroundFill;
+    match fill {
+        BackgroundFill::Solid(ink) => {
+            let fg = semantic_color(colors, "text_primary", 0x0017_1717);
+            Some(
+                ink.native_ink(&mut |color| colors.resolve(color))?
+                    .resolve_hsla(rgba(fg.as_rgba_hex()).into())
+                    .into(),
+            )
+        }
+        BackgroundFill::LegacyLinear(gradient) => {
+            resolve_gradient(gradient, colors).map(Into::into)
+        }
+        BackgroundFill::Layers(layers) => layers.native(|color| colors.resolve(color)),
+    }
+}
+
+#[cfg(feature = "vendor-gpui")]
 pub(crate) fn resolve_shadows(
     shadows: &[crate::ShadowSpec],
     colors: &impl ColorResolver,
-) -> gpui::ShadowStack {
+) -> crate::presentation_backend::ShadowStack {
     let mut contextual = false;
     let stack: Vec<_> = shadows
         .iter()
@@ -9399,7 +9561,10 @@ pub(crate) fn resolve_shadows(
             let color = shadow
                 .color
                 .native_ink(&mut |value| colors.resolve(value))?;
-            contextual |= matches!(color, gpui::PaintInk::CurrentText { .. });
+            contextual |= matches!(
+                color,
+                crate::presentation_backend::PaintInk::CurrentText { .. }
+            );
             Some(BoxShadow {
                 color,
                 offset: point(px(f64_to_f32(shadow.x)), px(f64_to_f32(shadow.y))),
@@ -9410,9 +9575,9 @@ pub(crate) fn resolve_shadows(
         })
         .collect();
     if contextual {
-        gpui::ShadowStack::Contextual(stack.into())
+        crate::presentation_backend::ShadowStack::Contextual(stack.into())
     } else {
-        gpui::ShadowStack::Literal(
+        crate::presentation_backend::ShadowStack::Literal(
             stack
                 .into_iter()
                 .map(|shadow| BoxShadow {
@@ -9425,6 +9590,31 @@ pub(crate) fn resolve_shadows(
                 .collect(),
         )
     }
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+pub(crate) fn resolve_shadows(
+    shadows: &[crate::ShadowSpec],
+    colors: &impl ColorResolver,
+) -> Vec<gpui::BoxShadow> {
+    let fg = semantic_color(colors, "text_primary", 0x0017_1717);
+    shadows
+        .iter()
+        .rev()
+        .filter_map(|shadow| {
+            let color = shadow
+                .color
+                .native_ink(&mut |value| colors.resolve(value))?
+                .resolve_hsla(rgba(fg.as_rgba_hex()).into());
+            Some(BoxShadow {
+                color,
+                offset: point(px(f64_to_f32(shadow.x)), px(f64_to_f32(shadow.y))),
+                blur_radius: px(f64_to_f32(shadow.blur)),
+                spread_radius: px(f64_to_f32(shadow.spread)),
+                inset: shadow.inset,
+            })
+        })
+        .collect()
 }
 
 macro_rules! definite_length_fn {
@@ -9929,7 +10119,9 @@ mod tests {
         assert_eq!(paint.background, Some(rgba(0x1122_33ff).into()));
         assert_eq!(
             paint.border,
-            Some(gpui::PaintInk::Literal(rgba(0x4455_66ff)))
+            Some(crate::presentation_backend::PaintInk::Literal(rgba(
+                0x4455_66ff
+            )))
         );
         assert_eq!(paint.text, Some(Rgba8::from_rgb_hex(0x0077_8899)));
         assert_eq!(paint.opacity, Some(0.625));
@@ -9944,7 +10136,9 @@ mod tests {
     fn focus_paint_covers_hover_paint_only_where_it_sets_a_field() {
         let hover = PseudoPaint {
             background: Some(rgba(0x0000_ffff).into()),
-            border: Some(gpui::PaintInk::Literal(rgba(0x00ff_00ff))),
+            border: Some(crate::presentation_backend::PaintInk::Literal(rgba(
+                0x00ff_00ff,
+            ))),
             text: None,
             opacity: Some(0.5),
             ..PseudoPaint::default()

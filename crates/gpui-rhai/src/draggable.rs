@@ -83,6 +83,7 @@ struct DragHandleElement {
     context: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for DragHandleElement {
     type Element = Self;
 

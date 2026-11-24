@@ -398,6 +398,7 @@ fn retained_frame_target(
     target
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for VirtualListEntityElement {
     type Element = Self;
 

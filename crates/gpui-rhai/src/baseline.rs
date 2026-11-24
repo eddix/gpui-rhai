@@ -7,10 +7,12 @@
 //! row's baseline and its own, both measured from the top of their line boxes the
 //! way GPUI paints a line (half the leading above the ascent).
 
+#[cfg(feature = "vendor-gpui")]
+use gpui::IntoElement;
 use gpui::{
     A11ySubtreeBuilder, AbsoluteLength, App, Bounds, DefiniteLength, Element, ElementId,
-    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Length, Pixels, Refineable, Styled,
-    TextStyle, TextStyleRefinement, Window, px,
+    GlobalElementId, InspectorElementId, LayoutId, Length, Pixels, Refineable, Styled, TextStyle,
+    TextStyleRefinement, Window, px,
 };
 
 /// A row's text child moved down (or up) so its first baseline sits on the row's.
@@ -41,6 +43,7 @@ fn first_baseline(style: &TextStyle, window: &Window) -> Pixels {
     (line - ascent - descent) / 2. + ascent
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl<E: Element + Styled> IntoElement for BaselineText<E> {
     type Element = Self;
 

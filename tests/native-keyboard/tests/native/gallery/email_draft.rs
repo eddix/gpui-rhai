@@ -584,6 +584,8 @@ fn email_draft_receipt_and_restore_retarget_the_same_native_height(cx: &mut Test
     assert!((h(&mut v) - before).abs() < 1.5);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn email_draft_recipient_shell_follows_painted_hover_and_open_state(cx: &mut TestAppContext) {
     use crate::support::{center, live_fills, logical_paint_rect, walk_live_paint};
@@ -1158,3 +1160,6 @@ fn email_draft_preset_sizes_and_absent_recipients_keep_actions_bounded(cx: &mut 
         assert!(!node(&mut v, &view, "button", "Send email").disabled);
     }
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

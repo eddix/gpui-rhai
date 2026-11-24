@@ -823,7 +823,9 @@ impl Paint {
                         style.underline = Some(gpui::UnderlineStyle {
                             thickness: px(1.0),
                             color: None,
+                            #[cfg(feature = "vendor-gpui")]
                             paint_tag: None,
+                            #[cfg(feature = "vendor-gpui")]
                             baseline_offset: None,
                             wavy: false,
                         });

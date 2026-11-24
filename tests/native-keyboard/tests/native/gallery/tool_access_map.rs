@@ -160,6 +160,8 @@ fn tool_access_map_running_and_stale_draft_cannot_replay(cx: &mut TestAppContext
     node(&mut v, &view, "tabpanel", "Tool access map");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn tool_access_map_running_wire_moves_natively_without_rerunning_rhai(cx: &mut TestAppContext) {
     fn pulse_x(scene: &gpui::Scene, scale: f32) -> Option<f32> {
@@ -244,3 +246,6 @@ fn tool_access_map_running_wire_moves_natively_without_rerunning_rhai(cx: &mut T
             .is_empty()
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

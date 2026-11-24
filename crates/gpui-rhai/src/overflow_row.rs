@@ -118,6 +118,7 @@ fn available(known: Option<Pixels>, space: AvailableSpace, natural: Pixels) -> P
     })
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for OverflowRowElement {
     type Element = Self;
     fn into_element(self) -> Self {

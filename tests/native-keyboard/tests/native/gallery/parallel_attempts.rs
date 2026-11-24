@@ -170,6 +170,8 @@ fn parallel_attempts_settle_without_moving_cards_and_keep_keyboard_pick_on_resiz
     node(&mut v, &view, "radio", "Using Attempt B");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn parallel_attempts_quiet_row_uses_group_opacity_and_restores_on_keyboard_focus(
     cx: &mut TestAppContext,
@@ -410,6 +412,8 @@ fn parallel_attempts_best_badge_scales_once_per_mount(cx: &mut TestAppContext) {
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn parallel_attempts_live_fill_retargets_without_script_frames(cx: &mut TestAppContext) {
     let clock = ManualRuntimeClock::new(Instant::now());
@@ -511,3 +515,6 @@ fn parallel_attempts_live_fill_retargets_without_script_frames(cx: &mut TestAppC
         "{before} → {middle} → {after}"
     );
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

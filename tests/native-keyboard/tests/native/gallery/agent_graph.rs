@@ -151,6 +151,8 @@ fn agent_graph_standing_pairs_do_not_collide_with_separator_in_business_ids(
     assert!(target.x >= stage.x && target.x + target.width <= stage.x + stage.width);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn painted_head(visual: &mut VisualTestContext) -> f64 {
     visual.update(|window, _| {
         let scale = f64::from(window.scale_factor());
@@ -217,6 +219,8 @@ fn agent_graph_dense_narrow_layout_keeps_every_native_target_separate(cx: &mut T
     assert_eq!(layer(&root, "wires").unwrap().1.commands().len(), 64);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn agent_graph_canvas_head_resamples_route_at_same_native_motion_time(cx: &mut TestAppContext) {
     let manual = ManualRuntimeClock::new(Instant::now());
@@ -260,3 +264,6 @@ fn agent_graph_canvas_head_resamples_route_at_same_native_motion_time(cx: &mut T
     let later = painted_head(&mut v);
     assert!((later - changed - 50.0).abs() < 3.0);
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

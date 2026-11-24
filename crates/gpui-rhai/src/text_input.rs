@@ -1,5 +1,7 @@
 //! Native text input behavior adapted from GPUI's Apache-2.0 `examples/input.rs`.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -209,6 +211,7 @@ fn request_text_width(window: &mut Window, height: Pixels, intrinsic: Option<&st
             &[TextRun {
                 len: content.len(),
                 font: text_style.font(),
+                #[cfg(feature = "vendor-gpui")]
                 letter_spacing: text_style.letter_spacing,
                 color: text_style.color,
                 background_color: None,
@@ -977,6 +980,7 @@ fn horizontal_scroll_for_cursor(
     scroll_x.max(px(0.0))
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for TextElement {
     type Element = Self;
 
@@ -1047,6 +1051,7 @@ impl Element for TextElement {
         let run = TextRun {
             len: display.len(),
             font: text_style.font(),
+            #[cfg(feature = "vendor-gpui")]
             letter_spacing: text_style.letter_spacing,
             color,
             background_color: None,
@@ -1064,7 +1069,9 @@ impl Element for TextElement {
                     underline: Some(UnderlineStyle {
                         color: Some(run.color),
                         thickness: px(1.0),
+                        #[cfg(feature = "vendor-gpui")]
                         paint_tag: None,
+                        #[cfg(feature = "vendor-gpui")]
                         baseline_offset: None,
                         wavy: false,
                     }),

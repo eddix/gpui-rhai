@@ -198,6 +198,8 @@ fn tag_input_preserves_single_editor_under_resize_and_moves_to_chips_in_rtl(
     assert!(text_of(&mut visual, &view, "state").contains("\"new\""));
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn tag_input_ime_preedit_never_commits_a_delimiter(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(

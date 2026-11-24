@@ -446,6 +446,8 @@ fn command_appearance_and_footer_changes_do_not_remount_the_active_editor(cx: &m
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn application_footer_controls_keep_their_styles_semantics_and_own_enter_scope(
     cx: &mut TestAppContext,
@@ -531,3 +533,6 @@ fn application_footer_controls_keep_their_styles_semantics_and_own_enter_scope(
         assert!(last_error(&mut visual, &view).is_none());
     }
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

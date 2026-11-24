@@ -1,7 +1,9 @@
+#[cfg(feature = "vendor-gpui")]
+use super::platform_input;
 use super::{
     ClipboardItem, Duration, FIELD, Instant, ManualRuntimeClock, MotionPreference, Mount,
     ScriptViewHandle, Step, TestAppContext, VisualTestContext, by_test_id, cells, click_center,
-    dispatch, field_box, last_error, painted_quads, platform_input, refresh, settle, text_of,
+    dispatch, field_box, last_error, painted_quads, refresh, settle, text_of,
 };
 
 const RING: u32 = 0xc11a_7fff;
@@ -52,6 +54,8 @@ fn animated_field() -> String {
     )
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn digit_blurs(visual: &mut VisualTestContext) -> usize {
     fn count(scene: &gpui::Scene) -> usize {
         let active: usize = scene
@@ -126,6 +130,7 @@ fn otp_input_caret_blinks_only_while_active_and_respects_live_motion_settings(
     assert_eq!(caret_alpha(&mut visual, editor), None);
     click_center(&mut visual, editor);
     refresh(&mut visual);
+    #[cfg(feature = "vendor-gpui")]
     let geometry = platform_input(&mut visual, |handler| handler.bounds_for_range(0..0));
     assert_eq!(caret_alpha(&mut visual, editor), Some(1.));
     visual
@@ -133,6 +138,7 @@ fn otp_input_caret_blinks_only_while_active_and_respects_live_motion_settings(
         .unwrap();
     animate(&mut visual, &clock, 550);
     assert_eq!(caret_alpha(&mut visual, editor), None);
+    #[cfg(feature = "vendor-gpui")]
     assert_eq!(
         platform_input(&mut visual, |handler| handler.bounds_for_range(0..0)),
         geometry
@@ -173,6 +179,8 @@ fn error_step(visual: &mut VisualTestContext, clock: &ManualRuntimeClock, ms: u6
     settle(visual, Step::Refresh, 4);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn otp_input_discard_staggers_without_writing_or_clearing_a_new_attempt(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
@@ -237,6 +245,8 @@ fn otp_input_discard_staggers_without_writing_or_clearing_a_new_attempt(cx: &mut
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn otp_input_staggers_glyphs_and_retargets_one_ring_without_moving_the_input(
     cx: &mut TestAppContext,
@@ -296,6 +306,8 @@ fn otp_input_staggers_glyphs_and_retargets_one_ring_without_moving_the_input(
     assert_eq!(last_error(&mut visual, &view), None);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn otp_input_success_morph_uses_the_cell_envelope_and_preserves_following_geometry(
     cx: &mut TestAppContext,
@@ -369,3 +381,6 @@ fn otp_input_success_morph_uses_the_cell_envelope_and_preserves_following_geomet
         );
     }
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

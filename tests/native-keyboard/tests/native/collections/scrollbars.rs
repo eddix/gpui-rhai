@@ -492,6 +492,8 @@ fn entirely_unconsumed_track_wheel_events_are_not_swallowed(cx: &mut TestAppCont
     );
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn opt_in_body_wheel_consumes_once_before_native_list_and_leaves_unsupported_input(
     cx: &mut TestAppContext,
@@ -572,11 +574,14 @@ impl NestedBodyHost {
             )
             .child(inner)
             .into_any_element();
+        #[cfg(feature = "vendor-gpui")]
         let inner = if let Some(transform) = inner_transform {
             AffineWheelLayer::wrap(inner, transform)
         } else {
             inner
         };
+        #[cfg(not(feature = "vendor-gpui"))]
+        let _ = inner_transform;
         let outer_context = bars.with_scroll_axis(Some(gpui::Axis::Vertical));
         let outer = outer_body.map(|body| {
             if body {
@@ -608,11 +613,13 @@ impl NestedBodyHost {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 struct AffineWheelLayer {
     child: Option<AnyElement>,
     transform: TransformationMatrix,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl AffineWheelLayer {
     fn wrap(child: AnyElement, transform: TransformationMatrix) -> AnyElement {
         Self {
@@ -623,6 +630,7 @@ impl AffineWheelLayer {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for AffineWheelLayer {
     type Element = Self;
     fn into_element(self) -> Self {
@@ -630,6 +638,7 @@ impl IntoElement for AffineWheelLayer {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl Element for AffineWheelLayer {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();
@@ -679,11 +688,13 @@ impl Element for AffineWheelLayer {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 struct AffineWheelHost {
     surface: NestedBodyHost,
     outer_body: Option<bool>,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl Render for AffineWheelHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let child = self.surface.content_with_surfaces(
@@ -704,6 +715,7 @@ impl Render for AffineWheelHost {
 }
 
 #[gpui::test]
+#[cfg(feature = "vendor-gpui")]
 fn transformed_nested_wheel_routes_residual_to_the_parent_own_presented_viewport(
     cx: &mut TestAppContext,
 ) {

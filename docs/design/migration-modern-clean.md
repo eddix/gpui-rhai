@@ -13,12 +13,10 @@ to an older SDK does not provide the same rendering or behavior.
 
 ## Before integration
 
-This migration is a review candidate. Its renderer uses GPUI capabilities
-that are not available in the published backend versions currently pinned
-by this repository. Verify the required backend changes on both GPUI
-variants and use supported public releases before merging or publishing
-the SDK. Keep temporary dependency overrides out of product manifests
-and release lockfiles.
+The default [public profile](../gpui-profiles.md) uses released dependencies
+and explicit rendering fallbacks. The alternate macOS vendor profile uses
+the repository's optical and layout extensions without changing the
+published dependency graph.
 
 Verify native mounting and interaction, live preset changes without state
 loss, and packaged consumers on both backends. The real macOS VoiceOver

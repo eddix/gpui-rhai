@@ -2004,10 +2004,10 @@ impl UiNode {
         side: &str,
         width: f64,
         height: f64,
-    ) -> Result<gpui::TextExclusion, TextExclusionError> {
+    ) -> Result<crate::presentation_backend::TextExclusion, TextExclusionError> {
         let side = match side {
-            "left" => gpui::TextExclusionSide::Left,
-            "right" => gpui::TextExclusionSide::Right,
+            "left" => crate::presentation_backend::TextExclusionSide::Left,
+            "right" => crate::presentation_backend::TextExclusionSide::Right,
             _ => return Err(TextExclusionError::InvalidSide),
         };
         if ![width, height]
@@ -2016,14 +2016,15 @@ impl UiNode {
         {
             return Err(TextExclusionError::InvalidExtent);
         }
-        Ok(gpui::TextExclusion {
+        Ok(crate::presentation_backend::TextExclusion {
             side,
             width: gpui::px(crate::renderer::f64_to_f32(width)),
             height: gpui::px(crate::renderer::f64_to_f32(height)),
         })
     }
 
-    pub(crate) fn wrap_exclusion(&self) -> Option<gpui::TextExclusion> {
+    #[cfg(any(test, feature = "vendor-gpui"))]
+    pub(crate) fn wrap_exclusion(&self) -> Option<crate::presentation_backend::TextExclusion> {
         let UiValue::Map(fields) = self.attributes().get("wrap_exclusion")? else {
             return None;
         };
@@ -2078,10 +2079,11 @@ impl UiNode {
         ))
     }
 
+    #[cfg(feature = "vendor-gpui")]
     pub(crate) fn leading_float(
         &self,
         direction: crate::TextDirection,
-    ) -> Option<gpui::LeadingFloat> {
+    ) -> Option<crate::presentation_backend::LeadingFloat> {
         let UiValue::Map(fields) = self.attributes().get(LEADING_FLOAT_ATTRIBUTE)? else {
             return None;
         };
@@ -2100,11 +2102,11 @@ impl UiNode {
             _ => return None,
         };
         let right = end ^ (direction == crate::TextDirection::RightToLeft);
-        Some(gpui::LeadingFloat {
+        Some(crate::presentation_backend::LeadingFloat {
             side: if right {
-                gpui::TextExclusionSide::Right
+                crate::presentation_backend::TextExclusionSide::Right
             } else {
-                gpui::TextExclusionSide::Left
+                crate::presentation_backend::TextExclusionSide::Left
             },
             min_column_width: gpui::px(crate::renderer::f64_to_f32(*min_column)),
             min_text_width: gpui::px(crate::renderer::f64_to_f32(*min_text)),
@@ -4953,7 +4955,12 @@ mod tests {
             TextExclusionError::InvalidNode
         );
         let profiled = text.with_wrap_exclusion("left", 40., 60.).unwrap();
-        assert_eq!(profiled.wrap_exclusion().unwrap().width, gpui::px(40.));
+        let exclusion = profiled.wrap_exclusion().unwrap();
+        assert_eq!(exclusion.width, gpui::px(40.));
+        assert!(matches!(
+            exclusion.side,
+            crate::presentation_backend::TextExclusionSide::Left
+        ));
         assert!(
             profiled
                 .with_wrap_exclusion("left", 0., 60.)

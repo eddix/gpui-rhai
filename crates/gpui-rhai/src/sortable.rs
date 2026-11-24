@@ -141,6 +141,7 @@ struct SortableElement {
     context: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for SortableElement {
     type Element = Self;
 

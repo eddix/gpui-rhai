@@ -1207,3 +1207,6 @@ fn view(ctx) { markdown::MarkdownViewer(#{ key: "large", label: "Large native Ma
     assert!(plain.starts_with("世界") && plain.ends_with("End of native document"));
     assert!(!plain.contains("**"));
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

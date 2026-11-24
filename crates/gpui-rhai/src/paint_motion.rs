@@ -1,9 +1,11 @@
 //! Paint endpoints for a scalar progress track owned by `MotionRuntime`.
 //! Render phases neither advance a second clock nor run script.
-use gpui::{
-    Background, BoxShadow, ComputedPaint, Fill, Hsla, LayeredBackground, PaintInk, Rgba,
-    ShadowStack,
-};
+#[cfg(feature = "vendor-gpui")]
+use crate::presentation_backend::ShadowStack;
+use crate::presentation_backend::{ComputedPaint, PaintInk};
+#[cfg(feature = "vendor-gpui")]
+use gpui::LayeredBackground;
+use gpui::{Background, BoxShadow, Fill, Hsla, Rgba};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct PaintTransition {
@@ -95,6 +97,7 @@ impl LayoutSizeAxis {
         }
     }
 
+    #[cfg(feature = "vendor-gpui")]
     pub(crate) const fn extent(self, bounds: crate::GeometryBounds) -> f64 {
         match self {
             Self::Width => bounds.width,
@@ -263,6 +266,7 @@ fn blend_ink(
     Some(PaintInk::Literal(color(a, b, t)))
 }
 
+#[cfg(feature = "vendor-gpui")]
 fn layers(fill: Option<&Fill>, foreground: Hsla) -> Option<LayeredBackground> {
     match fill {
         Some(Fill::Layers(stack)) => Some(stack.clone()),
@@ -271,6 +275,7 @@ fn layers(fill: Option<&Fill>, foreground: Hsla) -> Option<LayeredBackground> {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 fn blend_background(
     from: Option<&Fill>,
     to: Option<&Fill>,
@@ -325,6 +330,25 @@ fn blend_background(
     }
 }
 
+#[cfg(not(feature = "vendor-gpui"))]
+fn blend_background(
+    from: Option<&Fill>,
+    to: Option<&Fill>,
+    _a: Hsla,
+    _b: Hsla,
+    t: f32,
+) -> Option<Fill> {
+    let solid = |fill: Option<&Fill>| match fill {
+        Some(Fill::Color(bg)) => bg.as_solid().map(Into::into),
+        None => Some(Rgba::default()),
+    };
+    match (solid(from), solid(to)) {
+        (Some(a), Some(b)) => Some(Fill::Color(Background::from(color(a, b, t)))),
+        _ => to.cloned(),
+    }
+}
+
+#[cfg(feature = "vendor-gpui")]
 fn blend_shadows(
     from: &ShadowStack,
     to: &ShadowStack,
@@ -361,4 +385,43 @@ fn blend_shadows(
         });
     }
     ShadowStack::Literal(result)
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+fn blend_shadows(
+    from: &[BoxShadow],
+    to: &[BoxShadow],
+    _a_fg: Hsla,
+    _b_fg: Hsla,
+    t: f32,
+) -> Vec<BoxShadow> {
+    if from == to {
+        return to.to_vec();
+    }
+    let a = from;
+    let b = to;
+    let mut result = Vec::with_capacity(a.len().max(b.len()));
+    for i in 0..a.len().max(b.len()) {
+        let left = a.get(i);
+        let right = b.get(i);
+        let Some(target) = right.or(left) else {
+            continue;
+        };
+        let same_geometry = |shadow: &BoxShadow| {
+            shadow.offset == target.offset
+                && shadow.blur_radius == target.blur_radius
+                && shadow.spread_radius == target.spread_radius
+                && shadow.inset == target.inset
+        };
+        if !left.is_none_or(same_geometry) {
+            return to.to_vec();
+        }
+        let a = left.map_or_else(Rgba::default, |s| s.color.into());
+        let b = right.map_or_else(Rgba::default, |s| s.color.into());
+        result.push(BoxShadow {
+            color: color(a, b, t).into(),
+            ..target.clone()
+        });
+    }
+    result
 }

@@ -1471,7 +1471,7 @@ impl MotionRuntime {
         &mut self,
         path: &str,
         owner: crate::NodeId,
-        paint: &mut gpui::ComputedPaint,
+        paint: &mut crate::presentation_backend::ComputedPaint,
         parent: gpui::Hsla,
         transition: crate::paint_motion::PaintTransition,
         now: Instant,
@@ -1488,7 +1488,7 @@ impl MotionRuntime {
             target.isolated_opacity = false;
             target.foreground_grayscale = 0.;
         }
-        let restore_group = |sample: &mut gpui::ComputedPaint| {
+        let restore_group = |sample: &mut crate::presentation_backend::ComputedPaint| {
             if let Some((opacity, isolated, grayscale)) = passthrough {
                 sample.opacity = opacity;
                 sample.isolated_opacity = isolated;
@@ -5167,8 +5167,8 @@ mod tests {
         let start = Instant::now();
         let at = |ms| start + Duration::from_millis(ms);
         let mut runtime = MotionRuntime::new(MotionPreference::Normal);
-        let original = gpui::ComputedPaint::default();
-        let muted = gpui::ComputedPaint {
+        let original = crate::presentation_backend::ComputedPaint::default();
+        let muted = crate::presentation_backend::ComputedPaint {
             opacity: Some(0.4),
             foreground_grayscale: 0.8,
             isolated_opacity: true,
@@ -5180,7 +5180,10 @@ mod tests {
             delay_ms: 110,
             group_effects: true,
         };
-        let display = |runtime: &mut MotionRuntime, target: &gpui::ComputedPaint, ms, timing| {
+        let display = |runtime: &mut MotionRuntime,
+                       target: &crate::presentation_backend::ComputedPaint,
+                       ms,
+                       timing| {
             let mut paint = target.clone();
             let active = runtime.present_paint(
                 "window/editor/icon",
@@ -5192,16 +5195,17 @@ mod tests {
             );
             (active, paint)
         };
-        let close = |paint: &gpui::ComputedPaint, opacity: f32, grayscale: f32| {
-            assert!(
-                (paint.opacity.unwrap_or(1.) - opacity).abs() < 1e-5,
-                "{paint:?}"
-            );
-            assert!(
-                (paint.foreground_grayscale - grayscale).abs() < 1e-5,
-                "{paint:?}"
-            );
-        };
+        let close =
+            |paint: &crate::presentation_backend::ComputedPaint, opacity: f32, grayscale: f32| {
+                assert!(
+                    (paint.opacity.unwrap_or(1.) - opacity).abs() < 1e-5,
+                    "{paint:?}"
+                );
+                assert!(
+                    (paint.foreground_grayscale - grayscale).abs() < 1e-5,
+                    "{paint:?}"
+                );
+            };
         assert_eq!(
             display(&mut runtime, &original, 0, timing),
             (false, original.clone())

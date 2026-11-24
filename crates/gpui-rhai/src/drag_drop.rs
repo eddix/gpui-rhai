@@ -69,6 +69,7 @@ struct DragSourceElement {
     context: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for DragSourceElement {
     type Element = Self;
 
@@ -280,6 +281,7 @@ struct DropZoneElement {
     context: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for DropZoneElement {
     type Element = Self;
 

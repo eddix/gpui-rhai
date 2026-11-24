@@ -4,6 +4,8 @@
 //! implementation is independent, with behavior informed by Longbridge's
 //! Apache-2.0 gpui-component scrollbar.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -645,6 +647,7 @@ impl ThemedScrollbar {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ThemedScrollbar {
     type Element = Self;
 
@@ -1177,7 +1180,7 @@ fn register_axis_listeners(
 struct ThumbCapture {
     frame: AxisFrame,
     grab: Pixels,
-    coordinates: gpui::VisualCoordinates,
+    coordinates: crate::presentation_backend::VisualCoordinates,
     source: Rc<dyn ScrollbarSource>,
     state: ScrollbarState,
     last_sample: Cell<Option<Pixels>>,

@@ -357,7 +357,13 @@ fn append_line(
     for (row_index, (row_start, glyphs)) in source_rows.into_iter().enumerate() {
         let end_x = row_end.next()?;
         let row_width = end_x - row_start;
+        #[cfg(feature = "vendor-gpui")]
         let (offset, available) = line.row_interval(row_index, width);
+        #[cfg(not(feature = "vendor-gpui"))]
+        let (offset, available) = {
+            let _ = row_index;
+            (px(0.), width)
+        };
         let left = origin.x + offset + align_offset(align, available, row_width);
         let mut visual = glyphs.into_iter().collect::<Vec<_>>();
         visual.sort_by(|(ab, ax), (bb, bx)| ax.partial_cmp(bx).unwrap_or(ab.cmp(bb)));
@@ -413,6 +419,7 @@ mod tests {
             })
             .collect();
         WrappedLineLayout {
+            #[cfg(feature = "vendor-gpui")]
             row_bands: None,
             unwrapped_layout: Arc::new(LineLayout {
                 width: px(width),

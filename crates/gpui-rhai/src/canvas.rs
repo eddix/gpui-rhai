@@ -59,8 +59,8 @@ impl PaintColor {
     pub(crate) fn native_ink(
         &self,
         resolve: &mut impl FnMut(&ColorValue) -> Option<Rgba8>,
-    ) -> Option<gpui::PaintInk> {
-        use gpui::PaintInk;
+    ) -> Option<crate::presentation_backend::PaintInk> {
+        use crate::presentation_backend::PaintInk;
         match self.source() {
             PaintColorSource::Value(value) => {
                 resolve(value).map(|v| PaintInk::Literal(gpui::rgba(v.as_rgba_hex())))
@@ -244,6 +244,10 @@ impl CanvasStrokeDash {
         scale: f64,
         length_upper: f64,
     ) -> Option<gpui::PathBuilder> {
+        Some(builder.dash_array(&self.scaled(scale, length_upper)?.map(gpui::px)))
+    }
+
+    fn scaled(self, scale: f64, length_upper: f64) -> Option<[f32; 2]> {
         let [on, off] = [self.on, self.off].map(|n| n * scale);
         // Bound the native splitter and guarantee that its f32 cursor advances.
         if !length_upper.is_finite()
@@ -254,11 +258,12 @@ impl CanvasStrokeDash {
         {
             return None;
         }
-        Some(builder.dash_array(&[on, off].map(|n| gpui::px(crate::renderer::f64_to_f32(n)))))
+        Some([on, off].map(crate::renderer::f64_to_f32))
     }
 }
 
 impl CanvasStrokeStyle {
+    #[cfg(feature = "vendor-gpui")]
     fn native(self, width: f64) -> Option<gpui::StrokeOptions> {
         if !width.is_finite()
             || !(f64::from(f32::MIN_POSITIVE)..=f64::from(f32::MAX)).contains(&width)
@@ -282,6 +287,32 @@ impl CanvasStrokeStyle {
                 .with_line_cap(cap)
                 .with_line_join(join),
         )
+    }
+
+    #[cfg(not(feature = "vendor-gpui"))]
+    fn native(self, width: f64) -> Option<gpui::StrokeOptions> {
+        if !width.is_finite()
+            || !(f64::from(f32::MIN_POSITIVE)..=f64::from(f32::MAX)).contains(&width)
+        {
+            return None;
+        }
+        let cap = match self.cap {
+            CanvasLineCap::Butt => lyon::path::LineCap::Butt,
+            CanvasLineCap::Round => lyon::path::LineCap::Round,
+            CanvasLineCap::Square => lyon::path::LineCap::Square,
+        };
+        let join = match self.join {
+            CanvasLineJoin::Miter => lyon::path::LineJoin::Miter,
+            CanvasLineJoin::MiterClip => lyon::path::LineJoin::MiterClip,
+            CanvasLineJoin::Round => lyon::path::LineJoin::Round,
+            CanvasLineJoin::Bevel => lyon::path::LineJoin::Bevel,
+        };
+        Some(gpui::StrokeOptions {
+            line_width: crate::renderer::f64_to_f32(width),
+            line_cap: cap,
+            line_join: join,
+            ..Default::default()
+        })
     }
 }
 
@@ -605,7 +636,7 @@ impl CanvasCommand {
         progress: Option<f64>,
         stroke_scale: f64,
         project: impl Fn(f64, f64) -> gpui::Point<gpui::Pixels>,
-    ) -> Option<gpui::Path<gpui::Pixels>> {
+    ) -> Option<crate::presentation_backend::Path> {
         let projected = |x: f64, y: f64| {
             if !x.is_finite() || !y.is_finite() {
                 return None;
@@ -741,6 +772,7 @@ impl CanvasCommand {
         builder.build().ok()
     }
 
+    #[cfg(feature = "vendor-gpui")]
     fn tessellated_hit(
         &self,
         x: f64,
@@ -771,6 +803,86 @@ impl CanvasCommand {
                     sides.iter().all(|v| *v >= -1e-9) || sides.iter().all(|v| *v <= 1e-9)
                 })
             })
+    }
+
+    #[cfg(not(feature = "vendor-gpui"))]
+    fn tessellated_hit(
+        &self,
+        x: f64,
+        y: f64,
+        progress: Option<f64>,
+        stroke_scale: f64,
+        project: impl Fn(f64, f64) -> gpui::Point<gpui::Pixels>,
+    ) -> bool {
+        let projected = |p: (f64, f64)| {
+            let p = project(p.0, p.1);
+            (f64::from(p.x), f64::from(p.y))
+        };
+        let (paths, stroke) = match self {
+            Self::Line {
+                from_x,
+                from_y,
+                to_x,
+                to_y,
+                width,
+                stroke_style,
+                ..
+            } => (
+                vec![vec![(*from_x, *from_y), (*to_x, *to_y)]],
+                Some((*width, *stroke_style)),
+            ),
+            Self::Path {
+                segments,
+                transform,
+                stroke,
+                stroke_style,
+                ..
+            } => {
+                let paths = flatten_path(segments, *transform);
+                let paths = if stroke.is_some() && progress.is_some_and(|p| p < 1.) {
+                    trimmed_canvas_paths(paths, progress.unwrap_or(1.))
+                } else {
+                    paths
+                };
+                (paths, stroke.as_ref().map(|(_, w)| (*w, *stroke_style)))
+            }
+            Self::MorphPath {
+                from,
+                to,
+                transform,
+                stroke,
+                stroke_style,
+                ..
+            } => {
+                let Some(path) = interpolate_path(from, to, progress.unwrap_or(0.)) else {
+                    return false;
+                };
+                (
+                    flatten_path(&path, *transform),
+                    Some((stroke.1, *stroke_style)),
+                )
+            }
+            Self::MorphFillPath {
+                from,
+                to,
+                transform,
+                ..
+            } => {
+                let Some(path) = interpolate_path(from, to, progress.unwrap_or(0.)) else {
+                    return false;
+                };
+                (flatten_path(&path, *transform), None)
+            }
+            _ => return false,
+        };
+        let paths = paths
+            .into_iter()
+            .map(|p| p.into_iter().map(projected).collect::<Vec<_>>());
+        if let Some((width, style)) = stroke {
+            public_stroke_contains(paths, width * stroke_scale, stroke_scale, style, (x, y))
+        } else {
+            paths.fold(false, |state, p| state ^ point_in_polygon(x, y, &p))
+        }
     }
 
     fn path_clip(&self) -> Option<CanvasClipRect> {
@@ -1842,6 +1954,124 @@ fn append_cubic(
             ));
         }
     }
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+fn public_stroke_contains(
+    paths: impl Iterator<Item = Vec<(f64, f64)>>,
+    width: f64,
+    scale: f64,
+    style: CanvasStrokeStyle,
+    at: (f64, f64),
+) -> bool {
+    use crate::renderer::f64_to_f32 as f;
+    const RESOLUTION: f32 = 2.;
+    // Public GPUI's Path hides its stroke outline; use the same outline
+    // engine rather than treating cap/join/dash paint as distance to a line.
+    let Some(native) = style.native(width) else {
+        return false;
+    };
+    let mut builder = tiny_skia_path::PathBuilder::new();
+    let mut length_upper = 0.;
+    for points in paths {
+        let Some((first, rest)) = points.split_first() else {
+            continue;
+        };
+        if points
+            .iter()
+            .any(|(x, y)| !(f(*x).is_finite() && f(*y).is_finite()))
+        {
+            return false;
+        }
+        builder.move_to(f(first.0), f(first.1));
+        for &(x, y) in rest {
+            builder.line_to(f(x), f(y));
+        }
+        if points.len() > 2 && points.first() == points.last() {
+            builder.close();
+        }
+        length_upper += points
+            .windows(2)
+            .map(|pair| (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1))
+            .sum::<f64>();
+    }
+    let Some(mut outline) = builder.finish() else {
+        return false;
+    };
+    if let Some(dash) = style.dash {
+        let Some(array) = dash.scaled(scale, length_upper) else {
+            return false;
+        };
+        if let Some(dash) = tiny_skia_path::StrokeDash::new(array.to_vec(), 0.)
+            && let Some(dashed) = outline.dash(&dash, RESOLUTION)
+        {
+            outline = dashed;
+        }
+    }
+    let options = tiny_skia_path::Stroke {
+        width: native.line_width,
+        miter_limit: native.miter_limit,
+        line_cap: match style.cap {
+            CanvasLineCap::Butt => tiny_skia_path::LineCap::Butt,
+            CanvasLineCap::Round => tiny_skia_path::LineCap::Round,
+            CanvasLineCap::Square => tiny_skia_path::LineCap::Square,
+        },
+        line_join: match style.join {
+            CanvasLineJoin::Miter => tiny_skia_path::LineJoin::Miter,
+            CanvasLineJoin::MiterClip => tiny_skia_path::LineJoin::MiterClip,
+            CanvasLineJoin::Round => tiny_skia_path::LineJoin::Round,
+            CanvasLineJoin::Bevel => tiny_skia_path::LineJoin::Bevel,
+        },
+        dash: None,
+    };
+    outline
+        .stroke(&options, RESOLUTION)
+        .is_some_and(|stroke| public_outline_contains(&stroke, at))
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+fn public_outline_contains(path: &tiny_skia_path::Path, at: (f64, f64)) -> bool {
+    use tiny_skia_path::PathSegment::{Close, CubicTo, LineTo, MoveTo, QuadTo};
+    let pt = |p: tiny_skia_path::Point| (f64::from(p.x), f64::from(p.y));
+    let mut contour = Vec::new();
+    let winding = |points: &[(f64, f64)]| {
+        let (x, y) = at;
+        if points.len() < 3 {
+            return 0;
+        }
+        points
+            .iter()
+            .zip(points.iter().cycle().skip(1))
+            .map(|(p, q)| {
+                if (p.1 > y) == (q.1 > y) || x >= (q.0 - p.0) * (y - p.1) / (q.1 - p.1) + p.0 {
+                    0
+                } else if q.1 > p.1 {
+                    1
+                } else {
+                    -1
+                }
+            })
+            .sum::<i32>()
+    };
+    let mut net = 0;
+    for segment in path.segments() {
+        let last = contour.last().copied().unwrap_or_default();
+        match segment {
+            MoveTo(p) => {
+                net += winding(&contour);
+                contour.clear();
+                contour.push(pt(p));
+            }
+            LineTo(p) => contour.push(pt(p)),
+            QuadTo(c, p) => append_quadratic(Some(&mut contour), last, pt(c), pt(p)),
+            CubicTo(a, b, p) => append_cubic(Some(&mut contour), last, pt(a), pt(b), pt(p)),
+            Close => {
+                net += winding(&contour);
+                contour.clear();
+            }
+        }
+    }
+    net + winding(&contour) != 0
 }
 
 fn point_in_polygon(x: f64, y: f64, polygon: &[(f64, f64)]) -> bool {

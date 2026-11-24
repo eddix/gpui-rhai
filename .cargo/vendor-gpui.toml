@@ -1,0 +1,9 @@
+# Opt-in: do not rename public package identities. This config affects the full host graph.
+[patch.crates-io]
+gpui-pre = { path = "vendor/gpui/gpui-pre" }
+gpui-pre-apple = { path = "vendor/gpui/gpui-pre-apple" }
+gpui-pre-macros = { path = "vendor/gpui/gpui-pre-macros" }
+gpui-fast = { path = "vendor/gpui/gpui-fast" }
+gpui-fast-apple = { path = "vendor/gpui/gpui-fast-apple" }
+gpui-fast-macros = { path = "vendor/gpui/gpui-fast-macros" }
+zed-font-kit = { path = "vendor/gpui/font-kit" }

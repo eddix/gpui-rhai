@@ -103,6 +103,7 @@ pub(crate) struct ImagePresentationElement {
     pub fill_box: bool,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ImagePresentationElement {
     type Element = Self;
     fn into_element(self) -> Self {

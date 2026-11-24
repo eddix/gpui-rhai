@@ -9,6 +9,8 @@ use crate::support::{
     ActiveHost, Mount, Step, bounds, by_role, click_center, dispatch, last_error, settle,
 };
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn marker_paint(visual: &mut VisualTestContext) -> (f32, f32) {
     fn scan(scene: &gpui::Scene, alpha: f32, sigma: f32, result: &mut (f32, f32)) {
         for color in scene
@@ -50,6 +52,8 @@ fn marker_paint(visual: &mut VisualTestContext) -> (f32, f32) {
     })
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn marker_alpha(visual: &mut VisualTestContext) -> f32 {
     marker_paint(visual).0
 }
@@ -230,12 +234,16 @@ fn fraction_translation_uses_laid_out_axes_and_does_not_move_siblings(cx: &mut T
     assert_eq!(last_error(&mut visual, &view), None);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[track_caller]
 fn assert_alpha(visual: &mut VisualTestContext, expected: f32) {
     let actual = marker_alpha(visual);
     assert!((actual - expected).abs() < 0.005, "{actual} != {expected}");
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn button_label_changes_fade_natively_without_mount_or_reflow_animation(cx: &mut TestAppContext) {
     for &(name, theme) in gpui_rhai_registry::BUNDLED_DESIGN_PRESET_SOURCES {
@@ -446,6 +454,8 @@ fn button_loading_width_and_following_sibling_use_the_same_constrained_frame(
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn button_entry_preserves_host_label_opacity_and_unchanged_loading_labels(cx: &mut TestAppContext) {
     for host_alpha in [false, true] {
@@ -476,6 +486,8 @@ fn button_entry_preserves_host_label_opacity_and_unchanged_loading_labels(cx: &m
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn button_icon_entry_scales_with_the_existing_clock(cx: &mut TestAppContext) {
     for policy in [
@@ -550,6 +562,8 @@ fn button_icon_entry_scales_with_the_existing_clock(cx: &mut TestAppContext) {
     }
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn content_change_uses_view_active_time_across_a_long_suspend(cx: &mut TestAppContext) {
     let manual = ManualRuntimeClock::new(Instant::now());
@@ -596,6 +610,8 @@ fn content_change_uses_view_active_time_across_a_long_suspend(cx: &mut TestAppCo
     assert_eq!(last_error(&mut visual, &view), None);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn caller_change_modifier_survives_incremental_component_presentation_replay(
     cx: &mut TestAppContext,
@@ -633,3 +649,6 @@ fn caller_change_modifier_survives_incremental_component_presentation_replay(
     assert_eq!(visual.update(|window, cx| window.focused(cx)), Some(focus));
     assert_eq!(last_error(&mut visual, &view), None);
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

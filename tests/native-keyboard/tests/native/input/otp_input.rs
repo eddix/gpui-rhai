@@ -232,6 +232,8 @@ fn otp_input_resend_countdown_rearms_once_per_activation(cx: &mut TestAppContext
     assert_eq!(last_error(&mut visual, &view), None);
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 fn platform_input<T>(
     visual: &mut VisualTestContext,
     f: impl FnOnce(&mut gpui::PlatformInputHandler) -> T,
@@ -244,6 +246,8 @@ fn platform_input<T>(
     output
 }
 
+// Depends on the vendored renderer's native scene/input witness.
+#[cfg(feature = "vendor-gpui")]
 #[gpui::test]
 fn otp_input_platform_preedit_and_resized_cell_geometry_share_one_owner(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, FIELD, gpui_rhai_registry::MODERN_DARK_THEME);

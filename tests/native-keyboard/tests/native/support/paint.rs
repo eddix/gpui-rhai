@@ -3,6 +3,19 @@
 
 use gpui::{Background, Hsla, VisualTestContext, rgba};
 
+/// The same scene evidence from the published backend's bench-support API.
+#[cfg(not(feature = "vendor-gpui"))]
+pub(crate) trait PublicSceneWitness {
+    fn visual_probe_with_painted_scene<T>(&self, visit: impl FnOnce(&gpui::Scene) -> T) -> T;
+}
+
+#[cfg(not(feature = "vendor-gpui"))]
+impl PublicSceneWitness for gpui::Window {
+    fn visual_probe_with_painted_scene<T>(&self, visit: impl FnOnce(&gpui::Scene) -> T) -> T {
+        visit(self.rendered_scene())
+    }
+}
+
 /// `(x, y, width, height)` in logical pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Rect {
@@ -31,6 +44,7 @@ pub(crate) fn walk_live_paint(
     visit: &mut impl FnMut(&gpui::Scene, gpui::TransformationMatrix),
 ) {
     visit(scene, placement);
+    #[cfg(feature = "vendor-gpui")]
     for group in &scene.isolated_groups {
         if group.is_renderable() {
             walk_live_paint(group.source(), placement.compose(group.transform()), visit);
@@ -292,7 +306,11 @@ fn window_quads(window: &gpui::Window, include_rounded_clips: bool) -> Vec<gpui:
     }
     if include_rounded_clips {
         let mut quads = Vec::new();
-        append(window.painted_scene(), &mut quads);
+        #[cfg(feature = "vendor-gpui")]
+        let scene = window.painted_scene();
+        #[cfg(not(feature = "vendor-gpui"))]
+        let scene = window.rendered_scene();
+        append(scene, &mut quads);
         quads
     } else {
         window.painted_quads()
