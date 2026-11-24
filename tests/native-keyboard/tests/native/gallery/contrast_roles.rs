@@ -4,6 +4,7 @@ use gpui_rhai::{AuditFinding, AuditRules, GeometryBounds, ScriptViewHandle, Them
 use super::conversation::{click, gallery, node, ready};
 use crate::support::{PresetRisks, bounds, glyphs_with_ink, live_fills, snapshot};
 
+#[cfg(target_os = "macos")]
 fn real(cx: &TestAppContext, name: &'static str) -> TestAppContext {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -46,6 +47,7 @@ fn record(risks: &mut PresetRisks, theme: &ThemeVariant, findings: &[AuditFindin
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn cost_waterfall_task_and_run_status_keep_distinct_painted_roles(cx: &mut TestAppContext) {
     let mut app = real(cx, "cost_header_roles");
     let (mut v, view) = gallery(&mut app, "cost_waterfall", "modern-light");
@@ -104,6 +106,7 @@ fn cost_waterfall_task_and_run_status_keep_distinct_painted_roles(cx: &mut TestA
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn breakdown_chart_unit_uses_its_own_muted_ink(cx: &mut TestAppContext) {
     let mut app = real(cx, "breakdown_unit");
     let (mut v, view) = gallery(&mut app, "breakdown_chart", "modern-light");
@@ -149,6 +152,7 @@ fn breakdown_chart_unit_uses_its_own_muted_ink(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn conversation_model_fallback_is_legible_inside_composer(cx: &mut TestAppContext) {
     let mut app = real(cx, "inline_model_fallback");
     let (mut v, view) = gallery(&mut app, "scene.messages", "modern-light");
@@ -179,6 +183,7 @@ fn conversation_model_fallback_is_legible_inside_composer(cx: &mut TestAppContex
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn affine_table_keeps_the_authored_header_risk_when_rotated_or_straight(cx: &mut TestAppContext) {
     let mut app = real(cx, "affine_header_proof");
     let (mut v, view) = gallery(&mut app, "foundations.affine", "modern-light");
@@ -203,6 +208,7 @@ fn affine_table_keeps_the_authored_header_risk_when_rotated_or_straight(cx: &mut
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn recommendation_confidence_keeps_its_source_ink_and_opaque_paper(cx: &mut TestAppContext) {
     let mut app = real(cx, "recommendation_confidence");
     let (mut v, view) = gallery(&mut app, "smart_recommendation", "modern-light");

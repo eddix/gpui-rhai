@@ -62,6 +62,7 @@ fn parallel_attempts_reviewed_ink_is_scoped_to_the_actual_fixture_roles(cx: &mut
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn parallel_attempts_uses_the_name_line_height_and_emphasizes_total_values(
     cx: &mut TestAppContext,
 ) {

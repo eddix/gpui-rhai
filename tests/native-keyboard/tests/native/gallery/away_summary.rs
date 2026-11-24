@@ -48,6 +48,7 @@ fn away_summary_footer_buttons_share_the_reference_height_in_every_preset(cx: &m
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn away_summary_keeps_caption_and_action_inks_distinct_through_folding(cx: &mut TestAppContext) {
     use crate::support::{PresetRisks, center, glyphs_with_ink, live_fills};
     #[cfg(feature = "gpui-fast")]

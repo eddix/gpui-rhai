@@ -4,6 +4,7 @@ use super::conversation::{click, gallery, node, ready};
 use crate::support::{Mount, bounds, center, glyphs_with_ink, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn memory_panel_metadata_separator_has_its_own_paint_and_reading_scale(cx: &mut TestAppContext) {
     use crate::support::PresetRisks;
     #[cfg(feature = "gpui-fast")]
@@ -89,6 +90,7 @@ fn memory_panel_metadata_separator_has_its_own_paint_and_reading_scale(cx: &mut 
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn memory_panel_footer_action_keeps_its_preset_size_and_body_ink(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -147,6 +149,7 @@ fn horizontal_fades(visual: &mut gpui::VisualTestContext) -> usize {
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn memory_panel_clean_counts_follow_selection_without_changing_idle_ink(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -186,6 +189,7 @@ fn memory_panel_clean_counts_follow_selection_without_changing_idle_ink(cx: &mut
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn memory_panel_keeps_preset_filter_metrics_and_places_actions_below_the_fact(
     cx: &mut TestAppContext,
 ) {

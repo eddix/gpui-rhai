@@ -451,6 +451,7 @@ fn collaboration_stream_toolbar_preserves_each_designs_own_content_inset(cx: &mu
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn collaboration_stream_participant_ink_follows_hover_and_selection(cx: &mut TestAppContext) {
     use crate::support::{center, glyphs_with_ink};
     #[cfg(feature = "gpui-fast")]
@@ -648,6 +649,7 @@ fn collaboration_stream_composer_uses_the_authored_height_range(cx: &mut TestApp
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn collaboration_stream_attachment_and_reply_paint_the_body_ink_in_all_presets(
     cx: &mut TestAppContext,
 ) {

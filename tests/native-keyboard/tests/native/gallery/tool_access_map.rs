@@ -8,6 +8,7 @@ use super::conversation::{click, gallery, node, ready};
 use crate::support::{Host, bounds, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn tool_access_map_preserves_distinct_tab_geometry_and_secondary_ink(cx: &mut TestAppContext) {
     use crate::support::{center, glyphs_with_ink};
     #[cfg(feature = "gpui-fast")]

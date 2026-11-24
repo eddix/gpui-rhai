@@ -12,6 +12,7 @@ fn button(v: &mut VisualTestContext, view: &ScriptViewHandle, label: &str) {
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn judge_bracket_answer_metadata_uses_the_quiet_11px_recipe(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

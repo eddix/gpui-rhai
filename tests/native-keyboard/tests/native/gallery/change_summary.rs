@@ -4,6 +4,7 @@ use super::conversation::{click, gallery, node, ready, resize_to_group_width};
 use crate::support::{bounds, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn change_summary_uses_preset_wrapping_and_the_actual_content_breakpoint(cx: &mut TestAppContext) {
     use crate::support::{Mount, glyphs_with_ink};
     #[cfg(feature = "gpui-fast")]
@@ -88,6 +89,7 @@ fn view(ctx) { column([cards::ChangeSummary(#{
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn summary_and_tips_keep_original_contrast_warnings_on_their_painted_headers(
     cx: &mut TestAppContext,
 ) {

@@ -10,6 +10,7 @@ use crate::support::{
 };
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn plan_vs_actual_finish_marker_uses_body_ink_on_its_wash(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -141,6 +142,7 @@ fn plan_vs_actual_authored_task_risk_stays_in_the_raw_audit(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn plan_vs_actual_waiting_title_paints_body_ink_until_the_host_finishes_it(
     cx: &mut TestAppContext,
 ) {

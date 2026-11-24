@@ -78,6 +78,7 @@ fn compact_breakdown_delta_uses_the_signed_surface_and_an_isolated_affine_entry(
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn compact_breakdown_narrow_caption_preserves_the_painted_share(cx: &mut TestAppContext) {
     use crate::support::glyph_rects_with_ink;
     #[cfg(feature = "gpui-fast")]

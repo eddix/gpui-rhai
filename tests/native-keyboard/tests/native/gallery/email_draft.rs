@@ -50,6 +50,7 @@ fn underline_at_link(v: &mut VisualTestContext, area: gpui_rhai::GeometryBounds)
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn email_draft_hover_uses_native_underline_motion_without_rerunning_rhai(cx: &mut TestAppContext) {
     use crate::support::center;
     #[cfg(feature = "gpui-fast")]
@@ -209,6 +210,7 @@ fn wrapped_link_hover_ignores_the_blank_area_of_its_semantic_union(cx: &mut Test
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn email_draft_inline_quote_shares_a_line_and_does_not_start_editing(cx: &mut TestAppContext) {
     use crate::support::click_center;
     #[cfg(feature = "gpui-fast")]
@@ -379,6 +381,7 @@ fn email_draft_tone_and_edit_buttons_share_the_reference_height_in_every_preset(
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn email_draft_tone_ink_follows_native_hover_and_selection(cx: &mut TestAppContext) {
     use crate::support::glyphs_with_ink;
     #[cfg(feature = "gpui-fast")]
@@ -779,6 +782,7 @@ fn email_draft_audit_uses_the_painted_paper_behind_its_grid_content(cx: &mut Tes
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn email_draft_link_keeps_separate_glyph_and_underline_ink(cx: &mut TestAppContext) {
     use crate::support::{glyphs_with_ink, logical_paint_rect, walk_live_paint};
     #[cfg(feature = "gpui-fast")]
@@ -846,6 +850,7 @@ fn email_draft_link_keeps_separate_glyph_and_underline_ink(cx: &mut TestAppConte
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn email_draft_account_and_address_keep_their_distinct_native_ink(cx: &mut TestAppContext) {
     use crate::support::glyphs_with_ink;
     #[cfg(feature = "gpui-fast")]
@@ -890,6 +895,7 @@ fn email_draft_account_and_address_keep_their_distinct_native_ink(cx: &mut TestA
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn email_draft_attachment_keeps_the_paper_and_routes_both_actions(cx: &mut TestAppContext) {
     use crate::support::{center, glyphs_with_ink, live_fills};
     #[cfg(feature = "gpui-fast")]
@@ -994,6 +1000,7 @@ fn email_draft_attachment_keeps_the_paper_and_routes_both_actions(cx: &mut TestA
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn email_draft_switches_action_bands_without_restarting_the_editor_or_request(
     cx: &mut TestAppContext,
 ) {

@@ -6,6 +6,7 @@ use super::conversation::{click, gallery, node, ready, resize_to_group_width};
 use crate::support::{bounds, center, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn tips_panel_uses_the_inner_grid_width_and_scales_visible_text(cx: &mut TestAppContext) {
     use crate::support::Mount;
     #[cfg(feature = "gpui-fast")]

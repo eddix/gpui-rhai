@@ -150,6 +150,7 @@ fn project_status_and_picker_use_distinct_native_paints_in_each_design(cx: &mut 
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn authored_project_status_and_due_date_remain_in_the_raw_contrast_audit(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

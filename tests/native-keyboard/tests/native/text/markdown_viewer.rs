@@ -1055,6 +1055,7 @@ fn view(ctx) { column([
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn markdown_links_focus_and_hit_only_their_wrapped_text_fragments(cx: &mut TestAppContext) {
     use crate::support::{glyph_rects_with_ink, logical_paint_rect, walk_live_paint};
     #[cfg(feature = "gpui-fast")]

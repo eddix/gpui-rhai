@@ -9,6 +9,7 @@ use crate::support::{bounds, snapshot};
 const CLOSED: &str = "Background tasks: 2 running, 1 needs you";
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn running_now_trigger_paints_preset_ink_and_surface_without_a_second_button(
     cx: &mut TestAppContext,
 ) {

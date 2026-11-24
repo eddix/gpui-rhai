@@ -193,6 +193,7 @@ fn fan_out_grid_filters_without_moving_and_retries_only_accepted_failures(cx: &m
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn fan_out_grid_switches_footer_paper_without_replacing_its_controls(cx: &mut TestAppContext) {
     use crate::support::{glyphs_with_ink, live_fills};
     #[cfg(feature = "gpui-fast")]

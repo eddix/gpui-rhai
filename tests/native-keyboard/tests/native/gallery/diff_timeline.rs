@@ -26,6 +26,7 @@ fn keyed<'a>(node: &'a UiNode, key: &str) -> Option<&'a UiNode> {
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn diff_timeline_legend_and_time_ticks_keep_independent_ink(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -79,6 +80,7 @@ fn diff_timeline_legend_and_time_ticks_keep_independent_ink(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn diff_timeline_preview_paints_code_and_change_signs_separately(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -180,6 +182,7 @@ fn diff_timeline_preview_paints_code_and_change_signs_separately(cx: &mut TestAp
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn diff_timeline_reserves_a_real_count_lane_and_paints_paired_semantic_amounts(
     cx: &mut TestAppContext,
 ) {

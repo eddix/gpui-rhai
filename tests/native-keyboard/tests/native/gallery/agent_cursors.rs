@@ -9,6 +9,7 @@ use super::conversation::{click, gallery, node, ready};
 use crate::support::{Host, PresetRisks, Step, bounds, center, glyphs_with_ink, settle, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn agent_cursors_overflow_badge_uses_avatar_paper_and_keeps_native_disclosure(
     cx: &mut TestAppContext,
 ) {
@@ -148,6 +149,7 @@ fn agent_cursors_review_tab_and_header_risks_keep_their_exact_stock_paint(cx: &m
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn agent_cursors_review_tab_rest_and_hover_match_all_four_appearances(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -191,6 +193,7 @@ fn agent_cursors_review_tab_rest_and_hover_match_all_four_appearances(cx: &mut T
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn agent_cursors_review_tab_hover_retargets_from_the_painted_midpoint(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

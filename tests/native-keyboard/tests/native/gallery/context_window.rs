@@ -19,6 +19,7 @@ fn used(v: &mut VisualTestContext, view: &ScriptViewHandle, count: i64) {
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn context_window_modern_summary_aligns_painted_digits(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -212,6 +213,7 @@ fn context_window_reports_overflow_and_missing_limit_without_inventing_capacity(
     node(&mut v, &view, "status", "No token limit available");
 }
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn context_window_footer_presents_preset_ink_and_a_bounded_action(cx: &mut TestAppContext) {
     use crate::support::{PresetRisks, glyphs_with_ink, snapshot};
     #[cfg(feature = "gpui-fast")]

@@ -25,6 +25,7 @@ fn capacity_paint(v: &mut VisualTestContext, area: GeometryBounds) -> (gpui::Bac
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn context_map_capacity_readout_matches_the_actual_preset_states(cx: &mut TestAppContext) {
     use crate::support::glyphs_with_ink;
     #[cfg(feature = "gpui-fast")]
@@ -330,6 +331,7 @@ fn context_map_tile_keeps_title_ink_and_fades_its_secondary_line(cx: &mut TestAp
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn context_map_free_tile_uses_its_own_ink_without_losing_the_caption_fade(cx: &mut TestAppContext) {
     use crate::support::glyph_rects_with_ink;
     #[cfg(feature = "gpui-fast")]
@@ -760,6 +762,7 @@ fn context_map_clean_leaves_the_outer_paper_to_its_host(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn context_map_summary_and_footer_draw_their_own_secondary_ink(cx: &mut TestAppContext) {
     use crate::support::{PresetRisks, glyphs_with_ink};
     #[cfg(feature = "gpui-fast")]
@@ -849,6 +852,7 @@ fn context_map_summary_and_footer_draw_their_own_secondary_ink(cx: &mut TestAppC
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn context_map_model_uses_its_header_ink_in_each_preset(cx: &mut TestAppContext) {
     use crate::support::glyphs_with_ink;
     #[cfg(feature = "gpui-fast")]

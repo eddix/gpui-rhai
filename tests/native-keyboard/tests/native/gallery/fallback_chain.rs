@@ -8,6 +8,7 @@ use super::conversation::{click, gallery, node, ready};
 use crate::support::{Host, Mount, bounds, center, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn fallback_chain_endpoint_ink_tracks_the_accepted_result(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -239,6 +240,7 @@ fn fallback_chain_running_numbers_sweep_then_rest_without_advancing_the_host(
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn fallback_chain_running_summary_uses_muted_text_not_the_dot_accent(cx: &mut TestAppContext) {
     use crate::support::glyphs_with_ink;
     #[cfg(feature = "gpui-fast")]

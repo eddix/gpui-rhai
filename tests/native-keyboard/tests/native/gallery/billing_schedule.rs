@@ -30,6 +30,7 @@ fn replace_phase(v: &mut VisualTestContext, view: &ScriptViewHandle, text: &str)
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn billing_schedule_date_summary_and_labels_use_secondary_body_ink(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

@@ -11,6 +11,7 @@ use gpui_rhai::*;
 use crate::support::{Mount, Step, bounds, center, last_error, settle};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn inherited_glyph_paint_samples_parent_motion_without_recoloring_explicit_spans(
     cx: &mut TestAppContext,
 ) {
@@ -82,6 +83,7 @@ fn inherited_glyph_paint_samples_parent_motion_without_recoloring_explicit_spans
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn mixed_rich_text_keeps_dynamic_and_fixed_ink_in_the_same_shaped_line(cx: &mut TestAppContext) {
     use crate::support::glyph_rects_with_ink;
     #[cfg(feature = "gpui-fast")]
@@ -140,6 +142,7 @@ fn mixed_rich_text_keeps_dynamic_and_fixed_ink_in_the_same_shaped_line(cx: &mut 
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn mixed_rich_ink_survives_wrapping_and_ellipsis(cx: &mut TestAppContext) {
     use crate::support::glyph_rects_with_ink;
     #[cfg(feature = "gpui-fast")]

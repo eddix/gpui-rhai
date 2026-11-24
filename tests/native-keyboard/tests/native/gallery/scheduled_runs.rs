@@ -37,6 +37,7 @@ fn scheduled_runs_card_marks_paint_on_the_card_paper_and_grips_are_not_text(
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn scheduled_runs_date_ink_matches_the_header_inset_in_all_presets(cx: &mut TestAppContext) {
     use crate::support::{Mount, glyph_rects_with_ink};
     #[cfg(feature = "gpui-fast")]
@@ -139,6 +140,7 @@ fn scheduled_runs_singular_task_count_uses_the_singular_label(cx: &mut TestAppCo
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn scheduled_runs_expands_the_selected_name_without_replacing_its_avatar(cx: &mut TestAppContext) {
     use crate::support::{glyph_rects_with_ink, live_fills};
     #[cfg(feature = "gpui-fast")]
@@ -284,6 +286,7 @@ fn drag_between(
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn scheduled_runs_note_and_period_use_independent_preset_ink(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -330,6 +333,7 @@ fn scheduled_runs_note_and_period_use_independent_preset_ink(cx: &mut TestAppCon
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn scheduled_runs_aligns_the_title_and_note_on_a_painted_baseline(cx: &mut TestAppContext) {
     use crate::support::{Mount, glyph_rects_with_ink};
     #[cfg(feature = "gpui-fast")]

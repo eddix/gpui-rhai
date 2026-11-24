@@ -93,6 +93,7 @@ fn textarea_paste_reveals_the_caret_using_the_new_scroll_extent(cx: &mut TestApp
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn isolated_tracking_keeps_retained_editor_caret_and_pointer_geometry(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

@@ -19,6 +19,7 @@ fn button(v: &mut VisualTestContext, view: &ScriptViewHandle, label: &str) {
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn conflict_radar_path_roles_keep_actual_font_and_neutral_file_ink(cx: &mut TestAppContext) {
     use crate::support::glyphs_with_ink;
     #[cfg(feature = "gpui-fast")]

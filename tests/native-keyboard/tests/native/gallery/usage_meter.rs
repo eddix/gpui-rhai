@@ -193,6 +193,7 @@ fn view(ctx){
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn usage_meter_native_quota_number_inherits_its_status_ink(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;
@@ -230,6 +231,7 @@ fn usage_meter_native_quota_number_inherits_its_status_ink(cx: &mut TestAppConte
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn usage_meter_footer_owns_the_action_surface_in_each_state(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

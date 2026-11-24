@@ -1812,6 +1812,7 @@ fn status_bar_uses_spare_end_space_without_changing_center_alignment(cx: &mut Te
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn gallery_status_bar_keeps_locale_and_the_audit_action_visible(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

@@ -8,6 +8,7 @@ use super::conversation::{click, gallery, node, ready};
 use crate::support::{Mount, bounds, glyphs_with_ink, live_fills, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn experiment_chips_reproduce_each_presets_independent_ink_and_translucent_wash(
     cx: &mut TestAppContext,
 ) {
@@ -148,6 +149,7 @@ fn view(ctx) {
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn experiment_chips_preserve_their_visible_light_preset_audit_warnings(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

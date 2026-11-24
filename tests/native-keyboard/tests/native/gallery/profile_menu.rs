@@ -7,6 +7,7 @@ use super::conversation::{click, gallery, node, ready};
 use crate::support::{Mount, bounds, snapshot};
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn profile_setup_uses_authored_spacing_and_a_wider_next_hit_area(cx: &mut TestAppContext) {
     #[cfg(feature = "gpui-fast")]
     use apple_fast as apple;

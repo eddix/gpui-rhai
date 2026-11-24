@@ -987,6 +987,7 @@ fn rate_limit_planner_overflow_uses_native_hatches_with_independent_periods(
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
 fn rate_limit_planner_bar_text_uses_the_selected_srgb_mix(cx: &mut TestAppContext) {
     use crate::support::{PresetRisks, live_fills};
     #[cfg(feature = "gpui-fast")]
