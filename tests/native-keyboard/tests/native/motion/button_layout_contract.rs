@@ -117,17 +117,27 @@ fn layout_size_motion_reflows_siblings_on_both_axes(cx: &mut TestAppContext) {
     let button = bounds(&mut visual, &view, "button", "Toggle");
     click_center(&mut visual, button);
     settle(&mut visual, Step::Refresh, 3);
-    assert!((bounds(&mut visual, &view, "group", "Width").width - 150.).abs() < 0.5);
-    assert!((bounds(&mut visual, &view, "group", "Height").height - 80.).abs() < 0.5);
+    let tween = gpui_rhai::EXTENDED_RENDERING;
+    let (first_w, first_h) = if tween { (150., 80.) } else { (240., 160.) };
+    assert!((bounds(&mut visual, &view, "group", "Width").width - first_w).abs() < 0.5);
+    assert!((bounds(&mut visual, &view, "group", "Height").height - first_h).abs() < 0.5);
     manual.advance(Duration::from_millis(200));
     settle(&mut visual, Step::Refresh, 3);
     let mid_w = bounds(&mut visual, &view, "group", "Width").width;
     let mid_h = bounds(&mut visual, &view, "group", "Height").height;
+    let (expected_w, expected_h) = if tween { (195., 120.) } else { (240., 160.) };
     assert!(
-        (mid_w - 195.).abs() < 0.5 && (mid_h - 120.).abs() < 0.5,
+        (mid_w - expected_w).abs() < 0.5 && (mid_h - expected_h).abs() < 0.5,
         "{mid_w} {mid_h}"
     );
-    assert!((bounds(&mut visual, &view, "group", "Horizontal neighbor").x - h - 45.).abs() < 0.5);
-    assert!((bounds(&mut visual, &view, "group", "Vertical neighbor").y - v - 40.).abs() < 0.5);
+    assert!(
+        (bounds(&mut visual, &view, "group", "Horizontal neighbor").x - h - (expected_w - 150.))
+            .abs()
+            < 0.5
+    );
+    assert!(
+        (bounds(&mut visual, &view, "group", "Vertical neighbor").y - v - (expected_h - 80.)).abs()
+            < 0.5
+    );
     assert_eq!(last_error(&mut visual, &view), None);
 }

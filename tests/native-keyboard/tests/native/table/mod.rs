@@ -19,6 +19,9 @@ mod modern_clean_geometry;
 mod render_ahead;
 mod sort_key;
 mod sticky_header;
+// Rotated drag geometry is an opt-in vendor contract. Ordinary resize,
+// cancellation and scrolling are tested independently on both profiles.
+#[cfg(feature = "vendor-gpui")]
 mod transformed_resize;
 mod virtual_rows;
 

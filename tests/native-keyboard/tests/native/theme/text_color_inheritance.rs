@@ -55,14 +55,19 @@ fn inherited_glyph_paint_samples_parent_motion_without_recoloring_explicit_spans
     );
     visual.simulate_mouse_move(center(row), None, Modifiers::none());
     settle(&mut visual, Step::Tick, 4);
+    let (start_ink, sampled_ink) = if EXTENDED_RENDERING {
+        (0x304050ff, 0x708090ff)
+    } else {
+        (0xb0c0d0ff, 0xb0c0d0ff)
+    };
     assert_eq!(
-        glyph_rects_with_ink(&mut visual, row, 0x304050ff),
+        glyph_rects_with_ink(&mut visual, row, start_ink),
         plain_glyphs
     );
     clock.advance(Duration::from_millis(80));
     settle(&mut visual, Step::Tick, 4);
     assert_eq!(
-        glyph_rects_with_ink(&mut visual, row, 0x708090ff),
+        glyph_rects_with_ink(&mut visual, row, sampled_ink),
         plain_glyphs
     );
     assert_eq!(
@@ -125,15 +130,20 @@ fn mixed_rich_text_keeps_dynamic_and_fixed_ink_in_the_same_shaped_line(cx: &mut 
     );
     visual.simulate_mouse_move(center(region), None, Modifiers::none());
     settle(&mut visual, Step::Tick, 4);
+    let (start_ink, sampled_ink) = if EXTENDED_RENDERING {
+        (0x304050ff, 0x708090ff)
+    } else {
+        (0xb0c0d0ff, 0xb0c0d0ff)
+    };
     assert_eq!(
-        glyph_rects_with_ink(&mut visual, region, 0x304050ff),
+        glyph_rects_with_ink(&mut visual, region, start_ink),
         inherited,
-        "animated paint must not jump to the target before the clock advances"
+        "inherited glyphs share the configured profile's first paint"
     );
     clock.advance(Duration::from_millis(80));
     settle(&mut visual, Step::Tick, 4);
     assert_eq!(
-        glyph_rects_with_ink(&mut visual, region, 0x708090ff),
+        glyph_rects_with_ink(&mut visual, region, sampled_ink),
         inherited,
         "both uncolored spans must sample the same midpoint, including the bold span"
     );
@@ -194,11 +204,16 @@ fn mixed_rich_ink_survives_wrapping_and_ellipsis(cx: &mut TestAppContext) {
         settle(&mut visual, Step::Tick, 4);
         clock.advance(Duration::from_millis(80));
         settle(&mut visual, Step::Tick, 4);
-        assert_eq!(glyph_rects_with_ink(&mut visual, region, 0x708090ff), base);
-        // The 50% author ink is composed on the mid-transition color, not
-        // on the layout-phase target. Its glyph rects don't move either.
+        let (sampled, sampled_tint) = if EXTENDED_RENDERING {
+            (0x708090ff, 0x786058ff)
+        } else {
+            (0xb0c0d0ff, 0x988078ff)
+        };
+        assert_eq!(glyph_rects_with_ink(&mut visual, region, sampled), base);
+        // The 50% author ink composes with the displayed paint, whether a
+        // sampled midpoint or a native immediate target. Geometry stays fixed.
         assert_eq!(
-            glyph_rects_with_ink(&mut visual, region, 0x786058ff),
+            glyph_rects_with_ink(&mut visual, region, sampled_tint),
             tinted
         );
         assert_eq!(glyph_rects_with_ink(&mut visual, region, 0xd04070ff), fixed);

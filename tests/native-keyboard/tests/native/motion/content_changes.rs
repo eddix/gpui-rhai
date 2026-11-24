@@ -414,7 +414,8 @@ fn button_loading_width_and_following_sibling_use_the_same_constrained_frame(
         let label = "Receiving the most recent query results";
         let first = bounds(&mut visual, &view, "button", label);
         same_gap(first.width, finish_at(&mut visual));
-        if preference == MotionPreference::Normal {
+        let tween = gpui_rhai::EXTENDED_RENDERING && preference == MotionPreference::Normal;
+        if tween {
             assert!(
                 (start.width - first.width).abs() < 1.,
                 "width jumps at content change: {start:?}/{first:?}"
@@ -422,7 +423,7 @@ fn button_loading_width_and_following_sibling_use_the_same_constrained_frame(
         } else {
             assert!(
                 (first.width - 170.).abs() < 1.,
-                "reduced policy must present target: {first:?}"
+                "without native size interpolation, present the target: {first:?}"
             );
         }
         let revision = visual.update(|_, cx| view.committed_revision(cx).unwrap());
@@ -430,7 +431,7 @@ fn button_loading_width_and_following_sibling_use_the_same_constrained_frame(
         settle(&mut visual, Step::Refresh, 3);
         let mid = bounds(&mut visual, &view, "button", label);
         same_gap(mid.width, finish_at(&mut visual));
-        if preference == MotionPreference::Normal {
+        if tween {
             assert!(mid.width > start.width + 1. && mid.width < 169.5, "{mid:?}");
             dispatch(&mut visual, &view, by_role("button", "Finish"), "click").unwrap();
             settle(&mut visual, Step::Frame, 3);
@@ -445,10 +446,16 @@ fn button_loading_width_and_following_sibling_use_the_same_constrained_frame(
             same_gap(done.width, finish_at(&mut visual));
             assert!((done.width - start.width).abs() < 1.);
         } else {
+            assert!((mid.width - first.width).abs() < 1.);
             assert_eq!(
                 visual.update(|_, cx| view.committed_revision(cx).unwrap()),
                 revision
             );
+            dispatch(&mut visual, &view, by_role("button", "Finish"), "click").unwrap();
+            settle(&mut visual, Step::Frame, 3);
+            let done = bounds(&mut visual, &view, "button", "Go");
+            same_gap(done.width, finish_at(&mut visual));
+            assert!((done.width - start.width).abs() < 1.);
         }
         assert_eq!(last_error(&mut visual, &view), None);
     }

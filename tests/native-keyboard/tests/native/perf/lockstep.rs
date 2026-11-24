@@ -151,14 +151,25 @@ fn focus_and_hover_keep_the_windows_identical(cx: &mut TestAppContext) {
     sides.advance_motion(Duration::from_millis(48));
     sides.assert_same("hover at the same intermediate motion instant");
     let hover_between = sides.quads(0);
-    assert_ne!(hover_start, hover_between, "hover must animate, not freeze");
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert_ne!(hover_start, hover_between, "hover must animate, not freeze");
+    } else {
+        assert_eq!(
+            hover_start, hover_between,
+            "public hover applies its target immediately"
+        );
+    }
     sides.advance_motion(Duration::from_millis(240));
     sides.assert_same("hover at rest");
-    assert_ne!(
-        hover_between,
-        sides.quads(0),
-        "intermediate frame must not be the endpoint"
-    );
+    if gpui_rhai::EXTENDED_RENDERING {
+        assert_ne!(
+            hover_between,
+            sides.quads(0),
+            "intermediate frame must not be the endpoint"
+        );
+    } else {
+        assert_eq!(hover_between, sides.quads(0));
+    }
     sides.act(|visual, view| {
         let tab = bounds(visual, view, "tab", "Two");
         visual.simulate_click(center(tab), Modifiers::none());

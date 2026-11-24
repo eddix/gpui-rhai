@@ -362,10 +362,14 @@ fn reveal_moves_from_the_real_side_after_a_flip_without_animating_the_trigger(
         clock.advance(Duration::from_millis(240));
         settle(&mut visual, Step::Refresh, 3);
         let rested = bounds(&mut visual, &view, "group", "Reveal preview");
-        assert!(
-            entering.width < rested.width - 0.3,
-            "scale sample absent: {entering:?} {rested:?}"
-        );
+        if gpui_rhai::EXTENDED_RENDERING {
+            assert!(
+                entering.width < rested.width - 0.3,
+                "scale sample absent: {entering:?} {rested:?}"
+            );
+        } else {
+            assert!((entering.width - rested.width).abs() < 0.5);
+        }
         let displacement = entering.y - rested.y;
         assert!(
             if flipped {
