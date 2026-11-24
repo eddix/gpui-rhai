@@ -40,6 +40,7 @@ if (!/^native-[0-9a-f]+(?:\.exe)?$/.test(basename(exe))) {
     // them their own process, and recycle the allocator between other batches.
     const exhaustive = name => name.startsWith("gallery::acceptance::every_gallery_page_")
       || name.startsWith("gallery::module_coverage::")
+      || name === "gallery::stories::every_gallery_story_case_mounts_draws_and_presents_semantics"
       || name === "gallery::acceptance::gallery_reviewed_text_aligns_in_every_preset_and_density";
     const regular = tests.filter(name => !exhaustive(name));
     const batches = tests.filter(exhaustive).map(name => ({tests: [name], threads: "1"}));

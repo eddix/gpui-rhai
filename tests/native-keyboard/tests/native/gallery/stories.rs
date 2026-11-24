@@ -163,6 +163,7 @@ fn wait_for_text(
 fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestAppContext) {
     cx.executor().allow_parking();
     cx.update(gpui_rhai::install);
+    let windows_before = cx.update(|app| app.windows().len());
     for story in stories() {
         for case in story.cases {
             let launch = GalleryLaunch {
@@ -213,6 +214,17 @@ fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestApp
                     .bounds
                     .is_some_and(|bounds| bounds.width > 0.0 && bounds.height > 0.0)),
                 "{}/{} presented no laid-out semantic node",
+                story.id,
+                case.id
+            );
+            // GPUI owns open windows independently of their handles. Release
+            // each case before refreshing the next one.
+            visual.update(|window, _| window.remove_window());
+            cx.run_until_parked();
+            assert_eq!(
+                cx.update(|app| app.windows().len()),
+                windows_before,
+                "{}/{} left a test window open",
                 story.id,
                 case.id
             );

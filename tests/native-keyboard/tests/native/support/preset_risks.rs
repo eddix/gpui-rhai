@@ -4137,7 +4137,7 @@ fn away_summary_risk_separates_authored_tray_from_native_row_paper() {
 }
 
 #[test]
-fn scheduled_runs_risk_keeps_the_pill_wash_inside_the_history_group() {
+fn scheduled_runs_risk_matches_the_pill_wash_to_the_painter() {
     let mut policy = PresetRisks::new();
     let stock = policy
         .stock
@@ -4149,7 +4149,13 @@ fn scheduled_runs_risk_keeps_the_pill_wash_inside_the_history_group() {
     let inner = [1. - 15. / 255.; 3];
     let ink = gpui_rhai::Rgba8::from_rgba_hex(0x6b6b6bff);
     let final_paper = blend_rgb(inner, 0.45, base);
-    let final_ink = blend_rgb([107. / 255.; 3], 0.45, base);
+    let isolated = blend_rgb([107. / 255.; 3], 0.45, base);
+    let per_draw = blend_rgb([107. / 255.; 3], 0.45, final_paper);
+    let (expected_ink, wrong_ink) = if gpui_rhai::EXTENDED_RENDERING {
+        (isolated, per_draw)
+    } else {
+        (per_draw, isolated)
+    };
     let mut finding = AuditFinding {
         rule: AuditRule::LowContrastText,
         node: None,
@@ -4159,7 +4165,7 @@ fn scheduled_runs_risk_keeps_the_pill_wash_inside_the_history_group() {
             foreground: ink,
             element_opacity: 0.45,
             background_srgb: Some(final_paper),
-            ratio: contrast_between(final_ink, final_paper),
+            ratio: contrast_between(expected_ink, final_paper),
             minimum: 4.5,
             conservative: false,
         }),
@@ -4176,10 +4182,10 @@ fn scheduled_runs_risk_keeps_the_pill_wash_inside_the_history_group() {
         assert!(!policy.record(&stock, &other));
     }
     let evidence = finding.contrast.as_mut().unwrap();
-    evidence.ratio = contrast_on_opacity(ink, 0.45, final_paper);
+    evidence.ratio = contrast_between(wrong_ink, final_paper);
     assert!(
         !policy.record(&stock, &finding),
-        "per-glyph fading is not group compositing"
+        "the evidence must describe the selected paint model"
     );
 }
 
