@@ -38,6 +38,7 @@ The regular Cargo workspaces and lockfiles are the release/public build.
 locks and the opt-in SDK feature. It does not change your checkout lockfile.
 
 ```sh
+bash scripts/with-vendor-gpui.sh sdk pre check -p gpui-rhai
 bash scripts/with-vendor-gpui.sh sdk fast check -p gpui-rhai-cli
 bash scripts/with-vendor-gpui.sh native pre test --test native gallery::module_coverage
 bash scripts/with-vendor-gpui.sh apps pre run --release -p disktree-rhai -- /path/to/scan

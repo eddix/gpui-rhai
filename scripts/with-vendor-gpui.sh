@@ -16,7 +16,9 @@ shift 3
 [[ "$backend" == pre || "$backend" == fast ]] || usage
 [[ "$(uname -s)" == Darwin ]] || { echo "Vendor GPUI rendering is currently supported on macOS only." >&2; exit 2; }
 case "$workspace" in
-    sdk) prefix=""; features="gpui-rhai/gpui-$backend,gpui-rhai-cli/gpui-$backend,gpui-rhai/vendor-gpui";;
+    # The SDK and CLI expose the same two feature names. Unqualified features
+    # apply to whichever member the caller selects with `-p` (or to both).
+    sdk) prefix=""; features="gpui-$backend,vendor-gpui";;
     native) prefix="tests/native-keyboard/"; features="gpui-$backend,vendor-gpui";;
     apps) [[ "$backend" == pre ]] || usage; prefix="apps/"; features="vendor-gpui";;
     *) usage;;

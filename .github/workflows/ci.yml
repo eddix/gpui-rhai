@@ -250,7 +250,9 @@ jobs:
         with:
           toolchain: 1.99.0
       - name: Check the vendor graph
-        run: bash scripts/with-vendor-gpui.sh sdk ${{ matrix.backend }} check -p gpui-rhai-cli
+        run: |
+          bash scripts/with-vendor-gpui.sh sdk ${{ matrix.backend }} tree -p gpui-rhai --depth 1
+          bash scripts/with-vendor-gpui.sh sdk ${{ matrix.backend }} check -p gpui-rhai-cli
       - name: Native and Gallery contracts on the vendor backend
         run: bash scripts/with-vendor-gpui.sh native ${{ matrix.backend }} test --test native
         env:
