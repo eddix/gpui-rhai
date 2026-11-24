@@ -24,7 +24,7 @@ of the available profiles, not a controlled performance benchmark.
 | Hairlines and shadows | The public native shadow stack; no alternate translucent-surface cutout. |
 | Hover, focus, loading and expansion | Native states and callbacks are retained; computed-paint color transitions and content-size interpolation can snap. |
 | Glass and filters | Ordinary non-blurred surfaces; no group filters, glyph-sweep mask or composed-group opacity. |
-| Typography and wrapping | Native tracking; ordinary wrapping without figure exclusion or glyph-level underline animation. |
+| Typography and wrapping | Native default character spacing and ordinary wrapping. Custom tracking, figure exclusion, and glyph-level underline animation require the vendor profile. |
 | Transformed interactive subtrees | Remain in the ordinary layout plane so pointer, focus and editing do not diverge from paint. Canvas retains its command-space transforms. |
 
 Use Rust's `gpui_rhai::EXTENDED_RENDERING` to distinguish the profiles.

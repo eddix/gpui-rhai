@@ -151,9 +151,14 @@ fn isolated_tracking_keeps_retained_editor_caret_and_pointer_geometry(cx: &mut T
             let owner = visual.update(|window, cx| window.focused(cx)).unwrap();
             change_type(&mut visual, &view);
             let after = caret(&mut visual);
+            let expected_advance = if gpui_rhai::EXTENDED_RENDERING {
+                28.
+            } else {
+                0.
+            };
             assert!(
-                (after.x - before.x - 28.).abs() < 0.02,
-                "{name}/area={area}: tracking must update all four cluster advances; start={start:?}, before={before:?}, after={after:?}"
+                (after.x - before.x - expected_advance).abs() < 0.02,
+                "{name}/area={area}: expected tracking advance {expected_advance}; start={start:?}, before={before:?}, after={after:?}"
             );
             assert_eq!(
                 visual.update(|window, cx| window.focused(cx)),
