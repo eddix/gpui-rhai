@@ -72,6 +72,44 @@ fn field_box(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> gpui_rh
     bounds(visual, view, "text_field", "Verification code")
 }
 
+#[gpui::test]
+fn confirming_a_focused_code_releases_tab_navigation_without_reentry(cx: &mut TestAppContext) {
+    for key in ["tab", "shift-tab"] {
+        let (mut visual, view) = mount(cx, FIELD, gpui_rhai_registry::MODERN_LIGHT_THEME);
+        let editor = field_box(&mut visual, &view);
+        click_center(&mut visual, editor);
+        let focus = visual
+            .update(|window, cx| window.focused(cx))
+            .expect("code editor focus");
+        visual.simulate_input("123456");
+        dispatch(&mut visual, &view, by_test_id("success"), "click").unwrap();
+        refresh(&mut visual);
+        visual.simulate_keystrokes(key);
+        refresh(&mut visual);
+        let current = visual.update(|window, cx| window.focused(cx));
+        assert!(
+            current.is_some() && current.as_ref() != Some(&focus),
+            "{key}: navigation continues"
+        );
+
+        let verified = bounds(&mut visual, &view, "status", "Verified");
+        click_center(&mut visual, verified);
+        assert_ne!(
+            visual.update(|window, cx| window.focused(cx)).as_ref(),
+            Some(&focus)
+        );
+        for key in ["shift-tab", "tab", "tab"] {
+            visual.simulate_keystrokes(key);
+            refresh(&mut visual);
+            assert_ne!(
+                visual.update(|window, cx| window.focused(cx)).as_ref(),
+                Some(&focus)
+            );
+        }
+        assert_eq!(last_error(&mut visual, &view), None);
+    }
+}
+
 fn cells(
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,

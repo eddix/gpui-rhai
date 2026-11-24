@@ -339,11 +339,15 @@ impl TextInputEntity {
         cx: &mut Context<Self>,
     ) {
         sync_controlled(&mut self.buffer, &config.value);
+        let confirmed = self.code.as_ref().is_some_and(|code| code.is_success());
         self.focus = crate::renderer::configure_editor_focus(
             &self.focus,
             self.surface.as_ref(),
-            config.disabled,
+            config.disabled || confirmed,
         );
+        if confirmed {
+            self.selecting = false;
+        }
         self.placeholder = config.placeholder.clone().into();
         self.placeholder_color = config.placeholder_color;
         self.disabled = config.disabled;
@@ -1197,51 +1201,59 @@ impl Element for TextElement {
 }
 
 impl Render for TextInputEntity {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::app::read_host_frame_epoch(cx);
         let submit_enabled = self.callbacks.submit.is_some();
-        let element = div()
+        let layout = div()
             .flex()
             .h_full()
             .when(
                 self.code.is_none() && self.width_preference == EditorWidthPreference::Stable,
                 gpui::Styled::w_full,
             )
-            .items_center()
-            .key_context(if self.code.is_some() {
-                "GPUIRhaiTextInput GPUIRhaiCodeEntry"
-            } else {
-                "GPUIRhaiTextInput"
+            .items_center();
+        let element = if self.code.as_ref().is_some_and(|code| code.is_success()) {
+            // The editor became a status, not an input. Keep exactly one
+            // non-stop position until its old focus leaves, so Tab still
+            // dispatches through the containing view. A zero-area anchor
+            // cannot take pointer focus or create another semantic node.
+            layout.when(self.focus.is_focused(window), |layout| {
+                layout.child(div().absolute().size(px(0.0)).track_focus(&self.focus))
             })
-            .when(
-                self.code.as_ref().is_none_or(|code| !code.is_success()),
-                |input| input.track_focus(&self.focus),
-            )
-            .on_key_down(cx.listener(Self::key_down))
-            .cursor(CursorStyle::IBeam)
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::delete))
-            .on_action(cx.listener(Self::left))
-            .on_action(cx.listener(Self::right))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
-            .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::home))
-            .on_action(cx.listener(Self::end))
-            .when(submit_enabled, |input| {
-                input.on_action(cx.listener(Self::submit))
-            })
-            .on_action(cx.listener(Self::show_character_palette))
-            .on_action(cx.listener(Self::paste))
-            .on_action(cx.listener(Self::cut))
-            .on_action(cx.listener(Self::copy))
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
-            .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
-            .on_mouse_move(cx.listener(Self::mouse_move))
-            .child(TextElement { input: cx.entity() });
+        } else {
+            layout
+                .key_context(if self.code.is_some() {
+                    "GPUIRhaiTextInput GPUIRhaiCodeEntry"
+                } else {
+                    "GPUIRhaiTextInput"
+                })
+                .track_focus(&self.focus)
+                .on_key_down(cx.listener(Self::key_down))
+                .cursor(CursorStyle::IBeam)
+                .on_action(cx.listener(Self::backspace))
+                .on_action(cx.listener(Self::delete))
+                .on_action(cx.listener(Self::left))
+                .on_action(cx.listener(Self::right))
+                .on_action(cx.listener(Self::select_left))
+                .on_action(cx.listener(Self::select_right))
+                .on_action(cx.listener(Self::select_all))
+                .on_action(cx.listener(Self::home))
+                .on_action(cx.listener(Self::end))
+                .when(submit_enabled, |input| {
+                    input.on_action(cx.listener(Self::submit))
+                })
+                .on_action(cx.listener(Self::show_character_palette))
+                .on_action(cx.listener(Self::paste))
+                .on_action(cx.listener(Self::cut))
+                .on_action(cx.listener(Self::copy))
+                .on_action(cx.listener(Self::undo))
+                .on_action(cx.listener(Self::redo))
+                .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
+                .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
+                .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
+                .on_mouse_move(cx.listener(Self::mouse_move))
+        };
+        let element = element.child(TextElement { input: cx.entity() });
         if let Some(surface) = &self.surface {
             surface.decorate(element)
         } else {
