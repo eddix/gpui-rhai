@@ -5,7 +5,7 @@ use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use gpui_rhai::*;
 use gpui_rhai_cli::acceptance::{self, AcceptanceLaunch};
 
-use super::mount_prepared;
+use super::{mount_prepared, release_case_window};
 use crate::support::{Host, PresetRisks, Step, click_center, last_error, settle, snapshot};
 
 fn mount(
@@ -65,6 +65,7 @@ fn gallery_number_input_holds_and_releases_a_real_stepper(cx: &mut TestAppContex
         settle(&mut visual, Step::Frame, 3);
         assert_eq!(value(&mut visual), Some(UiValue::Float(4300.0)), "{theme}");
         assert_eq!(last_error(&mut visual, &view), None);
+        release_case_window(visual, cx);
     }
 }
 
@@ -101,6 +102,7 @@ fn gallery_otp_input_reaches_verification_and_never_echoes_the_code_semantically
             "{theme}: the code is not an audit label"
         );
         assert_eq!(last_error(&mut visual, &view), None);
+        release_case_window(visual, cx);
     }
 }
 
@@ -586,6 +588,7 @@ fn audit_page_layout_matrix_with_motion(
                 }
             }
         }
+        release_case_window(visual, cx);
     }
     risks.assert_reported();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -676,6 +679,7 @@ fn overview_metadata_risks_keep_the_real_compact_and_schedule_surfaces(cx: &mut 
                 altered.contrast.as_mut().unwrap().background_srgb = Some([0.5; 3]);
                 assert!(!risks.record(&theme, &altered));
             }
+            release_case_window(v, cx);
         }
     }
     risks.assert_reported();
@@ -709,6 +713,7 @@ fn conflict_radar_directory_risks_require_their_actual_row_surfaces(cx: &mut Tes
             wrong_paper.contrast.as_mut().unwrap().background_srgb = Some([0.5; 3]);
             assert!(!risks.record(&theme, &wrong_paper), "{preset}");
         }
+        release_case_window(v, cx);
     }
     risks.assert_reported();
 }
@@ -782,6 +787,7 @@ fn scheduling_tool_and_billing_risks_keep_their_stock_surface(cx: &mut TestAppCo
                     assert!(unverified.is_empty(), "{preset}/{density}: {unverified:#?}");
                 }
             }
+            release_case_window(v, cx);
         }
     }
     risks.assert_reported();
@@ -844,6 +850,7 @@ fn quota_and_diff_fixture_risks_have_independent_paint_evidence(cx: &mut TestApp
                 }
             }
         }
+        release_case_window(v, cx);
     }
     risks.assert_reported();
     assert!(unreviewed.is_empty(), "{}", unreviewed.join("\n"));
@@ -904,6 +911,7 @@ fn memory_rate_and_judge_stock_captions_match_only_their_actual_paint(cx: &mut T
                 other_paper.contrast.as_mut().unwrap().background_srgb = Some([0.5; 3]);
                 assert!(!risks.record(&theme, &other_paper));
             }
+            release_case_window(visual, cx);
         }
     }
     risks.assert_reported();
@@ -973,6 +981,7 @@ fn fallback_and_collaboration_authored_risks_keep_their_exact_paint(cx: &mut Tes
                 );
             }
         }
+        release_case_window(visual, cx);
     }
     risks.assert_reported();
 }
@@ -1034,6 +1043,7 @@ fn gallery_equal_header_roles_keep_their_line_boxes_at_reading_scales(cx: &mut T
                 assert!(findings.is_empty(), "{page}/{design}/{scale}: {findings:?}");
             }
         }
+        release_case_window(visual, cx);
     }
 }
 

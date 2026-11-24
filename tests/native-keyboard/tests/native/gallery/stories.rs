@@ -217,10 +217,7 @@ fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestApp
                 story.id,
                 case.id
             );
-            // GPUI owns open windows independently of their handles. Release
-            // each case before refreshing the next one.
-            visual.update(|window, _| window.remove_window());
-            cx.run_until_parked();
+            super::release_case_window(visual, cx);
             assert_eq!(
                 cx.update(|app| app.windows().len()),
                 windows_before,

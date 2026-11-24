@@ -37,17 +37,20 @@ if (!/^native-[0-9a-f]+(?:\.exe)?$/.test(basename(exe))) {
   if (args.includes("--list")) {
     process.exitCode = run([...args, "--exact", ...tests]);
   } else {
-    // Exhaustive Gallery audits build hundreds of views in one test. Give
-    // them their own process, and recycle the allocator between other batches.
-    const exhaustive = name => name.startsWith("gallery::acceptance::every_gallery_page_")
+    // Gallery matrices and multi-page paint audits build many large scenes.
+    // Do not overlap their peak memory or retain their allocations into a
+    // regular batch.
+    const isolated = name => name.startsWith("gallery::acceptance::every_gallery_page_")
       || name.startsWith("gallery::module_coverage::")
       || name === "gallery::stories::every_gallery_story_case_mounts_draws_and_presents_semantics"
-      || name === "gallery::acceptance::gallery_reviewed_text_aligns_in_every_preset_and_density";
+      || name === "gallery::acceptance::gallery_reviewed_text_aligns_in_every_preset_and_density"
+      || name === "gallery::acceptance::scheduling_tool_and_billing_risks_keep_their_stock_surface"
+      || name === "gallery::acceptance::memory_rate_and_judge_stock_captions_match_only_their_actual_paint";
     // The ordinary Fast suite disables scroll layers while the SDK owns the
     // virtual rows; this direct renderer contract intentionally needs them on.
     const layerContract = "perf::invariants::repeating_fill_period_changes_the_promoted_tiles_without_moving_the_scroll";
-    const regular = tests.filter(name => !exhaustive(name) && name !== layerContract);
-    const batches = tests.filter(exhaustive).map(name => ({tests: [name], threads: "1"}));
+    const regular = tests.filter(name => !isolated(name) && name !== layerContract);
+    const batches = tests.filter(isolated).map(name => ({tests: [name], threads: "1"}));
     if (tests.includes(layerContract)) {
       batches.push({tests: [layerContract], threads: "1", env: {GPUI_SCROLL_LAYERS: "1"}});
     }

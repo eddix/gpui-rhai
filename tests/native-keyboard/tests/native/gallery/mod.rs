@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use gpui::{Render, TestAppContext, WindowHandle};
+use gpui::{Render, TestAppContext, VisualTestContext, WindowHandle};
 use gpui_rhai::{PreparedScriptView, ScriptViewConfig, ScriptViewHandle, ScriptViewHost};
 
 mod acceptance;
@@ -107,4 +107,20 @@ fn mount_prepared<R: Render>(
     cx.run_until_parked();
     let view = mounted.borrow().clone().unwrap();
     (window, view)
+}
+
+/// GPUI owns a test window even after its handles are dropped. Retire each
+/// Gallery case before mounting the next one so its scene and runtime do not
+/// accumulate during a theme/scale audit.
+fn release_case_window(mut visual: VisualTestContext, cx: &mut TestAppContext) {
+    let id = visual.update(|window, _| {
+        let id = window.window_handle().window_id();
+        window.remove_window();
+        id
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.update(|app| app.windows().iter().all(|handle| handle.window_id() != id)),
+        "Gallery case left window {id:?} registered",
+    );
 }
