@@ -22,8 +22,8 @@ of the available profiles, not a controlled performance benchmark.
 | --- | --- |
 | Layered fills and repeated stripes | A native two-stop fill or native slash pattern. The exact multi-stop edge, clip boxes and moving gradient plane are vendor-only. |
 | Hairlines and shadows | The public native shadow stack; no alternate translucent-surface cutout. |
-| Hover, focus, loading and expansion | Native states and callbacks are retained; computed-paint color transitions and content-size interpolation can snap. |
-| Glass and filters | Ordinary non-blurred surfaces; no group filters, glyph-sweep mask or composed-group opacity. |
+| Hover, focus, loading and expansion | Solid backgrounds, borders and text colors can transition through the shared MotionRuntime. Animated text sweeps use a subtle opacity pulse; layout size changes still snap to their constrained size. |
+| Glass and filters | Ordinary non-blurred surfaces; no group filters, per-glyph sweep mask or composed-group opacity. |
 | Typography and wrapping | Native default character spacing and ordinary wrapping. Custom tracking, figure exclusion, and glyph-level underline animation require the vendor profile. |
 | Transformed interactive subtrees | Remain in the ordinary layout plane so pointer, focus and editing do not diverge from paint. Canvas retains its command-space transforms. |
 

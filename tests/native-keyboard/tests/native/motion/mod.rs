@@ -7,3 +7,4 @@ mod content_changes;
 mod native_triggers;
 mod presented_frames;
 mod shared_layout_scope;
+mod solid_paint;

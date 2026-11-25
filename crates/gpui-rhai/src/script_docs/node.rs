@@ -267,12 +267,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "paint_transition(_: &mut UiNode, _: i64, _: string) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["duration_ms", "easing"],
-        doc: "Retargets paint colors on the existing native node from their displayed sample. Supports solid paint, compatible layered gradient stops and compatible shadow colors. Does not animate layout or subtree opacity. Initial presentation and Reduced/None snap.",
+        doc: "Retargets solid backgrounds, border ink and text colors from their displayed sample. The vendor profile additionally interpolates compatible layered gradients and shadow colors. Does not animate layout or subtree opacity. Initial presentation and Reduced/None snap.",
     },
     ScriptFnDoc {
         signature: "paint_transition(_: &mut UiNode, _: i64, _: string, _: map) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["duration_ms", "easing", "options"],
-        doc: "Adds a bounded delay_ms and opts into group_effects for resolved opacity and grayscale. Explicit opacity or grayscale tracks retain compositing ownership. Layout is unchanged; first presentation and Reduced/None snap.",
+        doc: "Adds a bounded delay_ms and opts into vendor-only group_effects for resolved opacity and grayscale. Explicit opacity or grayscale tracks retain compositing ownership. Layout is unchanged; first presentation and Reduced/None snap.",
     },
     ScriptFnDoc {
         signature: "motion(_: &mut UiNode, _: gpui_rhai::motion::MotionSource) -> UiNode",

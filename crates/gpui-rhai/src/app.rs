@@ -5580,6 +5580,8 @@ impl ScriptHostView {
             self.presentation_diagnostics
                 .sink(self.lifecycle.generation()),
         );
+        #[cfg(not(feature = "vendor-gpui"))]
+        let dispatcher = dispatcher.with_paint_text_sample(self.paint_text_sample_driver());
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
         self.presentation_diagnostics
@@ -6151,6 +6153,19 @@ impl ScriptHostView {
                 request(window);
             }
         }
+    }
+
+    #[cfg(not(feature = "vendor-gpui"))]
+    fn paint_text_sample_driver(&self) -> Rc<crate::renderer::PaintTextSampleFn> {
+        let state = Rc::downgrade(&self.lifecycle.runtime());
+        Rc::new(move |path, parent, now| {
+            state
+                .upgrade()?
+                .try_borrow()
+                .ok()?
+                .motions
+                .sample_paint_text(path, parent, now)
+        })
     }
 
     fn layout_size_motion_driver(

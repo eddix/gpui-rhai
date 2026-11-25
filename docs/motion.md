@@ -57,9 +57,12 @@ motion, with path trim, follow, and compatible-topology morphing. A Canvas
 command with an axis-aligned clip rectangle still rejects vector rotate/scale/skew
 motion: the runtime does not paint and hit-test two different shapes.
 
-For a node whose accepted style changes, the optional argument to
+For a node whose accepted style changes, `paint_transition` animates
+solid backgrounds, border ink and text colors on both backend profiles.
+The transition starts from the displayed sample and does not change layout.
+Gradient and shadow interpolation require the vendor profile. The optional argument to
 `paint_transition(300, "ease_out", #{group_effects: true, delay_ms: 110})`
-includes the final opacity and grayscale values in the paint transition.
+includes the final opacity and grayscale values on the vendor profile.
 Both values use one MotionRuntime track, start from the displayed pair, and
 preserve explicit group isolation through the transition. The first frame
 and Reduced/None take the final style immediately. Explicit opacity or

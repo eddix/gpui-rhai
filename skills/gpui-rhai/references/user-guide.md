@@ -780,9 +780,10 @@ the right edge); the half width is a fraction of measured text width.
 Animate it with `motion_keyframes("glyph_sweep", ...)` on a keyed text
 node. The normal text remains visible, and the highlight reuses the
 glyphs' own atlas coverage. Reduced and disabled motion suppress
-the moving band. The isolated candidate currently draws this effect
-on Apple monochrome text; color glyphs and other renderers keep their
-ordinary output.
+the effect. The vendor profile draws the highlight on Apple monochrome
+text. The public profile uses the same animated phase for a subtle opacity
+pulse on the text; it does not draw a moving band. A static sweep leaves
+public text unchanged.
 Use `style().glyph_ink_sweep(ink, 0.25, 1.5, 0)` when the highlight
 should **replace** the original glyph ink rather than be layered on
 top. It interpolates the premultiplied ink and applies glyph coverage

@@ -73,7 +73,7 @@ struct RepeatClickBinding {
     notify: gpui::EntityId,
     read: Rc<RepeatClickFn>,
 }
-type PaintMotionFn = dyn Fn(
+pub(crate) type PaintMotionFn = dyn Fn(
     &str,
     NodeId,
     &mut crate::presentation_backend::ComputedPaint,
@@ -81,6 +81,9 @@ type PaintMotionFn = dyn Fn(
     Instant,
     &mut Window,
 );
+#[cfg(not(feature = "vendor-gpui"))]
+pub(crate) type PaintTextSampleFn =
+    dyn Fn(&str, gpui::Hsla, Instant) -> Option<crate::paint_motion::TextPaintSample>;
 pub(crate) type LayoutSizeMotionFn = dyn Fn(
     &str,
     NodeId,
@@ -113,6 +116,8 @@ impl NativeNodeMotion {
 pub struct NodeEventDispatcher {
     presentation: Option<crate::presentation_diagnostic::PresentationSink>,
     paint_motion: Option<Rc<PaintMotionFn>>,
+    #[cfg(not(feature = "vendor-gpui"))]
+    paint_text_sample: Option<Rc<PaintTextSampleFn>>,
     size_motion: Option<Rc<LayoutSizeMotionFn>>,
     native_progress: Option<Rc<NativeProgressFn>>,
     script: Rc<DispatchFn>,
@@ -166,6 +171,8 @@ impl NodeEventDispatcher {
         Self {
             presentation: None,
             paint_motion: None,
+            #[cfg(not(feature = "vendor-gpui"))]
+            paint_text_sample: None,
             size_motion: None,
             native_progress: None,
             script: Rc::new(move |callback, event, payload, target, window, app| {
@@ -212,6 +219,12 @@ impl NodeEventDispatcher {
 
     pub(crate) fn with_size_motion(mut self, driver: Rc<LayoutSizeMotionFn>) -> Self {
         self.size_motion = Some(driver);
+        self
+    }
+
+    #[cfg(not(feature = "vendor-gpui"))]
+    pub(crate) fn with_paint_text_sample(mut self, sample: Rc<PaintTextSampleFn>) -> Self {
+        self.paint_text_sample = Some(sample);
         self
     }
 
@@ -3423,6 +3436,24 @@ impl GpuiNodeRenderer {
         #[cfg(not(feature = "vendor-gpui"))]
         let contextual = PublicContextualPaint::from_style(resolved_style);
         #[cfg(not(feature = "vendor-gpui"))]
+        let public_motion = retained_id.and_then(|owner| {
+            let mut transition = crate::paint_motion::transition(node)?;
+            // The public painter submits colors, never isolated group effects.
+            transition.group_effects = false;
+            Some(crate::inherited_text::public_paint::Binding {
+                path: crate::motion::retained_node_path(path, owner),
+                owner,
+                transition,
+                driver: environment.dispatcher?.paint_motion.clone()?,
+                text_sample: environment.dispatcher?.paint_text_sample.clone()?,
+                now: environment.now,
+            })
+        });
+        #[cfg(not(feature = "vendor-gpui"))]
+        let native_motion = public_motion.is_some();
+        #[cfg(feature = "vendor-gpui")]
+        let native_motion = false;
+        #[cfg(not(feature = "vendor-gpui"))]
         let contextual_paint = contextual.is_present();
         #[cfg(feature = "vendor-gpui")]
         let contextual_paint = {
@@ -3467,6 +3498,7 @@ impl GpuiNodeRenderer {
         let owns_scroll_anchor =
             retained_id.is_some_and(|id| environment.scroll_anchors.contains_key(&id));
         if !contextual_paint
+            && !native_motion
             && !owns_scroll_anchor
             && !node_needs_interaction_wrapper(node, needs, disabled)
         {
@@ -3492,7 +3524,8 @@ impl GpuiNodeRenderer {
             .debug_selector(move || debug_path.clone());
         // A disabled node keeps its resolved disabled paint; pointer states
         // must not repaint it.
-        let element = if disabled || inherited_text {
+        let defer_pseudo = inherited_text || native_motion;
+        let element = if disabled || defer_pseudo {
             element
         } else {
             let focused =
@@ -3512,7 +3545,7 @@ impl GpuiNodeRenderer {
             node,
             retained_id,
             environment,
-            disabled || inherited_text,
+            disabled || defer_pseudo,
             None,
         );
         let element = apply_native_semantics(element, semantic);
@@ -3692,8 +3725,8 @@ impl GpuiNodeRenderer {
         } else {
             apply_environment_raw_pointer(element, node, retained_id, environment)
         };
-        if inherited_text || contextual_paint {
-            let inherited_paint = inherited_text.then(|| {
+        if defer_pseudo || contextual_paint {
+            let deferred_paint = (defer_pseudo && !disabled).then(|| {
                 (
                     node.style().clone(),
                     OwnedColorResolver::capture(&environment.resolver()),
@@ -3702,30 +3735,61 @@ impl GpuiNodeRenderer {
                     environment.hover_group.map(hover_group_name),
                 )
             });
+            #[cfg(not(feature = "vendor-gpui"))]
+            let probe_focus = node_focus.cloned().filter(|_| {
+                !native_editor_owns_semantics(node)
+                    && !matches!(node.kind(), UiNodeKind::Overlay { .. })
+            });
             Wrapped::Inherited(crate::inherited_text::InheritedTextElement::new(
                 element,
                 move |element, color| {
                     #[cfg(not(feature = "vendor-gpui"))]
                     let element = contextual.apply(element, color);
-                    let Some((style, colors, focused, indicators, group)) = inherited_paint else {
-                        return element;
-                    };
-                    let mut element = apply_pseudo_backgrounds(
-                        element,
-                        &style,
-                        &colors,
-                        focused,
-                        indicators,
-                        repeat_pressed,
-                        Some(color),
+                    let inherited = inherited_text.then_some(color);
+                    let paints = deferred_paint.as_ref().map(
+                        |(style, colors, focused, indicators, group)| {
+                            let mut paints = NodePseudoPaint::resolve(
+                                style,
+                                colors,
+                                *focused,
+                                *indicators,
+                                repeat_pressed,
+                            );
+                            if let (Some(group), Some(props)) = (group, style.group_hover.as_ref())
+                            {
+                                paints.group_hover =
+                                    Some((group.clone(), pseudo_paint(Some(props), colors)));
+                            }
+                            paints
+                        },
                     );
-                    if let (Some(group), Some(properties)) = (group, style.group_hover.as_ref()) {
-                        let paint = pseudo_paint(Some(properties), &colors);
-                        element = element.group_hover(group, move |style| {
-                            apply_pseudo_paint(style, &paint, Some(color))
-                        });
+
+                    #[cfg(not(feature = "vendor-gpui"))]
+                    if let Some(binding) = public_motion {
+                        let mut probe = div().id("paint-target");
+                        if let Some(focus) = &probe_focus {
+                            probe = probe.track_focus(focus);
+                        }
+                        let (element, probe) = if let Some(paints) = paints {
+                            (
+                                paints.apply(element, inherited, true),
+                                paints.apply(probe, inherited, false),
+                            )
+                        } else {
+                            (element, probe)
+                        };
+                        return crate::inherited_text::public_paint::ElementWithPaint {
+                            element,
+                            probe,
+                            binding,
+                        }
+                        .into_any_element();
                     }
-                    element
+                    if let Some(paints) = paints {
+                        paints.apply(element, inherited, false).into_any_element()
+                    } else {
+                        element.into_any_element()
+                    }
                 },
             ))
         } else {
@@ -4356,6 +4420,7 @@ fn render_text_node<C: ColorResolver>(
     retained_id: Option<NodeId>,
 ) -> AnyElement {
     let text = text_node_content(node, text, environment, path, retained_id);
+    #[cfg(feature = "vendor-gpui")]
     let element = if let Some((ink, half_width, phase, travel)) = resolved_style
         .glyph_sweep
         .as_ref()
@@ -4372,6 +4437,8 @@ fn render_text_node<C: ColorResolver>(
     } else {
         element.child(text)
     };
+    #[cfg(not(feature = "vendor-gpui"))]
+    let element = element.child(text);
     if environment.baseline_parent {
         // The node's own type over the row's sets how far its baseline sits from the
         // row's; the probe reads the refinement the node's element was given.
@@ -4436,6 +4503,7 @@ fn text_node_content<C: ColorResolver>(
 
 /// Paint the *same* interactive leaf exactly once; GPUI reuses the atlas
 /// coverage in its own post-paint step. No second element or layout probe.
+#[cfg(feature = "vendor-gpui")]
 struct GlyphSweepElement {
     text: Option<AnyElement>,
     phase: f32,
@@ -4452,6 +4520,7 @@ impl IntoElement for GlyphSweepElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl Element for GlyphSweepElement {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();
@@ -4495,12 +4564,6 @@ impl Element for GlyphSweepElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        #[cfg(not(feature = "vendor-gpui"))]
-        {
-            let _ = (self.travel, self.phase, self.half_width, self.color, bounds);
-            text.paint(window, cx);
-        }
-        #[cfg(feature = "vendor-gpui")]
         if let Some(travel) = self.travel {
             window.with_glyph_ink_sweep(
                 bounds,
@@ -8593,33 +8656,44 @@ fn pseudo_paint(properties: Option<&StyleProperties>, colors: &impl ColorResolve
 }
 
 fn apply_pseudo_paint(
-    mut style: gpui::StyleRefinement,
+    style: gpui::StyleRefinement,
     paint: &PseudoPaint,
     inherited: Option<gpui::Hsla>,
 ) -> gpui::StyleRefinement {
-    if let Some(fill) = &paint.background {
-        style.style().background = Some(fill.clone());
+    apply_pseudo_paint_fields(style, paint, inherited, false)
+}
+
+fn apply_pseudo_paint_fields(
+    mut style: gpui::StyleRefinement,
+    paint: &PseudoPaint,
+    inherited: Option<gpui::Hsla>,
+    defer_colors: bool,
+) -> gpui::StyleRefinement {
+    if !defer_colors {
+        if let Some(fill) = &paint.background {
+            style.style().background = Some(fill.clone());
+        }
+        if let Some(color) = paint.border {
+            #[cfg(feature = "vendor-gpui")]
+            {
+                style.style().border_color = Some(color);
+            }
+            #[cfg(not(feature = "vendor-gpui"))]
+            {
+                style.style().border_color =
+                    Some(color.resolve_hsla(inherited.unwrap_or_else(|| rgba(0x1717_17ff).into())));
+            }
+        }
+        if paint.inherited_text
+            && let Some(color) = inherited
+        {
+            style = style.text_color(color);
+        } else if let Some(color) = paint.text {
+            style = style.text_color(rgba(color.as_rgba_hex()));
+        }
     }
     if let Some(shadows) = &paint.shadows {
         style = native_shadows(style, shadows.clone());
-    }
-    if let Some(color) = paint.border {
-        #[cfg(feature = "vendor-gpui")]
-        {
-            style.style().border_color = Some(color);
-        }
-        #[cfg(not(feature = "vendor-gpui"))]
-        {
-            style.style().border_color =
-                Some(color.resolve_hsla(inherited.unwrap_or_else(|| rgba(0x1717_17ff).into())));
-        }
-    }
-    if paint.inherited_text
-        && let Some(color) = inherited
-    {
-        style = style.text_color(color);
-    } else if let Some(color) = paint.text {
-        style = style.text_color(rgba(color.as_rgba_hex()));
     }
     if let Some(opacity) = paint.opacity {
         style = style.opacity(opacity);
@@ -8680,7 +8754,7 @@ fn hover_group_name(id: NodeId) -> SharedString {
 /// `hover → focus → active`. While the view hides focus indicators the focus
 /// paint is left out.
 fn apply_pseudo_backgrounds(
-    mut element: Stateful<Div>,
+    element: Stateful<Div>,
     style: &Style,
     colors: &impl ColorResolver,
     focused: bool,
@@ -8688,35 +8762,80 @@ fn apply_pseudo_backgrounds(
     repeat_pressed: bool,
     inherited_text: Option<gpui::Hsla>,
 ) -> Stateful<Div> {
-    let paint = |properties: Option<&StyleProperties>| pseudo_paint(properties, colors);
-    let mut hover = paint(style.hover.as_ref());
-    let active = paint(style.active.as_ref());
-    let mut focus = paint(style.focus.as_ref());
-    if focus.border.is_none()
-        && style.base.focus_ring.is_none()
-        && style
-            .focus
-            .as_ref()
-            .is_none_or(|state| state.focus_ring.is_none())
-    {
-        focus.border = Some(crate::presentation_backend::PaintInk::Literal(rgba(
-            semantic_color(colors, "focus_ring", 0x003b_82f6).as_rgba_hex(),
-        )));
+    NodePseudoPaint::resolve(style, colors, focused, focus_indicators, repeat_pressed).apply(
+        element,
+        inherited_text,
+        false,
+    )
+}
+
+struct NodePseudoPaint {
+    hover: PseudoPaint,
+    active: PseudoPaint,
+    focus: Option<PseudoPaint>,
+    group_hover: Option<(SharedString, PseudoPaint)>,
+}
+
+impl NodePseudoPaint {
+    fn resolve(
+        style: &Style,
+        colors: &impl ColorResolver,
+        focused: bool,
+        focus_indicators: bool,
+        repeat_pressed: bool,
+    ) -> Self {
+        let paint = |properties: Option<&StyleProperties>| pseudo_paint(properties, colors);
+        let mut hover = paint(style.hover.as_ref());
+        let active = paint(style.active.as_ref());
+        let focus = focus_indicators.then(|| {
+            let mut focus = paint(style.focus.as_ref());
+            if focus.border.is_none()
+                && style.base.focus_ring.is_none()
+                && style
+                    .focus
+                    .as_ref()
+                    .is_none_or(|state| state.focus_ring.is_none())
+            {
+                focus.border = Some(crate::presentation_backend::PaintInk::Literal(rgba(
+                    semantic_color(colors, "focus_ring", 0x003b_82f6).as_rgba_hex(),
+                )));
+            }
+            focus
+        });
+        if focused && let Some(focus) = &focus {
+            hover = hover.under(focus);
+        }
+        if repeat_pressed {
+            // The shared pointer lease suppresses native click/active painting.
+            hover = hover.under(&active);
+        }
+        Self {
+            hover,
+            active,
+            focus,
+            group_hover: None,
+        }
     }
-    if focused && focus_indicators {
-        hover = hover.under(&focus);
+
+    fn apply(
+        &self,
+        element: Stateful<Div>,
+        inherited: Option<gpui::Hsla>,
+        defer_colors: bool,
+    ) -> Stateful<Div> {
+        let encode =
+            |style, paint| apply_pseudo_paint_fields(style, paint, inherited, defer_colors);
+        let mut element = element
+            .hover(|style| encode(style, &self.hover))
+            .active(|style| encode(style, &self.active));
+        if let Some(focus) = &self.focus {
+            element = element.focus(|style| encode(style, focus));
+        }
+        if let Some((group, paint)) = &self.group_hover {
+            element = element.group_hover(group.clone(), |style| encode(style, paint));
+        }
+        element
     }
-    if repeat_pressed {
-        // A coordinated mouse-down suppresses GPUI's ordinary click/active
-        // state. Keep the same paint order while the shared pointer lease is live.
-        hover = hover.under(&active);
-    }
-    element = element.hover(move |style| apply_pseudo_paint(style, &hover, inherited_text));
-    element = element.active(move |style| apply_pseudo_paint(style, &active, inherited_text));
-    if focus_indicators {
-        element = element.focus(move |style| apply_pseudo_paint(style, &focus, inherited_text));
-    }
-    element
 }
 
 fn is_disabled(node: &UiNode) -> bool {
@@ -8854,6 +8973,22 @@ fn prepare_node_element<C: ColorResolver>(
     element = apply_node_focus_tracking(element, node, focus.as_ref(), environment.primitives);
     if let Some(opacity) = signals.opacity.or(animation.opacity) {
         element = element.opacity(f64_to_f32(opacity.clamp(0.0, 1.0)));
+    }
+    #[cfg(not(feature = "vendor-gpui"))]
+    if environment.motion_preference == crate::MotionPreference::Normal
+        && matches!(node.kind(), UiNodeKind::Text { .. })
+        && style
+            .glyph_sweep
+            .as_ref()
+            .is_some_and(|sweep| sweep.paint_parameters().is_some())
+        && let Some(phase) = animation.glyph_sweep.filter(|phase| phase.is_finite())
+    {
+        // Use the existing decorative track; no extra clock, key or layer.
+        // The endpoints match, so an infinite sweep loops without a flash.
+        let phase = std::f64::consts::TAU * phase.clamp(0.0, 1.0);
+        let pulse = f64_to_f32(0.95 + 0.05 * phase.cos());
+        let opacity = element.style().opacity.unwrap_or(1.0) * pulse;
+        element = element.opacity(opacity);
     }
     #[cfg(feature = "vendor-gpui")]
     if let Some(sigma) = animation.foreground_blur {

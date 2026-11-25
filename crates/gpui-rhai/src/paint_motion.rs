@@ -171,7 +171,27 @@ pub(crate) struct PaintEndpoints {
     pub group_effects: bool,
 }
 
+/// A committed text sample may explicitly inherit the surrounding ink.
+/// The caller's absence of a sample instead means the track has no endpoints.
+#[cfg(not(feature = "vendor-gpui"))]
+pub(crate) struct TextPaintSample(pub(crate) Option<Hsla>);
+
 impl PaintEndpoints {
+    pub(crate) fn text_color(&self, progress: f64, parent: Hsla) -> Option<Hsla> {
+        let t = crate::renderer::f64_to_f32(progress.clamp(0., 1.));
+        if t >= 1. || (self.from.text_color.is_none() && self.to.text_color.is_none()) {
+            return self.to.text_color;
+        }
+        Some(
+            color(
+                self.from.text_color.unwrap_or(parent).into(),
+                self.to.text_color.unwrap_or(parent).into(),
+                t,
+            )
+            .into(),
+        )
+    }
+
     pub fn sample(&self, progress: f64, parent: Hsla) -> ComputedPaint {
         let t = crate::renderer::f64_to_f32(progress.clamp(0., 1.));
         if t >= 1. {
@@ -183,11 +203,7 @@ impl PaintEndpoints {
         let foreground_to = to.text_color.unwrap_or(parent);
         ComputedPaint {
             paint_reveal_x: to.paint_reveal_x,
-            text_color: if from.text_color.is_none() && to.text_color.is_none() {
-                None
-            } else {
-                Some(color(foreground_from.into(), foreground_to.into(), t).into())
-            },
+            text_color: self.text_color(progress, parent),
             border_color: blend_ink(
                 from.border_color,
                 to.border_color,

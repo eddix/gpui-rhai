@@ -1463,6 +1463,26 @@ impl MotionRuntime {
         (from.filter(|_| started).map(|from| (from, 0.)), started)
     }
 
+    /// Public GPUI captures text ink when building native runs, before paint.
+    /// Read the already committed endpoints without retargeting on provisional
+    /// pre-layout hover or focus state.
+    #[cfg(not(feature = "vendor-gpui"))]
+    pub(crate) fn sample_paint_text(
+        &self,
+        path: &str,
+        parent: gpui::Hsla,
+        now: Instant,
+    ) -> Option<crate::paint_motion::TextPaintSample> {
+        if self.preference() != MotionPreference::Normal {
+            return None;
+        }
+        let key = MotionKey::for_node(&format!("{path}/paint"), MotionProperty::Opacity);
+        let (_, endpoints) = self.paint_endpoints.get(&key)?;
+        Some(crate::paint_motion::TextPaintSample(
+            endpoints.text_color(self.sample(&key, now).unwrap_or(1.), parent),
+        ))
+    }
+
     /// Observe the actual winning native paint after hover/focus resolution.
     /// The internal scalar progress uses the ordinary active slot, pause,
     /// budget and policy paths. The reserved `/paint` lane is not a `UiNode`

@@ -732,12 +732,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "glyph_sweep(_: &mut Style, _: ColorValue, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["ink", "half_width", "phase"],
-        doc: "Overlays a triangular tint on already-shaped monochrome glyphs, without changing base ink or layout. Half width is 0.01–0.5 of the text extent; phase runs from 0 (outside left) to 1 (outside right). Animate phase with the glyph_sweep property. Apple rendering only in this candidate.",
+        doc: "Overlays a triangular tint on already-shaped monochrome glyphs on the macOS vendor profile, without changing layout. Half width is 0.01–0.5 of the text extent; phase runs from 0 (outside left) to 1 (outside right). An animated glyph_sweep uses a subtle text opacity pulse on the public profile instead.",
     },
     ScriptFnDoc {
         signature: "glyph_ink_sweep(_: &mut Style, _: ColorValue, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic, _: types::dynamic::Dynamic) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["ink", "half_width", "travel", "phase"],
-        doc: "Replaces part of the original monochrome ink with a triangular highlight, interpolating premultiplied color before applying atlas coverage once. Width and travel are text-box fractions; travel must be at least 1 plus twice the half width and at most 3. Uses the same glyph_sweep animation property. Apple rendering only in this candidate.",
+        doc: "Replaces part of the original monochrome ink with a triangular highlight on the macOS vendor profile. Width and travel are text-box fractions; travel must be at least 1 plus twice the half width and at most 3. Uses the same glyph_sweep animation property and public text opacity fallback as glyph_sweep.",
     },
     ScriptFnDoc {
         signature: "without_glyph_sweep(_: &mut Style) -> Style",
