@@ -11,7 +11,7 @@ import "layouts/region" as region;
 
 fn pages() {
     [#{ id: "scene.messages", title: "Assistant conversation", group: "Scenes" },
-     #{ id: "run_controls", title: "RunControls", group: "Layouts and patterns" }]
+     #{ id: "run_controls", title: "RunControls", group: "Agents" }]
 }
 
 define_component(#{

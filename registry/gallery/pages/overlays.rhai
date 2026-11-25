@@ -19,7 +19,7 @@ fn pages() {
         #{ id: "sheet", title: "Sheet", group: "Overlays" },
         #{ id: "popover", title: "Popover", group: "Overlays" },
         #{ id: "tooltip", title: "Tooltip", group: "Overlays" },
-        #{ id: "hover_card", title: "HoverCard", group: "Overlays" },
+        #{ id: "hover_card", title: "HoverCard", group: "Agents" },
         #{ id: "toast", title: "Toast", group: "Overlays" },
     ]
 }

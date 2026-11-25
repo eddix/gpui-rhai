@@ -1439,6 +1439,48 @@ fn command_palette_navigates_by_keyboard(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn new_component_pages_share_the_agents_navigation_group(cx: &mut TestAppContext) {
+    use gpui::{px, size};
+
+    // NumberInput was under Fields. Its existing launch ID still works,
+    // but the real navigation tree now takes Left to the Agents parent.
+    let (mut visual, view) = keyboard_mount(cx, "number_input");
+    visual.update(|window, _| window.activate_window());
+    visual.simulate_resize(size(px(590.), px(555.)));
+    settle(&mut visual, Step::Tick, 6);
+    let region = |visual: &mut VisualTestContext, name: &str| {
+        snapshot(visual, &view)
+            .find_by_role_and_name("region", name)
+            .next()
+            .is_some()
+    };
+    assert!(region(&mut visual, "NumberInput"));
+    action(&mut visual, &view, "gallery.browse_pages", UiValue::Null);
+    settle(&mut visual, Step::Tick, 4);
+    let agents_expanded = |visual: &mut VisualTestContext| {
+        snapshot(visual, &view)
+            .find_by_role_and_name("treeitem", "Agents")
+            .next()
+            .and_then(|node| node.expanded)
+    };
+    keys(&mut visual, "left");
+    assert_eq!(agents_expanded(&mut visual), Some(true));
+    keys(&mut visual, "left");
+    assert_eq!(agents_expanded(&mut visual), Some(false));
+    keys(&mut visual, "right");
+    assert_eq!(agents_expanded(&mut visual), Some(true));
+    keys(&mut visual, "escape");
+    assert!(region(&mut visual, "NumberInput"));
+
+    // Moving a page between groups must not break command-palette navigation.
+    keys(&mut visual, "cmd-k");
+    typed(&mut visual, "AgentCheckpoints");
+    keys(&mut visual, "enter");
+    assert!(region(&mut visual, "AgentCheckpoints"));
+    no_error(&mut visual, &view);
+}
+
+#[gpui::test]
 fn palette_theme_switch_in_a_narrow_window_preserves_editor_and_scroll(cx: &mut TestAppContext) {
     use gpui::{ScrollDelta, ScrollEvent, point, px, size};
 
@@ -1648,7 +1690,7 @@ fn gallery_pages_drawer_releases_main_width_and_preserves_edits(cx: &mut TestApp
     );
     assert!(
         snapshot(&mut visual, &view)
-            .find_by_role_and_name("region", "NumberInput")
+            .find_by_role_and_name("region", "Textarea")
             .next()
             .is_some()
     );

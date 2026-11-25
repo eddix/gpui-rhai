@@ -26,11 +26,11 @@ import "components/button" as button;
 fn pages() {
     [
         #{ id: "input", title: "Input", group: "Fields" },
-        #{ id: "number_input", title: "NumberInput", group: "Fields" },
-        #{ id: "otp_input", title: "OtpInput", group: "Fields" },
-        #{ id: "tag_input", title: "TagInput", group: "Fields" },
-        #{ id: "filter_menu", title: "FilterMenu", group: "Fields" },
-        #{ id: "stepper_form", title: "StepperForm", group: "Fields" },
+        #{ id: "number_input", title: "NumberInput", group: "Agents" },
+        #{ id: "otp_input", title: "OtpInput", group: "Agents" },
+        #{ id: "tag_input", title: "TagInput", group: "Agents" },
+        #{ id: "filter_menu", title: "FilterMenu", group: "Agents" },
+        #{ id: "stepper_form", title: "StepperForm", group: "Agents" },
         #{ id: "textarea", title: "Textarea", group: "Fields" },
         #{ id: "input_group", title: "InputGroup", group: "Fields" },
         #{ id: "select", title: "Select", group: "Fields" },

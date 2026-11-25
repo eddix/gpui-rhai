@@ -244,12 +244,12 @@ fn nav_expand(ctx, keys) { set_value("gallery.nav_expanded", ctx, keys); }
 
 // ---- pages ----------------------------------------------------------------------------
 
-// The sidebar groups in order: the chapters of docs/design/atoms.md, then composition,
-// scenes and the motion pack. Every page names one of them in its `group`. Page modules
-// only organize the source, so a new module adds pages to these groups, never a group.
+// Display order in the sidebar and command palette. Every page names one
+// group; its source module is independent of its navigation group.
+// Agents keeps the components and patterns added in the Modern/Clean update together.
 fn groups() {
     ["Foundations", "Markers", "Fields", "Lists", "Navigation", "Overlays", "Containers",
-        "Display", "Interaction", "Layouts and patterns", "Charts", "Scenes", "Effects"]
+        "Display", "Interaction", "Layouts and patterns", "Agents", "Charts", "Scenes", "Effects"]
 }
 
 // The page modules, in the order their pages join a group.

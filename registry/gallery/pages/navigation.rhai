@@ -14,7 +14,7 @@ import "patterns/navigation_stack" as navigation;
 
 fn pages() {
     [
-        #{ id: "breadcrumb", title: "Breadcrumb", group: "Navigation" },
+        #{ id: "breadcrumb", title: "Breadcrumb", group: "Agents" },
         #{ id: "tabs", title: "Tabs", group: "Navigation" },
         #{ id: "tab_overflow_menu", title: "TabOverflowMenu", group: "Navigation" },
         #{ id: "carousel", title: "Carousel", group: "Navigation" },
