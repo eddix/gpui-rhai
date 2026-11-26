@@ -19,7 +19,18 @@ const scale = (values, compact) => compact
 const density = (comfortable, compact) => `by_env("density",#{comfortable:px(${comfortable}),compact:px(${compact})})`;
 const compactScale = (values, floor = 20, reduction = 4) => scale(values,values.map(value=>Math.max(floor,value-reduction)));
 const role = (size, line, weight = 400, extra = "") => `#{ size: px(${size}), line_height: px(${line}), weight: ${weight}${extra} }`;
-const shadow = (x, y, blur, spread, ink, inset = false) => `shadow(#{x:${x},y:${y},blur:${blur},spread:${spread},color:${ink},inset:${inset}})`;
+// Policy for the built-in recipes, not a restriction on the SDK's shadow API.
+// Zero-blur spread still serves as a paint-only outline and is independent of
+// how far a cast shadow extends.
+const shortBlur = 3;
+const shortOffset = 2;
+const shadow = (x, y, blur, spread, ink, inset = false) => {
+  if (!inset && (blur > shortBlur || Math.abs(x) > shortOffset || Math.abs(y) > shortOffset)) {
+    throw new Error(`Built-in outer shadow exceeds short elevation: offset (${x}, ${y}), blur ${blur}`);
+  }
+  return `shadow(#{x:${x},y:${y},blur:${blur},spread:${spread},color:${ink},inset:${inset}})`;
+};
+const shortDrop = (ink, x = 0, spread = 0) => shadow(x,shortOffset,shortBlur,spread,ink);
 const shadows = layers => `.shadows([${layers.join(",")}])`;
 const gradientLayer = (colors, box = "border") => `#{angle:180,origin:"${box}",clip:"${box}",stops:[${colors.map((ink,i)=>`#{offset:${i/(colors.length-1)},color:${ink}}`).join(",")}]}`;
 const layeredGradient = layers => `.layered_gradient(layered_gradient([${layers.join(",")}]))`;
@@ -1101,9 +1112,14 @@ function recipe(preset, dark) {
     const selected = color("selection");
     const hairline = shadow(0,0,0,clean ? .5 : 1,edge);
     const smallShadow = [hairline, shadow(0,1,1,-1,black(.1)), shadow(0,1,2,0,black(.05))];
-    const panelShadow = clean
-      ? [hairline,shadow(0,8,24,-8,black(dark ? .35 : .12)),shadow(0,2,6,-2,black(.06))]
-      : [shadow(0,0,0,1,black(.06)),shadow(0,18,40,-12,black(dark ? .4 : .18)),shadow(0,4,12,-4,black(.06))];
+    // Nonmodal elevation: the surface and hairline separate the floating
+    // panel. A small cast/contact pair avoids a long, low-contrast halo.
+    const floatingCast = (ink = black(.12), contact = black(dark ? .06 : .03)) =>
+      [shortDrop(ink),shadow(0,1,0,0,contact)];
+    const floatingShadow = [hairline,...floatingCast()];
+    // Modals retain the backdrop wash and a stronger near-edge shadow, not a
+    // longer shadow. Other panels must not inherit modal elevation.
+    const modalShadow = [hairline,...floatingCast(black(dark ? .24 : .16),black(dark ? .12 : .06))];
     const fieldShadow = clean ? smallShadow : [shadow(0,0,0,1,color("field.line")),shadow(0,1,2,0,black(.04))];
     const focusShadow = [shadow(0,0,0,1,color("field.focus_edge")),shadow(0,1,2,0,black(clean ? .06 : .04))];
     const recipes = {};
@@ -1115,7 +1131,7 @@ function recipe(preset, dark) {
     recipes.button = {
       primary: clean
         ? `style().background(${color("button.primary_bg")}).text_color(${color("button.primary_fg")}).hover(style().background(${color("button.primary_hover")}))`
-        : `style()${buttonFill("button.primary_bg","button.primary_bottom")}.text_color(${color("button.primary_fg")})${shadows([shadow(0,0,0,1,color("button.ring")),shadow(0,2,4,0,black(dark ? .4 : .1))])}.hover(style()${buttonFill("button.primary_hover","button.primary_hover_bottom")})`,
+        : `style()${buttonFill("button.primary_bg","button.primary_bottom")}.text_color(${color("button.primary_fg")})${shadows([shadow(0,0,0,1,color("button.ring")),shortDrop(black(dark ? .4 : .1))])}.hover(style()${buttonFill("button.primary_hover","button.primary_hover_bottom")})`,
       secondary: `style().background(${color("button.secondary_bg")}).text_color(${strongest}).border_color(${clean ? transparent : edge})${shadows(clean ? smallShadow : [shadow(0,1,2,0,black(.06))])}.hover(style().background(${color("button.secondary_hover")}))`,
       ghost: `style().background(${transparent}).text_color(${color("button.ghost_fg")}).shadows([]).hover(style().background(${wash}).text_color(${color("button.ghost_hover_fg")}))`,
       danger: `style().background(${color("button.danger_bg")}).text_color(${color("danger")}).shadows([]).hover(style().background(${color("button.danger_hover")}))`,
@@ -1133,8 +1149,8 @@ function recipe(preset, dark) {
       ? [shadow(0,0,0,.5,dark ? white(.1) : black(.06)),shadow(0,1,2,0,black(dark ? .4 : .05))]
       : [shadow(0,0,0,1,rgba(dark ? "2a2a2e" : "ececec")),shadow(0,1,2,0,black(dark ? .2 : .04))];
     const cardHover = clean
-      ? [shadow(0,0,0,.5,dark ? white(.16) : black(.1)),shadow(0,2,6,0,black(dark ? .4 : .08))]
-      : [shadow(0,0,0,1,rgba(dark ? "3a3a40" : "d9d9d9")),shadow(0,2,6,-1,black(.08))];
+      ? [shadow(0,0,0,.5,dark ? white(.16) : black(.1)),shortDrop(black(dark ? .4 : .08))]
+      : [shadow(0,0,0,1,rgba(dark ? "3a3a40" : "d9d9d9")),shortDrop(black(.08),0,-1)];
     const cardSelected = clean
       ? [shadow(0,0,0,.5,dark ? white(.2) : black(.14)),shadow(0,1,2,0,black(dark ? .4 : .05))]
       : [shadow(0,0,0,1,rgba(dark ? "3a3a40" : "d9d9d9")),shadow(0,1,2,0,black(.04))];
@@ -1285,7 +1301,7 @@ function recipe(preset, dark) {
     const guideBlue = color("checklist.setup_fill");
     const trackerFill = color("checklist.tracker_fill");
     const checklistShadow = clean ? smallShadow :
-      [shadow(0,1,2,0,black(dark ? .25 : .03)),shadow(0,8,24,0,black(dark ? .34 : .035))];
+      [shadow(0,1,2,0,black(dark ? .25 : .03)),shortDrop(black(dark ? .20 : .035))];
     for (const name of ["progress_tracker", "setup_guide"]) {
       const tracker = name === "progress_tracker";
       cset(name,"root",`style().max_width(px(${tracker ? (clean ? 340 : 360) : 320})).border(px(${clean ? 0 : 1})).border_color(${edge}).padding_x(px(${tracker ? (clean ? 6 : 16) : 8})).padding_top(px(${tracker ? (clean ? 14 : 22) : (clean ? 12 : 16)})).padding_bottom(px(${tracker ? (clean ? 6 : 14) : 8})).gap(px(${tracker ? (clean ? 8 : 12) : 8})).radius(px(${clean ? 10 : 20})).background(${field})${shadows(checklistShadow)}`);
@@ -1341,7 +1357,7 @@ function recipe(preset, dark) {
     set("patterns/model_picker","root",`style()`);
     set("patterns/model_picker","trigger",`style().min_height(px(${clean ? 28 : 30})).gap(px(${clean ? 6 : 7})).padding_x(px(${clean ? 6 : 8})).radius(px(${clean ? 6 : 10})).text_color(${clean ? muted : ink})`);
     set("patterns/model_picker","model_icon",`style().width(px(18)).height(px(18)).radius(px(${clean ? 5 : 6})).background(${wash}).text_color(${muted})`);
-    set("patterns/model_picker","panel",`style().width(px(${clean ? 320 : 352})).padding(px(${clean ? 4 : 6})).radius(px(${clean ? 10 : 16})).border(px(${clean ? .5 : 1})).border_color(${edge}).background(${panel})${shadows(checklistShadow)}`);
+    set("patterns/model_picker","panel",`style().width(px(${clean ? 320 : 352})).padding(px(${clean ? 4 : 6})).radius(px(${clean ? 10 : 16})).border(px(${clean ? .5 : 1})).border_color(${edge}).background(${panel})${shadows(floatingCast())}`);
     set("patterns/model_picker","heading",`style().min_height(px(24)).font_size(px(11)).text_color(${muted})`);
     set("patterns/model_picker","item",`style().min_height(px(${clean ? 42 : 48})).radius(px(${clean ? 6 : 9})).padding_x(px(7))`);
     set("patterns/model_picker","selected",`style().background(${selected})`);
@@ -1411,7 +1427,7 @@ function recipe(preset, dark) {
     runset("write",`style().padding_x(px(${clean ? 8 : 10})).padding_top(px(${clean ? 10 : 12})).padding_bottom(px(${clean ? 8 : 10})).radius(px(${clean ? 8 : 16})).background(${panel}).focus_within(style().focus_ring(px(1),offset_px(-1),${focus}))${shadows(clean ? smallShadow : checklistShadow)}`);
     runset("editor",`style().padding_x(px(4)).padding_y(px(0)).border(px(0)).background(${transparent})${shadows([])}.focus(style()${shadows([])})`);
     runset("permission_trigger",`style().min_height(px(28)).padding_x(px(6)).radius(px(${clean ? 6 : 7})).text_color(${muted})`);
-    runset("permission_panel",`style().padding(px(${clean ? 4 : 5})).radius(px(${clean ? 10 : 16})).background(${panel})${shadows(checklistShadow)}`);
+    runset("permission_panel",`style().padding(px(${clean ? 4 : 5})).radius(px(${clean ? 10 : 16})).background(${panel})${shadows(floatingShadow)}`);
     runset("permission_selected",`style().background(${wash})`);
     runset("permission_alert",`style().text_color(${color("text.danger")})`);
     runset("permission_hint",`style().font_size(px(12)).line_height(px(16)).text_color(${muted})`);
@@ -1451,7 +1467,7 @@ function recipe(preset, dark) {
     picker("group",`style().font_size(px(11)).padding_x(px(6)).text_color(${faint}).font_weight(500)`);
     picker("row",`style().min_height(px(${clean ? 40 : 42})).gap(px(${clean ? 6 : 8})).padding_x(px(6)).radius(px(${clean ? 6 : 9})).font_size(px(${clean ? 13 : 14}))`);
     picker("tile",`style().width(px(${clean ? 24 : 26})).height(px(${clean ? 24 : 26})).radius(px(${clean ? 5 : 7}))`);
-    picker("large_tile",`style().width(px(${clean ? 46 : 52})).height(px(${clean ? 46 : 52})).radius(px(${clean ? 9 : 12}))${shadows([shadow(0,12,14,-10,black(.18))])}`);
+    picker("large_tile",`style().width(px(${clean ? 46 : 52})).height(px(${clean ? 46 : 52})).radius(px(${clean ? 9 : 12}))${shadows([shortDrop(black(.12))])}`);
     picker("art",`style().min_height(px(${clean ? 96 : 110})).radius(px(${clean ? 8 : 12})).background(${clean ? transparent : wash}).clip()`);
     picker("description",`style().font_size(px(${clean ? 13 : 14})).line_height(px(20))`);
     picker("explore",`style().self_start().min_height(px(${clean ? 28 : 32}))`);
@@ -1513,7 +1529,7 @@ function recipe(preset, dark) {
       }
     }
     const wr=(part,value)=>set("patterns/writing_assistant",part,value);
-    wr("root",`style().padding(px(${clean ? 0 : 8})).radius(px(${clean ? 10 : 32})).border(px(${clean ? 0 : 1})).border_color(${edge}).background(${panel})${shadows(clean ? smallShadow : [shadow(0,1,2,0,black(.05)),shadow(0,12,32,0,black(dark ? .21 : .06))])}`);
+    wr("root",`style().padding(px(${clean ? 0 : 8})).radius(px(${clean ? 10 : 32})).border(px(${clean ? 0 : 1})).border_color(${edge}).background(${panel})${shadows(clean ? smallShadow : floatingCast(black(dark ? .18 : .06)))}`);
     wr("header",`style().padding_x(px(${clean ? 16 : 18})).padding_y(px(${clean ? 13 : 16})).border_bottom(px(${clean ? .5 : 0})).border_color(${edge})`);
     wr("name",`style().font_size(px(${clean ? 15 : 20})).font_weight(500).line_height(px(${clean ? 21 : 24})).letter_spacing_em(${clean ? 0 : -.02})`);
     wr("tagline",`style().font_size(px(${clean ? 12 : 13})).line_height(px(18)).text_color(${muted})`);
@@ -1558,13 +1574,13 @@ function recipe(preset, dark) {
     tree("root",`style().gap(px(${clean ? 12 : 16}))`);
     tree("title",`style().font_size(px(${clean ? 14 : 15})).font_weight(600)`);
     tree("pager",`style().gap(px(${clean ? 6 : 8}))`);
-    tree("question",`style().padding_x(px(${clean ? 16 : 17})).padding_y(px(14)).gap(px(9)).radius(px(${clean ? 8 : 14})).background(${panel})${shadows(clean ? smallShadow : panelShadow)}`);
+    tree("question",`style().padding_x(px(${clean ? 16 : 17})).padding_y(px(14)).gap(px(9)).radius(px(${clean ? 8 : 14})).background(${panel})${shadows(clean ? smallShadow : floatingShadow)}`);
     tree("avatar",`style().radius(px(${clean ? 6 : 8})).background(${wash})`);
     tree("agent",`style().font_size(px(12)).line_height(px(17)).font_weight(500)`);
     tree("text",`style().font_size(px(${clean ? 15 : 16})).line_height(px(22)).font_weight(600)`);
     tree("context",`style().font_size(px(12)).line_height(px(17)).text_color(${muted})`);
     tree("branches",`style().gap(px(${clean ? 14 : 13}))`);
-    tree("choice",`style().padding_x(px(12)).padding_y(px(${clean ? 9 : 10})).radius(px(${clean ? 8 : 13})).background(${panel})${shadows(clean ? smallShadow : panelShadow)}`);
+    tree("choice",`style().padding_x(px(12)).padding_y(px(${clean ? 9 : 10})).radius(px(${clean ? 8 : 13})).background(${panel})${shadows(clean ? smallShadow : floatingShadow)}`);
     tree("active",`style().background(${color("selection")})${shadows([shadow(0,0,0,clean ? .5 : 1,color("accent"),true)])}`);
     tree("muted",`style().background(${wash})`);
     tree("label",`style().font_size(px(13)).line_height(px(18)).font_weight(500)`);
@@ -1849,15 +1865,15 @@ function recipe(preset, dark) {
     ag("total",`style().font_size(px(12.5)).line_height(px(18)).font_weight(600).text_color(${ink}).font_feature("tnum",1)`);
     ag("panel",`style().background(${panel}).radius(px(${clean ? 10 : 16}))${shadows(clean ? [hairline] : smallShadow)}`);
     ag("node",`style().radius(px(${clean ? 10 : 13})).background(${panel}).border(px(1)).border_color(${edge}).hover(style().border_color(${edgeStrong}))${shadows(smallShadow)}`);
-    ag("agent",`style().radius(px(${clean ? 12 : 16}))${shadows([shadow(0,0,0,3,wash),shadow(0,0,0,4,edge),shadow(0,3,7,-2,black(.14))])}`);
+    ag("agent",`style().radius(px(${clean ? 12 : 16}))${shadows([shadow(0,0,0,3,wash),shadow(0,0,0,4,edge),shortDrop(black(.14))])}`);
     ag("tool",`style().background(${panel})${shadows(smallShadow)}`);
     ag("user",`style().background(${strongest}).text_color(${dark ? color("surface_raised") : color("on_accent")})`);
-    ag("lead",`style().radius(px(${clean ? 13 : 17}))${shadows([shadow(0,0,0,3,wash),shadow(0,0,0,4,color("agent_tree.link")),shadow(0,4,9,-5,black(.17))])}`);
+    ag("lead",`style().radius(px(${clean ? 13 : 17}))${shadows([shadow(0,0,0,3,wash),shadow(0,0,0,4,color("agent_tree.link")),shortDrop(black(.17))])}`);
     ag("node_selected",`style().border_color(${color("accent")}).hover(style().border_color(${color("accent")}))`);
     ag("node_neighbor",`style().border_color(alpha(${color("accent")},0.5))`);
     ag("node_quiet",`style().border_color(${edge})${shadows([hairline])}`);
     ag("node_label",`style().font_size(px(11.5)).line_height(px(16)).font_weight(500).text_color(${ink})`);
-    ag("inspector",`style().background(${panel}).radius(px(${clean ? 9 : 12})).padding(px(9)).gap(px(5))${shadows([hairline,shadow(0,8,26,-9,black(.25))])}`);
+    ag("inspector",`style().background(${panel}).radius(px(${clean ? 9 : 12})).padding(px(9)).gap(px(5))${shadows(floatingShadow)}`);
     ag("inspector_title",`style().font_size(px(14)).line_height(px(20)).font_weight(600)`);
     ag("status",`style().padding_x(px(5)).padding_y(px(1)).radius(px(6)).font_size(px(11)).line_height(px(16)).background(${wash}).text_color(${ink})`);
     for(const [state,tone] of [["working","info"],["waiting","warning"],["error","danger"],["done","success"]]){
@@ -1996,7 +2012,7 @@ function recipe(preset, dark) {
     recap("lane_label",`style().font_weight(500).font_size(px(${clean ? 11.5 : 13})).line_height(px(18)).text_color(${rc(clean ? "quiet" : "text")})`);
     recap("lane_count",`style().min_width(px(${clean ? 20 : 22})).padding_x(px(6)).line_height(px(${clean ? 18 : 20})).font_size(px(${clean ? 11 : 11.5})).radius(px(${clean ? 6 : 99})).background(${rc("soft")}).text_color(${rc("text")}).text_center().font_feature("tnum",1)`);
     recap("card",`style().padding(px(${clean ? 9 : 10})).min_height(px(${clean ? 90 : 96})).gap(px(2)).radius(px(${clean ? 10 : 14})).background(${rc("panel")})${shadows(smallShadow)}`);
-    recap("card_hot",`style()${shadows([shadow(0,0,0,1,edgeStrong),shadow(0,2,6,0,black(.05))])}`);
+    recap("card_hot",`style()${shadows([shadow(0,0,0,1,edgeStrong),shortDrop(black(.05))])}`);
     recap("card_head",`style().min_height(px(22)).gap(px(8))`);
     recap("mark",`style().width(px(20)).height(px(20)).radius(px(6)).font_size(px(10.5)).font_weight(600).text_color(${ink})${shadows([shadow(0,0,0,1,edge,true)])}`);
     recap("card_title",`style().font_size(px(${clean ? 13 : 13.5})).line_height(px(20)).text_color(${ink})`);
@@ -2193,7 +2209,7 @@ function recipe(preset, dark) {
       shadow(0,0,0,.5,white(.10)),shadow(0,1,2,0,black(.40)),
     ] : smallShadow) : [shadow(0,0,0,1,breakdownLine),shadow(0,1,2,0,black(.04))];
     const quotaStrongShadow=[shadow(0,1,2,0,black(.12))];
-    if(!clean)quotaStrongShadow.push(shadow(0,6,14,-6,black(.35)));
+    if(!clean)quotaStrongShadow.push(shortDrop(black(.20)));
     const quotaHover=rgba(dark ? "232326" : clean ? "fafafa" : "f4f4f5");
     const quotaInk=clean ? strongest : ink;
     const quotaStrongFill=clean ? (dark ? white(.90) : black(.88)) : ink;
@@ -2316,7 +2332,7 @@ function recipe(preset, dark) {
     }
     const notice=(part,value)=>set("patterns/notification_stack",part,value);
     notice("root","style()");
-    const noticeShadow=clean ? smallShadow : [shadow(0,1,2,0,black(dark ? .4 : .03)),shadow(0,8,24,0,black(dark ? .2 : .035))];
+    const noticeShadow=clean ? smallShadow : floatingCast(black(dark ? .20 : .08));
     for(const part of ["panel","rear"]){
       const bg=part==="panel" ? productPanel : color("notification_stack.peek");
       notice(part,`style().radius(px(${clean ? 12 : 20})).background(${bg}).border(px(${clean ? 0 : 1})).border_color(${productEdge})${shadows(noticeShadow)}`);
@@ -2359,7 +2375,7 @@ function recipe(preset, dark) {
     away("toggle_folded",`style().gap_x(px(6)).padding_start(px(10)).padding_end(px(8)).radius(px(14)).font_weight(400).background(${clean ? transparent : awayTray}).text_color(${awayMuted})`);
     away("rule",`style().background(${productLine})`);
     const kpi=(part,value)=>set("patterns/kpi_chart",part,value);
-    const kpiLift=clean ? smallShadow : [shadow(0,1,2,0,black(dark ? .27 : .03)),shadow(0,8,24,0,black(dark ? .18 : .035))];
+    const kpiLift=clean ? smallShadow : floatingCast(black(dark ? .18 : .08));
     kpi("root",`style().radius(px(${clean ? 10 : 20})).background(${productPanel}).border(px(${clean ? 0 : 1})).border_color(${productEdge})${shadows(kpiLift)}`);
     kpi("body",`style().padding_x(px(${clean ? 16 : 20})).padding_top(px(${clean ? 14 : 20})).padding_bottom(px(${clean ? 12 : 4})).gap(px(0))`);
     kpi("title",`style().font_size(px(${clean ? 15 : 14})).line_height(px(${clean ? 24 : 20})).font_weight(${clean ? 500 : 400}).text_color(${clean ? strongest : secondaryText})`);
@@ -2375,7 +2391,7 @@ function recipe(preset, dark) {
     }
     kpi("chart",`style().margin_top(px(${clean ? 19 : 24})).gap(px(12))`);
     kpi("tick",`style().font_size(px(12)).line_height(px(18)).text_color(${muted})`);
-    kpi("tooltip",`style().radius(px(${clean ? 8 : 12})).padding_x(px(12)).padding_y(px(10)).background(${panel}).border(px(${clean ? 0 : 1})).border_color(${edge})${shadows(clean ? smallShadow : [shadow(0,8,24,-6,black(dark ? .38 : .12)),shadow(0,2,6,0,black(.04))])}`);
+    kpi("tooltip",`style().radius(px(${clean ? 8 : 12})).padding_x(px(12)).padding_y(px(10)).background(${panel}).border(px(${clean ? 0 : 1})).border_color(${edge})${shadows(clean ? floatingShadow : floatingCast())}`);
     kpi("tooltip_title",`style().font_size(px(13)).line_height(px(18)).font_weight(500).text_color(${strongest})`);
     kpi("tooltip_label",`style().font_size(px(12)).line_height(px(18)).text_color(${secondaryText})`);
     kpi("tooltip_value",`style().font_size(px(12)).line_height(px(18)).font_weight(500).text_color(${ink})`);
@@ -2440,7 +2456,7 @@ function recipe(preset, dark) {
     now("caption",`style().font_size(px(12)).line_height(px(16)).text_color(${muted})`);
     const nowIcon=clean ? (dark ? white(.46) : black(.447)) : rgba(dark ? "8a8a90" : "8a8a8a");
     now("chevron",`style().width(px(12)).height(px(12)).text_color(${nowIcon})`);
-    now("panel",`style().width(px(${clean ? 340 : 348})).padding(px(4)).radius(px(${clean ? 10 : 16})).background(${nowPaper})${shadows(clean ? smallShadow : [shadow(0,12,32,-5,black(dark ? .48 : .18)),shadow(0,1,4,0,black(.08))])}`);
+    now("panel",`style().width(px(${clean ? 340 : 348})).padding(px(4)).radius(px(${clean ? 10 : 16})).background(${nowPaper})${shadows(clean ? smallShadow : floatingShadow)}`);
     now("heading",`style().min_height(px(${clean ? 28 : 32})).padding_x(px(${clean ? 8 : 10})).gap(px(6))`);
     now("label",`style().font_size(px(${clean ? 10 : 13})).line_height(px(${clean ? 16 : 20})).font_weight(500).letter_spacing_em(${clean ? 0.05 : 0}).text_color(${clean ? muted : strongest})`);
     now("body",`style().padding(px(${clean ? 0 : 4})).radius(px(${clean ? 0 : 12})).background(${productPanel})${shadows(clean ? [] : smallShadow)}`);
@@ -2616,7 +2632,7 @@ function recipe(preset, dark) {
     const profileHover=clean ? (dark ? white(.08) : black(.06)) : (dark ? rgba("2a2a2d") : rgba("f5f5f5"));
     const profileActive=clean ? (dark ? white(.1) : black(.08)) : rgba(dark ? "313135" : "efefef");
     const profileLine=dark ? white(.08) : clean ? black(.06) : rgba("e5e5e5");
-    const profileLift=[shadow(0,0,0,.5,profileLine),shadow(0,12,28,-10,black(dark ? .55 : .16)),shadow(0,1,2,0,black(.05))];
+    const profileLift=[shadow(0,0,0,.5,profileLine),...floatingCast()];
     profileMenu("root",clean
       ? `style().max_width(px(260)).padding(px(0)).radius(theme_radius("lg")).background(${productPanel})${shadows(profileLift)}`
       : `style().max_width(px(320)).padding(px(6)).radius(px(22)).background(${color("profile_menu.tray")})`);
@@ -2831,7 +2847,7 @@ function recipe(preset, dark) {
     const fanHover=color("fan_out_grid.filter_wash"), fanKeyFill=clean ? fanHover : fanPanel;
     const fanPop=[
       shadow(0,0,0,clean ? .5 : 1,dark ? rgba(clean ? "ffffff1f" : "34343a") : clean ? black(.08) : rgba("ececec")),
-      shadow(0,clean ? 12 : 16,clean ? 28 : 36,clean ? -10 : -12,black(dark ? clean ? .6 : .7 : clean ? .18 : .22)),
+      ...floatingCast(),
       ...(clean ? [shadow(0,1,2,0,black(.05))] : []),
     ];
     fanout("root",`style().padding(px(${clean ? 0 : 4})).gap_y(px(${clean ? 14 : 0})).radius(px(${clean ? 0 : 20})).letter_spacing_em(${clean ? 0 : -.006})`);
@@ -2932,7 +2948,7 @@ function recipe(preset, dark) {
     const cause=(part,value)=>set("patterns/root_cause_tree",part,value);
     const causeEdge=color("root_cause.line"),causeCard=color("root_cause.card");
     const causeShadow=clean ? smallShadow : [shadow(0,0,0,1,causeEdge),shadow(0,1,2,0,black(dark ? .30 : .04))];
-    const causeHover=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.16) : black(.09)),shadow(0,2,6,-2,black(dark ? .5 : .12))];
+    const causeHover=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.16) : black(.09)),shortDrop(black(dark ? .25 : .12),0,-1)];
     const causeFlat=shadows([shadow(0,0,0,clean ? .5 : 1,causeEdge)]);
     cause("root","style().gap_y(px(0))");
     cause("head","style().padding_x(px(2)).padding_bottom(px(14)).gap_x(px(8))");
@@ -2968,7 +2984,7 @@ function recipe(preset, dark) {
     const bracket=(part,value)=>set("patterns/judge_bracket",part,value);
     const bracketCard=color("bracket.card"),bracketEdge=color("bracket.line");
     const bracketShadow=clean ? smallShadow : [shadow(0,0,0,1,bracketEdge),shadow(0,1,2,0,black(dark ? .30 : .04))];
-    const bracketHover=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.16) : black(.09)),shadow(0,2,6,-2,black(dark ? .50 : .12))];
+    const bracketHover=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.16) : black(.09)),shortDrop(black(dark ? .25 : .12),0,-1)];
     bracket("root","style().gap_y(px(0))");
     bracket("head","style().padding_x(px(2)).padding_bottom(px(14)).gap_x(px(8))");
     bracket("title",`${readingType(13,20)}.font_weight(500)`);
@@ -2999,8 +3015,8 @@ function recipe(preset, dark) {
     const stream=(part,value)=>set("patterns/collaboration_stream",part,value);
     const streamLine=color("stream.line"),streamCard=color("stream.card");
     const streamSurface=clean ? smallShadow : [shadow(0,0,0,1,streamLine),shadow(0,1,2,0,black(dark ? .30 : .04))];
-    const streamPicked=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.14) : black(.10)),shadow(0,2,6,-2,black(dark ? .50 : .12))];
-    const streamLift=[shadow(0,0,0,clean ? .5 : 1,streamLine),shadow(0,12,28,-10,black(dark ? .60 : .18)),shadow(0,1,2,0,black(.05))];
+    const streamPicked=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.14) : black(.10)),shortDrop(black(dark ? .25 : .12),0,-1)];
+    const streamLift=[shadow(0,0,0,clean ? .5 : 1,streamLine),...floatingCast()];
     stream("root",`style().padding(px(${clean ? 0 : 4})).radius(px(${clean ? 0 : 20})).gap_y(px(${clean ? 6 : 4}))
        .font_size(px(${clean ? 13 : 13.5})).line_height(px(20)).letter_spacing_em(${clean ? 0 : -.006})`);
     stream("top",clean ? "style().padding_bottom(px(4)).gap_x(px(12))"
@@ -3078,17 +3094,16 @@ function recipe(preset, dark) {
     rate("bar_text","style().font_size(px(10.5)).line_height(px(16)).font_weight(500)");
     rate("icon",`style().radius(px(${clean ? 5 : 7})).hover(style().background(${rlEdge}))`);
     rate("editor",`style().padding(px(12)).radius(px(${clean ? 10 : 16})).gap_y(px(5))
-      ${shadows([shadow(0,0,0,clean ? .5 : 1,rlEdge),shadow(0,clean ? 8 : 18,clean ? 24 : 40,clean ? -6 : -12,black(dark ? .6 : .18))])}`);
+      ${shadows([shadow(0,0,0,clean ? .5 : 1,rlEdge),...floatingCast()])}`);
     rate("add","style().min_height(px(24)).font_size(px(12.5))");
     rate("foot","style().min_height(px(48)).margin_top(px(2))");
     rate("verdict","style().font_size(px(12.5)).line_height(px(18))");
     rate("fit",`style().min_height(px(28)).font_size(px(12.5)).radius(px(${clean ? 6 : 10}))`);
     const srEdge=color("recommendation.line");
     const srLift=clean ? smallShadow : [shadow(0,0,0,1,srEdge),shadow(0,1,2,0,black(dark ? .4 : .04))];
-    const srPop=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.1) : black(.08)),
-      shadow(0,12,clean ? 28 : 30,clean ? -10 : -8,black(dark ? (clean ? .6 : .5) : (clean ? .16 : .2)))];
+    const srPop=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.1) : black(.08)),...floatingCast()];
     const srPrimary=[shadow(0,0,0,1,dark ? black(.6) : rgba("0d0d0d")),
-      shadow(0,2,4,0,black(dark ? .35 : .1)),shadow(0,1,0,0,dark ? rgba("ffffff") : white(.12),true)];
+      shortDrop(black(dark ? .35 : .1)),shadow(0,1,0,0,dark ? rgba("ffffff") : white(.12),true)];
     const srGradient=(top,bottom)=>`.linear_gradient(linear_gradient(#{angle:180,from:${rgba(top)},to:${rgba(bottom)}}))`;
     rec("root",`style().max_width(px(440)).padding(px(${clean ? 0 : 6})).radius(px(${clean ? 10 : 22}))${clean ? shadows(srLift) : ".shadows([])"}`);
     rec("card",`style().radius(px(${clean ? 10 : 16})).padding_x(px(${clean ? 0 : 8})).padding_top(px(${clean ? 0 : 6})).padding_bottom(px(${clean ? 0 : 8})).border(px(${clean ? 0 : 1})).border_color(${srEdge})${clean ? ".shadows([])" : shadows([shadow(0,1,2,0,black(dark ? .4 : .06))])}`);
@@ -3114,7 +3129,7 @@ function recipe(preset, dark) {
     rec("recommended",`style().font_size(px(${clean ? 11 : 10.5})).line_height(px(${clean ? 18 : 16})).padding_x(px(${clean ? 5 : 6})).radius(px(${clean ? 5 : 12}))`);
     const trEdge=clean ? (dark ? white(.1) : black(.06)) : rgba(dark ? "2e2e33" : "ececec");
     const trLift=clean ? smallShadow : [shadow(0,0,0,1,trEdge),shadow(0,1,2,0,black(dark ? .3 : .04))];
-    const trPop=[shadow(0,0,0,clean ? .5 : 1,trEdge),shadow(0,clean ? 12 : 16,clean ? 28 : 36,clean ? -10 : -12,black(dark ? .6 : (clean ? .18 : .22)))];
+    const trPop=[shadow(0,0,0,clean ? .5 : 1,trEdge),...floatingCast()];
     trace("root",`style().font_size(px(${clean ? 13 : 14})).line_height(px(20)).letter_spacing_em(${clean ? 0 : -0.006}).padding(px(${clean ? 0 : 4})).radius(px(${clean ? 12 : 20}))${clean ? shadows(trLift) : ""}`);
     trace("head",`style().padding_start(px(${clean ? 16 : 12})).padding_end(px(${clean ? 14 : 8})).padding_top(px(${clean ? 12 : 8})).padding_bottom(px(12)).gap_x(px(8))${clean ? ".border_bottom(px(0.5)).border_color("+trEdge+")" : ""}`);
     trace("title",`style().font_size(px(${clean ? 13 : 14})).line_height(px(20)).font_weight(${clean ? 500 : 600})`);
@@ -3154,7 +3169,7 @@ function recipe(preset, dark) {
     trace("document","style().font_size(px(12)).line_height(px(17)).padding_x(px(10)).padding_y(px(8))");
     const taEdge=clean ? (dark ? white(.1) : black(.06)) : rgba(dark ? "2f2f34" : "ececec");
     const taLift=clean ? smallShadow : [shadow(0,0,0,1,taEdge),shadow(0,1,2,0,black(dark ? .4 : .04))];
-    const taRise=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.16) : black(.1)),shadow(0,2,6,-2,black(dark ? .5 : .12))];
+    const taRise=[shadow(0,0,0,clean ? .5 : 1,dark ? white(.16) : black(.1)),shortDrop(black(dark ? .25 : .12),0,-1)];
     toolAccess("root",`style().padding(px(${clean ? 0 : 4})).radius(px(${clean ? 0 : 16}))`);
     toolAccess("head",`style().padding_x(px(${clean ? 2 : 10})).padding_top(px(${clean ? 0 : 7})).padding_bottom(px(${clean ? 10 : 7})).gap_x(px(8))`);
     if(clean) toolAccess("mark",`style().text_color(${color("tool_access.muted")})`);
@@ -3299,11 +3314,11 @@ function recipe(preset, dark) {
     const flagSurface=rgba(dark ? "f4f4f5" : "141416");
     const flagInk=rgba(dark ? "141416" : "ffffff");
     const flagEdge=`#{angle:90,stops:[#{offset:0,color:${rgba("f06db5")}},#{offset:0.55,color:${rgba("b98af0")}},#{offset:1,color:${rgba("4fb0fe")}}]}`;
-    cursors("flag",`style().radius(px(${clean ? 8 : 10})).padding_x(px(${clean ? 9 : 10})).padding_y(px(${clean ? 5 : 6})).border(px(0)).border_bottom(px(1)).border_color(${transparent})${layeredGradient([gradientLayer([flagSurface,flagSurface],"padding"),flagEdge])}${shadows([shadow(0,8,18,-8,rgba("ee3e9e80")),shadow(6,8,18,-8,rgba("0190fe80")),shadow(0,2,6,-2,black(.3))])}`);
+    cursors("flag",`style().radius(px(${clean ? 8 : 10})).padding_x(px(${clean ? 9 : 10})).padding_y(px(${clean ? 5 : 6})).border(px(0)).border_bottom(px(1)).border_color(${transparent})${layeredGradient([gradientLayer([flagSurface,flagSurface],"padding"),flagEdge])}${shadows([shortDrop(rgba("ee3e9e40"),0,-1),shortDrop(rgba("0190fe40"),2,-1),shortDrop(black(.24),0,-1)])}`);
     cursors("flag_name",`style().font_size(px(12)).line_height(px(16)).font_weight(${clean ? 500 : 600}).text_color(${flagInk})`);
     cursors("flag_activity",`style().font_size(px(11.5)).line_height(px(16)).text_color(alpha(${flagInk},0.88))`);
     cursors("pin",`style().radius(px(${clean ? 6 : 8})).background(${panel}).text_color(${ink})${shadows(smallShadow)}`);
-    cursors("popup",`style().padding(px(10)).gap(px(6)).radius(px(${clean ? 9 : 14})).border(px(0)).background(${panel})${shadows(panelShadow)}`);
+    cursors("popup",`style().padding(px(10)).gap(px(6)).radius(px(${clean ? 9 : 14})).border(px(0)).background(${panel})${shadows(floatingShadow)}`);
     cursors("popup_title",`style().font_size(px(13)).line_height(px(18)).font_weight(${clean ? 500 : 600}).text_color(${strongest})`);
     cursors("popup_text",`style().font_size(px(12.5)).line_height(px(19)).text_color(${ink})`);
     const di=(part,value)=>set("patterns/decision_inbox",part,value);
@@ -3490,23 +3505,22 @@ function recipe(preset, dark) {
     cset("card","header",`style()${t("subtitle")}.font_weight(500).letter_spacing_em(${clean ? 0 : -0.01}).text_color(${strongest})`);
     cset("card","content",`style()${t("body")}.text_color(${color("card.body")})`);
     cset("card","footer",`style().flex_row().flex_wrap().items_center().gap(px(8)).min_height(px(${clean ? 28 : 40})).padding_top(px(${clean ? 0 : 4})).padding_start(px(${clean ? 0 : 16})).padding_end(px(${clean ? 0 : 2}))${t("card_footer")}.text_color(${clean ? muted : faint})`);
-    const panelStyle = `style().padding(px(${clean ? 14 : 16})).radius(px(${clean ? 12 : 16})).border(px(0)).background(${panel})${t("body")}.text_color(${ink})${shadows(panelShadow)}`;
-    cset("popover","content",panelStyle);
+    const floatingPanel = `style().padding(px(${clean ? 14 : 16})).radius(px(${clean ? 12 : 16})).border(px(0)).background(${panel})${t("body")}.text_color(${ink})${shadows(floatingShadow)}`;
+    cset("popover","content",floatingPanel);
     cset("hover_card","root","style().min_width(px(0))");
     cset("hover_card","trigger","style()");
-    cset("hover_card","content",`style().max_width(px(320)).padding(px(${clean ? 14 : 16})).radius(px(${clean ? 12 : 16})).border(px(0)).background(${panel})${t("hover_card")}.text_color(${ink})${shadows(panelShadow)}`);
-    const tooltipShadows = clean
-      ? [shadow(0,4,12,-4,color("tooltip.shadow"))]
-      : [shadow(0,8,20,-8,color("tooltip.shadow")), dark
-          ? shadow(0,0,0,1,color("tooltip.shadow_secondary"))
-          : shadow(0,2,6,-2,color("tooltip.shadow_secondary"))];
+    cset("hover_card","content",`style().max_width(px(320)).padding(px(${clean ? 14 : 16})).radius(px(${clean ? 12 : 16})).border(px(0)).background(${panel})${t("hover_card")}.text_color(${ink})${shadows(floatingShadow)}`);
+    const tooltipShadows = [
+      ...(!clean && dark ? [shadow(0,0,0,1,color("tooltip.shadow_secondary"))] : []),
+      ...floatingCast(color("tooltip.shadow")),
+    ];
     cset("tooltip","content",`style().max_width(px(240)).padding_x(px(${clean ? 8 : 9})).padding_y(px(${clean ? 4 : 5})).gap(px(${clean ? 6 : 8})).radius(${length("metrics.tooltip_radius")}).border(px(0)).background(${color("tooltip.surface")})${clean ? ".backdrop_blur(8)" : ""}${t("tooltip")}.font_weight(500).letter_spacing_em(${clean ? 0 : -0.005}).text_color(${color("tooltip.ink")})${shadows(tooltipShadows)}${clean ? ".items_baseline()" : ".items_center()"}`);
     // Logical end-inset compensation is equivalent to the key's optical -3px
     // outer margin while staying theme/scaling aware and mirroring in RTL.
     cset("tooltip","content_with_shortcut",`style().padding_end(px(${clean ? 8 : 6}))`);
     cset("tooltip","shortcut",`style().padding_x(px(${clean ? 0 : 5})).radius(px(${clean ? 0 : 4})).background(${color("tooltip.key")}).opacity(1.0).font_feature("tnum",1).whitespace_nowrap()${t("key_legend_tooltip")}.letter_spacing_em(0.02).text_color(${color("tooltip.muted")})`);
     for (const name of ["dialog","sheet"]) {
-      cset(name,"panel",`style().padding(px(${clean ? 20 : 24})).gap(px(16)).radius(px(${clean ? 16 : 20})).border(px(0)).letter_spacing_em(${clean ? 0 : -0.006}).background(${panel})${shadows(panelShadow)}`);
+      cset(name,"panel",`style().padding(px(${clean ? 20 : 24})).gap(px(16)).radius(px(${clean ? 16 : 20})).border(px(0)).letter_spacing_em(${clean ? 0 : -0.006}).background(${panel})${shadows(modalShadow)}`);
       cset(name,"title",`style()${t("title")}.font_weight(500).letter_spacing_em(${clean ? -0.005 : -0.01}).text_color(${strongest})`);
       cset(name,"content",`style()${t("body")}.text_color(${ink})`);
       cset(name,"actions",`style().gap(px(8))`);
@@ -3515,7 +3529,7 @@ function recipe(preset, dark) {
     cset("alert_dialog","description",`style()${t("body")}.text_color(${muted})`);
     cset("alert_dialog","actions",`style().gap(px(8))`);
     for (const name of ["menu","context_menu"]) {
-      cset(name,"content",`style().padding(px(4)).gap(px(2)).radius(px(${clean ? 10 : 12})).border(px(0)).background(${panel})${shadows(panelShadow)}`);
+      cset(name,"content",`style().padding(px(4)).gap(px(2)).radius(px(${clean ? 10 : 12})).border(px(0)).background(${panel})${shadows(floatingShadow)}`);
       cset(name,"item",`style().min_height(px(${clean ? 28 : 32})).padding_x(px(8)).gap(px(8)).radius(px(6)).border(px(0))${t("body")}.font_weight(400).text_color(${ink}).hover(style().background(${wash}))`);
       cset(name,"shortcut",`style()${t("key_legend")}.text_color(${faint})`);
       cset(name,"separator",`style().height(px(1)).background(${edge}).margin_y(px(4))`);
@@ -3531,12 +3545,12 @@ function recipe(preset, dark) {
     cset("breadcrumb","icon","style().width(px(14)).height(px(14))");
     cset("breadcrumb","more",`style().width(px(${clean ? 24 : 26})).height(px(${clean ? 20 : 22})).radius(px(6)).hover(style().background(${wash}).text_color(${ink}))`);
     cset("breadcrumb","more_icon","style().width(px(16)).height(px(16))");
-    cset("breadcrumb","popup",`style().min_width(px(${clean ? 168 : 180})).max_height(px(280)).padding(px(${clean ? 4 : 5})).gap(px(1)).radius(px(${clean ? 12 : 14})).background(${panel}).border(px(0))${t("breadcrumb")}${shadows(panelShadow)}`);
+    cset("breadcrumb","popup",`style().min_width(px(${clean ? 168 : 180})).max_height(px(280)).padding(px(${clean ? 4 : 5})).gap(px(1)).radius(px(${clean ? 12 : 14})).background(${panel}).border(px(0))${t("breadcrumb")}${shadows(floatingShadow)}`);
     cset("breadcrumb","popup_item",`style().min_height(px(${clean ? 32 : 34})).padding_x(px(8)).gap(px(8)).radius(px(${clean ? 8 : 9}))${t("breadcrumb")}`);
     cset("breadcrumb","popup_icon",`style().width(px(14)).height(px(14)).text_color(${muted})`);
     for (const name of ["select","combobox"]) {
       cset(name,"trigger",`style().min_height(${length("metrics.field_h")}).padding_x(${length("metrics.field_pad")}).gap(px(6)).radius(${length("metrics.field_radius")}).border(px(0)).background(${field})${t("control")}.font_weight(400)${shadows(fieldShadow)}.focus(style()${shadows(focusShadow)})`);
-      cset(name,"panel",`style().padding(px(4)).radius(px(${clean ? 10 : 12})).border(px(0)).background(${panel})${shadows(panelShadow)}`);
+      cset(name,"panel",`style().padding(px(4)).radius(px(${clean ? 10 : 12})).border(px(0)).background(${panel})${shadows(floatingShadow)}`);
       cset(name,"placeholder",`style().text_color(${placeholder})`);
       cset(name,"indicator",`style().width(px(16)).height(px(16)).text_color(${faint})`);
       cset(name,"clear",`style().width(px(20)).height(px(20)).padding(px(0)).radius(px(4)).border(px(0)).text_color(${faint})`);
@@ -3548,7 +3562,7 @@ function recipe(preset, dark) {
     }
     const commandShadow=clean ? (dark
       ? [shadow(0,0,0,.5,color("command.shadow_edge")),shadow(0,1,2,0,black(.4))]
-      : [shadow(0,0,0,.5,color("command.shadow_edge")),shadow(0,12,28,-10,black(.16)),shadow(0,1,2,0,black(.05))])
+      : [shadow(0,0,0,.5,color("command.shadow_edge")),...floatingCast(black(.16))])
       : [shadow(0,0,0,1,color("command.shadow_edge")),shadow(0,1,2,0,black(.04))];
     cset("command","root",`style().width(relative(1)).max_width(px(600)).gap(px(0)).padding(${length("metrics.command_tray_pad")}).radius(px(${clean ? 12 : 20})).border(px(0)).background(${color(clean ? "command.surface" : "command.tray")})${t("command_body")}.text_color(${color("command.ink")})${shadows(clean ? commandShadow : [])}`);
     cset("command","root_embedded",`style().padding(px(0)).radius(px(0)).border(px(0)).background(${transparent}).shadows([])`);
@@ -3584,7 +3598,7 @@ function recipe(preset, dark) {
     // Calendar is the same visual family as DatePicker, with independent API.
     for (const name of ["calendar","date_picker"]) {
       const rootPart = name === "calendar" ? "root" : "panel";
-      cset(name,rootPart,`style().padding(px(12)).gap(px(8)).radius(px(${clean ? 12 : 16})).border(px(0)).background(${panel})${name === "date_picker" ? shadows(panelShadow) : ""}`);
+      cset(name,rootPart,`style().padding(px(12)).gap(px(8)).radius(px(${clean ? 12 : 16})).border(px(0)).background(${panel})${name === "date_picker" ? shadows(floatingShadow) : ""}`);
       cset(name,"header",`style().gap(px(8)).padding_y(px(4))`);
       cset(name,"month_title",`style()${t("label")}.font_weight(500).text_color(${strongest})`);
       cset(name,"weekday",`style()${t("caption")}.font_weight(400).text_color(${faint})`);
@@ -3610,7 +3624,7 @@ function recipe(preset, dark) {
     cset("date_range_picker","trigger",`style().min_height(${length("metrics.field_h")}).padding_x(px(10)).gap(px(8)).radius(${length("metrics.field_radius")}).border(px(0)).background(${field})${t("control")}${shadows(fieldShadow)}.hover(style()${shadows(focusShadow)})`);
     cset("date_range_picker","trigger_icon",`style().width(px(16)).height(px(16)).text_color(${faint})`);
     cset("date_range_picker","trigger_comparison",`style()${t("caption")}.text_color(${faint})`);
-    cset("date_range_picker","panel",`style().padding(px(${clean ? 0 : 4})).radius(px(${clean ? 10 : 20})).background(${color("date_range.tray")})${shadows(panelShadow)}`);
+    cset("date_range_picker","panel",`style().padding(px(${clean ? 0 : 4})).radius(px(${clean ? 10 : 20})).background(${color("date_range.tray")})${shadows(floatingShadow)}`);
     cset("date_range_picker","body",`style().background(${panel}).radius(px(${clean ? 10 : 16}))${shadows(clean ? [] : [hairline])}`);
     cset("date_range_picker","presets",`style().width(px(${clean ? 140 : 136})).padding(px(${clean ? 4 : 6})).gap(px(${clean ? 2 : 1})).border_end(px(${clean ? .5 : 1})).border_color(${edge})`);
     cset("date_range_picker","presets_compact",`style().padding(px(${clean ? 8 : 10})).gap(px(${clean ? 4 : 6})).border_bottom(px(${clean ? .5 : 1})).border_color(${edge})`);
@@ -3625,7 +3639,7 @@ function recipe(preset, dark) {
     // The temporal wrapper uses the real Input; do not repaint its native
     // field, state or focus surface with a second, independently tuned recipe.
     cset("time_input","root",`style()`);
-    cset("time_range_picker","panel",panelStyle);
+    cset("time_range_picker","panel",floatingPanel);
     cset("time_range_picker","trigger",`style().min_height(${length("metrics.field_h")}).radius(${length("metrics.field_radius")}).border(px(1)).border_color(${edge}).background(${field})${t("control")}`);
     cset("time_range_picker","actions",`style().gap(px(8))`);
     // Keyboard cursor/focus belongs to the collection, not this decorative
@@ -3696,7 +3710,7 @@ function recipe(preset, dark) {
     cset("alert","title",`style()${t("label")}.font_weight(500)`);
     cset("alert","description",`style()${t("body")}.text_color(${muted})`);
     cset("alert","lamp",`style().radius(px(999))`);
-    cset("toast","toast",`style().padding(px(${clean ? 12 : 16})).gap(px(8)).radius(px(${clean ? 10 : 14})).border(px(0)).background(${panel})${shadows(panelShadow)}`);
+    cset("toast","toast",`style().padding(px(${clean ? 12 : 16})).gap(px(8)).radius(px(${clean ? 10 : 14})).border(px(0)).background(${panel})${shadows(floatingShadow)}`);
     cset("toast","root","style()");
     cset("toast","title",`style()${t("label")}.font_weight(500)`);
     cset("toast","message",`style()${t("body")}.text_color(${muted})`);
@@ -3725,7 +3739,7 @@ function recipe(preset, dark) {
     const tabShadow = clean
       ? (dark ? [shadow(0,0,0,.5,white(.1)),shadow(0,1,2,0,black(.4))] : smallShadow)
       : (dark ? [shadow(0,0,0,1,white(.06)),shadow(0,1,2,0,black(.4))]
-          : [shadow(0,0,0,.5,black(.08)),shadow(0,1,2,0,black(.08)),shadow(0,2,8,-2,black(.06))]);
+          : [shadow(0,0,0,.5,black(.08)),shadow(0,1,2,0,black(.08)),shortDrop(black(.06),0,-1)]);
     const segmentSelection = `style().background(${color("tabs.pill")})${shadows(tabShadow)}`;
     recipes.tabs = {
       track_list: `style().padding(${length("metrics.segment_pad")}).gap(px(0)).radius(${length("metrics.segment_radius")}).background(${color("tabs.tray")})`,

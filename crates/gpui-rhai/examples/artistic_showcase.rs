@@ -70,8 +70,8 @@ fn render_ArtPanel(ctx, props) {
                 .radius(px(18)).border(px(1)).border_color(theme_color("border"))
                 .linear_gradient(linear_gradient(#{ angle: 145,
                     from: rgba(0x24283be8), to: rgba(0x16161ee8) }))
-                .shadow(shadow(#{ x: 0, y: 18, blur: 48, spread: 2,
-                    color: rgba(0x00000070) }))
+                .shadow(shadow(#{ x: 0, y: 2, blur: 3, spread: 0,
+                    color: rgba(0x0000003d) }))
                 .font_family("Avenir Next").cursor_pointer()))
         .accessibility_role("group")
         .accessibility_label("Night Signals artistic showcase")

@@ -348,6 +348,59 @@ fn gallery_model_picker_audit_at_all_scales(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn gallery_model_picker_composer_draws_shadows_only_on_the_outer_shell(cx: &mut TestAppContext) {
+    for theme in ["clean-light", "modern-light", "clean-dark", "modern-dark"] {
+        let (window, view) = mount(
+            cx,
+            &AcceptanceLaunch {
+                page: "model_picker".into(),
+                theme: theme.into(),
+                ..Default::default()
+            },
+        );
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        settle(&mut visual, Step::Refresh, 1);
+
+        let draft = bounds_of(&mut visual, &view, "text_field", "Prompt");
+        let shell = bounds_of(&mut visual, &view, "group", "Prompt");
+        let at_box = |rect: GeometryBounds| {
+            move |shape: crate::support::Rect| {
+                // Include the ring, spread and cast offset, but not another
+                // nested control or the shell around the editor.
+                (f64::from(shape.x) - rect.x).abs() < 4.
+                    && (f64::from(shape.y) - rect.y).abs() < 4.
+                    && (f64::from(shape.width) - rect.width).abs() < 4.
+                    && (f64::from(shape.height) - rect.height).abs() < 4.
+            }
+        };
+        for focused in [false, true] {
+            if focused {
+                click_at(&mut visual, draft);
+                visual.simulate_input("draft");
+                settle(&mut visual, Step::Refresh, 2);
+                let tree = snapshot(&mut visual, &view);
+                let field = tree
+                    .find_by_role_and_name("text_field", "Prompt")
+                    .next()
+                    .unwrap();
+                assert_eq!(field.value, Some(UiValue::String("draft".into())));
+            }
+            assert!(
+                !painted_shadow_radii(&mut visual, at_box(shell)).is_empty(),
+                "{theme}, focused={focused}: lost the outer Composer shadow",
+            );
+            let field_shadows = painted_shadow_radii(&mut visual, at_box(draft));
+            assert!(
+                field_shadows.is_empty(),
+                "{theme}, focused={focused}: editor paints its own shadow over the shell: {field_shadows:?}",
+            );
+        }
+        no_error(&mut visual, &view);
+        release_case_window(visual, cx);
+    }
+}
+
+#[gpui::test]
 fn gallery_cited_answer_audit_at_all_scales(cx: &mut TestAppContext) {
     audit_page_layout_matrix(cx, "cited_answer");
 }
@@ -2254,6 +2307,104 @@ fn gallery_theme_picker_lists_loaded_themes_and_switches(cx: &mut TestAppContext
     click_at(&mut visual, mocha);
     no_error(&mut visual, &view);
     assert!(shows(&mut visual, &view, "Theme Catppuccin Mocha"));
+}
+
+#[gpui::test]
+fn gallery_theme_picker_paints_only_short_shadows(cx: &mut TestAppContext) {
+    for theme in [
+        "default-dark",
+        "modern-dark",
+        "modern-light",
+        "clean-dark",
+        "clean-light",
+    ] {
+        let (mut visual, view) = theme_mount(cx, theme);
+        let picker = bounds_of(&mut visual, &view, "combobox", "Theme");
+        click_at(&mut visual, picker);
+        let panel = bounds_of(&mut visual, &view, "listbox", "Theme");
+        assert_short_panel_shadow(&mut visual, panel, theme, "listbox");
+        no_error(&mut visual, &view);
+        release_case_window(visual, cx);
+    }
+}
+
+#[gpui::test]
+fn gallery_modal_panels_paint_only_short_shadows(cx: &mut TestAppContext) {
+    for (theme, page, trigger, title) in [
+        ("default-dark", "dialog", "Rename service", "Rename service"),
+        ("modern-light", "dialog", "Rename service", "Rename service"),
+        ("clean-dark", "dialog", "Rename service", "Rename service"),
+        ("modern-dark", "sheet", "Show details", "worker-07"),
+        ("clean-light", "sheet", "Show details", "worker-07"),
+    ] {
+        let (window, view) = mount(
+            cx,
+            &AcceptanceLaunch {
+                page: page.into(),
+                theme: theme.into(),
+                ..Default::default()
+            },
+        );
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        settle(&mut visual, Step::Refresh, 1);
+        let opener = bounds_of(&mut visual, &view, "button", trigger);
+        click_at(&mut visual, opener);
+        let panel = bounds_of(&mut visual, &view, "dialog", title);
+        assert_short_panel_shadow(&mut visual, panel, theme, page);
+        no_error(&mut visual, &view);
+        release_case_window(visual, cx);
+    }
+}
+
+fn assert_short_panel_shadow(
+    visual: &mut VisualTestContext,
+    panel: GeometryBounds,
+    theme: &str,
+    kind: &str,
+) {
+    assert!(panel.width > 0. && panel.height > 0.);
+    let shadows = painted_shadow_radii(visual, |rect| {
+        // Select the panel's stack, including the old heavily offset shadows.
+        (f64::from(rect.x + rect.width / 2.) - (panel.x + panel.width / 2.)).abs() < 2.
+            && (f64::from(rect.y + rect.height / 2.) - (panel.y + panel.height / 2.)).abs() < 25.
+            && (f64::from(rect.width) - panel.width).abs() < 26.
+            && (f64::from(rect.height) - panel.height).abs() < 26.
+    });
+    assert!(
+        shadows.iter().any(|radius| (*radius - 3.).abs() < 0.01)
+            && shadows.iter().all(|radius| *radius <= 3.01),
+        "{theme} {kind}: expected a short 3px cast shadow and no long tail, got {shadows:?}",
+    );
+}
+
+fn painted_shadow_radii(
+    visual: &mut VisualTestContext,
+    belongs_to: impl Fn(crate::support::Rect) -> bool,
+) -> Vec<f32> {
+    use crate::support::{logical_paint_rect, walk_live_paint};
+
+    visual.update(|window, _| {
+        let scale = window.scale_factor();
+        window.visual_probe_with_painted_scene(|scene| {
+            let mut radii = Vec::new();
+            walk_live_paint(
+                scene,
+                gpui::TransformationMatrix::default(),
+                &mut |scene, pose| {
+                    for shadow in &scene.shadows {
+                        #[cfg(not(feature = "vendor-gpui"))]
+                        let shape = shadow.shape_bounds;
+                        #[cfg(feature = "vendor-gpui")]
+                        let shape = shadow.bounds;
+                        if belongs_to(logical_paint_rect(shape, pose, scale)) {
+                            radii.push(shadow.blur_radius.0 / scale);
+                        }
+                    }
+                },
+            );
+            radii
+        })
+    })
 }
 
 /// Visible quads `width` x `height` logical pixels over the hovered divider center.

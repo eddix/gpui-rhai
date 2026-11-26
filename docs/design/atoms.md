@@ -169,10 +169,15 @@ input's background. Do not draw a double frame around InputGroup's editor.
 
 ## 8. Overlays and containers
 
-Match the source surface, shadow stack, radius, insets, max-size and fixed
-header/body/footer organization. Menus, tooltips, popovers and dialogs do not
-all use one8px shadowless frame. clean Tooltip includes a translucent blur;
-omitting it remains an explicit paint gap.
+Preserve the surface, radius, insets, max-size and fixed header/body/footer
+organization. Standard nonmodal overlays use a distinct surface and a fine edge
+for separation. Built-in cast shadows use at most 3px of blur and 2px of
+offset per axis. Modal panels and sheets keep their backdrop wash and use a
+stronger short shadow for emphasis, without extending its reach. Paint-only
+edges, inset shadows, and focus outlines are separate from elevation and take
+no layout space. The SDK still allows applications to define custom shadows.
+Clean Tooltip includes a translucent blur; omitting it remains an explicit
+paint gap.
 
 Keep the SDK overlay owner, focus trap/return, Escape routing, clipping,
 parent-child overlay relationships and outside press behavior. Browser
