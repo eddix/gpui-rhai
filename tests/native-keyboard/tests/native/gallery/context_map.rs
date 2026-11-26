@@ -133,10 +133,7 @@ fn context_map_capacity_readout_interpolates_its_author_paint(cx: &mut TestAppCo
     }
     let area = bounds(&mut v, &view, "text", "82%");
     let target = gpui::rgba(0xffecd6ff).into();
-    if !gpui_rhai::EXTENDED_RENDERING {
-        assert_eq!(capacity_paint(&mut v, area).0, target);
-        return;
-    }
+    // The readout is a solid fill; sampling it does not require extended paint.
     assert_eq!(capacity_paint(&mut v, area).0, neutral);
     clock.advance(Duration::from_millis(150));
     ready(&mut v, &view);
