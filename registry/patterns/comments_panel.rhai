@@ -215,6 +215,5 @@ fn render_CommentsPanel(ctx,props){
             .padding(theme_length("space.spacing_unit")).radius(theme_radius("lg")).background(theme_color("surface_hover"))));
     // In the Modern tray the title and the composer initials are different
     // lanes, not two lines of a shared text column.
-    let theme=ctx.theme_variant();
-    if theme!=()&&theme.family=="Modern"{surface.audit_allow(["text-edge-misaligned"])}else{surface}
+    if ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="modern"{surface.audit_allow(["text-edge-misaligned"])}else{surface}
 }

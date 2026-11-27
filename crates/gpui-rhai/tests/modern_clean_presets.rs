@@ -183,18 +183,23 @@ fn every_preset_recipe_resolves_its_entire_paint_table() {
         let mut styles = BTreeMap::new();
         for (id, parts) in theme.tokens.component_styles.iter() {
             for (part, style) in parts {
+                let resolved = style
+                    .resolve(&Environment::EMPTY, &theme.tokens.environment)
+                    .expect("preset part style resolves with default environment");
                 styles.insert(
                     format!("{id}.{part}"),
-                    resolved_recipe(style.clone(), &theme),
+                    resolved_recipe(resolved.clone(), &theme),
                 );
             }
         }
         for (namespace, tokens) in &theme.tokens.namespaces {
             for (token, value) in tokens {
-                if let gpui_rhai::ThemeTokenValue::Style(style) = value {
+                if let Some(style) =
+                    value.resolve_style(&Environment::EMPTY, &theme.tokens.environment)
+                {
                     styles.insert(
                         format!("token:{namespace}.{token}"),
-                        resolved_recipe(*style.clone(), &theme),
+                        resolved_recipe(style.clone(), &theme),
                     );
                 }
             }
@@ -237,7 +242,7 @@ fn grid_and_inset_focus_recipes_survive_full_theme_export() {
         .or_default()
         .insert(
             "overlay".to_owned(),
-            gpui_rhai::ThemeTokenValue::Style(Box::new(
+            gpui_rhai::ThemeTokenValue::Style(Box::new(gpui_rhai::Variable::Fixed(
                 Style::new()
                     .background(
                         ColorValue::token("tag.chip")
@@ -252,7 +257,7 @@ fn grid_and_inset_focus_recipes_survive_full_theme_export() {
                         ColorValue::token("focus_ring").unwrap(),
                     )
                     .unwrap(),
-            )),
+            ))),
         );
     let custom = std::sync::Arc::make_mut(&mut theme.tokens)
         .namespaces
@@ -296,7 +301,10 @@ fn grid_and_inset_focus_recipes_survive_full_theme_export() {
             ),
         ),
     ] {
-        custom.insert(name.to_owned(), gpui_rhai::ThemeTokenValue::Style(style));
+        custom.insert(
+            name.to_owned(),
+            gpui_rhai::ThemeTokenValue::Style(Box::new(gpui_rhai::Variable::Fixed(*style))),
+        );
     }
     let source = gpui_rhai::export_theme_source(&theme).unwrap();
     assert_eq!(
@@ -335,8 +343,7 @@ fn adjacent_month_dates_use_subtle_text_not_empty_field_placeholder_ink() {
         for component in ["components/calendar", "components/date_picker"] {
             let parts = theme
                 .tokens
-                .component_styles
-                .component(&ModuleId::parse(component).unwrap())
+                .resolve_component_styles(&ModuleId::parse(component).unwrap(), &Environment::EMPTY)
                 .unwrap();
             let part = &parts["day_outside"];
             let color = theme
@@ -395,8 +402,7 @@ fn full_preset_parts_follow_common_and_namespaced_color_overrides() {
             );
             let rules = theme
                 .tokens
-                .component_styles
-                .component(&ModuleId::parse(module).unwrap())
+                .resolve_component_styles(&ModuleId::parse(module).unwrap(), &Environment::EMPTY)
                 .unwrap();
             let properties = &rules[part].base;
             let resolve_ink = |value: &PaintColor| {
@@ -440,7 +446,8 @@ fn derived_chip_contrast_is_materialized_in_theme_roles_not_per_node_searches() 
             "facet_warning",
             "facet_danger",
         ] {
-            let gpui_rhai::ThemeTokenValue::Style(style) = &theme.tokens.namespaces["tag"][part]
+            let Some(style) = theme.tokens.namespaces["tag"][part]
+                .resolve_style(&Environment::EMPTY, &theme.tokens.environment)
             else {
                 panic!("{name}/{part}: a color role replaced the style recipe");
             };
@@ -690,8 +697,7 @@ fn command_presets_keep_local_chrome_roles_and_original_soft_inks() {
         let dark = name.contains("dark");
         let parts = theme
             .tokens
-            .component_styles
-            .component(&ModuleId::parse("components/command").unwrap())
+            .resolve_component_styles(&ModuleId::parse("components/command").unwrap(), &Environment::EMPTY)
             .unwrap();
         let rule = |part: &str| resolved_recipe(parts[part].clone(), &theme);
         assert_eq!(
@@ -764,13 +770,17 @@ fn command_presets_keep_local_chrome_roles_and_original_soft_inks() {
             Some(&ColorValue::Literal(Rgba8::from_rgba_hex(0))),
             "rejected controlled roving must not paint a second independent highlight"
         );
-        let source = theme.tokens.token("command.search_asset").unwrap();
+        let source = theme
+            .tokens
+            .token("command.search_asset")
+            .and_then(|value| value.resolve_string(&Environment::EMPTY, &theme.tokens.environment))
+            .unwrap();
         assert_eq!(
             source,
-            &gpui_rhai::ThemeTokenValue::String(format!(
+            format!(
                 "app/icons/command_search_{}",
                 if clean { "clean" } else { "modern" }
-            ))
+            )
         );
         let query = theme
             .tokens
@@ -788,8 +798,7 @@ fn command_presets_keep_glyph_and_logo_geometry_with_original_hint_ink() {
         let dark = name.contains("dark");
         let parts = theme
             .tokens
-            .component_styles
-            .component(&ModuleId::parse("components/command").unwrap())
+            .resolve_component_styles(&ModuleId::parse("components/command").unwrap(), &Environment::EMPTY)
             .unwrap();
         let rule = |part: &str| resolved_recipe(parts[part].clone(), &theme);
         let rgba = |key: &str| theme.tokens.color(key).unwrap().as_rgba_hex();
@@ -839,8 +848,7 @@ fn table_presets_keep_their_own_surfaces_grid_and_header_action() {
         let dark = name.contains("dark");
         let parts = theme
             .tokens
-            .component_styles
-            .component(&ModuleId::parse("components/table").unwrap())
+            .resolve_component_styles(&ModuleId::parse("components/table").unwrap(), &Environment::EMPTY)
             .unwrap();
         let rule = |part: &str| resolved_recipe(parts[part].clone(), &theme);
         assert_eq!(
@@ -1029,4 +1037,48 @@ fn complete_presets_export_without_losing_geometry_type_or_component_states() {
         assert_eq!(reloaded, original, "{name}");
         assert_eq!(gpui_rhai::export_theme_source(&reloaded).unwrap(), exported);
     }
+}
+
+#[test]
+fn design_axis_is_orthogonal_across_all_color_palettes() {
+    let neutral_dark = preset(gpui_rhai_registry::NEUTRAL_DARK_THEME);
+    let mocha = preset(gpui_rhai_registry::CATPPUCCIN_MOCHA_THEME);
+    let default_light = preset(gpui_rhai_registry::DEFAULT_LIGHT_THEME);
+    let mut state = UiRuntimeState::new();
+    state.theme = Some(
+        ThemeManager::from_variants(
+            [neutral_dark, mocha, default_light],
+            ThemeSelection::new("Catppuccin", "Mocha"),
+        )
+        .unwrap(),
+    );
+    let runtime = Rc::new(RefCell::new(state));
+    let context = UiContext::new(
+        runtime,
+        ComponentInstancePath::root("App", "orthogonal"),
+        None,
+        ExecutionPhase::Event,
+        BTreeMap::new(),
+    );
+    assert_eq!(context.environment_value("design").as_deref(), Some("modern"));
+    assert_eq!(
+        context.theme_token("design.name").unwrap().into_string().unwrap(),
+        "modern"
+    );
+    let modern_btn = context.theme_style("button.primary").unwrap();
+    context.set_environment("design", "clean").unwrap();
+    assert_eq!(context.environment_value("design").as_deref(), Some("clean"));
+    assert_eq!(
+        context.theme_token("design.name").unwrap().into_string().unwrap(),
+        "clean"
+    );
+    let clean_btn = context.theme_style("button.primary").unwrap();
+    assert_ne!(modern_btn, clean_btn);
+    // Switching palette preserves the orthogonal `design = clean` choice.
+    context.set_theme("Default", "Light").unwrap();
+    assert_eq!(context.environment_value("design").as_deref(), Some("clean"));
+    assert_eq!(
+        context.theme_token("design.name").unwrap().into_string().unwrap(),
+        "clean"
+    );
 }

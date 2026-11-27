@@ -45,6 +45,8 @@ Values a style is built from; read lengths and colors from theme tokens.
 |---|---|
 | `alpha(color: ColorValue, factor: float) -> ColorValue` | Returns `color` with its alpha multiplied by `factor` (0 to 1); a token color resolves when the node renders. |
 | `alpha(color: ColorValue, factor: int) -> ColorValue` | Returns `color` with its alpha multiplied by `factor` (0 to 1); a token color resolves when the node renders. |
+| `by_mode(light: ColorValue, dark: ColorValue) -> ColorValue` | Selects `light` in light themes and `dark` in dark themes when resolving theme color tokens or style paints. |
+| `by_mode(modes: Map) -> ColorValue` | Selects a color by theme mode from `#{ light, dark }`, resolving the matching branch for the active theme's light or dark mode. |
 | `color(value: String) -> ColorValue` | Parses a color literal: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, a CSS basic name, `transparent`, or an `rgb()`, `hsl()` or `hwb()` form. |
 | `mix(base: ColorValue, other: ColorValue, weight: float) -> ColorValue` | Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders. |
 | `mix(base: ColorValue, other: ColorValue, weight: int) -> ColorValue` | Mixes `base` toward `other` by `weight` (0 to 1) in every channel, alpha included; token colors resolve when the node renders. |
@@ -241,6 +243,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.cancel_task(handle: TaskHandle) -> bool` | Cancels a task so its callbacks never run and signals its work on commit; returns `false` when it already finished, raises for another component's handle. |
 | `ctx.cancel_timeout(key: String) -> bool` | Cancels this component's declared `timeout` or `interval` `key` until its declaration changes; returns `false` when no such timer is active. |
 | `ctx.clear_close_handler()` | Removes the current window's close handler, so a native close request closes the window again; not allowed during render. |
+| `ctx.clear_environment(name: String)` | Clears the app-wide override for environment axis `name` (such as `design`), restoring the active theme's declared default; not allowed during render. |
 | `ctx.close_window(id: String)` | Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render. |
 | `ctx.collection_follow_status(key: String) -> ?` | Reads this component's presented collection status as `#{ following, unseen }`, or `()` while absent. An event-time query, not a render dependency; use `on_follow_change` for reactive state. |
 | `ctx.component_style(parts: Array, base: Style) -> Style` | Resolves 1..32 unique snake_case parts together, in their declared order: all preset refinements, then all application refinements, then instance root/part overrides. Prevents a later selected-state preset from overwriting an earlier common-part user override. |
@@ -256,6 +259,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.element_width_class(reference: ElementRef, breakpoints: Array) -> ?` | Returns 0..=breakpoints.len for the committed layout width, or () while unbound/unmeasured. At a boundary the lower class wins. Accepts up to 32 strictly increasing, finite non-negative logical-pixel numbers. Render observes class/binding changes, not every size, position, transform or clip change; size/bounds reads remain stronger. Multiple class reads coalesce in fixed-size interval storage. This is a last-committed query, not synchronous CSS measurement. |
 | `ctx.element_width_class(key: String, breakpoints: Array) -> ?` | Reads the committed layout-width class by component-local ref key, or () while unavailable. Same bounded numeric thresholds and inclusive-boundary policy as the ElementRef overload. Render subscriptions survive mount/rebinding; event reads are untracked. |
 | `ctx.emit(event: String, payload: ?)` | Emits the declared event `event` with a schema-checked `payload`; the caller's handler runs after this callback. Not allowed during render. |
+| `ctx.environment(name: String) -> ?` | Returns the active value of theme environment axis `name` (such as `design`), or `()` if unset; records a theme dependency in render. |
 | `ctx.event_target_bounds() -> ?` | Returns the `#{ x, y, width, height }` window bounds of the node running the current handler, or `()`; untracked, event callbacks only. |
 | `ctx.focus(reference: ElementRef)` | Queues keyboard focus for a ref's node, applied after the transaction commits; not allowed during render. |
 | `ctx.focus(key: String)` | Queues keyboard focus for the node of a component-local ref key, applied after the transaction commits; not allowed during render. |
@@ -321,6 +325,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.set_app_store(store: String, field: String, value: ?)` | Writes a schema-checked `value` to `field` of app store `store` and rerenders its readers; not during render, undone on failure. |
 | `ctx.set_app_store_path(store: String, field: String, path: Array, value: ?)` | Replaces one existing nested path of an app store field, schema-checking the whole field; rerenders only readers of that path. |
 | `ctx.set_close_handler(callback: FnPtr)` | Calls `callback` instead of closing when the user closes the current window; it may confirm, then call `close_window`. |
+| `ctx.set_environment(name: String, value: String)` | Sets the app-wide value of theme environment axis `name` (such as `design` to `"modern"` or `"clean"`) without recompiling or resetting state; not allowed during render. |
 | `ctx.set_local_locale(locale: String)` | Selects `locale` for the current component subtree and rerenders its locale readers; not allowed during render. |
 | `ctx.set_local_theme(family: String, variant: String)` | Selects the theme variant `variant` of `family` for the current component subtree; not allowed during render. |
 | `ctx.set_local_theme_system(family: String)` | Makes the current component subtree follow the system light or dark appearance within theme `family`; not allowed during render. |
@@ -334,6 +339,7 @@ Methods of the context a view, callback or effect receives.
 | `ctx.set_theme(family: String, variant: String)` | Selects the app-wide theme variant `variant` of `family` without recompiling or resetting state; not allowed during render. |
 | `ctx.set_theme_system(family: String)` | Makes the app follow the system light or dark appearance within theme `family`; not allowed during render. |
 | `ctx.set_theme_system_pair(light: Map, dark: Map)` | Makes the app follow the system appearance with variant `light` or `dark`, each `#{ family, name }` as `ctx.theme_variant()` returns; the two may come from different families. Not allowed during render. |
+| `ctx.set_window_environment(name: String, value: String)` | Sets the theme environment axis `name` to `value` for the current window; not allowed during render. |
 | `ctx.set_window_locale(locale: String)` | Selects `locale` for the current window and rerenders its locale readers; not allowed during render. |
 | `ctx.set_window_store(store: String, field: String, value: ?)` | Writes a schema-checked `value` to `field` of the current window's store and rerenders its readers; not allowed during render. |
 | `ctx.set_window_store_path(store: String, field: String, path: Array, value: ?)` | Replaces one existing nested path of a field of the current window's store; rerenders only readers of that path. |

@@ -271,7 +271,12 @@ impl PresetRisks {
                         && tail[2].parse::<usize>().is_ok_and(|day| day < 7)
                         && tail[3] == "0"
                 });
-        let density_segment = ["gallery-density-comfortable", "gallery-density-compact"]
+        let density_segment = [
+            "gallery-density-comfortable",
+            "gallery-density-compact",
+            "gallery-design-modern",
+            "gallery-design-clean",
+        ]
             .iter()
             .any(|key| finding.path.ends_with(&format!("/{key}/0/0/0")));
         let pagination_ellipsis = parts.contains(&"page-pagination")

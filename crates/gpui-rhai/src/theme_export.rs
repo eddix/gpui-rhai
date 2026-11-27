@@ -66,11 +66,16 @@ pub fn export_theme_source(theme: &ThemeVariant) -> Result<String> {
                     let value = match value {
                         ThemeTokenValue::Color(c) => format!("0x{:08x}", c.as_rgba_hex()),
                         ThemeTokenValue::Length(v) => expr(&json(v)?)?,
-                        ThemeTokenValue::Number(v) => {
-                            format!("#{{ type: \"number\", value: {v:?} }}")
-                        }
-                        ThemeTokenValue::String(v) => quoted(v),
-                        ThemeTokenValue::Style(v) => style_expr(v)?,
+                        ThemeTokenValue::Number(v) => match v {
+                            crate::token::Variable::Fixed(n) => {
+                                format!("#{{ type: \"number\", value: {n:?} }}")
+                            }
+                            crate::token::Variable::ByEnv(_) => {
+                                format!("#{{ type: \"number\", value: {} }}", expr(&json(v)?)?)
+                            }
+                        },
+                        ThemeTokenValue::String(v) => expr(&json(v)?)?,
+                        ThemeTokenValue::Style(v) => variable_style_expr(v)?,
                     };
                     Ok((name.clone(), value))
                 }))?,
@@ -88,7 +93,7 @@ pub fn export_theme_source(theme: &ThemeVariant) -> Result<String> {
                 map_expr(
                     parts
                         .iter()
-                        .map(|(part, style)| Ok((part.clone(), style_expr(style)?))),
+                        .map(|(part, style)| Ok((part.clone(), variable_style_expr(style)?))),
                 )?,
             ))
         }))?,
@@ -262,11 +267,67 @@ fn color_expr(value: &Value) -> Result<String> {
                 render(background),
                 f64::from(*ratio) / 100.0
             ),
+            ColorValue::ByMode { light, dark } => {
+                format!("by_mode({}, {})", render(light), render(dark))
+            }
         }
     }
     let color: ColorValue =
         serde_json::from_value(value.clone()).map_err(|e| error(e.to_string()))?;
     Ok(render(&color))
+}
+
+fn variable_style_expr(value: &crate::token::Variable<Style>) -> Result<String> {
+    match value {
+        crate::token::Variable::Fixed(style) => style_expr(style),
+        crate::token::Variable::ByEnv(table) => {
+            fn render_branch(
+                depth: usize,
+                keys: &[crate::token::Symbol],
+                entries: &[(Vec<String>, String)],
+            ) -> Result<String> {
+                if depth == keys.len() {
+                    return entries
+                        .first()
+                        .map(|(_, value)| value.clone())
+                        .ok_or_else(|| error("empty environment style branch"));
+                }
+                let mut grouped: BTreeMap<String, Vec<(Vec<String>, String)>> = BTreeMap::new();
+                for (path, rendered) in entries {
+                    grouped
+                        .entry(path[depth].clone())
+                        .or_default()
+                        .push((path.clone(), rendered.clone()));
+                }
+                let mut fields = BTreeMap::new();
+                for (branch_key, branch_entries) in grouped {
+                    fields.insert(branch_key, render_branch(depth + 1, keys, &branch_entries)?);
+                }
+                Ok(render_map(fields))
+            }
+
+            let rendered_entries = table
+                .entries()
+                .map(|(path, style)| {
+                    Ok((
+                        path.iter().map(|s| s.as_str().to_string()).collect(),
+                        style_expr(style)?,
+                    ))
+                })
+                .collect::<Result<Vec<(Vec<String>, String)>>>()?;
+            let keys = table
+                .keys()
+                .iter()
+                .map(|k| quoted(&k.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(format!(
+                "by_env([{}], {})",
+                keys,
+                render_branch(0, table.keys(), &rendered_entries)?
+            ))
+        }
+    }
 }
 
 fn style_expr(style: &Style) -> Result<String> {

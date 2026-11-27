@@ -203,7 +203,7 @@ fn step_marker(ctx,model,step,i,furthest,clean){
 }
 fn progress_view(ctx,props,model,compact){
     let furthest=farthest(model.ids,ctx.get_state("reached"),model.index);
-    let theme=ctx.theme_variant();let clean=theme!=()&&theme.family=="Clean";
+    let clean=ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean";
     let list=[];for i in 0..props.steps.len{list.push(step_marker(ctx,model,props.steps[i],i,furthest,clean));}
     let wide=row(list).with_key("steps").retained_page(!compact).with_style(ctx.component_style("progress",
         style().gap(theme_spacing("xs")).min_width(px(0)).width(relative(1.0))))
@@ -360,7 +360,6 @@ fn render_StepperForm(ctx,props){
     let root=column([progress_view(ctx,props,model,compact),body]).with_key(props.key).with_ref(reference)
         .with_style(ctx.component_style("root",style().width(relative(1.0)).max_width(px(560)).min_width(px(0))
             .gap(theme_spacing("xs")).text_color(theme_color("text_primary")))).disabled(props.disabled);
-    let theme=ctx.theme_variant();
     // The tray progress has its own gutter; it does not share the card's text inset.
-    if theme!=()&&theme.family=="Modern"{root.audit_allow(["text-edge-misaligned"])}else{root}
+    if ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="modern"{root.audit_allow(["text-edge-misaligned"])}else{root}
 }

@@ -236,11 +236,11 @@ pub struct ThemeTypography {
     pub roles: BTreeMap<String, TypographyRole>,
 }
 
-/// A named typography role: a concrete style or an alias to another role.
+/// A named typography role: a concrete style (fixed or environment-driven) or an alias to another role.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TypographyRole {
-    Style(TypographyToken),
+    Style(Variable<TypographyToken>),
     /// Another role's name, optionally chosen by environment values (for
     /// example a `control` role that maps `xs` to `body_small`).
     Alias(Variable<String>),
@@ -288,11 +288,49 @@ pub struct ResolvedTypography {
 pub enum ThemeTokenValue {
     Color(Rgba8),
     Length(ThemeLength),
-    Number(f64),
-    String(String),
-    /// A complete style recipe, including pseudo states, consumed by source
-    /// components through the same typed API as application-owned styles.
-    Style(Box<crate::Style>),
+    Number(Variable<f64>),
+    String(Variable<String>),
+    /// A complete style recipe (fixed or `by_env`), including pseudo states,
+    /// consumed by source components through the same typed API as application-owned styles.
+    Style(Box<Variable<crate::Style>>),
+}
+
+impl ThemeTokenValue {
+    #[must_use]
+    pub fn resolve_number(
+        &self,
+        environment: &Environment,
+        declarations: &EnvironmentDeclarations,
+    ) -> Option<f64> {
+        match self {
+            Self::Number(value) => value.resolve(environment, declarations).copied(),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn resolve_string(
+        &self,
+        environment: &Environment,
+        declarations: &EnvironmentDeclarations,
+    ) -> Option<&str> {
+        match self {
+            Self::String(value) => value.resolve(environment, declarations).map(String::as_str),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn resolve_style(
+        &self,
+        environment: &Environment,
+        declarations: &EnvironmentDeclarations,
+    ) -> Option<&crate::Style> {
+        match self {
+            Self::Style(value) => value.resolve(environment, declarations),
+            _ => None,
+        }
+    }
 }
 
 impl ThemeTokens {
@@ -300,6 +338,18 @@ impl ThemeTokens {
     pub fn token(&self, path: &str) -> Option<&ThemeTokenValue> {
         let (namespace, name) = path.split_once('.')?;
         self.namespaces.get(namespace)?.get(name)
+    }
+
+    /// Resolve every component style part of `id` for `environment` using this
+    /// token set's declared environment defaults.
+    #[must_use]
+    pub fn resolve_component_styles(
+        &self,
+        id: &crate::ModuleId,
+        environment: &Environment,
+    ) -> Option<BTreeMap<String, crate::Style>> {
+        self.component_styles
+            .resolve_component(id, environment, &self.environment)
     }
 
     #[must_use]
@@ -420,6 +470,7 @@ impl ThemeTokens {
         for _ in 0..MAX_TYPOGRAPHY_ALIAS_DEPTH {
             match self.typography.roles.get(&current)? {
                 TypographyRole::Style(token) => {
+                    let token = token.resolve(environment, &self.environment)?;
                     let (family, fallbacks) = if token.family.is_some() {
                         (token.family.clone(), token.fallbacks.clone())
                     } else {
@@ -535,17 +586,28 @@ impl ThemeTokens {
                     ThemeTokenValue::Length(length) => {
                         self.validate_length(&format!("{namespace}.{name}"), length)?;
                     }
-                    ThemeTokenValue::Number(number) if !number.is_finite() => {
-                        return Err(ThemeError::NonFiniteNumber {
-                            namespace: namespace.clone(),
-                            name: name.clone(),
-                        });
+                    ThemeTokenValue::Number(number) => {
+                        self.validate_variable(&format!("{namespace}.{name}"), number)?;
+                        if number.values().any(|n| !n.is_finite()) {
+                            return Err(ThemeError::NonFiniteNumber {
+                                namespace: namespace.clone(),
+                                name: name.clone(),
+                            });
+                        }
                     }
-                    ThemeTokenValue::Color(_)
-                    | ThemeTokenValue::Number(_)
-                    | ThemeTokenValue::String(_)
-                    | ThemeTokenValue::Style(_) => {}
+                    ThemeTokenValue::String(text) => {
+                        self.validate_variable(&format!("{namespace}.{name}"), text)?;
+                    }
+                    ThemeTokenValue::Style(style) => {
+                        self.validate_variable(&format!("{namespace}.{name}"), style)?;
+                    }
+                    ThemeTokenValue::Color(_) => {}
                 }
+            }
+        }
+        for (id, parts) in self.component_styles.iter() {
+            for (part, style) in parts {
+                self.validate_variable(&format!("component_styles.{id}.{part}"), style)?;
             }
         }
         self.validate_typography()?;
@@ -646,7 +708,12 @@ impl ThemeTokens {
                 return Err(ThemeError::InvalidTypographyRole(role.clone()));
             }
             match value {
-                TypographyRole::Style(token) => validate_typography_token(role, token)?,
+                TypographyRole::Style(tokens) => {
+                    self.validate_variable(&format!("typography.{role}"), tokens)?;
+                    for token in tokens.values() {
+                        validate_typography_token(role, token)?;
+                    }
+                }
                 TypographyRole::Alias(target) => {
                     self.validate_variable(&format!("typography.{role}"), target)?;
                     for target in target.values() {
@@ -858,7 +925,7 @@ impl ThemeTokenOverrides {
                 .typography
                 .roles
                 .into_iter()
-                .map(|(name, token)| (name, TypographyRole::Style(token)))
+                .map(|(name, token)| (name, TypographyRole::Style(Variable::Fixed(token))))
                 .collect(),
             motion: self.motion,
             namespaces: self.namespaces,
@@ -983,7 +1050,7 @@ impl TokenLayer {
     }
 
     /// Evaluate color expressions and produce the final token set.
-    fn finalize(mut self) -> Result<ThemeTokens, ThemeError> {
+    fn finalize(mut self, mode: ThemeMode) -> Result<ThemeTokens, ThemeError> {
         self.validate_color_paths()?;
         // Every token base reads at a reading scale, which it need not declare.
         self.environment
@@ -1028,7 +1095,7 @@ impl TokenLayer {
             });
         }
 
-        let resolved = resolve_color_expressions(&self.colors)?;
+        let resolved = resolve_color_expressions(&self.colors, mode)?;
         let mut colors = BTreeMap::new();
         let mut namespaces = self.namespaces;
         for (name, color) in resolved {
@@ -1074,9 +1141,11 @@ impl TokenLayer {
 /// Evaluate every color, following token references between colors.
 fn resolve_color_expressions(
     colors: &BTreeMap<String, ColorValue>,
+    mode: ThemeMode,
 ) -> Result<BTreeMap<String, Rgba8>, ThemeError> {
     fn visit(
         name: &str,
+        mode: ThemeMode,
         colors: &BTreeMap<String, ColorValue>,
         resolved: &mut BTreeMap<String, Rgba8>,
         stack: &mut Vec<String>,
@@ -1093,13 +1162,13 @@ fn resolve_color_expressions(
         }
         stack.push(name.to_owned());
         let mut failure = None;
-        let value = expression.resolve_with(&mut |token: &str| match visit(
-            token, colors, resolved, stack,
-        ) {
-            Ok(value) => value,
-            Err(error) => {
-                failure.get_or_insert(error);
-                None
+        let value = expression.resolve_with_mode(mode, &mut |token: &str| {
+            match visit(token, mode, colors, resolved, stack) {
+                Ok(value) => value,
+                Err(error) => {
+                    failure.get_or_insert(error);
+                    None
+                }
             }
         });
         stack.pop();
@@ -1116,7 +1185,7 @@ fn resolve_color_expressions(
 
     let mut resolved = BTreeMap::new();
     for name in colors.keys() {
-        visit(name, colors, &mut resolved, &mut Vec::new())?;
+        visit(name, mode, colors, &mut resolved, &mut Vec::new())?;
     }
     Ok(resolved)
 }
@@ -1124,6 +1193,10 @@ fn resolve_color_expressions(
 impl ColorResolver for ThemeVariant {
     fn resolve_token(&self, token: &str) -> Option<Rgba8> {
         self.tokens.color(token)
+    }
+
+    fn theme_mode(&self) -> ThemeMode {
+        self.mode
     }
 
     fn resolve_length_in(&self, length: Length, environment: &Environment) -> Option<Length> {
@@ -1252,6 +1325,8 @@ pub struct ThemeManager {
     app: ThemePreference,
     windows: BTreeMap<String, ThemePreference>,
     scopes: BTreeMap<ComponentInstancePath, ThemePreference>,
+    environment: Environment,
+    window_environments: BTreeMap<String, Environment>,
     generation: u64,
 }
 
@@ -1325,6 +1400,8 @@ impl ThemeManager {
             app,
             windows: BTreeMap::new(),
             scopes: BTreeMap::new(),
+            environment: Environment::EMPTY,
+            window_environments: BTreeMap::new(),
             generation: 1,
         };
         for family in families {
@@ -1420,11 +1497,118 @@ impl ThemeManager {
     }
 
     pub fn remove_window(&mut self, window: &str) -> bool {
-        let removed = self.windows.remove(window).is_some();
+        let removed_theme = self.windows.remove(window).is_some();
+        let removed_env = self.window_environments.remove(window).is_some();
+        let removed = removed_theme || removed_env;
         if removed {
             self.generation = self.generation.saturating_add(1);
         }
         removed
+    }
+
+    /// Set an orthogonal application-level environment value (such as `design = "clean"`).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThemeError`] when the environment name or value is invalid or
+    /// undeclared by the resolved application theme.
+    pub fn set_environment(&mut self, name: &str, value: &str) -> Result<(), ThemeError> {
+        let resolved = self.resolve(None, None, SystemAppearance::Dark)?;
+        Self::validate_environment_entry(&resolved.variant.tokens.environment, name, value)?;
+        let updated = self
+            .environment
+            .with(Symbol::intern(name), Symbol::intern(value))
+            .map_err(|error| ThemeError::InvalidTokenValue {
+                token: format!("environment.{name}"),
+                reason: error.to_string(),
+            })?;
+        if self.environment != updated {
+            self.environment = updated;
+            self.generation = self.generation.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    /// Clear an application-level environment override so each theme's declared default applies.
+    pub fn clear_environment(&mut self, name: &str) -> bool {
+        let updated = self.environment.without(Symbol::intern(name));
+        if updated != self.environment {
+            self.environment = updated;
+            self.generation = self.generation.saturating_add(1);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set an orthogonal per-window environment override.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThemeError`] when the environment name or value is undeclared.
+    pub fn set_window_environment(
+        &mut self,
+        window: impl Into<String>,
+        name: &str,
+        value: &str,
+    ) -> Result<(), ThemeError> {
+        let window = window.into();
+        let resolved = self.resolve(Some(&window), None, SystemAppearance::Dark)?;
+        Self::validate_environment_entry(&resolved.variant.tokens.environment, name, value)?;
+        let current = self
+            .window_environments
+            .get(&window)
+            .copied()
+            .unwrap_or(Environment::EMPTY);
+        let updated = current
+            .with(Symbol::intern(name), Symbol::intern(value))
+            .map_err(|error| ThemeError::InvalidTokenValue {
+                token: format!("environment.{name}"),
+                reason: error.to_string(),
+            })?;
+        if current != updated {
+            self.window_environments.insert(window, updated);
+            self.generation = self.generation.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    /// The orthogonal environment overrides active for `window`.
+    #[must_use]
+    pub fn environment_for(&self, window: Option<&str>) -> Environment {
+        let mut merged = self.environment;
+        if let Some(window_env) = window.and_then(|name| self.window_environments.get(name)) {
+            merged = merged.with_all(window_env.iter()).unwrap_or(merged);
+        }
+        merged
+    }
+
+    fn validate_environment_entry(
+        declarations: &EnvironmentDeclarations,
+        name: &str,
+        value: &str,
+    ) -> Result<(), ThemeError> {
+        if !valid_token_segment(name) {
+            return Err(ThemeError::InvalidTokenName {
+                namespace: "environment".to_owned(),
+                name: name.to_owned(),
+            });
+        }
+        let symbol = Symbol::intern(name);
+        let Some(declaration) = declarations.get(&symbol) else {
+            return Err(ThemeError::UndeclaredEnvironment {
+                token: format!("environment.{name}"),
+                name: name.to_owned(),
+            });
+        };
+        if !declaration.allows(Symbol::intern(value)) {
+            return Err(ThemeError::UndeclaredEnvironmentValue {
+                token: format!("environment.{name}"),
+                name: name.to_owned(),
+                value: value.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     pub fn remove_scope(&mut self, scope: &ComponentInstancePath) -> bool {
@@ -1492,7 +1676,11 @@ impl ThemeManager {
             .get(&selection.family)
             .and_then(|family| family.variants.get(&selection.variant))
             .ok_or_else(|| ThemeError::UnknownSelection(selection.clone()))?;
-        Ok(ResolvedTheme { variant })
+        let environment = self.environment_for(window);
+        Ok(ResolvedTheme {
+            variant,
+            environment,
+        })
     }
 
     fn nearest_scope(&self, component: &ComponentInstancePath) -> Option<&ThemePreference> {
@@ -1603,6 +1791,7 @@ impl LocalThemes {
 
 pub struct ResolvedTheme<'a> {
     variant: &'a ThemeVariant,
+    environment: Environment,
 }
 
 impl ResolvedTheme<'_> {
@@ -1610,11 +1799,24 @@ impl ResolvedTheme<'_> {
     pub fn variant(&self) -> &ThemeVariant {
         self.variant
     }
+
+    #[must_use]
+    pub const fn environment(&self) -> Environment {
+        self.environment
+    }
 }
 
 impl ColorResolver for ResolvedTheme<'_> {
     fn resolve_token(&self, token: &str) -> Option<Rgba8> {
         self.variant.resolve_token(token)
+    }
+
+    fn theme_mode(&self) -> ThemeMode {
+        self.variant.mode
+    }
+
+    fn environment(&self) -> Environment {
+        self.environment
     }
 
     fn resolve_length_in(&self, length: Length, environment: &Environment) -> Option<Length> {
@@ -1701,7 +1903,7 @@ pub fn load_theme_with_layers(
         family: theme.family,
         name: theme.name,
         mode: theme.mode,
-        tokens: Arc::new(layer.finalize()?),
+        tokens: Arc::new(layer.finalize(theme.mode)?),
     };
     variant.validate()?;
     Ok(variant)
@@ -1829,7 +2031,7 @@ mod tests {
                 "brand".to_owned(),
                 [(
                     "slot".to_owned(),
-                    ThemeTokenValue::Style(Box::new(crate::Style::new())),
+                    ThemeTokenValue::Style(Box::new(Variable::Fixed(crate::Style::new()))),
                 )]
                 .into(),
             )]
@@ -1886,7 +2088,7 @@ mod tests {
                     "brand".to_owned(),
                     [(
                         "slot".to_owned(),
-                        ThemeTokenValue::Style(Box::new(replacement)),
+                        ThemeTokenValue::Style(Box::new(Variable::Fixed(replacement))),
                     )]
                     .into(),
                 );
@@ -2547,5 +2749,143 @@ mod tests {
             motion.validate(),
             Err(ThemeError::InvalidMotionTokens)
         ));
+    }
+
+    #[test]
+    fn by_mode_and_orthogonal_design_environment_resolve_and_round_trip() {
+        let engine = engine();
+        let base = load_token_base(
+            engine.engine(),
+            "base.rhai",
+            r#"fn tokens() { #{
+                environment: #{ design: #{ values: ["modern", "clean"], "default": "modern" } },
+                colors: #{
+                    "shadow.edge": by_mode(#{ light: rgba(0x111111ff), dark: rgba(0xeeeeeeff) }),
+                },
+                radii: #{ card: by_env("design", #{ modern: px(16), clean: px(8) }) },
+                design: #{
+                    name: by_env("design", #{ modern: "modern", clean: "clean" }),
+                    layered: by_env("design", #{ modern: 1.0, clean: 0.0 }),
+                },
+                typography: #{ roles: #{
+                    body: by_env("design", #{
+                        modern: #{ size: px(14), line_height: px(20), weight: 400 },
+                        clean: #{ size: px(13), line_height: px(18), weight: 500 },
+                    }),
+                } },
+                component_styles: #{
+                    "components/card": #{
+                        root: by_env("design", #{
+                            modern: style().padding(px(4)).height(px(20)),
+                            clean: style().padding(px(16)).height(px(10)),
+                        }),
+                    },
+                },
+            } }"#,
+        )
+        .expect("token base");
+
+        let light = load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
+            "light.rhai",
+            r#"fn theme() { #{ family: "Demo", name: "Light", mode: "light", tokens: #{ colors: #{ surface: 0xffffffff } } } }"#,
+            &ThemeTokenOverrides::default(),
+        )
+        .expect("light");
+        let dark = load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
+            "dark.rhai",
+            r#"fn theme() { #{ family: "Demo", name: "Dark", mode: "dark", tokens: #{
+                colors: #{ surface: 0x111111ff },
+                environment_defaults: #{ design: "clean" },
+            } } }"#,
+            &ThemeTokenOverrides::default(),
+        )
+        .expect("dark");
+
+        assert_eq!(
+            light.tokens.color("shadow.edge"),
+            Some(Rgba8::from_rgba_hex(0x1111_11ff))
+        );
+        assert_eq!(
+            dark.tokens.color("shadow.edge"),
+            Some(Rgba8::from_rgba_hex(0xeeee_eeff))
+        );
+
+        let exported = crate::export_theme_source(&light).expect("export round trip");
+        let reloaded = load_theme_source(engine.engine(), "exported.rhai", &exported).unwrap();
+        assert_eq!(reloaded, light);
+
+        let mut manager =
+            ThemeManager::from_variants([light, dark], ThemeSelection::new("Demo", "Light"))
+                .expect("manager");
+        let card = crate::ModuleId::parse("components/card").unwrap();
+
+        let initial = manager
+            .resolve(None, None, SystemAppearance::Light)
+            .expect("initial");
+        assert_eq!(
+            initial.resolve_length(Length::theme_radius("card").unwrap()),
+            Some(Length::Pixels(16.0))
+        );
+        assert_eq!(
+            initial.resolve_typography("body").unwrap().size,
+            Length::Pixels(14.0)
+        );
+        assert_eq!(
+            initial
+                .variant()
+                .tokens
+                .resolve_component_styles(&card, &initial.environment())
+                .unwrap()["root"]
+                .base
+                .height,
+            Some(crate::LayoutLength::Definite(Length::Pixels(20.0)))
+        );
+
+        manager
+            .set_environment("design", "clean")
+            .expect("set design");
+        let clean_light = manager
+            .resolve(None, None, SystemAppearance::Light)
+            .expect("clean light");
+        assert_eq!(
+            clean_light.resolve_length(Length::theme_radius("card").unwrap()),
+            Some(Length::Pixels(8.0))
+        );
+        assert_eq!(
+            clean_light.resolve_typography("body").unwrap().size,
+            Length::Pixels(13.0)
+        );
+        assert_eq!(
+            clean_light
+                .variant()
+                .tokens
+                .resolve_component_styles(&card, &clean_light.environment())
+                .unwrap()["root"]
+                .base
+                .height,
+            Some(crate::LayoutLength::Definite(Length::Pixels(10.0)))
+        );
+
+        // Switching color theme keeps the orthogonal design override intact.
+        manager
+            .set_app(ThemePreference::Fixed {
+                selection: ThemeSelection::new("Demo", "Dark"),
+            })
+            .expect("switch to dark");
+        let clean_dark = manager
+            .resolve(None, None, SystemAppearance::Dark)
+            .expect("clean dark");
+        assert_eq!(
+            clean_dark.resolve_token("shadow.edge"),
+            Some(Rgba8::from_rgba_hex(0xeeee_eeff))
+        );
+        assert_eq!(
+            clean_dark.resolve_length(Length::theme_radius("card").unwrap()),
+            Some(Length::Pixels(8.0))
+        );
     }
 }

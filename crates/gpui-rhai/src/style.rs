@@ -532,6 +532,11 @@ pub enum ColorValue {
         background: Box<ColorValue>,
         ratio: u16,
     },
+    /// Choose between light-mode and dark-mode color expressions.
+    ByMode {
+        light: Box<ColorValue>,
+        dark: Box<ColorValue>,
+    },
 }
 
 impl CustomType for ColorValue {
@@ -560,6 +565,15 @@ impl ColorValue {
 
     /// Resolve the expression, asking `lookup` for token leaves.
     pub fn resolve_with(&self, lookup: &mut dyn FnMut(&str) -> Option<Rgba8>) -> Option<Rgba8> {
+        self.resolve_with_mode(crate::ThemeMode::Light, lookup)
+    }
+
+    /// Resolve the expression for a specific theme color mode (`light` or `dark`).
+    pub fn resolve_with_mode(
+        &self,
+        mode: crate::ThemeMode,
+        lookup: &mut dyn FnMut(&str) -> Option<Rgba8>,
+    ) -> Option<Rgba8> {
         match self {
             Self::Literal(color) => Some(*color),
             Self::Token(token) => lookup(token),
@@ -568,8 +582,8 @@ impl ColorValue {
                 other,
                 weight,
             } => {
-                let base = base.resolve_with(lookup)?;
-                let other = other.resolve_with(lookup)?;
+                let base = base.resolve_with_mode(mode, lookup)?;
+                let other = other.resolve_with_mode(mode, lookup)?;
                 Some(base.mix(other, f64::from(*weight) / 1000.0))
             }
             Self::PremultipliedMix {
@@ -577,19 +591,21 @@ impl ColorValue {
                 other,
                 weight,
             } => Some(
-                base.resolve_with(lookup)?
-                    .mix_premultiplied(other.resolve_with(lookup)?, f64::from(*weight) / 1000.0),
+                base.resolve_with_mode(mode, lookup)?.mix_premultiplied(
+                    other.resolve_with_mode(mode, lookup)?,
+                    f64::from(*weight) / 1000.0,
+                ),
             ),
             Self::Alpha { color, alpha } => color
-                .resolve_with(lookup)
+                .resolve_with_mode(mode, lookup)
                 .map(|color| color.with_alpha_factor(f64::from(*alpha) / 1000.0)),
             Self::Over {
                 foreground,
                 background,
             } => Some(
                 foreground
-                    .resolve_with(lookup)?
-                    .over(background.resolve_with(lookup)?),
+                    .resolve_with_mode(mode, lookup)?
+                    .over(background.resolve_with_mode(mode, lookup)?),
             ),
             Self::Readable {
                 color,
@@ -597,11 +613,24 @@ impl ColorValue {
                 background,
                 ratio,
             } => {
-                let color = color.resolve_with(lookup)?;
-                let toward = toward.resolve_with(lookup)?;
-                let background = background.resolve_with(lookup)?;
+                let color = color.resolve_with_mode(mode, lookup)?;
+                let toward = toward.resolve_with_mode(mode, lookup)?;
+                let background = background.resolve_with_mode(mode, lookup)?;
                 Some(color.readable(toward, background, f64::from(*ratio) / 100.0))
             }
+            Self::ByMode { light, dark } => match mode {
+                crate::ThemeMode::Light => light.resolve_with_mode(mode, lookup),
+                crate::ThemeMode::Dark => dark.resolve_with_mode(mode, lookup),
+            },
+        }
+    }
+
+    /// Choose one color expression for light themes and another for dark themes.
+    #[must_use]
+    pub fn by_mode(light: Self, dark: Self) -> Self {
+        Self::ByMode {
+            light: Box::new(light),
+            dark: Box::new(dark),
         }
     }
 
@@ -4671,6 +4700,45 @@ fn register_token_api(engine: &mut Engine) {
 
 /// Late-bound color expressions. Each numeric argument takes an integer or a float.
 fn register_color_expression_api(engine: &mut Engine) {
+    FuncRegistration::new("by_mode")
+        .in_global_namespace()
+        .register_into_engine(engine, |light: ColorValue, dark: ColorValue| {
+            ColorValue::by_mode(light, dark)
+        });
+    FuncRegistration::new("by_mode")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |table: Map| -> Result<ColorValue, Box<EvalAltResult>> {
+                let decode = |key: &str| -> Result<ColorValue, Box<EvalAltResult>> {
+                    let value = table.get(key).ok_or_else(|| {
+                        Box::new(style_runtime_error(format!(
+                            "by_mode expects a map with `{key}` color"
+                        )))
+                    })?;
+                    if let Some(color) = value.read_lock::<ColorValue>() {
+                        return Ok(color.clone());
+                    }
+                    if let Ok(hex) = value.as_int() {
+                        let raw = u32::try_from(hex).map_err(|_| {
+                            Box::new(style_runtime_error(
+                                "by_mode color integers must fit 0xRRGGBBAA".to_owned(),
+                            ))
+                        })?;
+                        return Ok(ColorValue::Literal(Rgba8::from_rgba_hex(raw)));
+                    }
+                    Err(Box::new(style_runtime_error(format!(
+                        "by_mode `{key}` must be a ColorValue or 0xRRGGBBAA integer"
+                    ))))
+                };
+                if table.len() != 2 {
+                    return Err(Box::new(style_runtime_error(
+                        "by_mode expects only `light` and `dark` entries".to_owned(),
+                    )));
+                }
+                Ok(ColorValue::by_mode(decode("light")?, decode("dark")?))
+            },
+        );
     FuncRegistration::new("over")
         .in_global_namespace()
         .register_into_engine(engine, |foreground: ColorValue, background: ColorValue| {

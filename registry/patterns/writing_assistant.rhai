@@ -264,7 +264,7 @@ fn render_WritingAssistant(ctx,props){
     let deck_size=ctx.element_size(deck_ref);
     let width=if deck_size==(){360.0}else{max(1.0,min(deck_size.width,720.0))};
     let height=if deck_size==(){340.0}else{max(1.0,min(deck_size.height,720.0))};
-    let variant=ctx.theme_variant();let clean=variant!=()&&variant.family=="Clean";
+    let clean=ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean";
     let sigma=if clean{36.0}else{34.0};
     let pink_w=if clean{0.58}else{0.60};let pink_h=if clean{0.40}else{0.42};
     let violet_w=if clean{0.54}else{0.56};let violet_h=if clean{0.42}else{0.44};

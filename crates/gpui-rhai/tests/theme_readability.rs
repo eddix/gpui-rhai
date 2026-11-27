@@ -143,6 +143,47 @@ fn all_palettes_have_reading_margin_and_ordered_perceptual_surface_steps() {
                 );
             }
         }
+        for token in [
+            "surface_sunken",
+            "surface_elevated",
+            "border_subtle",
+            "border_strong",
+            "shadow.ambient",
+            "shadow.key",
+        ] {
+            assert!(
+                theme.tokens.color(token).is_some(),
+                "{file}: missing expanded token {token}"
+            );
+        }
+        assert!(
+            color("border_strong").contrast_ratio(color("surface_raised")) >= 3.0,
+            "{file}: border_strong must clear 3:1 on surface_raised"
+        );
+        for hue in [
+            "blue", "violet", "teal", "green", "amber", "rose", "orange", "slate",
+        ] {
+            let solid = color(&format!("palette.{hue}"));
+            let ink = color(&format!("palette.{hue}_ink"));
+            let soft = color(&format!("palette.{hue}_soft"));
+            let _edge = color(&format!("palette.{hue}_border"));
+            assert!(
+                solid.contrast_ratio(color("surface_raised")) >= 3.0,
+                "{file}: palette.{hue} solid contrast on surface_raised"
+            );
+            for bg in [
+                color("surface"),
+                color("surface_raised"),
+                color("surface_sunken"),
+                soft,
+            ] {
+                assert!(
+                    ink.contrast_ratio(bg) >= 4.5,
+                    "{file}: palette.{hue}_ink contrast ratio {:.2}",
+                    ink.contrast_ratio(bg)
+                );
+            }
+        }
         println!(
             "| {} {} | {:.2} | {:.2} | {page:.3} | {raised:.3} | {hover:.3} | {:.2} | {:.2} |",
             theme.family,

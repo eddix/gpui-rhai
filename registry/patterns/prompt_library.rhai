@@ -310,7 +310,6 @@ fn render_PromptLibrary(ctx,props){
     }
     let root=column(views).with_key(props.key).with_ref(reference).with_style(ctx.component_style("root",style().width(relative(1.0)).min_width(px(0))
         .gap(theme_length("space.spacing_unit")).padding(theme_length("space.spacing_unit")).radius(theme_radius("lg")).background(theme_color("surface_raised"))));
-    let theme=ctx.theme_variant();
     // The standalone Modern tray and the library card have separate gutters.
-    if theme!=()&&theme.family=="Modern"{root.audit_allow(["text-edge-misaligned"])}else{root}
+    if ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="modern"{root.audit_allow(["text-edge-misaligned"])}else{root}
 }

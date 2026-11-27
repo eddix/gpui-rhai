@@ -104,7 +104,7 @@ fn note(content) { text(content).with_style(style().typography("caption").text_c
 fn board_stage(ctx, base) {
     let theme = ctx.theme_variant();
     if theme != () && ctx.theme_token("design.name") == "clean" {
-        base.background(if theme.mode == "dark" { rgb(0x111113) } else { rgb(0xf3f3f4) })
+        base.background(theme_color("surface_sunken"))
     } else {
         base
     }

@@ -2,6 +2,13 @@
 // Run with --check in CI; no browser, network, or external project is required.
 import fs from "node:fs";
 import path from "node:path";
+import {
+  CATEGORICAL_HUES,
+  NEUTRAL_THEMES,
+  computeExpandedPaletteColors,
+  extractExistingPaletteSpec,
+  renderPaletteThemeFile,
+} from "./palette-catalog.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const check = process.argv.includes("--check");
@@ -451,6 +458,7 @@ function recipe(preset, dark) {
     "parallel_attempts.muted": clean ? (dark ? white(.45) : black(.45)) : rgba("8a8a8a"),
     "parallel_attempts.action_hover": dark ? white(clean ? .08 : .06) : black(clean ? .06 : .05),
     "parallel_attempts.tray": clean ? transparent : rgba(dark ? "1a1a1c" : "f0f0f0"),
+    "parallel_attempts.card": rgba(dark ? (clean ? "1c1c1f" : "232326") : "ffffff"),
     "parallel_attempts.wash": clean ? alphaColor(dark ? "7dcf9f" : "5fc88a",dark ? .06 : .035) : rgba(dark ? "173022" : "f3fbf6"),
     surface: canvas, surface_raised: panel, surface_hover: wash,
     text_primary: ink, text_muted: muted,
@@ -609,6 +617,12 @@ function recipe(preset, dark) {
     "away_summary.needs": rgba(dark ? "e6c24d" : "e8b000"),
     "away_summary.done": rgba(dark ? "4fb0fe" : "0190fe"),
     "away_summary.failed": rgba(dark ? "ff6b5f" : "f04438"),
+    "away_summary.muted": clean ? (dark ? white(.45) : black(.45)) : rgba(dark ? "7c7c82" : "8a8a8a"),
+    "away_summary.text": clean ? (dark ? white(.62) : black(.61)) : rgba(dark ? "a1a1a6" : "6b6b6b"),
+    "away_summary.tray": rgba(dark ? "19191c" : "f0f0f0"),
+    "away_summary.card": clean && dark ? rgba("1c1c1f") : rgba(dark ? "232326" : "ffffff"),
+    "agent_steering.tag": clean && !dark ? alphaColor("0060e2", .765) : rgba("4fb0fe"),
+    "agent_steering.note_bg": clean ? (dark ? white(.04) : black(.03)) : rgba(dark ? "232326" : "f5f5f5"),
     "kpi_chart.first": rgba(dark ? "60a5fa" : "2563eb"),
     "kpi_chart.second": rgba("a3a3a3"),
     "kpi_chart.third": rgba(dark ? "c084fc" : "9333ea"),
@@ -632,6 +646,7 @@ function recipe(preset, dark) {
     "running_now.badge": clean ? (dark ? "alpha(rgb(0xe6c24d),0.16)" : "alpha(rgb(0xe8b000),0.14)") : rgba(dark ? "332a0f" : "f9f1d6"),
     "running_now.badge_text": rgba(dark ? "e6c24d" : "8f6c00"),
     "running_now.trigger_ink": clean ? (dark ? white(.62) : black(.61)) : rgba(dark ? "7c7c82" : "8a8a8a"),
+    "running_now.paper": rgba(dark ? (clean ? "1c1c1e" : "19191c") : (clean ? "ffffff" : "f0f0f0")),
     "running_now.faint": clean ? (dark ? white(.30) : black(.27)) : rgba(dark ? "4a4a50" : "b8b8b8"),
     "scheduled_runs.capacity": rgba(dark ? "66cbbb" : "37ae9d"),
     "scheduled_runs.current": rgba(dark ? "ff6b5f" : "f04438"),
@@ -642,6 +657,8 @@ function recipe(preset, dark) {
     "scheduled_runs.ink": dark ? white(.90) : clean ? black(.88) : rgba("171717"),
     "scheduled_runs.track": rgba(dark ? "363639" : "e7e7e8"),
     "scheduled_runs.well": dark ? white(.03) : clean ? black(.024) : rgba("fafafa"),
+    "scheduled_runs.pill": dark ? white(.07) : black(clean ? .05 : .06),
+    "scheduled_runs.count_bg": alphaColor("a651f0", .06),
     "scheduled_runs.muted": dark ? white(.45) : clean ? black(.45) : rgba("8a8a8a"),
     "scheduled_runs.text": dark ? white(.62) : clean ? black(.61) : rgba("6b6b6b"),
     "scheduled_runs.faint": dark ? white(.28) : clean ? black(.27) : rgba("b5b5b5"),
@@ -671,6 +688,8 @@ function recipe(preset, dark) {
     "context_window.muted": clean ? (dark ? white(.46) : black(.45)) : rgba(dark ? "8b8b92" : "8f8f8f"),
     "context_map.model": clean ? (dark ? white(.62) : black(.61)) : rgba(dark ? "a1a1a1" : "6b6b6b"),
     "context_map.muted": clean ? (dark ? white(.45) : black(.45)) : rgba("8a8a8a"),
+    "context_map.empty": clean ? (dark ? white(.28) : black(.27)) : rgba(dark ? "5c5c5c" : "b8b8b8"),
+    "context_map.tray": rgba(dark ? "1a1a1c" : "f0f0f0"),
     "context_map.shine": clean ? (dark ? white(.35) : black(.22)) : rgba(dark ? "8a8a8a" : "b8b8b8"),
     "context_map.panel": rgba(dark ? (clean ? "1c1c1f" : "232326") : "ffffff"),
     "context_map.capacity_bg": clean ? black(.05) : rgba(dark ? "2a2a2e" : "ffffff"),
@@ -745,6 +764,7 @@ function recipe(preset, dark) {
     "diff_timeline.wash": `alpha(rgb(0x${dark ? "4d8dff" : "0060e2"}),${clean ? .05 : .07})`,
     ...costColors,
     "cost_waterfall.muted": clean ? (dark ? white(.45) : black(.45)) : rgba(dark ? "7c7c82" : "8a8a8a"),
+    "cost_waterfall.card": rgba(dark ? (clean ? "1c1c1e" : "232326") : "ffffff"),
     "cost_waterfall.tray": clean ? transparent : rgba(dark ? "19191c" : "f0f0f0"),
     "project_card.ring": clean ? (dark ? white(.10) : black(.08)) : rgba(dark ? "3a3a40" : "dcdce0"),
     "project_card.ring_hot": clean ? (dark ? white(.26) : black(.20)) : rgba(dark ? "6c6c72" : "acacb3"),
@@ -1978,11 +1998,11 @@ function recipe(preset, dark) {
     astr("step_clock",`style().font_size(px(11.5)).line_height(px(16)).text_color(${muted}).font_feature("tnum",1)`);
     astr("note",`style().padding_x(px(6)).padding_y(px(3)).gap(px(5)).radius(px(${clean ? 5 : 8})).background(${wash})`);
     astr("notes","style().gap(px(2))");
-    astr("note_applied",`style().padding_start(px(${clean ? 6 : 8})).padding_end(px(${clean ? 8 : 10})).padding_y(px(${clean ? 4 : 6})).gap_x(px(6)).radius(px(${clean ? 6 : 10})).background(${clean ? (dark ? white(.04) : black(.03)) : rgba(dark ? "232326" : "f5f5f5")})${clean ? shadows([shadow(0,0,0,.5,edge,true)]) : ""}`);
+    astr("note_applied",`style().padding_start(px(${clean ? 6 : 8})).padding_end(px(${clean ? 8 : 10})).padding_y(px(${clean ? 4 : 6})).gap_x(px(6)).radius(px(${clean ? 6 : 10})).background(${color("agent_steering.note_bg")})${clean ? shadows([shadow(0,0,0,.5,edge,true)]) : ""}`);
     const steeringNoteMuted=clean ? (dark ? white(.45) : black(.45)) : rgba(dark ? "8b8b92" : "8a8a8a");
     astr("note_arrow",`style().width(px(12)).height(px(12)).margin_top(px(${clean ? 2 : 3})).text_color(${steeringNoteMuted})`);
     astr("note_text",`${readingType(clean ? 12 : 13,clean ? 16 : 18)}.text_color(${ink})`);
-    astr("note_tag",`${readingType(12,clean ? 16 : 18)}.gap(px(3)).font_weight(500).text_color(${clean && !dark ? alphaColor("0060e2", .765) : rgba("4fb0fe")})`);
+    astr("note_tag",`${readingType(12,clean ? 16 : 18)}.gap(px(3)).font_weight(500).text_color(${color("agent_steering.tag")})`);
     astr("queue",`style().padding_y(px(6)).gap(px(5)).border_top(px(${clean ? .5 : 1})).border_color(${edge})`);
     astr("queue_title",`style().font_size(px(11.5)).line_height(px(16)).font_weight(600).text_color(${muted})`);
     astr("compose",`style().padding_x(px(4)).padding_y(px(2)).gap(px(5))`);
@@ -2346,10 +2366,10 @@ function recipe(preset, dark) {
     notice("dismiss",`style().width(px(28)).height(px(28)).top(px(${clean ? 12 : 16})).inset_end(px(${clean ? 12 : 16})).radius(px(${clean ? 6 : 8})).hover(style().background(${productWash}).text_color(${ink}))`);
     notice("action",`style().margin_top(px(${clean ? 12 : 10})).min_height(px(${clean ? 28 : 32})).radius(px(${clean ? 6 : 9}))`);
     const away=(part,value)=>set("patterns/away_summary",part,value);
-    const awayMuted=clean ? (dark ? white(.45) : black(.45)) : rgba(dark ? "7c7c82" : "8a8a8a");
-    const awayText=clean ? secondaryText : rgba(dark ? "a1a1a6" : "6b6b6b");
-    const awayTray=rgba(dark ? "19191c" : "f0f0f0");
-    const awayPaper=clean && dark ? rgba("1c1c1f") : productPanel;
+    const awayMuted=color("away_summary.muted");
+    const awayText=color("away_summary.text");
+    const awayTray=color("away_summary.tray");
+    const awayPaper=color("away_summary.card");
     const awayFill=clean ? (dark ? white(.07) : black(.05)) : rgba(dark ? "2c2c30" : "ebebeb");
     const awayRowHover=clean ? (dark ? white(.035) : black(.025)) : rgba(dark ? "28282b" : "f7f7f7");
     away("root","style()");
@@ -2444,7 +2464,7 @@ function recipe(preset, dark) {
     breakdownPlot("legend_hint",`style().font_size(px(${clean ? 12 : 12.5})).line_height(px(${clean ? 16 : 20})).text_color(${muted})`);
     breakdownPlot("legend_reset",`style().radius(px(${clean ? 6 : 8})).font_size(px(${clean ? 13 : 12.5})).line_height(px(20)).text_color(${clean ? strongest : color("breakdown_chart.c1")}).hover(style().background(${clean ? productWash : `alpha(${color("breakdown_chart.c1")},0.08)`}))${legendFocus}`);
     const now=(part,value)=>set("patterns/running_now",part,value);
-    const nowPaper=rgba(dark ? (clean ? "1c1c1e" : "19191c") : (clean ? "ffffff" : "f0f0f0"));
+    const nowPaper=color("running_now.paper");
     const nowHover=rgba(dark ? (clean ? "252527" : "222226") : (clean ? "fafafa" : "e8e8e8"));
     now("root","style()");
     now("trigger",`style().min_height(px(${clean ? 28 : 30})).gap(px(8)).padding_start(px(${clean ? 10 : 11})).padding_end(px(${clean ? 8 : 9})).radius(px(${clean ? 6 : 8})).background(${nowPaper})${shadows(clean ? smallShadow : [])}.hover(style().background(${nowHover}))`);
@@ -2485,8 +2505,7 @@ function recipe(preset, dark) {
       : `style().padding(px(8)).gap(px(8)).radius(px(16)).border(px(1)).border_color(${edge})${shadows(smallShadow)}.background(${scheduleCard})`);
     scheduleBoard("stack",`style().background(${color("scheduled_runs.lane")}).radius(px(${clean ? 14 : 16})).padding(px(4))`);
     scheduleBoard("stack_head","style().height(px(30)).min_height(px(30)).padding_start(px(8)).padding_end(px(6))");
-    const scheduleCountInk=dark ? white(.62) : (clean ? black(.61) : rgba("6b6b6b"));
-    scheduleBoard("stack_count",`${readingType(11,16)}.padding_x(px(5)).radius(px(6)).background(${alphaColor("a651f0", .06)}).text_color(${scheduleCountInk})`);
+    scheduleBoard("stack_count",`${readingType(11,16)}.padding_x(px(5)).radius(px(6)).background(${color("scheduled_runs.count_bg")}).text_color(${color("scheduled_runs.text")})`);
     scheduleBoard("stack_header",`${readingType(11.5,16)}.font_weight(500).text_color(${color("scheduled_runs.muted")})`);
     scheduleBoard("counter",`style().font_size(px(11)).line_height(px(16)).text_color(${color("scheduled_runs.muted")}).font_feature("tnum",1)`);
     scheduleBoard("agent",`style().height(px(26)).min_width(px(26)).padding_x(px(5)).radius(px(7)).border(px(0)).background(${scheduleCard})${shadows(smallShadow)}`);
@@ -2510,7 +2529,7 @@ function recipe(preset, dark) {
     scheduleBoard("task_meta",`${readingType(clean ? 10.5 : 11.5,14)}.text_color(${color("scheduled_runs.muted")})`);
     scheduleBoard("task_metrics","style().height(px(16)).gap(px(10))");
     scheduleBoard("task_stat",`${readingType(clean ? 10.5 : 11.5,16)}.text_color(${color("scheduled_runs.muted")})`);
-    scheduleBoard("usage_badge",`style().padding_x(px(5)).radius(px(${clean ? 4 : 999})).background(${dark ? white(.07) : black(clean ? .05 : .06)})`);
+    scheduleBoard("usage_badge",`style().padding_x(px(5)).radius(px(${clean ? 4 : 999})).background(${color("scheduled_runs.pill")})`);
     scheduleBoard("usage_label",`${readingType(10,15)}.text_color(${color("scheduled_runs.text")})`);
     scheduleBoard("task_part",`${readingType(10,15)}.text_color(${color("scheduled_runs.muted")})`);
     scheduleBoard("task_mark",`${readingType(9,16)}.font_weight(500).text_color(${scheduleInk})`);
@@ -2590,7 +2609,7 @@ function recipe(preset, dark) {
     const contextPanel=color("context_map.panel");
     contextMap("root", clean
       ? `style().padding(px(0)).radius(theme_radius("lg")).background(${transparent}).letter_spacing_em(0).shadows([])`
-      : `style().padding(px(4)).radius(px(20)).background(${rgba(dark ? "1a1a1c" : "f0f0f0")}).letter_spacing_em(-0.006)`);
+      : `style().padding(px(4)).radius(px(20)).background(${color("context_map.tray")}).letter_spacing_em(-0.006)`);
     contextMap("field",`style().radius(theme_radius("lg")).background(${contextPanel})${shadows(clean ? [] : smallShadow)}`);
     contextMap("header",`style().padding_x(px(${clean ? 10 : 12})).padding_y(px(${clean ? 8 : 10})).gap_x(px(8)).gap_y(px(6))`);
     const contextHeaderType=readingType(clean ? 13 : 14,20);
@@ -2626,8 +2645,7 @@ function recipe(preset, dark) {
     contextMap("tip_item","style().font_size(px(13)).line_height(px(20))");
     contextMap("footer",`style().padding_x(px(10)).padding_top(px(10)).padding_bottom(px(8)).gap_x(px(16)).gap_y(px(4))`);
     contextMap("fate",`${contextSummaryType}.text_color(${color("context_map.muted")})`);
-    const contextEmptyInk=clean ? (dark ? white(.28) : black(.27)) : rgba(dark ? "5c5c5c" : "b8b8b8");
-    contextMap("fate_empty",`style().text_color(${contextEmptyInk})`);
+    contextMap("fate_empty",`style().text_color(${color("context_map.empty")})`);
     const profileMenu=(part,value)=>set("patterns/profile_menu",part,value);
     const profileHover=clean ? (dark ? white(.08) : black(.06)) : (dark ? rgba("2a2a2d") : rgba("f5f5f5"));
     const profileActive=clean ? (dark ? white(.1) : black(.08)) : rgba(dark ? "313135" : "efefef");
@@ -2764,7 +2782,7 @@ function recipe(preset, dark) {
     const costWaterfall=(part,value)=>set("patterns/cost_waterfall",part,value);
     const cwEdge=clean ? (dark ? white(.08) : black(.06)) : edge;
     costWaterfall("root",clean
-      ? `style().padding(px(0)).radius(theme_radius("lg")).background(${productPanel})${shadows(smallShadow)}`
+      ? `style().padding(px(0)).radius(theme_radius("lg")).background(${color("cost_waterfall.card")})${shadows(smallShadow)}`
       : `style().padding(px(6)).radius(px(21)).background(${color("cost_waterfall.tray")}).shadows([])`);
     costWaterfall("head",`style().gap(px(8)).padding_x(px(${clean ? 16 : 12})).padding_top(px(${clean ? 10 : 6})).padding_bottom(px(10)).border_bottom(px(${clean ? .5 : 0})).border_color(${cwEdge})`);
     costWaterfall("heading",`style().font_size(px(${clean ? 13 : 14})).line_height(px(20)).font_weight(${clean ? 500 : 600})`);
@@ -2807,7 +2825,7 @@ function recipe(preset, dark) {
     costWaterfall("detail",`style().padding_x(px(14)).padding_y(px(10)).gap(px(8)).background(${productWash})`);
     costWaterfall("excerpt",`style().font_size(px(${clean ? 12 : 13})).line_height(px(19))`);
     const parallel=(part,value)=>set("patterns/parallel_attempts",part,value);
-    const attemptPanel=rgba(dark ? (clean ? "1c1c1f" : "232326") : "ffffff");
+    const attemptPanel=color("parallel_attempts.card");
     const attemptWash=color("parallel_attempts.wash");
     const attemptEdge=color("parallel_attempts.done_edge");
     const attemptGlow=color("parallel_attempts.shine");
@@ -3891,30 +3909,292 @@ function object(entries, indent = 8) {
   return `#{\n${Object.entries(entries).map(([name,value]) => `${" ".repeat(indent)}${JSON.stringify(name)}: ${value},`).join("\n")}\n${" ".repeat(indent-4)}}`;
 }
 
-function tokens(data, palette = true, baseColors = undefined, replaceStyles = false) {
-  const {clean, colors, dimensions, type, parts, recipes} = data;
+// Combine one Modern expression and one Clean expression along the orthogonal `design` axis,
+// flattening any inner `by_env(...)` axes (density / size) so no nested EnvTable is emitted.
+function mergeByDesign(modernExpr, cleanExpr) {
+  if (modernExpr === cleanExpr) return modernExpr;
+  const axisValues = {
+    density: ["comfortable", "compact"],
+    size: ["xs", "sm", "md", "lg"],
+  };
+  const expandFixed = (expr, keys) => {
+    if (keys.length === 0) return expr;
+    const [head, ...rest] = keys;
+    const entries = axisValues[head].map(v => `${v}: ${expandFixed(expr, rest)}`).join(", ");
+    return `#{ ${entries} }`;
+  };
+  const envMatch = expr => {
+    const m = expr.match(/^by_env\((\[[^\]]+\]|"[^"]+"),\s*(#\{[\s\S]*\})\)$/);
+    if (!m) return null;
+    const keys = m[1].startsWith("[")
+      ? [...m[1].matchAll(/"([^"]+)"/g)].map(x => x[1])
+      : [m[1].slice(1, -1)];
+    return { keys, body: m[2] };
+  };
+  const m = envMatch(modernExpr);
+  const c = envMatch(cleanExpr);
+  if (m && c && JSON.stringify(m.keys) === JSON.stringify(c.keys)) {
+    return `by_env(${JSON.stringify(["design", ...m.keys])}, #{ modern: ${m.body}, clean: ${c.body} })`;
+  }
+  if (m && !c) {
+    return `by_env(${JSON.stringify(["design", ...m.keys])}, #{ modern: ${m.body}, clean: ${expandFixed(cleanExpr, m.keys)} })`;
+  }
+  if (!m && c) {
+    return `by_env(${JSON.stringify(["design", ...c.keys])}, #{ modern: ${expandFixed(modernExpr, c.keys)}, clean: ${c.body} })`;
+  }
+  if (m && c) {
+    // Different inner axes (e.g. ["density","size"] vs ["size"]): expand the shorter one.
+    const allKeys = ["density", "size"].filter(k => m.keys.includes(k) || c.keys.includes(k));
+    const lift = (parsed) => {
+      if (JSON.stringify(parsed.keys) === JSON.stringify(allKeys)) return parsed.body;
+      if (allKeys.length === 2 && parsed.keys.length === 1 && parsed.keys[0] === "size") {
+        return `#{ comfortable: ${parsed.body}, compact: ${parsed.body} }`;
+      }
+      throw new Error(`Unsupported mixed by_env axes: ${m.keys} vs ${c.keys}`);
+    };
+    return `by_env(${JSON.stringify(["design", ...allKeys])}, #{ modern: ${lift(m)}, clean: ${lift(c)} })`;
+  }
+  return `by_env("design", #{ modern: ${modernExpr}, clean: ${cleanExpr} })`;
+}
+
+function mergeMapsByDesign(modernMap, cleanMap, fallback = undefined) {
+  const keys = [...new Set([...Object.keys(modernMap), ...Object.keys(cleanMap)])];
+  return Object.fromEntries(keys.map(key => {
+    const mVal = key in modernMap ? modernMap[key] : fallback;
+    const cVal = key in cleanMap ? cleanMap[key] : fallback;
+    if (mVal === undefined || cVal === undefined) {
+      throw new Error(`Missing design variant for key ${key}`);
+    }
+    return [key, mergeByDesign(mVal, cVal)];
+  }));
+}
+
+// Convert hardcoded light-mode color literals inside a component style expression
+// into semantic tokens (5 surfaces, 3 borders, 2 shadows, 8x4 categorical palette,
+// or by_mode for neutral overlay backdrops).
+function semanticizeStyle(lightExpr, darkExpr, clean) {
+  if (lightExpr === undefined) return darkExpr;
+  let out = lightExpr;
+
+  // 1. Modal/sheet backdrop opacity differs by light vs dark mode.
+  out = out.replaceAll(
+    "background(alpha(rgb(0x000000),0.35))",
+    "background(by_mode(alpha(rgb(0x000000),0.35),alpha(rgb(0x000000),0.6)))",
+  );
+
+  // 2. Shadow outlines & drop-shadow cast colors (context-aware on shadow() calls).
+  out = out.replace(/shadow\(#\{([^}]+)\}\)/g, (full, body) => {
+    const isOutline = /\bblur:0\b/.test(body) && /\by:0\b/.test(body);
+    const isInsetHighlight = /\binset:true\b/.test(body);
+    let updated = body;
+    if (isOutline) {
+      updated = updated
+        .replace(/color:(?:rgba\(0x(?:ecececff|e5e5e5ff|e6e6e6ff|2a2a2eff|2e2e33ff|2f2f34ff|2e2e31ff)\)|alpha\(rgb\(0x000000\),0\.0[4-8]\))/g, `color:${color("border_subtle")}`)
+        .replace(/color:(?:rgba\(0x(?:d9d9d9ff|d4d4d4ff|3a3a40ff|0d0d0dff)\)|alpha\(rgb\(0x000000\),0\.(?:09|1|1[0-9]|2)\))/g, `color:${color("border_strong")}`);
+    } else if (isInsetHighlight) {
+      updated = updated
+        .replace(/color:(?:rgba\(0xffffffff\)|alpha\(rgb\(0xffffff\),0\.[0-9]+\)|alpha\(rgb\(0x000000\),0\.0[3-6]\))/g, `color:${color("border_subtle")}`);
+    } else {
+      updated = updated
+        .replace(/color:alpha\(rgb\(0x000000\),0\.0[1-6][0-9]?\)/g, `color:${color("shadow.ambient")}`)
+        .replace(/color:alpha\(rgb\(0x000000\),0\.(?:0[7-9]|[1-4][0-9]?)\)/g, `color:${color("shadow.key")}`);
+    }
+    return `shadow(#{${updated}})`;
+  });
+
+  // 3. Context-aware replacements for text_color vs background/border_color.
+  out = out
+    .replaceAll(`.text_color(${rgba("ffffff")})`, `.text_color(${color("on_accent")})`)
+    .replaceAll(".text_color(rgb(0xffffff))", `.text_color(${color("on_accent")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),1))", `.text_color(${color("text_primary")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),0.88))", `.text_color(${color("text_primary")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),0.8))", `.text_color(${color("text_primary")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),0.61))", `.text_color(${color("text_muted")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),0.45))", `.text_color(${color("text_muted")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),0.447))", `.text_color(${color("text_muted")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),0.3))", `.text_color(${color("text_muted")})`)
+    .replaceAll(".text_color(alpha(rgb(0x000000),0.27))", `.text_color(${color("text_muted")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.015))", `.background(${color("surface_hover")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.018))", `.background(${color("surface_hover")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.025))", `.background(${color("surface_hover")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.03))", `.background(${color("surface_sunken")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.04))", `.background(${color("surface_sunken")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.05))", `.background(${color("surface_hover")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.06))", `.background(${color("surface_hover")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.08))", `.background(${color("surface_hover")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.8))", `.background(${color("text_primary")})`)
+    .replaceAll(".background(alpha(rgb(0x000000),0.88))", `.background(${color("text_primary")})`)
+    .replaceAll(".border_color(alpha(rgb(0x000000),0.06))", `.border_color(${color("border_subtle")})`)
+    .replaceAll(".border_color(alpha(rgb(0x000000),0.08))", `.border_color(${color("border_subtle")})`)
+    .replaceAll(".border_color(alpha(rgb(0x000000),0.1))", `.border_color(${color("border")})`)
+    .replaceAll(".border_color(alpha(rgb(0x000000),0.12))", `.border_color(${color("border_strong")})`)
+    .replaceAll(".border_color(alpha(rgb(0x000000),0.14))", `.border_color(${color("border_strong")})`);
+
+  // 4. Exhaustive literal color -> semantic token map.
+  const substitutions = [
+    // Neutral inks
+    [rgba("171717"), color("text_primary")],
+    [rgba("18181b"), color("text_primary")],
+    [rgba("141416"), color("text_primary")],
+    [rgba("0d0d0d"), color("text_primary")],
+    [rgba("201e25"), color("text_primary")],
+    [rgba("26242b"), color("text_primary")],
+    [rgba("323137"), color("text_primary")],
+    [rgba("3b3a41"), color("text_primary")],
+    [rgba("404040"), color("text_primary")],
+    [rgba("000000"), color("text_primary")],
+    [rgba("525252"), color("text_muted")],
+    [rgba("6b6b6b"), color("text_muted")],
+    [rgba("737373"), color("text_muted")],
+    [rgba("8a8a8a"), color("text_muted")],
+    [rgba("8f8f8f"), color("text_muted")],
+    [rgba("b5b5b5"), color("text_muted")],
+    // Surfaces (5-level hierarchy)
+    [rgba("ffffff"), color("surface_raised")],
+    ["rgb(0xffffff)", color("surface_raised")],
+    [rgba("fcfcfc"), color("surface_raised")],
+    [rgba("f4f4f5"), color("surface")],
+    [rgba("fafafa"), `mix(${color("surface_raised")},${color("surface_sunken")},0.25)`],
+    [rgba("f7f7f7"), color("surface_sunken")],
+    [rgba("f5f5f5"), color("surface_sunken")],
+    [rgba("f0f0f0"), color("surface_sunken")],
+    [rgba("efefef"), color("surface_sunken")],
+    [rgba("ebebeb"), color("surface_hover")],
+    [rgba("e8e8e8"), color("surface_hover")],
+    [rgba("e9e9ec"), color("selection")],
+    // Borders (3-level hierarchy)
+    [rgba("ececec"), color("border_subtle")],
+    ["rgb(0xe6e6e6)", color("border_subtle")],
+    [rgba("e5e5e5"), color("border")],
+    [rgba("d9d9d9"), color("border_strong")],
+    [rgba("d4d4d4"), color("border_strong")],
+    [rgba("b8b8b8"), color("border")],
+    // Focus / Accent / Categorical hues
+    ["alpha(rgb(0x0060e2),0.7)", color("focus_ring")],
+    ["alpha(rgb(0x0060e2),0.765)", color("accent")],
+    [rgba("eef9f3"), color("palette.green_soft")],
+    ["alpha(rgb(0x5fc88a),0.08)", color("palette.green_soft")],
+    [rgba("fff0f0"), color("palette.rose_soft")],
+    [rgba("006dcbf2"), color("palette.blue_ink")],
+    [rgba("008ff519"), color("palette.blue_soft")],
+    [rgba("007d2ee0"), color("palette.green_ink")],
+    [rgba("00a43319"), color("palette.green_soft")],
+    [rgba("d72400da"), color("text.danger")],
+    [rgba("f52b0018"), color("badge.danger_bg")],
+    [rgba("1e8a4f"), color("palette.green_ink")],
+    [rgba("2456d6"), color("palette.blue_ink")],
+    [rgba("c4320a"), color("text.danger")],
+    [rgba("4fb0fe"), color("palette.blue")],
+    [rgba("0190fe40"), `alpha(${color("palette.blue")},0.25)`],
+    [rgba("b98af0"), color("palette.violet")],
+    ["rgb(0xa651f0)", color("palette.violet")],
+    [rgba("f06db5"), color("palette.rose")],
+    [rgba("ee3e9e40"), `alpha(${color("palette.rose")},0.25)`],
+    // Remaining translucent black/white tokens (for clean mode shadows/washes)
+    ["alpha(rgb(0x000000),0.03)", color("surface_sunken")],
+    ["alpha(rgb(0x000000),0.04)", color("shadow.ambient")],
+    ["alpha(rgb(0x000000),0.05)", color("shadow.ambient")],
+    ["alpha(rgb(0x000000),0.06)", color("border_subtle")],
+    ["alpha(rgb(0x000000),0.08)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.1)", color("border")],
+    ["alpha(rgb(0x000000),0.12)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.14)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.16)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.17)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.18)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.2)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.24)", color("shadow.key")],
+    ["alpha(rgb(0x000000),0.27)", color("text_muted")],
+    ["alpha(rgb(0x000000),0.3)", color("text_muted")],
+    ["alpha(rgb(0x000000),0.45)", color("text_muted")],
+    ["alpha(rgb(0x000000),0.61)", color("text_muted")],
+    ["alpha(rgb(0x000000),0.8)", color("text_primary")],
+    ["alpha(rgb(0x000000),0.88)", color("text_primary")],
+    ["alpha(rgb(0x000000),1)", color("text_primary")],
+  ];
+  for (const [before, after] of substitutions) {
+    out = out.replaceAll(before, after);
+  }
+  return out;
+}
+
+function semanticizePreset(preset) {
+  const light = recipe(preset, false);
+  const dark = recipe(preset, true);
+  const clean = preset === "clean";
+  // Keep alternate-palette danger button text readable via semantic text.danger.
+  light.recipes.button.danger = light.recipes.button.danger.replace(
+    `.text_color(${color("danger")})`, `.text_color(${color("text.danger")})`,
+  );
+  const parts = Object.fromEntries(Object.entries(light.parts).map(([id, map]) => [
+    id,
+    Object.fromEntries(Object.entries(map).map(([part, expr]) => [
+      part,
+      semanticizeStyle(expr, dark.parts[id]?.[part], clean),
+    ])),
+  ]));
+  const recipes = Object.fromEntries(Object.entries(light.recipes).map(([ns, map]) => [
+    ns,
+    Object.fromEntries(Object.entries(map).map(([name, expr]) => [
+      name,
+      semanticizeStyle(expr, dark.recipes[ns]?.[name], clean),
+    ])),
+  ]));
+  return { ...light, parts, recipes };
+}
+
+function dualDesignTokens(modernData, cleanData, baseColors) {
+  const dimensions = mergeMapsByDesign(modernData.dimensions, cleanData.dimensions);
+  const type = mergeMapsByDesign(modernData.type, cleanData.type);
+  const parts = Object.fromEntries(modules.map(({ id }) => [
+    id,
+    object(mergeMapsByDesign(modernData.parts[id], cleanData.parts[id], "style()"), 12),
+  ]));
+  const recipes = Object.fromEntries(
+    Object.keys(modernData.recipes).map(ns => [
+      ns,
+      object(mergeMapsByDesign(modernData.recipes[ns], cleanData.recipes[ns], "style()")),
+    ]),
+  );
+
   const variables = {
-    environment: '#{ density: #{values:["comfortable","compact"],"default":"comfortable"},size:#{values:["xs","sm","md","lg"],"default":"md"} }',
+    environment: '#{ design: #{values:["modern","clean"],"default":"modern"},density: #{values:["comfortable","compact"],"default":"comfortable"},size:#{values:["xs","sm","md","lg"],"default":"md"} }',
     spacing: object({xxs:px(2),xs:px(4),sm:density(8,6),md:density(12,8),lg:density(16,12),xl:density(24,20)}),
     space: object({unit:px(4),spacing_unit:density(4,3),related:density(8,6),group:density(16,12),section:density(24,20)}),
-    radius: object({xs:px(clean ? 4 : 5),sm:px(clean ? 4 : 6),md:scale(clean ? [5,6,7,8] : [8,9,10,12]),lg:px(clean ? 12 : 16),pill:px(999)}),
+    radius: object({
+      xs: mergeByDesign(px(5), px(4)),
+      sm: mergeByDesign(px(6), px(4)),
+      md: mergeByDesign(scale([8,9,10,12]), scale([5,6,7,8])),
+      lg: mergeByDesign(px(16), px(12)),
+      pill: px(999),
+    }),
     metrics: object(dimensions),
     typography: `#{family:"Inter",fallbacks:["PingFang SC","Noto Sans CJK SC","Noto Sans","Arial"],roles:${object(type,12)}}`,
-    motion: `#{durations_ms:#{thinking_sweep:${clean ? 1600 : 1800}}}`,
-    design: object({name:JSON.stringify(clean ? "clean" : "modern"),layered:clean ? "0.0" : "1.0"}),
-    command:object({search_asset:JSON.stringify(`app/icons/command_search_${clean ? "clean" : "modern"}`),
-      enter_asset:JSON.stringify(`app/icons/command_enter_${clean ? "clean" : "modern"}`),enter_label:JSON.stringify(clean ? "" : "ENTER"),group_case:JSON.stringify(clean ? "upper" : "preserve"),narrow_footer:JSON.stringify(clean ? "hidden" : "visible")}),
-    spinner: object({stroke_width:clean ? "1.8" : "2.0",track_alpha:clean ? "0.18" : "0.2",speed_ms:clean ? "800.0" : "750.0"}),
+    motion: `#{durations_ms:#{thinking_sweep:1800}}`,
+    design: object({
+      name: mergeByDesign(JSON.stringify("modern"), JSON.stringify("clean")),
+      layered: mergeByDesign("1.0", "0.0"),
+    }),
+    command: object({
+      search_asset: mergeByDesign(JSON.stringify("app/icons/command_search_modern"), JSON.stringify("app/icons/command_search_clean")),
+      enter_asset: mergeByDesign(JSON.stringify("app/icons/command_enter_modern"), JSON.stringify("app/icons/command_enter_clean")),
+      enter_label: mergeByDesign(JSON.stringify("ENTER"), JSON.stringify("")),
+      group_case: mergeByDesign(JSON.stringify("preserve"), JSON.stringify("upper")),
+      narrow_footer: mergeByDesign(JSON.stringify("visible"), JSON.stringify("hidden")),
+    }),
+    spinner: object({
+      stroke_width: mergeByDesign("2.0", "1.8"),
+      track_alpha: mergeByDesign("0.2", "0.18"),
+      speed_ms: mergeByDesign("750.0", "800.0"),
+    }),
     checkbox: object({stroke_width:"1.8",draw_ms:"260.0",draw_delay_ms:"40.0",mixed_draw_ms:"200.0"}),
-    agent_findings: object({heading_case:JSON.stringify(clean ? "upper" : "preserve")}),
-    trace: object({heading_case:JSON.stringify(clean ? "upper" : "preserve")}),
-    component_styles: object(Object.fromEntries(Object.entries(parts).map(([id,styles]) => [id,object(styles,12)]))),
-    ...Object.fromEntries(Object.entries(recipes).map(([name,styles]) => [name,object(styles)])),
+    agent_findings: object({heading_case: mergeByDesign(JSON.stringify("preserve"), JSON.stringify("upper"))}),
+    trace: object({heading_case: mergeByDesign(JSON.stringify("preserve"), JSON.stringify("upper"))}),
+    component_styles: object(parts),
+    ...recipes,
+    colors: `palette_colors() + ${object(baseColors)}`,
   };
-  if (replaceStyles) variables.component_styles_replace = "true";
-  if (palette) variables.colors = object(colors);
-  else if (baseColors) variables.colors = `palette_colors() + ${object(baseColors)}`;
-  return object(variables,8);
+  return object(variables, 8);
 }
 
 function write(file, content) {
@@ -3926,44 +4206,111 @@ function write(file, content) {
   }
 }
 
-// Presets include their complete token/part recipes, so selecting a preset is
-// atomic and does not require keeping a separate stylesheet selection in sync.
+// 1. Generate Neutral Light/Dark and expand all 19 existing theme palettes
+// directly with 5 surfaces, 3 borders, 2 shadows, and the 8x4 categorical palette.
+for (const spec of NEUTRAL_THEMES) {
+  const expanded = computeExpandedPaletteColors(spec.file, spec.mode, spec.core);
+  write(`registry/themes/${spec.file}`, renderPaletteThemeFile({ ...spec, expanded }));
+}
+
+const existingPaletteFiles = fs.readdirSync(path.join(root, "registry/themes"))
+  .filter(file => file.endsWith(".rhai") && !/^(modern|clean|neutral)_/.test(file))
+  .sort();
+for (const file of existingPaletteFiles) {
+  const spec = extractExistingPaletteSpec(path.join(root, "registry/themes", file));
+  const expanded = computeExpandedPaletteColors(spec.file, spec.mode, spec.core);
+  write(`registry/themes/${file}`, renderPaletteThemeFile({ ...spec, expanded }));
+}
+
+// 2. Generate compact Modern/Clean compatibility presets: each sets its default
+// `design` environment value and exact reference colors while inheriting the
+// orthogonal dual-design geometry, typography, and component recipes from tokens.rhai.
 for (const preset of ["modern","clean"]) {
   for (const mode of ["light","dark"]) {
-    const data = recipe(preset,mode === "dark");
-    write(`registry/themes/${preset}_${mode}.rhai`, `// Generated by scripts/generate-design-presets.mjs; edit the maintained recipes.\nfn theme() {\n    #{ family: "${preset === "modern" ? "Modern" : "Clean"}", name: "${mode === "light" ? "Light" : "Dark"}", mode: "${mode}",\n       tokens: ${tokens(data,true,undefined,true)}\n    }\n}\n`);
+    const isDark = mode === "dark";
+    const data = recipe(preset, isDark);
+    const neutralSpec = NEUTRAL_THEMES.find(t => t.mode === mode);
+    const expanded = computeExpandedPaletteColors(neutralSpec.file, mode, neutralSpec.core);
+    const exactSunken = {
+      modern_light: "0xf0f0f0ff",
+      modern_dark: "0x141416ff",
+      clean_light: "0xf3f3f4ff",
+      clean_dark: "0x111113ff",
+    }[`${preset}_${mode}`];
+    const presetColors = {
+      surface_sunken: exactSunken,
+      surface_elevated: expanded.surface_elevated,
+      border_subtle: expanded.border_subtle,
+      border_strong: expanded.border_strong,
+      "shadow.ambient": expanded["shadow.ambient"],
+      "shadow.key": expanded["shadow.key"],
+      ...Object.fromEntries(CATEGORICAL_HUES.flatMap(hue => [
+        [`palette.${hue}`, expanded[`palette.${hue}`]],
+        [`palette.${hue}_ink`, expanded[`palette.${hue}_ink`]],
+        [`palette.${hue}_soft`, expanded[`palette.${hue}_soft`]],
+        [`palette.${hue}_border`, expanded[`palette.${hue}_border`]],
+      ])),
+      ...data.colors,
+    };
+    const presetTokens = object({
+      environment: `#{ design: #{values:["modern","clean"],"default":${JSON.stringify(preset)}} }`,
+      colors: object(presetColors),
+    }, 8);
+    write(
+      `registry/themes/${preset}_${mode}.rhai`,
+      `// Generated by scripts/generate-design-presets.mjs; edit the maintained recipes.\n`
+      + `// Compatibility preset: Neutral ${mode === "light" ? "Light" : "Dark"} reference colors with default design="${preset}".\n`
+      + `fn theme() {\n    #{ family: "${preset === "modern" ? "Modern" : "Clean"}", name: "${mode === "light" ? "Light" : "Dark"}", mode: "${mode}",\n       tokens: ${presetTokens}\n    }\n}\n`,
+    );
   }
 }
-// Alternate palettes inherit Modern's geometry and public part recipes, but
-// retain their own hues. Only the four full reference presets own exact
-// appearance colors. The palette helper keeps its existing derived semantics.
-const base = recipe("modern",false);
-// A hue used for a fill is not automatically readable as small action text.
-// Exact presets retain their authored color; alternate palettes already expose
-// a calibrated semantic text role for this purpose.
-base.recipes.button.danger = base.recipes.button.danger.replace(
-  `.text_color(${color("danger")})`, `.text_color(${color("text.danger")})`);
+
+// 3. Build the orthogonal dual-design (modern | clean) + mode-aware token base.
+const modernSemantic = semanticizePreset("modern");
+const cleanSemantic = semanticizePreset("clean");
+const base = modernSemantic;
+
+// Strict guard: zero hardcoded opaque hex literals allowed in tokens.rhai component_styles or recipes.
+for (const [label, sheet] of [
+  ["modern.parts", modernSemantic.parts],
+  ["clean.parts", cleanSemantic.parts],
+  ["modern.recipes", modernSemantic.recipes],
+  ["clean.recipes", cleanSemantic.recipes],
+]) {
+  for (const [id, entries] of Object.entries(sheet)) {
+    for (const [part, expr] of Object.entries(entries)) {
+      const stripped = expr.replaceAll("by_mode(alpha(rgb(0x000000),0.35),alpha(rgb(0x000000),0.6))", "");
+      const leaks = [...stripped.matchAll(/0x([0-9a-fA-F]{6,8})/g)]
+        .map(m => m[1].toLowerCase())
+        .filter(h => h !== "00000000");
+      if (leaks.length > 0) {
+        throw new Error(`Hardcoded color leak in tokens.rhai ${label} ${id}.${part}: ${leaks.join(", ")} in ${expr}`);
+      }
+    }
+  }
+}
+
 const aliases = {};
-// Auxiliary palettes own opaque, paired status surfaces. A translucent wash
-// cannot guarantee its foreground contrast on a selected row or colored card.
-// The four exact presets above retain their authored alpha unchanged.
 const paletteToneSurface = (semantic, foreground, weight = .1) =>
   `readable(mix(${color("surface_hover")},${color(semantic)},${weight}),${color("surface_hover")},${color(foreground)},4.5)`;
 for (const key of Object.keys(base.colors).filter(key => key.includes("."))) {
   const recap = {
     "agent_recap.area": `alpha(${color("text_primary")},0.07)`, "agent_recap.cursor": color("border"),
-    "agent_recap.dot": color("text_muted"), "agent_recap.failed": color("text.danger"), "agent_recap.grid": color("border"),
+    "agent_recap.dot": color("text_muted"), "agent_recap.failed": color("text.danger"), "agent_recap.grid": color("border_subtle"),
     "agent_recap.needs": color("warning"), "agent_recap.stroke": color("text_muted"), "agent_recap.panel": color("surface_raised"),
-    "agent_recap.tray": color("surface_hover"), "agent_recap.text": color("text_muted"), "agent_recap.quiet": color("text_muted"),
-    "agent_recap.faint": color("text_muted"), "agent_recap.soft": color("surface_hover"), "agent_recap.ok": color("text.success"),
-    "agent_recap.ok_bg": color("surface_hover"),
+    "agent_recap.tray": color("surface_sunken"), "agent_recap.text": color("text_muted"), "agent_recap.quiet": color("text_muted"),
+    "agent_recap.faint": color("text_muted"), "agent_recap.soft": color("surface_sunken"), "agent_recap.ok": color("text.success"),
+    "agent_recap.ok_bg": color("palette.green_soft"),
   };
   if (key in recap) { aliases[key]=recap[key]; continue; }
   let target = "text_primary";
   if (/^(surface|field)\./.test(key) || /secondary_(bg|hover)/.test(key)) target = "surface_raised";
-  if (/placeholder|subtle|icon|ghost_fg/.test(key)) target = "text_muted";
-  if (/border|edge/.test(key)) target = "border";
-  if (/hover|tray|counter|map_missing/.test(key)) target = "surface_hover";
+  if (/\.(card|panel|paper)$/.test(key)) target = "surface_raised";
+  if (/\.(popover|popup)$/.test(key)) target = "surface_elevated";
+  if (/\.(tray|well|inset|track|free|slot|idle|wait)$/.test(key)) target = "surface_sunken";
+  if (/placeholder|subtle|icon|ghost_fg|muted|faint|quiet/.test(key)) target = "text_muted";
+  if (/border|edge|line|grid|rule|rail/.test(key)) target = "border_subtle";
+  if (/hover|counter|map_missing/.test(key)) target = "surface_hover";
   if (/selection|tabbar.active/.test(key)) target = "selection";
   if (/primary_(bg|bottom|hover)/.test(key)) target = "accent";
   if (key === "button.primary_fg") target = "on_accent";
@@ -3972,249 +4319,294 @@ for (const key of Object.keys(base.colors).filter(key => key.includes("."))) {
   if (key === "text.secondary" || key.startsWith("scrollbar.")) target = "text_muted";
   const tone = key.match(/^badge\.(neutral|info|success|warning|danger|purple)_(bg|fg)$/);
   if (tone) {
-    const semantic = {neutral:"text_muted",info:"accent",purple:"accent",success:"success",warning:"warning",danger:"danger"}[tone[1]];
-    const foreground = {neutral:"text_muted",info:"text.accent",purple:"text.accent",success:"text.success",warning:"text.warning",danger:"text.danger"}[tone[1]];
+    if (tone[1] === "purple") {
+      aliases[key] = color(tone[2] === "bg" ? "palette.violet_soft" : "palette.violet_ink");
+      continue;
+    }
+    const semantic = {neutral:"text_muted",info:"accent",success:"success",warning:"warning",danger:"danger"}[tone[1]];
+    const foreground = {neutral:"text_muted",info:"text.accent",success:"text.success",warning:"text.warning",danger:"text.danger"}[tone[1]];
     aliases[key] = tone[2] === "bg" ? paletteToneSurface(semantic,foreground) : color(foreground);
   } else aliases[key] = color(target);
 }
+// Upgrade component aliases to use the 5-level Surface hierarchy, 3-level Border hierarchy,
+// and the 8x4 non-semantic Categorical Palette across every bundled theme.
 for (const [role, fallback] of Object.entries({
-  card: "surface_raised", ink: "text_primary", tray: "surface_hover", muted: "text_muted",
-  tab: "surface_hover", tab_ink: "text_primary", face_edge: "border",
+  card: "surface_raised", ink: "text_primary", tray: "surface_sunken", muted: "text_muted",
+  tab: "surface_sunken", tab_ink: "text_primary", face_edge: "border_subtle",
 })) aliases[`agent_cursors.${role}`] = color(fallback);
 for (const [role, fallback] of Object.entries({
-  card: "surface_raised", tray: "surface_hover", chip: "surface_hover",
+  card: "surface_raised", tray: "surface_sunken", chip: "surface_sunken",
   chip_hover: "selection", choice: "surface.field", choice_edge: "border",
   choice_on: "choice.fill", mark: "choice.on_fill", hover: "surface_hover",
 })) aliases[`filter_menu.${role}`] = color(fallback);
 for (const [role, fallback] of Object.entries({
-  panel:"surface_raised",tray:"surface_hover",line:"border",fill:"surface_hover",hover:"surface_hover",selected:"selection",
-  quiet:"text_muted",faint:"text_muted",critical:"text.danger",warning:"text.warning",note:"accent",spark:"accent",
-  run:"accent",run_edge:"focus_ring",done:"surface_hover",done_edge:"border",failed:"badge.danger_bg",failed_edge:"danger",sheen:"surface_raised",
+  panel:"surface_raised",tray:"surface_sunken",line:"border_subtle",fill:"surface_sunken",hover:"surface_hover",selected:"selection",
+  quiet:"text_muted",faint:"text_muted",critical:"text.danger",warning:"text.warning",note:"palette.blue_ink",spark:"palette.blue",
+  run:"palette.blue",run_edge:"focus_ring",done:"surface_sunken",done_edge:"border_subtle",failed:"badge.danger_bg",failed_edge:"danger",sheen:"surface_raised",
   avatar_ink:"text_muted",
 })) aliases[`agent_findings.${role}`] = color(fallback);
 for (const [role, fallback] of Object.entries({
-  tray:"surface_hover",panel:"surface_raised",icon:"surface_raised",text:"text_muted",quiet:"text_muted",faint:"text_muted",
-  rule:"border",hover:"surface_hover",preview:"selection",also:"badge.info_bg",also_chip:"badge.info_bg",also_ink:"text.accent",
-  kept:"badge.warning_bg",kept_chip:"badge.warning_bg",kept_ink:"text.warning",strike:"text_muted",accent:"accent",
+  tray:"surface_sunken",panel:"surface_raised",icon:"surface_raised",text:"text_muted",quiet:"text_muted",faint:"text_muted",
+  rule:"border_subtle",hover:"surface_hover",preview:"selection",also:"palette.blue_soft",also_chip:"palette.blue_soft",also_ink:"palette.blue_ink",
+  kept:"palette.amber_soft",kept_chip:"palette.amber_soft",kept_ink:"palette.amber_ink",strike:"text_muted",accent:"accent",
 })) aliases[`agent_ledger.${role}`] = color(fallback);
-for (const [role,fallback] of Object.entries({c1:"accent",c2:"accent",c3:"selection",c4:"text_muted",c5:"border",card:"surface_raised",muted:"text_muted",up:"success",down:"danger",up_bg:"badge.success_bg",down_bg:"badge.danger_bg"})) {
+for (const [role,fallback] of Object.entries({
+  c1:"palette.1",c2:"palette.2",c3:"palette.3",c4:"palette.4",c5:"palette.5",
+  card:"surface_raised",muted:"text_muted",up:"success",down:"danger",up_bg:"palette.green_soft",down_bg:"palette.rose_soft",
+})) {
   aliases[`compact_breakdown.${role}`] = color(fallback);
 }
-for (const [role,fallback] of Object.entries({accent:"accent",track:"surface_hover",spark:"border",warn:"warning",warn_text:"text.warning",full:"danger",full_text:"text.danger",fill:"surface_hover"})) {
+for (const [role,fallback] of Object.entries({accent:"accent",track:"surface_sunken",spark:"border",warn:"warning",warn_text:"text.warning",full:"danger",full_text:"text.danger",fill:"surface_sunken"})) {
   aliases[`usage_meter.${role}`] = color(fallback);
 }
 for (const [role,fallback] of Object.entries({icon:"accent",good:"text.success",bad:"text.danger"})) {
   aliases[`change_summary.${role}`] = color(fallback);
 }
 aliases["tips_panel.done"] = color("text.success");
-for(const [key,fallback] of Object.entries({art:"border",art_dot:"accent",badge:"surface_hover",peek:"surface_hover"})){
+for(const [key,fallback] of Object.entries({art:"border_subtle",art_dot:"accent",badge:"surface_sunken",peek:"surface_sunken"})){
   aliases[`notification_stack.${key}`] = color(fallback);
 }
-for(const [key,fallback] of Object.entries({needs:"warning",done:"accent",failed:"danger"})){
+for(const [key,fallback] of Object.entries({needs:"warning",done:"accent",failed:"danger",muted:"text_muted",text:"text_muted",tray:"surface_sunken",card:"surface_raised"})){
   aliases[`away_summary.${key}`] = color(fallback);
 }
-for (const [part,fallback] of Object.entries({first:"accent",second:"text_muted",third:"text.success",grid:"border",guide:"text_muted"})) {
+aliases["agent_steering.tag"] = color("palette.blue_ink");
+aliases["agent_steering.note_bg"] = color("surface_sunken");
+for (const [part,fallback] of Object.entries({first:"palette.1",second:"palette.2",third:"palette.3",grid:"border_subtle",guide:"text_muted"})) {
   aliases[`kpi_chart.${part}`] = color(fallback);
 }
-for (const [part,fallback] of Object.entries({c1:"accent",c2:"compact_breakdown.c2",c3:"danger",c4:"success",c5:"warning",c6:"text_muted",c7:"compact_breakdown.c5",grid:"border",muted:"text_muted",rest:"surface_hover",zero:"text_muted"})) {
+for (const [part,fallback] of Object.entries({
+  c1:"palette.1",c2:"palette.2",c3:"palette.3",c4:"palette.4",c5:"palette.5",c6:"palette.6",c7:"palette.7",
+  grid:"border_subtle",muted:"text_muted",rest:"surface_sunken",zero:"text_muted",
+})) {
   aliases[`breakdown_chart.${part}`] = color(fallback);
 }
-for (const [part,fallback] of Object.entries({teal:"success",amber:"warning",orange:"text.warning",blue:"accent",badge:"badge.warning_bg",badge_text:"text.warning",trigger_ink:"text_muted",faint:"text.subtle"})) {
+for (const [part,fallback] of Object.entries({
+  teal:"palette.teal",amber:"palette.amber",orange:"palette.orange",blue:"palette.blue",
+  badge:"palette.amber_soft",badge_text:"palette.amber_ink",trigger_ink:"text_muted",paper:"surface_raised",faint:"text.subtle",
+})) {
   aliases[`running_now.${part}`] = color(fallback);
 }
-for (const [part,fallback] of Object.entries({capacity:"success",card:"surface_raised",ink:"text_primary",current:"danger",drop:"selection",lane:"surface_hover",track:"border",well:"surface_hover",
-  muted:"text_muted",text:"text_primary",faint:"field.placeholder"})) {
+for (const [part,fallback] of Object.entries({
+  capacity:"palette.green",card:"surface_raised",ink:"text_primary",current:"palette.rose",drop:"selection",
+  lane:"surface_sunken",track:"border_subtle",well:"surface_sunken",
+  muted:"text_muted",text:"text_primary",faint:"field.placeholder",
+})) {
   aliases[`scheduled_runs.${part}`] = color(fallback);
 }
+aliases["scheduled_runs.pill"] = `alpha(${color("text_primary")},0.06)`;
+aliases["scheduled_runs.count_bg"] = `alpha(${color("palette.violet")},0.06)`;
+aliases["cost_waterfall.card"] = color("surface_raised");
+aliases["parallel_attempts.card"] = color("surface_raised");
 aliases["scheduled_runs.hatch"] = `alpha(${color("text_muted")},0.07)`;
-for (const [part,fallback] of Object.entries({tile:"surface_hover",code:"surface_hover",error:"badge.danger_bg",error_border:"control.danger_hover"})) {
+for (const [part,fallback] of Object.entries({tile:"surface_sunken",code:"surface_sunken",error:"badge.danger_bg",error_border:"control.danger_hover"})) {
   aliases[`tool_call.${part}`] = color(fallback);
 }
-for (const [part,fallback] of Object.entries({c1:"text_primary",c2:"text_muted",c3:"border",c4:"accent",c5:"success",c6:"warning",
-  free:"surface_hover",shine:"text_primary",warn:"text.warning",warn_bg:"badge.warning_bg",full_bg:"badge.danger_bg",saved:"text.success",muted:"text_muted"})) {
+for (const [part,fallback] of Object.entries({
+  c1:"palette.1",c2:"palette.2",c3:"palette.3",c4:"palette.4",c5:"palette.5",c6:"palette.6",
+  free:"surface_sunken",shine:"text_primary",warn:"text.warning",warn_bg:"palette.amber_soft",full_bg:"badge.danger_bg",saved:"text.success",muted:"text_muted",
+})) {
   aliases[`context_window.${part}`] = color(fallback);
 }
-for (const kind of ["system","tools","memory","file","chat","result","summary"]) {
-  aliases[`context_map.${kind}_bg`] = color(kind === "summary" ? "badge.success_bg" : kind === "result" ? "badge.warning_bg" : "surface_hover");
-  aliases[`context_map.${kind}_edge`] = color("border");
-  aliases[`context_map.${kind}_ink`] = color(kind === "summary" ? "text.success" : kind === "result" ? "text.warning" : "text_primary");
+const contextMapHue = {
+  system: "slate", tools: "blue", memory: "violet", file: "teal",
+  chat: "orange", result: "amber", summary: "green",
+};
+for (const [kind, hue] of Object.entries(contextMapHue)) {
+  aliases[`context_map.${kind}_bg`] = color(`palette.${hue}_soft`);
+  aliases[`context_map.${kind}_edge`] = color(`palette.${hue}_border`);
+  aliases[`context_map.${kind}_ink`] = color(`palette.${hue}_ink`);
 }
-aliases["context_map.free_edge"] = color("border");
+aliases["context_map.free_edge"] = color("border_subtle");
 aliases["context_map.free_hatch"] = `alpha(${color("text_muted")},0.07)`;
 aliases["context_map.model"] = color("text_muted");
 aliases["context_map.muted"] = color("text_muted");
+aliases["context_map.empty"] = color("text_muted");
+aliases["context_map.tray"] = color("surface_sunken");
 aliases["context_map.shine"] = color("text_muted");
 aliases["context_map.panel"] = color("surface_raised");
-aliases["context_map.capacity_bg"] = color("surface_hover");
-aliases["context_map.capacity_edge"] = color("border");
-aliases["context_map.capacity_warn_bg"] = color("badge.warning_bg");
+aliases["context_map.capacity_bg"] = color("surface_sunken");
+aliases["context_map.capacity_edge"] = color("border_subtle");
+aliases["context_map.capacity_warn_bg"] = color("palette.amber_soft");
 aliases["context_map.capacity_full_bg"] = color("badge.danger_bg");
 aliases["context_map.capacity_full_ink"] = color("badge.danger_fg");
 for (const [part, fallback] of Object.entries({
-  accent:"accent",badge_ink:"text.danger",badge_bg:"badge.danger_bg",muted:"text_muted",setup_ink:"text_primary",track:"surface_hover",tray:"surface_hover",
+  accent:"accent",badge_ink:"text.danger",badge_bg:"badge.danger_bg",muted:"text_muted",setup_ink:"text_primary",track:"surface_sunken",tray:"surface_sunken",
 })) aliases[`profile_menu.${part}`] = color(fallback);
 for (const [part, fallback] of Object.entries({
-  card:"surface_raised",tray:"surface_hover",warn:"text.warning",warn_bg:"badge.warning_bg",ok:"text.success",
-  ok_bg:"badge.success_bg",chip:"surface_hover",account:"text_muted",address:"text_muted",file:"text_muted",hint:"text_muted",tone_ink:"text_muted",tone_edge:"border",link:"accent",link_underline:"text_muted",send:"button.primary_bg",on_send:"button.primary_fg",
+  card:"surface_raised",tray:"surface_sunken",warn:"text.warning",warn_bg:"palette.amber_soft",ok:"text.success",
+  ok_bg:"palette.green_soft",chip:"surface_sunken",account:"text_muted",address:"text_muted",file:"text_muted",hint:"text_muted",tone_ink:"text_muted",tone_edge:"border_subtle",link:"accent",link_underline:"text_muted",send:"button.primary_bg",on_send:"button.primary_fg",
 })) aliases[`email_draft.${part}`] = color(fallback);
 aliases["email_draft.tone_hover"] = transparent;
 for (const [part, fallback] of Object.entries({
-  add:"success",add_ink:"text.success",binary:"text_muted",card:"surface_raised",code:"accent",del:"danger",del_ink:"text.danger",
-  faint:"field.placeholder",muted:"text_muted",grid:"border",image:"accent",net:"text_muted",sheet:"success",tray:"surface_hover",wash:"selection",
+  add:"palette.green",add_ink:"palette.green_ink",binary:"palette.slate_ink",card:"surface_raised",code:"palette.blue",del:"palette.rose",del_ink:"palette.rose_ink",
+  faint:"field.placeholder",muted:"text_muted",grid:"border_subtle",image:"palette.violet",net:"text_muted",sheet:"palette.teal",tray:"surface_sunken",wash:"selection",
 })) aliases[`diff_timeline.${part}`] = color(fallback);
 for (const [kind, set] of Object.entries({
-  agent:["surface_hover","border","control.edge_strong","text_muted"],
-  llm:["selection","accent","surface_hover","accent"],
-  tool:["badge.success_bg","success","surface_hover","success"],
+  agent:["palette.slate_soft","palette.slate_border","border_strong","palette.slate"],
+  llm:["palette.violet_soft","palette.violet_border","palette.violet_soft","palette.violet"],
+  tool:["palette.teal_soft","palette.teal_border","palette.teal_soft","palette.teal"],
   error:["badge.danger_bg","danger","control.danger_hover"],
 })) for (const [i, fallback] of set.entries())
   aliases[`cost_waterfall.${kind}_${["bg","edge","out","mark"][i]}`] = color(fallback);
-aliases["cost_waterfall.tray"] = color("surface_hover");
+aliases["cost_waterfall.tray"] = color("surface_sunken");
 aliases["cost_waterfall.muted"] = color("text_muted");
 for (const [part,fallback] of Object.entries({
-  best_bg:"badge.success_bg",best_edge:"success",done_bg:"badge.success_bg",done_edge:"success",done_ink:"text.success",
-  failed_bg:"badge.danger_bg",failed_edge:"danger",failed_ink:"text.danger",running_bg:"badge.info_bg",running_edge:"accent",running_ink:"accent",
-  icon:"surface_raised",mark:"accent",shine:"surface_raised",track:"surface_hover",tray:"surface_hover",wash:"badge.success_bg",
+  best_bg:"palette.green_soft",best_edge:"palette.green_border",done_bg:"palette.green_soft",done_edge:"palette.green_border",done_ink:"palette.green_ink",
+  failed_bg:"badge.danger_bg",failed_edge:"danger",failed_ink:"text.danger",running_bg:"palette.blue_soft",running_edge:"palette.blue_border",running_ink:"palette.blue_ink",
+  icon:"surface_raised",mark:"accent",shine:"surface_raised",track:"surface_sunken",tray:"surface_sunken",wash:"palette.green_soft",
   strong:"text_primary",ink:"text_primary",text:"text_muted",muted:"text_muted",action_hover:"surface_hover",
 })) aliases[`parallel_attempts.${part}`] = color(fallback);
-for (const [status, fallback] of Object.entries({queued:["surface_hover","border","text_muted"],running:["badge.info_bg","accent","accent"],
-  retrying:["badge.warning_bg","warning","text.warning"],done:["badge.success_bg","success","text.success"],failed:["badge.danger_bg","danger","text.danger"]})) {
+for (const [status, fallback] of Object.entries({
+  queued:["surface_sunken","border_subtle","text_muted"],
+  running:["palette.blue_soft","palette.blue_border","palette.blue_ink"],
+  retrying:["palette.amber_soft","palette.amber_border","palette.amber_ink"],
+  done:["palette.green_soft","palette.green_border","palette.green_ink"],
+  failed:["badge.danger_bg","danger","text.danger"],
+})) {
   for(const [i, paint] of fallback.entries()) aliases[`fan_out_grid.${status}_${["bg","edge","ink"][i]}`] = color(paint);
 }
-for(const [part,fallback] of Object.entries({mark:"accent",pin:"focus_ring",shine:"surface_raised",tray:"surface_hover",
-  paper:"surface_raised",strong:"text_primary",ink:"text_primary",muted:"text_muted",filter_wash:"surface_hover"})){
+for(const [part,fallback] of Object.entries({mark:"accent",pin:"focus_ring",shine:"surface_raised",tray:"surface_sunken",
+  paper:"surface_raised",strong:"text_primary",ink:"text_primary",muted:"text_muted",filter_wash:"surface_sunken"})){
   aliases[`fan_out_grid.${part}`] = color(fallback);
 }
-for(const [part,fallback] of Object.entries({card:"surface_raised",inset:"surface_hover",line:"border",tray:"surface_hover",
+for(const [part,fallback] of Object.entries({card:"surface_raised",inset:"surface_sunken",line:"border_subtle",tray:"surface_sunken",
   ink:"text_primary",text:"text_primary",muted:"text_muted",tint:"text.accent"})){
   aliases[`billing_schedule.${part}`] = color(fallback);
 }
 for(const [part,fallback] of Object.entries({
-  actual:"badge.purple_bg",actual_edge:"badge.purple_fg",actual_mark:"badge.purple_fg",ahead:"text.success",ahead_fill:"badge.success_bg",ahead_gap:"badge.success_bg",
-  card:"surface_raised",forecast:"surface_hover",forecast_edge:"border",ghost:"text_muted",grid:"border",late:"text.warning",late_edge:"warning",
-  late_fill:"badge.warning_bg",late_gap:"badge.warning_bg",link:"text_muted",live:"text.accent",live_line:"accent",muted:"text_muted",quiet:"text.subtle",wash:"surface_hover",
+  actual:"palette.violet_soft",actual_edge:"palette.violet_border",actual_mark:"palette.violet",ahead:"palette.green_ink",ahead_fill:"palette.green_soft",ahead_gap:"palette.green_soft",
+  card:"surface_raised",forecast:"surface_sunken",forecast_edge:"border_subtle",ghost:"text_muted",grid:"border_subtle",late:"palette.amber_ink",late_edge:"palette.amber_border",
+  late_fill:"palette.amber_soft",late_gap:"palette.amber_soft",link:"text_muted",live:"palette.blue_ink",live_line:"palette.blue",muted:"text_muted",quiet:"text.subtle",wash:"surface_sunken",
 })){
   aliases[`plan_vs_actual.${part}`] = color(fallback);
 }
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",area:"surface_raised",card:"surface_raised",grid:"border",idle:"surface_hover",wait:"surface_hover",
-  fill:"surface_hover",ink:"text_primary",text:"text_muted",
-  muted:"text_muted",quiet:"text.subtle",rail:"border",active:"text.accent",active_edge:"accent",active_fill:"badge.info_bg",
-  ok:"text.success",ok_edge:"success",ok_fill:"badge.success_bg",error:"text.danger",error_edge:"danger",error_fill:"badge.danger_bg",popover:"surface_raised",
+  tray:"surface_sunken",area:"surface_raised",card:"surface_raised",grid:"border_subtle",idle:"surface_sunken",wait:"surface_sunken",
+  fill:"surface_sunken",ink:"text_primary",text:"text_muted",
+  muted:"text_muted",quiet:"text.subtle",rail:"border",active:"palette.blue_ink",active_edge:"palette.blue_border",active_fill:"palette.blue_soft",
+  ok:"palette.green_ink",ok_edge:"palette.green_border",ok_fill:"palette.green_soft",error:"text.danger",error_edge:"danger",error_fill:"badge.danger_bg",popover:"surface_elevated",
 })){
   aliases[`fallback_chain.${part}`] = color(fallback);
 }
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",well:"surface_hover",hover:"surface_hover",fill:"surface_hover",ink:"text_primary",text:"text_muted",muted:"text_muted",track:"switch.off",
-  track_on:"accent",knob:"on_accent",danger:"text.danger",danger_fill:"badge.danger_bg",paused:"text.warning",
-  paused_fill:"badge.warning_bg",solid:"text_primary",on_solid:"surface_raised",
+  tray:"surface_sunken",card:"surface_raised",well:"surface_sunken",hover:"surface_hover",fill:"surface_sunken",ink:"text_primary",text:"text_muted",muted:"text_muted",track:"switch.off",
+  track_on:"accent",knob:"on_accent",danger:"text.danger",danger_fill:"badge.danger_bg",paused:"palette.amber_ink",
+  paused_fill:"palette.amber_soft",solid:"text_primary",on_solid:"surface_raised",
 })){
   aliases[`memory_panel.${part}`] = color(fallback);
 }
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",well:"surface_hover",fill:"surface_hover",ink:"text_primary",text:"text_muted",muted:"text_muted",rail:"border",
-  used:"accent",glint:"focus_ring",live:"text.accent",live_fill:"badge.info_bg",success:"text.success",
-  success_fill:"badge.success_bg",warning:"text.warning",warning_fill:"badge.warning_bg",danger:"text.danger",
+  tray:"surface_sunken",card:"surface_raised",well:"surface_sunken",fill:"surface_sunken",ink:"text_primary",text:"text_muted",muted:"text_muted",rail:"border",
+  used:"palette.blue",glint:"focus_ring",live:"palette.blue_ink",live_fill:"palette.blue_soft",success:"palette.green_ink",
+  success_fill:"palette.green_soft",warning:"palette.amber_ink",warning_fill:"palette.amber_soft",danger:"text.danger",
   danger_fill:"badge.danger_bg",solid:"text_primary",on_solid:"surface_raised",
 })) aliases[`tool_access.${part}`] = color(fallback);
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",muted:"text_muted",text:"text_muted",grid:"border",guide:"border",hover:"surface_hover",selected:"selection",
-  well:"surface_hover",accent:"accent",now:"accent",agent_bg:"surface_hover",agent_edge:"border",agent_ink:"text_primary",agent_mark:"text_muted",
-  llm_bg:"badge.purple_bg",llm_edge:"badge.purple_fg",llm_ink:"badge.purple_fg",llm_mark:"badge.purple_fg",
-  tool_bg:"badge.info_bg",tool_edge:"text.accent",tool_ink:"text.accent",tool_mark:"text.accent",
+  tray:"surface_sunken",card:"surface_raised",muted:"text_muted",text:"text_muted",grid:"border_subtle",guide:"border_subtle",hover:"surface_hover",selected:"selection",
+  well:"surface_sunken",accent:"accent",now:"accent",agent_bg:"palette.slate_soft",agent_edge:"palette.slate_border",agent_ink:"palette.slate_ink",agent_mark:"palette.slate",
+  llm_bg:"palette.violet_soft",llm_edge:"palette.violet_border",llm_ink:"palette.violet_ink",llm_mark:"palette.violet",
+  tool_bg:"palette.teal_soft",tool_edge:"palette.teal_border",tool_ink:"palette.teal_ink",tool_mark:"palette.teal",
   error_bg:"badge.danger_bg",error_edge:"danger",error_ink:"text.danger",error_mark:"danger",
-  live_bg:"badge.info_bg",live_ink:"text.accent",done_bg:"badge.success_bg",done_ink:"text.success",slow_bg:"badge.warning_bg",slow_ink:"text.warning",
+  live_bg:"palette.blue_soft",live_ink:"palette.blue_ink",done_bg:"palette.green_soft",done_ink:"palette.green_ink",slow_bg:"palette.amber_soft",slow_ink:"palette.amber_ink",
 })) aliases[`trace.${part}`] = color(fallback);
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",paper:"surface_raised",reason:"text_primary",muted:"text_muted",line:"border",
-  hover:"surface_hover",chip:"badge.purple_bg",chip_ink:"badge.purple_fg",idle:"border",signal0:"text_muted",
-  weak:"warning",good:"accent",strong:"success",success:"text.success",success_bg:"badge.success_bg",action:"surface_raised",
-  action_hover:"surface_hover",solid:"text_primary",on_solid:"surface_raised",popup:"surface_raised",selected:"selection",selected_edge:"accent",
-  tag:"badge.info_bg",
+  tray:"surface_sunken",card:"surface_raised",paper:"surface_raised",reason:"text_primary",muted:"text_muted",line:"border_subtle",
+  hover:"surface_hover",chip:"palette.violet_soft",chip_ink:"palette.violet_ink",idle:"border",signal0:"text_muted",
+  weak:"palette.amber",good:"palette.blue",strong:"palette.green",success:"palette.green_ink",success_bg:"palette.green_soft",action:"surface_raised",
+  action_hover:"surface_hover",solid:"text_primary",on_solid:"surface_raised",popup:"surface_elevated",selected:"selection",selected_edge:"accent",
+  tag:"palette.blue_soft",
 })) aliases[`recommendation.${part}`] = color(fallback);
 for(const [part,fallback] of Object.entries({
-  card:"surface_raised",ink:"text_primary",muted:"text_muted",line:"border",guide:"border",stroke:"border",actual:"text_muted",wash:"surface_hover",
-  accent:"accent",warm:"text.warning",warm_bg:"badge.warning_bg",danger:"text.danger",danger_bg:"badge.danger_bg",
+  card:"surface_raised",ink:"text_primary",muted:"text_muted",line:"border_subtle",guide:"border_subtle",stroke:"border",actual:"text_muted",wash:"surface_sunken",
+  accent:"accent",warm:"palette.amber_ink",warm_bg:"palette.amber_soft",danger:"text.danger",danger_bg:"badge.danger_bg",
   warn:"danger",
-  okay:"text.success",okay_bg:"badge.success_bg",popup:"surface_raised",button:"text_primary",on_button:"surface_raised",tag:"surface_hover",tag_over:"badge.danger_bg",
-  blue:"text.accent",purple:"badge.purple_fg",teal:"badge.info_fg",pink:"text.danger",cyan:"text.accent",green:"text.success",amber:"text.warning",
+  okay:"palette.green_ink",okay_bg:"palette.green_soft",popup:"surface_elevated",button:"text_primary",on_button:"surface_raised",tag:"surface_sunken",tag_over:"badge.danger_bg",
+  blue:"palette.blue",purple:"palette.violet",teal:"palette.teal",pink:"palette.rose",cyan:"palette.teal",green:"palette.green",amber:"palette.amber",
 })) aliases[`rate_plan.${part}`] = color(fallback);
 aliases["rate_plan.hatch"] = `alpha(${color("danger")},0.30)`;
 aliases["rate_plan.hatch_bg"] = `alpha(${color("danger")},0.05)`;
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",meta:"text_muted",muted:"text_muted",text:"text_muted",faint:"text_muted",line:"border",
+  tray:"surface_sunken",card:"surface_raised",meta:"text_muted",muted:"text_muted",text:"text_muted",faint:"text_muted",line:"border_subtle",
   ink:"text_primary",shine:"text_muted",
-  fill:"surface_hover",well:"surface_hover",rail:"border",path:"accent",brand:"text.accent",brand_bg:"badge.info_bg",
+  fill:"surface_sunken",well:"surface_sunken",rail:"border",path:"accent",brand:"palette.blue_ink",brand_bg:"palette.blue_soft",
   danger:"text.danger",danger_bg:"badge.danger_bg",solid:"text_primary",on_solid:"surface_raised",
 })) aliases[`root_cause.${part}`] = color(fallback);
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",ink:"text_primary",muted:"text_muted",faint:"text_muted",line:"border",
-  dash:"border",hint:"surface",rail:"border",won:"text_muted",lost:"border",path:"accent",blue:"text.accent",
-  tag:"badge.info_bg",well:"surface_hover",solid:"text_primary",on_solid:"surface_raised",shine:"text_muted",
+  tray:"surface_sunken",card:"surface_raised",ink:"text_primary",muted:"text_muted",faint:"text_muted",line:"border_subtle",
+  dash:"border",hint:"surface",rail:"border",won:"text_muted",lost:"border",path:"accent",blue:"palette.blue_ink",
+  tag:"palette.blue_soft",well:"surface_sunken",solid:"text_primary",on_solid:"surface_raised",shine:"text_muted",
 })) aliases[`bracket.${part}`] = color(fallback);
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",bubble:"surface_hover",hover:"surface_hover",ink:"text_primary",text:"text_primary",
-  muted:"text_muted",faint:"text_muted",fill:"surface_hover",well:"surface_hover",you:"surface_raised",line:"border",
-  accent:"accent",solid:"text_primary",inverse:"surface_raised",wait_fg:"text.warning",wait_bg:"badge.warning_bg",
-  blue:"accent",violet:"badge.purple_fg",cyan:"badge.info_fg",orange:"text.warning",green:"text.success",pink:"text.danger",shine:"text_primary",
+  tray:"surface_sunken",card:"surface_raised",bubble:"surface_sunken",hover:"surface_hover",ink:"text_primary",text:"text_primary",
+  muted:"text_muted",faint:"text_muted",fill:"surface_sunken",well:"surface_sunken",you:"surface_raised",line:"border_subtle",
+  accent:"accent",solid:"text_primary",inverse:"surface_raised",wait_fg:"palette.amber_ink",wait_bg:"palette.amber_soft",
+  blue:"palette.blue",violet:"palette.violet",cyan:"palette.teal",orange:"palette.orange",green:"palette.green",pink:"palette.rose",shine:"text_primary",
 })) aliases[`stream.${part}`] = color(fallback);
 for(const [part,fallback] of Object.entries({
-  tray:"surface_hover",card:"surface_raised",ink:"text_primary",text:"text_primary",muted:"text_muted",faint:"text_muted",line:"border",
-  fill:"surface_hover",hover:"surface_hover",stripe:"surface",edit:"badge.info_bg",edit_edge:"accent",hit:"badge.warning_bg",
-  hit_edge:"warning",hit_ink:"text.warning",hit_row:"badge.warning_bg",kept:"badge.success_bg",kept_edge:"success",
-  kept_ink:"text.success",accent:"accent",chip:"text_primary",inverse:"surface_raised",sheen:"surface_raised",
+  tray:"surface_sunken",card:"surface_raised",ink:"text_primary",text:"text_primary",muted:"text_muted",faint:"text_muted",line:"border_subtle",
+  fill:"surface_sunken",hover:"surface_hover",stripe:"surface",edit:"palette.blue_soft",edit_edge:"palette.blue_border",hit:"palette.amber_soft",
+  hit_edge:"palette.amber_border",hit_ink:"palette.amber_ink",hit_row:"palette.amber_soft",kept:"palette.green_soft",kept_edge:"palette.green_border",
+  kept_ink:"palette.green_ink",accent:"accent",chip:"text_primary",inverse:"surface_raised",sheen:"surface_raised",
 })) aliases[`radar.${part}`] = color(fallback);
-for(const [key,fallback] of Object.entries({accent:"accent",ring:"border",ring_hot:"text_muted",card:"surface_raised",tray:"surface_hover",muted:"text_muted",gray:"text_muted",violet:"accent",amber:"text.warning",blue:"accent",green:"text.success",red:"text.danger"})){
+for(const [key,fallback] of Object.entries({
+  accent:"accent",ring:"border_subtle",ring_hot:"text_muted",card:"surface_raised",tray:"surface_sunken",muted:"text_muted",
+  gray:"palette.slate_ink",violet:"palette.violet_ink",amber:"palette.amber_ink",blue:"palette.blue_ink",green:"palette.green_ink",red:"palette.rose_ink",
+})){
   aliases[`project_card.${key}`] = color(fallback);
 }
-for(const tone of ["red","amber","green","blue","violet","gray"]){
-  const ink=color(`project_card.${tone}`);
-  aliases[`project_card.${tone}_wash`]=`alpha(${ink},0.10)`;
-  aliases[`project_card.${tone}_active`]=`alpha(${ink},0.18)`;
+const projectToneToHue = {red:"rose",amber:"amber",green:"green",blue:"blue",violet:"violet",gray:"slate"};
+for(const [tone, hue] of Object.entries(projectToneToHue)){
+  aliases[`project_card.${tone}_wash`]=color(`palette.${hue}_soft`);
+  aliases[`project_card.${tone}_active`]=color(`palette.${hue}_border`);
 }
-for(const [role,fallback] of Object.entries({option_text:"text_muted",option_ink:"text_primary",option_line:"border",option_fill:"selection",option_hover:"surface_hover"}))
+for(const [role,fallback] of Object.entries({option_text:"text_muted",option_ink:"text_primary",option_line:"border_subtle",option_fill:"selection",option_hover:"surface_hover"}))
   aliases[`project_card.${role}`]=color(fallback);
-for(const [key,fallback] of Object.entries({control:"text_muted",a:"accent",b:"accent",c:"warning",d:"success",track:"surface_hover",card:"surface_raised",tray:"surface_hover",muted:"text_muted"})){
+for(const [key,fallback] of Object.entries({
+  control:"palette.slate",a:"palette.blue",b:"palette.violet",c:"palette.amber",d:"palette.green",
+  track:"surface_sunken",card:"surface_raised",tray:"surface_sunken",muted:"text_muted",
+})){
   aliases[`experiment_card.${key}`] = color(fallback);
 }
-for(const tone of ["red","amber","green","blue","violet","gray"]){
-  const ink=color(`project_card.${tone}`);
-  aliases[`experiment_card.chip_${tone}_ink`]=ink;
-  aliases[`experiment_card.chip_${tone}_wash`]=`alpha(${ink},0.11)`;
+for(const [tone, hue] of Object.entries(projectToneToHue)){
+  aliases[`experiment_card.chip_${tone}_ink`]=color(`palette.${hue}_ink`);
+  aliases[`experiment_card.chip_${tone}_wash`]=color(`palette.${hue}_soft`);
 }
 for (const [role, fallback] of Object.entries({
-  card: "surface_raised", tray: "surface_hover", track: "border", progress: "accent",
-  success_fill: "badge.success_bg",
+  card: "surface_raised", tray: "surface_sunken", track: "border_subtle", progress: "accent",
+  success_fill: "palette.green_soft",
 })) aliases[`stepper.${role}`] = color(fallback);
 for (const [role, fallback] of Object.entries({
-  track: "surface_hover", tracker_fill: "accent", setup_fill: "accent",
-  ring: "border", muted: "text_muted", open: "surface_hover",
+  track: "surface_sunken", tracker_fill: "accent", setup_fill: "accent",
+  ring: "border", muted: "text_muted", open: "surface_sunken",
   locked_icon: "text_muted", current_dot: "border",
 })) aliases[`checklist.${role}`] = color(fallback);
 for (const [role, fallback] of Object.entries({
-  ink:"text_primary", like:"accent", comment:"accent", repost:"accent", share:"accent",
-  selected:"accent", selected_fill:"selection", selected_edge:"border",
+  ink:"text_primary", like:"palette.rose_ink", comment:"palette.blue_ink", repost:"palette.green_ink", share:"palette.violet_ink",
+  selected:"accent", selected_fill:"selection", selected_edge:"border_subtle",
 })) aliases[`reaction.${role}`] = color(fallback);
 for (const [role, fallback] of Object.entries({
-  highlight:"selection", well:"surface_hover", tray:"surface",
+  highlight:"selection", well:"surface_sunken", tray:"surface_sunken",
 })) aliases[`cite.${role}`] = color(fallback);
 for (const [role, fallback] of Object.entries({
   sheen:"surface_raised", ink:"text_muted", check:"text.success",
 })) aliases[`thinking.${role}`] = color(fallback);
 for (const [role,fallback] of Object.entries({
-  mark:"accent", tray:"surface", queue:"surface_hover", steer:"selection", steer_ink:"text.accent",
+  mark:"accent", tray:"surface_sunken", queue:"surface_sunken", steer:"selection", steer_ink:"text.accent",
 })) aliases[`run.${role}`] = color(fallback);
-for (const tone of ["app","blue","violet","amber","green","gray"]) {
-  aliases[`catalog.tile_${tone}`] = color("surface_hover");
-  aliases[`catalog.mark_${tone}`] = color(tone === "app" || tone === "gray" ? "text_primary" : "text.accent");
+for (const [tone, hue] of Object.entries({app:"slate",blue:"blue",violet:"violet",amber:"amber",green:"green",gray:"slate"})) {
+  aliases[`catalog.tile_${tone}`] = color(`palette.${hue}_soft`);
+  aliases[`catalog.mark_${tone}`] = color(`palette.${hue}_ink`);
 }
+aliases["writing.glow_pink"] = `alpha(${color("palette.rose")},0.22)`;
+aliases["writing.glow_violet"] = `alpha(${color("palette.violet")},0.22)`;
+aliases["writing.glow_blue"] = `alpha(${color("palette.blue")},0.22)`;
 aliases["button.danger_bg"] = paletteToneSurface("danger","text.danger");
 aliases["button.danger_hover"] = paletteToneSurface("danger","text.danger",.16);
-aliases["card.tray"] = color("surface_hover");
+aliases["card.tray"] = color("surface_sunken");
 aliases["kbd.surface"] = color("surface_raised");
 aliases["kbd.ink"] = color("text_muted");
-aliases["kbd.edge"] = color("border");
-aliases["kbd.depth"] = color("control.border");
+aliases["kbd.edge"] = color("border_subtle");
+aliases["kbd.depth"] = color("border");
 aliases["card.selected"] = color("selection");
 aliases["card.body"] = color("text_primary");
 aliases["card.description"] = color("text_muted");
@@ -4229,8 +4621,8 @@ aliases["switch.thumb_off_ink"] = color("surface");
 aliases["switch.checked_thumb"] = color("on_accent");
 aliases["collection.selection"] = color("selection");
 aliases["table.surface"] = color("surface_raised");
-aliases["table.edge"] = color("border");
-aliases["table.grid"] = color("border");
+aliases["table.edge"] = color("border_subtle");
+aliases["table.grid"] = color("border_subtle");
 aliases["table.header_ink"] = color("text_muted");
 aliases["table.text"] = color("text_primary");
 aliases["table.icon"] = color("text_muted");
@@ -4239,19 +4631,19 @@ aliases["table.header_hover_ink"] = color("text_primary");
 aliases["table.row_hover"] = color("surface_hover");
 aliases["table.sort_ink"] = color("text.accent");
 aliases["kbd.menu_surface"] = color("surface_raised");
-aliases["kbd.menu_edge"] = color("border");
+aliases["kbd.menu_edge"] = color("border_subtle");
 aliases["command.shortcut"] = color("collection.metadata");
 aliases["command.shortcut_active"] = color("text_primary");
-aliases["command.surface"] = color("surface_raised");
-aliases["command.tray"] = color("surface_hover");
-aliases["command.line"] = color("border");
-aliases["command.shadow_edge"] = color("border");
+aliases["command.surface"] = color("surface_elevated");
+aliases["command.tray"] = color("surface_sunken");
+aliases["command.line"] = color("border_subtle");
+aliases["command.shadow_edge"] = color("border_subtle");
 aliases["command.ink"] = color("text_primary");
 aliases["command.placeholder"] = color("field.placeholder");
 aliases["command.icon"] = color("text_muted");
 aliases["command.hint"] = color("collection.metadata");
 aliases["command.logo_surface"] = color("surface_raised");
-aliases["command.logo_edge"] = color("border");
+aliases["command.logo_edge"] = color("border_subtle");
 aliases["command.logo_ink"] = color("text_primary");
 aliases["command.group"] = color("collection.metadata");
 aliases["command.selection"] = color("selection");
@@ -4269,7 +4661,7 @@ aliases["tabs.ink"] = color("text_primary");
 aliases["tabs.hover"] = color("text_primary");
 aliases["tabs.counter_fg"] = color("text_primary");
 aliases["tabs.icon"] = color("text_muted");
-aliases["tabs.line"] = color("border");
+aliases["tabs.line"] = color("border_subtle");
 aliases["pagination.ink"] = color("text_primary");
 aliases["pagination.text"] = color("text_primary");
 aliases["pagination.muted"] = color("text_muted");
@@ -4278,17 +4670,17 @@ aliases["pagination.wash"] = color("surface_hover");
 aliases["pagination.active"] = color("selection");
 aliases["pagination.surface"] = color("surface_raised");
 aliases["pagination.surface_hover"] = color("surface_hover");
-aliases["pagination.edge"] = color("border");
-aliases["pagination.edge_hover"] = color("control.border");
+aliases["pagination.edge"] = color("border_subtle");
+aliases["pagination.edge_hover"] = color("border_strong");
 aliases["tooltip.surface"] = color("text_primary");
 aliases["tooltip.ink"] = color("surface");
 aliases["tooltip.muted"] = `alpha(${color("surface")},0.72)`;
 aliases["tooltip.key"] = `alpha(${color("surface")},0.14)`;
-aliases["tooltip.shadow"] = `alpha(rgb(0x000000),0.32)`;
-aliases["tooltip.shadow_secondary"] = `alpha(rgb(0x000000),0.12)`;
-aliases["tag.chip"] = color("surface_hover");
-aliases["tag.edge"] = color("border");
-aliases["tracker.sheen"] = base.colors["tracker.sheen"];
+aliases["tooltip.shadow"] = color("shadow.key");
+aliases["tooltip.shadow_secondary"] = color("shadow.ambient");
+aliases["tag.chip"] = color("surface_sunken");
+aliases["tag.edge"] = color("border_subtle");
+aliases["tracker.sheen"] = `alpha(${color("text_primary")},0.12)`;
 for (const tone of badgeTones) {
   aliases[`badge.${tone}_strong_bg`] = `${color(`badge.${tone}_fg`)}.over(${color("surface_raised")})`;
   aliases[`badge.${tone}_strong_fg`] = strongInk(color(`badge.${tone}_strong_bg`));
@@ -4302,25 +4694,9 @@ for (const tone of ["info","success","warning","danger"]) {
   aliases[`tag.text_${variant}_ink`] = `readable(${color(`tag.${tone}_fg`)},${color("text_primary")},${color("tag.chip")}.over(${color("surface_raised")}),4.5)`;
   aliases[`tag.facet_${variant}_ink`] = `readable(${color(`tag.${tone}_fg`)},${color("text_primary")},${color(`tag.${tone}_bg`)},4.5)`;
 }
-const substitutions = [
-  [rgba("171717"),color("text_primary")],
-  [rgba("737373"),color("text_muted")],
-  [rgba("8f8f8f"),color("text_muted")],
-  [rgba("b5b5b5"),color("text_muted")],
-  [rgba("ffffff"),color("surface_raised")],
-  [rgba("f4f4f5"),color("surface")],
-  [rgba("f0f0f0"),color("surface_hover")],
-  [rgba("e5e5e5"),color("border")],
-  [rgba("d4d4d4"),color("control.border")],
-  [rgba("e9e9ec"),color("selection")],
-  ["alpha(rgb(0x0060e2),0.7)",color("focus_ring")],
-];
-for (const group of [base.parts,base.recipes]) for (const values of Object.values(group)) {
-  for (const key of Object.keys(values)) for (const [before,after] of substitutions) values[key] = values[key].replaceAll(before,after);
-}
 const paletteHelper = fs.readFileSync(path.join(root,"registry/presets/palette.rhai"),"utf8");
 for (const match of paletteHelper.matchAll(/"([^"]+)"\s*:/g)) delete aliases[match[1]];
-write("registry/tokens.rhai",`// Generated by scripts/generate-design-presets.mjs; edit the maintained recipes.\n${paletteHelper}\nfn tokens() {\n    ${tokens(base,false,aliases)}\n}\n`);
+write("registry/tokens.rhai",`// Generated by scripts/generate-design-presets.mjs; edit the maintained recipes.\n${paletteHelper}\nfn tokens() {\n    ${dualDesignTokens(modernSemantic, cleanSemantic, aliases)}\n}\n`);
 write("docs/design/component-coverage.md", `# Modern / Clean module coverage
 
 Generated from the maintained recipes and public SDK modules; this is not a

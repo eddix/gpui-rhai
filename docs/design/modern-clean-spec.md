@@ -4,21 +4,26 @@ This is the maintained implementation specification, not a research archive.
 The migration is not complete until the functional and native visual gates in
 [the work log](migration-modern-clean.md) pass.
 
-## Presets
+## Presets and orthogonal design axis
 
-| Design | Light variant | Dark variant |
+| Design (`environment.design`) | Reference compatibility Light | Reference compatibility Dark |
 |---|---|---|
-| modern | Modern / Light | Modern / Dark |
-| clean | Clean / Light | Clean / Dark |
+| `modern` | Modern / Light | Modern / Dark |
+| `clean` | Clean / Light | Clean / Dark |
 
-A design owns geometry, typography, surfaces, edges, effects and motion.
-An appearance changes colors without changing geometry. Alternate palettes
-inherit Modern geometry and adapt semantic colors; they are not exact-color
-reference configurations.
+A design (`modern` or `clean`) lives on the `design` environment axis and owns
+geometry, typography, surfaces, edges, effects and motion via `by_env("design", ...)`
+in `registry/tokens.rhai`. A color theme (`Neutral`, `Default`, `Catppuccin`,
+`Tokyo Night`, etc.) owns colors without changing geometry, so any color theme
+combines orthogonally with either `modern` or `clean` (`ctx.set_environment("design", ...)`).
+`Modern Light/Dark` and `Clean Light/Dark` remain thin compatibility presets
+supplying the exact reference colors and defaulting `design` to `"modern"` or
+`"clean"`.
 
-Full variants are ordinary theme sources. They resolve the token base, preset,
-and Host overrides atomically. There is no separate native-only skin selector.
-Application component overrides and instance overrides remain available.
+Full variants and color palettes are ordinary theme sources. They resolve the
+token base, theme palette, environment axis (`design`, `density`, `size`, `scale`),
+and Host overrides atomically. Application component overrides and instance
+overrides remain available.
 
 ## Core metrics
 

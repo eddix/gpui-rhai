@@ -161,6 +161,7 @@ pub enum PrimitiveValue {
 pub struct PrimitiveTheme {
     tokens: Option<std::sync::Arc<crate::ThemeTokens>>,
     colors: BTreeMap<String, Rgba8>,
+    mode: crate::ThemeMode,
     environment: crate::Environment,
     inherited_disabled: bool,
     direction: crate::TextDirection,
@@ -178,6 +179,7 @@ impl Default for PrimitiveTheme {
         Self {
             tokens: None,
             colors: BTreeMap::new(),
+            mode: crate::ThemeMode::Light,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             direction: crate::TextDirection::LeftToRight,
@@ -264,6 +266,7 @@ impl PrimitiveTheme {
                 colors.color_snapshot()
             },
             tokens,
+            mode: colors.theme_mode(),
             environment: colors.environment(),
             inherited_disabled: false,
             direction,
@@ -397,6 +400,10 @@ impl PrimitiveTheme {
 impl ColorResolver for PrimitiveTheme {
     fn resolve_token(&self, token: &str) -> Option<Rgba8> {
         self.color(token)
+    }
+
+    fn theme_mode(&self) -> crate::ThemeMode {
+        self.mode
     }
 
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {

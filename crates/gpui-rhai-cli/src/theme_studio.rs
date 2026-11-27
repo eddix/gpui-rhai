@@ -611,8 +611,20 @@ fn with_token_base(document: &ThemeVariant) -> Result<ThemeVariant, String> {
 
 fn default_draft() -> Result<ThemeVariant, String> {
     let engine = RuntimeEngine::new();
-    load_theme_source(engine.engine(), "modern_dark.rhai", MODERN_DARK_THEME)
-        .map_err(|error| error.to_string())
+    let base = gpui_rhai::load_token_base(
+        engine.engine(),
+        "tokens.rhai",
+        gpui_rhai_registry::TOKEN_BASE_SOURCE,
+    )
+    .map_err(|error| error.to_string())?;
+    gpui_rhai::load_theme_with_layers(
+        engine.engine(),
+        Some(&base),
+        "modern_dark.rhai",
+        MODERN_DARK_THEME,
+        &gpui_rhai::ThemeTokenOverrides::default(),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn json_string(value: &str) -> String {
@@ -938,14 +950,27 @@ mod tests {
     #[test]
     fn full_presets_keep_their_recipes_through_studio_preview_and_save() {
         let engine = RuntimeEngine::new();
+        let base = gpui_rhai::load_token_base(
+            engine.engine(),
+            "tokens.rhai",
+            gpui_rhai_registry::TOKEN_BASE_SOURCE,
+        )
+        .unwrap();
         for &(name, source) in gpui_rhai_registry::BUNDLED_DESIGN_PRESET_SOURCES {
-            let original = load_theme_source(engine.engine(), name, source).unwrap();
+            let original = gpui_rhai::load_theme_with_layers(
+                engine.engine(),
+                Some(&base),
+                name,
+                source,
+                &gpui_rhai::ThemeTokenOverrides::default(),
+            )
+            .unwrap();
             let preview = with_token_base(&original).unwrap();
             for (component, parts) in original.tokens.component_styles.iter() {
                 let actual = preview
                     .tokens
                     .component_styles
-                    .component(component)
+                    .component_rules(component)
                     .unwrap();
                 for (part, expected) in parts {
                     assert_eq!(
@@ -970,7 +995,7 @@ mod tests {
                 let actual = reloaded
                     .tokens
                     .component_styles
-                    .component(component)
+                    .component_rules(component)
                     .unwrap();
                 for (part, expected) in parts {
                     assert_eq!(
@@ -1016,8 +1041,21 @@ mod tests {
     #[test]
     fn exact_design_presets_keep_visible_contrast_warnings_instead_of_being_recolored() {
         let engine = RuntimeEngine::new();
+        let base = gpui_rhai::load_token_base(
+            engine.engine(),
+            "tokens.rhai",
+            gpui_rhai_registry::TOKEN_BASE_SOURCE,
+        )
+        .unwrap();
         for &(name, source) in gpui_rhai_registry::BUNDLED_DESIGN_PRESET_SOURCES {
-            let theme = load_theme_source(engine.engine(), name, source).unwrap();
+            let theme = gpui_rhai::load_theme_with_layers(
+                engine.engine(),
+                Some(&base),
+                name,
+                source,
+                &gpui_rhai::ThemeTokenOverrides::default(),
+            )
+            .unwrap();
             let status = validation_status(&theme);
             assert!(
                 status.contains("warnings"),
@@ -1030,10 +1068,18 @@ mod tests {
     #[test]
     fn studio_reports_placeholder_alpha_and_parent_dependent_backgrounds() {
         let engine = RuntimeEngine::new();
-        let mut theme = load_theme_source(
+        let base = gpui_rhai::load_token_base(
             engine.engine(),
+            "tokens.rhai",
+            gpui_rhai_registry::TOKEN_BASE_SOURCE,
+        )
+        .unwrap();
+        let mut theme = gpui_rhai::load_theme_with_layers(
+            engine.engine(),
+            Some(&base),
             "modern_light.rhai",
             gpui_rhai_registry::MODERN_LIGHT_THEME,
+            &gpui_rhai::ThemeTokenOverrides::default(),
         )
         .unwrap();
         let original = theme.clone();

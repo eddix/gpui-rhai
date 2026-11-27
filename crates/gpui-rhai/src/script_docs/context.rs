@@ -145,6 +145,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Removes the current window's close handler, so a native close request closes the window again; not allowed during render.",
     },
     ScriptFnDoc {
+        signature: "clear_environment(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["name"],
+        doc: "Clears the app-wide override for environment axis `name` (such as `design`), restoring the active theme's declared default; not allowed during render.",
+    },
+    ScriptFnDoc {
         signature: "close_window(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["id"],
         doc: "Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render.",
@@ -168,6 +173,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "element_bounds(_: &mut UiContext, _: ElementRef) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["reference"],
         doc: "Returns a ref's last committed `#{ layout, visual, clip }` window bounds, or `()` before first layout; records a dependency in render. A present clip is the visible rectangular extent, with zero area when fully clipped.",
+    },
+    ScriptFnDoc {
+        signature: "environment(_: &mut UiContext, _: string) -> types::dynamic::Dynamic",
+        params: &["name"],
+        doc: "Returns the active value of theme environment axis `name` (such as `design`), or `()` if unset; records a theme dependency in render.",
     },
     ScriptFnDoc {
         signature: "element_bounds(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -520,6 +530,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Selects the app-wide theme variant `variant` of `family` without recompiling or resetting state; not allowed during render.",
     },
     ScriptFnDoc {
+        signature: "set_environment(_: &mut UiContext, _: string, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["name", "value"],
+        doc: "Sets the app-wide value of theme environment axis `name` (such as `design` to `\"modern\"` or `\"clean\"`) without recompiling or resetting state; not allowed during render.",
+    },
+    ScriptFnDoc {
         signature: "set_theme_system(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["family"],
         doc: "Makes the app follow the system light or dark appearance within theme `family`; not allowed during render.",
@@ -533,6 +548,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "set_window_locale(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["locale"],
         doc: "Selects `locale` for the current window and rerenders its locale readers; not allowed during render.",
+    },
+    ScriptFnDoc {
+        signature: "set_window_environment(_: &mut UiContext, _: string, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["name", "value"],
+        doc: "Sets the theme environment axis `name` to `value` for the current window; not allowed during render.",
     },
     ScriptFnDoc {
         signature: "set_window_store(_: &mut UiContext, _: string, _: string, _: types::dynamic::Dynamic) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

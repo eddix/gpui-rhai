@@ -291,13 +291,30 @@ fn swatches(roles) {
     kit::line(items)
 }
 
+fn palette_pill(hue) {
+    row([
+        box([]).with_style(style().width(theme_length("metrics.mark")).height(theme_length("metrics.mark"))
+            .radius(theme_radius("full")).background(theme_color(`palette.${hue}`)).flex_shrink(false)),
+        text(`palette.${hue}`).with_style(style().typography("code").text_color(theme_color(`palette.${hue}_ink`))),
+    ]).with_style(style().flex_row().items_center().gap(theme_spacing("xs"))
+        .padding_x(theme_spacing("sm")).padding_y(theme_spacing("xxs"))
+        .radius(theme_radius("md")).background(theme_color(`palette.${hue}_soft`))
+        .border(px(1)).border_color(theme_color(`palette.${hue}_border`)))
+}
+
 fn color_page(h, v) {
+    let palette_pills = [];
+    for hue in ["blue", "violet", "teal", "green", "amber", "rose", "orange", "slate"] {
+        palette_pills.push(palette_pill(hue));
+    }
     kit::page(h, v, "foundations.color", "Color roles",
-        "Paired surfaces and foregrounds follow the selected preset. Primary actions use ink; semantic colors keep their own roles.", [
-        kit::sec("Surfaces", swatches(["surface", "surface_raised", "surface_hover", "selection", "border"])),
+        "Paired surfaces, borders, semantic accents, and non-semantic categorical hues follow the selected color theme independently of Modern or Clean design.", [
+        kit::sec("Surfaces", swatches(["surface_sunken", "surface", "surface_raised", "surface_elevated", "surface_hover", "selection"])),
+        kit::sec("Borders", swatches(["border_subtle", "border", "border_strong"])),
         kit::sec("Text", swatches(["text_primary", "text_muted", "disabled", "focus_ring"])),
         kit::sec("Accent and status", swatches(["accent", "accent_hover", "success", "warning", "danger"])),
         kit::sec("Readable text", swatches(["text.accent", "text.success", "text.warning", "text.danger"])),
+        kit::sec("Categorical palette", kit::line(palette_pills)),
         kit::sec("In use", kit::line([
             badge::Badge(#{ text: "Healthy" }), badge::Badge(#{ text: "Degraded", variant: "warning" }),
             badge::Badge(#{ text: "Down", variant: "danger", emphasis: "strong" }),

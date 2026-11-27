@@ -1243,6 +1243,8 @@ pub const MODERN_LIGHT_THEME: &str = include_str!("../themes/modern_light.rhai")
 pub const MODERN_DARK_THEME: &str = include_str!("../themes/modern_dark.rhai");
 pub const CLEAN_LIGHT_THEME: &str = include_str!("../themes/clean_light.rhai");
 pub const CLEAN_DARK_THEME: &str = include_str!("../themes/clean_dark.rhai");
+pub const NEUTRAL_LIGHT_THEME: &str = include_str!("../themes/neutral_light.rhai");
+pub const NEUTRAL_DARK_THEME: &str = include_str!("../themes/neutral_dark.rhai");
 pub const DEFAULT_THEME: &str = include_str!("../themes/default_dark.rhai");
 pub const DEFAULT_LIGHT_THEME: &str = include_str!("../themes/default_light.rhai");
 pub const TOKYO_NIGHT_THEME: &str = include_str!("../themes/tokyo_night.rhai");
@@ -2020,6 +2022,8 @@ pub const BUNDLED_DESIGN_PRESET_SOURCES: &[(&str, &str)] = &[
 /// Alternate color palettes retain their calibrated reading margins. Their
 /// policy does not authorize recoloring the exact design presets above.
 pub const BUNDLED_PALETTE_SOURCES: &[(&str, &str)] = &[
+    ("neutral_light.rhai", NEUTRAL_LIGHT_THEME),
+    ("neutral_dark.rhai", NEUTRAL_DARK_THEME),
     ("default_dark.rhai", DEFAULT_THEME),
     ("default_light.rhai", DEFAULT_LIGHT_THEME),
     ("tokyo_night.rhai", TOKYO_NIGHT_THEME),
@@ -2322,7 +2326,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         // Includes the four design-specific Command search/Enter glyphs.
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 25);
-        assert_eq!(BUNDLED_THEME_SOURCES.len(), 23);
+        assert_eq!(BUNDLED_THEME_SOURCES.len(), 25);
         assert_eq!(BUNDLED_STORIES.len(), 25);
         assert!(
             BUNDLED_COMPONENT_SOURCES

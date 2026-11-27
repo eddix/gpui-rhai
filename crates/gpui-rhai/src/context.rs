@@ -1676,7 +1676,7 @@ impl UiContext {
         parts: &BTreeSet<String>,
     ) -> Result<(), crate::ComponentStyleError> {
         self.preset_component_part_styles = self
-            .with_resolved_theme(|variant| {
+            .with_resolved_theme_env(|variant, environment| {
                 variant
                     .tokens
                     .component_styles
@@ -1684,8 +1684,7 @@ impl UiContext {
                 Ok(variant
                     .tokens
                     .component_styles
-                    .component(component)
-                    .cloned()
+                    .resolve_component(component, &environment, &variant.tokens.environment)
                     .unwrap_or_default())
             })
             .transpose()?
@@ -1696,13 +1695,33 @@ impl UiContext {
                 "UI state is already borrowed while refreshing component styles".to_owned(),
             )
         })?;
+        let active_env = runtime
+            .theme
+            .as_ref()
+            .map_or(crate::Environment::EMPTY, |theme| {
+                theme.environment_for(self.window.as_deref())
+            });
+        let active_decls = runtime
+            .theme
+            .as_ref()
+            .and_then(|theme| {
+                let appearance = self
+                    .window
+                    .as_deref()
+                    .and_then(|window| runtime.window_appearances.get(window).copied())
+                    .unwrap_or(crate::SystemAppearance::Dark);
+                theme
+                    .resolve(self.window.as_deref(), Some(&self.component), appearance)
+                    .ok()
+                    .map(|resolved| resolved.variant().tokens.environment.clone())
+            })
+            .unwrap_or_default();
         runtime
             .component_styles()
             .validate_parts(component, parts)?;
         self.global_component_part_styles = runtime
             .component_styles()
-            .component(component)
-            .cloned()
+            .resolve_component(component, &active_env, &active_decls)
             .unwrap_or_default();
         Ok(())
     }
@@ -4069,22 +4088,143 @@ impl UiContext {
             .map(|variant| variant.tokens.color_snapshot())
     }
 
+    /// Read the active value of a declared theme environment axis (for example
+    /// `"design"` or `"density"`), tracking the active theme dependency.
+    #[must_use]
+    pub fn environment_value(&self, name: &str) -> Option<String> {
+        let symbol = crate::token::Symbol::intern(name);
+        self.with_resolved_theme_env(|variant, environment| {
+            let declaration = variant.tokens.environment.get(&symbol)?;
+            let value = match environment.get(symbol) {
+                Some(override_value) if declaration.allows(override_value) => override_value,
+                _ => declaration.default,
+            };
+            Some(value.as_str().to_string())
+        })
+        .flatten()
+    }
+
+    /// Set an orthogonal application-level environment value (such as
+    /// `design = "clean"`) independently of the selected color palette.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, theme, or borrow errors.
+    pub fn set_environment(&self, name: &str, value: &str) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let invalidated = runtime.environment_dependencies.invalidate_theme_app();
+        let theme = runtime
+            .theme
+            .as_mut()
+            .ok_or(UiContextError::ThemeUnavailable)?;
+        theme.set_environment(name, value)?;
+        runtime.mark_all_windows_dirty();
+        runtime.mark_dirty(invalidated);
+        runtime.traces.push(
+            crate::RuntimeTraceKind::Theme,
+            self.component.to_string(),
+            format!("set environment {name}={value}"),
+            None,
+            false,
+        );
+        Ok(())
+    }
+
+    /// Clear an application-level environment override so each theme's own
+    /// declared default applies.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, theme, or borrow errors.
+    pub fn clear_environment(&self, name: &str) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let invalidated = runtime.environment_dependencies.invalidate_theme_app();
+        let theme = runtime
+            .theme
+            .as_mut()
+            .ok_or(UiContextError::ThemeUnavailable)?;
+        if theme.clear_environment(name) {
+            runtime.mark_all_windows_dirty();
+            runtime.mark_dirty(invalidated);
+            runtime.traces.push(
+                crate::RuntimeTraceKind::Theme,
+                self.component.to_string(),
+                format!("clear environment {name}"),
+                None,
+                false,
+            );
+        }
+        Ok(())
+    }
+
+    /// Set an orthogonal per-window environment override.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, theme, or borrow errors.
+    pub fn set_window_environment(&self, name: &str, value: &str) -> Result<(), UiContextError> {
+        let Some(window) = self.window.clone() else {
+            return self.set_environment(name, value);
+        };
+        self.require_mutation()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let invalidated = runtime
+            .environment_dependencies
+            .invalidate_theme_window(&window);
+        let theme = runtime
+            .theme
+            .as_mut()
+            .ok_or(UiContextError::ThemeUnavailable)?;
+        theme.set_window_environment(window, name, value)?;
+        runtime.mark_dirty([self.component.clone()]);
+        runtime.mark_dirty(invalidated);
+        runtime.traces.push(
+            crate::RuntimeTraceKind::Theme,
+            self.component.to_string(),
+            format!("set window environment {name}={value}"),
+            None,
+            false,
+        );
+        Ok(())
+    }
+
     /// Read a namespaced theme setting/recipe and track the actual scoped
     /// theme during rendering. Lengths remain symbolic, so a descendant's
     /// inherited size/reading scale is resolved at native layout, not here.
     /// Returns None for a missing token or unavailable theme.
     #[must_use]
     pub fn theme_token(&self, path: &str) -> Option<Dynamic> {
-        self.with_resolved_theme(|variant| {
+        self.with_resolved_theme_env(|variant, environment| {
             use crate::ThemeTokenValue;
+            let decls = &variant.tokens.environment;
             match variant.tokens.token(path)? {
                 ThemeTokenValue::Color(value) => {
                     Some(Dynamic::from(crate::ColorValue::Literal(*value)))
                 }
                 ThemeTokenValue::Length(_) => crate::Length::token(path).ok().map(Dynamic::from),
-                ThemeTokenValue::Number(value) => Some(Dynamic::from_float(*value)),
-                ThemeTokenValue::String(value) => Some(Dynamic::from(value.clone())),
-                ThemeTokenValue::Style(value) => Some(Dynamic::from((**value).clone())),
+                ThemeTokenValue::Number(value) => value
+                    .resolve(&environment, decls)
+                    .copied()
+                    .map(Dynamic::from_float),
+                ThemeTokenValue::String(value) => value
+                    .resolve(&environment, decls)
+                    .cloned()
+                    .map(Dynamic::from),
+                ThemeTokenValue::Style(value) => value
+                    .resolve(&environment, decls)
+                    .cloned()
+                    .map(Dynamic::from),
             }
         })
         .flatten()
@@ -4099,14 +4239,25 @@ impl UiContext {
     ///
     /// Returns [`UiContextError::UnknownThemeToken`] for an unavailable style.
     pub fn theme_style(&self, path: &str) -> Result<crate::Style, UiContextError> {
-        self.with_resolved_theme(|variant| match variant.tokens.token(path) {
-            Some(crate::ThemeTokenValue::Style(value)) => Ok((**value).clone()),
-            _ => Err(UiContextError::UnknownThemeToken(path.to_owned())),
+        self.with_resolved_theme_env(|variant, environment| {
+            variant
+                .tokens
+                .token(path)
+                .and_then(|value| value.resolve_style(&environment, &variant.tokens.environment))
+                .cloned()
+                .ok_or_else(|| UiContextError::UnknownThemeToken(path.to_owned()))
         })
         .unwrap_or_else(|| Ok(crate::Style::new()))
     }
 
     fn with_resolved_theme<R>(&self, project: impl FnOnce(&crate::ThemeVariant) -> R) -> Option<R> {
+        self.with_resolved_theme_env(|variant, _| project(variant))
+    }
+
+    fn with_resolved_theme_env<R>(
+        &self,
+        project: impl FnOnce(&crate::ThemeVariant, crate::Environment) -> R,
+    ) -> Option<R> {
         let Ok(mut runtime) = self.runtime.try_borrow_mut() else {
             return None;
         };
@@ -4128,7 +4279,7 @@ impl UiContext {
                     .resolve(self.window.as_deref(), Some(&self.component), appearance)
                     .ok()
             })
-            .map(|theme| project(theme.variant()))
+            .map(|theme| project(theme.variant(), theme.environment()))
     }
 
     /// Resolved identity, not the app/window/local preference selecting it.
@@ -5863,6 +6014,38 @@ fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
                         path.to_string(),
                     )))
                 })
+            },
+        )
+        .with_fn(
+            "environment",
+            |context: &mut UiContext, name: ImmutableString| -> Dynamic {
+                context
+                    .environment_value(name.as_str())
+                    .map_or(Dynamic::UNIT, Dynamic::from)
+            },
+        )
+        .with_fn(
+            "set_environment",
+            |context: &mut UiContext, name: ImmutableString, value: ImmutableString| {
+                context
+                    .set_environment(name.as_str(), value.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "clear_environment",
+            |context: &mut UiContext, name: ImmutableString| {
+                context
+                    .clear_environment(name.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_window_environment",
+            |context: &mut UiContext, name: ImmutableString, value: ImmutableString| {
+                context
+                    .set_window_environment(name.as_str(), value.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         );
 }

@@ -4562,6 +4562,8 @@ mod tests {
     /// baseline, so they have no released hashes.
     const ADDED_WITH_BASELINES: &[&str] = &[
         "themes/default_dark.rhai",
+        "themes/neutral_light.rhai",
+        "themes/neutral_dark.rhai",
         "themes/modern_light.rhai",
         "themes/modern_dark.rhai",
         "themes/clean_light.rhai",

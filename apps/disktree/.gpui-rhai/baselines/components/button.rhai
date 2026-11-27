@@ -150,8 +150,7 @@ fn button_foreground(variant) {
 }
 fn button_recipe(ctx, variant) { ctx.theme_style(`button.${button_tone(variant)}`) }
 fn paint_duration(ctx) {
-    let theme = ctx.theme_variant();
-    if theme != () && theme.family == "Clean" { 140 } else { 160 }
+    if ctx.theme_variant() != () && ctx.theme_token("design.name") == "clean" { 140 } else { 160 }
 }
 fn icon_entry(icon, loading) {
     row([icon]).with_key("icon-entry")

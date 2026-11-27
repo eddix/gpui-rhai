@@ -265,6 +265,23 @@ impl Environment {
         Ok(self)
     }
 
+    /// Return a copy with `name` removed, if present.
+    #[must_use]
+    pub fn without(mut self, name: Symbol) -> Self {
+        let len = usize::from(self.len);
+        if let Some(index) = self.entries[..len]
+            .iter()
+            .position(|(candidate, _)| *candidate == name)
+        {
+            for i in index..len.saturating_sub(1) {
+                self.entries[i] = self.entries[i + 1];
+            }
+            self.len -= 1;
+            self.entries[usize::from(self.len)] = (Symbol(0), Symbol(0));
+        }
+        self
+    }
+
     /// Apply every override in order.
     ///
     /// # Errors
@@ -390,6 +407,19 @@ impl<T> EnvTable<T> {
     }
 
     /// Map every entry while keeping the key structure.
+    #[must_use]
+    pub fn map<U>(&self, mut map: impl FnMut(&T) -> U) -> EnvTable<U> {
+        EnvTable {
+            keys: self.keys.clone(),
+            entries: self
+                .entries
+                .iter()
+                .map(|(path, value)| (path.clone(), map(value)))
+                .collect(),
+        }
+    }
+
+    /// Map every entry while keeping the key structure.
     ///
     /// # Errors
     ///
@@ -455,6 +485,24 @@ impl<T> Variable<T> {
         match self {
             Self::Fixed(value) => Box::new(std::iter::once(value)),
             Self::ByEnv(table) => Box::new(table.entries.values()),
+        }
+    }
+
+    /// Map every branch while preserving environment structure.
+    #[must_use]
+    pub fn map<U>(&self, mut map: impl FnMut(&T) -> U) -> Variable<U> {
+        match self {
+            Self::Fixed(value) => Variable::Fixed(map(value)),
+            Self::ByEnv(table) => Variable::ByEnv(table.map(map)),
+        }
+    }
+
+    /// Borrow the value when it does not vary by environment.
+    #[must_use]
+    pub const fn as_fixed(&self) -> Option<&T> {
+        match self {
+            Self::Fixed(value) => Some(value),
+            Self::ByEnv(_) => None,
         }
     }
 }

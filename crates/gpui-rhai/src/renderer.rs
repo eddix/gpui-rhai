@@ -1602,9 +1602,14 @@ pub trait ColorResolver {
     /// Look up one color token by name or `namespace.name` path.
     fn resolve_token(&self, token: &str) -> Option<Rgba8>;
 
+    /// Color mode of the active theme, used by `by_mode(...)` expressions.
+    fn theme_mode(&self) -> crate::ThemeMode {
+        crate::ThemeMode::Light
+    }
+
     /// Resolve a color value, evaluating expressions over token leaves.
     fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        color.resolve_with(&mut |token| self.resolve_token(token))
+        color.resolve_with_mode(self.theme_mode(), &mut |token| self.resolve_token(token))
     }
 
     /// Every color token this resolver knows, for snapshot capture.
@@ -1697,6 +1702,13 @@ impl<C: ColorResolver + ?Sized> ColorResolver for EnvironmentScoped<'_, C> {
         }
     }
 
+    fn theme_mode(&self) -> crate::ThemeMode {
+        match self.local {
+            Some(local) => local.theme_mode(),
+            None => self.inner.theme_mode(),
+        }
+    }
+
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
         match self.local {
             Some(local) => local.color_snapshot(),
@@ -1757,12 +1769,25 @@ impl ColorResolver for LiteralColorResolver {
 /// An owned theme capture for deferred rendering boundaries (slot runtimes,
 /// canvas, overlay backdrops). It keeps the full token set when available so
 /// environment variants still resolve inside the boundary.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct OwnedColorResolver {
     tokens: Option<std::sync::Arc<crate::ThemeTokens>>,
     colors: BTreeMap<String, Rgba8>,
+    mode: crate::ThemeMode,
     environment: crate::Environment,
     motion: crate::ThemeMotion,
+}
+
+impl Default for OwnedColorResolver {
+    fn default() -> Self {
+        Self {
+            tokens: None,
+            colors: BTreeMap::new(),
+            mode: crate::ThemeMode::Light,
+            environment: crate::Environment::EMPTY,
+            motion: crate::ThemeMotion::default(),
+        }
+    }
 }
 
 impl OwnedColorResolver {
@@ -1775,6 +1800,7 @@ impl OwnedColorResolver {
                 colors.color_snapshot()
             },
             tokens,
+            mode: colors.theme_mode(),
             environment: colors.environment(),
             motion: colors.resolve_motion(),
         }
@@ -1798,6 +1824,10 @@ impl ColorResolver for OwnedColorResolver {
             Some(tokens) => tokens.color(token),
             None => self.colors.get(token).copied(),
         }
+    }
+
+    fn theme_mode(&self) -> crate::ThemeMode {
+        self.mode
     }
 
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
@@ -2322,7 +2352,7 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
-            environment: crate::Environment::EMPTY,
+            environment: colors.environment(),
             inherited_disabled: false,
             inline_projection: None,
             focus_path: &[],
@@ -2423,7 +2453,7 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
-            environment: crate::Environment::EMPTY,
+            environment: colors.environment(),
             inherited_disabled: false,
             inline_projection: None,
             focus_path: &[],
@@ -2517,7 +2547,7 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
-            environment: crate::Environment::EMPTY,
+            environment: colors.environment(),
             inherited_disabled: false,
             inline_projection: None,
             focus_path: &[],
@@ -2603,7 +2633,7 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
-            environment: crate::Environment::EMPTY,
+            environment: colors.environment(),
             inherited_disabled: false,
             inline_projection: None,
             focus_path: &[],
@@ -2678,7 +2708,7 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
-            environment: crate::Environment::EMPTY,
+            environment: colors.environment(),
             inherited_disabled: false,
             focus_path: &[],
             focus_indicators: true,
@@ -2752,7 +2782,10 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
-            environment: resources.environment,
+            environment: colors
+                .environment()
+                .with_all(resources.environment.iter())
+                .unwrap_or(resources.environment),
             inherited_disabled: resources.inherited_disabled,
             inline_projection: None,
             focus_path: resources.focus_path,
@@ -2843,7 +2876,10 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
-            environment: resources.environment,
+            environment: colors
+                .environment()
+                .with_all(resources.environment.iter())
+                .unwrap_or(resources.environment),
             inherited_disabled: resources.inherited_disabled,
             inline_projection: None,
             focus_path: resources.focus_path,
@@ -2915,7 +2951,10 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
-            environment: resources.environment,
+            environment: colors
+                .environment()
+                .with_all(resources.environment.iter())
+                .unwrap_or(resources.environment),
             inherited_disabled: resources.inherited_disabled,
             inline_projection: None,
             focus_path: resources.focus_path,

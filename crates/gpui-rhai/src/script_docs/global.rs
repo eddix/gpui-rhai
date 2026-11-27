@@ -161,6 +161,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Varies a theme token with the environment: `keys` is an axis name or an array of names, and `table` maps their values, nested per axis.",
     },
     ScriptFnDoc {
+        signature: "by_mode(_: ColorValue, _: ColorValue) -> ColorValue",
+        params: &["light", "dark"],
+        doc: "Selects `light` in light themes and `dark` in dark themes when resolving theme color tokens or style paints.",
+    },
+    ScriptFnDoc {
+        signature: "by_mode(_: map) -> core::result::Result<gpui_rhai::style::ColorValue,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["modes"],
+        doc: "Selects a color by theme mode from `#{ light, dark }`, resolving the matching branch for the active theme's light or dark mode.",
+    },
+    ScriptFnDoc {
         signature: "canvas(_: CanvasScene) -> UiNode",
         params: &["scene"],
         doc: "Creates a canvas node that paints a retained `canvas_scene` in canvas-local logical pixels.",

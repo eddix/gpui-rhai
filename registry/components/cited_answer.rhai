@@ -312,7 +312,6 @@ fn render_CitedAnswer(ctx,props){
         .with_style(ctx.component_style(if embedded{["root","embedded"]}else{["root"]},style()
             .min_width(px(0)).gap(theme_length("space.spacing_unit").times(2)).text_color(theme_color("text_primary"))))
         .on_key_value("escape",Fn("close").curry(config),());
-    let theme=ctx.theme_variant();
     // The standalone Modern card and the caption tray have distinct gutters.
-    if !embedded&&theme!=()&&theme.family=="Modern"{root.audit_allow(["text-edge-misaligned"])}else{root}
+    if !embedded&&ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="modern"{root.audit_allow(["text-edge-misaligned"])}else{root}
 }

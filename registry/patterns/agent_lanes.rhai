@@ -191,16 +191,19 @@ fn task(ctx,p,cfg,ref_item,walk,index){
     item.on_key_value("plain+home",Fn("focus_task").curry(walk[0].id,key_ref(walk[0])),())
         .on_key_value("plain+end",Fn("focus_task").curry(walk[walk.len-1].id,key_ref(walk[walk.len-1])),())
 }
-fn agent_mark(ctx,a){
+fn agent_mark(ctx,a,lane_index){
     let icon=opt(a,"avatar");let base=if icon==(){text(if a.name==""{"•"}else{a.name.sub_string(0,1).to_upper()})}else{icon};
+    let slot=((lane_index%8)+1).to_string();
     row([base]).with_key("avatar").accessibility_hidden(true).with_style(ctx.component_style("avatar",style().width(theme_length("space.unit").times(6)).height(theme_length("space.unit").times(6))
-        .flex_shrink(false).items_center().justify_center().typography("caption").radius(theme_length("space.unit").times(5)).background(theme_color("surface_hover"))))
+        .flex_shrink(false).items_center().justify_center().typography("caption").radius(theme_length("space.unit").times(5))
+        .background(theme_color(`palette.${slot}_soft`)).text_color(theme_color(`palette.${slot}_ink`))
+        .border(px(1)).border_color(theme_color(`palette.${slot}_border`))))
 }
-fn lane(ctx,a,packed,cfg,refs,data,indices){
+fn lane(ctx,a,lane_index,packed,cfg,refs,data,indices){
     let labels=[text(a.name).with_key("name").accessibility_role("heading").accessibility_level(3)
         .with_style(ctx.component_style("agent_name",style().min_width(px(0)).typography("body").font_weight(500).text_ellipsis().whitespace_nowrap()))];
     if opt(a,"model")!=(){labels.push(caption(ctx,a.model,"model").with_key("model").with_style(style().text_ellipsis().whitespace_nowrap()));}
-    let lead=row([agent_mark(ctx,a),column(labels).with_key("who").with_style(style().min_width(px(0)).flex_grow())]).with_key("agent")
+    let lead=row([agent_mark(ctx,a,lane_index),column(labels).with_key("who").with_style(style().min_width(px(0)).flex_grow())]).with_key("agent")
         .audit_allow(["mixed-type-in-row"]).with_style(ctx.component_style("agent",style().min_width(px(0)).gap(theme_length("space.spacing_unit").times(1.5)).items_center().padding_x(theme_length("space.spacing_unit").times(1.25))));
     if !cfg.compact{lead=lead.with_style(style().width(theme_length("space.unit").times(32)).flex_shrink(false));}
     let children=[];
@@ -295,7 +298,7 @@ fn render_AgentLanes(ctx,props){
     let refs=#{};let indices=#{};
     for i in 0..data.walk.len{let t=data.walk[i];refs[t.id]=element_ref(key_ref(t));indices[t.id]=i;}
     let rows=[axis(ctx,props,cfg,axis_ref)];
-    for agent in props.agents{rows.push(lane(ctx,agent,data.lanes[agent.id],cfg,refs,data,indices));}
+    for i in 0..props.agents.len{let agent=props.agents[i];rows.push(lane(ctx,agent,i,data.lanes[agent.id],cfg,refs,data,indices));}
     if props.agents.len==0{rows.push(caption(ctx,ctx.t_or("agent_lanes.empty","No agents to show"),"empty").with_key("empty"));}
     let stage=column(rows).with_key("lanes").with_style(style().min_width(px(0)).gap(theme_length("space.spacing_unit")));
     let decor=links(ctx,stage_ref,axis_ref,refs,data,cfg);

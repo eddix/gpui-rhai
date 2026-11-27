@@ -323,7 +323,7 @@ fn render_FilterMenu(ctx,props){
         controlled:controlled,editable:!props.disabled&&(!controlled||opt(props,"on_change")!=())};
     effect("committed",[model,ctx.get_state("pending")],Fn("synchronize"),Fn("cleanup"));
     let active=current_row(model,ctx.get_state("cursor"));let active_key=if active==(){""}else{active.key};
-    let preset=ctx.theme_variant();let clean=preset!=()&&preset.family=="Clean";
+    let clean=ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean";
     let title=opt(props,"title");if title==(){title=ctx.t_or("filter_menu.label","Filters");}
     let clearable=false;
     for group in model.groups{for o in group.options{
@@ -357,13 +357,14 @@ fn render_FilterMenu(ctx,props){
     if clean&&props.hints{card.push(legends);}
     let face=column(card).with_key("card").with_style(ctx.component_style("card",style().min_width(px(0)).padding(theme_length("space.spacing_unit").times(3))
         .radius(theme_radius("md")).background(theme_color("surface_raised"))));
+    let modern=ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="modern";
     // Modern insets the title by 2px relative to the options and chip band.
-    if preset!=()&&preset.family=="Modern"{face=face.audit_allow(["text-edge-misaligned"]);}
+    if modern{face=face.audit_allow(["text-edge-misaligned"]);}
     let root=[face];
     if !clean&&props.hints{root.push(legends);}
     let surface=column(root).with_key(props.key).disabled(props.disabled)
         .with_style(ctx.component_style("root",style().width(relative(1.0)).max_width(px(420)).min_width(px(0))
             .typography("control").text_color(theme_color("text_primary"))));
     // The tray's keyboard legend and the inset card have their own gutters.
-    if preset!=()&&preset.family=="Modern"{surface.audit_allow(["text-edge-misaligned"])}else{surface}
+    if modern{surface.audit_allow(["text-edge-misaligned"])}else{surface}
 }

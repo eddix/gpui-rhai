@@ -448,7 +448,7 @@ fn render_chart(ctx,p){
     if !ids::valid(p.dataset){throw "BreakdownChart requires a stable dataset ID";}
     let base=style().min_width(px(0)).width(relative(1.0)).max_width(px(560)).radius(theme_radius("lg")).background(theme_color("surface_raised"));
     let root=element_ref("card");
-    let theme=ctx.theme_variant();let clean=theme!=()&&theme.family=="Clean";
+    let clean=ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean";
     let narrow=clean&&ctx.element_width_class(root,[420])==0;
     if p.dimensions.len==0||p.measures.len==0{
         return column([heading(ctx,p,0.0,"",narrow),ink(ctx,"empty",tx(ctx,"empty","No grouping available"),

@@ -73,10 +73,12 @@ fn init(ctx) {
     ctx.register_action("gallery.palette", Fn("open_palette"));
     ctx.register_action("gallery.toggle_source", Fn("toggle_source"));
     ctx.register_action("gallery.toggle_density", Fn("toggle_density"));
+    ctx.register_action("gallery.toggle_design", Fn("toggle_design"));
     ctx.register_action("gallery.toggle_mode", Fn("toggle_mode"));
     ctx.register_action("gallery.browse_pages", Fn("open_navigation"));
     ctx.register_action("gallery.go", Fn("go_to"));
     ctx.register_action("gallery.set_density", Fn("set_density_action"));
+    ctx.register_action("gallery.set_design", Fn("set_design_action"));
     ctx.register_action("gallery.set_scale", Fn("set_scale_action"));
     ctx.register_action("gallery.audit", Fn("set_audit"));
 }
@@ -176,11 +178,24 @@ fn palette_query(ctx, query) { ctx.set_state("palette_query", query); }
 fn palette_active(ctx, value) { ctx.set_state("palette_active", value); }
 fn palette_run(ctx, value) {
     if value.starts_with("page:") { go_to(ctx, value.sub_string(5)); }
+    if value.starts_with("design:") { set_design_action(ctx, value.sub_string(7)); }
     if value.starts_with("scale:") { set_scale_action(ctx, value.sub_string(6)); }
     if value.starts_with("theme:") { choose_theme(ctx, value.sub_string(6)); }
     if value.starts_with("locale:") { choose_locale(ctx, value.sub_string(7)); }
     ctx.set_state("palette_open", false);
 }
+fn current_design(ctx) {
+    let active = ctx.environment("design");
+    if active == "modern" || active == "clean" { return active; }
+    if ctx.theme_variant() != () && ctx.theme_token("design.name") == "clean" { "clean" } else { "modern" }
+}
+fn toggle_design(ctx, payload) {
+    ctx.set_environment("design", if current_design(ctx) == "clean" { "modern" } else { "clean" });
+}
+fn set_design_action(ctx, design) {
+    if design == "modern" || design == "clean" { ctx.set_environment("design", design); }
+}
+fn set_design(ctx, values) { if values.len > 0 { set_design_action(ctx, values[0]); } }
 fn toggle_source(ctx, payload) { set_value("gallery.source_open", ctx, !source_open(ctx.get_state("values"))); }
 fn source_open(values) { "gallery.source_open" in values && values["gallery.source_open"] }
 fn source_resized(ctx, size) { set_value("gallery.source_size", ctx, size); }
@@ -204,7 +219,12 @@ fn toggle_mode(ctx, payload) {
 fn choose_theme(ctx, value) {
     if value == () { return; }
     for variant in ctx.theme_variants() {
-        if theme_key(variant)==value {ctx.set_theme(variant.family,variant.name);return;}
+        if theme_key(variant)==value {
+            if variant.family == "Modern" { ctx.set_environment("design", "modern"); }
+            else if variant.family == "Clean" { ctx.set_environment("design", "clean"); }
+            ctx.set_theme(variant.family,variant.name);
+            return;
+        }
     }
 }
 fn theme_key(variant) { `${variant.family.len}:${variant.family}${variant.name}` }
@@ -382,6 +402,10 @@ fn title_controls(ctx, class, drawer_layout) {
     }
     let controls = [];
     if class == "wide" {
+        controls.push(toggle_group::ToggleGroup(#{ key: "gallery-design", label: "Design",
+            values: [current_design(ctx)], allow_empty: false, size: "sm",
+            items: [#{ value: "modern", label: "Modern" }, #{ value: "clean", label: "Clean" }],
+            on_change: Fn("set_design") }));
         controls.push(toggle_group::ToggleGroup(#{ key: "gallery-density", label: "Density",
             values: [ctx.get_state("density")], allow_empty: false, size: "sm",
             items: [#{ value: "comfortable", label: "Comfortable" }, #{ value: "compact", label: "Compact" }],
@@ -417,6 +441,9 @@ fn palette_items(ctx) {
             items.push(#{ value: `page:${entry.id}`, label: entry.title, group: section.title });
         }
     }
+    items.push(#{ value: "action:design", label: "Toggle design (Modern / Clean)", group: "Gallery", action: "gallery.toggle_design" });
+    items.push(#{ value: "design:modern", label: "Design: Modern", group: "Gallery" });
+    items.push(#{ value: "design:clean", label: "Design: Clean", group: "Gallery" });
     items.push(#{ value: "action:density", label: "Toggle density", group: "Gallery", action: "gallery.toggle_density" });
     items.push(#{ value: "action:mode", label: "Toggle light and dark", group: "Gallery", action: "gallery.toggle_mode" });
     for step in scale_steps() {
@@ -468,11 +495,12 @@ fn theme_label(variant) { `${variant.family} ${variant.name}` }
 
 fn status_items(ctx, drawer_layout) {
     let label = |name, value| text(`${name} ${value}`);
+    let design = label.call("Design", current_design(ctx));
     let density = label.call("Density", ctx.get_state("density"));
     let theme = label.call("Theme", theme_label(ctx.theme_variant()));
     let locale = label.call("Locale", ctx.get_state("locale"));
     let scale = ctx.get_state("scale");
-    let start = [density, theme, locale];
+    let start = [design, density, theme, locale];
     // The reading scale shows once it leaves 100%.
     if scale != "100" {
         let reading = label.call("Scale", `${scale}%`);
@@ -480,7 +508,8 @@ fn status_items(ctx, drawer_layout) {
             // In the compact enlarged bar, every optional label disappears
             // whole instead of painting the first few letters under a clip.
             start = [row([theme.with_style(style().overflow_priority(2)),
-                reading.with_style(style().overflow_priority(3)), density.with_style(style().overflow_priority(1)),
+                reading.with_style(style().overflow_priority(3)), design.with_style(style().overflow_priority(1)),
+                density.with_style(style().overflow_priority(1)),
                 locale.with_style(style().overflow_priority(0))]).with_key("compact-status")
                 .with_style(style().overflow_row().max_width(relative(1.0))
                     .flex_shrink(true).gap(theme_spacing("md")))];

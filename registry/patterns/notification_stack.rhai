@@ -49,8 +49,7 @@ fn drawing(ctx,kind,rtl){
     };
     let dot=if kind=="rays"{"146 70"}else if kind=="grid"{"180 50"}else{"150 58"};
     let xy=dot.split(" ");
-    let theme=ctx.theme_variant();
-    let corner=if theme!=()&&theme.family=="Clean"{12}else{20};
+    let corner=if ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean"{12}else{20};
     // Clip the art against the actual corner as well as the card's rectangular
     // overflow mask. The whole graphic mirrors in the logical trailing corner.
     let c=corner.to_string();let edge=(220-corner).to_string();

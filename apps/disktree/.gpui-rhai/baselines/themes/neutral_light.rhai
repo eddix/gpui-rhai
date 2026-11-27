@@ -1,0 +1,45 @@
+// Neutral Light color palette extracted from the Modern/Clean reference.
+// Orthogonal to the `design` environment axis (modern / clean).
+fn theme() {
+    #{
+        family: "Neutral",
+        name: "Light",
+        mode: "light",
+        tokens: #{
+            colors: #{
+                surface_sunken: 0xececedff,
+                surface: 0xf4f4f5ff,
+                surface_raised: 0xffffffff,
+                surface_elevated: 0xffffffff,
+                surface_hover: 0xe2e2e5ff,
+                text_primary: 0x171717ff,
+                text_muted: 0x49494fff,
+                accent: 0x0060e2ff,
+                accent_hover: 0x004eb8ff,
+                on_accent: 0xffffffff,
+                danger: 0xc81e30ff,
+                on_danger: 0xffffffff,
+                warning: 0x9c6000ff,
+                on_warning: 0xffffffff,
+                success: 0x168046ff,
+                on_success: 0xffffffff,
+                border_subtle: 0xebebebff,
+                border: 0xa6a6acff,
+                border_strong: 0x87878bff,
+                focus_ring: 0x0060e2ff,
+                selection: 0xc0d2f0ff,
+                disabled: 0x8a8a91ff,
+                "shadow.ambient": 0x0000000d,
+                "shadow.key": 0x00000018,
+                "palette.blue": 0x008ffdff, "palette.blue_ink": 0x006abfff, "palette.blue_soft": 0xe0f2ffff, "palette.blue_border": 0xa8d9feff,
+                "palette.violet": 0x8a35d6ff, "palette.violet_ink": 0x8a35d6ff, "palette.violet_soft": 0xf1e7faff, "palette.violet_border": 0xd7baf1ff,
+                "palette.teal": 0x0b8576ff, "palette.teal_ink": 0x007669ff, "palette.teal_soft": 0xe2f0efff, "palette.teal_border": 0xacd6d0ff,
+                "palette.green": 0x1e8a4fff, "palette.green_ink": 0x007941ff, "palette.green_soft": 0xe4f1eaff, "palette.green_border": 0xb2d7c3ff,
+                "palette.amber": 0xb25e00ff, "palette.amber_ink": 0xa15500ff, "palette.amber_soft": 0xf6ece0ff, "palette.amber_border": 0xe5c8a8ff,
+                "palette.rose": 0xd9385aff, "palette.rose_ink": 0xc7244cff, "palette.rose_soft": 0xfae7ebff, "palette.rose_border": 0xf2bbc7ff,
+                "palette.orange": 0xd95f18ff, "palette.orange_ink": 0xb24800ff, "palette.orange_soft": 0xfaece3ff, "palette.orange_border": 0xf2c9b0ff,
+                "palette.slate": 0x6b6b72ff, "palette.slate_ink": 0x69686fff, "palette.slate_soft": 0xededeeff, "palette.slate_border": 0xcdcdcfff,
+            },
+        },
+    }
+}

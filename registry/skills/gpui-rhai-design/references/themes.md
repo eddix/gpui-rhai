@@ -8,31 +8,44 @@ the full native visual and interaction migration is still under verification.
 Read [principles](principles.md), [exact reference](modern-clean-spec.md), and
 the [component map](component-coverage.md) before selecting values.
 
-## 1. Preset, appearance and application overrides
+## 1. Orthogonal design axis, color themes and overrides
 
 | Axis | Owns | Layout |
 |---|---|---|
-| modern / clean | complete component metrics, type, corners, surfaces, effects and state recipes | may differ and reflow |
-| light / dark within a preset | the source appearance's colors/alpha/gradient/shadow colors | same geometry |
-| application palette | an intentional alternate palette, if requested | does not redefine the reference baseline |
-| accessibility/Host preferences | font/reading scale, motion and other user preferences | explicit, separately verified |
+| `design` environment (`modern` / `clean`) | complete component metrics, type, corners, surfaces, effects and state recipes via `by_env("design", ...)` | may differ and reflow |
+| color theme (`Neutral`, `Default`, `Catppuccin`, `Tokyo Night`, etc. — light / dark) | semantic surfaces, borders, text, accents, shadows, and categorical palette colors | same geometry |
+| compatibility presets (`Modern` / `Clean` Light & Dark) | exact reference colors + default `design` (`"modern"` or `"clean"`) over the shared dual-design token base | selects default `design` |
+| accessibility/Host preferences | `density` (`comfortable` / `compact`), `scale` (reading scale), motion and locale | explicit, separately verified |
 
-The four reference configurations are modern/light, modern/dark, clean/light,
-clean/dark, selected as family `Modern` / `Clean` and variant `Light` / `Dark`.
-Do not merely rename the old Default palette modern while retaining its
-paper/cobalt colors and old geometry.
+`design` is an orthogonal `environment` axis alongside `density`, `size`, and
+`scale`. Applications switch design language independently of color theme via
+`ctx.set_environment("design", "modern" | "clean")`, `ctx.set_window_environment`,
+`ctx.clear_environment("design")`, or subtree `.env(#{ design: "clean" })`.
+`Neutral Light` and `Neutral Dark` extract the reference neutral color palette
+without locking the design axis, while `Modern Light/Dark` and `Clean Light/Dark`
+remain thin compatibility presets that supply exact reference colors and default
+`design` to `"modern"` or `"clean"`.
 
-## 2. Token layers
+## 2. Token layers and expanded color contract
 
-Keep the runtime neutral and the source vocabulary above it. An implementation
-needs a preset base, appearance/state values and explicit application/Host
-overrides, resolved atomically so a modern frame cannot accidentally use clean
-metrics with old colors.
+Keep the runtime neutral and the source vocabulary above it. `registry/tokens.rhai`
+holds both `modern` and `clean` component stylesheets, typography, geometry, and
+recipes keyed by `by_env("design", ...)` and mode-adaptive paint expressions via
+`by_mode(light, dark)`. Every bundled theme file supplies:
 
-The existing token base/palette/Host override machinery is reusable, but the
-old rule "themes own colors only" does not describe a complete style preset.
-Keep palette-only changes geometry-stable; distinguish them from a deliberate
-design switch. Modern/clean are not density values.
+- **5 surface tiers**: `surface_sunken`, `surface`, `surface_raised`,
+  `surface_elevated`, `surface_hover`;
+- **3 border tiers**: `border_subtle`, `border`, `border_strong`;
+- **2 mode-calibrated shadow anchors**: `shadow.ambient`, `shadow.key`;
+- **8×4 non-semantic categorical palette**: `palette.<hue>`, `palette.<hue>_ink`
+  (>= 4.5:1 readable foreground), `palette.<hue>_soft`, and `palette.<hue>_border`
+  for `blue`, `violet`, `teal`, `green`, `amber`, `rose`, `orange`, `slate`,
+  plus ordered aliases `palette.1`..`palette.8` (and `charts.palette_1..8`).
+
+Color-only palette switches remain geometry-stable; `modern`/`clean` switches
+occur on the `design` axis and are independent of `density`. Custom 18-color
+third-party palettes still load cleanly because `tokens.rhai` provides mode-aware
+fallback derivations for the expanded roles whenever a palette omits them.
 
 ## 3. Primitive values and component aliases
 
@@ -105,7 +118,7 @@ Keep their existing source credits when copying or updating them:
 
 | Variants | Origin |
 |---|---|
-| Default Light/Dark, Tokyo Night/Storm, Catppuccin Latte/Mocha | project semantic adaptations |
+| Neutral Light/Dark, Default Light/Dark, Tokyo Night/Storm, Catppuccin Latte/Mocha | project semantic adaptations |
 | Ethereal, Everforest, Gruvbox, Hackerman, Nord, Retro 82 | [Omarchy themes](https://github.com/basecamp/omarchy/tree/master/themes), MIT |
 | Hermarchy | [Archer Clawbot](https://github.com/archer-clawbot/omarchy-hermarchy-theme), MIT |
 | Aetheria | [Dizziee](https://github.com/JJDizz1L/aetheria), MIT |

@@ -345,7 +345,6 @@ fn render_TagInput(ctx,props){
     if said!=""{rows.push(text(said).with_style(style().absolute().width(px(1)).height(px(1)).clip().opacity(0.0)).accessibility_role("status"));}
     let control=column(rows).with_key(props.key).disabled(props.disabled).with_style(ctx.component_style("root",style().relative().min_width(px(0)).gap(theme_length("space.spacing_unit").times(1.75))
         .text_color(theme_color("text_primary")).merge(if props.disabled{style().opacity(0.55)}else{style()})));
-    let theme=ctx.theme_variant();
     // Modern intentionally insets label/hint by 2px relative to the well.
-    if theme!=()&&theme.family=="Modern"{control.audit_allow(["text-edge-misaligned"])}else{control}
+    if ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="modern"{control.audit_allow(["text-edge-misaligned"])}else{control}
 }

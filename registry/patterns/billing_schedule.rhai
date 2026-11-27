@@ -373,8 +373,7 @@ fn render_schedule(ctx,p){
     let wide_ref=element_ref("wide-rail-width");
     let measured=ctx.element_size(wide_ref);
     let wide=measured!=() && measured.width>0.0 && ctx.element_width_class(root,[measured.width])==1;
-    let theme=ctx.theme_variant();
-    let m=#{draft:d,ticket:ticket,local:local,compact:!wide,clean:theme!=()&&theme.family=="Clean",currency:get(p,"currency","$")};
+    let m=#{draft:d,ticket:ticket,local:local,compact:!wide,clean:ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean",currency:get(p,"currency","$")};
     effect("sync_plan",#{id:p.schedule,revision:p.revision,draft:p.draft},Fn("sync_plan"),Fn("idle"));
     let rows=[];for l in d.lines{rows.push(schedule_row(ctx,m,l));}
     if rows.len==0{rows.push(label(ctx,"empty",tx(ctx,"empty","No products yet – add one below."),subtle().padding(sp(3))));}

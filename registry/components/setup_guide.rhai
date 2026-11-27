@@ -231,7 +231,7 @@ fn render_SetupGuide(ctx,props){
         .with_style(ctx.component_style("title",style().min_width(px(0)).typography("control").font_weight(600))),toolbar(ctx,props,model)])
         .with_key("header").with_style(ctx.component_style("header",style().min_width(px(0)).items_center().justify_between().gap(theme_length("space.spacing_unit").times(2))));
     let meter=checklist::completion_meter(ctx,title,model.done.len,model.ids.len,700,false);
-    let theme=ctx.theme_variant();let clean=theme!=()&&theme.family=="Clean";
+    let clean=ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean";
     let meters=[meter.with_style(style().flex_grow().flex_basis(px(0)).min_width(px(0)))];
     if clean{meters.push(checklist::counter(ctx,model.done.len,model.ids.len));}
     let progress=row(meters).with_key("progress").with_style(ctx.component_style("progress",style().width(relative(1.0)).min_width(px(0))

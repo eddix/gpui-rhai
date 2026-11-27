@@ -717,11 +717,16 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
     let base = load_bundled("modern_light.rhai", registry::MODERN_LIGHT_THEME);
     for &(name, source) in registry::BUNDLED_PALETTE_SOURCES {
         let palette = gpui_rhai::load_theme_source(engine.engine(), name, source).unwrap();
+        let namespaces_colors_only = palette.tokens.namespaces.values().all(|group| {
+            group
+                .values()
+                .all(|value| matches!(value, gpui_rhai::ThemeTokenValue::Color(_)))
+        });
         assert!(
             palette.tokens.spacing.is_empty()
                 && palette.tokens.radii.is_empty()
                 && palette.tokens.typography.roles.is_empty()
-                && palette.tokens.namespaces.is_empty(),
+                && namespaces_colors_only,
             "{name}: palettes must contain colors only"
         );
         let theme = load_bundled(name, source);
@@ -1859,8 +1864,10 @@ fn icon_button_owns_a_square_target_and_selected_icon_state() {
     );
     assert_eq!(root.attributes().get("pressed"), Some(&UiValue::Bool(true)));
     // A selected ghost IconButton fills its square with the selection block.
-    let gpui_rhai::ThemeTokenValue::Style(selected) =
-        theme.tokens.token("button.selected").unwrap()
+    let Some(selected) = theme
+        .tokens
+        .token("button.selected")
+        .and_then(|value| value.resolve_style(&gpui_rhai::Environment::EMPTY, &theme.tokens.environment))
     else {
         panic!("selected button recipe");
     };

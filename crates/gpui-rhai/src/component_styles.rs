@@ -4,6 +4,7 @@ use rhai::{Dynamic, Engine, Map, Scope};
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::token::{Environment, EnvironmentDeclarations, Variable};
 use crate::{ComponentRegistry, ModuleId, Style};
 
 const MAX_STYLED_COMPONENTS: usize = 256;
@@ -12,11 +13,74 @@ const MAX_STYLED_PARTS: usize = 4_096;
 /// Validated application-wide Style overrides keyed by formal component and part.
 ///
 /// Rules contain the same typed [`Style`] values accepted by per-instance
-/// `style`/`part_styles`. They are merged after component source defaults and
-/// before explicit instance overrides.
+/// `style`/`part_styles` (or environment tables via `by_env(...)`). They are
+/// merged after component source defaults and before explicit instance overrides.
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct ComponentStyleSheet {
-    rules: BTreeMap<ModuleId, BTreeMap<String, Style>>,
+    rules: BTreeMap<ModuleId, BTreeMap<String, Variable<Style>>>,
+}
+
+fn merge_style_variable(base: &Variable<Style>, overlay: &Variable<Style>) -> Variable<Style> {
+    match (base, overlay) {
+        (Variable::Fixed(a), Variable::Fixed(b)) => Variable::Fixed(a.clone().merged(b)),
+        (Variable::ByEnv(a), Variable::Fixed(b)) => {
+            Variable::ByEnv(a.map(|style| style.clone().merged(b)))
+        }
+        (Variable::Fixed(a), Variable::ByEnv(b)) => {
+            Variable::ByEnv(b.map(|style| a.clone().merged(style)))
+        }
+        (Variable::ByEnv(a), Variable::ByEnv(b)) => {
+            if a.keys() == b.keys() {
+                let mut entries = BTreeMap::new();
+                for (path, style_a) in a.entries() {
+                    let merged = match b.get(path) {
+                        Some(style_b) => style_a.clone().merged(style_b),
+                        None => style_a.clone(),
+                    };
+                    entries.insert(path.to_vec(), merged);
+                }
+                for (path, style_b) in b.entries() {
+                    entries
+                        .entry(path.to_vec())
+                        .or_insert_with(|| style_b.clone());
+                }
+                crate::token::EnvTable::new(a.keys().to_vec(), entries)
+                    .map_or_else(|_| overlay.clone(), Variable::ByEnv)
+            } else {
+                // Combine distinct environment axes into their Cartesian product.
+                let mut keys = a.keys().to_vec();
+                let mut b_positions = Vec::with_capacity(b.keys().len());
+                for key in b.keys() {
+                    if let Some(pos) = keys.iter().position(|existing| existing == key) {
+                        b_positions.push((pos, false));
+                    } else {
+                        b_positions.push((keys.len(), true));
+                        keys.push(*key);
+                    }
+                }
+                let mut entries = BTreeMap::new();
+                for (path_a, style_a) in a.entries() {
+                    for (path_b, style_b) in b.entries() {
+                        let mut compatible = true;
+                        let mut combined = path_a.to_vec();
+                        for (index, &(target_pos, is_new)) in b_positions.iter().enumerate() {
+                            if is_new {
+                                combined.push(path_b[index]);
+                            } else if combined[target_pos] != path_b[index] {
+                                compatible = false;
+                                break;
+                            }
+                        }
+                        if compatible {
+                            entries.insert(combined, style_a.clone().merged(style_b));
+                        }
+                    }
+                }
+                crate::token::EnvTable::new(keys, entries)
+                    .map_or_else(|_| overlay.clone(), Variable::ByEnv)
+            }
+        }
+    }
 }
 
 impl ComponentStyleSheet {
@@ -25,7 +89,7 @@ impl ComponentStyleSheet {
         component: &ModuleId,
         declared: &std::collections::BTreeSet<String>,
     ) -> Result<(), ComponentStyleError> {
-        if let Some(parts) = self.component(component) {
+        if let Some(parts) = self.rules.get(component) {
             for part in parts.keys() {
                 if !declared.contains(part) {
                     return Err(ComponentStyleError::UnknownPart {
@@ -37,16 +101,22 @@ impl ComponentStyleSheet {
         }
         Ok(())
     }
+
     /// Overlay rules part by part, preserving unspecified declarations.
     #[must_use]
     pub fn merged(mut self, overlay: &Self) -> Self {
         for (id, parts) in &overlay.rules {
             let target = self.rules.entry(id.clone()).or_default();
             for (part, style) in parts {
-                target
-                    .entry(part.clone())
-                    .or_default()
-                    .merge_in_place(style);
+                match target.get(part) {
+                    Some(existing) => {
+                        let combined = merge_style_variable(existing, style);
+                        target.insert(part.clone(), combined);
+                    }
+                    None => {
+                        target.insert(part.clone(), style.clone());
+                    }
+                }
             }
         }
         self
@@ -62,19 +132,48 @@ impl ComponentStyleSheet {
         self.rules.values().map(BTreeMap::len).sum()
     }
 
+    /// Raw component part rules, which may be fixed styles or `by_env(...)` tables.
     #[must_use]
-    pub fn component(&self, id: &ModuleId) -> Option<&BTreeMap<String, Style>> {
+    pub fn component_rules(&self, id: &ModuleId) -> Option<&BTreeMap<String, Variable<Style>>> {
         self.rules.get(id)
     }
 
-    /// Iterate validated component/part recipes without depending on their
-    /// serialized representation.
-    pub fn iter(&self) -> impl Iterator<Item = (&ModuleId, &BTreeMap<String, Style>)> {
+    /// Resolve every part rule of `id` for `environment` using declared defaults.
+    #[must_use]
+    pub fn resolve_component(
+        &self,
+        id: &ModuleId,
+        environment: &Environment,
+        declarations: &EnvironmentDeclarations,
+    ) -> Option<BTreeMap<String, Style>> {
+        let parts = self.rules.get(id)?;
+        let resolved = parts
+            .iter()
+            .filter_map(|(part, value)| {
+                value
+                    .resolve(environment, declarations)
+                    .cloned()
+                    .map(|style| (part.clone(), style))
+            })
+            .collect();
+        Some(resolved)
+    }
+
+    /// Resolve every fixed part rule of `id` without an environment table.
+    /// Rules that depend on an environment without defaults are omitted; prefer
+    /// [`Self::resolve_component`] when a theme environment is available.
+    #[must_use]
+    pub fn component(&self, id: &ModuleId) -> Option<BTreeMap<String, Style>> {
+        self.resolve_component(id, &Environment::EMPTY, &EnvironmentDeclarations::new())
+    }
+
+    /// Iterate raw validated component/part rules (including `by_env(...)` tables).
+    pub fn iter(&self) -> impl Iterator<Item = (&ModuleId, &BTreeMap<String, Variable<Style>>)> {
         self.rules.iter()
     }
 
     fn new(
-        rules: BTreeMap<ModuleId, BTreeMap<String, Style>>,
+        rules: BTreeMap<ModuleId, BTreeMap<String, Variable<Style>>>,
         components: &ComponentRegistry,
     ) -> Result<Self, ComponentStyleError> {
         if rules.len() > MAX_STYLED_COMPONENTS {
@@ -160,13 +259,19 @@ pub(crate) fn decode_component_styles(
             if !crate::token::valid_token_segment(&part) {
                 return Err(ComponentStyleError::InvalidPartName(part.to_string()));
             }
-            if !value.is::<Style>() {
+            if let Some(style) = value.read_lock::<Style>().map(|style| style.clone()) {
+                decoded.insert(part.to_string(), Variable::Fixed(style));
+            } else if let Some(table) =
+                crate::theme_source::try_decode_style_env_table(&value, &format!("{id}.{part}"))
+                    .map_err(|reason| ComponentStyleError::Script(reason))?
+            {
+                decoded.insert(part.to_string(), Variable::ByEnv(table));
+            } else {
                 return Err(ComponentStyleError::PartNotStyle {
                     component: id,
                     part: part.to_string(),
                 });
             }
-            decoded.insert(part.to_string(), value.cast::<Style>());
         }
         rules.insert(id, decoded);
     }

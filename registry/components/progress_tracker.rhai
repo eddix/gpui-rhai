@@ -208,9 +208,8 @@ fn render_ProgressTracker(ctx,props){
     }
     let title=opt(props,"title");if title==(){title=ctx.t_or("checklist.tracker","Getting started");}
     let reference=element_ref("tracker-root");
-    let theme=ctx.theme_variant();
     let width=ctx.element_width_class(reference,[300]);
-    let hide_icon=theme!=()&&theme.family=="Clean"&&width==0;
+    let hide_icon=ctx.theme_variant()!=()&&ctx.theme_token("design.name")=="clean"&&width==0;
     let rows=[];for item in props.steps{rows.push(tracker_row(ctx,item,model,hide_icon));}
     let heading=row([text(title).with_key("title").accessibility_role("heading").accessibility_level(3)
         .with_style(ctx.component_style("title",style().min_width(px(0)).typography("control").font_weight(500))),
