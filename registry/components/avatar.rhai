@@ -39,12 +39,17 @@ define_component(#{
             initials: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false, sensitive: false,
-                doc: "Text shown as written when there is no `handle`; unset, the first grapheme (user-perceived character) of `name`, uppercased.",
+                doc: "Text shown as written when there is no `handle` or its native image fails; unset, the first grapheme (user-perceived character) of `name`, uppercased.",
             },
             size: #{
                 schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false, sensitive: false,
                 doc: "Control size whose `metrics.control` is the diameter; without it, the environment's size.",
+            },
+            diameter: #{
+                schema: #{ type: "optional", value: #{ type: "length" } },
+                required: false, sensitive: false,
+                doc: "Optional circular diameter for the image and initials as well as the outer layout. Typography still uses size.",
             },
             presence: #{
                 schema: #{ type: "string", allowed: ["none", "online", "away", "busy"] },
@@ -86,9 +91,12 @@ fn render_Avatar(ctx, props) {
         first_grapheme(props.name).to_upper()
     };
     // Avatars share the control height of their size, so they sit in toolbars and rows.
-    let side = theme_length("metrics.control");
+    let side = if "diameter" in props && props.diameter != () { props.diameter }
+        else { theme_length("metrics.control") };
     let content = if "handle" in props && props.handle != () {
-        image(props.handle).with_style(ctx.component_style("image", style().width(side).height(side)))
+        image(props.handle).image_fallback_text(initials)
+            .with_part_style("image_fallback",ctx.component_style("initials",style().text_color(theme_color("text_primary"))))
+            .with_style(ctx.component_style("image", style().width(side).height(side)))
     } else {
         text(initials).with_style(ctx.component_style("initials",
             style().text_color(theme_color("text_primary"))))

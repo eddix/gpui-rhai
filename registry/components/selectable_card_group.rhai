@@ -153,15 +153,15 @@ fn render_choice_card(ctx, props, item, active) {
     }
     // One Card surface frames the presentational radio and its independent
     // actions. The frame is not an input target: action input cannot select it.
-    let frame = ctx.component_style("card", style().flex_col().flex_grow().min_width(px(0))
+    let frame = style().flex_col().flex_grow().min_width(px(0))
         .background(theme_color("surface_raised")).radius(theme_radius("lg"))
         .border(px(2)).border_color(theme_color("border"))
-        .focus_within(style().border_color(theme_color("focus_ring"))));
-    if selected { frame = ctx.component_style("card_selected", frame.border_color(theme_color("accent"))); }
+        .focus_within(style().border_color(theme_color("focus_ring")));
+    if selected { frame = frame.border_color(theme_color("accent")); }
     // Identity follows value even when items reorder. Refs use the current
     // numeric index only as a component-local lookup (values may be Unicode).
     column(children).with_key(item.value)
-        .with_style(ctx.component_style("item", frame))
+        .with_style(ctx.component_style(if selected {["item","card","card_selected"]}else{["item","card"]}, frame))
         .accessibility_role("group").accessibility_label(item.label)
 }
 fn render_SelectableCardGroup(ctx, props) {

@@ -1,19 +1,23 @@
 // A real controlled task: send a draft, stream native documents, pause following and stop.
 import "gallery/kit" as kit;
 import "patterns/composer" as composer;
-import "components/markdown_viewer" as markdown;
+import "components/ai_answer" as answer;
+import "patterns/model_picker" as model_picker;
+import "components/thinking_state" as thinking_state;
+import "gallery/run_demo" as run_demo;
 import "components/button" as button;
 import "components/badge" as badge;
 import "layouts/region" as region;
 
 fn pages() {
-    [#{ id: "scene.messages", title: "Assistant conversation", group: "Scenes" }]
+    [#{ id: "scene.messages", title: "Assistant conversation", group: "Scenes" },
+     #{ id: "run_controls", title: "RunControls", group: "Agents" }]
 }
 
 define_component(#{
     metadata: #{ id: "gallery/assistant", "export": "Assistant", version: "0.2.2",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["patterns/composer", "components/markdown_viewer", "components/button", "components/badge", "layouts/region"],
+        dependencies: ["patterns/composer", "patterns/model_picker", "components/ai_answer", "components/thinking_state", "components/button", "components/badge", "layouts/region"],
         capabilities: #{} },
     schema: #{
         props: #{ key: #{schema:#{type:"string"},required:true,sensitive:false} },
@@ -26,6 +30,10 @@ define_component(#{
             link: #{schema:#{type:"string"},"default":#{type:"string",value:""}},
             following: #{schema:#{type:"bool"},"default":#{type:"bool",value:true}},
             unseen: #{schema:#{type:"integer"},"default":#{type:"integer",value:0}},
+            model: #{schema:#{type:"ui_value"},"default":#{type:"map",value:#{
+                model:#{type:"string",value:"auto"},thinking:#{type:"bool",value:false},
+                search:#{type:"bool",value:false},effort:#{type:"string",value:"medium"}
+            }}},
         } },
         events: #{}, slots: #{}, parts: ["root"],
     },
@@ -46,7 +54,7 @@ fn assistant_send(ctx, value) {
     // Keep the demonstration bounded; dropping old pairs exercises keyed anchoring.
     while messages.len >= 40 { messages.remove(0); messages.remove(0); }
     messages.push(#{key:`user-${round}`,kind:"user",text:value,id:round,progress:0});
-    messages.push(#{key:`reply-${round}`,kind:"reply",text:"",id:round,progress:0});
+    messages.push(#{key:`reply-${round}`,kind:"reply",text:value,id:round,progress:0,phase:"reading"});
     ctx.set_state("messages", messages);
     ctx.set_state("round", round);
     ctx.set_state("progress", 0);
@@ -55,6 +63,10 @@ fn assistant_send(ctx, value) {
     ctx.scroll_collection_to_end("conversation");
 }
 fn assistant_stop(ctx, payload) {
+    if !ctx.get_state("busy"){return;}
+    let messages=ctx.get_state("messages");
+    messages[messages.len-1].phase="stopped";
+    ctx.set_state("messages",messages);
     ctx.set_state("busy", false);
     ctx.cancel_timeout("reply.tick");
 }
@@ -63,11 +75,17 @@ fn assistant_tick(ctx, payload) {
     let progress = ctx.get_state("progress") + 1;
     let messages = ctx.get_state("messages");
     messages[messages.len - 1].progress = progress;
+    messages[messages.len - 1].phase = if progress>=24{"done"}else{"writing"};
     ctx.set_state("messages", messages);
     ctx.set_state("progress", progress);
     if progress >= 24 { ctx.set_state("busy", false); }
 }
 fn assistant_link(ctx, payload) { ctx.set_state("link", payload.href); }
+fn assistant_source(ctx, payload) { ctx.set_state("link", payload.url); }
+fn assistant_work_source(ctx, payload) { ctx.set_state("link", payload.href); }
+fn assistant_model(ctx,value){ctx.set_state("model",value);}
+fn assistant_retry(prompt,ctx,payload){assistant_send(ctx,prompt);}
+fn assistant_follow_up(ctx,prompt){ctx.set_state("draft",prompt);}
 fn assistant_follow(ctx, payload) {
     ctx.set_state("following", payload.following);
     ctx.set_state("unseen", payload.unseen);
@@ -81,9 +99,25 @@ fn assistant_message(total, ctx, payload) {
     let content = if message.kind == "user" {
         text(message.text).selectable(true).with_style(style().typography("body"))
     } else {
-        markdown::MarkdownViewer(#{key:`markdown-${message.id}`,label:`Reply ${message.id}`,
-            source:gallery_reply_document(message.id, message.progress),height:"content",
-            on_link:Fn("assistant_link")})
+        let steps=[#{id:"inspect",label:"Inspect the health check",state:if message.progress>0{"done"}else{"running"}}];
+        if message.progress>0{
+            steps.push(#{id:"sources",kind:"search",label:"Read rollout evidence",
+                state:if message.progress>=14{"done"}else{"running"},sources:[
+                    #{id:"runbook",label:"Rollout investigation",href:"https://example.com/runbook"},
+                ]});
+        }
+        if message.progress>=14{steps.push(#{id:"write",label:"Write the reply",state:if message.phase=="done"{"done"}else{"running"}});}
+        let work=thinking_state::ThinkingState(#{key:"public-work",status:if message.phase=="reading"||message.phase=="writing"{"working"}else{message.phase},
+            label:"Work in progress",default_open:false,elapsed_ms:message.progress*70,steps:steps,on_open_source:Fn("assistant_work_source")});
+        let reply=answer::AIAnswer(#{key:`answer-${message.id}`,label:`Reply ${message.id}`,
+            source:if message.progress>0{gallery_reply_document(message.id,message.progress)}else{()},
+            status:message.phase,
+            sources:if message.progress>0{[#{id:"runbook",site:"Runbook",title:"Rollout investigation",
+                url:"https://example.com/runbook",quote:"Inspect the failed health check and retry only the affected host."}]}else{[]},
+            on_link:Fn("assistant_link"),on_open_source:Fn("assistant_source"),
+            on_stop:Fn("assistant_stop"),on_regenerate:Fn("assistant_retry").curry(message.text),
+            follow_ups:["Which host failed?","Show the retry instructions"],on_follow_up:Fn("assistant_follow_up")});
+        column([work,reply]).with_style(style().min_width(px(0)).gap(theme_spacing("sm")))
     };
     column([
         text(if message.kind == "user" {"YOU"} else {"ASSISTANT"})
@@ -120,6 +154,10 @@ fn assistant_render(ctx, props) {
     let editor = composer::Composer(#{key:"prompt",label:"Message",value:ctx.get_state("draft"),
         placeholder:"Enter sends; Shift+Enter adds a line",busy:busy,
         can_submit:has_message(ctx.get_state("draft")),max_length:4000,
+        leading:model_picker::ModelPicker(#{key:"response-model",placement:"top",value:ctx.get_state("model"),
+            models:[#{id:"auto",name:"Auto"},#{id:"quick",name:"Quick",description:"Fast triage",speed:5,quality:3,cost:1},
+                #{id:"deep",name:"Review",description:"Detailed diagnosis",speed:2,quality:5,cost:3}],
+            on_change:Fn("assistant_model")}),
         on_change:Fn("assistant_draft"),on_submit:Fn("assistant_send"),on_stop:Fn("assistant_stop")})
         .with_style(style().width(relative(1.0)));
     let link = ctx.get_state("link");
@@ -139,5 +177,10 @@ fn assistant_render(ctx, props) {
 
 fn view(ctx,h,v,id) {
     if id == "scene.messages" { render_component("gallery/assistant",#{key:"assistant"}) }
+    else if id == "run_controls" {
+        kit::page(h,v,"run_controls","RunControls","Send, steer, queue or recover a Host-owned run.",[
+            kit::sec("Run workspace",run_demo::RunDemo(#{key:"demo-run"}))
+        ])
+    }
     else { () }
 }

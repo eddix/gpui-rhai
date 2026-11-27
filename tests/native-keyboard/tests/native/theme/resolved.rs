@@ -398,11 +398,19 @@ fn theme_colors_paints_another_variants_palette(cx: &mut TestAppContext) {
             text(`${light.len()} of ${all.len()}: ${"accent" in all}`).accessibility_role("status"),
         ])
     }"#;
-    let (mut visual, view) = mount(cx, builder(source, false, false).prepare().unwrap(), "colors", false);
+    let (mut visual, view) = mount(
+        cx,
+        builder(source, false, false).prepare().unwrap(),
+        "colors",
+        false,
+    );
     settle(&mut visual);
     assert_eq!(view.state(), ScriptViewState::Active);
     let label = labels(&mut visual, &view);
-    assert!(label[0].starts_with("2 of ") && label[0].ends_with(": true"), "{label:?}");
+    assert!(
+        label[0].starts_with("2 of ") && label[0].ends_with(": true"),
+        "{label:?}"
+    );
     assert_eq!(crate::support::filled(&mut visual, 0xf3f1eaff).len(), 1);
 }
 
@@ -423,14 +431,21 @@ fn theme_colors_throws_for_an_unknown_variant_or_color(cx: &mut TestAppContext) 
             .update(cx, |outcome, _, _| outcome.0.clone())
             .unwrap()
             .expect("an unknown variant or color fails the first render");
-        assert!(error.contains("no theme variant") || error.contains("has no color"), "{error}");
+        assert!(
+            error.contains("no theme variant") || error.contains("has no color"),
+            "{error}"
+        );
     }
 }
 
 struct Outcome(Option<String>);
 
 impl gpui::Render for Outcome {
-    fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        _: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
         gpui::Empty
     }
 }

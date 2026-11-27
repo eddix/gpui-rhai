@@ -1,6 +1,6 @@
 # Textarea
 
-`components/textarea` · export `Textarea` · version 0.4.0. Generated from
+`components/textarea` · export `Textarea` · version 0.4.3. Generated from
 [`registry/components/textarea.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/textarea.rhai); do not edit.
 
 Textarea is a controlled multiline field with native IME, selection, wrapping, and auto-grow.
@@ -17,6 +17,7 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `alt_submit_key` | `"alt_enter"` or `"mod_enter"` or `()` | — | With on_alt_submit: Alt+Enter by default, or the platform modifier with Enter. Must differ from submit_key. |
 | `autofocus` | bool | `false` | Focuses the field once, when its editor first mounts; ignored while `disabled`. |
 | `disabled` | bool | `false` | Takes the field out of the tab order, blocks editing, and dims it. |
 | `editor_ref` | element ref or `()` | — | Optional caller-owned ref bound to the native editor, for restoring focus after an external action. |
@@ -25,7 +26,10 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 | `label` | string | required | Accessible name of the field; it is not drawn, so pair the textarea with a `Label` or a `FormField`. |
 | `max_length` | integer 0–1000000 or `()` | — | Most characters (grapheme clusters) typing or paste can reach; the controlled `value` must not exceed it. |
 | `max_rows` | integer 1–1000 | `8` | Most visual (wrapped) lines the field grows to before it scrolls inside. |
+| `max_viewport_height` | length or `()` | — | Cap for the native scroll viewport after row sizing. Must resolve to positive pixels and not be less than the floor. |
 | `min_rows` | integer 1–1000 | `3` | Fewest visual (wrapped) lines the auto-growing field shows; must not exceed `max_rows`. |
+| `min_viewport_height` | length or `()` | — | Floor for the native scroll viewport after row sizing. Must resolve to positive pixels; editor padding and borders are outside it. |
+| `on_alt_submit` | callback or `()` | — | Opt in to a separate submit callback; the same disabled, read-only and IME guards apply. |
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
 | `on_change` | callback or `()` | — | Called with the full new text after each edit. |
 | `on_focus` | callback or `()` | — | Called when the field gains keyboard focus. |
@@ -34,7 +38,7 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 | `placeholder` | string or `()` | — | Muted hint shown while `value` is empty. |
 | `read_only` | bool | `false` | Keeps the text focusable and selectable but blocks edits; the text turns `text_muted`. |
 | `rows` | integer 1–1000 or `()` | — | Fixed height in visual lines; the field scrolls inside it and stops auto-growing between `min_rows` and `max_rows`. |
-| `show_count` | bool | `false` | Shows the character count under the field, as `count / max_length` with a limit; it turns `text.danger` at the limit. |
+| `show_count` | bool | `false` | Shows the grapheme count under the field. A full valid value uses the `limit` part, not error paint; controlled values above max_length are rejected. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size; `xs` sets the text in `body_small`. Unset, it inherits the `size` environment. |
 | `style` | style | — | Style merged over the root part. |
 | `submit_key` | `"enter"` or `"mod_enter"` or `()` | — | With on_submit: `enter` submits and Shift+Enter inserts a native newline; `mod_enter` submits with Cmd+Enter on macOS or Ctrl+Enter elsewhere. Unset keeps Enter as a newline. |
@@ -44,6 +48,7 @@ textarea::Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 50
 
 | Event | Callback prop | Payload | Description |
 |---|---|---|---|
+| `alt_submit` | `on_alt_submit` | string | Emitted with the full text by the opted-in alternate shortcut; does not clear the value. |
 | `blur` | `on_blur` | none | Emitted when the field loses keyboard focus. |
 | `change` | `on_change` | string | Emitted after each edit; the payload is the full new text. |
 | `focus` | `on_focus` | none | Emitted when the field gains keyboard focus. |
@@ -55,5 +60,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `caret`, `counter`, `edi
 
 ## Theme
 
-- Tokens: `accent`, `border`, `control.border`, `danger`, `disabled`, `focus_ring`, `metrics.field_pad`, `metrics.multiline_pad`, `radius.md`, `selection`, `spacing.xxs`, `surface_raised`, `text.danger`, `text_muted`, `text_primary`, `typography.body`, `typography.body_small`, `typography.caption`
+- Tokens: `accent`, `border`, `control.border`, `danger`, `disabled`, `field.counter_full`, `field.invalid`, `field.placeholder`, `field.read_only_recipe`, `focus_ring`, `metrics.field_pad`, `metrics.multiline_pad`, `metrics.multiline_radius`, `radius.md`, `selection`, `spacing.xxs`, `surface_raised`, `text_muted`, `text_primary`, `typography.body`, `typography.body_small`, `typography.caption`
 - Environment: `density`, `size`

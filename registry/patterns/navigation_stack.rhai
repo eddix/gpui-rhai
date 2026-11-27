@@ -2,7 +2,7 @@
 {
   "id": "patterns/navigation_stack", "export": "NavigationStack", "version": "0.4.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
-  "dependencies": ["components/button", "components/menu"], "capabilities": {},
+  "dependencies": ["components/button", "components/breadcrumb"], "capabilities": {},
   "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"],
   "tokens": ["text_primary", "text_muted", "metrics.icon", "spacing.xs", "space.related", "space.group", "typography.title"],
   "environment": ["size", "density"]
@@ -15,12 +15,12 @@
 //     #{ key: "visit-1", title: "Service", content: text("Overview") }
 // ], on_pop: Fn("accept_depth") })
 import "components/button" as button;
-import "components/menu" as menu;
+import "components/breadcrumb" as breadcrumb;
 
 define_component(#{
     metadata: #{ id: "patterns/navigation_stack", "export": "NavigationStack", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/button", "components/menu"], capabilities: #{},
+        dependencies: ["components/button", "components/breadcrumb"], capabilities: #{},
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"],
         tokens: ["text_primary", "text_muted", "metrics.icon", "spacing.xs", "space.related", "space.group", "typography.title"],
         environment: ["size", "density"] },
@@ -54,8 +54,6 @@ define_component(#{
                 doc: "Receives #{ depth, source }; depth is the number of entries to retain. Sources: button, breadcrumb, keyboard, pointer, host. Without it Back is disabled." },
         },
         state: #{ fields: #{
-            menu_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
-            menu_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
             depth: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } },
             direction: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 1 } },
             current_key: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
@@ -76,9 +74,7 @@ fn nav_pointer(depth, ctx, event) {
     if event.button != "back" { return propagate(); }
     nav_pop(ctx, #{ depth: depth, source: "pointer" })
 }
-fn nav_menu_open(ctx, open) { ctx.set_state("menu_open", open); }
-fn nav_menu_active(ctx, value) { ctx.set_state("menu_active", value); }
-fn nav_menu_pop(ctx, value) { ctx.emit("pop", #{ depth: parse_int(value), source: "breadcrumb" }); }
+fn nav_crumb_pop(ctx, value) { ctx.emit("pop", #{ depth: parse_int(value), source: "breadcrumb" }); }
 fn nav_remember(ctx, placement) {
     let depth = placement.depth;
     let previous = ctx.get_state("depth");
@@ -88,17 +84,10 @@ fn nav_remember(ctx, placement) {
     }
     if previous == depth && ctx.get_state("current_key") != placement.top { ctx.set_state("direction", 1); }
     ctx.set_state("current_key", placement.top);
-    ctx.set_state("menu_open", false);
 }
 fn nav_cleanup(ctx, value) { () }
-fn nav_crumb(ctx, props, index) {
-    button::Button(#{ key: `crumb:${props.stack[index].key}`, text: props.stack[index].title,
-        variant: "ghost", on_click: if "on_pop" in props && props.on_pop != () { Fn("nav_button_pop").curry(#{ depth: index + 1, source: "breadcrumb" }) } else { () } })
-        .with_style(ctx.component_style("breadcrumb", style().min_width(px(0))))
-}
 fn nav_header(ctx, props, header, enabled, rtl) {
     let depth = props.stack.len;
-    let header_ref = element_ref("header");
     let trail = [];
     if header == "back" && depth > 1 {
         let chevron = image(asset(if rtl { "app/icons/chevron_right" } else { "app/icons/chevron_left" }))
@@ -109,32 +98,18 @@ fn nav_header(ctx, props, header, enabled, rtl) {
             .accessibility_label(`Back to ${props.stack[depth - 2].title}`)
             .with_style(ctx.component_style("back", style().min_width(px(0)))));
     } else if header == "breadcrumb" {
-        let bounds = ctx.element_bounds(header_ref);
-        let narrow = bounds == () || bounds.layout.width < 640.0;
-        let overflow = [];
-        if depth > 4 || (narrow && depth > 3) {
-            for index in 1..(depth - 2) {
-                overflow.push(#{ kind: "item", value: `${index + 1}`, label: props.stack[index].title, disabled: !enabled });
-            }
-        }
+        let entries = [];
         for index in 0..depth {
-            if overflow.len > 0 && index > 1 && index < depth - 2 { continue; }
-            if index > 0 { trail.push(text(if rtl { "‹" } else { "›" }).with_style(style().text_color(theme_color("text_muted")))); }
-            if index == depth - 1 {
-                trail.push(text(props.stack[index].title).with_key("current").accessibility_current("page")
-                    .accessibility_label(props.stack[index].title).with_style(style().min_width(px(0)).text_ellipsis().whitespace_nowrap()));
-            } else if overflow.len > 0 && index == 1 {
-                let trigger = button::Button(#{ key: "overflow-button", text: "…", variant: "ghost", disabled: !enabled });
-                trail.push(menu::Menu(#{ key: "overflow-menu", label: "Earlier pages", trigger: trigger,
-                    open: enabled && ctx.get_state("menu_open"), active_value: ctx.get_state("menu_active"), items: overflow,
-                    on_open_change: Fn("nav_menu_open"), on_active_change: Fn("nav_menu_active"), on_action: Fn("nav_menu_pop") })
-                    .with_style(ctx.component_style("overflow", style())));
-            } else { trail.push(nav_crumb(ctx, props, index)); }
+            entries.push(#{ value: `${index+1}`, label: props.stack[index].title });
         }
+        trail.push(breadcrumb::Breadcrumb(#{key:"breadcrumbs",label:props.label,
+            items:entries,on_navigate:if enabled {Fn("nav_crumb_pop")}else{()},
+            part_styles:#{item:ctx.component_style("breadcrumb",style()),
+                more:ctx.component_style("overflow",style())}}));
     }
     let actions = row(props.actions).with_key("actions").with_style(ctx.component_style("actions", style().items_center().flex_wrap().gap(theme_length("space.related"))));
     row([row(trail).with_key("trail").with_style(style().items_center().gap(theme_spacing("xs")).min_width(px(0)).flex_grow().overflow_hidden()), actions])
-        .with_key("header").with_ref(header_ref)
+        .with_key("header")
         .with_style(ctx.component_style("header", style().items_center().justify_between().flex_wrap().min_width(px(0)).gap(theme_length("space.related"))))
 }
 fn render_NavigationStack(ctx, props) {

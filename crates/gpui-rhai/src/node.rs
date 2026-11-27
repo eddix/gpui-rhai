@@ -21,6 +21,38 @@ pub enum ImageSourceSpec {
     Asset(AssetId),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ImageFallbackError {
+    #[error("image_fallback_text requires an image, directional image, or SVG node")]
+    NotAnImage,
+}
+
+/// An invalid leading rectangular exclusion on a text node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TextExclusionError {
+    #[error("wrap_exclusion requires a plain or rich text node")]
+    InvalidNode,
+    #[error("wrap_exclusion side must be left or right")]
+    InvalidSide,
+    #[error("wrap_exclusion width and height must be finite logical pixels in 0..=1000000")]
+    InvalidExtent,
+}
+
+/// An invalid column flow declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum LeadingFloatError {
+    #[error(
+        "leading_float requires a column with a figure and 1–64 prose children (no direct fragments)"
+    )]
+    InvalidChildren,
+    #[error("leading_float side must be start or end")]
+    InvalidSide,
+    #[error("leading_float widths must be finite logical pixels in 1..=1000000")]
+    InvalidWidth,
+}
+
+pub(crate) const LEADING_FLOAT_ATTRIBUTE: &str = "leading_float";
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct OverlayNodeSpec {
     pub id: OverlayId,
@@ -153,7 +185,34 @@ pub struct Span {
     typography: Option<ImmutableString>,
     bold: bool,
     italic: bool,
+    decoration: SpanDecoration,
     motions: Vec<MotionSource>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct SpanDecoration {
+    underline: bool,
+    underline_paint: Option<Box<SpanUnderline>>,
+    strikethrough: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SpanUnderline {
+    pub(crate) width: f64,
+    pub(crate) color: crate::ColorValue,
+    pub(crate) baseline_offset: Option<f64>,
+    pub(crate) hover: Option<crate::paint_motion::PaintTransition>,
+}
+
+pub(crate) fn spans_with_ranges(
+    spans: &[Span],
+) -> impl Iterator<Item = (std::ops::Range<usize>, &Span)> {
+    let mut offset = 0usize;
+    spans.iter().map(move |span| {
+        let start = offset;
+        offset = offset.saturating_add(span.text().len());
+        (start..offset, span)
+    })
 }
 
 impl Span {
@@ -167,6 +226,7 @@ impl Span {
             typography: None,
             bold: false,
             italic: false,
+            decoration: SpanDecoration::default(),
             motions: Vec::new(),
         }
     }
@@ -219,6 +279,91 @@ impl Span {
     }
 
     #[must_use]
+    pub const fn underline(mut self) -> Self {
+        self.decoration.underline = true;
+        self
+    }
+
+    /// Paint an underline independently of the span's glyph ink.
+    ///
+    /// # Errors
+    ///
+    /// Rejects non-finite widths and widths outside 0–16 logical pixels.
+    pub fn underline_with(
+        mut self,
+        width: f64,
+        color: crate::ColorValue,
+    ) -> Result<Self, crate::StyleValueError> {
+        if !(0.0..=16.0).contains(&width) {
+            return Err(crate::StyleValueError::InvalidUnderlineWidth(width));
+        }
+        self.decoration.underline = true;
+        self.decoration.underline_paint = Some(Box::new(SpanUnderline {
+            width,
+            color,
+            baseline_offset: None,
+            hover: None,
+        }));
+        Ok(self)
+    }
+
+    /// Paint an underline at a logical-pixel offset from each text baseline.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid widths and offsets outside -16–32 logical pixels.
+    pub fn underline_with_offset(
+        self,
+        width: f64,
+        color: crate::ColorValue,
+        offset: f64,
+    ) -> Result<Self, crate::StyleValueError> {
+        if !(-16.0..=32.0).contains(&offset) {
+            return Err(crate::StyleValueError::InvalidUnderlineOffset(offset));
+        }
+        let mut span = self.underline_with(width, color)?;
+        if let Some(decoration) = &mut span.decoration.underline_paint {
+            decoration.baseline_offset = Some(offset);
+        }
+        Ok(span)
+    }
+
+    pub(crate) fn underline_paint(&self) -> Option<&SpanUnderline> {
+        self.decoration.underline_paint.as_deref()
+    }
+
+    /// On its matching inline-link target, transition this underline to the span's glyph ink.
+    ///
+    /// # Errors
+    ///
+    /// Requires explicit underline paint and a duration no greater than 60 seconds.
+    pub fn underline_hover(
+        mut self,
+        duration_ms: u64,
+        easing: crate::MotionEasing,
+    ) -> Result<Self, crate::StyleValueError> {
+        let paint = self
+            .decoration
+            .underline_paint
+            .as_mut()
+            .filter(|_| duration_ms <= crate::paint_motion::DURATION_MAX_MS)
+            .ok_or(crate::StyleValueError::InvalidUnderlineHover)?;
+        paint.hover = Some(crate::paint_motion::PaintTransition {
+            duration_ms,
+            easing,
+            delay_ms: 0,
+            group_effects: false,
+        });
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn strikethrough(mut self) -> Self {
+        self.decoration.strikethrough = true;
+        self
+    }
+
+    #[must_use]
     pub fn text(&self) -> &str {
         self.text.as_str()
     }
@@ -257,6 +402,16 @@ impl Span {
     pub const fn is_italic(&self) -> bool {
         self.italic
     }
+
+    #[must_use]
+    pub const fn is_underlined(&self) -> bool {
+        self.decoration.underline
+    }
+
+    #[must_use]
+    pub const fn is_struck_through(&self) -> bool {
+        self.decoration.strikethrough
+    }
 }
 
 impl CustomType for Span {
@@ -269,6 +424,13 @@ impl CustomType for Span {
             .with_fn("color", |span: &mut Self, color: crate::ColorValue| {
                 span.clone().color(color)
             })
+            .with_fn("ink_from", |span: &mut Self, style: Style| {
+                let mut span = span.clone();
+                if let Some(ink) = &style.base.text_color {
+                    span.color = Some(ink.clone());
+                }
+                span
+            })
             .with_fn("background", |span: &mut Self, color: crate::ColorValue| {
                 span.clone().background(color)
             })
@@ -279,6 +441,47 @@ impl CustomType for Span {
                 span.clone().motion(source)
             })
             .with_fn("bold", |span: &mut Self| span.clone().bold())
+            .with_fn("underline", |span: &mut Self| span.clone().underline())
+            .with_fn(
+                "underline",
+                |span: &mut Self, width: rhai::FLOAT, ink: crate::ColorValue| {
+                    span.clone()
+                        .underline_with(width, ink)
+                        .map_err(|error| -> Box<rhai::EvalAltResult> { error.to_string().into() })
+                },
+            )
+            .with_fn(
+                "underline",
+                |span: &mut Self,
+                 width: rhai::FLOAT,
+                 ink: crate::ColorValue,
+                 offset: rhai::FLOAT| {
+                    span.clone()
+                        .underline_with_offset(width, ink, offset)
+                        .map_err(|error| -> Box<rhai::EvalAltResult> { error.to_string().into() })
+                },
+            )
+            .with_fn("strikethrough", |span: &mut Self| {
+                span.clone().strikethrough()
+            })
+            .with_fn(
+                "underline_hover",
+                |span: &mut Self,
+                 duration: INT,
+                 easing: ImmutableString|
+                 -> Result<Span, Box<EvalAltResult>> {
+                    let duration = u64::try_from(duration).map_err(|_| -> Box<EvalAltResult> {
+                        crate::StyleValueError::InvalidUnderlineHover
+                            .to_string()
+                            .into()
+                    })?;
+                    let easing = crate::MotionEasing::parse(easing.as_str())
+                        .map_err(|error| -> Box<EvalAltResult> { error.to_string().into() })?;
+                    span.clone()
+                        .underline_hover(duration, easing)
+                        .map_err(|error| -> Box<EvalAltResult> { error.to_string().into() })
+                },
+            )
             .with_fn("italic", |span: &mut Self| span.clone().italic());
     }
 }
@@ -439,6 +642,7 @@ pub struct UiNodeData {
     handlers: BTreeMap<String, Vec<UiEventBinding>>,
     handler_payloads: BTreeMap<String, UiValue>,
     motions: Vec<MotionSource>,
+    enter_motion_properties: u64,
     exit_motions: Vec<MotionSource>,
     progress_motions: Vec<crate::MotionProgressBinding>,
     timelines: Vec<crate::MotionTimeline>,
@@ -447,6 +651,9 @@ pub struct UiNodeData {
     table_layout: Option<Rc<crate::table_layout::TableLayout>>,
     table_column: Option<usize>,
     element_ref: Option<crate::ElementRef>,
+    text_anchor_plan: Option<crate::text_anchors::TextAnchorPlan>,
+    number_motion_binding: Option<crate::number_motion::NumberMotionBinding>,
+    canvas_peak_binding: Option<Rc<crate::canvas::CanvasPeakBinding>>,
     presentation: Vec<NodePresentationMutation>,
     component_snapshot: Option<ComponentOwnedSnapshotRef>,
 }
@@ -547,10 +754,16 @@ enum NodePresentationMutation {
     TableTrack(Rc<crate::table_layout::TableLayout>),
     TableColumn(usize),
     ElementRef(crate::ElementRef),
+    TextAnchors(crate::text_anchors::TextAnchorPlan),
+    NumberMotionBinding(crate::number_motion::NumberMotionBinding),
+    CanvasPeak(Rc<crate::canvas::CanvasPeakBinding>),
     Attribute(String, UiValue),
     Handler(String, UiEventBinding),
     HandlerPayload(String, UiValue),
-    Motion(MotionSource),
+    Motion {
+        source: MotionSource,
+        enter: bool,
+    },
     ExitMotion(MotionSource),
     ProgressMotion(crate::MotionProgressBinding),
     Timeline(Box<crate::MotionTimeline>),
@@ -572,6 +785,11 @@ impl NodePresentationMutation {
             Self::TableTrack(layout) => node.table_layout = Some(Rc::clone(layout)),
             Self::TableColumn(index) => node.table_column = Some(*index),
             Self::ElementRef(reference) => node.element_ref = Some(reference.clone()),
+            Self::TextAnchors(plan) => node.text_anchor_plan = Some(plan.clone()),
+            Self::NumberMotionBinding(binding) => {
+                node.number_motion_binding = Some(binding.clone());
+            }
+            Self::CanvasPeak(binding) => node.canvas_peak_binding = Some(binding.clone()),
             Self::Attribute(name, value) => {
                 node.attributes.insert(name.clone(), value.clone());
             }
@@ -584,10 +802,16 @@ impl NodePresentationMutation {
             Self::HandlerPayload(event, payload) => {
                 node.handler_payloads.insert(event.clone(), payload.clone());
             }
-            Self::Motion(animation) => {
+            Self::Motion { source, enter } => {
+                let bit = 1_u64 << source.property() as u32;
                 node.motions
-                    .retain(|existing| existing.property() != animation.property());
-                node.motions.push(animation.clone());
+                    .retain(|existing| existing.property() != source.property());
+                node.motions.push(source.clone());
+                if *enter {
+                    node.enter_motion_properties |= bit;
+                } else {
+                    node.enter_motion_properties &= !bit;
+                }
             }
             Self::ExitMotion(motion) => {
                 node.exit_motions
@@ -819,6 +1043,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -827,6 +1052,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -848,6 +1076,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -856,6 +1085,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -897,6 +1129,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -905,6 +1138,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -943,6 +1179,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -951,6 +1188,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -974,6 +1214,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -982,6 +1223,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -1011,6 +1255,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -1019,6 +1264,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -1060,6 +1308,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -1068,6 +1317,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -1092,6 +1344,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -1100,6 +1353,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -1124,6 +1380,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -1132,6 +1389,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -1153,6 +1413,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             motions: Vec::new(),
+            enter_motion_properties: 0,
             exit_motions: Vec::new(),
             progress_motions: Vec::new(),
             timelines: Vec::new(),
@@ -1161,6 +1422,9 @@ impl UiNode {
             table_layout: None,
             table_column: None,
             element_ref: None,
+            text_anchor_plan: None,
+            number_motion_binding: None,
+            canvas_peak_binding: None,
             presentation: Vec::new(),
             component_snapshot: None,
         }
@@ -1195,6 +1459,14 @@ impl UiNode {
     #[must_use]
     pub fn with_style(mut self, style: &Style) -> Self {
         self.apply_presentation_mutation(NodePresentationMutation::Style(Rc::new(style.clone())));
+        self
+    }
+
+    /// Native source defaults are not caller presentation decorations and must
+    /// not be replayed over a later component render. Retained identity stays
+    /// unchanged; this copy exists only for native element construction.
+    pub(crate) fn with_render_style_defaults(mut self, defaults: Style) -> Self {
+        self.style = Rc::new(defaults.merged(self.style()));
         self
     }
 
@@ -1700,6 +1972,196 @@ impl UiNode {
         self
     }
 
+    /// Wrap this text around a leading rectangle measured from its own top.
+    /// Offsets are logical pixels; zero width or height clears an exclusion.
+    ///
+    /// # Errors
+    /// Rejects invalid sides, extents and non-text nodes.
+    pub fn with_wrap_exclusion(
+        self,
+        side: &str,
+        width: f64,
+        height: f64,
+    ) -> Result<Self, TextExclusionError> {
+        if !matches!(
+            self.kind(),
+            UiNodeKind::Text { .. } | UiNodeKind::RichText { .. }
+        ) {
+            return Err(TextExclusionError::InvalidNode);
+        }
+        Self::parse_text_exclusion(side, width, height)?;
+        Ok(self.with_attribute(
+            "wrap_exclusion",
+            UiValue::Map(BTreeMap::from([
+                ("side".to_owned(), UiValue::String(side.to_owned())),
+                ("width".to_owned(), UiValue::Float(width)),
+                ("height".to_owned(), UiValue::Float(height)),
+            ])),
+        ))
+    }
+
+    fn parse_text_exclusion(
+        side: &str,
+        width: f64,
+        height: f64,
+    ) -> Result<crate::presentation_backend::TextExclusion, TextExclusionError> {
+        let side = match side {
+            "left" => crate::presentation_backend::TextExclusionSide::Left,
+            "right" => crate::presentation_backend::TextExclusionSide::Right,
+            _ => return Err(TextExclusionError::InvalidSide),
+        };
+        if ![width, height]
+            .into_iter()
+            .all(|v| (0.0..=1_000_000.0).contains(&v))
+        {
+            return Err(TextExclusionError::InvalidExtent);
+        }
+        Ok(crate::presentation_backend::TextExclusion {
+            side,
+            width: gpui::px(crate::renderer::f64_to_f32(width)),
+            height: gpui::px(crate::renderer::f64_to_f32(height)),
+        })
+    }
+
+    #[cfg(any(test, feature = "vendor-gpui"))]
+    pub(crate) fn wrap_exclusion(&self) -> Option<crate::presentation_backend::TextExclusion> {
+        let UiValue::Map(fields) = self.attributes().get("wrap_exclusion")? else {
+            return None;
+        };
+        let UiValue::String(side) = fields.get("side")? else {
+            return None;
+        };
+        let UiValue::Float(width) = fields.get("width")? else {
+            return None;
+        };
+        let UiValue::Float(height) = fields.get("height")? else {
+            return None;
+        };
+        Self::parse_text_exclusion(side, *width, *height)
+            .ok()
+            .filter(|v| v.width > gpui::px(0.) && v.height > gpui::px(0.))
+    }
+
+    /// Lay out the first child as a figure beside the following prose. Use
+    /// a full-width column; its horizontal gap and figure's bottom margin
+    /// define the exclusion. The whole flow stacks below either width limit.
+    ///
+    /// # Errors
+    /// Rejects invalid child counts, sides or bounds.
+    pub fn with_leading_float(
+        self,
+        side: &str,
+        min_column: f64,
+        min_text: f64,
+    ) -> Result<Self, LeadingFloatError> {
+        if !matches!(self.kind(), UiNodeKind::Box { children }
+            if (2..=65).contains(&children.len())
+            && children.iter().all(|child| !matches!(child.kind(), UiNodeKind::Fragment { .. })))
+        {
+            return Err(LeadingFloatError::InvalidChildren);
+        }
+        if !matches!(side, "start" | "end") {
+            return Err(LeadingFloatError::InvalidSide);
+        }
+        if ![min_column, min_text]
+            .into_iter()
+            .all(|width| (1.0..=1_000_000.).contains(&width))
+        {
+            return Err(LeadingFloatError::InvalidWidth);
+        }
+        Ok(self.with_attribute(
+            LEADING_FLOAT_ATTRIBUTE,
+            UiValue::Map(BTreeMap::from([
+                ("side".into(), UiValue::String(side.into())),
+                ("min_column".into(), UiValue::Float(min_column)),
+                ("min_text".into(), UiValue::Float(min_text)),
+            ])),
+        ))
+    }
+
+    #[cfg(feature = "vendor-gpui")]
+    pub(crate) fn leading_float(
+        &self,
+        direction: crate::TextDirection,
+    ) -> Option<crate::presentation_backend::LeadingFloat> {
+        let UiValue::Map(fields) = self.attributes().get(LEADING_FLOAT_ATTRIBUTE)? else {
+            return None;
+        };
+        let UiValue::String(side) = fields.get("side")? else {
+            return None;
+        };
+        let UiValue::Float(min_column) = fields.get("min_column")? else {
+            return None;
+        };
+        let UiValue::Float(min_text) = fields.get("min_text")? else {
+            return None;
+        };
+        let end = match side.as_str() {
+            "start" => false,
+            "end" => true,
+            _ => return None,
+        };
+        let right = end ^ (direction == crate::TextDirection::RightToLeft);
+        Some(crate::presentation_backend::LeadingFloat {
+            side: if right {
+                crate::presentation_backend::TextExclusionSide::Right
+            } else {
+                crate::presentation_backend::TextExclusionSide::Left
+            },
+            min_column_width: gpui::px(crate::renderer::f64_to_f32(*min_column)),
+            min_text_width: gpui::px(crate::renderer::f64_to_f32(*min_text)),
+        })
+    }
+
+    /// Project a bounded set of grapheme anchors when this text is painted.
+    ///
+    /// # Errors
+    ///
+    /// Requires a bound ref, a plain or rich text node, and an exact match
+    /// between the plan source and the node text.
+    pub fn with_text_anchors(
+        mut self,
+        plan: crate::text_anchors::TextAnchorPlan,
+    ) -> Result<Self, crate::text_anchors::TextAnchorError> {
+        use crate::text_anchors::TextAnchorError;
+        let (UiNodeKind::Text { text } | UiNodeKind::RichText { text, .. }) = self.kind() else {
+            return Err(TextAnchorError::InvalidNode);
+        };
+        if self.element_ref().is_none() {
+            return Err(TextAnchorError::InvalidNode);
+        }
+        if text.as_str() != plan.source() {
+            return Err(TextAnchorError::SourceMismatch);
+        }
+        self.apply_presentation_mutation(NodePresentationMutation::TextAnchors(plan));
+        Ok(self)
+    }
+
+    #[must_use]
+    pub(crate) fn text_anchor_plan(&self) -> Option<&crate::text_anchors::TextAnchorPlan> {
+        self.text_anchor_plan.as_ref()
+    }
+
+    /// Set non-interactive text to present if native image loading fails.
+    /// The normal image owner retains its identity and accessible name.
+    /// Style it with the `image_fallback` part. Empty text intentionally draws
+    /// no visual error, without suppressing presentation diagnostics.
+    ///
+    /// # Errors
+    /// Returns [`ImageFallbackError::NotAnImage`] for other node kinds.
+    pub fn with_image_fallback_text(
+        self,
+        text: impl Into<String>,
+    ) -> Result<Self, ImageFallbackError> {
+        if !matches!(
+            self.kind(),
+            UiNodeKind::Image { .. } | UiNodeKind::DirectionalImage { .. } | UiNodeKind::Svg { .. }
+        ) {
+            return Err(ImageFallbackError::NotAnImage);
+        }
+        Ok(self.with_attribute("image_fallback_text", UiValue::String(text.into())))
+    }
+
     /// Keep native state mounted while excluding a covered page from GPUI
     /// layout, input and accessibility. This does not suspend business work.
     #[must_use]
@@ -1766,8 +2228,109 @@ impl UiNode {
 
     #[must_use]
     pub fn with_motion(mut self, animation: MotionSource) -> Self {
-        self.apply_presentation_mutation(NodePresentationMutation::Motion(animation));
+        self.apply_presentation_mutation(NodePresentationMutation::Motion {
+            source: animation,
+            enter: false,
+        });
         self
+    }
+
+    /// Sample the declaration from the start when this node mounts or receives
+    /// a new explicit replay key. A recipe update alone does not restart it.
+    #[must_use]
+    pub fn with_enter_motion(mut self, source: MotionSource) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Motion {
+            source,
+            enter: true,
+        });
+        self
+    }
+
+    /// Allow a keyed element with an `ElementRef` to own a numerical track
+    /// without displaying the value as text.
+    #[must_use]
+    pub fn with_number_motion_source(self) -> Self {
+        self.with_attribute("motion_number_source", UiValue::Bool(true))
+    }
+
+    /// Use a shared numerical frame in place of the node's accepted text or layout.
+    ///
+    /// # Errors
+    ///
+    /// Text projections require a number-text node. Layout projections require a box.
+    pub fn with_number_motion_binding(
+        mut self,
+        binding: crate::number_motion::NumberMotionBinding,
+    ) -> Result<Self, &'static str> {
+        use crate::number_motion::NumberProjection;
+        if matches!(binding.projection, NumberProjection::StripHint(_)) {
+            if !matches!(self.kind(), UiNodeKind::Box { children }
+                if matches!(children.as_slice(), [child] if !matches!(child.kind(), UiNodeKind::Fragment { .. })))
+            {
+                return Err("a strip hint needs a box containing exactly one non-fragment child");
+            }
+        } else if matches!(
+            binding.projection,
+            NumberProjection::WidthFraction(_)
+                | NumberProjection::FlexShare(_)
+                | NumberProjection::Partition(_)
+        ) {
+            if !matches!(self.kind(), UiNodeKind::Box { .. }) {
+                return Err("sampled layout needs a box");
+            }
+        } else if !matches!(self.kind(), UiNodeKind::Text { .. })
+            || crate::locale::NumberTextFormat::from_attributes(self.attributes()).is_none()
+        {
+            return Err("sampled text needs a number_text node");
+        }
+        self.apply_presentation_mutation(NodePresentationMutation::NumberMotionBinding(binding));
+        Ok(self)
+    }
+
+    pub(crate) fn number_motion_binding(
+        &self,
+    ) -> Option<&crate::number_motion::NumberMotionBinding> {
+        self.0.number_motion_binding.as_ref()
+    }
+
+    /// Translate this node to a sampled peak in the path's authored layout coordinates.
+    /// Optional bounds are `[min_x, min_y, max_x, max_y]` and apply after the offset.
+    ///
+    /// # Errors
+    /// Returns an error for non-finite, unordered or out-of-range placement coordinates.
+    pub fn with_canvas_peak(
+        mut self,
+        route: crate::CanvasPeakRoute,
+        offset: [f64; 2],
+        bounds: Option<[f64; 4]>,
+    ) -> Result<Self, crate::CanvasError> {
+        let binding = crate::canvas::CanvasPeakBinding::new(route, offset, bounds)?;
+        self.apply_presentation_mutation(NodePresentationMutation::CanvasPeak(Rc::new(binding)));
+        Ok(self)
+    }
+
+    pub(crate) fn canvas_peak_binding(&self) -> Option<&crate::canvas::CanvasPeakBinding> {
+        self.canvas_peak_binding.as_deref()
+    }
+
+    /// Set foreground and optional background on frames whose sampled peak
+    /// is strictly above `limit_y` in the authored layout coordinate system.
+    ///
+    /// # Errors
+    /// Requires a preceding peak binding and a finite, native-sized threshold.
+    pub fn with_canvas_peak_paint_above(
+        mut self,
+        limit_y: f64,
+        foreground: crate::ColorValue,
+        background: Option<crate::ColorValue>,
+    ) -> Result<Self, crate::CanvasError> {
+        let binding = self
+            .canvas_peak_binding()
+            .ok_or(crate::CanvasError::MissingPeakBinding)?
+            .clone()
+            .with_paint_above(limit_y, foreground, background)?;
+        self.apply_presentation_mutation(NodePresentationMutation::CanvasPeak(Rc::new(binding)));
+        Ok(self)
     }
 
     #[must_use]
@@ -1788,7 +2351,36 @@ impl UiNode {
             "motion_replay_key".to_owned(),
             UiValue::String(key.into()),
         ));
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "motion_on_change".to_owned(),
+            UiValue::Bool(false),
+        ));
         self
+    }
+
+    /// Play this node's finite motion sources when `key` changes, not on mount.
+    ///
+    /// The initial presentation uses each source's terminal value. Equal keys
+    /// retain progress; changing only a source settles it without an entrance.
+    /// Timelines, exits and progress bindings are unaffected.
+    #[must_use]
+    pub fn with_motion_on_change(self, key: impl Into<String>) -> Self {
+        self.with_motion_replay_key(key)
+            .with_attribute("motion_on_change", UiValue::Bool(true))
+    }
+
+    /// For a keyed button with a click handler, activate on primary press
+    /// and continue while the pointer remains down and inside. Keyboard
+    /// and accessibility activation keep their normal one-shot behavior.
+    #[must_use]
+    pub fn with_repeat_press(self) -> Self {
+        self.with_attribute("repeat_press", UiValue::Bool(true))
+    }
+
+    pub(crate) fn repeats_press(&self) -> bool {
+        self.attributes().get("repeat_press") == Some(&UiValue::Bool(true))
+            && self.key().is_some()
+            && !self.event_handlers("click").is_empty()
     }
 
     #[must_use]
@@ -1818,6 +2410,100 @@ impl UiNode {
             UiValue::String(easing.to_string()),
         ));
         self
+    }
+
+    /// Animate native paint targets without animating layout or redelivering
+    /// pointer state to script. The first presented state is not animated.
+    #[must_use]
+    pub fn with_paint_transition(self, duration_ms: u64, easing: crate::MotionEasing) -> Self {
+        self.with_paint_transition_options(duration_ms, easing, 0, false)
+    }
+
+    /// Add a delay and optionally animate resolved opacity and grayscale
+    /// along with color. An explicit opacity or grayscale motion/signal
+    /// keeps ownership of the compositing fields instead.
+    #[must_use]
+    pub fn with_paint_transition_options(
+        self,
+        duration_ms: u64,
+        easing: crate::MotionEasing,
+        delay_ms: u64,
+        group_effects: bool,
+    ) -> Self {
+        let mut node = self
+            .with_attribute(
+                "paint_transition_duration_ms",
+                UiValue::Integer(
+                    INT::try_from(duration_ms.min(crate::paint_motion::DURATION_MAX_MS))
+                        .unwrap_or(INT::MAX),
+                ),
+            )
+            .with_attribute(
+                "paint_transition_easing",
+                UiValue::String(easing.to_string()),
+            );
+        if delay_ms > 0 || node.attributes.contains_key("paint_transition_delay_ms") {
+            node = node.with_attribute(
+                "paint_transition_delay_ms",
+                UiValue::Integer(
+                    INT::try_from(delay_ms.min(crate::paint_motion::DURATION_MAX_MS))
+                        .unwrap_or(INT::MAX),
+                ),
+            );
+        }
+        if group_effects
+            || node
+                .attributes
+                .contains_key("paint_transition_group_effects")
+        {
+            node = node.with_attribute(
+                "paint_transition_group_effects",
+                UiValue::Bool(group_effects),
+            );
+        }
+        node
+    }
+
+    /// Animate an auto-sized node's width when its content key changes.
+    /// Parent-only reflow and the first presentation do not start a track.
+    #[must_use]
+    pub fn with_intrinsic_width_motion(
+        self,
+        key: impl Into<String>,
+        duration_ms: u64,
+        easing: crate::MotionEasing,
+    ) -> Self {
+        self.with_attribute("intrinsic_width_motion_key", UiValue::String(key.into()))
+            .with_attribute("layout_size_motion_axis", UiValue::Null)
+            .with_attribute(
+                "intrinsic_width_motion_duration_ms",
+                UiValue::Integer(
+                    INT::try_from(duration_ms.min(crate::paint_motion::DURATION_MAX_MS))
+                        .unwrap_or(INT::MAX),
+                ),
+            )
+            .with_attribute(
+                "intrinsic_width_motion_easing",
+                UiValue::String(easing.to_string()),
+            )
+    }
+
+    /// Interpolate an existing node's constrained border-box size after the
+    /// controlled key changes, including explicit and percentage targets.
+    /// Initial appearance and parent-only reflow do not start a transition.
+    #[must_use]
+    pub fn with_layout_size_motion(
+        self,
+        key: impl Into<String>,
+        axis: crate::LayoutSizeAxis,
+        duration_ms: u64,
+        easing: crate::MotionEasing,
+    ) -> Self {
+        self.with_intrinsic_width_motion(key, duration_ms, easing)
+            .with_attribute(
+                "layout_size_motion_axis",
+                UiValue::String(axis.as_str().to_owned()),
+            )
     }
 
     /// Assign a same-window shared-layout identity to this real node.
@@ -1891,6 +2577,10 @@ impl UiNode {
         &self.motions
     }
 
+    pub(crate) fn is_enter_motion(&self, property: crate::MotionProperty) -> bool {
+        self.enter_motion_properties & (1_u64 << property as u32) != 0
+    }
+
     #[must_use]
     pub fn exit_motions(&self) -> &[MotionSource] {
         &self.exit_motions
@@ -1916,6 +2606,7 @@ impl UiNode {
         ghost.component_snapshot = None;
         ghost.presentation.clear();
         ghost.motions.clear();
+        ghost.enter_motion_properties = 0;
         ghost.exit_motions.clear();
         ghost.progress_motions.clear();
         ghost.timelines.clear();
@@ -1940,7 +2631,7 @@ impl UiNode {
             style.align_self = None;
             style.flex_grow = None;
             style.flex_grow_weight = None;
-            style.flex_shrink = None;
+            style.set_flex_shrink(None);
             style.flex_basis = None;
         }
         match &mut ghost.kind {
@@ -2266,7 +2957,7 @@ impl UiNode {
             style.base.flex_basis = None;
             style.base.flex_grow = Some(false);
             style.base.flex_grow_weight = None;
-            style.base.flex_shrink = Some(false);
+            style.base.set_flex_shrink(Some(false));
             self.signal_bindings.remove(&crate::SignalProperty::Width);
             self.signal_bindings
                 .remove(&crate::SignalProperty::WidthOverride);
@@ -2322,6 +3013,19 @@ impl CustomType for UiNode {
             .with_fn("with_style", |node: &mut Self, style: Style| {
                 node.clone().with_style(&style)
             })
+            .with_fn(
+                "image_fallback_text",
+                |node: &mut Self, text: ImmutableString| -> Result<Self, Box<EvalAltResult>> {
+                    node.clone()
+                        .with_image_fallback_text(text.to_string())
+                        .map_err(|error| {
+                            Box::new(EvalAltResult::ErrorRuntime(
+                                error.to_string().into(),
+                                Position::NONE,
+                            ))
+                        })
+                },
+            )
             .with_fn(
                 "with_table_track",
                 |node: &mut Self, columns: Array, signals: Array| {
@@ -2395,9 +3099,65 @@ impl CustomType for UiNode {
 #[allow(clippy::too_many_lines)]
 fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
     builder
+        .with_fn(
+            "leading_float",
+            |node: &mut UiNode, side: ImmutableString, min_column: Dynamic, min_text: Dynamic| {
+                node.clone()
+                    .with_leading_float(
+                        side.as_str(),
+                        crate::style::numeric_to_f64(&min_column)?,
+                        crate::style::numeric_to_f64(&min_text)?,
+                    )
+                    .map_err(|error| {
+                        Box::new(EvalAltResult::ErrorRuntime(
+                            error.to_string().into(),
+                            Position::NONE,
+                        ))
+                    })
+            },
+        )
+        .with_fn(
+            "wrap_exclusion",
+            |node: &mut UiNode, side: ImmutableString, width: Dynamic, height: Dynamic| {
+                node.clone()
+                    .with_wrap_exclusion(
+                        side.as_str(),
+                        crate::style::numeric_to_f64(&width)?,
+                        crate::style::numeric_to_f64(&height)?,
+                    )
+                    .map_err(|error| {
+                        Box::new(EvalAltResult::ErrorRuntime(
+                            error.to_string().into(),
+                            Position::NONE,
+                        ))
+                    })
+            },
+        )
+        .with_fn(
+            "capture_text_anchors",
+            |node: &mut UiNode, plan: crate::text_anchors::TextAnchorPlan| {
+                node.clone()
+                    .with_text_anchors(plan)
+                    .map_err(|error| Box::new(crate::text_anchors::script_error(error)))
+            },
+        )
         .with_fn("retained_page", |node: &mut UiNode, visible: bool| {
             node.clone().retained_page(visible)
         })
+        .with_fn(
+            "overflow_summary_for",
+            |node: &mut UiNode, count: INT| -> Result<UiNode, Box<EvalAltResult>> {
+                if !(0..=1024).contains(&count) {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "overflow summary count must be 0–1024".into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute(crate::overflow_row::SUMMARY_FOR, UiValue::Integer(count)))
+            },
+        )
         .with_fn(
             "navigation_scope",
             |node: &mut UiNode, depth: INT| -> Result<UiNode, Box<EvalAltResult>> {
@@ -2417,7 +3177,7 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
             node.clone().with_motion(animation)
         })
         .with_fn("enter_motion", |node: &mut UiNode, motion: MotionSource| {
-            node.clone().with_motion(motion)
+            node.clone().with_enter_motion(motion)
         })
         .with_fn("exit_motion", |node: &mut UiNode, motion: MotionSource| {
             node.clone().with_exit_motion(motion)
@@ -2434,6 +3194,15 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
                 node.clone().with_motion_replay_key(key.to_string())
             },
         )
+        .with_fn(
+            "motion_on_change",
+            |node: &mut UiNode, key: ImmutableString| {
+                node.clone().with_motion_on_change(key.to_string())
+            },
+        )
+        .with_fn("repeat_press", |node: &mut UiNode| {
+            node.clone().with_repeat_press()
+        })
         .with_fn(
             "motion_particle_count",
             |node: &mut UiNode, count: INT| -> Result<UiNode, Box<EvalAltResult>> {
@@ -2471,6 +3240,87 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
                     ))
                 })?;
                 Ok(node.clone().with_layout_motion(duration_ms, easing))
+            },
+        )
+        .with_fn(
+            "paint_transition",
+            |node: &mut UiNode,
+             duration_ms: INT,
+             easing: ImmutableString|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let duration_ms = u64::try_from(duration_ms)
+                    .ok()
+                    .filter(|duration| *duration <= crate::paint_motion::DURATION_MAX_MS)
+                    .ok_or_else(|| {
+                        Box::new(EvalAltResult::ErrorRuntime(
+                            "paint transition duration must be 0..=60000 ms".into(),
+                            Position::NONE,
+                        ))
+                    })?;
+                let easing = crate::MotionEasing::parse(easing.as_str()).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node.clone().with_paint_transition(duration_ms, easing))
+            },
+        )
+        .with_fn(
+            "paint_transition",
+            |node: &mut UiNode, duration_ms: INT, easing: ImmutableString, options: Map| {
+                crate::paint_motion::rhai_transition(node, duration_ms, easing.as_str(), &options)
+            },
+        )
+        .with_fn(
+            "intrinsic_width_motion",
+            |node: &mut UiNode,
+             key: ImmutableString,
+             duration_ms: INT,
+             easing: ImmutableString|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let duration_ms = u64::try_from(duration_ms)
+                    .ok()
+                    .filter(|duration| *duration <= crate::paint_motion::DURATION_MAX_MS)
+                    .ok_or_else(|| {
+                        Box::new(EvalAltResult::ErrorRuntime(
+                            "intrinsic width motion duration must be 0..=60000 ms".into(),
+                            Position::NONE,
+                        ))
+                    })?;
+                let easing = crate::MotionEasing::parse(easing.as_str()).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node
+                    .clone()
+                    .with_intrinsic_width_motion(key.to_string(), duration_ms, easing))
+            },
+        )
+        .with_fn(
+            "layout_size_motion",
+            |node: &mut UiNode,
+             key: ImmutableString,
+             axis: ImmutableString,
+             duration_ms: INT,
+             easing: ImmutableString|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let fail = |message: &str| {
+                    Box::new(EvalAltResult::ErrorRuntime(message.into(), Position::NONE))
+                };
+                let axis = crate::LayoutSizeAxis::parse(axis.as_str())
+                    .ok_or_else(|| fail("layout size axis must be width or height"))?;
+                let duration_ms = u64::try_from(duration_ms)
+                    .ok()
+                    .filter(|duration| *duration <= crate::paint_motion::DURATION_MAX_MS)
+                    .ok_or_else(|| fail("layout size motion duration must be 0..=60000 ms"))?;
+                let easing = crate::MotionEasing::parse(easing.as_str())
+                    .map_err(|error| fail(&error.to_string()))?;
+                Ok(node
+                    .clone()
+                    .with_layout_size_motion(key.to_string(), axis, duration_ms, easing))
             },
         )
         .with_fn(
@@ -2834,7 +3684,7 @@ fn normalize_node_event_name(event: &str) -> Result<String, Box<EvalAltResult>> 
 fn normalize_key_handler_name(key: &str) -> Result<String, Box<EvalAltResult>> {
     let invalid = || {
         Box::new(EvalAltResult::ErrorRuntime(
-            "key handler name must be 1-60 ASCII letters, digits or `_`, or one ASCII punctuation character other than `:`, optionally preceded by distinct `ctrl+`, `alt+`, `shift+` or `cmd+` modifiers; whitespace and multi-key chords are not accepted"
+            "key handler name must be 1-60 characters: use an ASCII named key or one punctuation character other than `:`, optionally preceded by `plain+` (unmodified only) or distinct `ctrl+`, `alt+`, `shift+` or `cmd+` modifiers; whitespace and multi-key chords are not accepted"
                 .into(),
             Position::NONE,
         ))
@@ -2855,6 +3705,9 @@ fn normalize_key_handler_name(key: &str) -> Result<String, Box<EvalAltResult>> {
         base.len() == 1 && base.as_bytes()[0].is_ascii_punctuation() && base.as_bytes()[0] != b':';
     if !(named || punctuation) {
         return Err(invalid());
+    }
+    if modifiers.is_some_and(|name| name.eq_ignore_ascii_case("plain")) {
+        return Ok(format!("plain+{}", base.to_ascii_lowercase()));
     }
     let mut present = [false; 4];
     if let Some(modifiers) = modifiers {
@@ -2941,6 +3794,10 @@ fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
                     .with_attribute("role", UiValue::String(role.to_string()))
             },
         )
+        .with_fn("accessibility_hidden", |node: &mut UiNode, hidden: bool| {
+            node.clone()
+                .with_attribute("accessibility_hidden", UiValue::Bool(hidden))
+        })
         .with_fn(
             "accessibility_label",
             |node: &mut UiNode, label: ImmutableString| {
@@ -3257,6 +4114,13 @@ fn register_accessibility_reference_methods(builder: &mut TypeBuilder<UiNode>) {
             },
         )
         .with_fn(
+            "accessibility_description",
+            |node: &mut UiNode, description: ImmutableString| {
+                node.clone()
+                    .with_attribute("description", UiValue::String(description.to_string()))
+            },
+        )
+        .with_fn(
             "accessibility_required",
             |node: &mut UiNode, required: bool| {
                 node.clone()
@@ -3315,6 +4179,101 @@ pub(crate) fn rich_text_node(
         }
     }
     Ok(with_call_source(UiNode::rich_text(spans), call))
+}
+
+pub(crate) const INLINE_TARGET_RANGES: &str = "_inline_target_ranges";
+pub(crate) const INLINE_PROSE_SOURCE: &str = "_inline_prose_source";
+pub(crate) const INLINE_UNDERLINE_MOTION: &str = "_inline_underline_motion";
+
+/// Like other structural layout nodes, the prose and its semantic targets are
+/// ordinary retained children, independent of how their bounds are presented.
+pub(crate) fn inline_prose_node(
+    call: NativeCallContext<'_>,
+    prose: UiNode,
+    targets: Array,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    let fail = |why: &str| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            format!("inline_prose: {why}").into(),
+            Position::NONE,
+        ))
+    };
+    let UiNodeKind::RichText { text, spans } = prose.kind() else {
+        return Err(fail("expected a rich_text node"));
+    };
+    if targets.is_empty() || targets.len() > 32 {
+        return Err(fail("expected one to 32 link targets"));
+    }
+    let boundaries = text
+        .grapheme_indices(true)
+        .map(|(index, _)| index)
+        .chain([text.len()])
+        .collect::<Vec<_>>();
+    let hover_spans: Vec<_> = spans_with_ranges(spans)
+        .filter_map(|(range, span)| span.underline_paint()?.hover.map(|_| range))
+        .collect();
+    let mut intervals: Vec<std::ops::Range<usize>> = Vec::new();
+    let mut keys = prose
+        .key()
+        .into_iter()
+        .map(|key| key.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    let mut children = vec![prose.with_attribute(INLINE_PROSE_SOURCE, UiValue::Bool(true))];
+    for value in targets {
+        let mut map = value
+            .try_cast::<Map>()
+            .ok_or_else(|| fail("expected #{ start, end, node }"))?;
+        let mut offset = |name: &str| {
+            let index = usize::try_from(map.remove(name)?.try_cast::<INT>()?).ok()?;
+            boundaries.get(index).copied()
+        };
+        let start = offset("start").ok_or_else(|| fail("invalid start grapheme index"))?;
+        let end = offset("end").ok_or_else(|| fail("invalid end grapheme index"))?;
+        let target = map
+            .remove("node")
+            .and_then(Dynamic::try_cast::<UiNode>)
+            .ok_or_else(|| fail("expected a link node"))?;
+        if !map.is_empty()
+            || !matches!(target.kind(), UiNodeKind::Box { children } if children.is_empty())
+            || target.attributes().get("role") != Some(&UiValue::String("link".into()))
+            || !target
+                .key()
+                .is_some_and(|key| keys.insert(key.as_str().to_owned()))
+        {
+            return Err(fail("targets must be empty link boxes with distinct keys"));
+        }
+        if start >= end
+            || intervals
+                .iter()
+                .any(|range| range.start < end && start < range.end)
+        {
+            return Err(fail("ranges must be nonempty and disjoint"));
+        }
+        let range = start..end;
+        let animate = hover_spans.contains(&range)
+            && target.attributes().get("disabled") != Some(&UiValue::Bool(true));
+        intervals.push(range);
+        children.push(if animate {
+            target.with_attribute(INLINE_UNDERLINE_MOTION, UiValue::Bool(true))
+        } else {
+            target
+        });
+    }
+    if hover_spans.iter().any(|range| !intervals.contains(range)) {
+        return Err(fail(
+            "a hover underline span must match one link's exact range",
+        ));
+    }
+    let range_offsets = intervals
+        .into_iter()
+        .flat_map(|range| [range.start, range.end])
+        .map(|value| UiValue::Integer(i64::try_from(value).unwrap_or(i64::MAX)))
+        .collect();
+    Ok(with_call_source(
+        UiNode::box_node(children)
+            .with_attribute(INLINE_TARGET_RANGES, UiValue::Array(range_offsets)),
+        call,
+    ))
 }
 
 pub(crate) fn canvas_node(call: NativeCallContext<'_>, scene: crate::CanvasScene) -> UiNode {
@@ -3648,6 +4607,7 @@ pub(crate) fn overlay_node(
         None | Some("popover") => OverlayKind::Popover,
         Some("combobox") => OverlayKind::Combobox,
         Some("tooltip") => OverlayKind::Tooltip,
+        Some("hover_card") => OverlayKind::HoverCard,
         Some("dialog") => OverlayKind::Dialog,
         Some("sheet") => OverlayKind::Sheet,
         Some("menu") => OverlayKind::Menu,
@@ -3683,7 +4643,8 @@ pub(crate) fn overlay_node(
     }
     let modal = optional_bool(&mut config, "modal")?
         .unwrap_or(matches!(kind, OverlayKind::Dialog | OverlayKind::Sheet));
-    let activate_on_trigger = optional_bool(&mut config, "activate_on_trigger")?.unwrap_or(true);
+    let activate_on_trigger = optional_bool(&mut config, "activate_on_trigger")?
+        .unwrap_or(kind != OverlayKind::HoverCard);
     let width_policy = overlay_width_policy(&mut config)?;
     let initial_focus = match optional_string(&mut config, "initial_focus")?.as_deref() {
         None | Some("panel") => OverlayInitialFocus::Panel,
@@ -3696,12 +4657,11 @@ pub(crate) fn overlay_node(
     };
     let dismiss_on_escape = optional_bool(&mut config, "dismiss_on_escape")?.unwrap_or(true);
     let dismiss_on_outside = optional_bool(&mut config, "dismiss_on_outside")?.unwrap_or(true);
-    let show_delay_ms = optional_usize(&mut config, "show_delay_ms")?;
-    let hide_delay_ms = optional_usize(&mut config, "hide_delay_ms")?;
-    let tooltip_delays = (kind == OverlayKind::Tooltip).then(|| TooltipDelays {
-        show_ms: u64::try_from(show_delay_ms.unwrap_or(500)).unwrap_or(u64::MAX),
-        hide_ms: u64::try_from(hide_delay_ms.unwrap_or(100)).unwrap_or(u64::MAX),
-    });
+    let tooltip_delays = overlay_hover_delays(
+        &mut config,
+        kind,
+        modal || activate_on_trigger || initial_focus == OverlayInitialFocus::First,
+    )?;
     if let Some((unknown, _)) = config.into_iter().next() {
         return overlay_config_error(format!("unknown overlay config field `{unknown}`"));
     }
@@ -3732,6 +4692,33 @@ pub(crate) fn overlay_node(
         ),
         call,
     ))
+}
+
+fn overlay_hover_delays(
+    config: &mut Map,
+    kind: OverlayKind,
+    invalid_card_policy: bool,
+) -> Result<Option<TooltipDelays>, Box<EvalAltResult>> {
+    let show = optional_usize(config, "show_delay_ms")?;
+    let hide = optional_usize(config, "hide_delay_ms")?;
+    let card = kind == OverlayKind::HoverCard;
+    if card
+        && (invalid_card_policy
+            || show.is_some_and(|delay| delay > 60_000)
+            || hide.is_some_and(|delay| delay > 60_000))
+    {
+        return overlay_config_error(
+            "hover cards are non-modal, do not activate on press or take initial focus, and use delays up to 60000ms",
+        );
+    }
+    Ok(
+        (card || kind == OverlayKind::Tooltip).then(|| TooltipDelays {
+            show_ms: u64::try_from(show.unwrap_or(if card { 600 } else { 500 }))
+                .unwrap_or(u64::MAX),
+            hide_ms: u64::try_from(hide.unwrap_or(if card { 300 } else { 100 }))
+                .unwrap_or(u64::MAX),
+        }),
+    )
 }
 
 pub(crate) fn layer_node(
@@ -3945,6 +4932,44 @@ fn collect_children(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wrap_exclusion_validates_and_can_be_cleared() {
+        use super::{TextExclusionError, UiNode};
+        let text = UiNode::text("one source");
+        assert_eq!(
+            text.clone()
+                .with_wrap_exclusion("start", 40., 60.)
+                .unwrap_err(),
+            TextExclusionError::InvalidSide
+        );
+        assert_eq!(
+            text.clone()
+                .with_wrap_exclusion("right", 40., f64::NAN)
+                .unwrap_err(),
+            TextExclusionError::InvalidExtent
+        );
+        assert_eq!(
+            UiNode::column(vec![text.clone()])
+                .with_wrap_exclusion("left", 40., 60.)
+                .unwrap_err(),
+            TextExclusionError::InvalidNode
+        );
+        let profiled = text.with_wrap_exclusion("left", 40., 60.).unwrap();
+        let exclusion = profiled.wrap_exclusion().unwrap();
+        assert_eq!(exclusion.width, gpui::px(40.));
+        assert!(matches!(
+            exclusion.side,
+            crate::presentation_backend::TextExclusionSide::Left
+        ));
+        assert!(
+            profiled
+                .with_wrap_exclusion("left", 0., 60.)
+                .unwrap()
+                .wrap_exclusion()
+                .is_none()
+        );
+    }
+
     use super::*;
     use crate::{
         ColorValue, EventPropagation, Length, MotionProperty, MotionTransition, Rgba8, SignalId,
@@ -3964,7 +4989,10 @@ mod tests {
                 .map(|(index, text)| (*index, UiNode::text(*text)))
                 .collect(),
             estimated_height: 24.0,
+            item_height: None,
             height: Some(120.0),
+            max_height: None,
+            content_padding: [0.; 2],
             overdraw_pixels: 0.0,
             bottom_align: false,
             follow_tail: false,
@@ -4080,6 +5108,45 @@ mod tests {
             node.attributes().get("role"),
             Some(&UiValue::String("label".to_owned()))
         );
+    }
+
+    #[test]
+    fn image_fallback_is_a_replayed_image_only_presentation_attribute() {
+        let runtime = crate::RuntimeEngine::new();
+        for script in [
+            "image_source(asset(\"media/avatar\")).image_fallback_text(\"AL\")",
+            "directional_image_source(asset(\"media/left\"),asset(\"media/right\")).image_fallback_text(\"AL\")",
+            "svg(\"<svg width='8' height='8'><path d='M0 0h8v8H0z'/></svg>\").image_fallback_text(\"AL\")",
+        ] {
+            let node = runtime.engine().eval::<UiNode>(script).unwrap();
+            assert_eq!(
+                node.attributes().get("image_fallback_text"),
+                Some(&UiValue::String("AL".into()))
+            );
+        }
+        let error = runtime
+            .engine()
+            .eval::<UiNode>("row([]).image_fallback_text(\"X\")")
+            .unwrap_err();
+        assert!(error.to_string().contains("requires an image"));
+        for (label, expected) in [
+            (" 🎨 Équipe", "É"),
+            ("---王小明", "王"),
+            ("...123", "1"),
+            ("🙂?!", ""),
+            ("ßeta", "SS"),
+            ("\u{0345}Alpha", "A"),
+        ] {
+            let mut scope = rhai::Scope::new();
+            scope.push("label", label.to_owned());
+            assert_eq!(
+                runtime
+                    .engine()
+                    .eval_with_scope::<String>(&mut scope, "text_initial(label)")
+                    .unwrap(),
+                expected
+            );
+        }
     }
 
     #[test]
@@ -4214,6 +5281,39 @@ mod tests {
     }
 
     #[test]
+    fn native_render_defaults_never_become_caller_presentation_or_component_state() {
+        let owner = ComponentInstancePath::root("Input", "field");
+        let snapshot = ComponentOwnedSnapshot::default();
+        let authored = Style::new().opacity(0.8).unwrap();
+        let original = UiNode::text("initial")
+            .with_component_root_snapshot(owner.clone(), snapshot.reference())
+            .with_key("stable")
+            .with_style(&authored);
+        let recorded = original.presentation.len();
+        let defaults = Style::new()
+            .typography("body")
+            .unwrap()
+            .opacity(0.55)
+            .unwrap();
+        let mut rendered = original.clone().with_render_style_defaults(defaults);
+        assert_eq!(rendered.style().base.opacity, Some(0.8));
+        assert_ne!(rendered.style(), &authored);
+        assert_eq!(rendered.key(), original.key());
+        assert_eq!(rendered.presentation.len(), recorded);
+        assert_eq!(original.style(), &authored);
+        let replacement = UiNode::text("updated")
+            .with_component_root_snapshot(owner.clone(), snapshot.reference());
+        assert!(rendered.replace_component_subtree(&owner, replacement));
+        assert_eq!(
+            rendered.style(),
+            &authored,
+            "only caller decorations replay"
+        );
+        assert_eq!(rendered.presentation.len(), recorded);
+        assert_eq!(snapshot.current().unwrap().style(), &Style::new());
+    }
+
+    #[test]
     fn inherited_motion_group_replays_across_nested_component_replacement() {
         let outer = ComponentInstancePath::root("Outer", "root");
         let inner = outer.child("Inner", "child");
@@ -4269,7 +5369,10 @@ mod tests {
                 data: Vec::<UiValue>::new().into(),
                 realized: BTreeMap::new(),
                 estimated_height: 30.0,
+                item_height: None,
                 height: Some(600.0),
+                max_height: None,
+                content_padding: [0.; 2],
                 overdraw_pixels: 120.0,
                 bottom_align: false,
                 follow_tail: false,
@@ -4424,6 +5527,7 @@ mod tests {
                 }
             }
             for (key, canonical) in [
+                ("Plain+1", "plain+1"),
                 ("Shift+F6", "shift+f6"),
                 ("cmd+shift+k", "shift+cmd+k"),
                 ("ctrl+alt+/", "ctrl+alt+/"),
@@ -4494,5 +5598,45 @@ mod tests {
         }
         assert!(normalize_node_event_name(&"a".repeat(64)).is_ok());
         assert!(normalize_node_event_name(&"a".repeat(65)).is_err());
+    }
+}
+#[test]
+fn span_underline_paint_keeps_ink_separate_and_validates_width() {
+    let glyph = crate::ColorValue::Token("text_primary".into());
+    let stroke = crate::ColorValue::Token("text_muted".into());
+    let span = Span::new("Link")
+        .color(glyph.clone())
+        .underline_with(1.5, stroke.clone())
+        .unwrap();
+    assert_eq!(span.color_value(), Some(&glyph));
+    assert_eq!(
+        span.underline_paint(),
+        Some(&SpanUnderline {
+            width: 1.5,
+            color: stroke.clone(),
+            baseline_offset: None,
+            hover: None,
+        })
+    );
+    assert!(span.is_underlined());
+    assert!(Span::new("Default").underline().underline_paint().is_none());
+    for invalid in [-1.0, 17.0, f64::NAN, f64::INFINITY] {
+        assert!(
+            Span::new("Invalid")
+                .underline_with(invalid, stroke.clone())
+                .is_err()
+        );
+    }
+    let offset = span
+        .clone()
+        .underline_with_offset(1.5, stroke.clone(), 4.0)
+        .unwrap();
+    assert_eq!(offset.underline_paint().unwrap().baseline_offset, Some(4.0));
+    for invalid in [-17.0, 33.0, f64::NAN, f64::INFINITY] {
+        assert!(
+            span.clone()
+                .underline_with_offset(1.5, stroke.clone(), invalid)
+                .is_err()
+        );
     }
 }

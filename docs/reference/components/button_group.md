@@ -35,5 +35,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `first`, `item`, `last`,
 
 ## Theme
 
-- Tokens: `radius.md`, `spacing.xxs`
+- Tokens: `metrics.button_radius`, `spacing.xxs`
 - Environment: `density`, `size`

@@ -6,10 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button"],
   "capabilities": {},
-  "tokens": [
-    "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border", "control.border",
-    "metrics.control", "metrics.icon", "radius.md"
-  ],
+  "tokens": ["border","button.selected","control.border","disabled","focus_ring","metrics.button_radius","metrics.control","metrics.icon","metrics.icon_button_h","metrics.icon_button_icon","radius.md","selection","surface_hover","text_primary"],
   "environment": ["size", "density"]
 }
 */
@@ -28,10 +25,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button"],
         capabilities: #{},
-        tokens: [
-            "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border", "control.border",
-            "metrics.control", "metrics.icon", "radius.md"
-        ],
+        tokens: ["border","button.selected","control.border","disabled","focus_ring","metrics.button_radius","metrics.control","metrics.icon","metrics.icon_button_h","metrics.icon_button_icon","radius.md","selection","surface_hover","text_primary"],
         environment: ["size", "density"],
     },
     schema: #{
@@ -44,7 +38,7 @@ define_component(#{
                 schema: #{
                     type: "string",
                     allowed: [
-                        "primary", "secondary", "danger", "warning",
+                        "primary", "secondary", "danger", "destructive", "warning",
                         "success", "ghost", "outline"
                     ]
                 },
@@ -60,15 +54,14 @@ define_component(#{
                 required: false, sensitive: false,
                 doc: "Control size, which sets the square's side; unset, it inherits the `size` environment.",
             },
-            selected: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false },
-                doc: "Pressed state of a toggle; `ghost`, `outline` and `secondary` fill with `selection` and stop reacting to hover." },
+            selected: #{ schema: #{ type: "optional", value: #{ type: "bool" } }, required: false, sensitive: false,
+                doc: "Omit for an ordinary action. Pass false or true for a controlled toggle and its accessible pressed state. Selected ghost, outline and secondary variants fill with selection and stop reacting to hover." },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Blocks clicks and greys the icon but keeps the variant's silhouette, as on `Button`; a disabled `action` disables it too." },
+                doc: "Blocks clicks and dims the complete variant to 40% opacity, as on `Button`; a disabled `action` disables it too." },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Blocks clicks and shows the disabled look while work runs, with Button's turning spinner in place of the icon. Reduced or no motion holds it still." },
+                doc: "Blocks clicks while work runs, with Button's turning spinner in place of the icon. Reduced or no motion holds it still." },
             hoverable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true }, doc: "Changes the fill on hover; `false` keeps it still." },
             on_click: #{ schema: #{ type: "optional", value: #{ type: "callback" } },
@@ -87,13 +80,14 @@ define_component(#{
     render: Fn("render_IconButton")
 });
 
-fn icon_button_fill(variant, selected) {
-    if selected && (variant == "ghost" || variant == "outline" || variant == "secondary") {
-        theme_color("selection")
-    } else { button::button_fill(variant) }
+fn IconButton(props) { render_component("components/icon_button", props) }
+
+// Fn names belong to the module that owns the retained callback. Delegate
+// through an ordinary import call to the shared Button action dispatch.
+fn icon_button_action(action, ctx, payload) {
+    button::run_action(action, ctx, payload);
 }
 
-fn IconButton(props) { render_component("components/icon_button", props) }
 fn render_IconButton(ctx, props) {
     if props.label == "" { throw "IconButton label must not be empty"; }
     let variant = if "variant" in props { props.variant } else { "ghost" };
@@ -101,54 +95,35 @@ fn render_IconButton(ctx, props) {
     let disabled = (if "disabled" in props { props.disabled } else { false })
         || (action != () && !ctx.action_enabled(action));
     let loading = if "loading" in props { props.loading } else { false };
-    let selected = if "selected" in props { props.selected } else { false };
+    let has_selection = "selected" in props && props.selected != ();
+    let selected = if has_selection { props.selected } else { false };
     let hoverable = if "hoverable" in props { props.hoverable } else { true };
     let has_click = "on_click" in props && props.on_click != ();
     let interactive = !disabled && !loading && (has_click || action != ());
-    let foreground = button::button_foreground(variant);
-    let fill = icon_button_fill(variant, selected);
-    let frame = if variant == "outline" { theme_color("control.border") } else { fill };
-    let base = style()
-        .flex_row()
-        .items_center()
-        .justify_center()
-        .width(theme_length("metrics.control"))
-        .height(theme_length("metrics.control"))
-        .radius(theme_radius("md"));
-    // Disabled keeps the variant's silhouette, as on Button: blocks turn into a neutral
-    // block, an outline keeps its frame, a ghost stays bare, selected or not.
-    let bare = variant == "ghost" || variant == "outline";
-    let disabled_fill = if bare { rgba(0x00000000) } else { theme_color("surface_hover") };
-    let disabled_frame = if variant == "outline" { theme_color("border") } else { disabled_fill };
-    base = base
-        .border(px(2))
-        .border_color(frame)
-        .background(fill)
-        .text_color(foreground)
-        .focus(style().border_color(theme_color("focus_ring")))
-        .active(style().opacity(0.86))
-        .disabled(style()
-            .background(disabled_fill)
-            .border_color(disabled_frame)
-            .text_color(theme_color("disabled")));
-    if hoverable && !disabled && !loading && !selected {
-        base = base.hover(style().background(button::button_hover(variant)));
-    }
+    let base = style().flex_row().items_center().justify_center()
+        .width(theme_length("metrics.icon_button_h"))
+        .height(theme_length("metrics.icon_button_h"))
+        .padding(px(0)).radius(theme_length("metrics.button_radius"))
+        .border(px(1)).border_color(rgba(0x00000000)).focus(style());
+    let state_style = button::button_recipe(ctx, variant)
+        .disabled(style().opacity(if disabled { 0.4 } else { 1.0 }));
+    if selected { state_style = state_style.merge(ctx.theme_style("button.selected")); }
+    if !hoverable || loading || selected { state_style = state_style.without_hover().without_active(); }
     let icon = if loading {
-        button::loading_spinner(ctx, if "size" in props { props.size } else { () })
+        button::loading_spinner(ctx)
     } else {
         props.icon.with_style(ctx.component_style("icon", style()
-            .width(theme_length("metrics.icon"))
-            .height(theme_length("metrics.icon"))
-            .text_color(foreground)
-            .disabled(style().text_color(theme_color("disabled")))))
+            .width(theme_length("metrics.icon_button_icon"))
+            .height(theme_length("metrics.icon_button_icon"))
+            ))
     };
-    let node = row([icon])
-        .with_style(ctx.component_style("root", base))
+    let node = row([button::icon_entry(icon, loading)])
+        .with_style(ctx.component_style("root", base, state_style))
+        .paint_transition(button::paint_duration(ctx), cubic_bezier(0.25,0.1,0.25,1.0))
         .disabled(disabled || loading)
         .accessibility_role("button")
-        .accessibility_label(props.label)
-        .accessibility_pressed(selected);
+        .accessibility_label(props.label);
+    if has_selection { node = node.accessibility_pressed(selected); }
     if "size" in props && props.size != () {
         node = node.env(#{ size: props.size });
     }
@@ -157,6 +132,6 @@ fn render_IconButton(ctx, props) {
         if shortcut != () { node = node.accessibility_key_shortcuts(shortcut.keystrokes); }
     }
     if !interactive { node }
-    else if action != () { node.on_click(Fn("button::run_action").curry(action)) }
+    else if action != () { node.on_click(Fn("icon_button_action").curry(action)) }
     else { node.on_click(props.on_click) }
 }

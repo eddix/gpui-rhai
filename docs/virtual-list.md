@@ -50,6 +50,20 @@ source key plus its bounded overdraw halo. The source may leave the painted
 viewport while its retained identity and gesture stay alive; target rows still
 realize normally as edge auto-scroll advances the destination viewport.
 
+## Viewport sizing
+
+Choose exactly one mode: numeric `height` for a fixed logical-pixel viewport,
+`fill_height: true` for the parent's available flex height, or
+`max_height: theme_length("metrics.command_row") * 8` for bounded content sizing.
+The latter accepts a positive absolute px/rem/theme Length, not a percentage.
+It starts bounded and fits the actual measured short content at its real width;
+long or incompletely measured content stays at the cap. It does not evaluate
+every row, call Rhai from native layout, or use estimates as a final content
+height. Empty data fits zero. Following siblings participate in normal layout.
+Width, theme and row-content changes remeasure through the same native list;
+scrolling, stable keys, follow state and realization budgets keep their usual
+owners. Application padding belongs outside the measured collection viewport.
+
 ## Controlled reveal targets
 
 Top-aligned selection and navigation components can pass `reveal_key`, using

@@ -23,8 +23,8 @@ button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" })
 | `disabled` | bool | `false` | Blocks clicks and greys the button but keeps the variant's silhouette; a disabled `action` disables it too. |
 | `hoverable` | bool | `true` | Changes the fill on hover; `false` keeps it still. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
-| `loading` | bool | `false` | Blocks clicks and shows the disabled look while work runs, with a turning spinner in the label's color: in place of `prefix`, else before the label, which then widens the button. Reduced or no motion holds the spinner still. |
-| `loading_text` | string | `""` | Replaces the label and the accessible name while `loading`; the button keeps the width of `text` unless this is wider. Empty leaves the label as it is. |
+| `loading` | bool | `false` | Blocks clicks without applying disabled opacity. Dims the label and replaces an existing prefix with a native rotating indicator; never synthesizes a new prefix. Reduced or no motion holds the indicator still. |
+| `loading_text` | string | `""` | Replaces the visible label and accessible name while loading, without an invisible idle-label spacer. Empty retains the ordinary label. |
 | `on_click` | callback or `()` | — | Called when the button is pressed; not while disabled or loading, and not when `action` is set. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `prefix` | node or `()` | — | Node before the label, such as an icon, drawn in the button's text color. |
@@ -33,7 +33,7 @@ button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" })
 | `style` | style | — | Style merged over the root part. |
 | `suffix` | node or `()` | — | Node after the label, such as a disclosure chevron, drawn in the button's text color. |
 | `text` | string | required | Label of the button; also its accessible name, except while `loading` shows `loading_text`. |
-| `variant` | `"primary"` or `"secondary"` or `"danger"` or `"warning"` or `"success"` or `"ghost"` or `"outline"` | `"secondary"` | Fill: `primary` accent, `danger`/`warning`/`success` status colors, `secondary` neutral, `ghost` bare, `outline` framed. |
+| `variant` | `"primary"` or `"secondary"` or `"danger"` or `"destructive"` or `"warning"` or `"success"` or `"ghost"` or `"outline"` | `"primary"` | Preset-owned fill: `primary` ink/reverse ink, `secondary` surface, `ghost` bare, `danger`/`destructive` soft red; warning, success and outline are derived variants. |
 
 ## Events
 
@@ -54,5 +54,9 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `label`, `prefix`, `root
 
 ## Theme
 
-- Tokens: `accent`, `accent_hover`, `border`, `control.border`, `control.danger_hover`, `control.hover`, `control.success_hover`, `control.warning_hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.icon`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.md`, `spacing.xs`, `success`, `surface_hover`, `text_primary`, `typography.control`, `typography.label`, `warning`
+- Tokens: `accent`, `accent_hover`, `border`, `button.danger_bg`, `button.ghost_fg`, `button.primary_bg`, `button.primary_fg`, `button.secondary_bg`, `control.border`, `control.danger_hover`, `control.hover`, `control.success_hover`, `control.warning_hover`, `danger`, `disabled`, `focus_ring`, `metrics.button_gap`, `metrics.button_h`, `metrics.button_icon`, `metrics.button_icon_pad`, `metrics.button_pad`, `metrics.button_radius`, `metrics.control`, `metrics.control_pad`, `metrics.icon`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.md`, `spacing.xs`, `success`, `surface_hover`, `text_primary`, `typography.button`, `typography.control`, `typography.label`, `warning`
 - Environment: `density`, `size`
+
+## Dependencies
+
+[`components/spinner`](../components/spinner.md)

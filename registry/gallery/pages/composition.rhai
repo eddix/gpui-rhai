@@ -86,7 +86,7 @@ fn hosts_toolbar(h, v, key) {
         filters: [input::Input(#{ key: `${key}-filter`, label: "Filter hosts", value: kit::val(v, "toolbar.filter", ""),
             placeholder: "Filter hosts", on_change: kit::store(h, "toolbar.filter") }).with_style(style().width(px(200)))],
         actions: [button::Button(#{ key: `${key}-export`, text: "Export", variant: "ghost", on_click: h.noop }),
-            button::Button(#{ key: `${key}-refresh`, text: "Refresh", on_click: h.noop })],
+            button::Button(#{ key: `${key}-refresh`, text: "Refresh", variant: "secondary", on_click: h.noop })],
         primary: button::Button(#{ key: `${key}-deploy`, text: "Deploy", variant: "primary", on_click: h.noop }) })
 }
 

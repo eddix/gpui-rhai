@@ -1,8 +1,13 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
 
-const THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
+const THEME: &str = shared_themes::PRIMARY;
 
 const PANEL: &str = r##"
 define_component(#{
@@ -65,8 +70,8 @@ fn render_ArtPanel(ctx, props) {
                 .radius(px(18)).border(px(1)).border_color(theme_color("border"))
                 .linear_gradient(linear_gradient(#{ angle: 145,
                     from: rgba(0x24283be8), to: rgba(0x16161ee8) }))
-                .shadow(shadow(#{ x: 0, y: 18, blur: 48, spread: 2,
-                    color: rgba(0x00000070) }))
+                .shadow(shadow(#{ x: 0, y: 2, blur: 3, spread: 0,
+                    color: rgba(0x0000003d) }))
                 .font_family("Avenir Next").cursor_pointer()))
         .accessibility_role("group")
         .accessibility_label("Night Signals artistic showcase")
@@ -93,7 +98,12 @@ fn view(ctx) {
 }
 "#;
 
-fn showcase_view() -> ScriptView {
+/// Build the retained-graphics tutorial; its illustration remains app-owned.
+///
+/// # Panics
+/// Panics if a static module identifier is invalid.
+#[must_use]
+pub fn view() -> ScriptView {
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         (ModuleId::parse("main").unwrap(), MAIN.to_owned()),
         (
@@ -103,12 +113,12 @@ fn showcase_view() -> ScriptView {
     ]));
     ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, THEME)
         .token_base(include_str!("../../../registry/tokens.rhai"))
+        .font_sources(shared_fonts::sources())
+        .theme_sources(shared_themes::additional())
 }
 
 fn main() {
-    let view = showcase_view()
-        .prepare()
-        .expect("artistic showcase prepares");
+    let view = view().prepare().expect("artistic showcase prepares");
     ScriptApplication::new(view)
         .window_size(760.0, 520.0)
         .run()
@@ -121,6 +131,6 @@ mod tests {
 
     #[test]
     fn pure_rhai_artistic_showcase_prepares() {
-        showcase_view().prepare().unwrap();
+        view().prepare().unwrap();
     }
 }

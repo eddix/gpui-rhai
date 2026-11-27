@@ -25,9 +25,11 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+#[cfg(feature = "vendor-gpui")]
+use gpui::IntoElement;
 use gpui::{
     AnyElement, AnyView, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, Size, Window,
+    LayoutId, Pixels, Size, Window,
 };
 
 use crate::{NodeId, RetainedUiTree, UiNode, UiNodeKindTag};
@@ -123,6 +125,9 @@ fn visit(
         _ => return,
     };
     if node.summary().opaque
+        || node
+            .attributes()
+            .contains_key(crate::node::LEADING_FLOAT_ATTRIBUTE)
         || node.attributes().get(crate::retained_page::PAGE_VISIBLE)
             == Some(&crate::UiValue::Bool(false))
     {
@@ -444,6 +449,7 @@ pub(crate) struct IslandHostElement {
     pub verify: bool,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for IslandHostElement {
     type Element = Self;
 

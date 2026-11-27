@@ -53,6 +53,7 @@ menu::Menu(#{ key: "file", label: "File menu", trigger: text("File"), open: true
 | `disabled` | bool | `false` | Dims the row; it cannot be clicked and keyboard navigation skips it. |
 | `kind` | `"item"` or `"separator"` or `"submenu"` or `"label"` | required | `item` is an activatable row, `separator` a divider, `label` a heading, `submenu` a nested menu row. |
 | `label` | string or `()` | — | Row text, also matched by letter-key type-ahead; on a `label` row, the heading text. |
+| `prefix` | node or `()` | — | Optional decorative leading node. A checked row uses its check mark in this lane. |
 | `shortcut` | string or `()` | — | Key legend shown at the row end, written like `cmd-o`; overrides the binding of `action`. |
 | `submenu` | node or `()` | — | Nested Menu node drawn for a `submenu` row; set its `parent_overlay` to this menu's `key`. |
 | `value` | string or `()` | — | Identifier passed to `on_action` and used as `active_value`; rows without one are skipped by the keys. |

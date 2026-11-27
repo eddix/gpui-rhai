@@ -23,9 +23,9 @@ fn a_subtree_reads_at_its_own_scale(cx: &mut TestAppContext) {
     settle(&mut visual, Step::Frame, 3);
     let plain = bounds(&mut visual, &view, "button", "Plain");
     let large = bounds(&mut visual, &view, "button", "Large");
-    // metrics.control: 32px at md and comfortable.
-    assert!((plain.height - 32.0).abs() < 0.5, "{plain:?}");
-    assert!((large.height - 48.0).abs() < 0.5, "{large:?}");
+    // Modern Button md is 40px; the subtree's scale makes the same recipe 60px.
+    assert!((plain.height - 40.0).abs() < 0.5, "{plain:?}");
+    assert!((large.height - 60.0).abs() < 0.5, "{large:?}");
     assert!(large.width > plain.width * 1.3, "{plain:?} {large:?}");
     let literal = bounds(&mut visual, &view, "group", "Literal");
     assert!((literal.width - 120.0).abs() < 0.5, "{literal:?}");

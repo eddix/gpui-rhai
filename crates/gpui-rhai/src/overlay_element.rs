@@ -1,17 +1,18 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, DispatchPhase, Display, Element, ElementId,
     FlexDirection, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement,
-    IntoElement, KeyDownEvent, LayoutId, MouseDownEvent, ParentElement, Pixels, Point,
-    SharedString, StatefulInteractiveElement, Style as GpuiStyle, Styled, WeakFocusHandle, Window,
-    deferred, div, point, px, relative, rgba, size,
+    IntoElement, KeyDownEvent, LayoutId, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels,
+    Point, SharedString, StatefulInteractiveElement, Style as GpuiStyle, Styled, WeakFocusHandle,
+    Window, deferred, div, point, px, relative, rgba, size,
 };
 
+use crate::hover_card::{HoverBinding, HoverSession};
 use crate::{
     FocusToken, LayerNodeSpec, LayerPlacement, OpenOverlay, OverlayBounds, OverlayId,
     OverlayInitialFocus, OverlayKind, OverlayManager, OverlayNodeSpec, OverlayPlacement,
@@ -36,6 +37,7 @@ struct OverlayCoordinatorState {
     outside_listener_claimed: bool,
     viewport: OverlayBounds,
     tooltip_owners: BTreeMap<String, BTreeSet<OverlayId>>,
+    hover_cards: BTreeMap<OverlayId, Weak<RefCell<HoverSession>>>,
     layer_elements: BTreeMap<OverlayId, (usize, AnyElement)>,
     /// Who declared each overlay rendered this frame, for Host lookups by key.
     identities: BTreeMap<OverlayId, OverlayIdentity>,
@@ -68,6 +70,7 @@ impl Default for WindowOverlayCoordinator {
             outside_listener_claimed: false,
             viewport: OverlayBounds::default(),
             tooltip_owners: BTreeMap::new(),
+            hover_cards: BTreeMap::new(),
             identities: BTreeMap::new(),
             modal_panels: BTreeMap::new(),
             modal_focus_check: false,
@@ -96,6 +99,7 @@ impl WindowOverlayCoordinator {
             .expect("GPUI viewport geometry is valid");
         state.viewport = viewport;
         state.callbacks.clear();
+        state.hover_cards.clear();
         state.priorities.clear();
         state.identities.clear();
         state.modal_panels.clear();
@@ -282,6 +286,9 @@ impl WindowOverlayCoordinator {
             .identities
             .retain(|_, identity| identity.view_id != view_id);
         state.layer_key_scopes.remove(view_id);
+        state
+            .hover_cards
+            .retain(|id, _| !id.as_str().starts_with(&prefix));
         if let Some(tooltips) = state.tooltip_owners.remove(view_id) {
             for id in tooltips {
                 state.manager.tooltips_mut().remove(&id);
@@ -308,6 +315,67 @@ impl WindowOverlayCoordinator {
         priority
     }
 
+    fn register_hover_card(&self, binding: &HoverBinding) {
+        self.0
+            .borrow_mut()
+            .hover_cards
+            .insert(binding.id.clone(), Rc::downgrade(&binding.session));
+    }
+
+    pub(crate) fn current_hover_card(
+        &self,
+        id: &OverlayId,
+        session: &Rc<RefCell<HoverSession>>,
+    ) -> bool {
+        self.0
+            .borrow()
+            .hover_cards
+            .get(id)
+            .and_then(Weak::upgrade)
+            .is_some_and(|owner| Rc::ptr_eq(&owner, session))
+    }
+
+    pub(crate) fn propose_hover_card(
+        &self,
+        id: &OverlayId,
+        session: &Rc<RefCell<HoverSession>>,
+        open: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if !self.current_hover_card(id, session) {
+            return;
+        }
+        let (target, peers) = {
+            let state = self.0.borrow();
+            let peers = if open {
+                state
+                    .manager
+                    .stack()
+                    .filter(|spec| spec.kind == OverlayKind::HoverCard && &spec.id != id)
+                    .filter_map(|spec| {
+                        Some((
+                            state.hover_cards.get(&spec.id).and_then(Weak::upgrade)?,
+                            state.callbacks.get(&spec.id)?.clone(),
+                        ))
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            (state.callbacks.get(id).cloned(), peers)
+        };
+        for (peer, close) in peers {
+            peer.borrow_mut().force_close(false, window, cx);
+            close(false, window, cx);
+        }
+        if let Some(target) = target
+            && self.current_hover_card(id, session)
+        {
+            target(open, window, cx);
+        }
+    }
+
     fn register(&self, spec: OverlaySpec) -> Result<PlacementResult, crate::OverlayError> {
         let mut state = self.0.borrow_mut();
         let viewport = state.viewport;
@@ -322,7 +390,12 @@ impl WindowOverlayCoordinator {
             report
                 .dismissed
                 .into_iter()
-                .filter_map(|id| state.callbacks.remove(&id))
+                .filter_map(|id| {
+                    if let Some(session) = state.hover_cards.get(&id).and_then(Weak::upgrade) {
+                        session.borrow_mut().force_close(false, window, cx);
+                    }
+                    state.callbacks.remove(&id)
+                })
                 .collect::<Vec<_>>()
         };
         let handled = !callbacks.is_empty();
@@ -363,7 +436,12 @@ impl WindowOverlayCoordinator {
             report
                 .dismissed
                 .into_iter()
-                .filter_map(|id| state.callbacks.remove(&id))
+                .filter_map(|id| {
+                    if let Some(session) = state.hover_cards.get(&id).and_then(Weak::upgrade) {
+                        session.borrow_mut().force_close(escape, window, cx);
+                    }
+                    state.callbacks.remove(&id)
+                })
                 .collect::<Vec<_>>()
         };
         let handled = !callbacks.is_empty();
@@ -577,6 +655,7 @@ impl Element for ScriptLayerElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ScriptLayerElement {
     type Element = Self;
 
@@ -606,6 +685,60 @@ pub(crate) struct ScriptOverlayElement {
     panel_focus: Option<FocusHandle>,
     identity: Option<OverlayIdentity>,
     coordinator: WindowOverlayCoordinator,
+    reveal: Option<OverlayReveal>,
+}
+
+struct OverlayReveal {
+    phase: f64,
+    affine: Rc<Cell<crate::ElementTransform>>,
+}
+
+impl OverlayReveal {
+    fn new(phase: f64) -> Self {
+        Self {
+            phase,
+            affine: Rc::default(),
+        }
+    }
+
+    fn place(
+        &self,
+        placement: PlacementResult,
+        align: crate::OverlayAlign,
+    ) -> (Point<Pixels>, OverlayBounds) {
+        let cross = match align {
+            crate::OverlayAlign::Start => 0.,
+            crate::OverlayAlign::Center => 0.5,
+            crate::OverlayAlign::End => 1.,
+        };
+        let distance = 4.0 * (1.0 - self.phase);
+        let (origin_x, origin_y, slide_x, slide_y) = match placement.placement {
+            OverlayPlacement::Top => (cross, 1., 0., distance),
+            OverlayPlacement::Bottom => (cross, 0., 0., -distance),
+            OverlayPlacement::Left | OverlayPlacement::Start => (1., cross, distance, 0.),
+            OverlayPlacement::Right | OverlayPlacement::End => (0., cross, -distance, 0.),
+            OverlayPlacement::Center => (0.5, 0.5, 0., 0.),
+        };
+        let scale = 0.03f64.mul_add(self.phase, 0.97);
+        self.affine.set(crate::ElementTransform {
+            scale_x: scale,
+            scale_y: scale,
+            origin_x,
+            origin_y,
+            ..crate::ElementTransform::default()
+        });
+        let b = placement.bounds;
+        let presented = OverlayBounds {
+            x: b.x + slide_x + origin_x * b.width * (1.0 - scale),
+            y: b.y + slide_y + origin_y * b.height * (1.0 - scale),
+            width: b.width * scale,
+            height: b.height * scale,
+        };
+        (
+            point(pixel_from_f64(slide_x), pixel_from_f64(slide_y)),
+            presented,
+        )
+    }
 }
 
 impl ScriptOverlayElement {
@@ -635,6 +768,7 @@ impl ScriptOverlayElement {
             panel_focus: None,
             identity: None,
             coordinator,
+            reveal: None,
         }
     }
 
@@ -648,6 +782,13 @@ impl ScriptOverlayElement {
         self
     }
 
+    pub(crate) fn with_reveal(mut self, phase: Option<f64>) -> Self {
+        self.reveal = phase
+            .filter(|phase| phase.is_finite() && *phase < 1.0 && self.spec.open)
+            .map(|phase| OverlayReveal::new(phase.clamp(0.0, 1.0)));
+        self
+    }
+
     pub(crate) fn with_trigger_focusable(mut self, focusable: bool) -> Self {
         self.trigger_focusable = focusable;
         self
@@ -656,7 +797,9 @@ impl ScriptOverlayElement {
     /// The trigger wrapper is a tab stop only when it is the activation
     /// target: it opens the overlay and its content cannot take focus itself.
     fn trigger_tab_stop(&self) -> bool {
-        self.open_change.is_some() && self.spec.activate_on_trigger && !self.trigger_focusable
+        self.open_change.is_some()
+            && (self.spec.activate_on_trigger || self.spec.kind == OverlayKind::HoverCard)
+            && !self.trigger_focusable
     }
 
     pub(crate) fn with_backdrop_style(mut self, style: Option<BackdropStyleHandler>) -> Self {
@@ -762,16 +905,47 @@ impl ScriptOverlayElement {
         state.was_open = self.spec.open;
     }
 
-    fn build_trigger(&mut self, trigger_focus: &FocusHandle) -> AnyElement {
+    fn hover_handler(
+        &self,
+        card: Option<HoverBinding>,
+        panel: bool,
+    ) -> impl Fn(&bool, &mut Window, &mut App) + 'static + use<> {
+        let coordinator = self.coordinator.clone();
+        let id = self.spec.id.clone();
+        let delays = if self.spec.kind == OverlayKind::Tooltip {
+            self.spec.tooltip_delays
+        } else {
+            None
+        };
+        move |hovered, window, cx| {
+            if let Some(card) = &card {
+                card.hover(panel, *hovered, window, cx);
+            }
+            if let Some(delays) = delays {
+                coordinator.tooltip_hover(
+                    id.clone(),
+                    *hovered,
+                    Duration::from_millis(delays.show_ms),
+                    Duration::from_millis(delays.hide_ms),
+                    window,
+                    cx,
+                );
+            }
+        }
+    }
+
+    fn build_trigger(
+        &mut self,
+        trigger_focus: &FocusHandle,
+        hover_card: Option<HoverBinding>,
+    ) -> AnyElement {
         let click_callback = self.open_change.clone();
         let key_callback = self.open_change.clone();
         let panel_key = self.panel_key.clone();
         let click_coordinator = self.coordinator.clone();
         let click_id = self.spec.id.clone();
         let key_coordinator = self.coordinator.clone();
-        let hover_coordinator = self.coordinator.clone();
-        let hover_id = self.spec.id.clone();
-        let tooltip_delays = self.spec.tooltip_delays;
+        let keyboard_card = hover_card.clone();
         let open = self.spec.open;
         let activate_on_trigger = self.spec.activate_on_trigger;
         let dismiss_on_escape = self.spec.dismiss.escape;
@@ -799,7 +973,14 @@ impl ScriptOverlayElement {
             .on_key_down(move |event, window, cx| {
                 let key = event.keystroke.key.as_str();
                 if key == "tab" {
-                    if event.keystroke.modifiers.shift {
+                    if !event.keystroke.modifiers.shift
+                        && keyboard_card
+                            .as_ref()
+                            .is_some_and(|card| card.tab_from_trigger(window, cx))
+                    {
+                        cx.stop_propagation();
+                        return;
+                    } else if event.keystroke.modifiers.shift {
                         window.focus_prev(cx);
                     } else {
                         window.focus_next(cx);
@@ -836,18 +1017,10 @@ impl ScriptOverlayElement {
                     }
                 }
             })
-            .on_hover(move |hovered, window, cx| {
-                if let Some(delays) = tooltip_delays {
-                    hover_coordinator.tooltip_hover(
-                        hover_id.clone(),
-                        *hovered,
-                        Duration::from_millis(delays.show_ms),
-                        Duration::from_millis(delays.hide_ms),
-                        window,
-                        cx,
-                    );
-                }
-            });
+            .on_hover(self.hover_handler(hover_card.clone(), false));
+        if let Some(card) = hover_card {
+            trigger = trigger.capture_any_mouse_down(move |_, window, cx| card.press(window, cx));
+        }
         if self.spec.width_policy.follows_trigger() {
             trigger = trigger.w_full();
         }
@@ -859,6 +1032,7 @@ impl ScriptOverlayElement {
         panel_focus: &FocusHandle,
         viewport: OverlayBounds,
         priority: usize,
+        hover_card: Option<HoverBinding>,
     ) -> Option<AnyElement> {
         if !self.spec.open {
             return None;
@@ -868,10 +1042,8 @@ impl ScriptOverlayElement {
         let modal = self.spec.modal;
         let dismiss_on_escape = self.spec.dismiss.escape;
         let escape_coordinator = self.coordinator.clone();
-        let hover_coordinator = self.coordinator.clone();
-        let hover_id = self.spec.id.clone();
-        let tooltip_delays = self.spec.tooltip_delays;
-        let mut panel = div()
+        let panel_key_card = hover_card.clone();
+        let panel = div()
             .id(SharedString::from(format!("{}-panel", self.id)))
             .track_focus(panel_focus)
             // A tooltip is never a keyboard target.
@@ -891,6 +1063,12 @@ impl ScriptOverlayElement {
                     if escape_coordinator.dismiss_escape(window, cx) {
                         cx.stop_propagation();
                     }
+                } else if key == "tab"
+                    && panel_key_card.as_ref().is_some_and(|card| {
+                        card.tab_from_panel(event.keystroke.modifiers.shift, window, cx)
+                    })
+                {
+                    cx.stop_propagation();
                 } else if key == "tab" && modal {
                     if event.keystroke.modifiers.shift {
                         window.focus_prev(cx);
@@ -903,19 +1081,33 @@ impl ScriptOverlayElement {
                     cx.stop_propagation();
                 }
             })
-            .on_hover(move |hovered, window, cx| {
-                if let Some(delays) = tooltip_delays {
-                    hover_coordinator.tooltip_hover(
-                        hover_id.clone(),
-                        *hovered,
-                        Duration::from_millis(delays.show_ms),
-                        Duration::from_millis(delays.hide_ms),
-                        window,
-                        cx,
-                    );
-                }
-            })
+            .on_hover(self.hover_handler(hover_card, true))
             .child(self.content.take().expect("overlay content rendered once"));
+        let panel = self.panel_presentation(panel, viewport);
+        let overlay = if matches!(self.spec.kind, OverlayKind::Dialog | OverlayKind::Sheet) {
+            self.build_modal_backdrop(panel, viewport)
+        } else {
+            let mut overlay = div().absolute();
+            match self.spec.width_policy {
+                OverlayWidthPolicy::MatchTrigger => overlay = overlay.w_full(),
+                OverlayWidthPolicy::AtLeastTrigger => overlay = overlay.min_w_full(),
+                OverlayWidthPolicy::Content => {}
+            }
+            overlay.child(panel).into_any_element()
+        };
+        if self.spec.parent.is_some() {
+            // The parent already owns the deferred layer.
+            Some(overlay)
+        } else {
+            Some(deferred(overlay).with_priority(priority).into_any_element())
+        }
+    }
+
+    fn panel_presentation(
+        &self,
+        mut panel: gpui::Stateful<gpui::Div>,
+        viewport: OverlayBounds,
+    ) -> AnyElement {
         match self.spec.width_policy {
             OverlayWidthPolicy::MatchTrigger => panel = panel.w_full(),
             OverlayWidthPolicy::AtLeastTrigger => panel = panel.min_w_full(),
@@ -932,27 +1124,44 @@ impl ScriptOverlayElement {
                 .flex()
                 .flex_col();
         }
+        if self.spec.kind == OverlayKind::Sheet {
+            // Give the preferred side thickness a real viewport-sized
+            // containing block. Placement alone cannot shrink its subtree.
+            panel = panel
+                .max_w(pixel_from_f64(viewport.width))
+                .max_h(pixel_from_f64(viewport.height))
+                .flex()
+                .flex_col();
+        }
+        if self.spec.kind == OverlayKind::HoverCard {
+            panel = panel
+                .max_w(pixel_from_f64((viewport.width - 16.).max(0.)))
+                .max_h(pixel_from_f64((viewport.height - 16.).max(0.)))
+                .flex()
+                .flex_col();
+        }
+        if self.spec.kind == OverlayKind::Popover {
+            // Placement alone clamps the reported bounds, not the layout
+            // subtree. Real caps give content with percentage maxima a
+            // bounded containing size, including scrollable short windows.
+            panel = panel
+                .max_w(pixel_from_f64((viewport.width - 32.).max(0.)))
+                .max_h(pixel_from_f64((viewport.height - 32.).max(0.)))
+                .flex()
+                .flex_col();
+        }
 
-        let overlay = if matches!(self.spec.kind, OverlayKind::Dialog | OverlayKind::Sheet) {
-            self.build_modal_backdrop(panel, viewport)
-        } else {
-            let mut overlay = div().absolute();
-            match self.spec.width_policy {
-                OverlayWidthPolicy::MatchTrigger => overlay = overlay.w_full(),
-                OverlayWidthPolicy::AtLeastTrigger => overlay = overlay.min_w_full(),
-                OverlayWidthPolicy::Content => {}
+        if let Some(reveal) = &self.reveal {
+            #[cfg(feature = "vendor-gpui")]
+            {
+                panel.style().isolated_opacity = Some(true);
             }
-            overlay.child(panel).into_any_element()
-        };
-        if self.spec.parent.is_some() {
-            // A nested overlay is rendered as part of its parent's deferred
-            // subtree, while the shared overlay coordinator still owns
-            // placement, ordering, and dismissal. This path exists because
-            // GPUI 0.2 panicked on a nested `defer_draw`; gpui-pre 0.3.9
-            // allows up to ten nested levels.
-            Some(overlay)
+            let visual = panel
+                .opacity(crate::renderer::f64_to_f32(reveal.phase))
+                .into_any_element();
+            crate::element_transform::transform_at_placement(visual, reveal.affine.clone())
         } else {
-            Some(deferred(overlay).with_priority(priority).into_any_element())
+            panel.into_any_element()
         }
     }
 
@@ -1035,6 +1244,7 @@ struct OverlayElementState {
     trigger_focus: FocusHandle,
     panel_focus: FocusHandle,
     previous_focus: Option<WeakFocusHandle>,
+    hover_card: Option<Rc<RefCell<HoverSession>>>,
 }
 
 pub(crate) struct OverlayFrame {
@@ -1042,6 +1252,7 @@ pub(crate) struct OverlayFrame {
     trigger_layout: LayoutId,
     overlay: Option<AnyElement>,
     overlay_layout: Option<LayoutId>,
+    hover_card: Option<HoverBinding>,
 }
 
 #[derive(Default)]
@@ -1080,6 +1291,7 @@ impl Element for ScriptOverlayElement {
                         .focus_handle()
                         .tab_stop(self.spec.kind != OverlayKind::Tooltip),
                     previous_focus: None,
+                    hover_card: None,
                 });
                 state.trigger_focus = state
                     .trigger_focus
@@ -1094,7 +1306,28 @@ impl Element for ScriptOverlayElement {
                     let _ = self.coordinator.dismiss(&self.spec.id, window, cx);
                 }
                 self.update_focus(&mut state, window, cx);
-                let mut trigger = self.build_trigger(&state.trigger_focus);
+                let hover_card = if self.spec.kind == OverlayKind::HoverCard {
+                    let session = state.hover_card.get_or_insert_with(Rc::default).clone();
+                    let binding =
+                        HoverBinding::new(self.spec.id.clone(), session, self.coordinator.clone());
+                    self.coordinator.register_hover_card(&binding);
+                    binding.sync(
+                        self.spec.open,
+                        self.spec.tooltip_delays.unwrap_or(crate::TooltipDelays {
+                            show_ms: 600,
+                            hide_ms: 300,
+                        }),
+                        &state.trigger_focus,
+                        &state.panel_focus,
+                        window,
+                        cx,
+                    );
+                    Some(binding)
+                } else {
+                    state.hover_card = None;
+                    None
+                };
+                let mut trigger = self.build_trigger(&state.trigger_focus, hover_card.clone());
                 let trigger_layout = trigger.request_layout(window, cx);
                 let priority = self.coordinator.reserve(
                     self.spec.id.clone(),
@@ -1109,6 +1342,7 @@ impl Element for ScriptOverlayElement {
                     &state.panel_focus,
                     self.coordinator.viewport_or_window(window.viewport_size()),
                     priority,
+                    hover_card.clone(),
                 );
                 let overlay_layout = overlay
                     .as_mut()
@@ -1122,6 +1356,9 @@ impl Element for ScriptOverlayElement {
                     flex_direction: FlexDirection::Column,
                     ..GpuiStyle::default()
                 };
+                // The shell should not impose a second intrinsic minimum
+                // when a flex parent gives the trigger a smaller width.
+                style.min_size.width = px(0.0).into();
                 if self.spec.width_policy.follows_trigger() {
                     style.size.width = relative(1.0).into();
                 }
@@ -1134,6 +1371,7 @@ impl Element for ScriptOverlayElement {
                             trigger_layout,
                             overlay,
                             overlay_layout,
+                            hover_card,
                         },
                     ),
                     state,
@@ -1154,6 +1392,9 @@ impl Element for ScriptOverlayElement {
         frame.trigger.prepaint(window, cx);
         let trigger_bounds = window.layout_bounds(frame.trigger_layout);
         let Some(overlay_layout) = frame.overlay_layout else {
+            if let Some(card) = &frame.hover_card {
+                card.set_bounds(bounds_to_overlay(trigger_bounds), None);
+            }
             return OverlayPrepaint::default();
         };
         let overlay_bounds = window.layout_bounds(overlay_layout);
@@ -1178,7 +1419,16 @@ impl Element for ScriptOverlayElement {
         } else {
             placement_bounds(placement)
         };
-        let offset = desired.origin - overlay_bounds.origin;
+        let (slide, presented) = self
+            .reveal
+            .as_ref()
+            .map_or((Point::default(), placement.bounds), |reveal| {
+                reveal.place(placement, self.spec.align)
+            });
+        if let Some(card) = &frame.hover_card {
+            card.set_bounds(bounds_to_overlay(trigger_bounds), Some(presented));
+        }
+        let offset = desired.origin - overlay_bounds.origin + slide;
         if let Some(overlay) = frame.overlay.as_mut() {
             window.with_element_offset(offset, |window| overlay.prepaint(window, cx));
         }
@@ -1201,6 +1451,13 @@ impl Element for ScriptOverlayElement {
         if let (Some(overlay), Some(_)) = (frame.overlay.as_mut(), prepaint.overlay_offset) {
             overlay.paint(window, cx);
         }
+        if let Some(card) = frame.hover_card.clone() {
+            window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+                if phase == DispatchPhase::Capture {
+                    card.pointer_moved(event.position, window, cx);
+                }
+            });
+        }
 
         if self.coordinator.host_managed() || !self.coordinator.claim_outside_listener() {
             return;
@@ -1216,6 +1473,16 @@ impl Element for ScriptOverlayElement {
     }
 }
 
+fn bounds_to_overlay(bounds: Bounds<Pixels>) -> OverlayBounds {
+    OverlayBounds {
+        x: f64::from(bounds.left()),
+        y: f64::from(bounds.top()),
+        width: f64::from(bounds.size.width),
+        height: f64::from(bounds.size.height),
+    }
+}
+
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ScriptOverlayElement {
     type Element = Self;
 

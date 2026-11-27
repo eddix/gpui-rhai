@@ -6,7 +6,7 @@
 //! productivity composition audit in both densities, and its scenes must be
 //! completable by keyboard alone. This module assembles and runs it; the Host
 //! adds only what Rhai cannot do: key bindings, page source documents and the
-//! live audit count shown in the status bar.
+//! live audit evidence shown from the status bar.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -52,7 +52,7 @@ impl Default for AcceptanceLaunch {
         Self {
             page: DEFAULT_PAGE.to_owned(),
             density: "comfortable".to_owned(),
-            theme: "default-dark".to_owned(),
+            theme: "modern-dark".to_owned(),
             locale: "en".to_owned(),
             motion: MotionPreference::Normal,
         }
@@ -60,8 +60,7 @@ impl Default for AcceptanceLaunch {
 }
 
 /// The launch map in `registry/gallery/main.rhai` that the Host replaces.
-const LAUNCH_DEFAULT: &str =
-    r#"#{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0 }"#;
+const LAUNCH_DEFAULT: &str = r#"#{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0, extended_rendering: false }"#;
 
 /// On macOS the Gallery window has no platform title bar: its own `TitleBar`
 /// moves the window and leaves this much room for the window buttons, which
@@ -275,10 +274,11 @@ fn theme_file(slug: &str) -> Result<(&'static str, &'static str), String> {
 fn launch_map(launch: &AcceptanceLaunch, titlebar_inset: u32) -> Result<String, String> {
     let quoted = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
     Ok(format!(
-        "#{{ page: {}, density: {}, locale: {}, titlebar_inset: {titlebar_inset} }}",
+        "#{{ page: {}, density: {}, locale: {}, titlebar_inset: {titlebar_inset}, extended_rendering: {} }}",
         quoted(&launch.page)?,
         quoted(&launch.density)?,
         quoted(&launch.locale)?,
+        gpui_rhai::EXTENDED_RENDERING,
     ))
 }
 
@@ -431,6 +431,7 @@ fn view_with_titlebar(
         primary_source,
     )
     .token_base(TOKEN_BASE_SOURCE)
+    .font_sources(crate::gallery::gallery_fonts()?)
     .profile_source(profile)
     .theme_sources(
         BUNDLED_THEME_SOURCES
@@ -453,6 +454,7 @@ fn view_with_titlebar(
         )
     }))
     .motion_preference(launch.motion)
+    .extension(crate::gallery::gallery_chart_fixture()?)
     .extension(source_documents()?);
     for binding in key_bindings()? {
         view = view.key_binding(binding);
@@ -501,27 +503,83 @@ pub fn titlebar_traffic_lights(
     }))
 }
 
-/// Report the live audit finding count to the Gallery's status bar, once per
-/// change.
+/// The complete audit last published to one Gallery, not just a finding count.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GalleryAuditSnapshot {
+    pub theme_family: String,
+    pub theme_name: String,
+    pub findings: Vec<gpui_rhai::AuditFinding>,
+}
+
+impl GalleryAuditSnapshot {
+    /// A copyable report. Findings remain strict; preserving a preset's
+    /// authored palette is not an assertion of accessibility conformance.
+    pub fn report_text(&self) -> String {
+        let mut lines = vec![
+            format!("View theme: {} / {}", self.theme_family, self.theme_name),
+            format!("Audit findings: {}", self.findings.len()),
+            "Palette preservation does not imply a WCAG pass. No findings are suppressed."
+                .to_owned(),
+            "Contrast evidence describes the declarative paint model, not a GPU pixel capture."
+                .to_owned(),
+        ];
+        for finding in &self.findings {
+            lines.extend([String::new(), finding.to_string()]);
+            if let Some(evidence) = &finding.contrast {
+                let background = evidence.background_srgb.map_or_else(
+                    || "non-solid surface".to_owned(),
+                    |[red, green, blue]| format!("sRGB [{red:.6}, {green:.6}, {blue:.6}]"),
+                );
+                lines.push(format!(
+                    "foreground #{:08x}; element opacity {:.6}; background {background}",
+                    evidence.foreground.as_rgba_hex(),
+                    evidence.element_opacity
+                ));
+                lines.push(format!(
+                    "ratio {:.6}:1; required {:.2}:1; conservative bound: {}",
+                    evidence.ratio, evidence.minimum, evidence.conservative
+                ));
+            }
+        }
+        lines.join("\n")
+    }
+}
+
+/// Publish current evidence once per content/theme change. Equal finding
+/// counts with different evidence still update the report; failed publication
+/// does not advance the cache and can be retried.
 ///
 /// # Errors
 ///
 /// Returns an audit or automation error from the mounted view.
 pub fn report_audit(
     view: &ScriptViewHandle,
-    last: &mut Option<usize>,
+    last: &mut Option<GalleryAuditSnapshot>,
     window: &mut Window,
     cx: &mut App,
 ) -> Result<(), String> {
-    let count = view
+    let findings = view
         .composition_audit(cx)
+        .map_err(|error| error.to_string())?;
+    let theme = view
+        .theme_snapshot(cx)
         .map_err(|error| error.to_string())?
-        .len();
-    if *last == Some(count) {
+        .variant;
+    let snapshot = GalleryAuditSnapshot {
+        theme_family: theme.family,
+        theme_name: theme.name,
+        findings,
+    };
+    if last.as_ref() == Some(&snapshot) {
         return Ok(());
     }
-    *last = Some(count);
-    let payload = UiValue::Integer(i64::try_from(count).unwrap_or(i64::MAX));
+    let payload = UiValue::Map(BTreeMap::from([
+        (
+            "count".to_owned(),
+            UiValue::Integer(i64::try_from(snapshot.findings.len()).unwrap_or(i64::MAX)),
+        ),
+        ("report".to_owned(), UiValue::String(snapshot.report_text())),
+    ]));
     view.automate(
         AutomationCommand::Action {
             id: "gallery.audit".to_owned(),
@@ -530,15 +588,16 @@ pub fn report_audit(
         window,
         cx,
     )
-    .map(|_| ())
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    *last = Some(snapshot);
+    Ok(())
 }
 
 struct GalleryRoot {
     host: ScriptViewHost,
     view: Option<ScriptViewHandle>,
     error: Option<String>,
-    audit: Option<usize>,
+    audit: Option<GalleryAuditSnapshot>,
     /// The committed revision last audited: frames that only repaint (hover,
     /// scrolling, a caret) are not audited again.
     audited_revision: Option<u64>,

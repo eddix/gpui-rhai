@@ -327,7 +327,7 @@ impl RetainedNode {
         self.focus_styled
     }
 
-    /// Whether the node's base style is `invisible()`.
+    /// Whether the base style excludes visibility or layout.
     pub(crate) const fn invisible(&self) -> bool {
         self.invisible
     }
@@ -634,8 +634,7 @@ impl RetainedUiTree {
     pub(crate) fn summary(&self) -> SubtreeSummary {
         self.root_id
             .and_then(|id| self.node(id))
-            .map(RetainedNode::summary)
-            .unwrap_or_default()
+            .map_or_else(Default::default, RetainedNode::summary)
     }
 
     #[must_use]
@@ -920,14 +919,20 @@ impl ReconcileTransaction<'_> {
             handler_payloads: candidate.handler_payloads().clone(),
             scrollable: snapshot_scrollable(candidate),
             focus_styled: candidate.style().focus.is_some(),
-            invisible: candidate.style().base.visible == Some(false),
+            invisible: candidate.style().base.visible == Some(false)
+                || candidate.style().base.display == Some(crate::DisplayMode::None),
             sized_by_content: crate::renderer::island_root_sized_by_content(
                 &candidate.style().base,
             ),
-            canvas_commands: match candidate.kind() {
+            canvas_commands: (match candidate.kind() {
                 crate::UiNodeKind::Canvas { scene } => scene.complexity(),
                 _ => 0,
-            },
+            })
+            .saturating_add(
+                candidate
+                    .canvas_peak_binding()
+                    .map_or(0, crate::canvas::CanvasPeakBinding::complexity),
+            ),
             canvas_scene: match candidate.kind() {
                 crate::UiNodeKind::Canvas { scene } => Some(scene.clone()),
                 _ => None,

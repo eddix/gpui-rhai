@@ -7,10 +7,12 @@
 //! row's baseline and its own, both measured from the top of their line boxes the
 //! way GPUI paints a line (half the leading above the ascent).
 
+#[cfg(feature = "vendor-gpui")]
+use gpui::IntoElement;
 use gpui::{
     A11ySubtreeBuilder, AbsoluteLength, App, Bounds, DefiniteLength, Element, ElementId,
-    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Length, Pixels, Refineable, Styled,
-    TextStyle, TextStyleRefinement, Window, px,
+    GlobalElementId, InspectorElementId, LayoutId, Length, Pixels, Refineable, Styled, TextStyle,
+    TextStyleRefinement, Window, px,
 };
 
 /// A row's text child moved down (or up) so its first baseline sits on the row's.
@@ -31,13 +33,17 @@ fn first_baseline(style: &TextStyle, window: &Window) -> Pixels {
     let rem_size = window.rem_size();
     let text_system = window.text_system();
     let font = text_system.resolve_font(&style.font());
-    text_system.baseline_offset(
-        font,
-        style.font_size.to_pixels(rem_size),
-        style.line_height_in_pixels(rem_size),
-    )
+    let size = style.font_size.to_pixels(rem_size);
+    let line = window.pixel_snap(style.line_height.to_pixels(size.into(), rem_size));
+    let ascent = text_system.ascent(font, size);
+    // Apple's raw font descent is signed. GPUI's shaper uses its magnitude
+    // for LineLayout, but TextSystem::baseline_offset uses the raw value.
+    // Match the shaped line's paint calculation and device-pixel rounding.
+    let descent = text_system.descent(font, size).abs();
+    (line - ascent - descent) / 2. + ascent
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl<E: Element + Styled> IntoElement for BaselineText<E> {
     type Element = Self;
 

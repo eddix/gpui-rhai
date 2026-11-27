@@ -39,5 +39,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `control`, `prefix`, `ro
 
 ## Theme
 
-- Tokens: `control.border`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `radius.md`, `surface_raised`, `text_muted`, `typography.control`
+- Tokens: `control.border`, `focus_ring`, `metrics.control`, `metrics.field_h`, `metrics.field_pad`, `metrics.field_radius`, `radius.md`, `surface_raised`, `text_muted`, `typography.control`
 - Environment: `density`, `size`

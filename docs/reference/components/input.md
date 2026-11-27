@@ -5,7 +5,7 @@
 
 Input is a controlled single-line native text input.
 
-State: native keyed TextInput Entity.
+State: native keyed TextInput Entity. Without an explicit width the native editor prefers 20 zero-character advances in its active font. This is not a minimum: it still stretches in a column and shrinks in a constrained row, without resizing when the value changes.
 
 `appearance: "embedded"` is the search or filter line that heads a panel or a list and keeps focus while it is open: no frame or well of its own, the container's edges and a hairline under it frame it, and its text starts on metrics.inset like the rows below. Its caret shows focus; the hairline stays `border` (`danger` while invalid).
 
@@ -23,6 +23,7 @@ input::Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_cha
 | `autofocus` | bool | `false` | Focuses the field once, when its editor first mounts; ignored while `disabled`. |
 | `disabled` | bool | `false` | Takes the field out of the tab order, blocks editing and submit, and dims it. |
 | `error` | bool | `false` | Marks the value invalid: a `danger` frame (or hairline when embedded) and the invalid state for assistive tech. |
+| `intrinsic_width` | bool | `false` | Prefer the shaped text width (or placeholder when empty). Parent layout and explicit width or min/max styles still constrain the field. |
 | `key` | string | required | Names the native editor, which keeps caret, selection and undo history across renders; a new key starts a fresh editor. |
 | `label` | string | required | Accessible name of the field; it is not drawn, so pair the input with a `Label` or a `FormField`. |
 | `on_blur` | callback or `()` | — | Called when the field loses keyboard focus. |
@@ -51,5 +52,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `input`, `placeholder`, 
 
 ## Theme
 
-- Tokens: `border`, `control.border`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.field_pad`, `metrics.inset`, `radius.md`, `surface_raised`, `text_muted`, `text_primary`, `typography.control`
+- Tokens: `border`, `control.border`, `danger`, `disabled`, `field.embedded`, `field.invalid`, `field.normal`, `field.placeholder`, `field.read_only_recipe`, `focus_ring`, `metrics.control`, `metrics.field_h`, `metrics.field_pad`, `metrics.field_radius`, `metrics.inset`, `radius.md`, `surface_raised`, `text_muted`, `text_primary`, `typography.control`
 - Environment: `density`, `size`

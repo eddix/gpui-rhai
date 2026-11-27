@@ -8,7 +8,7 @@
   "capabilities": {},
   "tokens": [
     "surface_hover", "accent", "surface", "focus_ring", "disabled", "text_primary",
-    "text_muted", "metrics.mark", "metrics.control", "spacing.xs", "spacing.sm",
+    "text_muted", "metrics.mark", "metrics.control", "metrics.slider_track", "spacing.xs", "spacing.sm",
     "typography.body"
   ],
   "environment": ["size", "density"]
@@ -23,7 +23,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_hover", "accent", "surface", "focus_ring", "disabled", "text_primary",
-            "text_muted", "metrics.mark", "metrics.control", "spacing.xs", "spacing.sm",
+            "text_muted", "metrics.mark", "metrics.control", "metrics.slider_track", "spacing.xs", "spacing.sm",
             "typography.body"
         ],
         environment: ["size", "density"] },
@@ -95,8 +95,8 @@ fn render_Slider(ctx, props) {
         // A 4px track, an accent fill and a fader cap: cobalt with a 2px surface
         // frame that turns ink while focused.
         track_style: ctx.component_style("track", style()
-            .width(if orientation == "horizontal" { relative(1.0) } else { px(4) })
-            .height(if orientation == "horizontal" { px(4) } else { relative(1.0) })
+            .width(if orientation == "horizontal" { relative(1.0) } else { theme_length("metrics.slider_track") })
+            .height(if orientation == "horizontal" { theme_length("metrics.slider_track") } else { relative(1.0) })
             .radius(px(0)).background(theme_color("surface_hover"))),
         fill_style: ctx.component_style("fill", style()
             .radius(px(0)).background(theme_color("accent"))),

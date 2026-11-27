@@ -2,9 +2,7 @@
 //! `VirtualCollection[key]/Item[<item key>]/...`, so a keyless component in a
 //! newly realized row cannot take the path of a retained row's component.
 
-use gpui::{
-    Modifiers, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
-};
+use gpui::{Modifiers, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::*;
 
 use crate::support::{Mount, Step, last_error, settle, snapshot};

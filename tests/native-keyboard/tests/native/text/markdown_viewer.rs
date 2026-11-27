@@ -149,7 +149,7 @@ fn scrollable_markdown_consumes_only_keys_that_move_its_native_reader(cx: &mut T
     let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     let raw = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .expect("prepared source for the native keyboard fixture");
@@ -207,7 +207,7 @@ fn copy_visible_markdown_line(
     let end = point(start.x + px(180.0), start.y);
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     let copied = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .expect("visible native text selection");
@@ -249,7 +249,7 @@ fn one_wrapped_markdown_item_keeps_end_and_up_positions_inside_its_viewport(
     let position = point(px((rect.x + 22.0) as f32), px((rect.y + 28.0) as f32));
     let initial = copy_visible_markdown_line(&mut visual, position);
     assert!(initial.contains("000"), "initial top line: {initial:?}");
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     let raw = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert_eq!(
         raw.as_deref(),
@@ -657,7 +657,7 @@ fn view(ctx) {
         let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
         visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
         visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-        visual.simulate_keystrokes("cmd-a cmd-c");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-c"));
         let copied = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
         assert_eq!(copied.as_deref(), Some("Fixture alt"));
         assert_eq!(
@@ -690,7 +690,7 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{ key: "message", label: "Reply", sou
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     settle(&mut visual, Step::Frame, 1);
     let selected = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert!(
@@ -699,8 +699,8 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{ key: "message", label: "Reply", sou
             && text.contains("Second")),
         "cross-block pointer selection: {selected:?}"
     );
-    visual.simulate_keystrokes("cmd-a");
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     let plain = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .unwrap();
@@ -709,7 +709,7 @@ fn view(ctx) {{ markdown::MarkdownViewer(#{{ key: "message", label: "Reply", sou
         "{plain:?}"
     );
     assert!(!plain.contains("**") && !plain.contains("```"));
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     let raw = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert_eq!(raw.as_deref(), Some(source));
 }
@@ -767,7 +767,7 @@ fn view(ctx) {
     let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-a cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a secondary-c"));
     let copied = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .unwrap();
@@ -1006,8 +1006,8 @@ fn view(ctx) { row([
         let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
         visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
         visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-        visual.simulate_keystrokes("cmd-a");
-        visual.simulate_keystrokes("cmd-c");
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
+        visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
         let copied = visual
             .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
             .unwrap();
@@ -1055,6 +1055,125 @@ fn view(ctx) { column([
 }
 
 #[gpui::test]
+#[cfg(target_os = "macos")]
+fn markdown_links_focus_and_hit_only_their_wrapped_text_fragments(cx: &mut TestAppContext) {
+    use crate::support::{glyph_rects_with_ink, logical_paint_rect, walk_live_paint};
+    #[cfg(feature = "gpui-fast")]
+    use apple_fast as apple;
+    #[cfg(feature = "gpui-pre")]
+    use apple_pre as apple;
+    let mut real = TestAppContext::build_with_text_system(
+        cx.dispatcher.clone(),
+        Some("markdown_link_fragments"),
+        std::sync::Arc::new(apple::AppleTextSystem::new()),
+    );
+    let (mut visual, view) = Mount::new(r###"
+import "components/markdown_viewer" as md;
+fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn hit(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}
+fn view(ctx){
+    column([text("hits:"+ctx.get_state("hits").to_string()),
+        md::MarkdownViewer(#{key:"doc",label:"Inline fragments",source:"Starting here [WIDE LINK WORDS ACROSS SEVERAL ROWS](opaque:case) trailing text.",
+            on_link:Fn("hit"),part_styles:#{link:style().text_color(rgb(0xc02970))}})
+            .with_style(style().width(px(225)).height(px(260)))])
+}
+"###).module("components/markdown_viewer", COMPONENT)
+        .theme(gpui_rhai_registry::MODERN_LIGHT_THEME)
+        .bundled_assets()
+        .mount(&mut real);
+    visual.update(|window, _| window.activate_window());
+    settle(&mut visual, Step::Tick, 6);
+    let document = bounds(&mut visual, &view, "document", "Inline fragments");
+    let mut glyphs = glyph_rects_with_ink(&mut visual, document, 0xc02970ff);
+    glyphs.retain(|g| g.height > 3.);
+    glyphs.sort_by(|a, b| a.y.total_cmp(&b.y).then(a.x.total_cmp(&b.x)));
+    let first = *glyphs.first().unwrap();
+    let last = *glyphs.last().unwrap();
+    assert!(last.y - first.y > 12., "expected wrapping: {glyphs:?}");
+    let first_line_left = glyphs
+        .iter()
+        .filter(|g| (g.y - first.y).abs() < 7.)
+        .map(|g| g.x)
+        .min_by(f32::total_cmp)
+        .unwrap();
+    let second_line_left = glyphs
+        .iter()
+        .filter(|g| (g.y - last.y).abs() < 7.)
+        .map(|g| g.x)
+        .min_by(f32::total_cmp)
+        .unwrap();
+    assert!(first_line_left - second_line_left > 20., "{glyphs:?}");
+    let click = |visual: &mut VisualTestContext, x, y| {
+        let p = point(px(x), px(y));
+        visual.simulate_mouse_down(p, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(p, MouseButton::Left, Modifiers::none());
+        settle(visual, Step::Frame, 2);
+    };
+    let count = |visual: &mut VisualTestContext, n| {
+        assert!(palette_texts(visual, &view).contains(&format!("hits:{n}")));
+    };
+    let blank_x = (first_line_left + second_line_left) / 2.;
+    click(&mut visual, blank_x, first.y + first.height / 2.);
+    count(&mut visual, 0);
+    for (index, glyph) in [first, last].into_iter().enumerate() {
+        click(
+            &mut visual,
+            glyph.x + glyph.width / 2.,
+            glyph.y + glyph.height / 2.,
+        );
+        count(&mut visual, index + 1);
+    }
+    click(&mut visual, blank_x, first.y + first.height / 2.);
+    visual.simulate_keystrokes("tab");
+    settle(&mut visual, Step::Frame, 2);
+    let focus = visual.update(|_, cx| {
+        view.theme_snapshot(cx)
+            .unwrap()
+            .variant
+            .tokens
+            .color("focus_ring")
+            .unwrap()
+    });
+    let outlines = visual.update(|window, _| {
+        let focus: gpui::Hsla = gpui::rgba(focus.as_rgba_hex()).into();
+        let scale = window.scale_factor();
+        window.visual_probe_with_painted_scene(|scene| {
+            let mut outlines = Vec::new();
+            walk_live_paint(
+                scene,
+                gpui::TransformationMatrix::unit(),
+                &mut |scene, transform| {
+                    outlines.extend(
+                        scene
+                            .quads
+                            .iter()
+                            .filter(|q| q.border_color == focus)
+                            .map(|q| logical_paint_rect(q.bounds, transform, scale)),
+                    );
+                },
+            );
+            outlines
+        })
+    });
+    assert!(
+        outlines
+            .iter()
+            .any(|r| r.x > blank_x && r.y <= first.y && r.bottom() >= first.bottom()),
+        "first link row must not outline the paragraph: {outlines:?} {first:?}"
+    );
+    assert!(
+        outlines
+            .iter()
+            .any(|r| r.x < blank_x && r.y <= last.y && r.bottom() >= last.bottom()),
+        "continuation must also have focus paint: {outlines:?} {last:?}"
+    );
+    visual.simulate_keystrokes("enter");
+    settle(&mut visual, Step::Frame, 2);
+    count(&mut visual, 3);
+    assert_eq!(last_error(&mut visual, &view), None);
+}
+
+#[gpui::test]
 fn markdown_large_host_document_exceeds_rhai_string_limit_without_entering_rhai_values(
     cx: &mut TestAppContext,
 ) {
@@ -1080,8 +1199,8 @@ fn view(ctx) { markdown::MarkdownViewer(#{ key: "large", label: "Large native Ma
     let position = point(px((rect.x + 2.0) as f32), px((rect.y + 10.0) as f32));
     visual.simulate_mouse_down(position, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(position, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-a");
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     let plain = visual
         .update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()))
         .unwrap();
@@ -1089,3 +1208,6 @@ fn view(ctx) { markdown::MarkdownViewer(#{ key: "large", label: "Large native Ma
     assert!(plain.starts_with("世界") && plain.ends_with("End of native document"));
     assert!(!plain.contains("**"));
 }
+
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::support::paint::PublicSceneWitness as _;

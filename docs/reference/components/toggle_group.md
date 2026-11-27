@@ -3,7 +3,7 @@
 `components/toggle_group` · export `ToggleGroup` · version 0.4.0. Generated from
 [`registry/components/toggle_group.rhai`](../../../registry/components/toggle_group.rhai); do not edit.
 
-ToggleGroup holds pressed tool state: equal-height segments joined inside one frame.
+ToggleGroup holds pressed state in a padded tonal track, with independent selected surfaces and a stable intrinsic label width across font weights.
 
 State: caller owns values; component owns only the roving active item.
 
@@ -48,9 +48,9 @@ toggle_group::ToggleGroup(#{ key: "align", label: "Alignment", values: ["left"],
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `item`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `item`, `item_pressed`, `label`, `label_pressed`, `root`.
 
 ## Theme
 
-- Tokens: `border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `radius.md`, `selection`, `surface_hover`, `text_muted`, `text_primary`, `typography.control`
+- Tokens: `metrics.segment_px`, `metrics.tabs_track_h`, `segmented.normal`, `typography.segment`
 - Environment: `density`, `size`

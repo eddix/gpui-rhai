@@ -65,8 +65,11 @@ define_component(#{
 
 fn TitleBar(props) { render_component("components/title_bar", props) }
 fn title_bar_content(ctx, part, value, typography, muted) {
-    let structural = style();
-    if type_of(value) == "string" {
+    let string_value = type_of(value) == "string";
+    let structural = if muted { style().min_width(px(0)) }
+        else if string_value { style().min_width(px(0)).flex_shrink(true) }
+        else { style().flex_shrink(false) };
+    if string_value {
         let defaults = structural.typography(typography)
             .whitespace_nowrap().text_ellipsis();
         if part == "title" { defaults = defaults.font_weight(600); }
@@ -79,11 +82,12 @@ fn title_bar_content(ctx, part, value, typography, muted) {
 fn render_TitleBar(ctx, props) {
     // Title and subtitle share one line at one size, told apart by weight and color: a
     // second line does not fit metrics.titlebar, and the subtitle truncates first.
-    let title_children = [title_bar_content(ctx, "title", props.title, "body", false)
-        .with_style(style().flex_shrink(false))];
+    let title_children = [title_bar_content(ctx, "title", props.title, "body", false)];
     if "subtitle" in props && props.subtitle != () {
-        title_children.push(title_bar_content(ctx, "subtitle", props.subtitle, "body", true)
-            .with_style(style().min_width(px(0))));
+        // Only this lane grows. The actual subtitle keeps its natural bounds
+        // when it fits, and gets no width until the title's preference is met.
+        title_children.push(row([title_bar_content(ctx, "subtitle", props.subtitle, "body", true)])
+            .with_style(style().min_width(px(0)).flex_basis(relative(0)).flex_grow()));
     }
     let start_children = if "start" in props { props.start } else { [] };
     start_children.push(row(title_children).with_style(style()

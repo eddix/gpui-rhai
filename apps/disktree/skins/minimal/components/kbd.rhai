@@ -2,83 +2,100 @@
 {
   "id": "components/kbd",
   "export": "Kbd",
-  "version": "0.2.0",
+  "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.xs",
-    "typography.label"
+    "typography.key_legend", "typography.key_legend_cap", "typography.key_legend_menu", "metrics.kbd_h", "metrics.kbd_glyph", "space.unit"
   ],
-  "environment": ["corners"]
+  "environment": ["size", "density"]
 }
 */
-// Kbd presents a key legend: a framed keycap, or an inline legend inside menus and buttons.
+// Kbd presents one framed key or combination, or a bare inline key legend.
 //
-// Example: Kbd(#{ keys: ["⌘", "K"], label: "Command K" })
+// Example: Kbd(#{ keys: ["mod", "shift", "p"], size: "md" })
 //
-// `keys` renders one keycap per key. Markers keep their size in both densities.
+// Named keys have platform-specific visual and spoken names. A combination uses
+// one keycap, keeps its input order in RTL, and does not register a key binding.
 
 define_component(#{
-    metadata: #{ id: "components/kbd", "export": "Kbd", version: "0.2.0",
+    metadata: #{ id: "components/kbd", "export": "Kbd", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
-            "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.xs",
-            "typography.label"
+            "typography.key_legend", "typography.key_legend_cap", "typography.key_legend_menu", "metrics.kbd_h", "metrics.kbd_glyph", "space.unit"
         ],
-        environment: ["corners"] },
+        environment: ["size", "density"] },
     schema: #{
         props: #{
             text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" },
-                doc: "Legend of a single key, used when `keys` is empty; one of `text` and `keys` is required." },
-            keys: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "string" } },
+                doc: "A literal legend used when keys is empty; not parsed as key names or bindings. Empty content produces no chip." },
+            keys: #{ schema: #{ type: "one_of", variants: [#{ type: "string" },
+                #{ type: "array", max_items: 8, items: #{ type: "string" } }] },
                 required: false, sensitive: false, "default": #{ type: "array", value: [] },
-                doc: "Legends rendered one key each, in order; when non-empty they replace `text`." },
+                doc: "One named key or a combination in one chip, in input order. Whitespace-only keys are ignored. Supports mod, cmd, ctrl, alt, shift, enter, esc, tab, space, backspace, delete, arrows, pageup, pagedown, home and end; other names stay literal." },
             label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false,
-                doc: "Accessible name; defaults to `text`, or to the `keys` joined by spaces." },
-            appearance: #{ schema: #{ type: "string", allowed: ["keycap", "inline"] },
+                doc: "Accessible name; otherwise uses spelled-out key names, or the literal text." },
+            size: #{ schema: #{ type: "string", allowed: ["sm", "md"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "sm" },
+                doc: "Keycap size, independent of surrounding control size: Modern 18/22px, Clean 16/20px, before reading scale." },
+            platform: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["mac", "other"] } },
+                required: false, sensitive: false, doc: "Explicit key naming convention, or current platform when omitted. Does not change binding semantics." },
+            appearance: #{ schema: #{ type: "string", allowed: ["keycap", "inline", "menu"] },
                 required: false, sensitive: false, "default": #{ type: "string", value: "keycap" },
-                doc: "`keycap` frames each key; `inline` shows bare legends, for use inside menus and buttons." },
+                doc: "keycap frames the whole combination; inline shows a bare legend; menu uses a 20px contextual keycap, inheriting its surrounding menu/command ink. None install bindings." },
         },
-        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "key"],
+        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "keys", "keys_other", "key", "glyph", "inline", "menu", "menu_key", "menu_keys"],
     },
     render: Fn("render_Kbd")
 });
 
-fn kbd_key(ctx, legend, inline) {
-    let key = style()
-        .flex_row().items_center().justify_center()
-        .min_height(theme_length("metrics.marker"));
-    if !inline {
-        // Keycaps are at least square; the 1px frame is a structural hairline.
-        key = key
-            .min_width(theme_length("metrics.marker"))
-            .padding_x(theme_spacing("xs"))
-            .radius(theme_radius("xs"))
-            .border(px(1)).border_color(theme_color("border"));
-    }
-    row([text(legend)]).with_style(ctx.component_style("key", key))
-}
-
 fn Kbd(props) { render_component("components/kbd", props) }
 fn render_Kbd(ctx, props) {
-    let keys = if "keys" in props { props.keys } else { [] };
-    let legend = if "text" in props { props.text } else { "" };
-    if keys.is_empty() && legend == "" { throw "Kbd needs text or keys"; }
-    let inline = "appearance" in props && props.appearance == "inline";
-    let caps = [];
-    if keys.is_empty() { caps.push(kbd_key(ctx, legend, inline)); }
-    for key in keys { caps.push(kbd_key(ctx, key, inline)); }
-    let name = if "label" in props && props.label != () { props.label }
-        else if keys.is_empty() { legend }
-        else { keys.reduce(|sum, key| if sum == () { key } else { `${sum} ${key}` }) };
-    row(caps)
-        .with_style(ctx.component_style("root", style()
-            .flex_row().items_center()
-            .gap(if inline { px(0) } else { theme_spacing("xxs") })
-            .text_color(theme_color("text_muted"))
-            .typography("label")))
-        .accessibility_role("text")
-        .accessibility_label(name)
+    let requested = if type_of(props.keys) == "string" { [props.keys] } else { props.keys };
+    let keys = [];
+    for raw in requested {
+        let key = if "platform" in props && props.platform != () { key_legend(raw, props.platform) }
+            else { key_legend(raw) };
+        if key.label != "" { keys.push(key); }
+    }
+    if keys.is_empty() && props.text == "" { return fragment([]); }
+    let spoken = if keys.is_empty() { props.text }
+        else { keys.reduce(|sum,key| if sum == () { key.spoken } else { `${sum} ${key.spoken}` }) };
+    let name = if "label" in props && props.label != () { props.label } else { spoken };
+    let inline = props.appearance == "inline";
+    let menu = props.appearance == "menu";
+    if inline {
+        let separator = if !keys.is_empty() && keys[0].platform == "other" { " " } else { "" };
+        let run = if keys.is_empty() { props.text }
+            else { keys.reduce(|sum,key| if sum == () { key.label } else { `${sum}${separator}${key.label}` }) };
+        return text(run).with_style(ctx.component_style(["root","key","inline"], style()
+            .typography("key_legend")))
+            .accessibility_role("text").accessibility_label(name).env(#{size:props.size});
+    }
+    let contents = [];
+    if keys.is_empty() {
+        contents.push(text(props.text).with_style(ctx.component_style(if menu {["key","menu_key"]}else{["key"]},style()))
+            .accessibility_role("presentation"));
+    } else {
+        let glyphs = [];
+        let index = 1;
+        for key in keys {
+            let parts = if menu {["key","menu_key"]}else if key.glyph { ["key","glyph"] } else { ["key"] };
+            glyphs.push(text(key.label).with_key(`key-${index}`)
+                .with_style(ctx.component_style(parts,style().grid_cell(index,1)))
+                .accessibility_role("presentation"));
+            index += 1;
+        }
+        let parts = if keys[0].platform == "other" { ["keys","keys_other"] } else { ["keys"] };
+        if menu {parts.push("menu_keys");}
+        // Explicit columns preserve left-to-right key order without changing
+        // locale or directional navigation outside the combination.
+        contents.push(box(glyphs).with_key("keys").with_style(ctx.component_style(parts,
+            style().grid_cols_max_content(keys.len).items_center())));
+    }
+    row(contents).with_style(ctx.component_style(if menu {["root","menu"]}else{["root"]},style().flex_row().items_center()
+        .justify_center().flex_shrink(false))).env(#{size:props.size})
+        .accessibility_role("text").accessibility_label(name)
 }

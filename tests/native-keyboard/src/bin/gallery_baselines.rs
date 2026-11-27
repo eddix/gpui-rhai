@@ -18,7 +18,6 @@ extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast_platform as gpui_platform;
 
-
 #[cfg(not(target_os = "macos"))]
 fn main() {
     eprintln!("Gallery baselines require macOS");

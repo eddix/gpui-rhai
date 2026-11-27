@@ -89,12 +89,20 @@ impl Serialize for Symbol {
 pub struct LengthToken {
     path: Symbol,
     scale: f64,
+    reading_scale: bool,
 }
 
 impl LengthToken {
-    /// Bits that tell this token from another: its path and scale.
+    /// Bits that tell this token from another: path, explicit factor and
+    /// reading-scale participation. Retained layout caches must see all three.
     pub(crate) fn identity_bits(&self) -> u64 {
-        u64::from(self.path.0) ^ self.scale.to_bits().rotate_left(17)
+        u64::from(self.path.0)
+            ^ self.scale.to_bits().rotate_left(17)
+            ^ if self.reading_scale {
+                0
+            } else {
+                0xa076_1d64_78bd_642f
+            }
     }
 
     /// Reference a token path such as `spacing.sm` or `metrics.row`.
@@ -108,6 +116,7 @@ impl LengthToken {
         Ok(Self {
             path: Symbol::intern(path),
             scale: 1.0,
+            reading_scale: true,
         })
     }
 
@@ -119,6 +128,20 @@ impl LengthToken {
     #[must_use]
     pub const fn scale(self) -> f64 {
         self.scale
+    }
+
+    /// Whether the inherited reading scale multiplies this reference.
+    #[must_use]
+    pub const fn scales_with_reading(self) -> bool {
+        self.reading_scale
+    }
+
+    /// Keep theme/environment resolution and explicit multiplication, but do
+    /// not multiply a structural stroke by the inherited reading scale.
+    #[must_use]
+    pub const fn without_reading_scale(mut self) -> Self {
+        self.reading_scale = false;
+        self
     }
 
     /// Multiply the resolved length by `factor`.
@@ -139,9 +162,13 @@ impl LengthToken {
 impl Serialize for LengthToken {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("LengthToken", 2)?;
+        let mut state =
+            serializer.serialize_struct("LengthToken", if self.reading_scale { 2 } else { 3 })?;
         state.serialize_field("path", &self.path)?;
         state.serialize_field("scale", &self.scale)?;
+        if !self.reading_scale {
+            state.serialize_field("reading_scale", &false)?;
+        }
         state.end()
     }
 }
@@ -236,6 +263,23 @@ impl Environment {
         self.len += 1;
         self.entries[..=len].sort_by_key(|(candidate, _)| *candidate);
         Ok(self)
+    }
+
+    /// Return a copy with `name` removed, if present.
+    #[must_use]
+    pub fn without(mut self, name: Symbol) -> Self {
+        let len = usize::from(self.len);
+        if let Some(index) = self.entries[..len]
+            .iter()
+            .position(|(candidate, _)| *candidate == name)
+        {
+            for i in index..len.saturating_sub(1) {
+                self.entries[i] = self.entries[i + 1];
+            }
+            self.len -= 1;
+            self.entries[usize::from(self.len)] = (Symbol(0), Symbol(0));
+        }
+        self
     }
 
     /// Apply every override in order.
@@ -363,6 +407,19 @@ impl<T> EnvTable<T> {
     }
 
     /// Map every entry while keeping the key structure.
+    #[must_use]
+    pub fn map<U>(&self, mut map: impl FnMut(&T) -> U) -> EnvTable<U> {
+        EnvTable {
+            keys: self.keys.clone(),
+            entries: self
+                .entries
+                .iter()
+                .map(|(path, value)| (path.clone(), map(value)))
+                .collect(),
+        }
+    }
+
+    /// Map every entry while keeping the key structure.
     ///
     /// # Errors
     ///
@@ -428,6 +485,24 @@ impl<T> Variable<T> {
         match self {
             Self::Fixed(value) => Box::new(std::iter::once(value)),
             Self::ByEnv(table) => Box::new(table.entries.values()),
+        }
+    }
+
+    /// Map every branch while preserving environment structure.
+    #[must_use]
+    pub fn map<U>(&self, mut map: impl FnMut(&T) -> U) -> Variable<U> {
+        match self {
+            Self::Fixed(value) => Variable::Fixed(map(value)),
+            Self::ByEnv(table) => Variable::ByEnv(table.map(map)),
+        }
+    }
+
+    /// Borrow the value when it does not vary by environment.
+    #[must_use]
+    pub const fn as_fixed(&self) -> Option<&T> {
+        match self {
+            Self::Fixed(value) => Some(value),
+            Self::ByEnv(_) => None,
         }
     }
 }
@@ -567,5 +642,13 @@ mod tests {
             .expect("scaled");
         assert!((token.scale() - 8.0).abs() < f64::EPSILON);
         assert!(token.scaled(-1.0).is_err());
+        let hairline = token.without_reading_scale();
+        assert!(!hairline.scales_with_reading());
+        assert!(token.scales_with_reading());
+        assert_ne!(hairline.identity_bits(), token.identity_bits());
+        // Keep the additional policy bit inside the existing padding rather
+        // than increasing every copied length/style in the retained tree.
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(std::mem::size_of::<LengthToken>(), 16);
     }
 }

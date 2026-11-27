@@ -6,6 +6,7 @@ import "components/alert_dialog" as alert_dialog;
 import "components/sheet" as sheet;
 import "components/popover" as popover;
 import "components/tooltip" as tooltip;
+import "components/hover_card" as hover_card;
 import "components/toast" as toast;
 import "components/button" as button;
 import "components/input" as input;
@@ -18,6 +19,7 @@ fn pages() {
         #{ id: "sheet", title: "Sheet", group: "Overlays" },
         #{ id: "popover", title: "Popover", group: "Overlays" },
         #{ id: "tooltip", title: "Tooltip", group: "Overlays" },
+        #{ id: "hover_card", title: "HoverCard", group: "Agents" },
         #{ id: "toast", title: "Toast", group: "Overlays" },
     ]
 }
@@ -28,6 +30,7 @@ fn view(ctx, h, v, id) {
     else if id == "sheet" { sheet_page(h, v) }
     else if id == "popover" { popover_page(h, v) }
     else if id == "tooltip" { tooltip_page(h, v) }
+    else if id == "hover_card" { hover_card_page(h, v) }
     else if id == "toast" { toast_page(h, v) }
     else { () }
 }
@@ -80,6 +83,30 @@ fn popover_page(h, v) {
         kit::sec("Open", kit::pile([popover::Popover(#{ key: "popover-filters", label: "Filters", trigger: trigger,
             open: kit::val(v, "popover.open", false), content: kit::note("Only hosts with alerts in the last hour."),
             on_open_change: kit::store(h, "popover.open") })])),
+    ])
+}
+
+fn hover_card_page(h,v) {
+    let saved=kit::val(v,"hover_card.saved",false);
+    let preview=column([
+        text("Checkout service").with_style(style().typography("label")),
+        kit::note("Owned by Platform · production traffic is healthy."),
+        button::Button(#{key:"pin-preview",text:if saved {"Remove bookmark"}else{"Bookmark service"},
+            variant:"secondary",on_click:kit::put(h,"hover_card.saved",!saved)}),
+    ]).with_style(style().gap(theme_spacing("sm")).min_width(px(0)));
+    kit::page(h,v,"hover_card","HoverCard",
+        "Rest the pointer or use Tab on the link. You can cross into the preview or Tab to its action. Escape dismisses it.",[
+        kit::sec("Service preview",kit::pile([
+            row([
+                hover_card::HoverCard(#{key:"service-preview",label:"Checkout preview",
+                    trigger:button::Button(#{key:"preview-trigger",text:"Checkout",variant:"secondary",on_click:h.noop}),
+                    content:preview}),
+                hover_card::HoverCard(#{key:"owner-preview",label:"Platform preview",
+                    trigger:button::Button(#{key:"owner-trigger",text:"Platform",variant:"ghost",on_click:h.noop}),
+                    content:kit::note("Runtime and deployment tooling.")}),
+            ]).with_style(style().gap(theme_spacing("sm"))),
+            kit::note(if saved {"Service bookmarked"}else{"No bookmark"}),
+        ]))
     ])
 }
 

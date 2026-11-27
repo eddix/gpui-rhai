@@ -22,7 +22,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "DragSourcePrimitive(_)",
         params: &["props"],
-        doc: "Native drag source that carries a typed payload to a `DropZonePrimitive` and reports `drag_end`; `components/drag_source` wraps it.",
+        doc: "Native drag source that carries a typed payload to a `DropZonePrimitive` and reports `drag_start` and `drag_end` to the still-mounted source; `components/drag_source` wraps it.",
     },
     ScriptFnDoc {
         signature: "DraggablePrimitive(_)",

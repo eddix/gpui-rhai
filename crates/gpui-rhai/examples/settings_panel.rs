@@ -1,3 +1,8 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{EmbeddedScriptSource, ModuleId, ScriptApplication, ScriptView};
@@ -97,7 +102,11 @@ fn choose_theme(ctx, values) {
     ctx.set_state("theme_open", false);
     if values.len == 0 { return; }
     let choice = values[0];
-    if choice == "default-light" { ctx.set_theme("Default", "Light"); }
+    if choice == "modern-light" { ctx.set_theme("Modern", "Light"); }
+    else if choice == "modern-dark" { ctx.set_theme("Modern", "Dark"); }
+    else if choice == "clean-light" { ctx.set_theme("Clean", "Light"); }
+    else if choice == "clean-dark" { ctx.set_theme("Clean", "Dark"); }
+    else if choice == "default-light" { ctx.set_theme("Default", "Light"); }
     else if choice == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if choice == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if choice == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }
@@ -118,7 +127,7 @@ fn set_theme_open(ctx, open) { ctx.set_state("theme_open", open); }
 fn set_theme_query(ctx, query) { ctx.set_state("theme_query", query); }
 fn set_help_open(ctx, open) { ctx.set_state("help_open", open); }
 fn open_help(ctx, payload) { ctx.set_state("help_open", true); }
-fn reset_theme(ctx, payload) { choose_theme(ctx, ["default-dark"]); }
+fn reset_theme(ctx, payload) { choose_theme(ctx, ["modern-dark"]); }
 fn set_language(ctx, values) {
     if values.len == 0 { return; }
     ctx.set_locale(values[0]);
@@ -135,6 +144,10 @@ fn init(ctx) {
 
 fn theme_options() {
     [
+        #{ value: "modern-light", label: "Modern Light", keywords: ["light", "design"] },
+        #{ value: "modern-dark", label: "Modern Dark", keywords: ["dark", "design"] },
+        #{ value: "clean-light", label: "Clean Light", keywords: ["light", "design"] },
+        #{ value: "clean-dark", label: "Clean Dark", keywords: ["dark", "design"] },
         #{ value: "default-light", label: "Default Light", keywords: ["light"] },
         #{ value: "default-dark", label: "Default Dark", keywords: ["dark"] },
         #{ value: "tokyo-night", label: "Tokyo Night", keywords: ["dark", "blue"] },
@@ -239,6 +252,10 @@ fn module(name: &str, source: &str) -> (ModuleId, String) {
 pub const WINDOW: (f32, f32) = (640.0, 520.0);
 
 const THEMES: &[&str] = &[
+    "modern-light",
+    "modern-dark",
+    "clean-light",
+    "clean-dark",
     "default-light",
     "default-dark",
     "tokyo-night",
@@ -265,7 +282,7 @@ pub fn view(theme: &str, locale: &str) -> ScriptView {
     let theme = if THEMES.contains(&theme) {
         theme
     } else {
-        "default-dark"
+        "modern-dark"
     };
     let locale = if matches!(locale, "en" | "zh-CN" | "ar") {
         locale
@@ -281,6 +298,7 @@ pub fn view(theme: &str, locale: &str) -> ScriptView {
         module("layouts/stack", STACK),
         module("patterns/form_layout", FORM_LAYOUT),
         module("components/button", BUTTON),
+        module("components/spinner", gpui_rhai_registry::SPINNER_SOURCE),
         module("components/icon_button", ICON_BUTTON),
         module("components/icon", ICON),
         module("components/label", LABEL),
@@ -296,10 +314,12 @@ pub fn view(theme: &str, locale: &str) -> ScriptView {
     ScriptView::sources(
         ModuleId::parse("main").expect("main module"),
         scripts,
-        DEFAULT_DARK,
+        shared_themes::PRIMARY,
     )
     .token_base(include_str!("../../../registry/tokens.rhai"))
-    .theme_sources([
+    .font_sources(shared_fonts::sources())
+    .theme_sources(shared_themes::additional().chain([
+        ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),
         ("default_light.rhai".to_owned(), DEFAULT_LIGHT.to_owned()),
         ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
         ("tokyo_storm.rhai".to_owned(), TOKYO_STORM.to_owned()),
@@ -320,7 +340,7 @@ pub fn view(theme: &str, locale: &str) -> ScriptView {
         ("hermarchy.rhai".to_owned(), HERMARCHY.to_owned()),
         ("futurism.rhai".to_owned(), FUTURISM.to_owned()),
         ("aetheria.rhai".to_owned(), AETHERIA.to_owned()),
-    ])
+    ]))
     .locale_sources([
         ("en.rhai".to_owned(), EN.to_owned()),
         ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),

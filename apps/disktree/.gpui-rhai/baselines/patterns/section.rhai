@@ -61,7 +61,7 @@ fn Section(props) { render_component("patterns/section", props) }
 fn render_Section(ctx, props) {
     let label_voice = "voice" in props && props.voice == "label";
     let title = if label_voice {
-        text(props.title.to_upper()).with_style(ctx.component_style("title", style()
+        text(props.title).with_style(ctx.component_style("title", style()
             .typography("label").text_color(theme_color("text_muted"))))
     } else {
         text(props.title).with_style(ctx.component_style("title", style()

@@ -1,5 +1,6 @@
 //! List, virtual collections and collection selection.
 
+mod bounded_content;
 mod column_browser;
 mod focus_frame;
 mod intrinsic;

@@ -113,11 +113,12 @@ boundary constraints. Edge-only aspect locking adjusts the perpendicular
 dimension around its center. When constraints exceed available space, the
 effective boundary maximum wins deterministically; sizes never become negative.
 
-The constraint policy must define how bounds, min/max, and aspect ratio interact
-and how an unsatisfiable request is handled. Reject invalid/non-finite geometry;
-never allow negative sizes. Container changes during a drag require a defined
-rebase or cancellation policy. Rotation combined with resize requires an
-explicit supported transform model rather than mixing window and local axes.
+The pointer displacement is projected into the boundary's committed layout
+axes before applying any constraints, including when an ancestor scales or
+rotates the boundary. If that boundary moves, changes its transform or
+materially changes size during the drag, the next gesture event cancels the
+preview and no stale rectangle is proposed. A boundary without an inverse
+coordinate map cannot start a pointer resize.
 
 Style parts are `root`, `surface`, `content`, and `handle`. Physical handles do
 not reverse in RTL; they remain attached to physical rectangle edges. Pointer
@@ -161,6 +162,11 @@ is hovered, dragged or focused (in `focus_ring`). The lane is the 8px separator
 of earlier releases, between the panes, filled on hover and drag and an ink bar
 on focus.
 
+Pointer drags use the same committed coordinate rule as Resizable, with the
+split group as the boundary. Horizontal RTL reverses the logical start axis
+after projecting the pointer displacement into that group. Both behaviors
+can be exercised in the Gallery's **Visual transforms** page.
+
 Style parts are `root`, `start`, `end` and `handle`. The handle takes
 `handle_hover` and `handle_drag` while it is hovered or dragged (a lane's
 `surface_hover` fill by default, nothing on a flush line; give them the
@@ -199,6 +205,22 @@ drag-to-reorder panels, docking, and persistence are not part of this component.
 
 Source: [split_pane.rhai](../../registry/components/split_pane.rhai).
 Runnable story: `gpui-rhai gallery --story components/split-pane`.
+
+## Slider and RangeSlider
+
+The two controls sample the layout rectangle used by their painted track
+and thumb anchors. This includes track widths or heights overridden by
+`part_styles`. An inverse transform maps the pointer before calculating
+the ratio, snapping to a step and applying the horizontal RTL direction.
+For RangeSlider the mapped value also determines which thumb starts the
+gesture; the other endpoint and the minimum gap remain unchanged.
+
+The native preview does not update the caller's accepted values. A valid
+release makes one proposal if the value changed. Changes to the track
+geometry, text direction, constraints or accepted input invalidate the old
+gesture: the next pointer event restores the controlled value without
+submitting a stale proposal. Rejected releases also restore the accepted
+display. Try both controls on the Gallery's **Visual transforms** page.
 
 ## DragSource and DropZone — implemented
 

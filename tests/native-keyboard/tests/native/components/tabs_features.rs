@@ -75,14 +75,14 @@ fn a_count_capsule_is_as_tall_as_the_label_and_joins_the_name(cx: &mut TestAppCo
     // Past 99 the capsule shows 99+.
     bounds(&mut visual, &view, "text", "99+");
 
-    // A neutral capsule in tabs.counter: metrics.counter (20, the control line height) tall,
-    // at least as wide, centred in the 32px tab like the label, a capsule: radius.pill clamps
+    // Modern's neutral counter is 18px tall, independent from the 36px tab,
+    // at least as wide and centered like the label; radius.pill clamps
     // to half the height.
     let neutral = fills(&mut visual, COUNTER);
     assert_eq!(neutral.len(), 1, "{neutral:?}");
     let (x, y, width, height, radius) = neutral[0];
     assert!(
-        (height - 20.0).abs() < 0.01 && width >= 20.0 - 0.01,
+        (height - 18.0).abs() < 0.01 && width >= 18.0 - 0.01,
         "{neutral:?}"
     );
     #[allow(clippy::cast_possible_truncation)]
@@ -97,12 +97,12 @@ fn a_count_capsule_is_as_tall_as_the_label_and_joins_the_name(cx: &mut TestAppCo
         x > alpha.x as f32 && x + width < tab_right,
         "after the label, inside the tab"
     );
-    assert!((radius - 10.0).abs() < 0.01, "a capsule: {radius}");
+    assert!((radius - 9.0).abs() < 0.01, "a capsule: {radius}");
 
     // A toned count fills the capsule with the tone; a tone alone is a 6px lamp.
     let toned = fills(&mut visual, ACCENT);
     assert!(
-        toned.iter().any(|quad| (quad.3 - 20.0).abs() < 0.01),
+        toned.iter().any(|quad| (quad.3 - 18.0).abs() < 0.01),
         "{toned:?}"
     );
     let lamp = fills(&mut visual, DANGER);

@@ -1,5 +1,7 @@
 //! Retained native `CodeViewer` and `DiffViewer` surfaces.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -19,6 +21,7 @@ use regex::RegexBuilder;
 use similar::TextDiff;
 use unicode_segmentation::UnicodeSegmentation as _;
 
+use crate::inline_link::{InlineLink, InlineLinkFrame};
 use crate::text_input::{
     NativeTypography, TextInputCallbacks, TextInputConfig, TextInputEntity, native_typography,
 };
@@ -236,24 +239,25 @@ pub enum DiffSide {
 }
 
 pub fn init_document_view(cx: &mut App) {
+    use crate::native_shortcut::platform_binding;
     cx.bind_keys([
-        KeyBinding::new("cmd-f", Find, Some(CODE_CONTEXT)),
-        KeyBinding::new("cmd-g", FindNext, Some(CODE_CONTEXT)),
-        KeyBinding::new("shift-cmd-g", FindPrevious, Some(CODE_CONTEXT)),
+        platform_binding(cx, "secondary-f", Find, CODE_CONTEXT),
+        platform_binding(cx, "secondary-g", FindNext, CODE_CONTEXT),
+        platform_binding(cx, "shift-secondary-g", FindPrevious, CODE_CONTEXT),
         KeyBinding::new("escape", CloseFind, Some(CODE_CONTEXT)),
-        KeyBinding::new("cmd-c", CopyDocumentSelection, Some(CODE_CONTEXT)),
+        platform_binding(cx, "secondary-c", CopyDocumentSelection, CODE_CONTEXT),
         KeyBinding::new("enter", ActivateDocumentLocation, Some(CODE_CONTEXT)),
-        KeyBinding::new("cmd-f", Find, Some(DIFF_CONTEXT)),
-        KeyBinding::new("cmd-g", FindNext, Some(DIFF_CONTEXT)),
-        KeyBinding::new("shift-cmd-g", FindPrevious, Some(DIFF_CONTEXT)),
+        platform_binding(cx, "secondary-f", Find, DIFF_CONTEXT),
+        platform_binding(cx, "secondary-g", FindNext, DIFF_CONTEXT),
+        platform_binding(cx, "shift-secondary-g", FindPrevious, DIFF_CONTEXT),
         KeyBinding::new("escape", CloseFind, Some(DIFF_CONTEXT)),
-        KeyBinding::new("cmd-c", CopyDocumentSelection, Some(DIFF_CONTEXT)),
+        platform_binding(cx, "secondary-c", CopyDocumentSelection, DIFF_CONTEXT),
         KeyBinding::new("enter", ActivateDocumentLocation, Some(DIFF_CONTEXT)),
         KeyBinding::new("alt-down", NextChange, Some(DIFF_CONTEXT)),
         KeyBinding::new("alt-up", PreviousChange, Some(DIFF_CONTEXT)),
-        KeyBinding::new("shift-cmd-e", ExpandAll, Some(DIFF_CONTEXT)),
-        KeyBinding::new("shift-cmd-c", CollapseAll, Some(DIFF_CONTEXT)),
-        KeyBinding::new("alt-cmd-c", CopyUnifiedDiff, Some(DIFF_CONTEXT)),
+        platform_binding(cx, "shift-secondary-e", ExpandAll, DIFF_CONTEXT),
+        platform_binding(cx, "shift-secondary-c", CollapseAll, DIFF_CONTEXT),
+        platform_binding(cx, "alt-secondary-c", CopyUnifiedDiff, DIFF_CONTEXT),
     ]);
 }
 
@@ -405,6 +409,7 @@ struct CodeViewerConfig {
     scrollbar: DocumentScrollbarConfig,
     descriptor: DocumentDescriptor,
     show_line_numbers: bool,
+    show_gutter: bool,
     wrap: DocumentWrap,
     tab_size: usize,
     height: CodeViewerHeight,
@@ -602,6 +607,7 @@ struct CodeViewerEntity {
     selection: DocumentSelection,
     search: SearchState,
     search_input: Entity<TextInputEntity>,
+    search_typography: NativeTypography,
     search_job: u64,
     search_task: Option<Task<()>>,
     job: u64,
@@ -650,7 +656,6 @@ impl CodeViewerEntity {
                     autofocus: false,
                     selection_color,
                     caret_color,
-                    typography: search_typography,
                 },
                 callbacks,
                 cx,
@@ -678,6 +683,7 @@ impl CodeViewerEntity {
             selection: DocumentSelection::default(),
             search: SearchState::default(),
             search_input,
+            search_typography,
             search_job: 0,
             search_task: None,
             job: 0,
@@ -696,14 +702,16 @@ impl CodeViewerEntity {
         cx: &mut Context<Self>,
     ) {
         let needs_prepare = self.config.preparation_changed(&config);
-        let presentation_changed =
-            self.config.wrap != config.wrap || self.config.tab_size != config.tab_size;
-        if self.config.height != config.height {
+        let presentation_changed = self.config.wrap != config.wrap
+            || self.config.tab_size != config.tab_size
+            || self.config.show_gutter != config.show_gutter;
+        if self.config.height != config.height || presentation_changed {
             self.measured_columns.set(None);
         }
         self.config = config;
         self.events = events;
         self.theme = theme.clone();
+        self.search_typography = search_typography;
         let callbacks = self.search_input.read(cx).callbacks();
         self.search_input.update(cx, |input, cx| {
             input.update_props(
@@ -716,7 +724,6 @@ impl CodeViewerEntity {
                     autofocus: false,
                     selection_color: theme_color(theme, "selection", 0x3347_6fff),
                     caret_color: theme_color(theme, "accent", 0x7aa2_f7ff),
-                    typography: search_typography,
                 },
                 callbacks,
                 cx,
@@ -808,6 +815,7 @@ impl CodeViewerEntity {
                     f64::from(bounds.size.width),
                     line_digits,
                     f64::from(text_size),
+                    self.config.show_gutter,
                 )
             }),
         }
@@ -1065,7 +1073,8 @@ impl CodeViewerEntity {
                 theme_color(&self.theme, "border", 0x353b_48ff).as_rgba_hex(),
             ))
             .child(
-                div()
+                self.search_typography
+                    .apply(div())
                     .h(px(26.0))
                     .flex_1()
                     .min_w(px(0.0))
@@ -1226,6 +1235,7 @@ impl CodeViewerEntity {
                 wrap: self.config.wrap,
                 tab_size: self.config.tab_size,
                 line_digits,
+                show_gutter: self.config.show_gutter,
                 text_size,
                 measured_columns: Rc::clone(&self.measured_columns),
                 last: Cell::new(None),
@@ -1391,6 +1401,7 @@ impl Element for DocumentBoundsRecorder {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for DocumentBoundsRecorder {
     type Element = Self;
 
@@ -1407,6 +1418,7 @@ struct ContentRows {
     wrap: DocumentWrap,
     tab_size: usize,
     line_digits: usize,
+    show_gutter: bool,
     text_size: f32,
     measured_columns: Rc<Cell<Option<usize>>>,
     /// The last count, so the layout passes of one frame wrap the document once.
@@ -1426,6 +1438,7 @@ impl ContentRows {
                     f64::from(width),
                     self.line_digits,
                     f64::from(self.text_size),
+                    self.show_gutter,
                 );
                 self.measured_columns.set(Some(columns));
                 Some(columns)
@@ -1524,6 +1537,7 @@ impl Element for CodeContentMeasure {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for CodeContentMeasure {
     type Element = Self;
 
@@ -1660,6 +1674,7 @@ fn code_line_element(
         focus: focus.clone(),
         events: events.clone(),
         links: Arc::from([]),
+        link_focus_ink: None,
         disabled,
     };
     let (text_size, line_height) = document_text_metrics(&config.text_style, theme);
@@ -1722,7 +1737,7 @@ fn code_line_element(
             .flex()
             .flex_row()
             .items_center()
-            .child(gutter)
+            .when(config.show_gutter, |row| row.child(gutter))
             .child(content),
         &config.line_style,
         theme,
@@ -1737,8 +1752,17 @@ fn code_gutter_width(line_digits: usize) -> f32 {
 }
 
 /// Columns that fit beside the gutter when lines wrap at the viewport width.
-fn viewport_wrap_columns(viewport_width: f64, line_digits: usize, text_size: f64) -> usize {
-    let reserved = (f64::from(code_gutter_width(line_digits)) + 16.0).max(72.0);
+fn viewport_wrap_columns(
+    viewport_width: f64,
+    line_digits: usize,
+    text_size: f64,
+    show_gutter: bool,
+) -> usize {
+    let reserved = if show_gutter {
+        (f64::from(code_gutter_width(line_digits)) + 16.0).max(72.0)
+    } else {
+        16.0
+    };
     let available = (viewport_width - reserved).max(20.0);
     let character_width = (text_size * 0.604).max(1.0);
     (available / character_width)
@@ -1762,20 +1786,31 @@ pub(crate) struct InteractiveDocumentText {
     pub(crate) focus: FocusHandle,
     pub(crate) events: PrimitiveContext,
     /// Display-local link ranges. Links only emit; they never open a URL.
-    pub(crate) links: Arc<[(Range<usize>, String, String)]>,
+    pub(crate) links: Arc<[InlineLink]>,
+    pub(crate) link_focus_ink: Option<gpui::Hsla>,
     pub(crate) disabled: bool,
+}
+
+pub(crate) struct DocumentTextFrame {
+    hitbox: gpui::Hitbox,
+    links: Option<Rc<InlineLinkFrame>>,
+    keyboard_links: Vec<AnyElement>,
 }
 
 impl Element for InteractiveDocumentText {
     type RequestLayoutState = ();
-    type PrepaintState = gpui::Hitbox;
+    type PrepaintState = DocumentTextFrame;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
     }
 
     fn a11y_role(&self) -> Option<gpui::Role> {
-        Some(gpui::Role::Label)
+        Some(if self.links.is_empty() || self.disabled {
+            gpui::Role::Label
+        } else {
+            gpui::Role::Paragraph
+        })
     }
 
     fn write_a11y_info(&self, node: &mut gpui::accesskit::Node) {
@@ -1812,7 +1847,40 @@ impl Element for InteractiveDocumentText {
     ) -> Self::PrepaintState {
         self.text
             .prepaint(None, inspector, bounds, state, window, cx);
-        window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal)
+        let hitbox = window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal);
+        let links = (!self.disabled && !self.links.is_empty()).then(|| {
+            Rc::new(InlineLinkFrame::project(
+                self.text.layout(),
+                self.source.get(self.global_range.clone()),
+                &self.links,
+                window,
+            ))
+        });
+        let mut keyboard_links = Vec::new();
+        if let Some((frame, ink)) = links.as_ref().zip(self.link_focus_ink) {
+            for (index, link) in self.links.iter().enumerate().filter(|(_, link)| link.first) {
+                let events = self.events.clone();
+                let payload =
+                    crate::inline_link::link_payload(link.destination.clone(), link.label.clone());
+                if let Some(target) = frame.focus_target(
+                    index,
+                    link,
+                    ink,
+                    move |window, cx| {
+                        let _ = events.emit("link", payload.clone(), window, cx);
+                    },
+                    window,
+                    cx,
+                ) {
+                    keyboard_links.push(target);
+                }
+            }
+        }
+        DocumentTextFrame {
+            hitbox,
+            links,
+            keyboard_links,
+        }
     }
 
     #[allow(clippy::too_many_lines)] // One shared native selection/link event registration pass.
@@ -1822,7 +1890,7 @@ impl Element for InteractiveDocumentText {
         inspector: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         state: &mut Self::RequestLayoutState,
-        hitbox: &mut Self::PrepaintState,
+        frame: &mut Self::PrepaintState,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -1831,13 +1899,16 @@ impl Element for InteractiveDocumentText {
         if self.disabled {
             return;
         }
+        for target in &mut frame.keyboard_links {
+            target.paint(window, cx);
+        }
+        let hitbox = &frame.hitbox;
         window.set_cursor_style(CursorStyle::IBeam, hitbox);
         let layout = self.text.layout().clone();
-        if let Ok(index) = layout.index_for_position(window.mouse_position())
-            && self
-                .links
-                .iter()
-                .any(|(range, _, _)| range.contains(&index))
+        if window
+            .event_position_in_layout(window.mouse_position())
+            .and_then(|point| frame.links.as_ref()?.hit(point))
+            .is_some()
         {
             window.set_cursor_style(CursorStyle::PointingHand, hitbox);
         }
@@ -1864,7 +1935,10 @@ impl Element for InteractiveDocumentText {
                     return;
                 }
                 focus.focus(window, cx);
-                let display = clamp(layout.index_for_position(event.position));
+                let Some(position) = window.event_position_in_layout(event.position) else {
+                    return;
+                };
+                let display = clamp(layout.index_for_position(position));
                 let local = display_source_offset(&offset_map, display).min(range.len());
                 let global = range.start + local;
                 selection.begin(side, Arc::clone(&source), global);
@@ -1907,7 +1981,10 @@ impl Element for InteractiveDocumentText {
                     && event.pressed_button == Some(MouseButton::Left)
                     && hitbox.is_hovered(window)
                 {
-                    let display = clamp(layout.index_for_position(event.position));
+                    let Some(position) = window.event_position_in_layout(event.position) else {
+                        return;
+                    };
+                    let display = clamp(layout.index_for_position(position));
                     let local = display_source_offset(&offset_map, display).min(range.len());
                     selection.update(side, range.start + local);
                     cx.stop_propagation();
@@ -1920,19 +1997,24 @@ impl Element for InteractiveDocumentText {
             let links = Arc::clone(&self.links);
             let selection = self.selection.clone();
             let events = self.events.clone();
+            let fragments = frame.links.clone();
             window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                 if phase.bubble() && event.button == MouseButton::Left && hitbox.is_hovered(window)
                 {
                     // A selection drag over a link must not activate it.
-                    let display = clamp(layout.index_for_position(event.position));
+                    let Some(position) = window.event_position_in_layout(event.position) else {
+                        return;
+                    };
                     if selection.selected_text().is_none()
-                        && let Some((_, href, text)) =
-                            links.iter().find(|(range, _, _)| range.contains(&display))
+                        && let Some(link) = fragments
+                            .as_ref()
+                            .and_then(|frame| frame.hit(position))
+                            .and_then(|index| links.get(index))
                     {
-                        let payload = UiValue::Map(BTreeMap::from([
-                            ("href".to_owned(), UiValue::String(href.clone())),
-                            ("text".to_owned(), UiValue::String(text.clone())),
-                        ]));
+                        let payload = crate::inline_link::link_payload(
+                            link.destination.clone(),
+                            link.label.clone(),
+                        );
                         let events = events.clone();
                         window.defer(cx, move |window, cx| {
                             let _ = events.emit("link", payload, window, cx);
@@ -1945,6 +2027,7 @@ impl Element for InteractiveDocumentText {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for InteractiveDocumentText {
     type Element = Self;
 
@@ -2060,6 +2143,7 @@ fn parse_code_config(
         scrollbar: DocumentScrollbarConfig::parse(props)?,
         descriptor,
         show_line_numbers: props.boolean("show_line_numbers").unwrap_or(true),
+        show_gutter: props.boolean("show_gutter").unwrap_or(true),
         wrap,
         tab_size: props.usize("tab_size").unwrap_or(4),
         height,
@@ -2429,6 +2513,14 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
                     ),
             ),
             (
+                "show_gutter".to_owned(),
+                ObjectField::optional(ValueSchema::Bool)
+                    .with_default(UiValue::Bool(true))
+                    .with_doc(
+                        "Reserves and paints the line number gutter. With `false`, the text and viewport wrapping use its space.",
+                    ),
+            ),
+            (
                 "wrap".to_owned(),
                 ObjectField::optional(ValueSchema::enumeration(["none", "viewport", "column"]))
                     .with_default(UiValue::String("none".to_owned()))
@@ -2642,6 +2734,7 @@ struct DiffViewerEntity {
     selection: DocumentSelection,
     search: DiffSearchState,
     search_input: Entity<TextInputEntity>,
+    search_typography: NativeTypography,
     search_job: u64,
     search_task: Option<Task<()>>,
     job: u64,
@@ -2689,7 +2782,6 @@ impl DiffViewerEntity {
                     autofocus: false,
                     selection_color: theme_color(&theme, "selection", 0x3347_6fff),
                     caret_color: theme_color(&theme, "accent", 0x7aa2_f7ff),
-                    typography: search_typography,
                 },
                 callbacks,
                 cx,
@@ -2731,6 +2823,7 @@ impl DiffViewerEntity {
             selection: DocumentSelection::default(),
             search: DiffSearchState::default(),
             search_input,
+            search_typography,
             search_job: 0,
             search_task: None,
             job: 0,
@@ -2761,6 +2854,7 @@ impl DiffViewerEntity {
         self.config = config;
         self.events = events;
         self.theme = theme.clone();
+        self.search_typography = search_typography;
         let callbacks = self.search_input.read(cx).callbacks();
         self.search_input.update(cx, |input, cx| {
             input.update_props(
@@ -2773,7 +2867,6 @@ impl DiffViewerEntity {
                     autofocus: false,
                     selection_color: theme_color(theme, "selection", 0x3347_6fff),
                     caret_color: theme_color(theme, "accent", 0x7aa2_f7ff),
-                    typography: search_typography,
                 },
                 callbacks,
                 cx,
@@ -3366,7 +3459,8 @@ impl DiffViewerEntity {
                 theme_color(&self.theme, "border", 0x353b_48ff).as_rgba_hex(),
             ))
             .child(
-                div()
+                self.search_typography
+                    .apply(div())
                     .h(px(26.0))
                     .flex_1()
                     .min_w(px(0.0))
@@ -3750,6 +3844,7 @@ impl Element for DiffBoundsRecorder {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for DiffBoundsRecorder {
     type Element = Self;
 
@@ -4257,6 +4352,7 @@ fn diff_cell(
         focus: focus.clone(),
         events: events.clone(),
         links: Arc::from([]),
+        link_focus_ink: None,
         disabled,
     };
     let (text_size, line_height) = document_text_metrics(&config.text_style, theme);
@@ -4729,13 +4825,17 @@ mod tests {
         let text_size = 12.0;
         let character_width = text_size * 0.604;
         for line_digits in [1, 3, 7] {
-            let columns = viewport_wrap_columns(400.0, line_digits, text_size);
+            let columns = viewport_wrap_columns(400.0, line_digits, text_size, true);
             let used = f64::from(code_gutter_width(line_digits));
             assert!(
                 f64::from(usize_f32(columns)) * character_width + used <= 400.0,
                 "{line_digits} digits wrap at {columns} columns"
             );
         }
+        assert!(
+            viewport_wrap_columns(400.0, 1, text_size, false)
+                > viewport_wrap_columns(400.0, 1, text_size, true)
+        );
     }
 
     #[test]
@@ -4765,6 +4865,7 @@ mod tests {
             wrap: DocumentWrap::Viewport,
             tab_size: 4,
             line_digits: 1,
+            show_gutter: true,
             text_size: 14.0,
             measured_columns: Rc::clone(&measured),
             last: Cell::new(None),
@@ -4773,7 +4874,7 @@ mod tests {
         assert_eq!(rows.rows(None), 4);
         assert_eq!(measured.get(), None);
         assert_eq!(rows.rows(Some(px(2000.0))), 4);
-        let columns = viewport_wrap_columns(200.0, 1, 14.0);
+        let columns = viewport_wrap_columns(200.0, 1, 14.0, true);
         let narrow = rows.rows(Some(px(200.0)));
         assert_eq!(measured.get(), Some(columns));
         assert_eq!(

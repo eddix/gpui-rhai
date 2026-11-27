@@ -43,6 +43,24 @@ last script transaction error. Use the existing stderr mirroring option or the
 Host observer instead of polling the frame or adding per-frame image logs.
 This does not make dynamic Host namespaces statically knowable to the CLI.
 
+An image may provide a native, non-interactive text cue instead of the inline
+error message:
+
+```rhai
+image_source(asset("media/avatar")).image_fallback_text("AL")
+    .with_style(style().width(px(32)).height(px(32)))
+    .with_part_style("image_fallback", style().font_weight(600))
+```
+
+This applies only to that image, directional image or inline SVG, not arbitrary
+descendants. Pending loads do not show the failure cue. The image owner keeps its
+identity and accessible name; the cue adds no focus target or semantic node.
+Empty text suppresses only the visual error, not the bounded presentation report.
+Recovery and resource replacement reset the error lease; repeated frames do not
+repeat the same report. Missing declared assets still fail preparation.
+Command's logical icon/logo IDs use the label's first Unicode letter/number;
+caller-supplied nodes own their own fallback. Avatar uses its normal initials.
+
 ## Application images
 
 The images under `ui/assets` form the `app` namespace: `ui/assets/icons/star.svg`
@@ -168,6 +186,12 @@ their first mounted GPUI view, from the files or from the tree `build.rs`
 embedded. A Host also passes validated in-memory `FontSource` values with
 `.font_source(...)` or `.font_sources(...)`.
 
+The CLI installs the bundled UI font's notice under
+`ui/licenses/Inter-OFL-1.1.txt`. Default macOS bundling copies `ui/licenses/`
+to the same relative path inside `Contents/Resources`, keeping notices readable
+without extracting the embedded UI. An application's explicit `resources`
+list replaces the defaults and must include its own chosen notices.
+
 The Host validates safe labels, TrueType/OpenType headers, a 16 MiB per-font
 limit, at most 64 sources, and duplicate payloads. App-global fingerprints
 prevent sibling views from registering identical bytes repeatedly. GPUI
@@ -180,3 +204,12 @@ paths or bytes.
 Family aliases and development hot replacement remain incomplete. Until aliases
 land, `font_family` must use the internal family name declared by the font
 itself.
+
+The bundled 400/500/600 faces all declare the actual native family `Inter`.
+Their subfamilies, weight classes and unique PostScript names distinguish the
+faces, so `font_family("Inter").font_weight(600)` selects the semibold face
+rather than a same-named regular face. The font preparation script normalizes
+family/style metadata from the licensed webfont subsets; it preserves their
+outlines, advances and vertical metrics. CSS `@font-face` aliases alone would
+not establish this native-family relationship. File names and `FontSource`
+labels are not aliases.

@@ -38,6 +38,18 @@ These Cargo examples demonstrate Host integration patterns worth copying:
 | `mini_timeline` | Compact timeline composition | — |
 | `byod_treemap` | Bring your own design: own palette and lengths, no token base or official components | `examples/byod_treemap/` |
 
+Official-design tutorials register Modern/Clean × Light/Dark and start in
+Modern/Dark. The Rust-owned-tree program consumes validated theme snapshots,
+not a running script UI engine. `byod_treemap` intentionally remains an
+application-owned design without the official token base or preset injection.
+
+The native suite mounts the same factories/constructors as all 16 tutorial
+programs, including file-backed sources, complete Rust Host layouts and native
+multi-window creation. Its reference-program checks exercise live design
+switches, real input/undo, Diff layout controls, worker delivery and embedded
+view remounts. They are integration checks, not complete source-pixel or OS
+input/accessibility acceptance.
+
 Run one with:
 
 ```sh

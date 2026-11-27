@@ -86,7 +86,8 @@ fn an_explicit_integer_height_is_kept(cx: &mut TestAppContext) {
     assert!(blank.abs() < 0.5, "comfortable: {blank}px blank");
     // The same integer in compact keeps 76px: the caller asked for it.
     let blank = blank_below(cx, "compact", "76");
-    assert!((blank - 12.0).abs() < 0.5, "compact: {blank}px blank");
+    // Compact content is 2 x 28px plus its derived 9px inset.
+    assert!((blank - 11.0).abs() < 0.5, "compact: {blank}px blank");
 }
 
 #[gpui::test]

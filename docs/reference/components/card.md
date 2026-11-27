@@ -18,8 +18,10 @@ card::Card(#{ header: text("Account"), content: text("Ada") })
 | `content` | node | required | The card body; header, content and footer sit `group` apart within `metrics.inset`. |
 | `footer` | node or `()` | — | A node below the content. |
 | `header` | node or `()` | — | A heading node above the content, in `subtitle` typography. |
+| `interactive` | bool | `false` | Enables the preset's hover treatment; actions and keyboard behavior remain with the content's controls. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
+| `selected` | bool | `false` | Selected visual state; selection remains controlled by the caller. |
 | `style` | style | — | Style merged over the root part. |
 | `variant` | `"block"` or `"outline"` | `"block"` | `block` fills with `surface_raised`; `outline` draws a hairline, for cards on a raised surface. |
 
@@ -33,9 +35,9 @@ card::Card(#{ header: text("Account"), content: text("Ada") })
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `footer`, `header`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `content`, `footer`, `header`, `root`, `surface`.
 
 ## Theme
 
-- Tokens: `border`, `metrics.inset`, `radius.lg`, `space.group`, `surface_raised`, `text_primary`, `typography.subtitle`
+- Tokens: `border`, `card.root_interactive`, `card.root_outline`, `card.root_selected`, `card.surface_hover`, `card.surface_selected`, `metrics.inset`, `radius.lg`, `space.group`, `surface_raised`, `text_primary`, `typography.subtitle`
 - Environment: `density`

@@ -8,6 +8,14 @@ mod focus_order;
 mod focus_within;
 mod key_bindings;
 mod key_phases;
+mod live_typography;
 mod node_keys;
+mod number_input;
+mod otp_input;
 mod tab_stops;
+mod tag_input;
 mod text_fields;
+mod textarea_counter;
+// Requires the vendor's transform/shaping probe.
+#[cfg(feature = "vendor-gpui")]
+mod transformed_geometry;

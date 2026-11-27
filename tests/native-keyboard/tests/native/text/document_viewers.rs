@@ -122,7 +122,7 @@ fn code_and_diff_viewers_mount_native_document_surfaces(cx: &mut TestAppContext)
     visual.simulate_mouse_down(diff_line, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(diff_line, MouseButton::Left, Modifiers::default());
     visual.simulate_keystrokes("alt-down");
-    visual.simulate_keystrokes("alt-cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("alt-secondary-c"));
     visual.run_until_parked();
     let patch = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert!(
@@ -192,18 +192,18 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-    visual.simulate_keystrokes("cmd-c");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-c"));
     visual.run_until_parked();
     let copied = visual.update(|_, cx| cx.read_from_clipboard().and_then(|item| item.text()));
     assert!(
         copied.as_deref().is_some_and(|text| text.contains('\n')),
         "cross-line source selection did not copy original text: {copied:?}"
     );
-    visual.simulate_keystrokes("cmd-f");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-f"));
     visual.run_until_parked();
     visual.simulate_input("enabled");
     visual.run_until_parked();
-    visual.simulate_keystrokes("cmd-g");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-g"));
     visual.simulate_keystrokes("escape");
     visual.run_until_parked();
     assert_eq!(last_error(&mut visual, &view), None);

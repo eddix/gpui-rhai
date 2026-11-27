@@ -182,18 +182,24 @@ fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppCo
         Some(&UiValue::String("中文😀é".to_owned()))
     );
 
-    cx.simulate_keystrokes(*window, "cmd-a cmd-c");
+    cx.simulate_keystrokes(
+        *window,
+        &crate::support::primary_keys("secondary-a secondary-c"),
+    );
     assert_eq!(
         cx.read_from_clipboard().and_then(|item| item.text()),
         Some("中文😀é".to_owned())
     );
-    cx.simulate_keystrokes(*window, "cmd-x");
+    cx.simulate_keystrokes(*window, &crate::support::primary_keys("secondary-x"));
     assert_eq!(
         runtime.borrow().component_state.get(&root_path, "value"),
         Some(&UiValue::String(String::new()))
     );
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("粘贴".to_owned()));
-    cx.simulate_keystrokes(*window, "cmd-a cmd-v");
+    cx.simulate_keystrokes(
+        *window,
+        &crate::support::primary_keys("secondary-a secondary-v"),
+    );
     assert_eq!(
         runtime.borrow().component_state.get(&root_path, "value"),
         Some(&UiValue::String("粘贴".to_owned()))
@@ -310,24 +316,33 @@ fn native_textarea_wraps_inserts_newlines_and_limits_graphemes(cx: &mut TestAppC
     );
 
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("👨‍👩‍👧‍👦abcdef".to_owned()));
-    cx.simulate_keystrokes(*window, "cmd-a cmd-v cmd-a cmd-c");
+    cx.simulate_keystrokes(
+        *window,
+        &crate::support::primary_keys("secondary-a secondary-v secondary-a secondary-c"),
+    );
     assert_eq!(
         cx.read_from_clipboard().and_then(|item| item.text()),
         Some("👨‍👩‍👧‍👦abcd".to_owned())
     );
-    cx.simulate_keystrokes(*window, "cmd-x");
+    cx.simulate_keystrokes(*window, &crate::support::primary_keys("secondary-x"));
     assert_eq!(
         runtime.borrow().component_state.get(&root_path, "value"),
         Some(&UiValue::String(String::new()))
     );
 
-    cx.simulate_keystrokes(*window, "tab cmd-a cmd-c");
+    cx.simulate_keystrokes(
+        *window,
+        &crate::support::primary_keys("tab secondary-a secondary-c"),
+    );
     assert_eq!(
         cx.read_from_clipboard().and_then(|item| item.text()),
         Some("Read only 中文".to_owned())
     );
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("mutated".to_owned()));
-    cx.simulate_keystrokes(*window, "cmd-v cmd-x");
+    cx.simulate_keystrokes(
+        *window,
+        &crate::support::primary_keys("secondary-v secondary-x"),
+    );
     cx.simulate_input(*window, "typed");
     assert_eq!(
         runtime
@@ -425,13 +440,19 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
     });
     cx.run_until_parked();
 
-    cx.simulate_keystrokes(*window, "tab cmd-a cmd-c");
+    cx.simulate_keystrokes(
+        *window,
+        &crate::support::primary_keys("tab secondary-a secondary-c"),
+    );
     assert_eq!(
         cx.read_from_clipboard().and_then(|item| item.text()),
         Some("Read only 中文".to_owned())
     );
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("mutated".to_owned()));
-    cx.simulate_keystrokes(*window, "cmd-v cmd-x");
+    cx.simulate_keystrokes(
+        *window,
+        &crate::support::primary_keys("secondary-v secondary-x"),
+    );
     cx.simulate_input(*window, "typed");
 
     assert!(errors.borrow().is_empty(), "{:?}", errors.borrow());

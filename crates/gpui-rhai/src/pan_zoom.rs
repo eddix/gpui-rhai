@@ -167,12 +167,28 @@ impl PanZoomEntity {
         if self.suspended || self.config.disabled || event.button != self.config.pan_button {
             return;
         }
-        let Some(viewport) = self.context.element_bounds(&self.config.viewport_ref, cx) else {
+        let Some(viewport) = self.context.element_geometry(&self.config.viewport_ref, cx) else {
             return;
         };
-        if !contains(viewport, event.position) {
+        let Some(viewport_inverse) = viewport.window_to_local else {
+            return;
+        };
+        if !contains(
+            viewport.local,
+            viewport_inverse.map_point(pixel_point(event.position)),
+        ) {
             return;
         }
+        let drawable = self.context.canvas_bounds(&self.config.content_ref, cx);
+        // Pan translates the content in its parent viewport, not in the
+        // content's own image, view-box or authored transform.
+        let geometry_is_current = move |entity: &Self, cx: &App| {
+            entity.context.canvas_bounds(&entity.config.content_ref, cx) == drawable
+                && entity
+                    .context
+                    .element_geometry(&entity.config.viewport_ref, cx)
+                    == Some(viewport)
+        };
         self.focus.focus(window, cx);
         if transform_changed(self.config.source, self.preview)
             || read_bool_signal(&self.context, &self.config.wheel_active_signal, cx)
@@ -183,25 +199,39 @@ impl PanZoomEntity {
         let start = self.preview;
         let axes = self.config.axes;
         let update_entity = cx.entity();
-        let update =
-            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
-                if gesture.moved() {
-                    let delta = gesture.delta();
-                    let next = pan_transform(start, delta, axes);
-                    update_entity.update(cx, |entity, cx| entity.set_preview(next, cx));
+        let update = move |gesture: crate::interaction::GestureUpdate,
+                           _: &mut Window,
+                           cx: &mut App| {
+            if gesture.moved() {
+                let valid = update_entity.update(cx, |entity, cx| {
+                    if !geometry_is_current(entity, cx) {
+                        return false;
+                    }
+                    let next =
+                        pan_transform(start, viewport_inverse.map_vector(gesture.delta()), axes);
+                    entity.set_preview(next, cx);
+                    true
+                });
+                if !valid {
+                    return crate::interaction::InteractionFlow::Cancel;
                 }
-                crate::interaction::InteractionFlow::Continue
-            };
+            }
+            crate::interaction::InteractionFlow::Continue
+        };
         let finish_entity = cx.entity();
-        let finish =
-            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
-                if gesture.moved() {
-                    let next = pan_transform(start, gesture.delta(), axes);
-                    finish_entity.update(cx, |entity, cx| entity.propose(next, window, cx));
+        let finish = move |gesture: crate::interaction::GestureUpdate,
+                           window: &mut Window,
+                           cx: &mut App| {
+            finish_entity.update(cx, |entity, cx| {
+                if gesture.moved() && geometry_is_current(entity, cx) {
+                    let next =
+                        pan_transform(start, viewport_inverse.map_vector(gesture.delta()), axes);
+                    entity.propose(next, window, cx);
                 } else {
-                    finish_entity.update(cx, |entity, cx| entity.restore_source(cx));
+                    entity.restore_source(cx);
                 }
-            };
+            });
+        };
         let cancel_entity = cx.entity();
         let cancel = move |_: &mut Window, cx: &mut App| {
             cancel_entity.update(cx, |entity, cx| entity.restore_source(cx));
@@ -253,13 +283,13 @@ impl PanZoomEntity {
             cx.stop_propagation();
             return;
         }
+        let Some((anchor, viewport)) = self.wheel_geometry(event.position, cx) else {
+            return;
+        };
         if matches!(event.touch_phase, gpui::TouchPhase::Started) {
             invalidate_wheel(&self.context, &self.config, cx);
             write_bool_signal(&self.context, &self.config.wheel_active_signal, true, cx);
         }
-        let Some(viewport) = self.context.canvas_bounds(&self.config.content_ref, cx) else {
-            return;
-        };
         let delta = event.delta.pixel_delta(px(16.0));
         let logical = if delta.y.abs() >= delta.x.abs() {
             f64::from(delta.y)
@@ -270,10 +300,6 @@ impl PanZoomEntity {
             return;
         }
         let factor = (-logical / 400.0).exp();
-        let anchor = (
-            f64::from(event.position.x) - viewport.x,
-            f64::from(event.position.y) - viewport.y,
-        );
         let next = zoom_transform(
             self.preview,
             factor,
@@ -310,6 +336,36 @@ impl PanZoomEntity {
         } else {
             self.commit_wheel(window, cx);
         }
+    }
+
+    fn wheel_geometry(
+        &self,
+        position: Point<Pixels>,
+        cx: &App,
+    ) -> Option<((f64, f64), crate::GeometryBounds)> {
+        let drawable = self.context.canvas_geometry(&self.config.content_ref, cx)?;
+        let owner_inverse = self
+            .context
+            .element_geometry(&self.config.viewport_ref, cx)?
+            .window_to_local?;
+        let viewport = drawable.bounds.layout;
+        let center = (viewport.width * 0.5, viewport.height * 0.5);
+        let shown = drawable.bounds.visual;
+        let shown_center = owner_inverse.map_point(
+            drawable
+                .plane_to_window
+                .map_point((shown.x + center.0, shown.y + center.1)),
+        );
+        let pointer = owner_inverse.map_point(pixel_point(position));
+        // Remove the pan recorded in this presented drawable (which may
+        // precede several wheel samples); preserve any authored transform of
+        // the drawable around its center. Signal previews cannot move the
+        // wheel coordinate origin or cause cumulative drift.
+        let anchor = (
+            center.0 + pointer.0 - shown_center.0 + shown.x - viewport.x,
+            center.1 + pointer.1 - shown_center.1 + shown.y - viewport.y,
+        );
+        (anchor.0.is_finite() && anchor.1.is_finite()).then_some((anchor, viewport))
     }
 
     fn schedule_wheel_commit(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -774,9 +830,11 @@ fn centered_zoom(
     )
 }
 
-fn contains(bounds: crate::GeometryBounds, point: Point<Pixels>) -> bool {
-    let x = f64::from(point.x);
-    let y = f64::from(point.y);
+fn pixel_point(point: Point<Pixels>) -> (f64, f64) {
+    (f64::from(point.x), f64::from(point.y))
+}
+
+fn contains(bounds: crate::GeometryBounds, (x, y): (f64, f64)) -> bool {
     x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height
 }
 

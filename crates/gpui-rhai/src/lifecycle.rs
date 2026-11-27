@@ -725,6 +725,9 @@ impl ScriptLifecycle {
             runtime
                 .pointer_capture_for(self.presentation_scope())
                 .clear();
+            runtime
+                .geometry_for(self.presentation_scope())
+                .cancel_press_motion_targets();
             Ok(now)
         })();
         match result {
@@ -1889,7 +1892,10 @@ impl ScriptLifecycle {
         })
     }
 
-    fn validate_callback_owner(&self, callback: &ScriptCallback) -> Result<(), LifecycleError> {
+    pub(crate) fn validate_callback_owner(
+        &self,
+        callback: &ScriptCallback,
+    ) -> Result<(), LifecycleError> {
         let (Some(component), Some(incarnation)) = (callback.component(), callback.incarnation())
         else {
             return Ok(());

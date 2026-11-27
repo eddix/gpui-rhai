@@ -54,9 +54,10 @@ fn byod_treemap_lays_out_every_item_inside_its_area() {
         assert!(x >= -0.01 && y >= -0.01 && x + width <= 760.01 && y + height <= 440.01);
         area += width * height;
         // Colors come from the app's own vocabulary, never the design language.
-        assert!(
-            matches!(&base.background, Some(ColorValue::Token(token)) if token.starts_with("tile."))
-        );
+        assert!(matches!(
+            base.background.as_deref().and_then(BackgroundFill::as_solid_value),
+            Some(ColorValue::Token(token)) if token.starts_with("tile.")
+        ));
     }
     assert!(
         (area - 760.0 * 440.0).abs() < 1.0,

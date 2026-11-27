@@ -1,15 +1,38 @@
 //! Contracts of the official components: labels and defaults, props and parts, control visuals,
 //! the Tabs collection and other single components.
 
+mod breadcrumb;
 mod carousel;
+mod checklists;
 mod collapsible_height;
 mod control_visuals;
+mod date_range;
+mod filter_menu;
+mod icon_button_semantics;
 mod inline_state_stale_detail;
 mod labels_and_defaults;
+mod part_cascade;
+mod preset_badge;
+mod preset_checkbox;
+mod preset_command;
+mod preset_command_responsive;
+mod preset_command_rows;
+mod preset_geometry;
+mod preset_groups;
+mod preset_kbd;
+mod preset_pagination;
+mod preset_pagination_interaction;
+mod preset_spinner;
+mod preset_switch;
+mod preset_tabs;
+mod preset_tags;
+mod preset_tooltip;
+mod preset_virtual_styles;
 mod prop_contracts;
 mod section_actions;
 mod selectable_card_group;
 mod shortcut_legend;
+mod stepper_form;
 mod tabs_collection;
 mod tabs_features;
 mod tabs_head;

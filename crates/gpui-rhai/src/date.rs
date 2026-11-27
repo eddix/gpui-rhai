@@ -276,6 +276,9 @@ pub(crate) fn register_date_api(engine: &mut Engine) {
     FuncRegistration::new("date_checked_add_days")
         .in_global_namespace()
         .register_into_engine(engine, date_checked_add_days);
+    FuncRegistration::new("date_days_between")
+        .in_global_namespace()
+        .register_into_engine(engine, date_days_between);
     FuncRegistration::new("date_checked_add_months")
         .in_global_namespace()
         .register_into_engine(engine, date_checked_add_months);
@@ -326,6 +329,13 @@ fn date_checked_add_days(
     Ok(date
         .checked_add_days(days)
         .map_or(Dynamic::UNIT, |date| Dynamic::from(date.to_iso())))
+}
+
+fn date_days_between(start: &str, end: &str) -> Result<rhai::INT, Box<EvalAltResult>> {
+    let start = parse_script_date(start)?;
+    let end = parse_script_date(end)?;
+    let ordinal = |d: GregorianDate| days_from_civil(d.year(), d.month(), d.day());
+    Ok(ordinal(end) - ordinal(start))
 }
 
 fn date_checked_add_months(
@@ -655,6 +665,17 @@ mod tests {
             .eval::<Map>(r#"date_info("2024-02-29")"#)
             .unwrap();
         assert_eq!(info["weekday"].clone_cast::<ImmutableString>(), "thursday");
+        let span = runtime
+            .engine()
+            .eval::<Array>(
+                r#"[date_days_between("2024-02-28", "2024-03-01"),
+                    date_days_between("2024-03-01", "2024-02-28"),
+                    date_checked_add_months("2024-02-29", -12)]"#,
+            )
+            .unwrap();
+        assert_eq!(span[0].as_int().unwrap(), 2);
+        assert_eq!(span[1].as_int().unwrap(), -2);
+        assert_eq!(span[2].clone_cast::<ImmutableString>(), "2023-02-28");
         let grid = runtime
             .engine()
             .eval::<Array>(r#"date_month_grid("2024-02-15", "sunday")"#)

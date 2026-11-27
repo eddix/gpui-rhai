@@ -3,12 +3,10 @@
 //! rendering until the Table renders again, and the Host's virtual collection policy applies
 //! where a Table sets nothing.
 
-use gpui::{
-    Pixels, Point, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
-};
+use gpui::{Pixels, Point, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px};
 use gpui_rhai::{
-    ExecutionOperation, RuntimeEngine, ScriptViewExtension, ScriptViewHandle,
-    VirtualCollectionPolicy,
+    ExecutionOperation, Length, RuntimeEngine, ScriptViewExtension, ScriptViewHandle,
+    ThemeTokenOverrides, ThemeTokenValue, Variable, VirtualCollectionPolicy,
 };
 
 use super::{mount_refreshed, table};
@@ -55,13 +53,36 @@ impl Scrolled {
         props: &str,
         policy: Option<VirtualCollectionPolicy>,
     ) -> Self {
-        let mut mount = table(script(props));
+        // The workload is explicitly one 32px row per wheel step. This is Host
+        // sizing policy, not an assumption that every design preset uses 32px.
+        let sizing = ThemeTokenOverrides {
+            namespaces: [(
+                "metrics".to_owned(),
+                ["table_row", "table_header"]
+                    .map(|name| {
+                        (
+                            name.to_owned(),
+                            ThemeTokenValue::Length(Variable::Fixed(Length::Pixels(32.0))),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            )]
+            .into(),
+            ..ThemeTokenOverrides::default()
+        };
+        let mut mount = table(script(props)).with(move |view| view.theme_token_overrides(sizing));
         if let Some(policy) = policy {
             mount = mount.with(move |view| view.extension(Policy(policy)));
         }
         let (window, view) = mount_refreshed(cx, mount);
         let mut visual = VisualTestContext::from_window(*window, cx);
         settle(&mut visual, Step::Tick, 2);
+        let first_row = bounds(&mut visual, &view, "row", "Rows row 1");
+        assert!(
+            (first_row.height - 32.0).abs() < 0.5,
+            "the workload must keep its 32px row, policy={policy:?}: {first_row:?}"
+        );
         let at = center(bounds(&mut visual, &view, "table", "Rows"));
         let mut scrolled = Self { visual, view, at };
         scrolled.renders();
@@ -170,14 +191,23 @@ fn the_host_policy_applies_where_a_table_sets_nothing(cx: &mut TestAppContext) {
         batch_items: Some(1),
         retain_items: Some(0),
     };
-    let (host_steps, _) = Scrolled::mount(cx, "", Some(host)).scroll(32, true);
-    assert!(
-        host_steps >= 24,
-        "the Host's batch of one rendered on {host_steps} of 32 steps"
+    // Fast's native list can request an initial 16-row block independently of
+    // SDK batching. Use the same 64-step workload as the explicit-policy test
+    // and compare equivalence, not an assumed first-viewport request cadence.
+    let explicit = Scrolled::mount(cx, "batch_rows:1,retain_rows:0,", None).scroll(64, true);
+    let hosted = Scrolled::mount(cx, "", Some(host)).scroll(64, true);
+    assert_eq!(
+        hosted, explicit,
+        "Host defaults must match explicit per-collection policy"
     );
-    let (own_steps, _) = Scrolled::mount(cx, "batch_rows:16,", Some(host)).scroll(32, true);
+    let (host_steps, _) = hosted;
+    assert!(
+        host_steps >= 48,
+        "the Host's batch of one rendered on {host_steps} of 64 steps"
+    );
+    let (own_steps, _) = Scrolled::mount(cx, "batch_rows:16,", Some(host)).scroll(64, true);
     assert!(
         own_steps * 4 <= host_steps,
-        "the Table's own batch rendered on {own_steps} of 32 steps"
+        "the Table's own batch rendered on {own_steps} of 64 steps"
     );
 }

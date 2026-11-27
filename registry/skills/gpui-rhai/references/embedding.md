@@ -23,7 +23,7 @@ outside dismissal, Escape routing, focus fallback, and approved key bindings.
 
 ## GPUI package identity
 
-gpui-rhai 0.4.2 uses the exact `gpui-pre 0.3.11` core/platform family while
+The public profile uses the exact `gpui-pre 0.3.14` core/platform family while
 preserving the Rust use names `gpui` and `gpui_platform`. Prefer the public
 re-exports so every Host type is guaranteed to match the runtime:
 
@@ -41,9 +41,9 @@ exact family version:
 
 ```toml
 [dependencies]
-gpui-rhai = "0.4.2"
-gpui = { package = "gpui-pre", version = "=0.3.11", default-features = false, features = ["font-kit"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+gpui-rhai = { path = "../gpui-rhai/crates/gpui-rhai" }
+gpui = { package = "gpui-pre", version = "=0.3.14", default-features = false, features = ["font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 ```
 
 Official `gpui 0.2.2` and `gpui-pre` expose similarly named but incompatible
@@ -53,23 +53,25 @@ reports the required declaration but never rewrites `Cargo.toml` automatically.
 ### The gpui-fast backend
 
 gpui-rhai also builds on [gpui-fast](https://github.com/longbridge/gpui-fast)
-0.1.13, for an application that links another gpui-fast UI into the same
-binary (nsh's `nsh-platform-gpui` 0.4 builds on that version). Turn off the
+0.1.19, for an application that links another gpui-fast UI into the same
+binary. Turn off the
 default `gpui-pre` feature and reach GPUI through the re-exports, which then
 name gpui-fast's crates:
 
 ```toml
 [dependencies]
-gpui-rhai = { version = "0.4", default-features = false, features = ["gpui-fast"] }
+gpui-rhai = { path = "../gpui-rhai/crates/gpui-rhai", default-features = false, features = ["gpui-fast"] }
 ```
 
 `gpui-rhai init --backend fast` writes this dependency. The two forks cannot
 share a binary: both register the same Objective-C classes when they load, so
 a process that links both aborts at launch, before `main`. `gpui-rhai check`
 rejects a direct dependency on the fork the application does not build on and
-a gpui-fast version other than 0.1.13 (a binary holds one), and warns when the
-workspace's `Cargo.lock` resolves both forks; separate binaries may each link
-one.
+a version that does not match the selected profile (a binary holds one).
+It warns when the workspace's `Cargo.lock` resolves both forks; separate
+binaries may each link one. See [GPUI providers](https://github.com/eddix/gpui-rhai/blob/main/docs/gpui-profiles.md) for the
+opt-in vendor release families. The snippets above refer to this source
+revision; previously published versions can use older pins.
 
 On gpui-fast:
 
@@ -677,3 +679,22 @@ Callback-typed custom primitive props accept the same `UiEventHandler`, so a
 Host-built TextInput does not need a Rhai adapter function. See
 `cargo run --release -p gpui-rhai --example host_owned_tree` for the complete
 Rust frame → UiNode → Host event → worker → `set_root` cycle.
+The foreground Host echoes controlled edits immediately. The worker returns
+only business state and the acknowledged edit revision; a reply for an older
+edit cannot replace the editor value or reset native undo history.
+
+`StaticUiView::with_theme(variant)` also accepts a resolved `ThemeVariant`.
+Its colors, lengths, inherited environment and typography use the same
+resolver and native primitive snapshots as script views. Call
+`set_theme(Some(variant), cx)` to switch the snapshot without reconciling the
+tree or replacing native inputs. Equal snapshots return `Ok(false)`; invalid
+snapshots return an error before mutation. `set_theme(None, cx)` returns to
+literal-only rendering, so remove symbolic values yourself if disabling themes.
+
+This is theme **data**, not a second theme runtime: the Host still owns
+selection, system-appearance changes, fonts and scheduling. A Host may build
+tokens entirely in Rust or use `load_token_base` / `load_theme_with_layers` at
+startup, then drop its parsing engine. The example loads Modern/Clean in both
+appearances once, registers the bundled font bytes using GPUI's text system,
+and switches these snapshots through a native Rust callback. No engine is
+retained for rendering or event delivery.

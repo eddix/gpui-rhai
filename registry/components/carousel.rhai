@@ -180,8 +180,7 @@ fn dots_node(ctx, props, cfg) {
             .radius(theme_radius("pill"))
             .background(if selected { theme_color("text_primary") } else { theme_color("control.border") });
         if !selected { mark = mark.group_hover(style().background(theme_color("text_muted"))); }
-        let resolved = ctx.component_style("dot", mark);
-        if selected { resolved = ctx.component_style("dot_selected", resolved); }
+        let resolved = ctx.component_style(if selected {["dot","dot_selected"]}else{["dot"]}, mark);
         let dot = row([row([]).with_key("mark").with_style(resolved)]).with_key(`dot:${index}`)
             .tab_stop(false).accessibility_role("button").accessibility_label(props.items[index].label)
             .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))

@@ -7,14 +7,13 @@ use std::rc::Rc;
 
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, WindowHandle};
 use gpui_rhai::{
-    AssetData, EmbeddedScriptSource, ScriptView, ModuleId, MotionPreference,
-    PreparedScriptView, ScriptViewConfig, ScriptViewError, ScriptViewHandle, ScriptViewHost,
-    ScriptViewState,
+    AssetData, EmbeddedScriptSource, ModuleId, MotionPreference, PreparedScriptView, ScriptView,
+    ScriptViewConfig, ScriptViewError, ScriptViewHandle, ScriptViewHost, ScriptViewState,
 };
 use gpui_rhai_registry::{
     BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
-    BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID,
-    DEFAULT_THEME, TOKEN_BASE_SOURCE,
+    BUNDLED_FONT_SOURCES, BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID,
+    BUNDLED_PATTERN_SOURCES_BY_ID, DEFAULT_THEME, TOKEN_BASE_SOURCE,
 };
 
 /// One mounted script view as the window root.
@@ -85,7 +84,7 @@ type ConfigureMount = Box<dyn FnOnce(ScriptViewConfig) -> ScriptViewConfig>;
 /// An embedded view to mount in a test window.
 ///
 /// [`Mount::new`] starts where `ScriptView` starts, plus the default dark theme and the
-/// token base: the entry module `main`, no other modules, no locale, no assets and the motion
+/// token base with its licensed UI fonts: the entry module `main`, no other modules, no locale, no assets and the motion
 /// preference from the environment. Each difference a test needs is one call, so a test that
 /// mounts without assets or with a custom extension says so where it mounts.
 pub(crate) struct Mount {
@@ -142,11 +141,20 @@ impl Mount {
         self
     }
 
-    /// Adds one official module by its ID, e.g. `"components/input"`.
+    /// Adds an official module and its declared transitive source dependencies.
+    /// `.module` remains the raw boundary for intentionally incomplete fixtures.
     #[track_caller]
-    pub(crate) fn registry(self, id: &str) -> Self {
+    pub(crate) fn registry(mut self, id: &str) -> Self {
+        if self.modules.contains_key(&ModuleId::parse(id).unwrap()) {
+            return self;
+        }
         let source = registry_source(id);
-        self.module(id, source)
+        let metadata = gpui_rhai::parse_component_header(source).unwrap();
+        self = self.module(id, source);
+        for dependency in metadata.dependencies {
+            self = self.registry(dependency.as_str());
+        }
+        self
     }
 
     /// Replaces the default dark theme.
@@ -216,7 +224,11 @@ impl Mount {
             std::mem::take(&mut self.theme),
         );
         if self.token_base {
-            view = view.token_base(TOKEN_BASE_SOURCE);
+            view =
+                view.token_base(TOKEN_BASE_SOURCE)
+                    .font_sources(BUNDLED_FONT_SOURCES.iter().map(|&(name, bytes)| {
+                        gpui_rhai::FontSource::new(name, bytes.to_vec()).expect("bundled UI font")
+                    }));
         }
         if !self.locales.is_empty() {
             view = view.locale_sources(std::mem::take(&mut self.locales));

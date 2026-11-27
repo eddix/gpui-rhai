@@ -26,7 +26,9 @@ impl Render for GalleryHost {
         } else {
             gpui::div().into_any_element()
         };
-        self.host.container(gpui::div().size_full().child(content))
+        // Match the production StoryWindow: flex_item needs a real flex parent.
+        self.host
+            .container(gpui::div().size_full().flex().child(content))
     }
 }
 
@@ -161,6 +163,7 @@ fn wait_for_text(
 fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestAppContext) {
     cx.executor().allow_parking();
     cx.update(gpui_rhai::install);
+    let windows_before = cx.update(|app| app.windows().len());
     for story in stories() {
         for case in story.cases {
             let launch = GalleryLaunch {
@@ -211,6 +214,14 @@ fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestApp
                     .bounds
                     .is_some_and(|bounds| bounds.width > 0.0 && bounds.height > 0.0)),
                 "{}/{} presented no laid-out semantic node",
+                story.id,
+                case.id
+            );
+            super::release_case_window(visual, cx);
+            assert_eq!(
+                cx.update(|app| app.windows().len()),
+                windows_before,
+                "{}/{} left a test window open",
                 story.id,
                 case.id
             );
@@ -761,24 +772,76 @@ fn workbench_large_hosts_filter_in_rust_without_materializing_rows_in_rhai(
         "gallery-workbench-search",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    visual.update(|window, _| window.activate_window());
+    // Exercise actual realized rows at an explicit acceptance viewport.
+    visual.simulate_resize(gpui::size(gpui::px(1280.0), gpui::px(900.0)));
+    crate::support::settle(&mut visual, crate::support::Step::Frame, 3);
+    let first_hosts = workbench_host_rows(&mut visual, &view);
+    assert!(
+        !first_hosts.is_empty(),
+        "host rows must actually be presented at the acceptance viewport"
+    );
     let result = dispatch(&mut visual, &view, by_role("button", "Next page"), "click").unwrap();
     let AutomationResult::Dispatch { report } = result else {
         panic!("pagination dispatch returned the wrong automation result");
     };
     assert!(report.invoked > 0);
-    visual.run_until_parked();
+    crate::support::settle(&mut visual, crate::support::Step::Frame, 3);
     let page_two = rendered_texts(&mut visual, &view);
-    assert!(page_two.iter().any(|text| text.contains("Page 2 / 40")));
-    drop(visual);
-
-    cx.simulate_input(*window, "edge-1000");
-    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
-    visual.run_until_parked();
+    let second_hosts = workbench_host_rows(&mut visual, &view);
+    assert!(
+        page_two.iter().any(|text| text == "26–50 of 1,000"),
+        "actual page text: {page_two:?}"
+    );
+    assert!(
+        snapshot(&mut visual, &view)
+            .find_by_role_and_name("button", "2")
+            .any(|node| node.current.as_deref() == Some("page"))
+    );
+    assert!(
+        !second_hosts.is_empty() && first_hosts.is_disjoint(&second_hosts),
+        "actual page rows must change: {first_hosts:?} -> {second_hosts:?}"
+    );
+    let search = bounds(&mut visual, &view, "text_field", "Search hosts");
+    crate::support::click_center(&mut visual, search);
+    visual.simulate_input("edge-1000");
+    crate::support::settle(&mut visual, crate::support::Step::Frame, 3);
     let texts = rendered_texts(&mut visual, &view);
     assert!(texts.iter().any(|text| text == "edge-1000"), "{texts:?}");
+    assert_eq!(
+        workbench_host_rows(&mut visual, &view),
+        ["edge-1000".to_owned()].into()
+    );
     assert!(
         visual
             .update(|_, cx| view.last_error(cx).unwrap())
             .is_none()
     );
+}
+
+/// Only realized hosts below the table, excluding chrome such as the selected
+/// deployment target in the status bar. This checks rows, not only pager text.
+fn workbench_host_rows(
+    visual: &mut gpui::VisualTestContext,
+    view: &ScriptViewHandle,
+) -> std::collections::BTreeSet<String> {
+    let tree = snapshot(visual, view);
+    let table = tree
+        .find_by_role_and_name("table", "Operations hosts")
+        .next()
+        .unwrap();
+    let mut pending = table.children.clone();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut hosts = std::collections::BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) {
+            continue;
+        }
+        let node = tree.node(id).unwrap();
+        if node.role == "text" && node.name.starts_with("edge-") {
+            hosts.insert(node.name.clone());
+        }
+        pending.extend_from_slice(&node.children);
+    }
+    hosts
 }

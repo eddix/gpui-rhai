@@ -2,7 +2,7 @@
 use gpui_rhai::{
     Rgba8, RuntimeEngine, ThemeMode, ThemeTokenOverrides, load_theme_with_layers, load_token_base,
 };
-use gpui_rhai_registry::{BUNDLED_THEME_SOURCES, TOKEN_BASE_SOURCE};
+use gpui_rhai_registry::{BUNDLED_PALETTE_SOURCES, TOKEN_BASE_SOURCE};
 
 #[allow(clippy::many_single_char_names)] // Standard Oklab matrix notation.
 fn lightness(color: Rgba8) -> f64 {
@@ -32,7 +32,7 @@ fn all_palettes_have_reading_margin_and_ordered_perceptual_surface_steps() {
     println!(
         "| Theme | Primary minimum | Muted minimum | Page L | Raised L | Hover L | Border/well | Primary hover text |"
     );
-    for &(file, source) in BUNDLED_THEME_SOURCES {
+    for &(file, source) in BUNDLED_PALETTE_SOURCES {
         let theme = load_theme_with_layers(
             engine.engine(),
             Some(&base),
@@ -143,6 +143,47 @@ fn all_palettes_have_reading_margin_and_ordered_perceptual_surface_steps() {
                 );
             }
         }
+        for token in [
+            "surface_sunken",
+            "surface_elevated",
+            "border_subtle",
+            "border_strong",
+            "shadow.ambient",
+            "shadow.key",
+        ] {
+            assert!(
+                theme.tokens.color(token).is_some(),
+                "{file}: missing expanded token {token}"
+            );
+        }
+        assert!(
+            color("border_strong").contrast_ratio(color("surface_raised")) >= 3.0,
+            "{file}: border_strong must clear 3:1 on surface_raised"
+        );
+        for hue in [
+            "blue", "violet", "teal", "green", "amber", "rose", "orange", "slate",
+        ] {
+            let solid = color(&format!("palette.{hue}"));
+            let ink = color(&format!("palette.{hue}_ink"));
+            let soft = color(&format!("palette.{hue}_soft"));
+            let _edge = color(&format!("palette.{hue}_border"));
+            assert!(
+                solid.contrast_ratio(color("surface_raised")) >= 3.0,
+                "{file}: palette.{hue} solid contrast on surface_raised"
+            );
+            for bg in [
+                color("surface"),
+                color("surface_raised"),
+                color("surface_sunken"),
+                soft,
+            ] {
+                assert!(
+                    ink.contrast_ratio(bg) >= 4.5,
+                    "{file}: palette.{hue}_ink contrast ratio {:.2}",
+                    ink.contrast_ratio(bg)
+                );
+            }
+        }
         println!(
             "| {} {} | {:.2} | {:.2} | {page:.3} | {raised:.3} | {hover:.3} | {:.2} | {:.2} |",
             theme.family,
@@ -162,7 +203,7 @@ fn tabs_counter_shows_on_every_tab_surface_and_keeps_its_text_readable() {
     let engine = RuntimeEngine::new();
     let base = load_token_base(engine.engine(), "tokens.rhai", TOKEN_BASE_SOURCE).unwrap();
     println!("| Theme | Text on capsule | Weakest step | Against |");
-    for &(file, source) in BUNDLED_THEME_SOURCES {
+    for &(file, source) in BUNDLED_PALETTE_SOURCES {
         let theme = load_theme_with_layers(
             engine.engine(),
             Some(&base),

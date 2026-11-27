@@ -33,11 +33,12 @@ fn settle(visual: &mut VisualTestContext) {
     crate::support::settle(visual, Step::Refresh, 3);
 }
 
-/// Whether a frame spans the whole collection (448 wide, taller than one row).
-fn frames_the_collection(frames: &[(f32, f32)]) -> bool {
-    frames
-        .iter()
-        .any(|(width, height)| (width - 448.0).abs() < 1.0 && *height > 64.0)
+/// A whole-collection cue may lie on its client edge or decorative outer edge.
+/// Both must be absent with a current row; a 1px preset frame is not row chrome.
+fn frames_the_collection(frames: &[(f32, f32)], client_width: f32) -> bool {
+    frames.iter().any(|(width, height)| {
+        ((width - client_width).abs() < 0.5 || (width - 448.0).abs() < 0.5) && *height > 64.0
+    })
 }
 
 /// Logical sizes of the quads whose border is drawn in the focus color.
@@ -51,7 +52,7 @@ fn framed_sizes(visual: &mut VisualTestContext) -> Vec<(f32, f32)> {
 }
 
 /// Focus the first tab stop and return the sizes of focus-colored frames.
-fn focused_frames(cx: &mut TestAppContext, body: &str) -> Vec<(f32, f32)> {
+fn focused_frames(cx: &mut TestAppContext, body: &str) -> (Vec<(f32, f32)>, f32) {
     let (mut visual, view) = mount(cx, body);
     assert!(
         framed_sizes(&mut visual).is_empty(),
@@ -61,7 +62,11 @@ fn focused_frames(cx: &mut TestAppContext, body: &str) -> Vec<(f32, f32)> {
     visual.update(|window, cx| view.focus(window, cx).unwrap());
     visual.simulate_keystrokes("tab");
     settle(&mut visual);
-    framed_sizes(&mut visual)
+    let client = visual
+        .debug_bounds("virtual-list:t-body")
+        .or_else(|| visual.debug_bounds("virtual-list:l-rows"))
+        .expect("collection client viewport");
+    (framed_sizes(&mut visual), f32::from(client.size.width))
 }
 
 const COLUMNS: &str = r#"[#{ key: "h", title: "Host", width: #{ kind: "flex", value: 1.0 } }]"#;
@@ -79,7 +84,7 @@ fn a_focused_table_without_a_current_row_is_framed(cx: &mut TestAppContext) {
             r#"selection_mode: "single", selected_keys: [], on_selection_change: Fn("noop")"#,
         ),
     ] {
-        let frames = focused_frames(
+        let (frames, client) = focused_frames(
             cx,
             &format!(
                 r#"table::Table(#{{ key: "t", label: "Hosts", row_key: "id", height: 120,
@@ -87,7 +92,7 @@ fn a_focused_table_without_a_current_row_is_framed(cx: &mut TestAppContext) {
             ),
         );
         assert!(
-            frames_the_collection(&frames),
+            frames_the_collection(&frames, client),
             "{case}: the table's edge is framed: {frames:?}"
         );
     }
@@ -95,7 +100,7 @@ fn a_focused_table_without_a_current_row_is_framed(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_focused_table_with_a_current_row_shows_its_cursor_not_a_frame(cx: &mut TestAppContext) {
-    let frames = focused_frames(
+    let (frames, client) = focused_frames(
         cx,
         &format!(
             r#"table::Table(#{{ key: "t", label: "Hosts", row_key: "id", height: 120,
@@ -104,21 +109,21 @@ fn a_focused_table_with_a_current_row_shows_its_cursor_not_a_frame(cx: &mut Test
         ),
     );
     assert!(
-        !frames_the_collection(&frames),
+        !frames_the_collection(&frames, client),
         "no frame around the whole table: {frames:?}"
     );
 }
 
 #[gpui::test]
 fn a_focused_list_without_a_selection_mode_is_framed(cx: &mut TestAppContext) {
-    let frames = focused_frames(
+    let (frames, client) = focused_frames(
         cx,
         r#"list::List(#{ key: "l", label: "Jobs", height: 120,
             items: [#{ key: "a", title: "Alpha" }, #{ key: "b", title: "Beta" }],
             on_context_request: Fn("noop") })"#,
     );
     assert!(
-        frames_the_collection(&frames),
+        frames_the_collection(&frames, client),
         "the list's edge is framed: {frames:?}"
     );
 }

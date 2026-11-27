@@ -18,18 +18,18 @@ icon_button::IconButton(#{ icon: svg(markup), label: "Close", variant: "ghost", 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
 | `action` | string or `()` | — | Registered action dispatched on click, in place of `on_click`; it also sets the enabled state and the shortcut told to assistive tech. |
-| `disabled` | bool | `false` | Blocks clicks and greys the icon but keeps the variant's silhouette, as on `Button`; a disabled `action` disables it too. |
+| `disabled` | bool | `false` | Blocks clicks and dims the complete variant to 40% opacity, as on `Button`; a disabled `action` disables it too. |
 | `hoverable` | bool | `true` | Changes the fill on hover; `false` keeps it still. |
 | `icon` | node | required | Icon node, sized `metrics.icon` square and drawn in the button's text color. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name; the button shows no text, so it must not be empty. |
-| `loading` | bool | `false` | Blocks clicks and shows the disabled look while work runs, with Button's turning spinner in place of the icon. Reduced or no motion holds it still. |
+| `loading` | bool | `false` | Blocks clicks while work runs, with Button's turning spinner in place of the icon. Reduced or no motion holds it still. |
 | `on_click` | callback or `()` | — | Called when the button is pressed; not while disabled or loading, and not when `action` is set. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
-| `selected` | bool | `false` | Pressed state of a toggle; `ghost`, `outline` and `secondary` fill with `selection` and stop reacting to hover. |
+| `selected` | bool or `()` | — | Omit for an ordinary action. Pass false or true for a controlled toggle and its accessible pressed state. Selected ghost, outline and secondary variants fill with selection and stop reacting to hover. |
 | `size` | `"xs"` or `"sm"` or `"md"` or `"lg"` or `()` | — | Control size, which sets the square's side; unset, it inherits the `size` environment. |
 | `style` | style | — | Style merged over the root part. |
-| `variant` | `"primary"` or `"secondary"` or `"danger"` or `"warning"` or `"success"` or `"ghost"` or `"outline"` | `"ghost"` | Fill, as on `Button`; the default `ghost` stays bare until hovered or `selected`. |
+| `variant` | `"primary"` or `"secondary"` or `"danger"` or `"destructive"` or `"warning"` or `"success"` or `"ghost"` or `"outline"` | `"ghost"` | Fill, as on `Button`; the default `ghost` stays bare until hovered or `selected`. |
 
 ## Events
 
@@ -49,7 +49,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `icon`, `root`, `spinner
 
 ## Theme
 
-- Tokens: `border`, `control.border`, `disabled`, `focus_ring`, `metrics.control`, `metrics.icon`, `radius.md`, `selection`, `surface_hover`, `text_primary`
+- Tokens: `border`, `button.selected`, `control.border`, `disabled`, `focus_ring`, `metrics.button_radius`, `metrics.control`, `metrics.icon`, `metrics.icon_button_h`, `metrics.icon_button_icon`, `radius.md`, `selection`, `surface_hover`, `text_primary`
 - Environment: `density`, `size`
 
 ## Dependencies

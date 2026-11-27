@@ -49,6 +49,7 @@ struct RotationElement {
     context: PrimitiveContext,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for RotationElement {
     type Element = Self;
 
@@ -133,14 +134,17 @@ impl Element for RotationElement {
             {
                 return;
             }
-            let Some(viewport) = context.canvas_bounds(&config.content_ref, cx) else {
+            let Some(drawable) = context.canvas_geometry(&config.content_ref, cx) else {
+                return;
+            };
+            let viewport = drawable.bounds.layout;
+            let Some(pointer_start) = pointer_angle(event.position, drawable, config.pivot) else {
                 return;
             };
             if let Some(focus) = config.focus.as_ref() {
                 focus.focus(window, cx);
             }
             sync_controlled_source(&context, &config, viewport, window, cx);
-            let pointer_start = pointer_angle(event.position, viewport, config.pivot);
             let source_angle = config.angle;
             let update_context = context.clone();
             let update_config = config.clone();
@@ -148,18 +152,19 @@ impl Element for RotationElement {
                                _: &mut Window,
                                cx: &mut App| {
                 if gesture.moved() {
-                    let Some(current_viewport) =
-                        update_context.canvas_bounds(&update_config.content_ref, cx)
+                    if !update_context
+                        .canvas_geometry(&update_config.content_ref, cx)
+                        .is_some_and(|current| same_rotation_basis(current, drawable))
+                    {
+                        return crate::interaction::InteractionFlow::Cancel;
+                    }
+                    let Some(pointer) =
+                        pointer_angle(gesture.current(), drawable, update_config.pivot)
                     else {
                         return crate::interaction::InteractionFlow::Cancel;
                     };
-                    if current_viewport != viewport {
-                        return crate::interaction::InteractionFlow::Cancel;
-                    }
-                    let pointer =
-                        pointer_angle(gesture.current(), current_viewport, update_config.pivot);
                     let next = rotated_angle(&update_config, source_angle, pointer - pointer_start);
-                    write_preview(&update_context, &update_config, current_viewport, next, cx);
+                    write_preview(&update_context, &update_config, viewport, next, cx);
                 }
                 crate::interaction::InteractionFlow::Continue
             };
@@ -168,12 +173,14 @@ impl Element for RotationElement {
             let finish = move |gesture: crate::interaction::GestureUpdate,
                                window: &mut Window,
                                cx: &mut App| {
-                let Some(current_viewport) =
-                    finish_context.canvas_bounds(&finish_config.content_ref, cx)
+                let Some(current) = finish_context.canvas_geometry(&finish_config.content_ref, cx)
                 else {
                     return;
                 };
-                if current_viewport != viewport {
+                let current_viewport = current.bounds.layout;
+                let pointer = pointer_angle(gesture.current(), drawable, finish_config.pivot);
+                let Some(pointer) = pointer.filter(|_| same_rotation_basis(current, drawable))
+                else {
                     write_preview(
                         &finish_context,
                         &finish_config,
@@ -182,9 +189,7 @@ impl Element for RotationElement {
                         cx,
                     );
                     return;
-                }
-                let pointer =
-                    pointer_angle(gesture.current(), current_viewport, finish_config.pivot);
+                };
                 let next = rotated_angle(&finish_config, source_angle, pointer - pointer_start);
                 if gesture.moved() && angle_changed(finish_config.angle, next) {
                     propose_angle(
@@ -392,12 +397,27 @@ fn typed_signal(
 
 fn pointer_angle(
     position: Point<Pixels>,
-    viewport: crate::GeometryBounds,
+    drawable: crate::geometry::CanvasDrawableGeometry,
     pivot: (f64, f64),
-) -> f64 {
-    let x = f64::from(position.x) - viewport.x - pivot.0;
-    let y = f64::from(position.y) - viewport.y - pivot.1;
-    y.atan2(x).to_degrees()
+) -> Option<f64> {
+    let pos = (f64::from(position.x), f64::from(position.y));
+    let (x, y) = drawable.plane_to_window.inverse()?.map_point(pos);
+    let origin = drawable.bounds.layout;
+    Some(
+        (y - origin.y - pivot.1)
+            .atan2(x - origin.x - pivot.0)
+            .to_degrees(),
+    )
+}
+
+fn same_rotation_basis(
+    current: crate::geometry::CanvasDrawableGeometry,
+    captured: crate::geometry::CanvasDrawableGeometry,
+) -> bool {
+    // Rotation moves the drawn origin to keep its pivot fixed. Neither
+    // that shift nor the resulting painted clip is a new gesture basis.
+    current.bounds.layout == captured.bounds.layout
+        && current.plane_to_window == captured.plane_to_window
 }
 
 fn rotated_angle(config: &RotatableConfig, source: f64, delta: f64) -> f64 {

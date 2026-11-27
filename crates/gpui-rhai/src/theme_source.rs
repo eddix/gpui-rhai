@@ -145,11 +145,26 @@ fn decode_layer(map: Map) -> Result<TokenLayer, ThemeError> {
                 }
             }
             "typography" => decode_typography(expect_map(value, "typography")?, &mut layer)?,
+            "component_styles" => {
+                layer.component_styles = crate::component_styles::decode_component_styles(value)
+                    .map_err(|error| decode_error("component_styles", error.to_string()))?;
+            }
+            "component_styles_replace" => {
+                layer.component_styles_replace = value
+                    .as_bool()
+                    .map_err(|_| decode_error("component_styles_replace", "expected a boolean"))?;
+            }
             "motion" => layer.motion = decode_motion(&value)?,
             "environment" => {
                 for (name, value) in expect_map(value, "environment")? {
                     let declaration = decode_declaration(&name, value)?;
                     layer.environment.insert(name.to_string(), declaration);
+                }
+            }
+            "environment_defaults" => {
+                for (name, value) in expect_map(value, "environment_defaults")? {
+                    let default = dynamic_string(value, &format!("environment_defaults.{name}"))?;
+                    layer.environment_defaults.insert(name.to_string(), default);
                 }
             }
             "namespaces" => {
@@ -161,6 +176,7 @@ fn decode_layer(map: Map) -> Result<TokenLayer, ThemeError> {
         }
     }
     layer.normalize_colors();
+    layer.validate_color_paths()?;
     Ok(layer)
 }
 
@@ -185,16 +201,89 @@ fn decode_namespace(
     Ok(())
 }
 
+pub(crate) fn try_decode_style_env_table(
+    value: &Dynamic,
+    path: &str,
+) -> Result<Option<EnvTable<crate::Style>>, String> {
+    let Some(source) = value
+        .read_lock::<EnvTableSource>()
+        .map(|source| source.clone())
+    else {
+        return Ok(None);
+    };
+    decode_env_table(source, path, &mut |leaf, leaf_path| {
+        if let Some(style) = leaf.read_lock::<crate::Style>().map(|style| style.clone()) {
+            Ok(style)
+        } else {
+            Err(decode_error(leaf_path, "expected a Style"))
+        }
+    })
+    .map(Some)
+    .map_err(|error| error.to_string())
+}
+
+fn first_env_leaf(value: &Dynamic, depth: usize) -> Option<Dynamic> {
+    if depth == 0 {
+        return Some(value.clone());
+    }
+    let map = value.read_lock::<Map>()?;
+    let first = map.values().next()?.clone();
+    drop(map);
+    first_env_leaf(&first, depth - 1)
+}
+
 fn decode_namespaced_value(value: Dynamic, path: &str) -> Result<ThemeTokenValue, ThemeError> {
+    if value.is::<crate::Style>() {
+        return Ok(ThemeTokenValue::Style(Box::new(Variable::Fixed(
+            value.cast::<crate::Style>(),
+        ))));
+    }
     if value.is_float() {
-        return Ok(ThemeTokenValue::Number(
+        return Ok(ThemeTokenValue::Number(Variable::Fixed(
             value.as_float().unwrap_or_default(),
-        ));
+        )));
     }
     if value.is_string() {
-        return Ok(ThemeTokenValue::String(
+        return Ok(ThemeTokenValue::String(Variable::Fixed(
             value.into_string().unwrap_or_default(),
-        ));
+        )));
+    }
+    if let Some(source) = value
+        .read_lock::<EnvTableSource>()
+        .map(|source| source.clone())
+    {
+        let root = Dynamic::from_map(source.table.clone());
+        let sample = first_env_leaf(&root, source.keys.len());
+        if let Some(sample) = sample {
+            if sample.is::<crate::Style>() {
+                return decode_env_table(source, path, &mut |leaf, leaf_path| {
+                    leaf.try_cast::<crate::Style>()
+                        .ok_or_else(|| decode_error(leaf_path, "expected a Style"))
+                })
+                .map(|table| ThemeTokenValue::Style(Box::new(Variable::ByEnv(table))));
+            }
+            if sample.is_string() {
+                return decode_env_table(source, path, &mut |leaf, leaf_path| {
+                    dynamic_string(leaf, leaf_path)
+                })
+                .map(|table| ThemeTokenValue::String(Variable::ByEnv(table)));
+            }
+            if sample.is_float() || sample.is_int() {
+                return decode_env_table(source, path, &mut |leaf, leaf_path| {
+                    leaf.as_float()
+                        .or_else(|_| {
+                            leaf.as_int()
+                                .ok()
+                                .and_then(|value| i32::try_from(value).ok())
+                                .map(f64::from)
+                                .ok_or("not a number")
+                        })
+                        .map_err(|_| decode_error(leaf_path, "expected a number"))
+                })
+                .map(|table| ThemeTokenValue::Number(Variable::ByEnv(table)));
+            }
+        }
+        return decode_length(&value, path).map(ThemeTokenValue::Length);
     }
     if let Some((map, kind)) = value.read_lock::<Map>().and_then(|map| {
         map.get("type")
@@ -206,22 +295,52 @@ fn decode_namespaced_value(value: Dynamic, path: &str) -> Result<ThemeTokenValue
             return match kind.as_str() {
                 "color" => Ok(ThemeTokenValue::Color(decode_literal_color(inner, path)?)),
                 "length" => Ok(ThemeTokenValue::Length(decode_length(&inner, path)?)),
-                "number" => inner
-                    .as_float()
-                    .or_else(|_| {
-                        inner
-                            .as_int()
-                            .ok()
-                            .and_then(|value| i32::try_from(value).ok())
-                            .map(f64::from)
-                            .ok_or("not a number")
-                    })
-                    .map(ThemeTokenValue::Number)
-                    .map_err(|_| decode_error(path, "expected a number")),
-                "string" => inner
-                    .into_string()
-                    .map(ThemeTokenValue::String)
-                    .map_err(|_| decode_error(path, "expected a string")),
+                "number" => {
+                    if let Some(source) = inner
+                        .read_lock::<EnvTableSource>()
+                        .map(|source| source.clone())
+                    {
+                        return decode_env_table(source, path, &mut |leaf, leaf_path| {
+                            leaf.as_float()
+                                .or_else(|_| {
+                                    leaf.as_int()
+                                        .ok()
+                                        .and_then(|value| i32::try_from(value).ok())
+                                        .map(f64::from)
+                                        .ok_or("not a number")
+                                })
+                                .map_err(|_| decode_error(leaf_path, "expected a number"))
+                        })
+                        .map(|table| ThemeTokenValue::Number(Variable::ByEnv(table)));
+                    }
+                    inner
+                        .as_float()
+                        .or_else(|_| {
+                            inner
+                                .as_int()
+                                .ok()
+                                .and_then(|value| i32::try_from(value).ok())
+                                .map(f64::from)
+                                .ok_or("not a number")
+                        })
+                        .map(|value| ThemeTokenValue::Number(Variable::Fixed(value)))
+                        .map_err(|_| decode_error(path, "expected a number"))
+                }
+                "string" => {
+                    if let Some(source) = inner
+                        .read_lock::<EnvTableSource>()
+                        .map(|source| source.clone())
+                    {
+                        return decode_env_table(source, path, &mut |leaf, leaf_path| {
+                            dynamic_string(leaf, leaf_path)
+                        })
+                        .map(|table| ThemeTokenValue::String(Variable::ByEnv(table)));
+                    }
+                    inner
+                        .into_string()
+                        .map(|value| ThemeTokenValue::String(Variable::Fixed(value)))
+                        .map_err(|_| decode_error(path, "expected a string"))
+                }
                 other => Err(decode_error(path, format!("unknown token type {other:?}"))),
             };
         }
@@ -259,21 +378,7 @@ fn decode_typography(map: Map, layer: &mut TokenLayer) -> Result<(), ThemeError>
     Ok(())
 }
 
-fn decode_role(value: Dynamic, path: &str) -> Result<TypographyRole, ThemeError> {
-    if value.is_string() {
-        return Ok(TypographyRole::Alias(Variable::Fixed(
-            value.into_string().unwrap_or_default(),
-        )));
-    }
-    if let Some(source) = value
-        .read_lock::<EnvTableSource>()
-        .map(|value| value.clone())
-    {
-        return decode_env_table(source, path, &mut |leaf, leaf_path| {
-            dynamic_string(leaf, leaf_path)
-        })
-        .map(|table| TypographyRole::Alias(Variable::ByEnv(table)));
-    }
+fn decode_typography_token(value: Dynamic, path: &str) -> Result<TypographyToken, ThemeError> {
     let mut map = expect_map(value, path)?;
     let size = decode_fixed_length(&take(&mut map, "size", path)?, &format!("{path}.size"))?;
     let line_height = decode_fixed_length(
@@ -295,13 +400,37 @@ fn decode_role(value: Dynamic, path: &str) -> Result<TypographyRole, ThemeError>
         Some(value) => string_array(value, &format!("{path}.fallbacks"))?,
     };
     reject_unknown(&map, path)?;
-    Ok(TypographyRole::Style(TypographyToken {
+    Ok(TypographyToken {
         size,
         line_height,
         weight,
         family,
         fallbacks,
-    }))
+    })
+}
+
+fn decode_role(value: Dynamic, path: &str) -> Result<TypographyRole, ThemeError> {
+    if value.is_string() {
+        return Ok(TypographyRole::Alias(Variable::Fixed(
+            value.into_string().unwrap_or_default(),
+        )));
+    }
+    if let Some(source) = value
+        .read_lock::<EnvTableSource>()
+        .map(|value| value.clone())
+    {
+        let root = Dynamic::from_map(source.table.clone());
+        let sample = first_env_leaf(&root, source.keys.len());
+        if sample.as_ref().is_some_and(Dynamic::is_map) {
+            return decode_env_table(source, path, &mut decode_typography_token)
+                .map(|table| TypographyRole::Style(Variable::ByEnv(table)));
+        }
+        return decode_env_table(source, path, &mut |leaf, leaf_path| {
+            dynamic_string(leaf, leaf_path)
+        })
+        .map(|table| TypographyRole::Alias(Variable::ByEnv(table)));
+    }
+    decode_typography_token(value, path).map(|token| TypographyRole::Style(Variable::Fixed(token)))
 }
 
 fn decode_declaration(name: &str, value: Dynamic) -> Result<EnvironmentDeclaration, ThemeError> {

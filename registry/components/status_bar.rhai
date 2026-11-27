@@ -48,20 +48,29 @@ define_component(#{
 });
 
 fn StatusBar(props) { render_component("components/status_bar", props) }
-// Start and end share the free width; the end keeps its fields, the start truncates.
-fn status_region(ctx, part, children, alignment) {
+// Symmetric side tracks protect a real center. Without one, the end only
+// reserves its intrinsic width and the start gets the remaining space.
+fn status_region(ctx, part, children, centered) {
     let base = style().height(relative(1.0)).items_center().gap(theme_spacing("md"))
         .whitespace_nowrap();
-    base = if alignment == "center" { base.justify_center().flex_shrink(false) }
-        else if alignment == "end" { base.justify_end().flex_grow().flex_basis(relative(0)) }
+    base = if part == "center" { base.justify_center().flex_shrink(false) }
+        else if part == "end" {
+            if centered { base.justify_end().flex_grow().flex_basis(relative(0)) }
+            else { base.justify_end().flex_shrink(false) }
+        }
         else { base.flex_grow().flex_basis(relative(0)).min_width(px(0)).overflow_hidden().text_ellipsis() };
-    row(children).with_style(ctx.component_style(part, base))
+    let styled = ctx.component_style(part, base);
+    // Keep the slot's retained position without charging two inter-slot
+    // gaps for an empty center.
+    row(children).with_style(if part == "center" && !centered { styled.hidden() } else { styled })
 }
 fn render_StatusBar(ctx, props) {
+    let center = if "center" in props { props.center } else { [] };
+    let centered = center.len > 0;
     row([
-        status_region(ctx, "start", if "start" in props { props.start } else { [] }, "start"),
-        status_region(ctx, "center", if "center" in props { props.center } else { [] }, "center"),
-        status_region(ctx, "end", if "end" in props { props.end } else { [] }, "end"),
+        status_region(ctx, "start", if "start" in props { props.start } else { [] }, centered),
+        status_region(ctx, "center", center, centered),
+        status_region(ctx, "end", if "end" in props { props.end } else { [] }, centered),
     ]).with_style(ctx.component_style("root", style()
         .width(relative(1.0)).height(theme_length("metrics.statusbar")).flex_shrink(false)
         .padding_x(theme_length("metrics.inset")).items_center()

@@ -75,7 +75,7 @@ fn render_Stat(ctx, props) {
             .typography("body").text_color(theme_color("text_muted")))));
     }
     let children = [
-        text(props.label.to_upper()).with_style(ctx.component_style("label", style()
+        text(props.label).with_style(ctx.component_style("label", style()
             .typography("label").text_color(theme_color("text_muted")))),
         // A figure and its unit are one datum set in two sizes on purpose.
         row(figure).with_style(style().flex_row().items_end().gap(theme_spacing("xs")))

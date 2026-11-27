@@ -23,6 +23,7 @@ pub enum OverlayKind {
     Popover,
     Combobox,
     Tooltip,
+    HoverCard,
     Dialog,
     Sheet,
     Menu,
@@ -446,6 +447,20 @@ pub struct TooltipTransition {
 }
 
 fn place(spec: &OverlaySpec, viewport: OverlayBounds) -> PlacementResult {
+    // An interactive preview is sized for a fixed desktop gutter. Use the
+    // same domain for flip and clamp, not just a smaller max-width on paint.
+    let viewport = if spec.kind == OverlayKind::HoverCard {
+        let x = 8.0_f64.min(viewport.width / 2.0);
+        let y = 8.0_f64.min(viewport.height / 2.0);
+        OverlayBounds {
+            x: viewport.x + x,
+            y: viewport.y + y,
+            width: viewport.width - 2.0 * x,
+            height: viewport.height - 2.0 * y,
+        }
+    } else {
+        viewport
+    };
     let preferred = candidate_bounds(spec, spec.preferred, viewport);
     if fits_primary_axis(preferred, viewport, spec.preferred) {
         return PlacementResult {

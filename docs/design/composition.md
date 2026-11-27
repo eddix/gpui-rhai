@@ -1,356 +1,217 @@
 # Composition guide
 
-For application developers. It explains how to combine components into
-screens. Most rules are already built into `layouts/` and `patterns/`; this
-guide explains why they behave that way and covers what no default can know.
-Read [principles.md](principles.md) first.
+**Modern / Clean composition specification.** Read [principles](principles.md).
+The four complete preset variants are implemented. Native visual and
+interaction acceptance for the complete migration is still in progress.
+Exact component values live in the [reference](modern-clean-spec.md).
 
-## 1. Start from layouts and patterns
+## 1. Start from reusable layouts and parts
 
-Write screens from the largest structure inward:
+Prefer the SDK's Stack/Inline/Toolbar/Region and patterns when their behavior
+fits. Use the public runtime for a custom composition when it does not. No
+layout or business pattern gains a private focus, drawing or state capability.
 
-1. `patterns/app_shell` — title bar, sidebar, main area, optional inspector,
-   status bar, command palette and keyboard regions.
-2. `layouts/region` — one working area: header, toolbar, body that fills the
-   remaining height, footer pinned to the bottom.
-3. `layouts/toolbar`, `patterns/data_view`, `patterns/list_detail`,
-   `patterns/form_layout`, `patterns/section` — the content of a region.
-4. `layouts/stack` and `layouts/inline` — everything else.
-5. Raw `row`/`column` only for what none of the above express.
-
-Patterns use **semantic slots**. A slot decides order, spacing relationship and
-the environment passed to its children:
-
-```rhai
-toolbar::Toolbar(#{
-    label: "Hosts",
-    context: [tag::Tag(#{ facet: "site", text: "i18n" })],
-    filters: [input::Input(#{ key: "q", label: "Filter", placeholder: "Filter", value: q,
-        on_change: Fn("q") })],
-    actions: [button::Button(#{ text: "Export", variant: "ghost", action: "data.export" })],
-    primary: button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" }),
-})
-```
-
-Slots accept any node. Putting something unusual in a slot is allowed; if it
-breaks a rule, the audit reports it.
-
-| Module | Export | Use |
-|---|---|---|
-| `layouts/stack` | `Stack` | a column with one relationship (`gap: "related"` by default) |
-| `layouts/inline` | `Inline` | a row with one relationship and one control `size` |
-| `layouts/toolbar` | `Toolbar` | one `fill` field, filters, then context; actions and one primary at the end; wraps when narrow |
-| `layouts/region` | `Region` | title and actions, toolbar, filling body, footer; `bleed` for rows, `scroll` for long bodies |
-| `patterns/section` | `Section` | a subtitle (or label voice), description, end actions, content |
-| `patterns/description_list` | `DescriptionList` | label and value pairs on one label column |
-| `patterns/stat` | `Stat`, `stats(items)` | a figure with unit and delta |
-| `patterns/form_layout` | `FormLayout` | aligned labels, field groups, submit row on the field edge |
-| `patterns/inline_state` | `InlineState` | loading, empty, error, stale, refreshing in place |
-| `patterns/data_view` | `DataView` | Region + Toolbar + body + footer, with states |
-| `patterns/list_detail` | `ListDetail` | a fixed list beside or above a filling detail |
-| `patterns/app_shell` | `AppShell` | title bar, sidebar, main, inspector, status bar, F6 regions |
-| `patterns/composer` | `Composer` | native controlled multiline draft, caller-owned leading controls, count, Send/Stop |
-
-Use `Composer` for message and prompt drafting. The application owns the draft,
-accepted send, Stop cancellation, and clearing `value`. `busy` blocks sending,
-not editing the next draft. The default native shortcut is Enter to send and
-Shift+Enter for a newline; `submit_key: "mod_enter"` leaves Enter as a newline.
-Standalone Textarea opts into the same submission behavior only when both a
-submit key and `on_submit` are supplied. Read-only fields never submit.
-
-Use `SelectableCardGroup` for a small set of rich choices. `values` is controlled;
-the group owns only its roving focus cursor. Single mode uses radio semantics,
-multiple mode uses checkboxes. `select_on_focus: false` delays expensive selection
-until Enter or Space. Keep `content` presentational: interactive controls go in
-the independent `actions` area, outside the radio/checkbox, and never select the
-card. Disabled choices skip navigation; independent actions retain their own
-availability policy. Prefer List or Select for more than a dozen choices.
-
-Rhai limits expression depth (64 per script, 32 inside a function). Build deep
-screens from small functions, one per region or section, as in the examples;
-it reads better too.
-
-Do not name application functions after built-ins (`index_of`, `contains`,
-`filter`, `split`, `text`, …). Rhai prefers a script function over a built-in,
-also inside imported components: a method call `x.f(a, b)` resolves to a
-script `fn f(a, b)` (the receiver is not a parameter), a direct call `f(a, b)`
-to the same. An application `fn index_of(values, key)` captured every
-`text.index_of(c, position)` in the registry. `gpui-rhai check` warns about
-these (`builtin-shadow`).
+Gallery's sidebar, preview frame and specimen spacing are demonstration
+context, not requirements for every application shell. Keep its
+navigation/source/acceptance functions; applications compose their own layouts
+using the same public components and design tokens.
 
 ## 2. Spacing
 
-Use the spacing scale everywhere (`theme_spacing(name)` or
-`theme_length("spacing.<name>")`); it is density aware.
+Use component aliases over reusable primitive steps, preserving exact source
+values, including fractional sizes and optical corrections. The previous
+comfortable/compact spacing table is not the modern/clean scale.
 
-| Token | comfortable | compact |
-|---|---:|---:|
-| `spacing.xxs` | 2 | 2 |
-| `spacing.xs` | 4 | 4 |
-| `spacing.sm` | 8 | 8 |
-| `spacing.md` | 12 | 8 |
-| `spacing.lg` | 16 | 12 |
-| `spacing.xl` | 24 | 16 |
+Relationships still help group content, but "all inner gaps must be strictly
+smaller" is not an unconditional source design rule. A tray, a heading and an
+optical offset can intentionally use equal or exceptional steps. Audit the
+actual source-matched composition instead of rounding it to pass an old rule.
+The proximity audit permits equal steps at the same level, includes intervening
+content insets in the enclosing separation, and starts a new hierarchy at a
+heading. A plain unheaded group with a larger inner gap still reports a finding;
+so do genuine peer-height, type, alignment and contrast failures.
 
-Relationship aliases (`theme_length("space.<alias>")`, or the `gap` names of
-Stack and Inline) name the intent and map onto the scale:
+Give a visible section title its heading role. A non-interactive icon explicitly
+hidden from accessibility can precede it without becoming the group's first
+content. A named image, interactive icon or visible prose still counts as
+preceding content. Use this distinction to preserve hierarchy, not to exempt an
+ordinary row from the audit.
 
-| Alias | Scale | Relationship | Examples |
-|---|---|---|---|
-| `unit` | `xs` | parts of one unit | icon and label, label and helper text |
-| `related` | `sm` | siblings in one group | buttons in a toolbar group, fields in a form |
-| `group` | `lg` | groups in one area | toolbar start and end groups, form groups, region parts |
-| `section` | `xl` | areas of one page | sections of a region, dialog padding |
+An actionable leaf tree item owns the typography and spacing within its
+label, ornament and readout. A role-only item or a branch wrapping a nested
+collection is still ordinary composition. Floating content also has its own
+audit scope. Tree items present their first actual text to text-start alignment,
+not a leading fold button, swatch or frame. The real text remains subject to
+alignment checks. Contrast, reachability and other rules remain independent.
 
-**Rule: inside a nesting, the inner gap is strictly smaller than the outer
-gap.** The audit checks this on resolved geometry, however the gap was written,
-with three refinements that match how proximity is read:
+Control heights are family-specific: a Modern md Button is 40px and an md
+Input is 36px. The row-height audit compares peers within a control family,
+including wrapped controls, rather than forcing these two families to the
+same height. Icon actions and text actions are distinct families, including
+when a formal wrapper directly forwards their root. Unequal peer text buttons,
+peer icon buttons or fields still produce findings; instance keys never create
+new families.
 
-- Only nesting along the same axis competes (a row's gaps against the
-  enclosing row, a column's against the enclosing column).
-- A row distributed with `justify_between` treats its gap as a floor, not a
-  relationship.
-- A heading leads its content: the gap under a heading is typographic, so the
-  content inside answers to the next gap out. This is why a Region (`group`
-  between its parts) can hold sections separated by `section`. A view
-  switcher (Tabs with `panel: false`) leading the content it switches plays
-  the same part, and so does a heading drawn outside the container (a host's
-  panel header): mark that container with `.heading_elsewhere()`, which Region
-  does for `external_title`.
+`key_legend` is a metadata voice, distinct from ordinary caption prose. It
+currently aliases the caption's exact metrics, so classifying a shortcut does
+not enlarge it to body type. Key legends stay outside mixed-body-type checks;
+ordinary captions and deliberately inconsistent body rows remain audited.
 
-Patterns choose these relationships for you; when writing a Stack yourself,
-prefer the aliases over raw steps so the intent is readable.
+Separate:
+
+- root padding and shadow spread;
+- inner-card padding and outer-tray padding;
+- field header/hint spacing and the editable text inset;
+- icon box and its path's painted extent;
+- component-to-component spacing owned by the parent.
 
 ## 3. Alignment
 
-- **One text edge.** Panel titles, toolbars, table headers and the first column
-  of rows start at the same x: the container edge plus `metrics.inset`.
-  Components already follow this; do not add padding around them.
-- **Same height in a row.** Controls in one row share one size. Put them in a
-  Toolbar or Inline, which passes `size` down, instead of setting `size` on each.
-- **Numbers.** Right-align numeric columns and figures with tabular digits.
-  Table does this for `numeric: true` columns; Stat and DescriptionList do it
-  for numeric values.
-- **Rows bleed.** Tables and lists carry their own row inset; a Region with
-  `bleed: true` (DataView does this) lets them reach its sides so row text
-  starts on the title's edge.
-- **Units.** Put units after the number in the muted color, sharing the
-  baseline: `881 GiB`.
-- **Fill, do not fix.** Main content fills the remaining height of its region;
-  give fixed heights only to lists stacked above a detail view.
-- **One field takes the rest of the bar.** A search or query field that should
-  take whatever the other controls leave goes in Toolbar's `fill` slot
-  (DataView: `toolbar.fill`). It leads the bar, at least
-  `metrics.label_column` wide, and the bar wraps only when that minimum does
-  not fit.
-- **Fields first, markers inside, actions last.** Toolbar sets the fields
-  (`fill`, then `filters`) at the start, what the bar acts on (`context`: tags,
-  a breadcrumb) after them, and the actions at the end, so control-height items
-  hold both edges and the shorter markers sit between them; a tag at the start
-  edge made the bar lean against the buttons at the other. In `filters`, `width: relative(1.0)` has nothing to resolve
-  against: the filter group is as wide as its content.
-- **A long body scrolls only when asked.** A Region's body fills the region
-  and clips; `scroll: true` makes it scroll, with ScrollArea's overlay
-  scrollbar (`scrollbar: "auto" | "always" | "hidden"`), while the header,
-  toolbar and footer stay put. Tables and virtual lists scroll themselves;
-  leave it off for them.
+Align visual centers and actual text line boxes, not nominal font size. Do
+not force every component with `size=md` to have one height: modern Button40
+and TextField36, clean Button28 and TextField32 are intentional source values.
 
-## 4. Hierarchy
+A local block should have coherent content edges. It does not follow that
+every header, field, table cell and panel in the whole application starts at
+one global `metrics.inset`. Source Card content16, Button padding16/10,
+fields12/10 and table cells14/12 are different relationships.
 
-Distinguish importance with color and weight before size.
+Keep numeric data aligned and source tabular figures enabled where
+appropriate. Parent fill/scroll ownership remains explicit: a Table/list
+scrolls itself; do not add a second scrolling body that steals its wheel.
 
-- **One size per row.** A row uses one typography role (markers excepted).
-  Mixed sizes in a row misalign baselines and make similar information look
-  different.
-- **Data or description?** If deleting the text removes information, it is
-  data: `body` in `text_primary`, or `text_muted` for secondary data (people,
-  times, IDs, counts). If it only explains, it is description: `caption`.
-- **Weight 600 only for titles** (section and panel titles, filled button
-  labels). Names in lists, versions and types are not bold.
-- **One title per region.** A region shows one title; sections inside it use
-  `subtitle`. The label voice replaces a title, never sits above one.
-- **Identifiers** (hosts, IDs, versions, keys) use the UI font with tabular
-  and slashed-zero features; real code uses the mono family.
+## 4. Hierarchy and copy
+
+Use source weight/color/size roles. In particular Inter500 is a normal
+control/title weight; the old 400/600-only rule is superseded. Do not add
+monospace uppercase section labels or square lamps to make a screen feel
+"more gpui-rhai". The new identity comes from the source's type, shape,
+surface layers, soft status fills and interaction continuity.
+
+Keep titles, descriptions, field labels and values distinct. Use sentence
+case unless the source component explicitly transforms its label. Application
+copy describes its own data and actions; it is not copied from the source's
+fake agent, pricing or project examples.
 
 ## 5. Color use
 
-| Color | Use | Do not use for |
-|---|---|---|
-| neutral (`text_primary`, `text_muted`, `surface_*`) | almost everything, including healthy states | — |
-| `accent` | the primary action, current location, selection, focus-adjacent marks, links | decoration, headings, "info" status |
-| `warning` | a deviation that needs attention but is not a failure | normal states, emphasis |
-| `danger` | failures, destructive actions, invalid input | "not found", empty results |
-| `success` | confirming an action just completed, recovery from failure | the steady healthy state |
+Use the chosen preset's local roles and alpha on the actual background.
+Primary ink/reverse-ink is different from semantic blue/info. Source green,
+amber, red and purple status badges remain available in their normal states.
+Do not restore the old cobalt/default palette or automatically neutralize a
+healthy status whose reference uses green.
 
-- **Normal is quiet.** A steady healthy item shows a neutral lamp. Color only
-  the deviation, so the one problem stands out among many rows.
-- **Not by color alone.** Every status has text and a lamp shape; a strong
-  Badge also changes silhouette.
-- **Budget.** Most of a screen is neutral; accent appears in one primary
-  action and the current item; status colors appear only where status deviates.
-- **Category colors** (Tag variants) mark kinds of things, not states. Do not
-  use a red Tag to say something failed; use a Badge.
+Preserve label/icon/shape distinctions in addition to color. Inspect contrast
+in the final layered composition. Record source low-contrast exceptions and
+product decisions; neither silent recoloring nor an unsupported accessibility
+claim is acceptable.
 
-## 6. Actions
+## 6. Actions and feedback
 
-- **One solid button per action group.** The primary action is the only filled
-  button in its group; other actions are `secondary`, `ghost` or `outline`.
-  Toolbar's single `primary` slot encodes this.
-- **Status-colored buttons** are for verdict actions whose result is the
-  status: Approve (`success`), Force or Override (`warning`), Delete
-  (`danger`). They count as the group's solid button.
-- **Order.** In toolbars, actions on the end side, primary last. In dialogs,
-  the confirming action last, Cancel before it.
-- **Buttons never stretch** to the container width except in narrow sheets.
-- **Destructive actions** ask for confirmation in a Dialog whose confirm button
-  is `danger` and is not the default for Enter.
-- **Every command is an action.** Register it with `ctx.register_action`, give
-  components `action: "id"`, and the shortcut, enabled state and command
-  palette entry come for free.
+Choose hierarchy intentionally; the source's variant showcase is not a rule
+to put four primary actions on every application toolbar. Keep action-derived
+shortcuts and enabled/dispatch state. Global shortcuts belong to the Host or
+application; do not hard-code one command-palette key for all apps.
 
-## 7. Feedback in place
+Loading, empty, invalid, failed and stale-data states belong where their
+content is. A source loading Button has a content/motion recipe, not just a
+spinner glued to an old button. Keep useful data visible during background
+refresh, and do not turn "no results" into a failure solely for red styling.
 
-Loading, empty and error states appear where the content would appear.
+## 7. Keyboard and overlays
 
-| State | Pattern | Copy |
-|---|---|---|
-| first load | `InlineState(#{ state: "loading" })` or Skeleton for fixed shapes | say what is loading |
-| empty | `InlineState(#{ state: "empty" })` | why it is empty and what to do next |
-| error | `InlineState(#{ state: "error", detail })` | one sentence of what happened; the raw error stays selectable |
+Keep SDK tab order, roving focus, activation keys, Escape ownership, command
+bindings and focus return. AppShell F6 regions, controlled dock/hidden/overlay
+modes and SplitPane/Resizable remain valid behavior; their appearance needs
+derived modern/clean targets because the source does not provide those
+generic widgets.
 
-InlineState requires a `title`: only the caller knows what is loading or why a
-list is empty. DataView takes the same map as `state:` and places it.
-| refresh failed with cached data | keep the data, show a stale note above it | "Showing cached data" plus the reason |
-| background refresh | keep the data, show a quiet refreshing marker | — |
+An input receives text in its native entity. A hover preview, a focus-opened
+tooltip and a modal panel have different lifetime and dismissal protocols;
+do not swap one for another because their screenshots look similar.
 
-"Nothing found" is empty, not an error. Never replace a whole region with an
-error when other sources still have data.
+Pointer-coarse media rules are distinct from narrow-container layout rules.
+Preserve the distinction when adapting touch targets or responsive drawers;
+a narrow desktop window does not automatically become a coarse pointer.
 
-## 8. Keyboard
+## 8. Domain compositions
 
-AppShell defines regions (sidebar, main, inspector, status bar).
+Specialized product references are not automatically SDK features. Keep agent
+control, approvals, billing, networking, upload policy, model selection and
+other services outside the runtime. New interactions such as editable cell
+ranges or OTP input need independent contracts.
 
-- **F6 / Shift+F6** move between regions; each region can also bind a direct
-  action (for example `Cmd+1` for the sidebar). A region shows the 2px ink
-  frame while it holds focus itself; Tab then enters its first control. Key
-  handlers accept modifier-qualified names (`on_key_value("shift+f6", ...)`);
-  a plain name fires whatever modifiers are held.
-- Inside a region, arrow keys move within lists and tables; **Tab** moves
-  between controls; **Enter** activates; **Space** toggles. A selectable
-  Table is one tab stop: arrows move the selection, Enter opens the row.
-- **Esc** steps back one level: close the overlay, then clear in-region state
-  (selection, filter focus), then return to the main region.
-- **Cmd+K** opens the command palette everywhere. It lists every enabled
-  action with its shortcut.
-- Show shortcuts where the action is offered: menus, palette, tooltips, and
-  buttons where space allows.
+DataView/ListDetail/FormLayout/Section/Stat and generic chart APIs remain
+useful. A KPI card built from Chart+Stat is a composition, not proof the SDK
+already ships the reference design's complete KPIChart behavior.
 
-### What AppShell covers
+## 9. Profiles and audits
 
-AppShell is the shell of a single-window tool: a title bar, one sidebar, the
-main area, one inspector, a status bar, the command palette and F6 regions,
-with fixed side widths (`sidebar_width`, `inspector_width`). Each side region
-takes the place the application chooses (`sidebar_mode`, `inspector_mode`,
-0.4.1, D81):
+Profiles still package application policy. Runtime correctness diagnostics
+stay design-neutral. The proximity and peer-height checks model content insets,
+heading hierarchies and control families; the installed productivity profile's
+strict color/type checks are not a certificate of exact-preset accessibility.
 
-- `dock`, the default: beside the main area, an F6 stop.
-- `hidden`: out of view and out of F6, its content still mounted, so its state
-  survives.
-- `overlay`: a modal drawer from the window's edge (the sidebar's start, the
-  inspector's end) over a scrim. Escape or a press on the scrim asks to close
-  it (`sidebar_dismiss`, `inspector_dismiss`); the application sets the region
-  `hidden`, and focus returns to where it was when the drawer opened.
+In fixed and responsive grids the audit uses presented layout occupancy:
+controls and type compare within a row and text starts within a column.
+Spanning items do not join separate tracks on the axis they span. Paint
+transforms do not change track membership; visual comparisons still use
+the container's coordinate frame. The same row and column rules work for
+grids and the corresponding flex stacks. A noninteractive decoration hidden
+from accessibility and containing no presented text does not lend its edge
+to the surrounding text stack; visible text participates even if omitted
+from accessibility.
 
-The application chooses by the room it has, not the window: it measures its
-shell with `ctx.element_size` and keeps its own breakpoints. Measuring needs an
-element ref, which only a formal component declares, so the measuring shell
-lives in one (the Gallery's `gallery/shell_demo` docks the inspector from
-800px and the sidebar from 600px). AppShell does not resize side bars, stack
-several panels on one side, or place floating tool windows. An application
-that needs those keeps its own shell and reuses the parts: Region and DataView
-for the panes, TitleBar and StatusBar for the bars, F6 through its own key
-handlers (a Host can mount a view per pane with `host_slot`). Its regions
-should still show the 2px ink frame while they hold focus themselves.
+A resolved `display` or `display_large` role marks primary display type.
+Primary display values and their caption, unit or delta do not share a
+font-size comparison, but two displayed values on the same line do. The
+other inline peers on that line are checked independently. A large literal
+font size alone does not create a display role. Color and reachability are
+still checked for both groups.
 
-## 9. Page patterns
+`metadata` is the role for a timestamp, qualifier or secondary ledger
+count next to its item name. It defaults to the caption type; a theme can
+set its metrics independently and a component can refine them for a preset.
+The audit compares metadata with metadata, and `initials` with other
+monograms, within the same visual line. Unresolved roles still participate
+as ordinary inline text. Neither role skips contrast or reachability.
 
-```
-AppShell
-┌──────────────────────────────────────────────────────────┐
-│ ● ● ●  Title                                    ⌘K       │ TitleBar
-├────────────┬─────────────────────────────────┬───────────┤
-│ SECTION    │ Region title                    │ INSPECTOR │
-│ Current    │ [filters][context]  [ghost][■■] │           │ Toolbar
-│ Item       │ body (fills)                    │           │
-│ Item       │                                 │           │
-│            │ ■ status            12 items    │           │ Footer
-├────────────┴─────────────────────────────────┴───────────┤
-│ field  value                                 field value │ StatusBar
-└──────────────────────────────────────────────────────────┘
-```
+Absolute children remain visible to their own diagnostics and to action
+policy. They do not contribute a title, alignment edge or control height
+to the enclosing layout's peer comparisons.
 
-- **DataView**: toolbar, table or list, footer with count, selection and data
-  time. Use for any browsable collection.
-- **ListDetail**: a list and the selected item's detail, stacked or side by
-  side; the list keeps a fixed height or width, the detail fills.
-- **FormLayout**: label column aligned, fields in groups separated by `group`,
-  submit row aligned with the fields.
-- **Section**: a titled part of a region with optional actions on the end side.
+Before a new profile ships, classify each old audit against reference cases:
+row-height mismatch must understand family-specific heights; mixed-type and
+spacing checks must allow source recipes; contrast checks must distinguish
+text, placeholders, decorative and meaningful edges. Validate new rules with
+source-matched positive controls and genuinely broken negative controls.
+Do not disable all audits or scatter `audit_allow` merely to get green output.
 
-## 10. Profiles
+Modern/Clean's exact palettes intentionally retain some weak tones. The default
+acceptance choice preserves them and reports measured risks, without relaxing
+the contrast rule or declaring accessibility conformance. Fixed stock fixtures
+may record only explicitly reviewed roles with exact palette, backing, opacity
+and numerical evidence; different roles, customized palettes and additional
+alpha remain failures. General application/Host audits are not given that
+fixture policy. A contrast bound over a varying surface is not an exact
+witness and must remain identified as conservative.
 
-A profile packages an application's policy:
+`AuditFinding::contrast` carries the model's numeric evidence. The model tracks
+native per-primitive element opacity and current frame membership; invisible
+measurements and closed overlays are not visible text. Structural fragments
+delegate visibility to their children. Runtime animation, native-private text,
+shadow/filter composition and actual GPU samples are separate evidence; the
+audit is not a complete pixel-level accessibility verifier.
 
-| File | Content |
-|---|---|
-| `ui/styles.rhai` | application-wide component skin |
-| `ui/tokens.rhai` overrides | density default, radius scale (keep ≤ 4px), font families |
-| `ui/profile.rhai` | audit rule set and its severity |
+The Gallery keeps all findings available from its status-bar report, including
+the selected theme and color facts. Equal counts must not hide changed evidence,
+and a failed report update must not advance the last-published cache.
 
-`gpui-rhai init --profile productivity` installs the reference profile: the
-design language defaults, comfortable density, the radius roles and all audit
-rules below. Without a profile, `gpui-rhai check` and the audit report only
-correctness problems.
+## 10. Acceptance
 
-### Audit rules (productivity profile)
-
-| Rule | Checks |
-|---|---|
-| `row-height-mismatch` | sibling controls in one row with different heights |
-| `text-edge-misaligned` | stacked text starts that differ by less than one inset step |
-| `spacing-not-nested` | an inner gap greater than or equal to its outer gap |
-| `multiple-solid-actions` | more than one solid button in an action group |
-| `mixed-type-in-row` | more than one typography size in a row of data |
-| `low-contrast-text` | text below 4.5:1 against the color actually painted behind it |
-| `literal-geometry` | literal control heights, spacing, font sizes or colors in application source |
-| `unresolved-font` | a font family whose whole fallback chain does not resolve on this platform |
-
-How the rules read a screen:
-
-- Controls, markers and painted or framed boxes align by their own edge, not
-  by the text inside them.
-- Label-voice text (section labels, table headers) and children that contain
-  controls are not counted as data sizes in `mixed-type-in-row`.
-- Overlay and Layer content (menus, dialogs, tooltips) is checked as its own
-  layer, not against the gaps of the page under it.
-- What renders is checked wherever it sits: the child of an `error_boundary`
-  (or its fallback once the child failed) and the realized rows of a virtual
-  list.
-- Only a wrapper that holds a single control stands for that control in its
-  parent's row: panes side by side are not one row of controls. A Badge's or
-  Tag's own lamp-to-text gap is the marker's business, like a control's.
-- A container that opts out of `spacing-not-nested` (a grid-like row whose
-  label column is a track) also does not impose its gap on its children.
-- `unresolved-font` accepts a family when any entry of its fallback chain
-  resolves.
-
-When a composition breaks a rule on purpose, say so on the node:
-`row([value, unit]).audit_allow(["mixed-type-in-row"])` (Stat does this for a
-figure and its unit). Keep these rare; they are greppable.
-
-## 11. Copy
-
-- Sentence case for labels and titles. Buttons start with a verb.
-- Short labels; no marketing copy; no emoji as function.
-- Say what is loading, why something is empty, and what failed in plain words;
-  keep raw errors selectable.
+For component work use the [atom checklist](atoms.md#11-new-component-checklist)
+and the reference matrix. Application layout, business copy and accessibility
+are additional checks, not replacements for matched component geometry.
+Keep old GPUI product baselines until approved replacements are generated
+from the real new implementation. Reference research and comparison captures
+stay outside the repository; they are not bundled component assets.

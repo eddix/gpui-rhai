@@ -53,6 +53,16 @@ const COPIED: &[(&str, &str, &str)] = &[
     ),
     (
         "gpui-rhai-design",
+        "docs/design/modern-clean-spec.md",
+        "references/modern-clean-spec.md",
+    ),
+    (
+        "gpui-rhai-design",
+        "docs/design/component-coverage.md",
+        "references/component-coverage.md",
+    ),
+    (
+        "gpui-rhai-design",
         "docs/design/decisions.md",
         "references/decisions.md",
     ),
@@ -69,7 +79,7 @@ struct Recipe {
 }
 
 const THEME_AND_LOCALE: [(&str, &str); 2] = [
-    ("__VISUAL_THEME__", "default-dark"),
+    ("__VISUAL_THEME__", "modern-dark"),
     ("__VISUAL_LOCALE__", "en"),
 ];
 
@@ -87,7 +97,7 @@ const RECIPES: &[Recipe] = &[
         note: "A FormLayout of Input, Textarea, Select, DatePicker, Checkbox, RadioGroup and \
                Switch fields, validated on submit, with a Dialog and a Toast.",
         values: &[
-            ("__VISUAL_THEME__", "default-dark"),
+            ("__VISUAL_THEME__", "modern-dark"),
             ("__VISUAL_LOCALE__", "en"),
             ("__VISUAL_NAME__", ""),
             ("__VISUAL_ACCEPTED__", "false"),
@@ -105,7 +115,7 @@ const RECIPES: &[Recipe] = &[
         note: "A DataView around a Table with a filter, sorting, selection, paging, and \
                loading and empty states.",
         values: &[
-            ("__VISUAL_THEME__", "default-dark"),
+            ("__VISUAL_THEME__", "modern-dark"),
             ("__VISUAL_LOCALE__", "en"),
             ("__VISUAL_SELECTED__", "[]"),
             ("__VISUAL_LOADING__", "false"),

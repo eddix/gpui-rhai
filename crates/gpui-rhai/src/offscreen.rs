@@ -21,14 +21,15 @@
 //!
 //! Steps: `--size WxH` (before the view mounts; 1280x800 by default),
 //! `--theme Family/Variant` or `--theme Variant` (in the current family),
-//! `--locale ID`, `--click NAME` (the first node whose accessible name is
+//! `--locale ID`, `--hover NAME` / `--click NAME` (the first node whose accessible name is
 //! NAME, or else starts with it), `--key CHORD` (GPUI syntax, such as
-//! `cmd-k`), `--wait MS` (advances the view's clock), `--out PATH` (saves the
+//! `cmd-k`), `--input TEXT` (inserts characters into the focused editor),
+//! `--wait MS` (advances the view's clock), `--out PATH` (saves the
 //! frame) and `--steps FILE`. A steps file holds one JSON command per line:
 //! the automation protocol's requests ([`crate::AutomationRequest`], such as
 //! `{"id":"q1","command":"query","locator":{"kind":"text","text":"Save"}}`)
-//! and the shot commands `click` (`name`, or `locator` as in automation),
-//! `keys`, `wait` (`millis`), `capture` (`path`), `theme` and `locale`. Each
+//! and the shot commands `hover` / `click` (`name`, or `locator` as in automation),
+//! `keys`, `input` (`text`), `wait` (`millis`), `capture` (`path`), `theme` and `locale`. Each
 //! line prints one [`crate::AutomationResponse`]; the first failing line stops
 //! the run.
 //!
@@ -65,7 +66,9 @@ pub enum ShotStep {
     Theme(String),
     Locale(String),
     Click(String),
+    Hover(String),
     Key(String),
+    Input(String),
     Wait(u64),
     Out(PathBuf),
     Steps(PathBuf),
@@ -116,7 +119,9 @@ impl ShotPlan {
                 "--theme" => plan.steps.push(ShotStep::Theme(value()?)),
                 "--locale" => plan.steps.push(ShotStep::Locale(value()?)),
                 "--click" => plan.steps.push(ShotStep::Click(value()?)),
+                "--hover" => plan.steps.push(ShotStep::Hover(value()?)),
                 "--key" => plan.steps.push(ShotStep::Key(value()?)),
+                "--input" => plan.steps.push(ShotStep::Input(value()?)),
                 "--wait" => {
                     let millis = value()?;
                     plan.steps.push(ShotStep::Wait(millis.parse().map_err(|_| {
@@ -127,7 +132,7 @@ impl ShotPlan {
                 "--steps" => plan.steps.push(ShotStep::Steps(PathBuf::from(value()?))),
                 other => {
                     return Err(ShotError::Arguments(format!(
-                        "unknown option {other}; shot takes --size --theme --locale --click --key --wait --out --steps"
+                        "unknown option {other}; shot takes --size --theme --locale --hover --click --key --input --wait --out --steps"
                     )));
                 }
             }
@@ -176,6 +181,13 @@ pub fn run_plan(
 pub use macos::run_plan;
 
 #[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PointerAim {
+    Point(gpui::Point<gpui::Pixels>),
+    Hidden,
+}
+
+#[cfg(target_os = "macos")]
 mod macos {
     use std::cell::RefCell;
     use std::io::{BufRead, Write as _};
@@ -183,12 +195,12 @@ mod macos {
     use std::time::Duration;
 
     use gpui::{
-        AnyWindowHandle, AppContext, Context, IntoElement, Modifiers, ParentElement, Render,
-        VisualTestAppContext, Window, point, px, size,
+        AnyWindowHandle, AppContext, Context, IntoElement, Modifiers, MouseMoveEvent,
+        ParentElement, Pixels, Point, Render, VisualTestAppContext, Window, point, px, size,
     };
     use serde::Deserialize;
 
-    use super::{ShotError, ShotPlan, ShotStep};
+    use super::{PointerAim, ShotError, ShotPlan, ShotStep};
     use crate::{
         AccessibilityNode, AutomationLocator, AutomationRequest, AutomationResponse,
         PreparedScriptView, ScriptViewConfig, ScriptViewError, ScriptViewHandle, ScriptViewHost,
@@ -212,7 +224,9 @@ mod macos {
 
     /// The `command` values of [`ShotCommand`]; any other line of a steps
     /// file is an automation request.
-    const SHOT_COMMANDS: [&str; 6] = ["click", "keys", "wait", "capture", "theme", "locale"];
+    const SHOT_COMMANDS: [&str; 8] = [
+        "click", "hover", "keys", "input", "wait", "capture", "theme", "locale",
+    ];
 
     /// A shot command of a steps file.
     #[derive(Debug, Deserialize)]
@@ -222,8 +236,15 @@ mod macos {
             name: Option<String>,
             locator: Option<AutomationLocator>,
         },
+        Hover {
+            name: Option<String>,
+            locator: Option<AutomationLocator>,
+        },
         Keys {
             keys: String,
+        },
+        Input {
+            text: String,
         },
         Wait {
             millis: u64,
@@ -243,6 +264,22 @@ mod macos {
         cx: VisualTestAppContext,
         window: AnyWindowHandle,
         view: ScriptViewHandle,
+    }
+
+    #[allow(clippy::cast_possible_truncation)]
+    fn box_pointer_center(geometry: crate::ElementGeometry) -> Option<Point<Pixels>> {
+        let open = geometry.visual;
+        let clip = geometry.clip.unwrap_or(open);
+        let left = open.x.max(clip.x);
+        let top = open.y.max(clip.y);
+        let right = (open.x + open.width).min(clip.x + clip.width);
+        let bottom = (open.y + open.height).min(clip.y + clip.height);
+        (right > left && bottom > top).then(|| {
+            point(
+                px(f64::midpoint(left, right) as f32),
+                px(f64::midpoint(top, bottom) as f32),
+            )
+        })
     }
 
     /// Run `plan` on the view `prepare` returns.
@@ -300,6 +337,10 @@ mod macos {
             self.cx.run_until_parked();
             self.cx
                 .update_window(self.window, |_, window, cx| {
+                    // An offscreen window has no platform frame loop. Deliver
+                    // the last presented frame's queued callbacks before
+                    // drawing again, as a regular platform frame would.
+                    window.simulate_next_frame(cx);
                     window.refresh();
                     let _ = window.draw(cx);
                 })
@@ -319,8 +360,10 @@ mod macos {
             match step {
                 ShotStep::Theme(theme) => self.theme(theme),
                 ShotStep::Locale(locale) => self.locale(locale),
-                ShotStep::Click(name) => self.click_name(name),
+                ShotStep::Click(name) => self.pointer_name(name, true),
+                ShotStep::Hover(name) => self.pointer_name(name, false),
                 ShotStep::Key(keys) => self.keys(keys),
+                ShotStep::Input(text) => self.input(text),
                 ShotStep::Wait(millis) => self.wait(*millis),
                 ShotStep::Out(path) => self.capture(path),
                 ShotStep::Steps(path) => self.steps_file(path),
@@ -352,7 +395,7 @@ mod macos {
 
         /// Click the node whose accessible name is `name`, or else the first
         /// whose name starts with it.
-        fn click_name(&mut self, name: &str) -> Result<(), ShotError> {
+        fn pointer_name(&mut self, name: &str, click: bool) -> Result<(), ShotError> {
             let snapshot = self.cx.update(|cx| self.view.accessibility_snapshot(cx))?;
             let node = snapshot
                 .nodes()
@@ -362,53 +405,71 @@ mod macos {
                         .nodes()
                         .find(|node| node.name.starts_with(name) && node.geometry.is_some())
                 })
-                .ok_or_else(|| ShotError::Step(format!("no node named `{name}` to click")))?;
-            self.click_node(node)
+                .ok_or_else(|| {
+                    ShotError::Step(format!(
+                        "no node named `{name}` to {}",
+                        if click { "click" } else { "hover" }
+                    ))
+                })?;
+            self.pointer_node(node, click)
         }
 
         /// Click the node `locator` finds, as automation would resolve it.
-        fn click_locator(&mut self, locator: &AutomationLocator) -> Result<(), ShotError> {
+        fn pointer_locator(
+            &mut self,
+            locator: &AutomationLocator,
+            click: bool,
+        ) -> Result<(), ShotError> {
             let snapshot = self.cx.update(|cx| self.view.accessibility_snapshot(cx))?;
             let id = crate::automation::resolve_locator(&snapshot, locator)
                 .map_err(|error| ShotError::Step(error.to_string()))?;
             let node = snapshot
                 .node(id)
-                .ok_or_else(|| ShotError::Step(format!("no node to click for {locator:?}")))?;
-            self.click_node(node)
+                .ok_or_else(|| ShotError::Step(format!("no pointer target for {locator:?}")))?;
+            self.pointer_node(node, click)
         }
 
-        /// Click the center of the visible part of `node`.
-        fn click_node(&mut self, node: &AccessibilityNode) -> Result<(), ShotError> {
+        /// Prefer its exact fragment when the semantic box spans empty
+        /// space; ordinary rectangles still use their visible center.
+        fn pointer_node(&mut self, node: &AccessibilityNode, click: bool) -> Result<(), ShotError> {
             let hidden = || ShotError::Step(format!("`{}` is not on screen", node.name));
             let geometry = node.geometry.ok_or_else(hidden)?;
-            let bounds = match geometry.clip {
-                Some(clip) => {
-                    let left = geometry.visual.x.max(clip.x);
-                    let top = geometry.visual.y.max(clip.y);
-                    let right =
-                        (geometry.visual.x + geometry.visual.width).min(clip.x + clip.width);
-                    let bottom =
-                        (geometry.visual.y + geometry.visual.height).min(clip.y + clip.height);
-                    if right <= left || bottom <= top {
-                        return Err(hidden());
-                    }
-                    (left, top, right, bottom)
-                }
-                None => (
-                    geometry.visual.x,
-                    geometry.visual.y,
-                    geometry.visual.x + geometry.visual.width,
-                    geometry.visual.y + geometry.visual.height,
-                ),
+            let aim = self.cx.update(|cx| self.view.pointer_aim(node.id, cx));
+            let center = match aim {
+                Some(PointerAim::Point(point)) => point,
+                Some(PointerAim::Hidden) => return Err(hidden()),
+                None => box_pointer_center(geometry).ok_or_else(hidden)?,
             };
-            #[allow(clippy::cast_possible_truncation)]
-            let center = point(
-                px(f64::midpoint(bounds.0, bounds.2) as f32),
-                px(f64::midpoint(bounds.1, bounds.3) as f32),
-            );
-            self.cx
-                .simulate_click(self.window, center, Modifiers::default());
+            if click {
+                self.cx
+                    .simulate_click(self.window, center, Modifiers::default());
+            } else {
+                self.cx.simulate_event(
+                    self.window,
+                    MouseMoveEvent {
+                        position: center,
+                        pressed_button: None,
+                        modifiers: Modifiers::default(),
+                    },
+                );
+            }
             self.settle()
+        }
+
+        fn pointer_args(
+            &mut self,
+            name: Option<String>,
+            locator: Option<AutomationLocator>,
+            click: bool,
+        ) -> Result<(), ShotError> {
+            match (name, locator) {
+                (Some(name), None) => self.pointer_name(&name, click),
+                (None, Some(locator)) => self.pointer_locator(&locator, click),
+                _ => Err(ShotError::Step(format!(
+                    "{} takes `name` or `locator`",
+                    if click { "click" } else { "hover" }
+                ))),
+            }
         }
 
         fn keys(&mut self, keys: &str) -> Result<(), ShotError> {
@@ -423,6 +484,11 @@ mod macos {
             self.cx
                 .background_executor
                 .advance_clock(Duration::from_millis(millis));
+            self.settle()
+        }
+
+        fn input(&mut self, text: &str) -> Result<(), ShotError> {
+            self.cx.simulate_input(self.window, text);
             self.settle()
         }
 
@@ -492,16 +558,10 @@ mod macos {
             let command: ShotCommand = serde_json::from_value(serde_json::Value::Object(request))
                 .map_err(|error| ShotError::Step(error.to_string()))?;
             match command {
-                ShotCommand::Click { name, locator } => match (name, locator) {
-                    (Some(name), None) => self.click_name(&name)?,
-                    (None, Some(locator)) => self.click_locator(&locator)?,
-                    _ => {
-                        return Err(ShotError::Step(
-                            "click takes `name` or `locator`".to_owned(),
-                        ));
-                    }
-                },
+                ShotCommand::Click { name, locator } => self.pointer_args(name, locator, true)?,
+                ShotCommand::Hover { name, locator } => self.pointer_args(name, locator, false)?,
                 ShotCommand::Keys { keys } => self.keys(&keys)?,
+                ShotCommand::Input { text } => self.input(&text)?,
                 ShotCommand::Wait { millis } => self.wait(millis)?,
                 ShotCommand::Capture { path } => self.capture(&path)?,
                 ShotCommand::Theme { theme } => self.theme(&theme)?,
@@ -528,7 +588,7 @@ mod tests {
     #[test]
     fn shot_arguments_keep_their_order() {
         let plan = ShotPlan::parse(args(
-            "--theme Nord/Dark --size 800x600 --click Settings --wait 250 --out a.png --key cmd-k --out b.png",
+            "--theme Nord/Dark --size 800x600 --hover Settings --click Settings --wait 250 --out a.png --input 测试 --key cmd-k --out b.png",
         ))
         .unwrap();
         assert_eq!((plan.width, plan.height), (800, 600));
@@ -536,9 +596,11 @@ mod tests {
             plan.steps,
             [
                 ShotStep::Theme("Nord/Dark".to_owned()),
+                ShotStep::Hover("Settings".to_owned()),
                 ShotStep::Click("Settings".to_owned()),
                 ShotStep::Wait(250),
                 ShotStep::Out(PathBuf::from("a.png")),
+                ShotStep::Input("测试".to_owned()),
                 ShotStep::Key("cmd-k".to_owned()),
                 ShotStep::Out(PathBuf::from("b.png")),
             ]

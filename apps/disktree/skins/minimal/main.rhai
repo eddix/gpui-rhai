@@ -11,6 +11,7 @@
 // (runtime API 3) — button, progress, spinner, keycaps and the stat pattern —
 // while the mosaic stays bespoke canvas and the controls stay keyboard-only.
 import "components/button" as button;
+import "components/breadcrumb" as breadcrumb;
 import "components/kbd" as kbd;
 import "components/progress" as progress;
 import "components/spinner" as spinner;
@@ -29,7 +30,7 @@ define_component(#{
         version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [
-            "components/button", "components/kbd", "components/progress",
+            "components/button", "components/breadcrumb", "components/kbd", "components/progress",
             "components/spinner", "components/status_bar", "patterns/stat",
         ],
         capabilities: #{
@@ -95,7 +96,7 @@ define_component(#{
         events: #{},
         slots: #{},
         parts: ["root"],
-        effects: ["scan", "layout"],
+        effects: ["scan", "layout", "paint_theme"],
     },
     render: Fn("render_ScanRoot"),
 });
@@ -736,7 +737,8 @@ fn nav_ascend(ctx) {
 /// A jump from the breadcrumb bar: no single region to move, it lands.
 fn nav_go_to(ctx, crumbs) {
     let layout = ctx.get_app_store("disktree", "layout");
-    if !layout.valid || !core::crumb_starts_with(crumbs, layout.crumbs) {
+    // A breadcrumb points to an ancestor, including the scan root [].
+    if !layout.valid || !core::crumb_starts_with(layout.crumbs, crumbs) {
         return ();
     }
     if crumb_key(crumbs) != layout.nav_key {
@@ -1446,26 +1448,8 @@ fn on_wheel(ctx, event) {
 
 /// Every mounted palette: the skin's own two first, then gpui-rhai's
 /// bundled set. Entries are [family, name, label].
-fn theme_entries() {
-    [
-        ["Disktree", "Minimal Gray", "Minimal Gray"],
-        ["Disktree", "Flexoki Light", "Flexoki Light"],
-        ["Default", "Dark", "Default Dark"],
-        ["Default", "Light", "Default Light"],
-        ["Nord", "Dark", "Nord Dark"],
-        ["Gruvbox", "Dark", "Gruvbox Dark"],
-        ["Catppuccin", "Latte", "Catppuccin Latte"],
-        ["Catppuccin", "Mocha", "Catppuccin Mocha"],
-        ["Everforest", "Dark", "Everforest Dark"],
-        ["Tokyo Night", "Night", "Tokyo Night"],
-        ["Tokyo Night", "Storm", "Tokyo Storm"],
-        ["Aetheria", "Dark", "Aetheria Dark"],
-        ["Ethereal", "Dark", "Ethereal Dark"],
-        ["Futurism", "Dark", "Futurism Dark"],
-        ["Hackerman", "Dark", "Hackerman Dark"],
-        ["Hermarchy", "Dark", "Hermarchy Dark"],
-        ["Retro 82", "Dark", "Retro 82"],
-    ]
+fn theme_entries_from(ctx) {
+    ctx.theme_variants()
 }
 
 fn theme_key(family, name) {
@@ -1474,9 +1458,12 @@ fn theme_key(family, name) {
 
 /// A theme switch re-colours the mosaic: the paint rows carry resolved
 /// colours, so the on-screen mode's paint is rebuilt for the new palette.
-fn repaint_after_theme(ctx) {
+fn repaint_after_theme(ctx, deps) {
     let layout = ctx.get_app_store("disktree", "layout");
     if layout.valid {
+        // Every mode caches literal fills. Invalidate inactive slots too,
+        // then rebuild only the mode currently visible.
+        reset_paint(ctx);
         let mode_now = ctx.get_state("mode");
         ctx.set_app_store(
             "disktree",
@@ -1485,6 +1472,8 @@ fn repaint_after_theme(ctx) {
         );
     }
 }
+
+fn paint_theme_stop(ctx, deps) { () }
 
 /// `e`: the next palette, wrapping.
 fn cycle_theme(ctx) {
@@ -1504,7 +1493,6 @@ fn cycle_theme(ctx) {
     }
     let pick = entries[next];
     ctx.set_theme(pick.family, pick.name);
-    repaint_after_theme(ctx);
 }
 
 // -- toolbar actions -------------------------------------------------------------
@@ -1543,6 +1531,8 @@ fn crumb_clicked(ctx, index) {
     }
     nav_go_to(ctx, crumbs);
 }
+
+fn breadcrumb_chosen(ctx, key) { crumb_clicked(ctx, parse_int(key)); }
 
 fn back_clicked(ctx, payload) {
     nav_history(ctx, true);
@@ -1632,6 +1622,10 @@ fn render_ScanRoot(ctx, props) {
     // The resolved variant drives the canvas palette; the read is a tracked
     // theme dependency, so a system appearance flip re-renders the mosaic.
     let light = is_light(ctx);
+    // Track paint's palette input independently from geometry. Host selection
+    // and system appearance changes must use the same invalidation path as
+    // the skin's own controls; a render read alone does not restart an effect.
+    effect("paint_theme", [light], Fn("repaint_after_theme"), Fn("paint_theme_stop"));
     // 极简皮肤没有侧栏：只有马赛克。
     // The active mode's paint, from its own store value (G9). `()` until the
     // layout effect fills it; mosaic_nodes renders an empty mosaic then.
@@ -1652,6 +1646,8 @@ fn render_ScanRoot(ctx, props) {
                 ctx.component_style(
                     "root",
                     style()
+                        .typography("body")
+                        .text_color(theme_color("text_primary"))
                         .flex_col()
                         .width(relative(1.0))
                         .height(relative(1.0))
@@ -1790,75 +1786,22 @@ fn history_button(label, enabled, handler) {
 /// The breadcrumb bar: history buttons, the root path, then the crumb path.
 /// Each crumb jumps straight to its directory.
 fn breadcrumbs(layout) {
-    let nodes = [
+    let items = [];
+    let parts = split_path(layout.root);
+    for i in 0..parts.len {
+        let root = i == parts.len - 1;
+        items.push(#{value:if root {"-1"}else{`prefix:${i}`},label:parts[i],disabled:!root});
+    }
+    for i in 0..layout.names.len {
+        items.push(#{value:`${i}`,label:if layout.names[i]=="" {"?"}else{layout.names[i]}});
+    }
+    row([
         history_button("<", layout.valid && layout.back.len() > 0, Fn("back_clicked")),
         history_button(">", layout.valid && layout.forward.len() > 0, Fn("forward_clicked")),
-    ];
-    let parts = split_path(layout.root);
-    for part in parts {
-        nodes.push(
-            text(part).with_style(
-                style()
-                    .font_size(px(12.0))
-                    .text_color(theme_color("text_muted"))
-                    .whitespace_nowrap().text_ellipsis()
-            )
-        );
-        nodes.push(
-            text("/").with_style(
-                style().font_size(px(12.0)).text_color(theme_color("border"))
-            )
-        );
-    }
-    let i = 0;
-    while i < layout.names.len() {
-        let active = i == layout.names.len() - 1;
-        let label = layout.names[i];
-        if label == "" {
-            label = "?";
-        }
-        nodes.push(crumb_segment(label, active, i));
-        if !active {
-            nodes.push(
-                text("/").with_style(
-                    style().font_size(px(12.0)).text_color(theme_color("border"))
-                )
-            );
-        }
-        i += 1;
-    }
-    row(nodes)
-        .with_style(
-            style()
-                .flex_row()
-                .items_center()
-                .gap(px(2.0))
-                .flex_grow()
-                .overflow_hidden()
-        )
-}
-
-fn crumb_segment(label, active, index) {
-    let weight = 400;
-    if active {
-        weight = 700;
-    }
-    box([text(label).with_style(
-        style()
-            .font_size(px(12.0))
-            .font_weight(weight)
-            .text_color(theme_color("text_primary"))
-            .whitespace_nowrap().text_ellipsis()
-            .max_width(px(180.0))
-    )])
-    .on_click_value(Fn("crumb_clicked"), index)
-    .with_style(
-        style()
-            .padding_x(px(6.0))
-            .padding_y(px(2.0))
-            .flex_shrink(false)
-            .hover(style().background(theme_color("surface_raised")))
-    )
+        breadcrumb::Breadcrumb(#{key:"directory-path",label:"Directory path",overflow_label:"Earlier directories",
+            separator_kind:"slash",items:items,on_navigate:if layout.valid {Fn("breadcrumb_chosen")}else{()}})
+            .with_style(style().flex_grow().width(px(0)).min_width(px(0))),
+    ]).with_style(style().items_center().gap(px(2)).flex_grow().min_width(px(0)))
 }
 
 /// Split a display path into its visible segments. A `~` home shortening
@@ -2773,11 +2716,11 @@ fn init(ctx) {
     // theme, else dark. "system" follows the window appearance; the skin
     // reads the resolved variant back at render (ctx.theme_variant).
     if args.theme_mode == "light" {
-        ctx.set_theme("Disktree", "Flexoki Light");
+        ctx.set_theme("Clean", "Light");
     } else if args.theme_mode == "system" {
-        ctx.set_theme_system("Disktree");
+        ctx.set_theme_system("Clean");
     } else {
-        ctx.set_theme("Disktree", "Minimal Gray");
+        ctx.set_theme("Clean", "Dark");
     }
     ctx.set_app_store("disktree", "args", #{ path: args.path, home: home });
     ctx.set_app_store("disktree", "scan", #{

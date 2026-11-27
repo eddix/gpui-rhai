@@ -192,15 +192,44 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
         "a zero-motion separator click must not emit resize: {single_click_texts:?}"
     );
 
+    // The preset's real table typography, rather than the former small label
+    // role, determines auto-fit. The existing 240px column does not ellipsize
+    // either occurrence, so their presented widths are a direct text oracle.
+    let widest_left = crate::support::snapshot(&mut visual, &view)
+        .nodes()
+        .filter(|node| node.role == "text" && node.name == "Left")
+        .filter_map(|node| node.geometry.map(|geometry| geometry.layout.width))
+        .reduce(f64::max)
+        .expect("untruncated header/body text");
+    let inset = visual.update(|window, cx| {
+        let theme = view.theme_snapshot(cx).unwrap().variant;
+        match theme
+            .tokens
+            .resolve_length(
+                gpui_rhai::Length::token("metrics.table_pad").unwrap(),
+                &gpui_rhai::Environment::EMPTY,
+            )
+            .unwrap()
+        {
+            gpui_rhai::Length::Pixels(value) => value,
+            gpui_rhai::Length::Rems(value) => value * f64::from(window.rem_size()),
+            _ => unreachable!(),
+        }
+    });
+    let expected_fit = (widest_left + 2.0 * inset).ceil().max(60.0);
     simulate_double_click(&mut visual, start);
     visual.run_until_parked();
     let auto_fit = bounds(&mut visual, &view, "columnheader", "Left").width;
-    assert!((auto_fit - 58.0).abs() < 1.0, "auto_fit={auto_fit}");
+    assert!(
+        (auto_fit - expected_fit).abs() < 1.0,
+        "auto_fit={auto_fit}, measured={expected_fit}"
+    );
     let auto_fit_texts = palette_texts(&mut visual, &view);
     assert!(
         auto_fit_texts
             .iter()
-            .any(|text| text == "resize:2:58" || text == "resize:2:58.0"),
+            .any(|text| text == &format!("resize:2:{auto_fit}")
+                || text == &format!("resize:2:{auto_fit:.1}")),
         "double-click auto-fit must emit one semantic resize: {auto_fit_texts:?}"
     );
 
@@ -216,7 +245,8 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
     assert!(
         keyboard_texts
             .iter()
-            .any(|text| text == "resize:3:66" || text == "resize:3:66.0"),
+            .any(|text| text == &format!("resize:3:{}", auto_fit + 8.0)
+                || text == &format!("resize:3:{:.1}", auto_fit + 8.0)),
         "focused separators must support logical arrow-key resizing: {keyboard_texts:?}"
     );
 }
@@ -336,7 +366,7 @@ fn native_collection_table_autofit_stays_on_the_realized_rust_path(cx: &mut Test
     visual.run_until_parked();
     let fitted = bounds(&mut visual, &view, "columnheader", "Row").width;
     assert!(
-        fitted >= 48.0 && fitted < header.width - 8.0,
+        fitted >= 48.0 && fitted <= header.width - 8.0,
         "native realized content did not auto-fit: before={header:?}, after={fitted}"
     );
     let performance = visual

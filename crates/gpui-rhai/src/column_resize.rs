@@ -7,14 +7,15 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, Bounds, CursorStyle, DispatchPhase, Element, ElementId, GlobalElementId,
     Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent,
-    Pixels, Point, SharedString, Style, Window, fill, point, px, relative, rgba, size,
+    Pixels, SharedString, Style, Window, fill, point, px, relative, rgba, size,
 };
 
+use crate::interaction::{GestureUpdate, InteractionFlow, ResizeGestureSpace};
 use crate::{
-    ComponentStateSchema, EventSchema, Length, ObjectField, PrimitiveContext, PrimitiveDescriptor,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
-    PrimitiveTheme, PrimitiveValue, Rgba8, SignalId, SignalKind, SignalValue, TextDirection,
-    UiValue, ValueSchema,
+    ComponentStateSchema, EventSchema, Length, NativeSignal, ObjectField, PrimitiveContext,
+    PrimitiveDescriptor, PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId,
+    PrimitiveProps, PrimitiveTheme, PrimitiveValue, Rgba8, SignalId, SignalKind, SignalValue,
+    TextDirection, UiValue, ValueSchema,
 };
 
 const DEFAULT_MIN_WIDTH: f64 = 48.0;
@@ -81,6 +82,7 @@ struct ResizeState(Rc<RefCell<ResizeStateInner>>);
 struct ResizeStateInner {
     source: SourceWidth,
     signal: crate::SignalId,
+    direction: TextDirection,
 }
 
 impl ResizeState {
@@ -88,6 +90,7 @@ impl ResizeState {
         Self(Rc::new(RefCell::new(ResizeStateInner {
             source: config.source.clone(),
             signal: config.signal.id().clone(),
+            direction: config.direction,
         })))
     }
 }
@@ -102,6 +105,7 @@ struct ColumnResizeHandle {
     measurements: ColumnMeasurementRegistry,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ColumnResizeHandle {
     type Element = Self;
 
@@ -149,18 +153,22 @@ impl Element for ColumnResizeHandle {
             .use_state(cx, |_, _| ResizeState::new(&self.config))
             .read(cx)
             .clone();
-        let reset = {
+        let (reset, axes_changed) = {
             let mut inner = state.0.borrow_mut();
             let changed =
                 inner.source != self.config.source || inner.signal != *self.config.signal.id();
+            let axes_changed = inner.direction != self.config.direction;
+            inner.direction = self.config.direction;
             if changed {
                 inner.source = self.config.source.clone();
                 inner.signal = self.config.signal.id().clone();
             }
-            changed
+            (changed, axes_changed)
         };
         let owner = self.events.interaction_owner(&self.config.id);
-        if reset && !self.events.cancel_interaction(&owner, window, cx) {
+        let canceled =
+            (reset || axes_changed) && self.events.cancel_interaction(&owner, window, cx);
+        if reset && !canceled {
             let events = self.events.clone();
             let signal = self.config.signal.clone();
             window.defer(cx, move |_, cx| {
@@ -226,7 +234,7 @@ fn register_pointer_down(
         {
             return;
         }
-        let Some(bounds) = events.element_bounds(&config.reference, cx) else {
+        let Some(header) = events.element_geometry(&config.reference, cx) else {
             return;
         };
         if event.click_count >= 2 {
@@ -234,7 +242,7 @@ fn register_pointer_down(
             events.cancel_interaction(&owner, window, cx);
             let measured = measurements
                 .maximum(config.signal.id())
-                .unwrap_or(bounds.width);
+                .unwrap_or(header.layout.width);
             let width = clamp_width(measured, config.min, config.max);
             let _ =
                 events.write_signal(&config.signal, SignalValue::OptionalFloat(Some(width)), cx);
@@ -247,73 +255,159 @@ fn register_pointer_down(
             cx.notify(view);
             return;
         }
-        let width = clamp_width(bounds.width, config.min, config.max);
-        let previous_override = events.read_signal(&config.signal, cx).ok();
+        if let Some(drag) = ColumnDrag::start(&events, &config, header, cx) {
+            drag.arm(&events, &config, event.position, view, window, cx);
+            cx.stop_propagation();
+        }
+    });
+}
+
+#[derive(Clone)]
+struct ColumnDrag {
+    space: ResizeGestureSpace,
+    width: f64,
+    scroll_x: f64,
+    previous_override: SignalValue,
+}
+
+impl ColumnDrag {
+    fn start(
+        events: &PrimitiveContext,
+        config: &ResizeConfig,
+        header: crate::PresentedGeometry,
+        cx: &App,
+    ) -> Option<Self> {
+        let (boundary, scroll_x) = match events.table_resize_viewport() {
+            Some(viewport) => (
+                viewport.presented()?,
+                viewport.logical_scroll_x(config.direction),
+            ),
+            None => (standalone_resize_axes(header)?, 0.),
+        };
+        Some(Self {
+            space: ResizeGestureSpace::new(boundary)?,
+            width: clamp_width(header.layout.width, config.min, config.max),
+            scroll_x,
+            previous_override: events
+                .read_signal(&config.signal, cx)
+                .unwrap_or(SignalValue::OptionalFloat(None)),
+        })
+    }
+
+    fn proposed_width(
+        &self,
+        gesture: GestureUpdate,
+        events: &PrimitiveContext,
+        config: &ResizeConfig,
+        cx: &App,
+    ) -> Option<f64> {
+        let boundary = if let Some(viewport) = events.table_resize_viewport() {
+            if (viewport.logical_scroll_x(config.direction) - self.scroll_x).abs() > 0.5 {
+                return None;
+            }
+            viewport.presented()
+        } else {
+            events
+                .element_geometry(&config.reference, cx)
+                .and_then(standalone_resize_axes)
+        };
+        let (dx, _) = self.space.displacement(boundary, gesture)?;
+        Some(clamp_width(
+            self.width + logical_delta(dx, config.direction),
+            config.min,
+            config.max,
+        ))
+    }
+
+    fn arm(
+        self,
+        events: &PrimitiveContext,
+        config: &ResizeConfig,
+        origin: gpui::Point<Pixels>,
+        view: gpui::EntityId,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let update_drag = self.clone();
         let update_config = config.clone();
         let update_events = events.clone();
-        let update = move |gesture: crate::interaction::GestureUpdate,
-                           _: &mut Window,
-                           cx: &mut App| {
+        let update = move |gesture: GestureUpdate, _: &mut Window, cx: &mut App| {
+            let Some(width) =
+                update_drag.proposed_width(gesture, &update_events, &update_config, cx)
+            else {
+                return InteractionFlow::Cancel;
+            };
             if gesture.moved() {
-                let delta =
-                    horizontal_delta(gesture.start(), gesture.current(), update_config.direction);
-                let value = clamp_width(width + delta, update_config.min, update_config.max);
-                let _ = update_events.write_signal(
+                write_width(
+                    &update_events,
                     &update_config.signal,
-                    SignalValue::OptionalFloat(Some(value)),
+                    SignalValue::OptionalFloat(Some(width)),
                     cx,
                 );
             }
-            crate::interaction::InteractionFlow::Continue
+            InteractionFlow::Continue
         };
         let finish_config = config.clone();
         let finish_events = events.clone();
-        let finish =
-            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
-                if !gesture.moved() {
-                    return;
-                }
-                let delta =
-                    horizontal_delta(gesture.start(), gesture.current(), finish_config.direction);
-                let value = clamp_width(width + delta, finish_config.min, finish_config.max);
-                let _ = finish_events.write_signal(
-                    &finish_config.signal,
-                    SignalValue::OptionalFloat(Some(value)),
-                    cx,
-                );
-                finish_events.propose(
-                    "resize",
-                    resize_payload(&finish_config.column_key, value),
-                    window,
-                    cx,
-                );
-                if finish_events.observes("resize") {
-                    schedule_preview_clear(&finish_events, &finish_config.signal, window, cx);
-                }
-            };
         let cancel_signal = config.signal.clone();
         let cancel_events = events.clone();
+        let rollback = self.previous_override.clone();
+        let finish = move |gesture: GestureUpdate, window: &mut Window, cx: &mut App| {
+            if !gesture.moved() {
+                return;
+            }
+            let Some(width) = self.proposed_width(gesture, &finish_events, &finish_config, cx)
+            else {
+                write_width(
+                    &finish_events,
+                    &finish_config.signal,
+                    self.previous_override.clone(),
+                    cx,
+                );
+                return;
+            };
+            write_width(
+                &finish_events,
+                &finish_config.signal,
+                SignalValue::OptionalFloat(Some(width)),
+                cx,
+            );
+            finish_events.propose(
+                "resize",
+                resize_payload(&finish_config.column_key, width),
+                window,
+                cx,
+            );
+            if finish_events.observes("resize") {
+                schedule_preview_clear(&finish_events, &finish_config.signal, window, cx);
+            }
+        };
         let cancel = move |_: &mut Window, cx: &mut App| {
-            let value = previous_override
-                .clone()
-                .unwrap_or(SignalValue::OptionalFloat(None));
-            let _ = cancel_events.write_signal(&cancel_signal, value, cx);
+            write_width(&cancel_events, &cancel_signal, rollback.clone(), cx);
         };
         let owner = events.interaction_owner(&config.id);
         events.begin_interaction(
-            crate::interaction::NativeGesture::new(
-                owner,
-                event.position,
-                view,
-                update,
-                finish,
-                cancel,
-            ),
+            crate::interaction::NativeGesture::new(owner, origin, view, update, finish, cancel),
             window,
             cx,
         );
-        cx.stop_propagation();
-    });
+    }
+}
+
+fn write_width(events: &PrimitiveContext, signal: &NativeSignal, value: SignalValue, cx: &mut App) {
+    let _ = events.write_signal(signal, value, cx);
+}
+
+/// Direct users of the primitive have no Table shell. Keep the header
+/// reference's native axes, but not its moving origin or changing width.
+fn standalone_resize_axes(
+    mut header: crate::PresentedGeometry,
+) -> Option<crate::PresentedGeometry> {
+    let (xx, xy, yx, yy, _, _) = header.local_to_window.components();
+    header.local_to_window = crate::Affine2D::new(xx, xy, yx, yy, 0., 0.).ok()?;
+    header.window_to_local = header.local_to_window.inverse();
+    header.layout.width = 0.;
+    Some(header)
 }
 
 fn schedule_preview_clear(
@@ -329,8 +423,7 @@ fn schedule_preview_clear(
     });
 }
 
-fn horizontal_delta(start: Point<Pixels>, current: Point<Pixels>, direction: TextDirection) -> f64 {
-    let delta = f64::from(current.x - start.x);
+fn logical_delta(delta: f64, direction: TextDirection) -> f64 {
     match direction {
         TextDirection::LeftToRight => delta,
         TextDirection::RightToLeft => -delta,
@@ -359,7 +452,8 @@ struct IntrinsicMeasureConfig {
     text: String,
     group: SignalId,
     horizontal_padding: Length,
-    extra_width: f64,
+    extra_width: Length,
+    inline_border_width: Length,
 }
 
 struct IntrinsicTextMeasureElement {
@@ -368,6 +462,7 @@ struct IntrinsicTextMeasureElement {
     measurements: ColumnMeasurementRegistry,
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for IntrinsicTextMeasureElement {
     type Element = Self;
 
@@ -428,7 +523,17 @@ impl Element for IntrinsicTextMeasureElement {
                 .unwrap_or(0.0);
             let padding =
                 absolute_length_pixels(self.config.horizontal_padding, window).unwrap_or_default();
-            let width = (text_width + padding * 2.0 + self.config.extra_width).ceil();
+            let Some(extra) = absolute_length_pixels(self.config.extra_width, window)
+                .filter(|width| width.is_finite() && (0.0..=MAX_COLUMN_WIDTH).contains(width))
+            else {
+                return;
+            };
+            let Some(border) = absolute_length_pixels(self.config.inline_border_width, window)
+                .filter(|width| width.is_finite() && (0.0..=MAX_COLUMN_WIDTH).contains(width))
+            else {
+                return;
+            };
+            let width = (text_width + padding * 2.0 + extra + border).ceil();
             if width.is_finite() {
                 self.measurements
                     .report(&self.config.group, self.instance, width);
@@ -527,20 +632,52 @@ fn parse_measure_config(
         None | Some(PrimitiveValue::Data(UiValue::Null)) => Length::Pixels(0.0),
         Some(_) => return Err("intrinsic text measurement padding must be Length".to_owned()),
     };
-    if !matches!(horizontal_padding, Length::Pixels(_) | Length::Rems(_)) {
-        return Err("intrinsic text measurement padding must resolve to pixels or rems".to_owned());
+    if !matches!(horizontal_padding, Length::Pixels(value) | Length::Rems(value) if value.is_finite() && (0.0..=MAX_COLUMN_WIDTH).contains(&value))
+    {
+        return Err(
+            "intrinsic text measurement padding must resolve to pixels or rems between 0 and 16384"
+                .to_owned(),
+        );
     }
-    let extra_width = props.number("extra_width").unwrap_or(0.0);
-    if !extra_width.is_finite() || !(0.0..=MAX_COLUMN_WIDTH).contains(&extra_width) {
+    let extra_width = match props.get("extra_width") {
+        Some(PrimitiveValue::Length(value)) => theme
+            .resolve_length(*value)
+            .ok_or_else(|| "intrinsic text measurement extra width did not resolve".to_owned())?,
+        None | Some(PrimitiveValue::Data(UiValue::Null)) => Length::Pixels(0.0),
+        Some(PrimitiveValue::Data(UiValue::Integer(_) | UiValue::Float(_))) => Length::Pixels(
+            props
+                .number("extra_width")
+                .ok_or("extra width must be numeric")?,
+        ),
+        Some(_) => {
+            return Err(
+                "intrinsic text measurement extra width must be a number or Length".to_owned(),
+            );
+        }
+    };
+    if !matches!(extra_width,Length::Pixels(value)|Length::Rems(value) if value.is_finite() && (0.0..=MAX_COLUMN_WIDTH).contains(&value))
+    {
         return Err(
             "intrinsic text measurement extra width must be between 0 and 16384".to_owned(),
         );
+    }
+    let inline_border_width = match props.get("inline_border_width") {
+        Some(PrimitiveValue::Length(value)) => theme
+            .resolve_length(*value)
+            .ok_or_else(|| "intrinsic text measurement border width did not resolve".to_owned())?,
+        None | Some(PrimitiveValue::Data(UiValue::Null)) => Length::Pixels(0.0),
+        Some(_) => return Err("intrinsic text measurement border width must be Length".to_owned()),
+    };
+    if !matches!(inline_border_width,Length::Pixels(value)|Length::Rems(value) if value.is_finite() && (0.0..=MAX_COLUMN_WIDTH).contains(&value))
+    {
+        return Err("intrinsic text measurement border width must resolve to pixels or rems between 0 and 16384".to_owned());
     }
     Ok(IntrinsicMeasureConfig {
         text,
         group: group.id().clone(),
         horizontal_padding,
         extra_width,
+        inline_border_width,
     })
 }
 
@@ -776,14 +913,20 @@ pub(crate) fn intrinsic_text_measure_primitive_descriptor() -> PrimitiveDescript
             ),
             (
                 "extra_width".to_owned(),
-                ObjectField::optional(ValueSchema::Number {
+                ObjectField::optional(ValueSchema::one_of([ValueSchema::Length,ValueSchema::Number {
                     min: Some(0.0),
                     max: Some(MAX_COLUMN_WIDTH),
                     exclusive_min: None,
                     exclusive_max: None,
-                })
+                }]))
                 .with_doc(
-                    "Logical pixels added once to the measured width, such as room for a sort icon; 0 when omitted.",
+                    "Additional width added once, as logical pixels or an absolute Length (including late-bound theme/reading-scale lengths); 0 when omitted.",
+                ),
+            ),
+            (
+                "inline_border_width".to_owned(),
+                ObjectField::optional(ValueSchema::Length).with_doc(
+                    "Total inline border width, added once after padding and extra content; pixels or rems, including late-bound theme lengths; 0 when omitted.",
                 ),
             ),
         ]),
@@ -844,16 +987,8 @@ mod tests {
 
     #[test]
     fn width_delta_and_clamping_follow_text_direction() {
-        let start = point(px(100.0), px(0.0));
-        let right = point(px(132.0), px(0.0));
-        assert!(
-            (horizontal_delta(start, right, TextDirection::LeftToRight) - 32.0).abs()
-                < f64::EPSILON
-        );
-        assert!(
-            (horizontal_delta(start, right, TextDirection::RightToLeft) + 32.0).abs()
-                < f64::EPSILON
-        );
+        assert!((logical_delta(32.0, TextDirection::LeftToRight) - 32.0).abs() < f64::EPSILON);
+        assert!((logical_delta(32.0, TextDirection::RightToLeft) + 32.0).abs() < f64::EPSILON);
         assert!((clamp_width(10.0, 48.0, 200.0) - 48.0).abs() < f64::EPSILON);
         assert!((clamp_width(240.0, 48.0, 200.0) - 200.0).abs() < f64::EPSILON);
     }
@@ -896,5 +1031,62 @@ mod tests {
         let descriptor = intrinsic_text_measure_primitive_descriptor();
         assert!(descriptor.lifecycle);
         assert_eq!(descriptor.id.as_str(), "gpui_rhai.intrinsic_text_measure");
+    }
+
+    #[test]
+    fn intrinsic_measurement_preserves_absolute_chrome_lengths() {
+        let props = PrimitiveProps::new()
+            .with("text", PrimitiveValue::Data(UiValue::String("Name".into())))
+            .with(
+                "group",
+                PrimitiveValue::Signal(crate::NativeSignal::new(measurement_group())),
+            )
+            .with(
+                "horizontal_padding",
+                PrimitiveValue::Length(Length::Rems(0.75)),
+            )
+            .with("extra_width", PrimitiveValue::Length(Length::Rems(1.1875)))
+            .with(
+                "inline_border_width",
+                PrimitiveValue::Length(Length::Rems(0.0625)),
+            );
+        let parsed = parse_measure_config(&props, &PrimitiveTheme::default()).unwrap();
+        assert_eq!(parsed.horizontal_padding, Length::Rems(0.75));
+        assert_eq!(parsed.extra_width, Length::Rems(1.1875));
+        assert_eq!(parsed.inline_border_width, Length::Rems(0.0625));
+        for (name, value, expected_ok) in [
+            (
+                "extra_width",
+                PrimitiveValue::Data(UiValue::Float(19.0)),
+                true,
+            ),
+            (
+                "extra_width",
+                PrimitiveValue::Data(UiValue::Float(f64::NAN)),
+                false,
+            ),
+            (
+                "extra_width",
+                PrimitiveValue::Length(Length::Relative(0.5)),
+                false,
+            ),
+            (
+                "inline_border_width",
+                PrimitiveValue::Length(Length::Pixels(-1.0)),
+                false,
+            ),
+            (
+                "horizontal_padding",
+                PrimitiveValue::Length(Length::Pixels(f64::INFINITY)),
+                false,
+            ),
+        ] {
+            assert_eq!(
+                parse_measure_config(&props.clone().with(name, value), &PrimitiveTheme::default())
+                    .is_ok(),
+                expected_ok,
+                "{name}"
+            );
+        }
     }
 }

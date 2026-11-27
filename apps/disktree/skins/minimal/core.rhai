@@ -1,9 +1,7 @@
 // Shared treemap geometry — the skin-level half of the disktree engine.
 //
-// This is a faithful Rhai port of tobi/disktree crates/disktree-core/src/treemap.rs
-// (squarify / worst_ratio) plus the hit-test rule. Skins import this module to get
-// the default squarified layout, or ignore it and bring their own geometry:
-// the contract with the host is tiles-in-viewport-pixels, nothing more.
+// This skin uses alternating slice-and-dice instead of the default
+// squarified layout. The host still receives tiles in viewport pixels.
 //
 // Rectangles are plain maps #{ x, y, w, h } in unzoomed viewport pixels.
 
@@ -56,25 +54,23 @@ fn worst_ratio_range(areas, from, to, row_sum, side) {
     worst
 }
 
-/// Split an area into one rectangle per value, proportional to it.
-/// Returned in the order of `values`, not in layout order.
-/// Direct port of tobi's squarify (Bruls, Huizing and van Wijk).
-///
-/// CONTRACT: `values` must already be ranked largest-first, like tobi's
-/// place_children feeds it. The host's tree data is ranked per metric; a skin
-/// calling this with unsorted values gets a valid but ugly mosaic.
-/// Slice-and-dice: 每层交替方向、按值比例顺序切分。极简皮肤的 tiling——
-/// 与默认皮肤的 squarify 相比，窄长条暴露层级顺序。
-/// Slice-and-dice: 每层交替方向、按值比例顺序切分。极简皮肤的 tiling——
-/// 与默认皮肤的 squarify 相比，窄长条暴露层级顺序。
+/// Slice the remaining rectangle across alternating axes. Each slice
+/// consumes its share of the remaining weight, not of the original total.
+/// Keep the values' input indices even when a zero-weight tile is empty.
 fn squarify(values, area) {
     let rects = [];
     if values.len() == 0 || area.w <= 0.0 || area.h <= 0.0 {
         return rects;
     }
-    let total = 0;
-    for v in values {
-        total += v;
+    // Reverse suffix sums avoid subtracting nearly equal large weights
+    // before dividing a later, much smaller slice.
+    let weights_left = [];
+    let total = 0.0;
+    let j = values.len() - 1;
+    while j >= 0 {
+        total += max(0.0, values[j].to_float());
+        weights_left.push(total);
+        j -= 1;
     }
     if total <= 0 {
         return rects;
@@ -86,7 +82,13 @@ fn squarify(values, area) {
     let horizontal = w >= h;
     let i = 0;
     while i < values.len() {
-        let share = values[i].to_float() / total.to_float();
+        let value = values[i].to_float();
+        if value <= 0.0 {
+            rects.push(rect(x, y, 0.0, 0.0));
+            i += 1;
+            continue;
+        }
+        let share = value / weights_left[values.len() - i - 1];
         if horizontal {
             let seg = w * share;
             rects.push(rect(x, y, seg, h));

@@ -12,8 +12,8 @@ use gpui_rhai_registry::{BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_B
 
 use crate::support::{Mount, Step, last_error, settle, snapshot};
 
-/// The body line height of the default tokens (`typography.body.line_height`); an
-/// unstyled `text` part sets CodeViewer's row height from it.
+/// This probe explicitly requests 14px text with a 22px line height. It verifies
+/// intrinsic sizing, not one bundled design's default typography.
 const ROW: f64 = 22.0;
 
 const SCRIPT: &str = r#"
@@ -45,6 +45,14 @@ fn view(ctx) {{ column([{view_body}, text(`hit:${{ctx.get_state("hit")}}`)]) }}
         .modules(BUNDLED_LAYOUT_SOURCES_BY_ID)
         .modules(BUNDLED_PATTERN_SOURCES_BY_ID)
         .motion(MotionPreference::None)
+        .with(|view| {
+            view.component_styles(
+                r#"fn component_styles(){#{
+            "components/code_viewer":#{text:style().font_size(px(14)).line_height(px(22))},
+            "layouts/region":#{body:style().padding(px(12))}
+        }}"#,
+            )
+        })
         .id("code-viewer-height")
         .mount(cx);
     // The document is prepared, and viewport wrapping rebuilt, in the background.
@@ -103,6 +111,35 @@ fn assert_near(actual: f64, expected: f64, what: &str) {
         (actual - expected).abs() < 0.5,
         "{what}: {actual}px, expected {expected}px"
     );
+}
+
+#[gpui::test]
+fn omitting_a_gutter_changes_native_display_rows_and_first_column_hit(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (mut v, view) = mount(
+        cx,
+        r#"
+        column([
+            code_viewer::CodeViewer(#{key:"with",label:"Reserved gutter",source:"1234567890123456789012345678901234",
+                  height:"content",wrap:"viewport",show_line_numbers:false,on_location_activate:Fn("activated")}),
+            code_viewer::CodeViewer(#{key:"without",label:"No gutter",source:"1234567890123456789012345678901234",
+                  height:"content",wrap:"viewport",show_gutter:false,on_location_activate:Fn("activated")})
+        ]).with_style(style().width(px(330)))
+    "#,
+    );
+    let spaced = bounds(&mut v, &view, "document", "Reserved gutter");
+    let plain = bounds(&mut v, &view, "document", "No gutter");
+    assert_near(
+        spaced.3,
+        ROW * 2.,
+        "the empty retained gutter still wraps the line",
+    );
+    assert_near(
+        plain.3,
+        ROW,
+        "the same line fits when the gutter is omitted",
+    );
+    assert_eq!(hit(&mut v, &view, plain.0 + 1., plain.1 + ROW / 2.), "1:1");
 }
 
 #[gpui::test]

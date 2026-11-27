@@ -1,6 +1,7 @@
 // Temporal workflows: controlled state stays in the Gallery root; no business polling.
 import "gallery/kit" as kit;
 import "components/calendar" as calendar;
+import "components/date_range_picker" as date_range_picker;
 import "components/time_input" as time_input;
 import "components/timeline" as timeline;
 import "components/time_range_picker" as time_range_picker;
@@ -8,12 +9,13 @@ import "components/button" as button;
 
 fn pages(){[
     #{id:"calendar",title:"Calendar",group:"Fields"},
+    #{id:"date_range_picker",title:"DateRangePicker",group:"Agents"},
     #{id:"time_input",title:"TimeInput",group:"Fields"},
     #{id:"timeline",title:"Timeline",group:"Lists"},
     #{id:"time_range_picker",title:"TimeRangePicker",group:"Fields"},
 ]}
 fn view(ctx,h,v,id){
-    if id=="calendar"{calendar_page(h,v)}else if id=="time_input"{time_input_page(ctx,h,v)}
+    if id=="calendar"{calendar_page(h,v)}else if id=="date_range_picker"{date_range_page(ctx,h,v)}else if id=="time_input"{time_input_page(ctx,h,v)}
     else if id=="timeline"{timeline_page(ctx,h,v)}else if id=="time_range_picker"{range_page(h,v)}else{()}
 }
 fn calendar_sample(h,v,key,density){calendar::Calendar(#{key:key,label:"Calendar date",value:kit::val(v,key,"2026-10-14"),
@@ -23,8 +25,22 @@ fn calendar_page(h,v){kit::page(h,v,"calendar","Calendar","One locale-aware grid
     kit::sec("Density",kit::densities(calendar_sample(h,v,"calendar.comfortable","comfortable"),calendar_sample(h,v,"calendar.compact","compact"))),
     kit::note("Arrows move by day or week; Home/End use the locale week. Page Up/Down changes month. Enter selects."),
 ])}
+fn date_range_page(ctx,h,v){
+    let value=kit::val(v,"dates.period",#{range:#{start:"2026-10-01",end:"2026-10-08"},compare_mode:"off",comparison:()});
+    let status=if value.comparison==(){"Comparison off"}else{
+        "Comparison: "+ctx.format_date(value.comparison.start,"medium")+" – "+ctx.format_date(value.comparison.end,"medium")
+    };
+    kit::page(h,v,"date_range_picker","DateRangePicker","Inclusive civil dates, presets and optional comparison in one draft.",[
+        kit::sec("Reporting",column([
+            date_range_picker::DateRangePicker(#{key:"reporting-period",label:"Reporting period",today:"2026-10-16",
+                value:value.range,compare_mode:value.compare_mode,on_change:kit::store(h,"dates.period")}),
+            kit::note(status),
+        ]).with_style(style().gap(theme_spacing("sm")).items_start())),
+        kit::note("Choose two days or a preset. Compare to the previous period or year. Apply commits; Escape and Cancel discard the draft."),
+    ])
+}
 fn time_input_page(ctx,h,v){let editable_error=kit::val(v,"clock.invalid","99:99");
-    kit::page(h,v,"time_input","TimeInput","Native clock editing follows the locale hour cycle and digits.",[
+    kit::page(h,v,"time_input","TimeInput","The native Input surface and focus, with locale-aware clock editing and stepping.",[
     kit::sec("Precision",kit::line([
         time_input::TimeInput(#{key:"clock-minute",label:"Minute precision",value:kit::val(v,"clock.minute",ctx.format_time(0,"short","UTC")),on_change:kit::store(h,"clock.minute")}),
         time_input::TimeInput(#{key:"clock-second",label:"Second precision",value:kit::val(v,"clock.second",ctx.format_time(0,"medium","UTC")),precision:"second",on_change:kit::store(h,"clock.second")}),

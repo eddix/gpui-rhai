@@ -69,5 +69,5 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `cursor`, `empty`, `focu
 
 ## Theme
 
-- Tokens: `border`, `focus_ring`, `metrics.inset`, `metrics.row`, `radius.md`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `spacing.sm`, `spacing.xs`, `surface_hover`, `table.selection`, `text_muted`, `typography.body`
+- Tokens: `border`, `collection.selection`, `focus_ring`, `metrics.inset`, `metrics.row`, `radius.md`, `scrollbar.thumb`, `scrollbar.thumb_hover`, `spacing.sm`, `spacing.xs`, `surface_hover`, `text_muted`, `typography.body`
 - Environment: `density`, `size`

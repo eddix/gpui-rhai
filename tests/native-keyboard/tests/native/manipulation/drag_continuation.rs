@@ -34,6 +34,62 @@ fn drag(
     visual.run_until_parked();
 }
 
+#[gpui::test]
+fn native_drag_announces_one_start_after_threshold_and_not_for_keyboard_drop(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let source = r#"
+import "components/drag_source" as drag;
+import "components/drop_zone" as drop;
+fn state_schema(){#{fields:#{
+    starts:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},
+    ends:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}
+}}}
+fn started(ctx,event){ctx.set_state("starts",ctx.get_state("starts")+1);}
+fn ended(ctx,event){ctx.set_state("ends",ctx.get_state("ends")+1);}
+fn view(ctx){
+    column([
+        text(ctx.get_state("starts").to_string()+":"+ctx.get_state("ends").to_string()).accessibility_role("status"),
+        drag::DragSource(#{key:"source",label:"Source",source_id:"card",payload_type:"card",payload:#{id:"card"},
+          threshold:4,keyboard_target:"slot",on_drag_start:Fn("started"),on_drag_end:Fn("ended"),
+          content:text("Card").with_style(style().width(px(150)).height(px(40)))}),
+        drop::DropZone(#{key:"target",label:"Slot",target_id:"slot",payload_types:["card"],operations:["move"],
+          content:text("Drop here").with_style(style().width(px(150)).height(px(40)))})
+    ]).with_style(style().width(px(240)).gap(px(8)))
+}
+"#;
+    let (mut v, view) = mount(cx, source);
+    v.update(|window, _| window.activate_window());
+    let start = center(bounds(&mut v, &view, "button", "Source"));
+    let to = center(bounds(&mut v, &view, "group", "Slot"));
+    let keys = Modifiers::none();
+    v.simulate_mouse_down(start, MouseButton::Left, keys);
+    let near = point(start.x + px(2.), start.y);
+    v.simulate_mouse_move(near, MouseButton::Left, keys);
+    v.simulate_mouse_up(near, MouseButton::Left, keys);
+    v.run_until_parked();
+    assert_eq!(status(&mut v, &view), "0:0");
+
+    v.simulate_keystrokes("enter");
+    v.run_until_parked();
+    assert_eq!(status(&mut v, &view), "0:1");
+
+    v.simulate_mouse_down(start, MouseButton::Left, keys);
+    v.simulate_mouse_move(to, MouseButton::Left, keys);
+    v.run_until_parked();
+    assert_eq!(status(&mut v, &view), "1:1");
+    for dx in [2., 4., 6.] {
+        v.simulate_mouse_move(point(to.x + px(dx), to.y), MouseButton::Left, keys);
+    }
+    v.run_until_parked();
+    assert_eq!(status(&mut v, &view), "1:1");
+    v.simulate_mouse_up(to, MouseButton::Left, keys);
+    v.run_until_parked();
+    assert_eq!(status(&mut v, &view), "1:2");
+    assert_eq!(v.update(|_, cx| view.last_error(cx).unwrap()), None);
+}
+
 fn gap_script(block: bool) -> String {
     r#"
 import "components/drag_source" as drag_source;

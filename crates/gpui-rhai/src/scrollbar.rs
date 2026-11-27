@@ -4,7 +4,10 @@
 //! implementation is independent, with behavior informed by Longbridge's
 //! Apache-2.0 gpui-component scrollbar.
 
+#[cfg(not(feature = "vendor-gpui"))]
+use crate::presentation_backend::PublicWindowExt as _;
 use std::cell::Cell;
+use std::collections::BTreeSet;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -86,6 +89,7 @@ pub(crate) struct ScrollWheelSource {
     source: Rc<dyn ScrollbarSource>,
     axes: (bool, bool),
     translate: bool,
+    retained_viewport: Option<(crate::GeometryRegistry, crate::NodeId)>,
 }
 
 impl ScrollWheelSource {
@@ -94,13 +98,67 @@ impl ScrollWheelSource {
             source: Rc::new(source),
             axes,
             translate,
+            retained_viewport: None,
         }
     }
 
-    fn apply(&self, position: Point<Pixels>, mut remaining: Point<Pixels>) -> Point<Pixels> {
-        if !self.source.viewport().contains(&position) {
+    pub(crate) fn with_retained_viewport(
+        mut self,
+        geometry: &crate::GeometryRegistry,
+        owner: Option<crate::NodeId>,
+    ) -> Self {
+        self.retained_viewport = owner.map(|owner| (geometry.clone(), owner));
+        self
+    }
+
+    fn contains(&self, position: Point<Pixels>) -> bool {
+        let viewport = self.source.viewport();
+        let Some((geometry, owner)) = &self.retained_viewport else {
+            // An anonymous external source has no registered presentation.
+            return viewport.contains(&position);
+        };
+        if !geometry.is_presented(*owner) {
+            return false;
+        }
+        let Ok(frame) = geometry.presented(*owner) else {
+            return false;
+        };
+        let point = (f64::from(position.x), f64::from(position.y));
+        if frame.clip.is_some_and(|clip| {
+            point.0 < clip.x
+                || point.0 >= clip.x + clip.width
+                || point.1 < clip.y
+                || point.1 >= clip.y + clip.height
+        }) {
+            return false;
+        }
+        frame.window_to_local.is_some_and(|inverse| {
+            let (x, y) = inverse.map_point(point);
+            let (x, y) = (x + frame.layout.x, y + frame.layout.y);
+            x >= f64::from(viewport.left())
+                && x < f64::from(viewport.right())
+                && y >= f64::from(viewport.top())
+                && y < f64::from(viewport.bottom())
+        })
+    }
+
+    fn apply(
+        &self,
+        position: Point<Pixels>,
+        remaining: Point<Pixels>,
+        admitted: &BTreeSet<usize>,
+    ) -> Point<Pixels> {
+        let hit = self.source.identity().map_or_else(
+            || self.contains(position),
+            |identity| admitted.contains(&identity),
+        );
+        if !hit {
             return remaining;
         }
+        self.apply_delta(remaining)
+    }
+
+    fn apply_delta(&self, mut remaining: Point<Pixels>) -> Point<Pixels> {
         let max = self.source.max_offset();
         let clamp = |value: Point<Pixels>| {
             point(
@@ -323,7 +381,8 @@ impl ScrollbarContext {
             style
                 .resolve(&crate::InteractionState::default())
                 .background
-                .as_ref()
+                .as_deref()
+                .and_then(crate::BackgroundFill::as_solid_value)
                 .and_then(|color| self.theme.resolve_color(color))
                 .unwrap_or(fallback)
         };
@@ -474,6 +533,7 @@ struct ScrollbarStateInner {
     last_activity: Option<Instant>,
     idle_timer_scheduled: bool,
     source_identity: Option<usize>,
+    frames: [Option<AxisFrame>; 2],
 }
 
 #[derive(Clone, Default)]
@@ -481,18 +541,31 @@ struct ScrollbarState(Rc<Cell<ScrollbarStateInner>>);
 
 #[derive(Clone)]
 struct AxisPrepaint {
-    axis: Axis,
-    track: Bounds<Pixels>,
+    frame: AxisFrame,
     thumb_hitbox: Bounds<Pixels>,
     thumb_paint: Bounds<Pixels>,
     bar_hitbox: Hitbox,
-    max_offset: Pixels,
-    thumb_length: Pixels,
     visible: bool,
     dragged: bool,
 }
 
-impl AxisPrepaint {
+#[derive(Clone, Copy, PartialEq)]
+struct AxisFrame {
+    axis: Axis,
+    track: Bounds<Pixels>,
+    max_offset: Pixels,
+    thumb_length: Pixels,
+    placement: [f64; 6],
+}
+
+impl AxisFrame {
+    const fn index(self) -> usize {
+        match self.axis {
+            Axis::Horizontal => 0,
+            Axis::Vertical => 1,
+        }
+    }
+
     fn coordinate(&self, point: Point<Pixels>) -> Pixels {
         match self.axis {
             Axis::Horizontal => point.x,
@@ -538,7 +611,7 @@ pub(crate) struct ThemedScrollbar {
 
 impl ThemedScrollbar {
     fn body_hitbox(&self, viewport: Bounds<Pixels>, window: &mut Window) -> Option<Hitbox> {
-        (self.wheel_body && !self.disabled).then(|| {
+        ((self.wheel_body || self.handle.identity().is_some()) && !self.disabled).then(|| {
             window.with_content_mask(Some(ContentMask { bounds: viewport }), |window| {
                 window.insert_hitbox(viewport, HitboxBehavior::Normal)
             })
@@ -574,6 +647,7 @@ impl ThemedScrollbar {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ThemedScrollbar {
     type Element = Self;
 
@@ -661,7 +735,9 @@ impl Element for ThemedScrollbar {
 
         let max = self.handle.max_offset();
         let body = self.body_hitbox(viewport, window);
+        let placement = window.visual_coordinates().coefficients();
         let mut axes = Vec::new();
+        let mut frames = [None; 2];
         for axis in [Axis::Horizontal, Axis::Vertical] {
             let visibility = self.spec.visibility(axis);
             if visibility == ScrollbarVisibility::Hidden {
@@ -681,10 +757,18 @@ impl Element for ThemedScrollbar {
             let travel = (container - thumb_length).max(px(0.0));
             let thumb_start = (scroll_position / max_offset * travel).clamp(px(0.0), travel);
             let track = axis_track(viewport, axis, self.direction);
+            let frame = AxisFrame {
+                axis,
+                track,
+                max_offset,
+                thumb_length,
+                placement,
+            };
             let thumb_hitbox = axis_thumb(track, axis, thumb_start, thumb_length, TRACK_WIDTH);
             let owner = axis_interaction_owner(&self.interaction_owner, axis);
             if !self.disabled {
                 self.interactions.present(owner.clone());
+                frames[frame.index()] = Some(frame);
             }
             let dragged = self.interactions.is_active(&owner);
             let active_width = if dragged {
@@ -705,17 +789,17 @@ impl Element for ThemedScrollbar {
                     .last_activity
                     .is_some_and(|last| now.saturating_duration_since(last) < AUTO_IDLE);
             axes.push(AxisPrepaint {
-                axis,
-                track,
+                frame,
                 thumb_hitbox,
                 thumb_paint,
                 bar_hitbox,
-                max_offset,
-                thumb_length,
                 visible,
                 dragged,
             });
         }
+        let mut inner = state.0.get();
+        inner.frames = frames;
+        state.0.set(inner);
         ScrollbarPrepaint {
             viewport,
             state,
@@ -742,6 +826,7 @@ impl Element for ThemedScrollbar {
             source: self.handle.clone(),
             axes: self.wheel_axes,
             translate: self.translate_wheel,
+            retained_viewport: None,
         }];
         wheel_chain.extend(self.wheel_parents.clone());
         register_wheel_listener(
@@ -749,31 +834,23 @@ impl Element for ThemedScrollbar {
             wheel_chain,
             state.clone(),
             view,
-            prepaint.body.as_ref().map_or_else(
-                || {
-                    WheelHitRegion::Tracks(
-                        prepaint
-                            .axes
-                            .iter()
-                            .map(|axis| axis.bar_hitbox.clone())
-                            .collect(),
-                    )
-                },
-                |_| WheelHitRegion::Body {
-                    coordinator: self.interactions.clone(),
-                    owner: self.interaction_owner.clone(),
-                    source: self
-                        .handle
-                        .identity()
-                        .expect("body routing requires a retained source handle"),
-                    ancestors: self
-                        .wheel_parents
-                        .iter()
-                        .filter_map(|parent| parent.source.identity())
-                        .collect(),
-                    hitbox: prepaint.body.clone().expect("body hitbox was prepared"),
-                },
-            ),
+            WheelHitRegion {
+                coordinator: self.interactions.clone(),
+                owner: self.interaction_owner.clone(),
+                source: self.handle.identity(),
+                ancestors: self
+                    .wheel_parents
+                    .iter()
+                    .filter_map(|parent| parent.source.identity())
+                    .collect(),
+                body: prepaint.body.clone(),
+                starts_on_body: self.wheel_body,
+                tracks: prepaint
+                    .axes
+                    .iter()
+                    .map(|axis| axis.bar_hitbox.clone())
+                    .collect(),
+            },
             self.disabled,
             window,
         );
@@ -791,7 +868,7 @@ impl Element for ThemedScrollbar {
                 window.set_cursor_style(CursorStyle::PointingHand, &axis.bar_hitbox);
             }
             window.with_content_mask(Some(ContentMask { bounds: viewport }), |window| {
-                window.paint_quad(fill(axis.track, rgba(self.track.as_rgba_hex())));
+                window.paint_quad(fill(axis.frame.track, rgba(self.track.as_rgba_hex())));
                 window.paint_quad(PaintQuad {
                     bounds: axis.thumb_paint,
                     corner_radii: px(4.0).into(),
@@ -895,8 +972,12 @@ fn register_hover_listener(
     view: gpui::EntityId,
     window: &mut Window,
 ) {
+    let coordinates = window.visual_coordinates();
     window.on_mouse_event(move |event: &MouseMoveEvent, _, _, cx| {
-        let hovered = viewport.contains(&event.position);
+        let hovered = coordinates.accepts_visual_point(event.position)
+            && coordinates
+                .layout_point(event.position)
+                .is_some_and(|p| viewport.contains(&p));
         let mut inner = state.0.get();
         if inner.hovered != hovered {
             inner.hovered = hovered;
@@ -909,15 +990,14 @@ fn register_hover_listener(
     });
 }
 
-enum WheelHitRegion {
-    Tracks(Vec<Hitbox>),
-    Body {
-        coordinator: crate::interaction::WindowInteractionCoordinator,
-        owner: crate::interaction::InteractionOwner,
-        source: usize,
-        ancestors: Vec<usize>,
-        hitbox: Hitbox,
-    },
+struct WheelHitRegion {
+    coordinator: crate::interaction::WindowInteractionCoordinator,
+    owner: crate::interaction::InteractionOwner,
+    source: Option<usize>,
+    ancestors: Vec<usize>,
+    body: Option<Hitbox>,
+    starts_on_body: bool,
+    tracks: Vec<Hitbox>,
 }
 
 fn register_wheel_listener(
@@ -929,57 +1009,70 @@ fn register_wheel_listener(
     disabled: bool,
     window: &mut Window,
 ) {
-    let apply: Rc<crate::interaction::NativeWheelHandler> = Rc::new(move |event, window, cx| {
-        let delta = event.delta.pixel_delta(window.line_height());
-        let remaining = chain.iter().fold(delta, |remaining, source| {
-            source.apply(event.position, remaining)
-        });
-        // The view notified below holds every source of the chain, which are
-        // the scroll containers around this one: notifying it redraws them,
-        // and leaves the cached views outside them to replay.
-        if remaining != delta {
-            cx.stop_propagation();
-        }
-        let mut inner = state.0.get();
-        if let Some(source) = chain.first() {
-            inner.last_offset = source.source.offset();
-        }
-        inner.last_activity = Some(Instant::now());
-        state.0.set(inner);
-        cx.notify(view);
-    });
-    window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
-        if !disabled && viewport.contains(&event.position) {
-            match (&region, phase) {
-                (
-                    WheelHitRegion::Body {
-                        coordinator,
-                        owner,
-                        source,
-                        ancestors,
-                        hitbox,
-                    },
-                    DispatchPhase::Capture,
-                ) if hitbox.should_handle_scroll(window) => {
-                    coordinator.register_wheel_region(
-                        owner.clone(),
-                        *source,
-                        ancestors.clone(),
-                        hitbox.clone(),
-                        Rc::clone(&apply),
-                        window,
-                        cx,
-                    );
-                }
-                (WheelHitRegion::Tracks(tracks), DispatchPhase::Bubble)
-                    if tracks
-                        .iter()
-                        .any(|track| track.should_handle_scroll(window)) =>
-                {
-                    apply(event, window, cx);
-                }
-                _ => {}
+    let coordinates = window.visual_coordinates();
+    let apply: Rc<crate::interaction::NativeWheelHandler> =
+        Rc::new(move |event, admitted, window, cx| {
+            let delta = event.delta.pixel_delta(window.line_height());
+            // The initiating source was already hit tested in its own presented
+            // plane. Keep input deltas in their native axis policy; admission
+            // for each explicit parent was collected by its own listener.
+            let mut sources = chain.iter();
+            let initial = sources
+                .next()
+                .map_or(delta, |source| source.apply_delta(delta));
+            let remaining = sources.fold(initial, |remaining, source| {
+                source.apply(event.position, remaining, admitted)
+            });
+            // The view notified below holds every source of the chain, which are
+            // the scroll containers around this one: notifying it redraws them,
+            // and leaves the cached views outside them to replay.
+            if remaining != delta {
+                cx.stop_propagation();
             }
+            let mut inner = state.0.get();
+            if let Some(source) = chain.first() {
+                inner.last_offset = source.source.offset();
+            }
+            inner.last_activity = Some(Instant::now());
+            state.0.set(inner);
+            cx.notify(view);
+        });
+    window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
+        if disabled
+            || phase != DispatchPhase::Capture
+            || !coordinates
+                .layout_point(event.position)
+                .is_some_and(|p| viewport.contains(&p))
+        {
+            return;
+        }
+        let body = region
+            .body
+            .as_ref()
+            .is_some_and(|hitbox| hitbox.should_handle_scroll(window));
+        let starts = if region.starts_on_body {
+            body
+        } else {
+            region
+                .tracks
+                .iter()
+                .any(|hitbox| hitbox.should_handle_scroll(window))
+        };
+        if starts || (body && region.source.is_some()) {
+            region.coordinator.register_wheel_region(
+                region.owner.clone(),
+                crate::interaction::NativeWheelRegion {
+                    source: region.source,
+                    ancestors: if starts {
+                        region.ancestors.clone()
+                    } else {
+                        Vec::new()
+                    },
+                    start: starts.then(|| Rc::clone(&apply)),
+                },
+                window,
+                cx,
+            );
         }
     });
 }
@@ -997,8 +1090,9 @@ fn register_axis_listeners(
     let handle = handle.clone();
     let down_handle = handle.clone();
     let down_state = state.clone();
-    let owner = axis_interaction_owner(interaction_owner, axis.axis);
+    let owner = axis_interaction_owner(interaction_owner, axis.frame.axis);
     let coordinator = interactions.clone();
+    let coordinates = window.visual_coordinates();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
         if phase != DispatchPhase::Bubble
             || event.button != MouseButton::Left
@@ -1006,34 +1100,43 @@ fn register_axis_listeners(
         {
             return;
         }
+        let Some(position) = coordinates.layout_point(event.position) else {
+            return;
+        };
         cx.stop_propagation();
         let mut inner = down_state.0.get();
         inner.last_activity = Some(Instant::now());
-        if axis.thumb_hitbox.contains(&event.position) {
+        if axis.thumb_hitbox.contains(&position) {
             let drag = Rc::new(ScrollbarDrag {
                 source: down_handle.clone(),
                 active: Cell::new(false),
             });
-            let drag_position = event.position - axis.thumb_hitbox.origin;
-            let update_axis = axis.clone();
-            let update_handle = down_handle.clone();
-            let update_state = down_state.clone();
+            let frame = axis.frame;
+            let grab = frame.coordinate(position - axis.thumb_hitbox.origin) + THUMB_INSET;
+            let apply = Rc::new(ThumbCapture {
+                frame,
+                grab,
+                coordinates: coordinates.clone(),
+                source: down_handle.clone(),
+                state: down_state.clone(),
+                last_sample: Cell::new(None),
+            });
+            let update_capture = Rc::clone(&apply);
             let update =
                 move |gesture: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
-                    let percentage = update_axis.percentage(
-                        gesture.current(),
-                        update_axis.coordinate(drag_position) + THUMB_INSET,
-                    );
-                    update_axis.set_percentage(update_handle.as_ref(), percentage);
-                    let mut inner = update_state.0.get();
-                    inner.last_activity = Some(Instant::now());
-                    update_state.0.set(inner);
-                    crate::interaction::InteractionFlow::Continue
+                    if update_capture.apply(gesture.current()) {
+                        crate::interaction::InteractionFlow::Continue
+                    } else {
+                        crate::interaction::InteractionFlow::Cancel
+                    }
                 };
             let finish_state = down_state.clone();
             let finish_drag = Rc::clone(&drag);
             let finish =
-                move |_: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
+                move |gesture: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
+                    if gesture.moved() {
+                        apply.apply(gesture.current());
+                    }
                     finish_drag.end();
                     let mut inner = finish_state.0.get();
                     inner.last_activity = Some(Instant::now());
@@ -1063,14 +1166,48 @@ fn register_axis_listeners(
             down_handle.drag_started();
             drag.active.set(true);
         } else {
-            axis.set_percentage(
+            axis.frame.set_percentage(
                 down_handle.as_ref(),
-                axis.percentage(event.position, axis.thumb_length / 2.0),
+                axis.frame
+                    .percentage(position, axis.frame.thumb_length / 2.0),
             );
         }
         down_state.0.set(inner);
         cx.notify(view);
     });
+}
+
+struct ThumbCapture {
+    frame: AxisFrame,
+    grab: Pixels,
+    coordinates: crate::presentation_backend::VisualCoordinates,
+    source: Rc<dyn ScrollbarSource>,
+    state: ScrollbarState,
+    last_sample: Cell<Option<Pixels>>,
+}
+
+impl ThumbCapture {
+    fn apply(&self, position: Point<Pixels>) -> bool {
+        if self.state.0.get().frames[self.frame.index()] != Some(self.frame) {
+            return false;
+        }
+        let Some(local) = self.coordinates.layout_point(position) else {
+            return false;
+        };
+        // An equal offset can still be an action (for example restoring
+        // tail follow). Deduplicate the sampled pointer, not the offset.
+        let along_track = self.frame.coordinate(local);
+        if self.last_sample.replace(Some(along_track)) != Some(along_track) {
+            self.frame.set_percentage(
+                self.source.as_ref(),
+                self.frame.percentage(local, self.grab),
+            );
+        }
+        let mut inner = self.state.0.get();
+        inner.last_activity = Some(Instant::now());
+        self.state.0.set(inner);
+        true
+    }
 }
 
 fn axis_interaction_owner(
@@ -1159,12 +1296,12 @@ mod tests {
         )])
         .with_scroll_parent(document.clone(), Some(Axis::Vertical))
         .with_scroll_parent(table.clone(), Some(Axis::Vertical));
-        let residual = bars
-            .wheel_parents
-            .iter()
-            .fold(point(px(0.0), px(-80.0)), |remaining, source| {
-                source.apply(point(px(10.0), px(10.0)), remaining)
-            });
+        let residual =
+            bars.wheel_parents
+                .iter()
+                .fold(point(px(0.0), px(-80.0)), |remaining, source| {
+                    source.apply(point(px(10.0), px(10.0)), remaining, &BTreeSet::new())
+                });
         assert_eq!(*writes.borrow(), ["table", "document", "rhai"]);
         assert_eq!(table.offset().y, px(-20.0));
         assert_eq!(document.offset().y, px(-30.0));

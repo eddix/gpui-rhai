@@ -5,6 +5,16 @@ use super::ScriptFnDoc;
 
 pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
+        signature: "component_style(_: &mut UiContext, _: array, _: gpui_rhai::style::Style) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["parts", "base"],
+        doc: "Resolves 1..32 unique snake_case parts together, in their declared order: all preset refinements, then all application refinements, then instance root/part overrides. Prevents a later selected-state preset from overwriting an earlier common-part user override.",
+    },
+    ScriptFnDoc {
+        signature: "component_style(_: &mut UiContext, _: array, _: gpui_rhai::style::Style, _: gpui_rhai::style::Style) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["parts", "base", "state"],
+        doc: "Resolves 1..32 unique parts as one cascade, inserting the controlled variant/state after all preset parts and before application and instance overrides. Parts within each layer are applied in array order.",
+    },
+    ScriptFnDoc {
         signature: "node_factory(_: &mut UiContext, _: Fn) -> core::result::Result<rhai::types::fn_ptr::FnPtr,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["renderer"],
         doc: "Captures a named Node factory's module/import environment at declaration, retaining user curry across helper-module forwarding. Render-only; forwarding an already bound factory preserves its original owner and environment. Invoke with ctx.render_node.",
@@ -87,7 +97,7 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "action_shortcut(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["action"],
-        doc: "Returns the key binding declared to this view for `action` as `#{ label, keystrokes, chords }`, or `()` when it has none.",
+        doc: "Returns the key binding declared to this view for `action` as `#{ label, keystrokes, chords }`, or `()` when it has none. Each chord contains `key`, `modifiers` and ordered `keys` display/spoken descriptors, matching `key_shortcut` without reparsing its label.",
     },
     ScriptFnDoc {
         signature: "actions(_: &mut UiContext) -> core::result::Result<alloc::vec::Vec<rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -135,6 +145,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Removes the current window's close handler, so a native close request closes the window again; not allowed during render.",
     },
     ScriptFnDoc {
+        signature: "clear_environment(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["name"],
+        doc: "Clears the app-wide override for environment axis `name` (such as `design`), restoring the active theme's declared default; not allowed during render.",
+    },
+    ScriptFnDoc {
         signature: "close_window(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["id"],
         doc: "Queues a forced close of window `id` that skips its close handler; needs window-command authority and is not allowed during render.",
@@ -142,7 +157,12 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "component_style(_: &mut UiContext, _: string, _: gpui_rhai::style::Style) -> gpui_rhai::style::Style",
         params: &["part", "base"],
-        doc: "Returns `base` merged with the stylesheet rule, the caller's `style` (root only) and `part_styles` for the declared part `part`.",
+        doc: "Returns `base` merged with the active preset's part recipe, application stylesheet, caller's `style` (root only) and `part_styles`. Preset reads track the scoped theme during render.",
+    },
+    ScriptFnDoc {
+        signature: "component_style(_: &mut UiContext, _: string, _: gpui_rhai::style::Style, _: gpui_rhai::style::Style) -> gpui_rhai::style::Style",
+        params: &["part", "base", "state"],
+        doc: "Resolves source base, preset part recipe, controlled state refinement, application stylesheet, instance root style, then instance part style. Use state for selected/invalid/variant paint so preset defaults cannot overwrite it and Host/application overrides remain final.",
     },
     ScriptFnDoc {
         signature: "dispatch_action(_: &mut UiContext, _: string, _: types::dynamic::Dynamic) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -152,12 +172,22 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
     ScriptFnDoc {
         signature: "element_bounds(_: &mut UiContext, _: ElementRef) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["reference"],
-        doc: "Returns a ref's last committed `#{ layout, visual, clip }` window bounds, or `()` before first layout; records a dependency in render.",
+        doc: "Returns a ref's last committed `#{ layout, visual, clip }` window bounds, or `()` before first layout; records a dependency in render. A present clip is the visible rectangular extent, with zero area when fully clipped.",
+    },
+    ScriptFnDoc {
+        signature: "environment(_: &mut UiContext, _: string) -> types::dynamic::Dynamic",
+        params: &["name"],
+        doc: "Returns the active value of theme environment axis `name` (such as `design`), or `()` if unset; records a theme dependency in render.",
     },
     ScriptFnDoc {
         signature: "element_bounds(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key"],
         doc: "Returns the `#{ layout, visual, clip }` window bounds of a component-local ref key, or `()`; the form event callbacks use.",
+    },
+    ScriptFnDoc {
+        signature: "text_anchors(_: &mut UiContext, _: ElementRef, _: TextAnchorPlan) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["reference", "plan"],
+        doc: "Reads the rendered anchors keyed by request ID, or `()` before presentation or when source, revision or requests differ. Records a dependency in render; each rect has layout, visual, clipped bounds and the visual quad.",
     },
     ScriptFnDoc {
         signature: "element_size(_: &mut UiContext, _: ElementRef) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -168,6 +198,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "element_size(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["key"],
         doc: "Reads logical layout `#{ width, height }` by component-local ref key, or `()` while unavailable. Render subscriptions survive pending mount and rebinding; event reads create no dependency.",
+    },
+    ScriptFnDoc {
+        signature: "element_width_class(_: &mut UiContext, _: ElementRef, _: array) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["reference", "breakpoints"],
+        doc: "Returns 0..=breakpoints.len for the committed layout width, or () while unbound/unmeasured. At a boundary the lower class wins. Accepts up to 32 strictly increasing, finite non-negative logical-pixel numbers. Render observes class/binding changes, not every size, position, transform or clip change; size/bounds reads remain stronger. Multiple class reads coalesce in fixed-size interval storage. This is a last-committed query, not synchronous CSS measurement.",
+    },
+    ScriptFnDoc {
+        signature: "element_width_class(_: &mut UiContext, _: string, _: array) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["key", "breakpoints"],
+        doc: "Reads the committed layout-width class by component-local ref key, or () while unavailable. Same bounded numeric thresholds and inclusive-boundary policy as the ElementRef overload. Render subscriptions survive mount/rebinding; event reads are untracked.",
     },
     ScriptFnDoc {
         signature: "emit(_: &mut UiContext, _: string, _: types::dynamic::Dynamic) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -190,6 +230,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Queues keyboard focus for the node of a component-local ref key, applied after the transaction commits; not allowed during render.",
     },
     ScriptFnDoc {
+        signature: "focus_descendant(_: &mut UiContext, _: string, _: bool) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["scope_key", "prefer_invalid"],
+        doc: "Queues focus in a mounted component-local scope. Chooses an enabled editor before a heading, preferring one marked invalid (or inside an invalid field) when requested. Hidden pages, disabled subtrees and nested overlay panels are skipped. Does not move focus outside the scope.",
+    },
+    ScriptFnDoc {
         signature: "focus_window(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["id"],
         doc: "Queues activation of window `id`; needs window-command authority and is not allowed during render.",
@@ -203,6 +248,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "format_month_year(_: &mut UiContext, _: string) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["date"],
         doc: "Formats the month and year of an ISO `YYYY-MM-DD` date with the selected locale's pattern. Records a locale dependency in render.",
+    },
+    ScriptFnDoc {
+        signature: "parse_number(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["text"],
+        doc: "Parses a finite decimal using the active locale's digits, decimal mark and grouping rules. Returns unit for empty or invalid input. With no locale bundles, uses ASCII digits, a decimal point and comma grouping.",
     },
     ScriptFnDoc {
         signature: "format_number(_: &mut UiContext, _: f64) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -223,6 +273,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "format_number(_: &mut UiContext, _: i64, _: map) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["value", "options"],
         doc: "Formats an integer in the selected locale; `options` takes `min_fraction_digits`, `max_fraction_digits` (0 to 12) and `grouping`.",
+    },
+    ScriptFnDoc {
+        signature: "number_text(_: &mut UiContext, _: f64, _: i64, _: string, _: string, _: bool) -> core::result::Result<gpui_rhai::node::UiNode,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["value", "digits", "prefix", "suffix", "share"],
+        doc: "Creates localized numeric text with 0–12 fraction digits and optional affixes. Native number motion changes the display but not the accepted accessibility value. Share formatting preserves the <1 and >99 thresholds for percentages.",
     },
     ScriptFnDoc {
         signature: "get_app_store(_: &mut UiContext, _: string, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -303,6 +358,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "motion_quality(_: &mut UiContext) -> string",
         params: &[],
         doc: "Returns the Host's motion quality tier: `low`, `medium` or `high`.",
+    },
+    ScriptFnDoc {
+        signature: "motion_preference(_: &mut UiContext) -> string",
+        params: &[],
+        doc: "Returns the effective motion policy: normal, reduced, or none. Geometry-dependent declarations can keep their natural layout when motion is disabled.",
     },
     ScriptFnDoc {
         signature: "motion_spring(_: &mut UiContext, _: string) -> core::result::Result<alloc::collections::btree::map::BTreeMap<smartstring::SmartString<smartstring::config::LazyCompact>,rhai::types::dynamic::Dynamic>,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -470,6 +530,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         doc: "Selects the app-wide theme variant `variant` of `family` without recompiling or resetting state; not allowed during render.",
     },
     ScriptFnDoc {
+        signature: "set_environment(_: &mut UiContext, _: string, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["name", "value"],
+        doc: "Sets the app-wide value of theme environment axis `name` (such as `design` to `\"modern\"` or `\"clean\"`) without recompiling or resetting state; not allowed during render.",
+    },
+    ScriptFnDoc {
         signature: "set_theme_system(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["family"],
         doc: "Makes the app follow the system light or dark appearance within theme `family`; not allowed during render.",
@@ -483,6 +548,11 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "set_window_locale(_: &mut UiContext, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &["locale"],
         doc: "Selects `locale` for the current window and rerenders its locale readers; not allowed during render.",
+    },
+    ScriptFnDoc {
+        signature: "set_window_environment(_: &mut UiContext, _: string, _: string) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["name", "value"],
+        doc: "Sets the theme environment axis `name` to `value` for the current window; not allowed during render.",
     },
     ScriptFnDoc {
         signature: "set_window_store(_: &mut UiContext, _: string, _: string, _: types::dynamic::Dynamic) -> core::result::Result<(),alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
@@ -550,6 +620,16 @@ pub(super) const DOCS: &[ScriptFnDoc] = &[
         signature: "text_direction(_: &mut UiContext) -> core::result::Result<alloc::string::String,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
         params: &[],
         doc: "Returns `ltr` or `rtl` for the locale of the current component scope, defaulting to `ltr` without a locale manager like native rendering; records a locale dependency in render.",
+    },
+    ScriptFnDoc {
+        signature: "theme_style(_: &mut UiContext, _: string) -> core::result::Result<gpui_rhai::style::Style,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["path"],
+        doc: "Reads a namespaced typed Style recipe and tracks the scoped theme. Without a theme (headless evaluation) returns an empty Style; a configured theme with a missing or mistyped recipe throws. Colors/lengths inside remain symbolic for native resolution.",
+    },
+    ScriptFnDoc {
+        signature: "theme_token(_: &mut UiContext, _: string) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",
+        params: &["path"],
+        doc: "Reads a namespaced color, length, number, string or Style token from the scoped theme and tracks it in render; throws when missing. Lengths remain token references so descendant size/reading scale is resolved at native layout, not captured here.",
     },
     ScriptFnDoc {
         signature: "theme_variant(_: &mut UiContext) -> core::result::Result<rhai::types::dynamic::Dynamic,alloc::boxed::Box<rhai::types::error::EvalAltResult>>",

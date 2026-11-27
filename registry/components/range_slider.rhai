@@ -7,7 +7,7 @@
   "dependencies": ["components/slider"],
   "capabilities": {},
   "tokens": [
-    "surface_hover", "accent", "text_primary", "text_muted", "metrics.control", "spacing.xs",
+    "surface_hover", "accent", "text_primary", "text_muted", "metrics.control", "metrics.slider_track", "spacing.xs",
     "spacing.sm", "typography.body"
   ],
   "environment": ["size", "density"]
@@ -23,7 +23,7 @@ define_component(#{
     metadata: #{ id:"components/range_slider", "export":"RangeSlider", version: "0.2.0",
         runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:["components/slider"], capabilities:#{},
         tokens: [
-            "surface_hover", "accent", "text_primary", "text_muted", "metrics.control",
+            "surface_hover", "accent", "text_primary", "text_muted", "metrics.control", "metrics.slider_track",
             "spacing.xs", "spacing.sm", "typography.body"
         ],
         environment: ["size", "density"] },
@@ -87,8 +87,8 @@ fn render_RangeSlider(ctx, props) {
         step:props.step,minimum_gap:props.minimum_gap,orientation:props.orientation,
         disabled:props.disabled,low_label:props.low_label,high_label:props.high_label,
         track_style:ctx.component_style("track",style()
-            .width(if horizontal{relative(1.0)}else{px(4)})
-            .height(if horizontal{px(4)}else{relative(1.0)})
+            .width(if horizontal{relative(1.0)}else{theme_length("metrics.slider_track")})
+            .height(if horizontal{theme_length("metrics.slider_track")}else{relative(1.0)})
             .radius(px(0)).background(theme_color("surface_hover"))),
         fill_style:ctx.component_style("fill",style().radius(px(0)).background(theme_color("accent"))),
         thumb_style:ctx.component_style("thumb",slider::slider_cap(props.orientation)),

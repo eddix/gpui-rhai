@@ -96,11 +96,13 @@ fn a_pushed_sticky_header_does_not_cover_the_column_header(cx: &mut TestAppConte
         sticky.y < column_bottom - 5.0,
         "the setup pushes the sticky header into the column header row: {sticky:?} vs {column:?}"
     );
-    // Click inside the overlap, on the Name column header.
+    // Click inside the overlap on the real inset sort button, not its inert
+    // outer header padding. Sticky rows must not steal the button's hit area.
+    let action = crate::support::bounds(&mut visual, &view, "button", "Sort Name");
     #[allow(clippy::cast_possible_truncation)]
     let at = point(
         px((column.x + 24.0) as f32),
-        px((column_bottom - 4.0) as f32),
+        px((action.y + action.height - 4.0) as f32),
     );
     visual.simulate_click(at, Modifiers::default());
     visual.run_until_parked();

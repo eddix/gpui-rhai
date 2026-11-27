@@ -4,10 +4,10 @@
   "export": "TabOverflowMenu",
   "version": "0.4.3",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
-  "dependencies": ["components/menu"],
+  "dependencies": ["components/menu", "components/icon_button"],
   "capabilities": {},
   "assets": ["icons/chevron_down.svg"],
-  "tokens": ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon", "radius.md"],
+  "tokens": [],
   "environment": ["size", "density"]
 }
 */
@@ -19,13 +19,14 @@
 //              items: [#{ value: "main", label: "main.rs", disabled: false }], on_pick: Fn("opened") })
 
 import "components/menu" as menu;
+import "components/icon_button" as icon_button;
 
 define_component(#{
     metadata: #{
         id: "components/tab_overflow_menu", "export": "TabOverflowMenu", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/menu"], capabilities: #{},
-        tokens: ["tabs.foreground", "surface_hover", "text_primary", "metrics.control", "metrics.icon", "radius.md"],
+        dependencies: ["components/menu", "components/icon_button"], capabilities: #{},
+        tokens: [],
         environment: ["size", "density"],
         assets: ["icons/chevron_down.svg"],
     },
@@ -75,15 +76,11 @@ fn render_TabOverflowMenu(ctx, props) {
         items.push(#{ kind: "item", value: item.value, label: item.label,
             disabled: if "disabled" in item { item.disabled } else { false } });
     }
-    let trigger = row([image_source(asset("app/icons/chevron_down"))
-        .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))])
-        // A definite height: the Menu root around the trigger has none to fill (#128).
-        .with_style(ctx.component_style("trigger", style().width(theme_length("metrics.control"))
-            .height(theme_length("metrics.control")).items_center().justify_center()
-            // A control's corners, as IconButton's, so the hover fill is not a square (#37).
-            .radius(theme_radius("md")).text_color(theme_color("tabs.foreground"))
-            .hover(style().background(theme_color("surface_hover")).text_color(theme_color("text_primary")))))
-        .accessibility_role("button").accessibility_label(props.label);
+    // The shared square action owns icon geometry and focus. The parent Tabs
+    // can refine its strip-specific dimensions through the trigger part.
+    let trigger = icon_button::IconButton(#{key:`${props.key}-trigger`,
+        icon:image_source(asset("app/icons/chevron_down")),label:props.label,variant:"ghost"})
+        .with_style(ctx.component_style("trigger",style()));
     let active = ctx.get_state("active");
     menu::Menu(#{ key: props.key, label: props.label, trigger: trigger, open: ctx.get_state("open"),
         active_value: if active == "" { props.value } else { active }, items: items,

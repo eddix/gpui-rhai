@@ -3,11 +3,11 @@
 `components/tag` · export `Tag` · version 0.4.3. Generated from
 [`registry/components/tag.rhai`](https://github.com/eddix/gpui-rhai/blob/main/registry/components/tag.rhai); do not edit.
 
-Tag labels a category: a flat tonal tape with an optional facet segment.
+Tag labels a category with a removable-chip surface and an optional facet segment.
 
 State: stateless and controlled by caller props.
 
-Variants mark a category, not a status. Without a facet they color the text; with a facet they fill the facet segment. Markers keep their size in both densities.
+Variants mark a category, not a status. Without a facet they color the text; with a facet they use a paired soft fill and ink. Markers keep their size in both densities.
 
 ```rhai
 import "components/tag" as tag;
@@ -21,14 +21,16 @@ tag::Tag(#{ facet: "env", text: "prod", variant: "danger" })
 |---|---|---|---|
 | `closable` | bool | `false` | Adds a close button after the text. |
 | `close_label` | string or `()` | — | Accessible name of the close button; defaults to the localized `tag.remove` message, `Remove <text>` in English. |
-| `disabled` | bool | `false` | Draws the tag in the `disabled` color and makes the close button inert. |
-| `facet` | string or `()` | — | Key drawn uppercase in a segment before the text, as in `ENV prod`; empty means none. |
+| `close_tab_stop` | bool | `true` | Whether the close button owns a Tab stop; use false for an editor that navigates its chip rows itself. |
+| `disabled` | bool | `false` | Dims the complete chip to 55% opacity and makes the close button inert. |
+| `facet` | string or `()` | — | Key drawn as written in a segment before the text, as in `env prod`; empty means none. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `on_close` | callback or `()` | — | Called with the tag's `text` when the close button is clicked; not called while `disabled`. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
+| `prefix` | node or `()` | — | An optional avatar or icon before the label, inside the value segment. |
 | `style` | style | — | Style merged over the root part. |
 | `text` | string | required | The value shown; it is also the payload of `close`. |
-| `variant` | `"neutral"` or `"accent"` or `"success"` or `"warning"` or `"danger"` | `"neutral"` | Category color: it colors the text, or fills the facet segment when there is a `facet`. |
+| `variant` | `"neutral"` or `"accent"` or `"success"` or `"warning"` or `"danger"` | `"neutral"` | Category tone: it colors the text, or supplies a paired soft fill/foreground for a facet segment. |
 
 ## Events
 
@@ -38,8 +40,8 @@ tag::Tag(#{ facet: "env", text: "prod", variant: "danger" })
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `close`, `facet`, `label`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `close`, `close_icon`, `facet`, `label`, `prefix`, `root`, `value`.
 
 ## Theme
 
-- Tokens: `accent`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.marker`, `on_accent`, `on_danger`, `on_success`, `on_warning`, `radius.pill`, `spacing.sm`, `spacing.xs`, `success`, `surface_hover`, `tag.facet`, `text.accent`, `text.danger`, `text.success`, `text.warning`, `text_primary`, `typography.caption`, `typography.label`, `warning`
+- Tokens: `metrics.tag_close`, `metrics.tag_end`, `metrics.tag_gap`, `metrics.tag_h`, `metrics.tag_icon`, `metrics.tag_pad`, `metrics.tag_radius`, `tag.facet_accent`, `tag.facet_danger`, `tag.facet_neutral`, `tag.facet_success`, `tag.facet_warning`, `tag.normal`, `tag.text_accent`, `tag.text_danger`, `tag.text_success`, `tag.text_warning`, `typography.tag`

@@ -338,7 +338,12 @@ impl crate::ScriptViewExtension for SystemServices {
         for command in commands {
             match command {
                 SystemCommand::Show(notification) => cx.show_system_notification(notification),
-                SystemCommand::Dismiss(tag) => cx.dismiss_system_notification(&tag),
+                SystemCommand::Dismiss(tag) => {
+                    #[cfg(feature = "vendor-gpui")]
+                    cx.dismiss_system_notification(&tag);
+                    #[cfg(not(feature = "vendor-gpui"))]
+                    cx.dismiss_system_notification(&tag).detach();
+                }
                 SystemCommand::Badge(label) => {
                     let _ = set_badge_label(label.as_deref());
                 }

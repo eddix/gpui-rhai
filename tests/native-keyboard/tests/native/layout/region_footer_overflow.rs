@@ -93,10 +93,28 @@ import "components/pagination" as pagination;"#,
     )
 }
 
-/// A Pagination with its summary, wider than the region; a magenta fill marks what it paints.
+/// Intentionally over-wide content, independent of the theme's intrinsic pager size.
+/// A magenta fill marks what it paints; the original clip assertions remain unchanged.
 const WIDE_PAGINATION: &str = r#"status: pagination::Pagination(#{ key: "pages", label: "Hosts pagination",
     total_items: 128, current_page: 3, page_size: 20, show_summary: true, size: "xs" })
-    .with_style(style().background(rgba(0xff00ffff))),"#;
+    .with_style(style().width(px(560)).flex_shrink(false).background(rgba(0xff00ffff))),"#;
+
+#[gpui::test]
+fn a_naturally_sized_pagination_footer_does_not_need_clipping(cx: &mut TestAppContext) {
+    let source = WIDE_PAGINATION.replace(".width(px(560)).flex_shrink(false)", "");
+    let (mut visual, view) = mount(cx, data_view(&source));
+    let region = placed(&mut visual, &view, "region", "Hosts");
+    let sibling = placed(&mut visual, &view, "text", "Detail pane");
+    let pagination = placed(&mut visual, &view, "navigation", "Hosts pagination");
+    let updated = placed(&mut visual, &view, "text", UPDATED);
+    assert_inside("the intrinsic Pagination", pagination, region, sibling);
+    assert_inside(
+        "updated beside an intrinsic Pagination",
+        updated,
+        region,
+        sibling,
+    );
+}
 
 fn assert_inside(what: &str, node: Placed, region: Placed, sibling: Placed) {
     assert!(

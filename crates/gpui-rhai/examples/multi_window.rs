@@ -1,3 +1,8 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
@@ -7,8 +12,6 @@ use gpui_rhai::{
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
-const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
-const DEFAULT_LIGHT: &str = include_str!("../../../registry/themes/default_light.rhai");
 const EN: &str = include_str!("../../../registry/locales/en.rhai");
 const AR: &str = include_str!("../../../registry/locales/ar.rhai");
 
@@ -45,8 +48,8 @@ fn increment_shared(ctx, payload) {
 fn edit_window_draft(ctx, payload) {
     ctx.set_window_store("session", "draft", `edited in ${ctx.window_id()}`);
 }
-fn use_light(ctx, payload) { ctx.set_window_theme("Default", "Light"); }
-fn use_dark(ctx, payload) { ctx.set_window_theme("Default", "Dark"); }
+fn use_light(ctx, payload) { ctx.set_window_theme(ctx.theme_variant().family, "Light"); }
+fn use_dark(ctx, payload) { ctx.set_window_theme(ctx.theme_variant().family, "Dark"); }
 fn use_english(ctx, payload) { ctx.set_window_locale("en"); }
 fn use_arabic(ctx, payload) { ctx.set_window_locale("ar"); }
 
@@ -65,10 +68,10 @@ fn view(ctx) {
         actions.push(button::Button(#{ text: "Focus settings window", variant: "secondary", on_click: Fn("focus_settings") }));
     }
     column([
-        text(`Window: ${id}`).with_style(style().font_size(rem(1.25))),
+        text(`Window: ${id}`).with_style(style().typography("heading")),
         text(`Shared count: ${ctx.get_app_store("shared", "count")}`),
         text(`Window draft: ${ctx.get_window_store("session", "draft")}`),
-        row(actions).with_style(style().gap(px(8))),
+        row(actions).with_style(style().flex_wrap().gap(theme_spacing("sm"))),
         dialog::Dialog(#{
             key: `close-${id}`,
             open: ctx.get_state("close_pending"),
@@ -81,7 +84,10 @@ fn view(ctx) {
             on_open_change: Fn("set_close_pending")
         })
     ]).with_style(
-        style().padding(px(24)).gap(px(16)).background(theme_color("surface"))
+        style().width(relative(1.0)).height(relative(1.0))
+            .padding(theme_spacing("lg")).gap(theme_spacing("md"))
+            .typography("body").text_color(theme_color("text_primary"))
+            .background(theme_color("surface"))
     )
 }
 "#;
@@ -132,23 +138,35 @@ fn module(id: &str, source: &str) -> (ModuleId, String) {
     )
 }
 
-fn main() {
+/// Build the multi-window tutorial, including its shared and per-window stores.
+///
+/// # Panics
+/// Panics if a static module identifier is invalid.
+#[must_use]
+pub fn view() -> ScriptView {
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         module("main", MAIN),
         module("components/button", BUTTON),
+        module("components/spinner", gpui_rhai_registry::SPINNER_SOURCE),
         module("components/dialog", DIALOG),
     ]));
-    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
-        .token_base(include_str!("../../../registry/tokens.rhai"))
-        .extension(MultiWindowStores)
-        .theme_sources([(
-            "themes/default_light.rhai".to_owned(),
-            DEFAULT_LIGHT.to_owned(),
-        )])
-        .locale_sources([
-            ("locales/en.rhai".to_owned(), EN.to_owned()),
-            ("locales/ar.rhai".to_owned(), AR.to_owned()),
-        ])
+    ScriptView::sources(
+        ModuleId::parse("main").unwrap(),
+        scripts,
+        shared_themes::PRIMARY,
+    )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
+    .font_sources(shared_fonts::sources())
+    .extension(MultiWindowStores)
+    .theme_sources(shared_themes::additional())
+    .locale_sources([
+        ("locales/en.rhai".to_owned(), EN.to_owned()),
+        ("locales/ar.rhai".to_owned(), AR.to_owned()),
+    ])
+}
+
+fn main() {
+    view()
         .prepare()
         .and_then(|prepared| {
             ScriptApplication::new(prepared)

@@ -10,7 +10,6 @@ extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast_platform as gpui_platform;
 
-
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

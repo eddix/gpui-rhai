@@ -1,6 +1,6 @@
 # DescriptionList
 
-`patterns/description_list` · export `DescriptionList` · version 0.2.0. Generated from
+`patterns/description_list` · export `DescriptionList` · version 0.4.3. Generated from
 [`registry/patterns/description_list.rhai`](../../../registry/patterns/description_list.rhai); do not edit.
 
 DescriptionList shows facts as label and value pairs on one label column.

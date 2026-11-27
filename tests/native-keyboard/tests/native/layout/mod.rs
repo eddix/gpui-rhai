@@ -1,10 +1,14 @@
 //! Layout of regions, toolbars, split panes, stretch, scroll areas, long text and the L2 patterns.
 
+mod app_shell_modes;
 mod auto_grid;
+mod axis_gaps;
+mod context_partition;
 mod fixed_chrome;
 mod hidden;
 mod l2_patterns;
 mod long_text_wrap;
+mod overflow_row;
 mod region_footer_overflow;
 mod region_scroll;
 mod region_toolbar;
@@ -17,4 +21,3 @@ mod split_pane_hover_style;
 mod stretch;
 mod tabs_panels;
 mod toolbar_tabs_overflow;
-mod app_shell_modes;

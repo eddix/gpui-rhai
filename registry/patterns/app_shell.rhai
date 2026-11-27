@@ -70,6 +70,9 @@ define_component(#{
                 window_drag: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                     "default": #{ type: "bool", value: false },
                     doc: "Whether pressing the bar's background moves the window and a double press zooms it." },
+                part_styles: #{ schema: #{ type: "map", values: #{ type: "style" } },
+                    required: false, sensitive: false,
+                    doc: "Per-instance styles for the corresponding TitleBar parts." },
             } } }, required: false, sensitive: false,
                 doc: "TitleBar props without `label`, for the bar across the top; omitted, the shell has no title bar." },
             sidebar: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false,
@@ -135,11 +138,12 @@ fn dismiss_inspector(ctx, open) { if !open { ctx.emit("inspector_dismiss", ()); 
 // A side region as a modal drawer from `side` of the window: the region's own surface,
 // with a hairline on the edge that faces the main area.
 fn drawer(ctx, props, key, part, side, content, width, open, dismiss) {
-    let surface = style().flex_col().relative().width(width).height(relative(1.0)).min_height(px(0))
+    let surface = style().flex_col().relative().width(width).height(relative(1.0))
+        .max_width(relative(1.0)).max_height(relative(1.0)).min_height(px(0))
         .background(theme_color("surface_raised")).border_color(theme_color("border"));
     surface = if side == "end" { surface.border_start(px(1)) } else { surface.border_end(px(1)) };
     let panel = column([content]).with_key(key)
-        .with_style(ctx.component_style(part, ctx.component_style("drawer", surface)))
+        .with_style(ctx.component_style(["drawer",part], surface))
         .accessibility_role("dialog").accessibility_label(`${props.label} ${part}`);
     overlay(row([]), panel, #{
         id: `${key}-drawer`, kind: "sheet", placement: side, open: open, gap: 0,

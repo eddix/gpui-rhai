@@ -15,8 +15,9 @@ avatar::Avatar(#{ name: "Ada Lovelace", initials: "AL", presence: "online" })
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `diameter` | length or `()` | — | Optional circular diameter for the image and initials as well as the outer layout. Typography still uses size. |
 | `handle` | `image` handle or `()` | — | Image handle of the picture, shown in the circle instead of the initials. |
-| `initials` | string or `()` | — | Text shown as written when there is no `handle`; unset, the first grapheme (user-perceived character) of `name`, uppercased. |
+| `initials` | string or `()` | — | Text shown as written when there is no `handle` or its native image fails; unset, the first grapheme (user-perceived character) of `name`, uppercased. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `name` | string | required | The person's name: the accessible name, and the source of the fallback initials. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |

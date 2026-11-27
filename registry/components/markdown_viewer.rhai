@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["surface", "surface_raised", "border", "spacing.xs", "spacing.sm", "typography.title", "typography.subtitle", "typography.body", "typography.body_small", "typography.caption"],
+  "tokens": ["surface", "surface_raised", "border", "spacing.xs", "spacing.sm", "typography.title", "typography.subtitle", "typography.body", "typography.body_small", "typography.caption","accent","on_accent","selection","text.accent"],
   "environment": []
 }
 */
@@ -17,7 +17,7 @@
 define_component(#{
     metadata: #{ id: "components/markdown_viewer", "export": "MarkdownViewer", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["surface", "surface_raised", "border", "spacing.xs", "spacing.sm", "typography.title", "typography.subtitle", "typography.body", "typography.body_small", "typography.caption"], environment: [] },
+        tokens: ["surface", "surface_raised", "border", "spacing.xs", "spacing.sm", "typography.title", "typography.subtitle", "typography.body", "typography.body_small", "typography.caption","accent","on_accent","selection","text.accent"], environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false,
@@ -38,13 +38,21 @@ define_component(#{
                 "default": #{ type: "map", value: #{} }, doc: "Explicit Markdown destination to Host asset ID map. The viewer never fetches URLs; missing assets show alt text." },
             on_link: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false,
                 doc: "Link activation callback with href and visible text. Host validates and decides what to open." },
+            tag_link_prefix: #{schema:#{type:"optional",value:#{type:"string"}},required:false,sensitive:false,
+                doc:"Makes links with this destination prefix use the inline tag paint recipe. They retain normal link interaction."},
+            active_tag_link: #{schema:#{type:"optional",value:#{type:"string"}},required:false,sensitive:false,
+                doc:"Matching tag link presented using the active tag paint recipe."},
+            annotations: #{schema:#{type:"array",max_items:128,items:#{type:"object",allow_unknown:false,fields:#{
+                start:#{schema:#{type:"integer",min:0},required:true,sensitive:false,doc:"Inclusive UTF-8 byte offset into visible plain text."},
+                end:#{schema:#{type:"integer",min:0},required:true,sensitive:false,doc:"Exclusive UTF-8 byte offset into visible plain text."},
+            }}},"default":#{type:"array",value:[]},required:false,sensitive:false,doc:"Paint-only annotations of the current visible plain text. Do not pass Markdown source offsets."},
         },
         state: #{ fields: #{} },
         events: #{ link: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
             href: #{ schema: #{ type: "string" }, required: true, sensitive: false, doc: "Untrusted destination; never opened by the viewer." },
             text: #{ schema: #{ type: "string" }, required: true, sensitive: false, doc: "Visible link text." },
         } }, doc: "User activated a link by pointer or keyboard." } },
-        slots: #{}, parts: ["root", "heading", "paragraph", "code_block", "inline_code", "quote", "table", "link", "rule", "loading", "error"],
+        slots: #{}, parts: ["root", "heading", "paragraph", "code_block", "inline_code", "quote", "table", "link", "rule", "loading", "error", "tag", "tag_active", "annotation"],
     },
     render: Fn("render_MarkdownViewer")
 });
@@ -89,6 +97,12 @@ fn render_MarkdownViewer(ctx, props) {
         quote_style: ctx.component_style("quote", style().typography("body").padding_y(theme_spacing("xs")).border_left(px(2)).border_color(theme_color("border"))),
         table_style: ctx.component_style("table", style().typography("body_small")),
         link_style: ctx.component_style("link", style()),
+        tag_link_prefix: prop_or(props,"tag_link_prefix",()),
+        active_tag_link: prop_or(props,"active_tag_link",()),
+        annotations: props.annotations,
+        tag_style: ctx.component_style("tag",style().text_color(theme_color("text.accent")).background(theme_color("selection")).font_weight(600)),
+        tag_active_style: ctx.component_style("tag_active",style().text_color(theme_color("on_accent")).background(theme_color("accent")).font_weight(600)),
+        annotation_style: ctx.component_style("annotation",style().background(theme_color("selection"))),
         rule_style: ctx.component_style("rule", style()),
         loading_style: ctx.component_style("loading", style().typography("caption")),
         error_style: ctx.component_style("error", style().typography("body")),

@@ -128,6 +128,15 @@ Canvas paint/hit testing, Motion affine samples, PanZoom, Rotatable,
 SelectionArea and drag/drop target resolution consume this model. Chart domain
 scales remain separate and explicitly convert at their boundary. UI scale,
 content zoom, DPI, RTL and logical axes are never treated as aliases.
+Resizable and SplitPane project total pointer displacement through the
+inverse linear map of the controlling boundary. The gesture threshold
+stays in window coordinates. The committed boundary position, transform
+and size must remain compatible until release; the moving handle is not
+the coordinate owner.
+Table uses the same resize coordinate snapshot, resolved from its owning
+viewport in native rendering rather than a caller's reference. It compares
+logical scroll position, because its physical RTL offset can change when
+the column preview changes the scroll extent.
 Rotatable reads the actual styled Canvas node, and a geometry revision change
 during a gesture cancels against current geometry. Degenerate marquee input is
 decided in window logical pixels; content-space predicates use relative numeric

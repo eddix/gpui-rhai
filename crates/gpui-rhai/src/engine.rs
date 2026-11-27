@@ -32,8 +32,9 @@ use crate::motion::register_motion_api;
 use crate::node::{
     asset_image_node, box_node, canvas_node, column_node, directional_asset_image_node,
     directional_image_node, error_boundary_node, fragment_node, generic_directional_image_node,
-    generic_image_node, image_node, layer_node, lazy_error_boundary_node, motion_group_node,
-    overlay_node, rich_text_node, row_node, span_value, stack_node, svg_node, text_node,
+    generic_image_node, image_node, inline_prose_node, layer_node, lazy_error_boundary_node,
+    motion_group_node, overlay_node, rich_text_node, row_node, span_value, stack_node, svg_node,
+    text_node,
 };
 use crate::pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
@@ -51,7 +52,7 @@ use crate::text_area::{
 use crate::text_input::{TextInputPrimitiveHandler, text_input_primitive_descriptor};
 use crate::value::OpaqueHandle;
 use crate::{
-    ComponentInstancePath, ComponentStateSchema, EventSchema, ExecutionPhase, ModuleId,
+    ComponentInstancePath, ComponentStateSchema, EventSchema, ExecutionPhase, Length, ModuleId,
     RenderStateTransaction, UiNode, UiRuntimeState, UiValue,
 };
 use crate::{SubscriptionHandle, TaskHandle};
@@ -575,6 +576,7 @@ pub struct ComponentInvocationRecipe {
     props: crate::ComponentProps,
     script_props: Map,
     component_context: UiContext,
+    style_parts: Rc<BTreeSet<String>>,
     caller_context: UiContext,
     part_styles: BTreeMap<String, crate::Style>,
     event_callbacks: Vec<(String, FnPtr)>,
@@ -789,6 +791,7 @@ impl RuntimeEngine {
                 ))
             })
         });
+        crate::text_anchors::register(&mut engine);
         engine.build_type::<UiNode>();
         engine.build_type::<OpaqueHandle>();
         engine.build_type::<TaskHandle>();
@@ -801,6 +804,8 @@ impl RuntimeEngine {
         engine.build_type::<crate::NativeHandlerRef>();
         crate::native_collection::register_native_collection_api(&mut engine);
         crate::document::register_document_api(&mut engine);
+        crate::prompt_template::register(&mut engine);
+        crate::site_domain::register(&mut engine);
         #[cfg(feature = "charts")]
         {
             crate::chart::register_chart_data_api(&mut engine);
@@ -840,6 +845,23 @@ impl RuntimeEngine {
         register_native_handler_api(&mut engine, &native_handlers);
 
         register_node_apis(&mut engine);
+        crate::context_capacity::register(&mut engine);
+        crate::context_partition::register(&mut engine);
+        crate::diff_timeline::register(&mut engine);
+        crate::cost_waterfall::register(&mut engine);
+        crate::rate_limit_planner::register(&mut engine);
+        crate::root_cause_tree::register(&mut engine);
+        crate::judge_bracket::register(&mut engine);
+        crate::delimited_preview::register(&mut engine);
+        crate::conflict_radar::register(&mut engine);
+        crate::trace_waterfall::register(&mut engine);
+        crate::fan_out::register(&mut engine);
+        crate::fallback_chain::register(&mut engine);
+        crate::memory_panel::register(&mut engine);
+        crate::plan_vs_actual::register(&mut engine);
+        crate::billing_schedule::register(&mut engine);
+        crate::diagnostic_document::register(&mut engine);
+        crate::schedule_capacity::register(&mut engine);
 
         configure_engine_limits(&mut engine);
 
@@ -1471,6 +1493,10 @@ impl RuntimeEngine {
             .try_borrow_mut()
             .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
             .reset_component_readers(component);
+        recipe
+            .component_context
+            .refresh_component_styles(&recipe.component, &recipe.style_parts)
+            .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
         for value in recipe.script_props.values_mut() {
             hydrate_replayed_node_value(value);
         }
@@ -2649,6 +2675,7 @@ fn validate_literal_imports(ast: &AST) -> Result<(), RuntimeError> {
 }
 
 fn register_node_apis(engine: &mut Engine) {
+    crate::key_legend::register_key_legend_api(engine);
     // A caller-written shortcut as `#{ label, keystrokes, chords }`, formatted
     // like a bound action's (`cmd-p` is `⌘P` on macOS); a legend stays as is.
     FuncRegistration::new("key_shortcut")
@@ -2664,6 +2691,9 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("text")
         .in_global_namespace()
         .register_into_engine(engine, rich_text_node);
+    FuncRegistration::new("inline_prose")
+        .in_global_namespace()
+        .register_into_engine(engine, inline_prose_node);
     FuncRegistration::new("span")
         .in_global_namespace()
         .register_into_engine(engine, span_value);
@@ -3144,6 +3174,7 @@ fn execute_component_render(
             props: recipe_props,
             script_props,
             component_context: recipe_component_context,
+            style_parts: Rc::new(component.schema.parts.clone()),
             caller_context: caller_context.clone(),
             part_styles,
             event_callbacks: recipe_event_callbacks,
@@ -3599,7 +3630,7 @@ fn enter_component_render(
         .transaction
         .mount(path.clone(), &component.schema.state)
         .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-    let global_part_styles = {
+    {
         let mut runtime = active
             .root_context
             .runtime()
@@ -3609,20 +3640,16 @@ fn enter_component_render(
             .component_state
             .mount_instance(path.clone(), &component.schema.state)
             .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-        runtime
-            .component_styles()
-            .component(&component.metadata.id)
-            .cloned()
-            .unwrap_or_default()
-    };
+    }
     let context = active
         .root_context
         .for_component(path.clone(), component.schema.events.clone())
         .with_component_styles(
-            global_part_styles,
+            component,
             component_root_style(&invocation.props),
             component_part_styles(&invocation.props),
         )
+        .map_err(|error| Box::new(component_render_error(error.to_string())))?
         .with_native_context(Some(native_context))
         .with_generation(active.generation);
     active.stack.push(path.clone());
@@ -3948,48 +3975,59 @@ fn declare_signal(
 }
 
 fn register_element_ref_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
-    let active = Rc::clone(active);
+    let plain = Rc::clone(active);
+    let namespaced = Rc::clone(active);
+    FuncRegistration::new("element_ref")
+        .in_global_namespace()
+        .register_into_engine(engine, move |key: ImmutableString| {
+            declare_element_ref(&plain, key.as_str(), None)
+        });
     FuncRegistration::new("element_ref")
         .in_global_namespace()
         .register_into_engine(
             engine,
-            move |key: ImmutableString| -> Result<crate::ElementRef, Box<EvalAltResult>> {
-                let key = key.to_string();
-                let mut guard = active.try_borrow_mut().map_err(|_| {
-                    Box::new(component_render_error(
-                        "component render stack is already borrowed",
-                    ))
-                })?;
-                let render = guard.as_mut().ok_or_else(|| {
-                    Box::new(component_render_error(
-                        "element_ref may run only during formal component render",
-                    ))
-                })?;
-                if render.effect_keys.last().and_then(Option::as_ref).is_none() {
-                    return Err(Box::new(component_render_error(
-                        "element refs may be declared only by formal components",
-                    )));
-                }
-                let component = render
-                    .contexts
-                    .last()
-                    .ok_or_else(|| {
-                        Box::new(component_render_error(
-                            "component render context stack is empty",
-                        ))
-                    })?
-                    .component_path()
-                    .clone();
-                let id = crate::ElementRefId::new(component.clone(), key.clone())
-                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                if !render.element_refs.insert(id.clone()) {
-                    return Err(Box::new(component_render_error(format!(
-                        "element ref `{key}` is declared more than once by component `{component}`"
-                    ))));
-                }
-                Ok(crate::ElementRef::new(id))
+            move |namespace: ImmutableString, business_key: ImmutableString| {
+                declare_element_ref(&namespaced, namespace.as_str(), Some(business_key.as_str()))
             },
         );
+}
+
+fn declare_element_ref(
+    active: &ActiveComponentRenderState,
+    name: &str,
+    business_key: Option<&str>,
+) -> Result<crate::ElementRef, Box<EvalAltResult>> {
+    let error = |message| Box::new(component_render_error(message));
+    let mut guard = active
+        .try_borrow_mut()
+        .map_err(|_| error("component render stack is already borrowed".to_owned()))?;
+    let render = guard.as_mut().ok_or_else(|| {
+        error("element_ref may run only during formal component render".to_owned())
+    })?;
+    if render.effect_keys.last().and_then(Option::as_ref).is_none() {
+        return Err(error(
+            "element refs may be declared only by formal components".to_owned(),
+        ));
+    }
+    let component = render
+        .contexts
+        .last()
+        .ok_or_else(|| error("component render context stack is empty".to_owned()))?
+        .component_path()
+        .clone();
+    let id = match business_key {
+        Some(key) => crate::ElementRefId::new_namespaced(component, name, key),
+        None => crate::ElementRefId::new(component, name),
+    }
+    .map_err(|cause| error(cause.to_string()))?;
+    if !render.element_refs.insert(id.clone()) {
+        return Err(error(format!(
+            "element ref `{}` is declared more than once by component `{}`",
+            id.key(),
+            id.component()
+        )));
+    }
+    Ok(crate::ElementRef::new(id))
 }
 
 #[derive(Debug)]
@@ -3998,7 +4036,10 @@ struct DecodedVirtualCollection {
     label: String,
     data: crate::VirtualCollectionData,
     estimated_height: f64,
+    item_height: Option<Length>,
     height: Option<f64>,
+    max_height: Option<Length>,
+    content_padding: [f64; 2],
     overdraw_pixels: f64,
     /// The collection's own render-ahead settings, before the Host policy.
     ahead: RenderAhead,
@@ -4021,7 +4062,10 @@ impl DecodedVirtualCollection {
             data: self.data,
             realized,
             estimated_height: self.estimated_height,
+            item_height: self.item_height,
             height: self.height,
+            max_height: self.max_height,
+            content_padding: self.content_padding,
             overdraw_pixels: self.overdraw_pixels,
             bottom_align: self.bottom_align,
             follow_tail: self.follow_tail,
@@ -4067,26 +4111,62 @@ impl RenderAhead {
     }
 }
 
-fn decode_virtual_collection(
-    mut config: Map,
-) -> Result<DecodedVirtualCollection, Box<EvalAltResult>> {
-    let key = collection_string(&mut config, "key")?;
-    let label = collection_optional_string(&mut config, "label")?.unwrap_or_default();
-    let estimated_height = collection_positive(&mut config, "estimated_height")?;
-    let height = collection_optional_number(&mut config, "height")?;
-    let fill_height = collection_optional_bool(&mut config, "fill_height")?.unwrap_or(false);
+fn collection_optional_item_height(config: &mut Map) -> Result<Option<Length>, Box<EvalAltResult>> {
+    collection_optional_absolute_length(config, "item_height")
+}
+
+fn collection_optional_absolute_length(
+    config: &mut Map,
+    field: &str,
+) -> Result<Option<Length>, Box<EvalAltResult>> {
+    config
+        .remove(field)
+        .filter(|value| !value.is_unit())
+        .map(|value| {
+            let length = value.try_cast::<Length>().ok_or_else(|| {
+                Box::new(component_render_error(format!(
+                    "virtual collection {field} must be px(...), rem(...) or theme_length(...)"
+                )))
+            })?;
+            length
+                .validate()
+                .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+            if matches!(
+                length,
+                Length::Relative(_) | Length::Pixels(0.0) | Length::Rems(0.0)
+            ) {
+                return Err(Box::new(component_render_error(format!(
+                    "virtual collection {field} must be positive and absolute"
+                ))));
+            }
+            Ok(length)
+        })
+        .transpose()
+}
+
+fn collection_sizing(
+    config: &mut Map,
+) -> Result<(Option<f64>, Option<Length>), Box<EvalAltResult>> {
+    let height = collection_optional_number(config, "height")?;
+    let max_height = collection_optional_absolute_length(config, "max_height")?;
+    let fill_height = collection_optional_bool(config, "fill_height")?.unwrap_or(false);
+    if max_height.is_some() && (height.is_some() || fill_height) {
+        return Err(Box::new(component_render_error(
+            "virtual collection max_height cannot be combined with height or fill_height",
+        )));
+    }
     let height = match (height, fill_height) {
         (Some(_), true) => {
             return Err(Box::new(component_render_error(
                 "virtual collection must specify either `height` or `fill_height`, not both",
             )));
         }
-        (None, false) => {
+        (None, false) if max_height.is_none() => {
             return Err(Box::new(component_render_error(
-                "virtual collection requires `height` or `fill_height: true`",
+                "virtual collection requires `height`, `max_height` or `fill_height: true`",
             )));
         }
-        (None, true) => None,
+        (None, _) => None,
         (Some(height), false) if height.is_finite() && height > 0.0 => Some(height),
         (Some(_), false) => {
             return Err(Box::new(component_render_error(
@@ -4094,6 +4174,21 @@ fn decode_virtual_collection(
             )));
         }
     };
+    Ok((height, max_height))
+}
+
+fn decode_virtual_collection(
+    mut config: Map,
+) -> Result<DecodedVirtualCollection, Box<EvalAltResult>> {
+    let key = collection_string(&mut config, "key")?;
+    let label = collection_optional_string(&mut config, "label")?.unwrap_or_default();
+    let estimated_height = collection_positive(&mut config, "estimated_height")?;
+    let item_height = collection_optional_item_height(&mut config)?;
+    let (height, max_height) = collection_sizing(&mut config)?;
+    let content_padding = [
+        collection_padding(&mut config, "content_padding_top")?,
+        collection_padding(&mut config, "content_padding_bottom")?,
+    ];
     let overdraw_pixels = collection_optional_number(&mut config, "overdraw_pixels")?
         .unwrap_or(estimated_height * 2.0);
     if !overdraw_pixels.is_finite() || !(0.0..=10_000.0).contains(&overdraw_pixels) {
@@ -4157,7 +4252,10 @@ fn decode_virtual_collection(
         label,
         data,
         estimated_height,
+        item_height,
         height,
+        max_height,
+        content_padding,
         overdraw_pixels,
         ahead,
         bottom_align,
@@ -4500,6 +4598,7 @@ fn virtual_collection_seed_indices(
     let previous = reuse.and_then(|reuse| reuse.previous_root.virtual_collection_spec(id));
     let preserves_scroll = previous.is_some_and(|previous| {
         previous.estimated_height.to_bits() == decoded.estimated_height.to_bits()
+            && previous.item_height == decoded.item_height
             && previous.overdraw_pixels.to_bits() == decoded.overdraw_pixels.to_bits()
             && previous.bottom_align == decoded.bottom_align
             && same_collection_key_order(&previous.data, &decoded.data)
@@ -4707,6 +4806,16 @@ fn collection_optional_string(
                 })
         })
         .transpose()
+}
+
+fn collection_padding(config: &mut Map, name: &str) -> Result<f64, Box<EvalAltResult>> {
+    let value = collection_optional_number(config, name)?.unwrap_or_default();
+    if !(0.0..=512.0).contains(&value) {
+        return Err(Box::new(component_render_error(format!(
+            "virtual collection {name} must be between 0 and 512 logical pixels"
+        ))));
+    }
+    Ok(value)
 }
 
 fn collection_optional_number(
@@ -5124,8 +5233,7 @@ fn component_part_styles(props: &Map) -> BTreeMap<String, crate::Style> {
     props
         .get("part_styles")
         .filter(|value| value.is::<Map>())
-        .map(Dynamic::clone_cast::<Map>)
-        .unwrap_or_default()
+        .map_or_else(Default::default, Dynamic::clone_cast::<Map>)
         .into_iter()
         .filter_map(|(name, value)| {
             value
@@ -5320,6 +5428,66 @@ mod tests {
     }
 
     #[test]
+    fn collection_item_height_keeps_symbolic_lengths_and_rejects_invalid_units() {
+        let mut config = virtual_config(&[], "top");
+        let token = Length::token("metrics.table_row").unwrap();
+        config.insert("item_height".into(), Dynamic::from(token));
+        let decoded = decode_virtual_collection(config.clone()).unwrap();
+        assert_eq!(decoded.item_height, Some(token));
+        assert_eq!(
+            decoded.estimated_height, 30.0,
+            "headless realization still has an explicit estimate"
+        );
+        for invalid in [
+            Length::Relative(0.5),
+            Length::Pixels(0.0),
+            Length::Pixels(f64::NAN),
+        ] {
+            config.insert("item_height".into(), Dynamic::from(invalid));
+            assert!(decode_virtual_collection(config.clone()).is_err());
+        }
+        config.insert("item_height".into(), Dynamic::from("44"));
+        assert!(decode_virtual_collection(config).is_err());
+    }
+
+    #[test]
+    fn bounded_collection_height_is_symbolic_positive_and_an_exclusive_sizing_mode() {
+        let mut config = virtual_config(&[], "top");
+        config.remove("height");
+        let token = Length::token("metrics.command_row").unwrap();
+        config.insert("max_height".into(), Dynamic::from(token));
+        let decoded = decode_virtual_collection(config.clone()).unwrap();
+        assert_eq!(decoded.max_height, Some(token));
+        assert_eq!(decoded.height, None);
+        for field in ["height", "fill_height"] {
+            let mut conflict = config.clone();
+            conflict.insert(
+                field.into(),
+                if field == "height" {
+                    Dynamic::from_int(100)
+                } else {
+                    Dynamic::from_bool(true)
+                },
+            );
+            assert!(
+                decode_virtual_collection(conflict)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("cannot be combined")
+            );
+        }
+        for invalid in [
+            Length::Relative(1.0),
+            Length::Pixels(0.0),
+            Length::Rems(-1.0),
+            Length::Pixels(f64::NAN),
+        ] {
+            config.insert("max_height".into(), Dynamic::from(invalid));
+            assert!(decode_virtual_collection(config.clone()).is_err());
+        }
+    }
+
+    #[test]
     fn sticky_virtual_collection_indices_are_bounded_unique_and_top_aligned() {
         let decoded = decode_virtual_collection(virtual_config(&[0], "top")).unwrap();
         assert_eq!(decoded.sticky_headers.as_ref(), &BTreeSet::from([0]));
@@ -5331,6 +5499,36 @@ mod tests {
         ] {
             let error = decode_virtual_collection(virtual_config(sticky, alignment)).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
+
+    #[test]
+    fn virtual_collection_content_padding_is_optional_finite_and_bounded() {
+        let config = virtual_config(&[], "top");
+        assert_eq!(
+            decode_virtual_collection(config.clone())
+                .unwrap()
+                .content_padding,
+            [0., 0.]
+        );
+        let mut padded = config.clone();
+        padded.insert("content_padding_top".into(), Dynamic::from_int(18));
+        padded.insert("content_padding_bottom".into(), Dynamic::from_float(20.5));
+        assert_eq!(
+            decode_virtual_collection(padded.clone())
+                .unwrap()
+                .content_padding,
+            [18., 20.5]
+        );
+        for wrong in [
+            Dynamic::from_float(-1.),
+            Dynamic::from_float(f64::NAN),
+            Dynamic::from_float(f64::INFINITY),
+            Dynamic::from_int(513),
+            Dynamic::from("24px"),
+        ] {
+            padded.insert("content_padding_top".into(), wrong);
+            assert!(decode_virtual_collection(padded.clone()).is_err());
         }
     }
 

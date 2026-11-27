@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "dev-reload")]
 use gpui::KeyBinding;
 use gpui::actions;
 use gpui::{
@@ -49,33 +50,34 @@ type InteractionContractSnapshots =
 struct ScriptRuntimeInstallation {
     bindings: BTreeMap<(String, Option<String>), ActionId>,
     loaded_fonts: BTreeSet<u64>,
+    loaded_font_families: BTreeSet<String>,
+    font_names: RefCell<Option<Rc<BTreeSet<String>>>>,
     window_command_owners: BTreeMap<gpui::WindowId, (std::rc::Weak<()>, String)>,
 }
 
 impl Global for ScriptRuntimeInstallation {}
 
-thread_local! {
-    static FONT_NAMES: RefCell<Option<(usize, Rc<BTreeSet<String>>)>> =
-        const { RefCell::new(None) };
-}
-
 /// The font families the text system can resolve, cached per set of fonts
-/// loaded through the runtime.
+/// loaded through this App's runtime, not per foreground thread or font count.
 fn available_font_names(cx: &App) -> Rc<BTreeSet<String>> {
-    let loaded = cx
-        .try_global::<ScriptRuntimeInstallation>()
-        .map_or(0, |installation| installation.loaded_fonts.len());
-    FONT_NAMES.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        if let Some((key, names)) = cache.as_ref()
-            && *key == loaded
-        {
-            return Rc::clone(names);
-        }
-        let names = Rc::new(cx.text_system().all_font_names().into_iter().collect());
-        *cache = Some((loaded, Rc::clone(&names)));
+    let installation = cx.try_global::<ScriptRuntimeInstallation>();
+    if let Some(installation) = installation
+        && let Some(names) = installation.font_names.borrow().as_ref()
+    {
+        return Rc::clone(names);
+    }
+    let mut names: BTreeSet<String> = cx.text_system().all_font_names().into_iter().collect();
+    if let Some(installation) = installation {
+        // The platform accepted these exact payloads. Some text-system
+        // inventories omit dynamic faces (the test platform is deliberately
+        // empty); retain only families parsed from the real payload metadata.
+        names.extend(installation.loaded_font_families.iter().cloned());
+        let names = Rc::new(names);
+        *installation.font_names.borrow_mut() = Some(Rc::clone(&names));
         names
-    })
+    } else {
+        Rc::new(names)
+    }
 }
 
 /// Install GPUI Rhai's application-wide input actions once.
@@ -87,10 +89,11 @@ pub fn install(cx: &mut App) {
     init_text_area(cx);
     crate::init_document_view(cx);
     crate::markdown_view::init_markdown_view(cx);
-    cx.bind_keys([KeyBinding::new(
-        "cmd-c",
+    cx.bind_keys([crate::native_shortcut::platform_binding(
+        cx,
+        "secondary-c",
         CopySelectedText,
-        Some(HOST_KEY_CONTEXT),
+        HOST_KEY_CONTEXT,
     )]);
     cx.set_global(ScriptRuntimeInstallation::default());
 }
@@ -886,7 +889,7 @@ impl Element for ScriptViewHostFrame {
         cx: &mut App,
     ) {
         // Event boundaries, unlike prepaint side effects, are replayed by a
-        // cached native child. Collect its body regions anew for each wheel.
+        // cached native child. Collect its scroll regions anew for each wheel.
         self.host.interactions().install_wheel_capture_start(window);
         child.paint(window, cx);
         self.host.inner.borrow_mut().frame_active = false;
@@ -910,6 +913,7 @@ impl Element for ScriptViewHostFrame {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ScriptViewHostFrame {
     type Element = Self;
 
@@ -984,6 +988,7 @@ impl Element for SharedLayerPortalElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for SharedLayerPortalElement {
     type Element = Self;
 
@@ -1997,6 +2002,23 @@ impl ScriptViewHandle {
         Ok(tree)
     }
 
+    #[cfg(all(
+        target_os = "macos",
+        any(feature = "offscreen-pre", feature = "offscreen-fast")
+    ))]
+    pub(crate) fn pointer_aim(
+        &self,
+        node: crate::NodeId,
+        cx: &App,
+    ) -> Option<crate::offscreen::PointerAim> {
+        let view = self.0.entity.read(cx);
+        view.lifecycle
+            .runtime()
+            .borrow()
+            .geometry_for(Some(&view.view_id))
+            .pointer_aim(node)
+    }
+
     /// Snapshot the stable language-neutral automation tree.
     ///
     /// # Errors
@@ -2280,6 +2302,7 @@ impl Element for ReanchoredContent {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for ReanchoredContent {
     type Element = Self;
 
@@ -2288,6 +2311,7 @@ impl IntoElement for ReanchoredContent {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for MeasuredScriptViewElement {
     type Element = Self;
 
@@ -3238,6 +3262,10 @@ fn install_declared_fonts(
         .iter()
         .map(crate::FontSource::fingerprint)
         .collect::<Vec<_>>();
+    let families = fresh
+        .iter()
+        .flat_map(crate::FontSource::family_names)
+        .collect::<BTreeSet<_>>();
     let bytes = fresh
         .into_iter()
         .map(|font| Cow::Owned(font.into_bytes()))
@@ -3245,9 +3273,10 @@ fn install_declared_fonts(
     cx.text_system()
         .add_fonts(bytes)
         .map_err(|error| crate::FontError::Load(error.to_string()))?;
-    cx.global_mut::<ScriptRuntimeInstallation>()
-        .loaded_fonts
-        .extend(fingerprints);
+    let installation = cx.global_mut::<ScriptRuntimeInstallation>();
+    installation.loaded_fonts.extend(fingerprints);
+    installation.loaded_font_families.extend(families);
+    installation.font_names.get_mut().take();
     Ok(())
 }
 
@@ -4907,6 +4936,7 @@ struct ScriptRenderSnapshot {
     /// The variants of the component subtrees with a local theme.
     local_themes: crate::theme::LocalThemes,
     motions: BTreeMap<crate::MotionKey, f64>,
+    number_motion: Rc<crate::number_motion::NumberMotionFrame>,
     motion_ghosts: Vec<crate::motion::MotionGhost>,
     signals: crate::SignalRegistry,
     geometry: crate::GeometryRegistry,
@@ -4936,6 +4966,81 @@ fn retained_within(
         cursor = tree.node(node).and_then(crate::RetainedNode::parent);
     }
     false
+}
+
+fn scoped_focus_target(
+    tree: &crate::RetainedUiTree,
+    scope: crate::NodeId,
+    prefer_invalid: bool,
+    eligible: &BTreeSet<crate::NodeId>,
+) -> Option<crate::NodeId> {
+    if !tree.is_page_visible(scope) {
+        return None;
+    }
+    // Do not focus through a disabled or hidden enclosing control. A pane
+    // itself can be inside a disabled form or a withdrawn overlay.
+    let mut ancestor = Some(scope);
+    while let Some(id) = ancestor {
+        let node = tree.node(id)?;
+        if node.invisible()
+            || ["disabled", "accessibility_hidden"]
+                .iter()
+                .any(|key| node.attributes().get(*key) == Some(&UiValue::Bool(true)))
+        {
+            return None;
+        }
+        ancestor = node.parent();
+    }
+    let mut pending = vec![(scope, false)];
+    let mut first_editor = None;
+    let mut heading = None;
+    while let Some((id, invalid_parent)) = pending.pop() {
+        let Some(node) = tree.node(id) else {
+            continue;
+        };
+        if node.invisible()
+            || ["disabled", "accessibility_hidden"]
+                .iter()
+                .any(|key| node.attributes().get(*key) == Some(&UiValue::Bool(true)))
+            || node.attributes().get(crate::retained_page::PAGE_VISIBLE)
+                == Some(&UiValue::Bool(false))
+        {
+            continue;
+        }
+        let invalid =
+            invalid_parent || node.attributes().get("invalid") == Some(&UiValue::Bool(true));
+        if eligible.contains(&id)
+            && let Some(UiValue::String(role)) = node.attributes().get("role")
+        {
+            match role.as_str() {
+                "text_field" | "combobox" | "spinbutton" | "checkbox" | "radio" | "switch"
+                | "slider" => {
+                    if !prefer_invalid || invalid {
+                        return Some(id);
+                    }
+                    first_editor.get_or_insert(id);
+                }
+                "heading" => {
+                    heading.get_or_insert(id);
+                }
+                _ => {}
+            }
+        }
+        let start = pending.len();
+        // An overlay's trigger is in this form's flow. Its panel is a
+        // separate focus boundary, and can be retained even when closed.
+        pending.extend(
+            node.children()
+                .filter(|child| {
+                    node.kind() != crate::UiNodeKindTag::Overlay || child.group() == "trigger"
+                })
+                .map(|child| (child.node(), invalid)),
+        );
+        pending[start..].reverse();
+    }
+    first_editor
+        .or(heading)
+        .or_else(|| eligible.contains(&scope).then_some(scope))
 }
 
 fn retained_depth(tree: &crate::RetainedUiTree, node: crate::NodeId) -> usize {
@@ -5076,6 +5181,7 @@ fn build_host_root(
     // GPUI's default text color and paints no background.
     let mut root = div()
         .id("gpui-rhai-host")
+        .relative()
         .size_full()
         .track_focus(host_focus);
     if let Some(color) = theme.tokens.color("text_primary") {
@@ -5102,7 +5208,6 @@ const fn error_banner_font_family() -> &'static str {
     "DejaVu Sans Mono"
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_error_banner(
     view_id: &str,
     window_id: &str,
@@ -5111,7 +5216,6 @@ fn build_error_banner(
     selection: crate::renderer::TextSelectionRegistry,
     host_focus: FocusHandle,
     on_dismiss: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-    content: AnyElement,
 ) -> AnyElement {
     let selector = format!("gpui-rhai-error-banner:{view_id}");
     let dismiss_selector = format!("gpui-rhai-error-banner-dismiss:{view_id}");
@@ -5133,44 +5237,43 @@ fn build_error_banner(
         Some(host_focus),
     );
     div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .right_0()
+        .block_mouse_except_scroll()
+        .id(ElementId::Name(accessibility_id.into()))
+        .role(Role::Alert)
+        .aria_label("Script view error")
+        .aria_description(error.to_owned())
+        .debug_selector(move || selector.clone())
+        .p_2()
+        .font_family(error_banner_font_family())
+        .text_size(px(12.0))
+        .line_height(px(18.0))
+        .bg(rgba(color("surface_raised", 0x1f1f_1fff).as_rgba_hex()))
+        .text_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
+        .border_1()
+        .border_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
         .flex()
-        .flex_col()
+        .items_start()
+        .gap_2()
+        .child(div().flex_1().min_w_0().child(error_text))
         .child(
+            // The error outlives the transaction that raised it; the
+            // developer closes it once read.
             div()
-                .id(ElementId::Name(accessibility_id.into()))
-                .role(Role::Alert)
-                .aria_label("Script view error")
-                .aria_description(error.to_owned())
-                .debug_selector(move || selector.clone())
-                .p_2()
-                .font_family(error_banner_font_family())
-                .text_size(px(12.0))
-                .line_height(px(18.0))
-                .bg(rgba(color("surface_raised", 0x1f1f_1fff).as_rgba_hex()))
-                .text_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
-                .border_1()
-                .border_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
-                .flex()
-                .items_start()
-                .gap_2()
-                .child(div().flex_1().min_w_0().child(error_text))
-                .child(
-                    // The error outlives the transaction that raised it; the
-                    // developer closes it once read.
-                    div()
-                        .id(ElementId::Name(format!("{owner_id}/dismiss").into()))
-                        .role(Role::Button)
-                        .aria_label("Dismiss script view error")
-                        .debug_selector(move || dismiss_selector.clone())
-                        .flex_none()
-                        .px_1()
-                        .cursor_pointer()
-                        .text_color(rgba(color("text_muted", 0xc8c8_c8ff).as_rgba_hex()))
-                        .child("Dismiss")
-                        .on_click(on_dismiss),
-                ),
+                .id(ElementId::Name(format!("{owner_id}/dismiss").into()))
+                .role(Role::Button)
+                .aria_label("Dismiss script view error")
+                .debug_selector(move || dismiss_selector.clone())
+                .flex_none()
+                .px_1()
+                .cursor_pointer()
+                .text_color(rgba(color("text_muted", 0xc8c8_c8ff).as_rgba_hex()))
+                .child("Dismiss")
+                .on_click(on_dismiss),
         )
-        .child(content)
         .into_any_element()
 }
 
@@ -5182,6 +5285,7 @@ fn script_node_dispatcher(
     view_id: &str,
 ) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
+    let script_owner = script_entity.clone();
     let native_entity = script_entity.clone();
     let signal_entity = script_entity.clone();
     let signal_read_entity = script_entity.clone();
@@ -5195,6 +5299,7 @@ fn script_node_dispatcher(
     };
     let canvas_geometry_reader = geometry_reader.clone();
     let hitbox_reader = geometry_reader.clone();
+    let repeat_click_reader = script_entity.clone();
     let canvas_bounds_reader = geometry_reader.clone();
     NodeEventDispatcher::with_event_names(move |callback, event, payload, target, window, app| {
         let origin = crate::InvocationOrigin::UserInput {
@@ -5205,6 +5310,14 @@ fn script_node_dispatcher(
                 view.handle_node_event(&callback, payload, target, origin, window, cx)
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
+    })
+    .with_script_owner(move |callback, app| {
+        script_owner
+            .read_with(app, |view, _| {
+                view.state.get() == ScriptViewState::Active
+                    && view.lifecycle.validate_callback_owner(callback).is_ok()
+            })
+            .unwrap_or(false)
     })
     .with_native(move |handler, event, payload, target, window, app| {
         native_entity
@@ -5250,14 +5363,10 @@ fn script_node_dispatcher(
             })
             .unwrap_or_else(|_| Err(crate::SignalError::Stale(signal.id().clone())))
     })
-    .with_element_bounds(move |reference, app| {
+    .with_element_geometry(move |reference, app| {
         geometry_reader.read(app, |runtime, view_id| {
             let node = runtime.element_refs.resolve(reference).ok()?;
-            runtime
-                .geometry_for(Some(view_id))
-                .presented(node)
-                .ok()
-                .map(|geometry| geometry.layout)
+            runtime.geometry_for(Some(view_id)).presented(node).ok()
         })
     })
     .with_element_hitbox(move |reference, app| {
@@ -5266,30 +5375,62 @@ fn script_node_dispatcher(
             runtime.geometry_for(Some(view_id)).hitbox(node)
         })
     })
+    .with_repeat_click(cx.entity_id(), move |owner, app| {
+        repeat_click_reader
+            .read_with(app, |view, _| {
+                if view.state.get() != ScriptViewState::Active
+                    || view.pending_interaction_cancels.contains(owner)
+                {
+                    return None;
+                }
+                let node = owner.retained_node()?;
+                let tree = view.lifecycle.retained();
+                if !tree.is_page_visible(node) {
+                    return None;
+                }
+                let retained = tree.node(node)?;
+                if retained.attributes().get("repeat_press") != Some(&UiValue::Bool(true)) {
+                    return None;
+                }
+                let mut ancestor = Some(retained);
+                while let Some(node) = ancestor {
+                    if node.attributes().get("disabled") == Some(&UiValue::Bool(true)) {
+                        return None;
+                    }
+                    ancestor = node.parent().and_then(|parent| tree.node(parent));
+                }
+                let bindings = retained.event_handlers("click");
+                (!bindings.is_empty()).then(|| crate::renderer::RepeatClickRoute {
+                    bindings: bindings.to_vec(),
+                    payload: retained
+                        .node_payload("click")
+                        .cloned()
+                        .unwrap_or(UiValue::Null),
+                })
+            })
+            .ok()
+            .flatten()
+    })
     .with_canvas_local_point(move |reference, point, app| {
         canvas_geometry_reader.read(app, |runtime, view_id| {
             let node = runtime.element_refs.resolve(reference).ok()?;
             let geometry = runtime.geometry_for(Some(view_id));
-            let bounds = geometry.canvas_drawable(node)?;
-            let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
-            Some(
-                crate::canvas::canvas_motion_affine(
-                    bounds.layout.width,
-                    bounds.layout.height,
-                    geometry.canvas_transform(node),
-                )
-                .inverse()?
-                .map_point(local),
+            let drawable = geometry.canvas_drawable(node)?;
+            let extent = drawable.bounds.layout;
+            let before_motion = crate::canvas::canvas_motion_affine(
+                extent.width,
+                extent.height,
+                geometry.canvas_transform(node),
             )
+            .inverse()?
+            .map_point(drawable.local_point(point)?);
+            drawable.viewport?.source_point(before_motion)
         })
     })
-    .with_canvas_bounds(move |reference, app| {
+    .with_canvas_geometry(move |reference, app| {
         canvas_bounds_reader.read(app, |runtime, view_id| {
             let node = runtime.element_refs.resolve(reference).ok()?;
-            runtime
-                .geometry_for(Some(view_id))
-                .canvas_drawable(node)
-                .map(|bounds| bounds.layout)
+            runtime.geometry_for(Some(view_id)).canvas_drawable(node)
         })
     })
 }
@@ -5425,16 +5566,22 @@ impl ScriptHostView {
         self.primitives.set_generation(self.lifecycle.generation());
         let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let (motion_active, committed_motion_events) = self.sample_motion_frame(&motion_root);
+        let request_motion_frame = Self::request_presentation_motion_frame(cx);
         let dispatcher = script_node_dispatcher(
             cx,
             self.lifecycle.runtime(),
             Rc::clone(&self.direct_signal_access),
             &self.view_id,
         )
+        .with_paint_motion(self.paint_motion_driver(Rc::clone(&request_motion_frame)))
+        .with_size_motion(self.layout_size_motion_driver(Rc::clone(&request_motion_frame)))
+        .with_native_progress(self.native_progress_driver(request_motion_frame))
         .with_presentation_sink(
             self.presentation_diagnostics
                 .sink(self.lifecycle.generation()),
         );
+        #[cfg(not(feature = "vendor-gpui"))]
+        let dispatcher = dispatcher.with_paint_text_sample(self.paint_text_sample_driver());
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
         self.presentation_diagnostics
@@ -5481,8 +5628,8 @@ impl ScriptHostView {
         };
         self.report_presentation_diagnostics(cx);
         let snapshot = &frame.snapshot;
-        let content = match (&self.last_failure, self.show_error_banner) {
-            (Some(failure), true) => build_error_banner(
+        let error_banner = match (&self.last_failure, self.show_error_banner) {
+            (Some(failure), true) => Some(build_error_banner(
                 &self.view_id,
                 &self.window_id,
                 &failure.message,
@@ -5493,9 +5640,8 @@ impl ScriptHostView {
                     view.clear_failure();
                     cx.notify();
                 }),
-                content,
-            ),
-            _ => content,
+            )),
+            _ => None,
         };
         let motion_ghosts = {
             let resources = frame.resources(self);
@@ -5542,7 +5688,10 @@ impl ScriptHostView {
                 {
                     Option::<gpui::AnyElement>::None
                 }
-            });
+            })
+            // A rejected transaction must not move the last good content
+            // or reparent an active input owner under the diagnostic.
+            .children(error_banner);
         let root = apply_root_text_direction(root, snapshot.direction);
         let key_scope = ViewKeyScope::new(cx);
         let root = key_scope.apply(root);
@@ -5689,21 +5838,16 @@ impl ScriptHostView {
         self.islands.fingerprint = Some(Rc::clone(&fingerprint));
         // The viewport is the width of a view that fills its window. A Host
         // that sizes the view can resize it within one viewport, so its anchor
-        // also holds the width the root last laid out at; the error banner lays
-        // the content out itself.
+        // also holds the width the root last laid out at.
         let viewport = f32::from(window.viewport_size().width).to_bits();
-        let root_anchor = if self.last_failure.is_some() && self.show_error_banner {
-            None
-        } else {
-            match self.islands.root_width {
-                RootWidth::Content => None,
-                RootWidth::Window => Some(u64::from(viewport)),
-                RootWidth::Host => {
-                    let width = laid_out_width
-                        .or_else(|| self.islands.laid_out_width.get())
-                        .unwrap_or(viewport);
-                    Some((u64::from(viewport) << 32) | u64::from(width))
-                }
+        let root_anchor = match self.islands.root_width {
+            RootWidth::Content => None,
+            RootWidth::Window => Some(u64::from(viewport)),
+            RootWidth::Host => {
+                let width = laid_out_width
+                    .or_else(|| self.islands.laid_out_width.get())
+                    .unwrap_or(viewport);
+                Some((u64::from(viewport) << 32) | u64::from(width))
             }
         };
         let mut islands = crate::island::IslandFrame {
@@ -5762,8 +5906,10 @@ impl HostFrame {
             overlays: &view.overlays,
             interactions: &self.interactions,
             motions: &snapshot.motions,
+            number_motion: Some(&snapshot.number_motion),
             signals: &snapshot.signals,
             geometry: &snapshot.geometry,
+            table_resize_viewport: None,
             pointer_capture: &snapshot.pointer_capture,
             focus_handles: &view.focus_handles,
             focus_owners: &self.focus_owners,
@@ -5939,9 +6085,152 @@ impl ScriptHostView {
         let now = runtime.clock.now();
         let clock_advanced = self.last_motion_sample != Some(now);
         self.last_motion_sample = Some(now);
+        let tree = self.lifecycle.retained();
+        runtime.motions.retain_paint_owners(domain, |owner, kind| {
+            tree.snapshot_node(owner).is_some_and(|node| match kind {
+                crate::motion::PaintOwnerKind::IntrinsicSize => {
+                    crate::paint_motion::layout_size(node).is_some()
+                }
+                crate::motion::PaintOwnerKind::ElementPaint => {
+                    crate::paint_motion::transition(node).is_some()
+                }
+                crate::motion::PaintOwnerKind::InlineUnderline => {
+                    if node.attributes().get(crate::node::INLINE_UNDERLINE_MOTION)
+                        != Some(&UiValue::Bool(true))
+                        || !tree.is_page_visible(owner)
+                    {
+                        return false;
+                    }
+                    let mut ancestor = tree.node(owner);
+                    while let Some(current) = ancestor {
+                        if current.invisible()
+                            || current.attributes().get("disabled") == Some(&UiValue::Bool(true))
+                        {
+                            return false;
+                        }
+                        ancestor = current.parent().and_then(|parent| tree.node(parent));
+                    }
+                    true
+                }
+            })
+        });
+        runtime.motions.retain_native_progress(domain, |node| {
+            tree.node(node).is_some() && tree.is_page_visible(node)
+        });
         let (frame, events) = sample_motion_domain(&mut runtime, domain, now);
         self.motion_waits_for_clock = frame.needs_frame && !clock_advanced;
         (clock_advanced && frame.needs_frame, events)
+    }
+
+    fn paint_motion_driver(
+        &self,
+        request: Rc<dyn Fn(&Window)>,
+    ) -> impl Fn(
+        &str,
+        crate::NodeId,
+        &mut crate::presentation_backend::ComputedPaint,
+        crate::paint_motion::PaintTransition,
+        Instant,
+        &mut Window,
+    ) + use<> {
+        let state = Rc::downgrade(&self.lifecycle.runtime());
+        let mounted = Rc::clone(&self.state);
+        move |path, node, paint, transition, now, window| {
+            if mounted.get() != ScriptViewState::Active {
+                return;
+            }
+            let Some(state) = state.upgrade() else {
+                return;
+            };
+            let parent = window.text_style().color;
+            let Ok(mut runtime) = state.try_borrow_mut() else {
+                return;
+            };
+            if runtime
+                .motions
+                .present_paint(path, node, paint, parent, transition, now)
+            {
+                request(window);
+            }
+        }
+    }
+
+    #[cfg(not(feature = "vendor-gpui"))]
+    fn paint_text_sample_driver(&self) -> Rc<crate::renderer::PaintTextSampleFn> {
+        let state = Rc::downgrade(&self.lifecycle.runtime());
+        Rc::new(move |path, parent, now| {
+            state
+                .upgrade()?
+                .try_borrow()
+                .ok()?
+                .motions
+                .sample_paint_text(path, parent, now)
+        })
+    }
+
+    fn layout_size_motion_driver(
+        &self,
+        request: Rc<dyn Fn(&Window)>,
+    ) -> Rc<crate::renderer::LayoutSizeMotionFn> {
+        let state = Rc::downgrade(&self.lifecycle.runtime());
+        let mounted = Rc::clone(&self.state);
+        Rc::new(move |path, node, size, transition, now, window| {
+            if mounted.get() != ScriptViewState::Active {
+                return None;
+            }
+            let state = state.upgrade()?;
+            let mut runtime = state.try_borrow_mut().ok()?;
+            let (sample, started) = runtime
+                .motions
+                .present_layout_size(path, node, size, transition, now);
+            if started {
+                request(window);
+            }
+            sample
+        })
+    }
+
+    fn request_presentation_motion_frame(cx: &Context<Self>) -> Rc<dyn Fn(&Window)> {
+        let view = cx.entity().downgrade();
+        let queued = Cell::new(false);
+        Rc::new(move |window| {
+            if !queued.replace(true) {
+                let view = view.clone();
+                window.on_next_frame(move |_, cx| {
+                    let _ = view.update(cx, |host, cx| {
+                        if host.state.get() == ScriptViewState::Active {
+                            cx.notify();
+                        }
+                    });
+                });
+            }
+        })
+    }
+
+    fn native_progress_driver(
+        &self,
+        request: Rc<dyn Fn(&Window)>,
+    ) -> Rc<crate::renderer::NativeProgressFn> {
+        let state = Rc::downgrade(&self.lifecycle.runtime());
+        let mounted = Rc::clone(&self.state);
+        Rc::new(move |scope, lane, progress, window| {
+            let Some(state) = state
+                .upgrade()
+                .filter(|_| mounted.get() == ScriptViewState::Active)
+            else {
+                return 1.;
+            };
+            let Ok(mut runtime) = state.try_borrow_mut() else {
+                return 1.;
+            };
+            let (sample, started) = runtime
+                .motions
+                .present_native_progress(scope, lane, progress);
+            if started {
+                request(window);
+            }
+            sample
+        })
     }
 
     fn deliver_committed_motion_events(
@@ -6037,6 +6326,15 @@ impl ScriptHostView {
     fn set_failure(&mut self, failure: ScriptFailure) {
         self.failure_serial += 1;
         self.last_failure = Some(failure);
+        // A physical hold must not automatically retry a failed transaction
+        // at the repeat rate. Keep normal recovery available on a new press.
+        self.pending_interaction_cancels.extend(
+            self.host
+                .interactions()
+                .active_owners(&self.view_id)
+                .into_iter()
+                .filter(crate::interaction::InteractionOwner::is_repeat_press),
+        );
     }
 
     fn set_plain_failure(&mut self, message: impl Into<String>) {
@@ -6349,8 +6647,7 @@ impl ScriptHostView {
         let local_themes = runtime
             .theme
             .as_ref()
-            .map(|themes| themes.local_themes(appearance))
-            .unwrap_or_default();
+            .map_or_else(Default::default, |themes| themes.local_themes(appearance));
         let direction = runtime
             .locale
             .as_ref()
@@ -6369,7 +6666,9 @@ impl ScriptHostView {
             .cloned();
         let motion_domain = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         ScriptRenderSnapshot {
-            now: runtime.clock.now(),
+            now: self
+                .last_motion_sample
+                .unwrap_or_else(|| runtime.clock.now()),
             clock: runtime.clock.clone(),
             motion_preference: runtime.motions.preference(),
             motion_quality: runtime.motions.quality(),
@@ -6377,6 +6676,12 @@ impl ScriptHostView {
             theme,
             local_themes,
             motions: runtime.motion_values.clone(),
+            number_motion: Rc::new(crate::number_motion::NumberMotionFrame::capture(
+                &runtime.motion_values,
+                &runtime.element_refs,
+                root,
+                &motion_domain,
+            )),
             motion_ghosts: runtime
                 .motion_ghosts
                 .iter()
@@ -6642,15 +6947,14 @@ impl ScriptHostView {
         let Some(target) = target else {
             return false;
         };
-        let handlers = self
-            .lifecycle
-            .retained()
-            .node(target.node)
-            .map(|node| {
-                node.event_handlers(crate::retained_page::NAVIGATION_BACK)
-                    .to_vec()
-            })
-            .unwrap_or_default();
+        let handlers =
+            self.lifecycle
+                .retained()
+                .node(target.node)
+                .map_or_else(Default::default, |node| {
+                    node.event_handlers(crate::retained_page::NAVIGATION_BACK)
+                        .to_vec()
+                });
         let payload = UiValue::Map(BTreeMap::from([
             (
                 "depth".to_owned(),
@@ -6997,16 +7301,28 @@ impl ScriptHostView {
                     cx.notify();
                 }
                 crate::element_ref::ElementCommand::Focus { node, .. } => {
-                    if !self.lifecycle.retained().is_page_visible(node) {
-                        continue;
+                    if !self.try_focus_exact_element(node, window, cx) {
+                        deferred.push(command);
                     }
-                    if let Some(handle) = self.focus_handles.get(&node) {
-                        self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
-                        handle.focus(window, cx);
-                    } else {
-                        self.set_plain_failure(format!(
-                            "retained node {node} is not focusable or has been unmounted"
-                        ));
+                }
+                crate::element_ref::ElementCommand::FocusDescendant {
+                    scope,
+                    prefer_invalid,
+                    ..
+                } => {
+                    let tree = self.lifecycle.retained();
+                    let eligible = self.focusable_nodes();
+                    if let Some(node) = scoped_focus_target(tree, scope, prefer_invalid, &eligible)
+                    {
+                        if let Some(handle) = self.focus_handles.get(&node) {
+                            self.navigation_focus_epoch =
+                                self.navigation_focus_epoch.wrapping_add(1);
+                            handle.focus(window, cx);
+                        } else {
+                            // A new pane can be committed before its focus handles
+                            // have been synchronized. Never choose another scope.
+                            deferred.push(command);
+                        }
                     }
                 }
                 crate::element_ref::ElementCommand::ScrollTo { node, x, y, .. } => {
@@ -7019,33 +7335,8 @@ impl ScriptHostView {
                     }
                 }
                 crate::element_ref::ElementCommand::ScrollIntoView { node, .. } => {
-                    let retained = self.lifecycle.retained();
-                    let ancestor = nearest_scroll_ancestor(retained, node);
-                    let handle = ancestor.and_then(|ancestor| self.scroll_handles.get(&ancestor));
-                    // A direct child scrolls the minimal amount that shows it, in the next
-                    // prepaint, which also finds a child laid out for the first time.
-                    let child_index = ancestor.and_then(|ancestor| {
-                        retained
-                            .node(ancestor)?
-                            .children()
-                            .position(|link| link.node() == node)
-                    });
-                    if let (Some(handle), Some(index)) = (handle, child_index) {
-                        handle.scroll_to_item(index);
-                        cx.notify();
-                    } else if let Some(anchor) = self.scroll_anchors.get(&node) {
-                        anchor.scroll_to(window, cx);
-                    } else if retained.node(node).is_none() {
-                        // Unmounted before the request ran (the view moved on): a reveal is a
-                        // request, not a command that must take effect.
-                    } else if ancestor.is_some() {
-                        // Mounted or ref'd in this transaction: the scroll handle and anchor
-                        // exist after the next frame's sync.
+                    if !self.try_reveal_element(node, window, cx) {
                         deferred.push(command);
-                    } else {
-                        self.set_plain_failure(format!(
-                            "retained node {node} has no scrollable ancestor"
-                        ));
                     }
                 }
             }
@@ -7057,6 +7348,62 @@ impl ScriptHostView {
                 .requeue_element_commands(deferred);
             cx.notify();
         }
+    }
+
+    /// False retains the exact command until its native handle is installed.
+    fn try_focus_exact_element(
+        &mut self,
+        node: crate::NodeId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let tree = self.lifecycle.retained();
+        if tree.node(node).is_none() || !tree.is_page_visible(node) {
+            return true;
+        }
+        if let Some(handle) = self.focus_handles.get(&node) {
+            self.navigation_focus_epoch = self.navigation_focus_epoch.wrapping_add(1);
+            handle.focus(window, cx);
+        } else if self.focusable_nodes().contains(&node) {
+            // The branch committed before the next native tree walk.
+            return false;
+        } else {
+            self.set_plain_failure(format!(
+                "retained node {node} is not focusable or has been unmounted"
+            ));
+        }
+        true
+    }
+
+    /// False leaves a reveal queued until the next frame can register its anchor.
+    fn try_reveal_element(
+        &mut self,
+        node: crate::NodeId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let retained = self.lifecycle.retained();
+        let ancestor = nearest_scroll_ancestor(retained, node);
+        let handle = ancestor.and_then(|ancestor| self.scroll_handles.get(&ancestor));
+        // Direct children can request their minimal reveal before their first
+        // prepaint; deeper descendants use the actual registered anchor.
+        let child_index = ancestor.and_then(|ancestor| {
+            retained
+                .node(ancestor)?
+                .children()
+                .position(|link| link.node() == node)
+        });
+        if let (Some(handle), Some(index)) = (handle, child_index) {
+            handle.scroll_to_item(index);
+            cx.notify();
+        } else if let Some(anchor) = self.scroll_anchors.get(&node) {
+            anchor.scroll_to(window, cx);
+        } else if retained.node(node).is_some() && ancestor.is_some() {
+            return false;
+        }
+        // A mounted target in a standalone layout may have no viewport to
+        // scroll. Revealing it is a no-op, not a failure of the focus action.
+        true
     }
 
     fn retain_mounted_primitives(&mut self) {
@@ -7799,6 +8146,27 @@ impl ScriptHostView {
     ) -> crate::EventResponse {
         if self.state.get() != ScriptViewState::Active {
             return crate::EventResponse::new().stop();
+        }
+        // Input modality changes can queue a hover leave from the same
+        // frame whose key handler unmounts that node (e.g. closing a popover).
+        // The owner has already been cleaned up; this is not a failed event.
+        let hover_leave = matches!(
+            &origin,
+            crate::InvocationOrigin::UserInput { event } if event == "hover_change"
+        ) && match &payload {
+            UiValue::Bool(hovered) => !hovered,
+            UiValue::Map(fields) => fields.get("hovered") == Some(&UiValue::Bool(false)),
+            _ => false,
+        };
+        if hover_leave
+            && matches!(
+                self.lifecycle.validate_callback_owner(callback),
+                Err(crate::LifecycleError::Runtime(
+                    RuntimeError::StaleComponentCallback { .. }
+                ))
+            )
+        {
+            return crate::EventResponse::new();
         }
         if let Ok(mut runtime) = self.lifecycle.runtime().try_borrow_mut() {
             runtime.traces.push(
@@ -9249,6 +9617,11 @@ mod tests {
         )
         .unwrap();
         fs::write(
+            components.join("spinner.rhai"),
+            include_str!("../../../registry/components/spinner.rhai"),
+        )
+        .unwrap();
+        fs::write(
             directory.path().join("main.rhai"),
             r#"import "components/button" as button;
             fn view(ctx) { button::Button(#{ text: "Styled" }) }
@@ -9303,6 +9676,10 @@ mod tests {
             (
                 button,
                 include_str!("../../../registry/components/button.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/spinner").unwrap(),
+                include_str!("../../../registry/components/spinner.rhai").to_owned(),
             ),
         ]));
         let prepared = ScriptView::sources(

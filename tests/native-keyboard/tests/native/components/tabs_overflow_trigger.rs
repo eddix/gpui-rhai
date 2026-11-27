@@ -26,7 +26,7 @@ fn the_overflow_menu_trigger_fills_the_bar(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn the_overflow_menu_trigger_hover_has_rounded_corners(cx: &mut TestAppContext) {
+fn the_document_bar_overflow_trigger_hover_keeps_its_square_geometry(cx: &mut TestAppContext) {
     let overrides = ThemeTokenOverrides {
         colors: BTreeMap::from([("surface_hover".to_owned(), Rgba8::from_rgba_hex(HOVER))]),
         ..Default::default()
@@ -50,7 +50,7 @@ fn the_overflow_menu_trigger_hover_has_rounded_corners(cx: &mut TestAppContext) 
         .find(|quad| (quad.bounds.width - trigger.width as f32).abs() < 0.5)
         .unwrap_or_else(|| panic!("no hover fill the trigger's width: {fills:?}"));
     assert!(
-        fill.corner_radii.iter().all(|radius| *radius > 0.0),
+        fill.corner_radii.iter().all(|radius| *radius == 0.0),
         "{fill:?}"
     );
 }

@@ -53,6 +53,7 @@ fn mount_with(
             ("surface_raised".to_owned(), Rgba8::from_rgba_hex(RAISED)),
             ("text_primary".to_owned(), Rgba8::from_rgba_hex(INK)),
             ("control.border".to_owned(), Rgba8::from_rgba_hex(DOT)),
+            ("control.edge_strong".to_owned(), Rgba8::from_rgba_hex(DOT)),
         ]),
         ..Default::default()
     };
@@ -154,15 +155,15 @@ fn an_arrow_at_an_end_is_disabled_unless_the_items_wrap(cx: &mut TestAppContext)
 fn a_dot_selects_its_item_and_the_selected_one_is_an_icon_wide(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(cx, carousel(1, "indicator:\"dots\""));
     assert_eq!(last_error(&mut visual, &view), None);
-    // The selected dot is metrics.icon (16) wide in text_primary; the others are 6px squares
-    // in control.border.
+    // The selected mark is metrics.icon (18) wide; unselected 5px circles keep
+    // the quieter edge color. Selection must remain a distinct width.
     let selected = fills(&mut visual, INK)
         .into_iter()
-        .filter(|(_, height)| (height - 6.0).abs() < 0.01)
+        .filter(|(_, height)| (height - 5.0).abs() < 0.01)
         .collect::<Vec<_>>();
-    assert_eq!(selected, vec![(16.0, 6.0)]);
+    assert_eq!(selected, vec![(18.0, 5.0)]);
     let others = fills(&mut visual, DOT);
-    assert_eq!(others, vec![(6.0, 6.0); 3]);
+    assert_eq!(others, vec![(5.0, 5.0); 3]);
     let dot = bounds(&mut visual, &view, "button", "Item 3");
     click_center(&mut visual, dot);
     settle(&mut visual);

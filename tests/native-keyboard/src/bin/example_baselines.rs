@@ -6,11 +6,14 @@
 //! The examples are compiled in as modules, so the capture uses exactly the
 //! view each example's `main` runs.
 
+// Standalone examples deliberately keep their own module namespace. Embedding
+// several of them in this capture tool reuses their shared support files.
+#![allow(clippy::duplicate_mod)]
+
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast as gpui;
 #[cfg(feature = "gpui-fast")]
 extern crate gpui_fast_platform as gpui_platform;
-
 
 #[cfg(not(target_os = "macos"))]
 fn main() {
@@ -66,7 +69,7 @@ mod capture {
     use std::time::Duration;
 
     use gpui::{AppContext, VisualTestAppContext, px, size};
-    use gpui_rhai::{ScriptView, MotionPreference};
+    use gpui_rhai::{MotionPreference, ScriptView};
 
     use super::baseline_cases::{ExampleCase, example_cases, example_window};
     use super::{

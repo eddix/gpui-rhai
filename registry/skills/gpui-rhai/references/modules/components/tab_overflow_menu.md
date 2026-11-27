@@ -44,9 +44,8 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `trigger`.
 
 ## Theme
 
-- Tokens: `metrics.control`, `metrics.icon`, `radius.md`, `surface_hover`, `tabs.foreground`, `text_primary`
 - Environment: `density`, `size`
 
 ## Dependencies
 
-[`components/menu`](menu.md)
+[`components/icon_button`](icon_button.md), [`components/menu`](menu.md)

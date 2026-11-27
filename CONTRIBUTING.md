@@ -21,22 +21,35 @@ Before submitting a change, run:
 
 ```text
 cargo fmt --all -- --check
-cargo check --workspace --all-targets --all-features
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-targets --all-features
-RUSTDOCFLAGS="-D warnings" cargo doc -p gpui-rhai --all-features --no-deps
+cargo check --workspace --all-targets --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
+RUSTDOCFLAGS="-D warnings" cargo doc -p gpui-rhai --features charts,dev-reload --no-deps
 RUSTDOCFLAGS="-D warnings" cargo doc -p gpui-rhai-cli --lib --no-deps
 cargo package -p gpui-rhai
 cargo build --workspace --all-targets --release
 bash scripts/audit-release-artifacts.sh
-cargo test --manifest-path tests/native-keyboard/Cargo.toml
-cargo test --manifest-path tests/native-keyboard/Cargo.toml --features dev-reload --test token_reload
-cargo clippy --manifest-path tests/native-keyboard/Cargo.toml --all-targets --features dev-reload -- -D warnings
+CARGO_TARGET_DIR="$PWD/target" cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+CARGO_TARGET_DIR="$PWD/target" cargo test --manifest-path tests/native-keyboard/Cargo.toml --features dev-reload --test token_reload --locked
+CARGO_TARGET_DIR="$PWD/target" cargo clippy --manifest-path tests/native-keyboard/Cargo.toml --all-targets --features dev-reload --locked -- -D warnings
 cargo fmt --manifest-path apps/Cargo.toml --all -- --check
 cargo clippy --manifest-path apps/Cargo.toml --locked --all-targets -- -D warnings
 cargo test --manifest-path apps/Cargo.toml --locked
 bash scripts/check-app-components.sh
 ```
+
+`gpui-pre` and `gpui-fast` are mutually exclusive; do not use `--all-features`.
+Repeat the SDK and native checks for fast explicitly:
+
+```text
+cargo check -p gpui-rhai --no-default-features --features gpui-fast,charts,dev-reload --all-targets --locked
+CARGO_TARGET_DIR="$PWD/target" cargo test --manifest-path tests/native-keyboard/Cargo.toml --no-default-features --features gpui-fast,dev-reload --locked
+CARGO_TARGET_DIR="$PWD/target" cargo clippy --manifest-path tests/native-keyboard/Cargo.toml --no-default-features --features gpui-fast,dev-reload --all-targets --locked -- -D warnings
+```
+
+Run these commands from the repository root. The explicit native target
+directory reuses the existing build cache rather than producing a second large
+copy inside the test workspace. Keep GPUI `test-support` out of release builds.
 
 `apps/` holds the [reference applications](apps/README.md), another separate
 workspace. A runtime or registry change that breaks one fixes it in the same

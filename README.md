@@ -10,7 +10,7 @@ identity and native state and renders it with GPUI.
   three-way and never overwrites a local edit.
 - **A neutral runtime with an optional design system.** The runtime draws what
   a script declares and has no visual opinions. The official registry adds a
-  design system for productivity tools: a token base, 73 components, layouts
+  design system for productivity tools: a token base, 74 components, layouts
   and patterns, a composition audit, and the Gallery that shows every component
   in both densities. It is specified in [docs/design](docs/design/).
 - **Native where frames matter.** Text editing, virtual lists, tables, charts,
@@ -22,7 +22,18 @@ identity and native state and renders it with GPUI.
 The latest release is 0.4.3 (Runtime API 3). See the
 [release notes](docs/releases/README.md).
 
+The current checkout is migrating the registry to complete Modern/Clean
+Light/Dark presets. This work is **unreleased and not fully accepted**; use
+matching SDK, CLI and registry source revisions when testing it, not an older
+published SDK with newly copied components. See the
+[migration status and remaining gates](docs/design/migration-modern-clean.md).
+The [public and vendor build profiles](docs/gpui-profiles.md) use the same
+Gallery, so you can compare rendering and interaction with the same preset.
+
 ## Quick start
+
+Use Rust 1.99 or newer. Check `rustc --version` in the application directory:
+this repository's toolchain selection does not apply to a separate project.
 
 ```text
 cargo install gpui-rhai-cli --locked

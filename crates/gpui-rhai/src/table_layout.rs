@@ -6,9 +6,11 @@
 
 use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
 
+#[cfg(feature = "vendor-gpui")]
+use gpui::IntoElement;
 use gpui::{
-    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement,
-    LayoutId, Pixels, ScrollHandle, SharedString, Window, point, px,
+    AnyElement, App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, LayoutId,
+    Pixels, ScrollHandle, SharedString, Window, point, px,
 };
 use rhai::{Array, EvalAltResult, FLOAT, INT, Map, Position};
 
@@ -298,6 +300,39 @@ struct ViewportState {
     direction: Option<TextDirection>,
 }
 
+/// The Table viewport, not the changing column or the scroll extent, owns
+/// the coordinate space of a column drag.
+#[derive(Clone)]
+pub(crate) struct TableResizeViewport {
+    pub(crate) node: crate::NodeId,
+    pub(crate) geometry: crate::GeometryRegistry,
+    pub(crate) scroll: Option<ScrollHandle>,
+}
+
+impl TableResizeViewport {
+    pub(crate) fn presented(&self) -> Option<crate::PresentedGeometry> {
+        self.geometry
+            .is_presented(self.node)
+            .then(|| self.geometry.presented(self.node).ok())
+            .flatten()
+    }
+
+    pub(crate) fn logical_scroll_x(&self, direction: TextDirection) -> f64 {
+        self.scroll.as_ref().map_or(0., |scroll| {
+            let offset = f64::from(scroll.offset().x);
+            let max = f64::from(scroll.max_offset().x).abs();
+            logical_scroll_x(offset, max, direction).clamp(0., max)
+        })
+    }
+}
+
+fn logical_scroll_x(physical: f64, maximum: f64, direction: TextDirection) -> f64 {
+    match direction {
+        TextDirection::LeftToRight => -physical,
+        TextDirection::RightToLeft => maximum + physical,
+    }
+}
+
 pub(crate) struct TableViewportElement {
     id: ElementId,
     columns: Vec<TableColumn>,
@@ -337,6 +372,7 @@ impl TableViewportElement {
     }
 }
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for TableViewportElement {
     type Element = Self;
     fn into_element(self) -> Self {
@@ -419,12 +455,12 @@ impl Element for TableViewportElement {
         let mut state = frame.state.borrow_mut();
         if let Some(scroll) = &self.scroll {
             let old = f64::from(scroll.offset().x);
-            let logical = match state.direction {
-                None => 0.0,
-                Some(TextDirection::LeftToRight) => -old,
-                Some(TextDirection::RightToLeft) => state.maximum + old,
-            }
-            .clamp(0.0, maximum);
+            let logical = state
+                .direction
+                .map_or(0., |direction| {
+                    logical_scroll_x(old, state.maximum, direction)
+                })
+                .clamp(0.0, maximum);
             let offset = match self.direction {
                 TextDirection::LeftToRight => -logical,
                 TextDirection::RightToLeft => logical - maximum,

@@ -57,11 +57,11 @@ fn composer_enter_shift_enter_busy_stop_and_native_undo(cx: &mut TestAppContext)
         "busy cannot resubmit"
     );
     assert_eq!(text_of(&mut visual, &view, "draft"), "one\ntwo!");
-    visual.simulate_keystrokes("cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-z"));
     // Submission does not insert an edit-history boundary: ordinary adjacent
     // typing remains coalesced exactly as in the native Textarea.
     assert_eq!(text_of(&mut visual, &view, "draft"), "one\n");
-    visual.simulate_keystrokes("shift-cmd-z");
+    visual.simulate_keystrokes(&crate::support::primary_keys("shift-secondary-z"));
     assert_eq!(text_of(&mut visual, &view, "draft"), "one\ntwo!");
     let stop_bounds = bounds(&mut visual, &view, "button", "Stop");
     click_center(&mut visual, stop_bounds);
@@ -86,10 +86,7 @@ fn a_root_background_covers_the_editor(cx: &mut TestAppContext) {
     let field = r#"composer::Composer(#{ key: "prompt", label: "Prompt", value: "",
         on_change: Fn("changed"), part_styles: #{ root: style().background(rgba(0x00ff00ff)) } })"#;
     let overrides = ThemeTokenOverrides {
-        colors: BTreeMap::from([(
-            "surface_raised".to_owned(),
-            Rgba8::from_rgba_hex(RAISED),
-        )]),
+        colors: BTreeMap::from([("surface_raised".to_owned(), Rgba8::from_rgba_hex(RAISED))]),
         ..Default::default()
     };
     let (mut visual, view) = Mount::components(SOURCE.replace_once("FIELD", field))

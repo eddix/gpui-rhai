@@ -1,11 +1,11 @@
 /* gpui-rhai
-{"id":"components/timeline","export":"Timeline","version":"0.4.3","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],"environment":["size","density"]}
+{"id":"components/timeline","export":"Timeline","version":"0.4.3","runtime_api":{"min_inclusive":3,"max_exclusive":4},"dependencies":[],"capabilities":{},"tokens":["collection.metadata","border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],"environment":["size","density"]}
 */
 // A source-owned, controlled timeline. Application work and data loading stay outside it.
 // Example: Timeline(#{key:"runs",label:"Deployment",items:[#{key:"build",title:"Build",status:"success"}]})
 define_component(#{metadata:#{id:"components/timeline","export":"Timeline",version:"0.4.3",
     runtime_api:#{min_inclusive:3,max_exclusive:4},dependencies:[],capabilities:#{},
-    tokens:["border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],environment:["size","density"]},
+    tokens:["collection.metadata","border","accent","success","warning","danger","text_primary","text_muted","text.accent","selection","surface_hover","focus_ring","metrics.row","metrics.control","metrics.label_column","metrics.inset","spacing.xs","spacing.sm","spacing.lg","typography.body","typography.caption","typography.label", "radius.md"],environment:["size","density"]},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Stable timeline identity."},
         label:#{schema:#{type:"string"},required:true,sensitive:false,doc:"Accessible timeline name."},
@@ -92,6 +92,7 @@ fn timeline_time(ctx,item,mode,zone,now){
 }
 fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,focus,ctx,payload){
     let item=payload.item;let current=field(item,"current",false);let chosen=item.key in selected;
+    let supporting=if chosen {theme_color("text_primary")}else{theme_color("collection.metadata")};
     let content=[];let status=ctx.t_or(`timeline.${item.status}`,item.status);let start=field(item,"start",());
     let absolute=if start==(){"—"}else{ctx.format_time(start,"long",zone)};
     if "day_header" in item{content.push(text(item.day_header).with_style(ctx.component_style("day_header",style()
@@ -128,15 +129,15 @@ fn timeline_row(expanded,selected,cursor,mode,display,zone,now,details,total,foc
         .on_click_value(Fn("timeline_toggle").curry(expanded),item.key).tab_stop(mode=="none");}
     let body=[row([title]).with_key("title-line").with_style(style().min_height(theme_length("metrics.control")).items_center())];
     if field(item,"description","")!=""{body.push(text(item.description).with_style(ctx.component_style("description",style()
-        .typography("caption").text_color(theme_color("text_muted")))));}
+        .typography("caption").text_color(supporting),style().text_color(supporting))));}
     if item.key in details{body.push(details[item.key].with_style(ctx.component_style("detail",style())));}
-    let time=text(timeline_time(ctx,item,display,zone,now)).with_style(style().typography("body").font_feature("tnum",1).text_color(theme_color("text_muted")));
+    let time=text(timeline_time(ctx,item,display,zone,now)).with_style(style().typography("body").font_feature("tnum",1).text_color(supporting));
     let time_line=row([time]).with_style(style().min_height(theme_length("metrics.control")).items_center());
     let time_column=column([time_line]).with_key("time-column").with_style(ctx.component_style("time",style()
         .width(theme_length("metrics.label_column")).flex_shrink(false).padding_top(theme_spacing("xs"))));
     let body_text=column(body).with_key("content-column").with_style(style().flex_grow().flex_basis(px(0)).min_width(px(0)).gap(theme_spacing("xs")));
     let body_column=row([disclosure,body_text]).with_style(style().flex_grow().flex_basis(px(0)).min_width(px(0)).gap(theme_spacing("xs")).padding_y(theme_spacing("xs")).items_start());
-    let meta=text(field(item,"meta","")).with_style(style().typography("body").font_feature("tnum",1).text_color(theme_color("text_muted")));
+    let meta=text(field(item,"meta","")).with_style(style().typography("body").font_feature("tnum",1).text_color(supporting));
     let meta_line=row([meta]).with_style(style().min_height(theme_length("metrics.control")).items_center());
     let meta_column=column([meta_line]).with_key("meta-column").with_style(ctx.component_style("meta",style().flex_shrink(false).padding_top(theme_spacing("xs"))));
     let indent=row([]).with_style(style().width(theme_spacing("lg")*item.depth).flex_shrink(false));

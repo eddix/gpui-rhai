@@ -54,6 +54,44 @@ fn a_dialog_takes_its_width(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn oversized_sheets_keep_their_panel_inside_the_viewport_on_each_edge(cx: &mut TestAppContext) {
+    use gpui::size;
+    for side in ["start", "end", "top", "bottom"] {
+        let script = format!(
+            r#"import "components/sheet" as sheet;
+                fn view(ctx) {{
+                    sheet::Sheet(#{{key:"sheet",title:"Bounded sheet",content:text("Readable content"),
+                        side:"{side}",open:true,size:900}})
+                }}"#
+        );
+        let (mut visual, view) = Mount::components(script)
+            .motion(MotionPreference::None)
+            .mount(cx);
+        visual.simulate_resize(size(px(390.), px(310.)));
+        crate::support::settle(&mut visual, Step::Tick, 4);
+        let panel = geometry(&mut visual, &view, "dialog", "Bounded sheet");
+        let title = geometry(&mut visual, &view, "text", "Bounded sheet");
+        assert!(
+            panel.x >= -0.5
+                && panel.y >= -0.5
+                && panel.x + panel.width <= 390.5
+                && panel.y + panel.height <= 310.5
+                && panel.width > 300.
+                && panel.height > 250.,
+            "{side}: preferred thickness must be capped by the real viewport: {panel:?}"
+        );
+        assert!(
+            title.x >= panel.x
+                && title.y >= panel.y
+                && title.x + title.width <= panel.x + panel.width + 0.5
+                && title.y + title.height <= panel.y + panel.height + 0.5,
+            "{side}: actual content, not only the backdrop, stays inside: {title:?} {panel:?}"
+        );
+        assert_eq!(last_error(&mut visual, &view), None);
+    }
+}
+
+#[gpui::test]
 fn a_tall_dialog_stops_at_ninety_percent_and_scrolls_its_body(cx: &mut TestAppContext) {
     let (mut visual, view) = mount(
         cx,

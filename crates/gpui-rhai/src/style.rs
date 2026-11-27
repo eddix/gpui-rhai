@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::{BackgroundFill, LayeredGradient, PaintColor};
 use rhai::{
     Array, CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FuncRegistration, INT,
     ImmutableString, Map, Position, TypeBuilder,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -37,19 +38,30 @@ impl<'de> Deserialize<'de> for Length {
             path: String,
             #[serde(default = "unit_scale")]
             scale: f64,
+            #[serde(default = "reading_scale_enabled")]
+            reading_scale: bool,
         }
 
         const fn unit_scale() -> f64 {
             1.0
+        }
+        const fn reading_scale_enabled() -> bool {
+            true
         }
 
         match Repr::deserialize(deserializer)? {
             Repr::Pixels(value) => Self::pixels(value),
             Repr::Rems(value) => Self::rems(value),
             Repr::Relative(value) => Self::relative(value),
-            Repr::Token(token) => {
-                Self::token(&token.path).and_then(|length| length.scaled(token.scale))
-            }
+            Repr::Token(token) => Self::token(&token.path)
+                .and_then(|length| length.scaled(token.scale))
+                .map(|length| {
+                    if token.reading_scale {
+                        length
+                    } else {
+                        length.without_reading_scale()
+                    }
+                }),
         }
         .map_err(serde::de::Error::custom)
     }
@@ -57,6 +69,47 @@ impl<'de> Deserialize<'de> for Length {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AutoLength;
+
+/// Signed character-cluster spacing. Em is resolved at the declaring node's
+/// final font size and then inherited as a computed pixel value.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(tag = "unit", content = "value", rename_all = "snake_case")]
+pub enum LetterSpacing {
+    Pixels(f64),
+    Em(f64),
+}
+
+impl<'de> Deserialize<'de> for LetterSpacing {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "unit", content = "value", rename_all = "snake_case")]
+        enum Repr {
+            Pixels(f64),
+            Em(f64),
+        }
+        match Repr::deserialize(deserializer)? {
+            Repr::Pixels(value) => Self::pixels(value),
+            Repr::Em(value) => Self::em(value),
+        }
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+impl LetterSpacing {
+    /// # Errors
+    /// Rejects non-finite values and values not representable by GPUI.
+    pub fn pixels(value: f64) -> Result<Self, StyleValueError> {
+        validate_signed(value).map_err(|_| StyleValueError::InvalidLetterSpacing(value))?;
+        Ok(Self::Pixels(value))
+    }
+
+    /// # Errors
+    /// Rejects non-finite values and values not representable by GPUI.
+    pub fn em(value: f64) -> Result<Self, StyleValueError> {
+        validate_signed(value).map_err(|_| StyleValueError::InvalidLetterSpacing(value))?;
+        Ok(Self::Em(value))
+    }
+}
 
 impl CustomType for AutoLength {
     fn build(mut builder: TypeBuilder<Self>) {
@@ -237,6 +290,16 @@ impl Length {
         matches!(self, Self::Token(_))
     }
 
+    /// Preserve the late-bound token and its density/size variants, without
+    /// applying reading scale. Literal lengths already have this behavior.
+    #[must_use]
+    pub const fn without_reading_scale(self) -> Self {
+        match self {
+            Self::Token(token) => Self::Token(token.without_reading_scale()),
+            literal => literal,
+        }
+    }
+
     /// Revalidate a deserialized length.
     ///
     /// # Errors
@@ -278,7 +341,7 @@ fn validate_signed(value: f64) -> Result<(), LengthError> {
     }
 }
 
-fn thousandths(value: f64) -> Result<u16, StyleValueError> {
+pub(crate) fn thousandths(value: f64) -> Result<u16, StyleValueError> {
     if value.is_finite() && (0.0..=1.0).contains(&value) {
         Ok(bounded_u16(value * 1000.0))
     } else {
@@ -310,6 +373,15 @@ fn validate_non_negative(value: f64) -> Result<(), LengthError> {
 pub struct Rgba8(u32);
 
 impl Rgba8 {
+    pub(crate) fn from_native_color(color: gpui::Hsla) -> Self {
+        let color = color.to_rgb();
+        Self(
+            (channel_byte(f64::from(color.r) * 255.0) << 24)
+                | (channel_byte(f64::from(color.g) * 255.0) << 16)
+                | (channel_byte(f64::from(color.b) * 255.0) << 8)
+                | channel_byte(f64::from(color.a) * 255.0),
+        )
+    }
     #[must_use]
     pub const fn from_rgba_hex(value: u32) -> Self {
         Self(value)
@@ -330,11 +402,48 @@ impl Rgba8 {
         Self(channel(24) | channel(16) | channel(8) | channel(0))
     }
 
+    /// Interpolate encoded sRGB in premultiplied alpha and return straight RGBA.
+    /// Color in a transparent endpoint contributes no visible RGB.
+    #[must_use]
+    pub fn mix_premultiplied(self, other: Self, weight: f64) -> Self {
+        let weight = weight.clamp(0.0, 1.0);
+        let a = self.channel(0) * (1.0 - weight);
+        let b = other.channel(0) * weight;
+        let alpha = a + b;
+        if alpha == 0.0 {
+            return Self(0);
+        }
+        let channel = |shift| {
+            channel_byte((self.channel(shift) * a + other.channel(shift) * b) / alpha) << shift
+        };
+        Self(channel(24) | channel(16) | channel(8) | channel_byte(alpha))
+    }
+
     /// Multiply the alpha channel by `factor`.
     #[must_use]
     pub fn with_alpha_factor(self, factor: f64) -> Self {
         let alpha = channel_byte(self.channel(0) * factor.clamp(0.0, 1.0));
         Self((self.0 & 0xffff_ff00) | alpha)
+    }
+
+    /// Source-over composition in encoded sRGB, returning straight RGBA.
+    /// This computes a color value; it does not isolate a rendered group.
+    #[must_use]
+    pub fn over(self, background: Self) -> Self {
+        let foreground_alpha = self.channel(0) / 255.0;
+        let background_alpha = background.channel(0) / 255.0 * (1.0 - foreground_alpha);
+        let alpha = foreground_alpha + background_alpha;
+        if alpha == 0.0 {
+            return Self(0);
+        }
+        let channel = |shift| {
+            channel_byte(
+                (self.channel(shift) * foreground_alpha
+                    + background.channel(shift) * background_alpha)
+                    / alpha,
+            ) << shift
+        };
+        Self(channel(24) | channel(16) | channel(8) | channel_byte(alpha * 255.0))
     }
 
     /// WCAG relative luminance of the color channels (alpha ignored).
@@ -361,6 +470,8 @@ impl Rgba8 {
 
     /// Move toward `toward` in small steps until the contrast against
     /// `background` reaches `ratio`; returns `toward` if no step does.
+    /// Like [`Self::contrast_ratio`], this compares RGB channels. Composite
+    /// translucent inputs onto their known backing with [`Self::over`] first.
     #[must_use]
     pub fn readable(self, toward: Self, background: Self, ratio: f64) -> Self {
         if self.contrast_ratio(background) >= ratio {
@@ -397,10 +508,21 @@ pub enum ColorValue {
         other: Box<ColorValue>,
         weight: u16,
     },
+    /// Encoded-sRGB interpolation of premultiplied color and alpha.
+    PremultipliedMix {
+        base: Box<ColorValue>,
+        other: Box<ColorValue>,
+        weight: u16,
+    },
     /// `color` with its alpha multiplied by `alpha` thousandths.
     Alpha {
         color: Box<ColorValue>,
         alpha: u16,
+    },
+    /// Encoded-sRGB source-over composition; token leaves remain late-bound.
+    Over {
+        foreground: Box<ColorValue>,
+        background: Box<ColorValue>,
     },
     /// `color` moved toward `toward` only as far as needed to reach `ratio`
     /// hundredths of contrast against `background`.
@@ -409,6 +531,11 @@ pub enum ColorValue {
         toward: Box<ColorValue>,
         background: Box<ColorValue>,
         ratio: u16,
+    },
+    /// Choose between light-mode and dark-mode color expressions.
+    ByMode {
+        light: Box<ColorValue>,
+        dark: Box<ColorValue>,
     },
 }
 
@@ -438,6 +565,15 @@ impl ColorValue {
 
     /// Resolve the expression, asking `lookup` for token leaves.
     pub fn resolve_with(&self, lookup: &mut dyn FnMut(&str) -> Option<Rgba8>) -> Option<Rgba8> {
+        self.resolve_with_mode(crate::ThemeMode::Light, lookup)
+    }
+
+    /// Resolve the expression for a specific theme color mode (`light` or `dark`).
+    pub fn resolve_with_mode(
+        &self,
+        mode: crate::ThemeMode,
+        lookup: &mut dyn FnMut(&str) -> Option<Rgba8>,
+    ) -> Option<Rgba8> {
         match self {
             Self::Literal(color) => Some(*color),
             Self::Token(token) => lookup(token),
@@ -446,24 +582,55 @@ impl ColorValue {
                 other,
                 weight,
             } => {
-                let base = base.resolve_with(lookup)?;
-                let other = other.resolve_with(lookup)?;
+                let base = base.resolve_with_mode(mode, lookup)?;
+                let other = other.resolve_with_mode(mode, lookup)?;
                 Some(base.mix(other, f64::from(*weight) / 1000.0))
             }
+            Self::PremultipliedMix {
+                base,
+                other,
+                weight,
+            } => Some(
+                base.resolve_with_mode(mode, lookup)?.mix_premultiplied(
+                    other.resolve_with_mode(mode, lookup)?,
+                    f64::from(*weight) / 1000.0,
+                ),
+            ),
             Self::Alpha { color, alpha } => color
-                .resolve_with(lookup)
+                .resolve_with_mode(mode, lookup)
                 .map(|color| color.with_alpha_factor(f64::from(*alpha) / 1000.0)),
+            Self::Over {
+                foreground,
+                background,
+            } => Some(
+                foreground
+                    .resolve_with_mode(mode, lookup)?
+                    .over(background.resolve_with_mode(mode, lookup)?),
+            ),
             Self::Readable {
                 color,
                 toward,
                 background,
                 ratio,
             } => {
-                let color = color.resolve_with(lookup)?;
-                let toward = toward.resolve_with(lookup)?;
-                let background = background.resolve_with(lookup)?;
+                let color = color.resolve_with_mode(mode, lookup)?;
+                let toward = toward.resolve_with_mode(mode, lookup)?;
+                let background = background.resolve_with_mode(mode, lookup)?;
                 Some(color.readable(toward, background, f64::from(*ratio) / 100.0))
             }
+            Self::ByMode { light, dark } => match mode {
+                crate::ThemeMode::Light => light.resolve_with_mode(mode, lookup),
+                crate::ThemeMode::Dark => dark.resolve_with_mode(mode, lookup),
+            },
+        }
+    }
+
+    /// Choose one color expression for light themes and another for dark themes.
+    #[must_use]
+    pub fn by_mode(light: Self, dark: Self) -> Self {
+        Self::ByMode {
+            light: Box::new(light),
+            dark: Box::new(dark),
         }
     }
 
@@ -474,6 +641,18 @@ impl ColorValue {
     /// Returns [`StyleValueError::InvalidColorFactor`] outside 0 to 1.
     pub fn mix(self, other: Self, weight: f64) -> Result<Self, StyleValueError> {
         Ok(Self::Mix {
+            base: Box::new(self),
+            other: Box::new(other),
+            weight: thousandths(weight)?,
+        })
+    }
+
+    /// Interpolate toward `other` in premultiplied sRGB without resolving tokens.
+    ///
+    /// # Errors
+    /// Returns [`StyleValueError::InvalidColorFactor`] outside 0 to 1.
+    pub fn mix_premultiplied(self, other: Self, weight: f64) -> Result<Self, StyleValueError> {
+        Ok(Self::PremultipliedMix {
             base: Box::new(self),
             other: Box::new(other),
             weight: thousandths(weight)?,
@@ -492,8 +671,19 @@ impl ColorValue {
         })
     }
 
+    /// Source-over composition without resolving theme-token leaves early.
+    #[must_use]
+    pub fn over(self, background: Self) -> Self {
+        Self::Over {
+            foreground: Box::new(self),
+            background: Box::new(background),
+        }
+    }
+
     /// Adjust toward `toward` until the contrast against `background`
     /// reaches `ratio` (1 to 21).
+    /// The calculation compares RGB, not uncomposited alpha; use [`Self::over`]
+    /// for translucent surfaces with a known backing.
     ///
     /// # Errors
     ///
@@ -857,13 +1047,36 @@ pub enum HitTestBehavior {
     BlockExceptScroll,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ShadowSpec {
     pub x: f64,
     pub y: f64,
     pub blur: f64,
     pub spread: f64,
-    pub color: ColorValue,
+    pub color: PaintColor,
+    /// Paint inside the box without consuming layout space.
+    #[serde(default)]
+    pub inset: bool,
+}
+
+impl<'de> Deserialize<'de> for ShadowSpec {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Repr {
+            x: f64,
+            y: f64,
+            blur: f64,
+            spread: f64,
+            color: PaintColor,
+            #[serde(default)]
+            inset: bool,
+        }
+        let value = Repr::deserialize(deserializer)?;
+        Self::new(value.x, value.y, value.blur, value.spread, value.color)
+            .map(|shadow| shadow.with_inset(value.inset))
+            .map_err(serde::de::Error::custom)
+    }
 }
 
 impl ShadowSpec {
@@ -871,13 +1084,14 @@ impl ShadowSpec {
     ///
     /// # Errors
     ///
-    /// Returns [`StyleValueError`] for non-finite offsets or negative radii.
+    /// Returns [`StyleValueError`] for non-finite/unrepresentable values or
+    /// negative blur. Spread is signed, as in CSS and both GPUI backends.
     pub fn new(
         x: f64,
         y: f64,
         blur: f64,
         spread: f64,
-        color: ColorValue,
+        color: impl Into<PaintColor>,
     ) -> Result<Self, StyleValueError> {
         if !x.is_finite()
             || !y.is_finite()
@@ -887,8 +1101,7 @@ impl ShadowSpec {
             || blur < 0.0
             || blur > f64::from(f32::MAX)
             || !spread.is_finite()
-            || spread < 0.0
-            || spread > f64::from(f32::MAX)
+            || spread.abs() > f64::from(f32::MAX)
         {
             return Err(StyleValueError::InvalidShadow);
         }
@@ -897,14 +1110,76 @@ impl ShadowSpec {
             y,
             blur,
             spread,
-            color,
+            color: color.into(),
+            inset: false,
         })
+    }
+
+    #[must_use]
+    pub const fn with_inset(mut self, inset: bool) -> Self {
+        self.inset = inset;
+        self
     }
 }
 
 impl CustomType for ShadowSpec {
     fn build(mut builder: TypeBuilder<Self>) {
         builder.with_name("ShadowSpec");
+    }
+}
+
+/// A focus-indicator outline, inside or outside the node's border box. It does not
+/// consume layout space, affect hit testing, or fill the gap to the node.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct FocusRingSpec {
+    pub width: Length,
+    pub offset: LayoutLength,
+    pub color: ColorValue,
+}
+
+impl FocusRingSpec {
+    /// Pixel/rem lengths and deferred theme tokens are accepted; percentages
+    /// do not define a focus-ring thickness or offset.
+    ///
+    /// # Errors
+    /// Returns [`StyleValueError::InvalidFocusRing`] for invalid/relative lengths.
+    pub fn new(
+        width: Length,
+        offset: impl Into<LayoutLength>,
+        color: ColorValue,
+    ) -> Result<Self, StyleValueError> {
+        let offset = offset.into();
+        let valid_offset = match offset {
+            LayoutLength::Definite(length) => {
+                length.validate().is_ok() && !matches!(length, Length::Relative(_))
+            }
+            LayoutLength::Signed(SignedLength::Pixels(value) | SignedLength::Rems(value)) => {
+                validate_signed(value).is_ok()
+            }
+            LayoutLength::Auto | LayoutLength::Signed(SignedLength::Relative(_)) => false,
+        };
+        if width.validate().is_err() || matches!(width, Length::Relative(_)) || !valid_offset {
+            return Err(StyleValueError::InvalidFocusRing);
+        }
+        Ok(Self {
+            width,
+            offset,
+            color,
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for FocusRingSpec {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Repr {
+            width: Length,
+            offset: LayoutLength,
+            color: ColorValue,
+        }
+        let value = Repr::deserialize(deserializer)?;
+        Self::new(value.width, value.offset, value.color).map_err(serde::de::Error::custom)
     }
 }
 
@@ -945,24 +1220,64 @@ impl CustomType for LinearGradientSpec {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum StyleValueError {
+    #[error("overflow priority must be in 0..=65535, got {0}")]
+    InvalidOverflowPriority(i64),
     #[error(
         "automatic grid widths require 1 <= minimum <= preferred <= maximum <= 1000000, all finite"
     )]
     InvalidAutoGrid,
     #[error("aspect ratio must be finite, positive and representable by GPUI, got {0}")]
     InvalidAspectRatio(f64),
-    #[error("shadow offsets must be finite and blur/spread must be finite and non-negative")]
+    #[error("shadow values must be finite and representable; blur must be non-negative")]
     InvalidShadow,
+    #[error(
+        "focus ring width must be a non-negative pixel/rem length or theme token; offset may also be signed pixels/rems, never auto or relative"
+    )]
+    InvalidFocusRing,
+    #[error("grid cell line indices must be in 1..=32767")]
+    InvalidGridCell,
+    #[error("a shadow stack may contain at most 32 layers")]
+    TooManyShadows,
     #[error("gradient angle must be finite")]
     InvalidGradientAngle,
     #[error("opacity must be finite and between zero and one, got {0}")]
     InvalidOpacity(f64),
+    #[error("blur must be a finite standard deviation in 0..=64 logical pixels, got {0}")]
+    InvalidBlurSigma(f64),
+    #[error("foreground grayscale must be finite and in 0..=1, got {0}")]
+    InvalidForegroundGrayscale(f64),
+    #[error(
+        "bottom fade stops must satisfy 0 <= start < end <= 1 and be distinct in native precision"
+    )]
+    InvalidBottomFade,
+    #[error("edge fade distances must be zero or within 1/256..=4096 logical pixels")]
+    InvalidEdgeFade,
+    #[error("glyph sweep needs a finite half width in 0.01..=0.5 and phase in 0..=1")]
+    InvalidGlyphSweep,
+    #[error("glyph ink sweep travel must be finite and in 1 + twice the half width ..= 3")]
+    InvalidGlyphInkTravel,
+    #[error("paint reveal needs a finite radius in 0..=512px and progress in 0..=1")]
+    InvalidPaintReveal,
+    #[error(
+        "invalid element transform: angles must be finite, skew in -89..=89, scale zero or magnitude 1e-6..=16, and origin fractions in -16..=16"
+    )]
+    InvalidElementTransform,
     #[error("translation must be finite, got {0}")]
     InvalidTranslation(f64),
     #[error("flex grow weight must be finite, positive, and representable by GPUI, got {0}")]
     InvalidFlexGrowWeight(f64),
+    #[error("flex shrink weight must be finite and within 0..=1000, got {0}")]
+    InvalidFlexShrinkWeight(f64),
+    #[error("underline width must be finite and within 0..=16px, got {0}")]
+    InvalidUnderlineWidth(f64),
+    #[error("underline offset must be finite and within -16..=32px, got {0}")]
+    InvalidUnderlineOffset(f64),
+    #[error("underline hover requires an explicit underline paint and a duration of 0–60000ms")]
+    InvalidUnderlineHover,
     #[error("font weight must be between 1 and 1000, got {0}")]
     InvalidFontWeight(i64),
+    #[error("letter spacing must be finite and representable by GPUI, got {0}")]
+    InvalidLetterSpacing(f64),
     #[error("font family must be a non-empty string no longer than 256 bytes")]
     InvalidFontFamily,
     #[error("font fallback list must contain 1-16 unique non-empty family names")]
@@ -1167,11 +1482,359 @@ impl CornerLengths {
     }
 }
 
+/// Optional intrinsic-row cells collapse in ascending priority; required cells never do.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverflowPriority {
+    Required,
+    Optional(u16),
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct LayoutConstraints {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_flex_shrink_weight",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub flex_shrink_weight: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_row: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overflow_priority: Option<OverflowPriority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_x: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap_y: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_max_content: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grid_intrinsic_rows: Option<bool>,
     pub auto_grid_columns: Option<crate::AutoGridColumns>,
     #[serde(default, deserialize_with = "deserialize_aspect_ratio")]
     pub aspect_ratio: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_grid_cell")]
+    pub grid_cell: Option<(u16, u16)>,
+}
+
+/// Physical direction of a pair of border-box alpha ramps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeFadeAxis {
+    Horizontal,
+    Vertical,
+}
+
+/// A paint-only alpha mask anchored to a node's border box. The slot also
+/// stores the original one-way bottom fade used by existing recipes.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BottomFade {
+    Off,
+    Linear {
+        start: f32,
+        end: f32,
+    },
+    Edges {
+        horizontal: bool,
+        leading: f32,
+        trailing: f32,
+    },
+    ScrollEdges {
+        horizontal: bool,
+        leading: f32,
+        trailing: f32,
+    },
+}
+
+impl BottomFade {
+    /// Make a mask that fades inward from either or both edges.
+    ///
+    /// # Errors
+    /// Returns `InvalidEdgeFade` for nonfinite or unrepresentable distances.
+    pub fn edges(axis: EdgeFadeAxis, leading: f64, trailing: f64) -> Result<Self, StyleValueError> {
+        let valid = |distance| distance == 0. || (1. / 256. ..=4096.).contains(&distance);
+        if !valid(leading) || !valid(trailing) {
+            return Err(StyleValueError::InvalidEdgeFade);
+        }
+        if leading == 0. && trailing == 0. {
+            return Ok(Self::Off);
+        }
+        Ok(Self::Edges {
+            horizontal: axis == EdgeFadeAxis::Horizontal,
+            leading: crate::renderer::f64_to_f32(leading),
+            trailing: crate::renderer::f64_to_f32(trailing),
+        })
+    }
+    /// Make a viewport mask whose ramps are present only while there is more
+    /// content in the matching physical scroll direction.
+    ///
+    /// # Errors
+    /// Returns `InvalidEdgeFade` for nonfinite or unrepresentable distances.
+    pub fn scroll_edges(
+        axis: EdgeFadeAxis,
+        leading: f64,
+        trailing: f64,
+    ) -> Result<Self, StyleValueError> {
+        Self::edges(axis, leading, trailing).map(|fade| match fade {
+            Self::Edges {
+                horizontal,
+                leading,
+                trailing,
+            } => Self::ScrollEdges {
+                horizontal,
+                leading,
+                trailing,
+            },
+            other => other,
+        })
+    }
+    /// Make a linear fade using two relative y stops.
+    ///
+    /// # Errors
+    /// Rejects invalid or indistinguishable stops.
+    pub fn linear(start: f64, end: f64) -> Result<Self, StyleValueError> {
+        let native_start = crate::renderer::f64_to_f32(start);
+        let native_end = crate::renderer::f64_to_f32(end);
+        if start.is_finite()
+            && end.is_finite()
+            && start >= 0.
+            && end <= 1.
+            && start < end
+            && native_start < native_end
+        {
+            Ok(Self::Linear {
+                start: native_start,
+                end: native_end,
+            })
+        } else {
+            Err(StyleValueError::InvalidBottomFade)
+        }
+    }
+
+    pub(crate) const fn into_native(self) -> crate::presentation_backend::BottomFade {
+        match self {
+            Self::Off => crate::presentation_backend::BottomFade::Off,
+            Self::Linear { start, end } => {
+                crate::presentation_backend::BottomFade::Linear { start, end }
+            }
+            Self::Edges {
+                horizontal,
+                leading,
+                trailing,
+            } => crate::presentation_backend::BottomFade::Edges {
+                horizontal,
+                leading,
+                trailing,
+            },
+            Self::ScrollEdges {
+                horizontal,
+                leading,
+                trailing,
+            } => crate::presentation_backend::BottomFade::ScrollEdges {
+                horizontal,
+                leading,
+                trailing,
+            },
+        }
+    }
+}
+
+fn deserialize_bottom_fade<'de, D: serde::Deserializer<'de>>(
+    input: D,
+) -> Result<Option<BottomFade>, D::Error> {
+    match Option::<BottomFade>::deserialize(input)? {
+        Some(BottomFade::Linear { start, end }) => {
+            BottomFade::linear(f64::from(start), f64::from(end))
+                .map(Some)
+                .map_err(serde::de::Error::custom)
+        }
+        Some(
+            fade @ (BottomFade::Edges {
+                horizontal,
+                leading,
+                trailing,
+            }
+            | BottomFade::ScrollEdges {
+                horizontal,
+                leading,
+                trailing,
+            }),
+        ) => (if matches!(fade, BottomFade::ScrollEdges { .. }) {
+            BottomFade::scroll_edges
+        } else {
+            BottomFade::edges
+        })(
+            if horizontal {
+                EdgeFadeAxis::Horizontal
+            } else {
+                EdgeFadeAxis::Vertical
+            },
+            f64::from(leading),
+            f64::from(trailing),
+        )
+        .map(Some)
+        .map_err(serde::de::Error::custom),
+        value => Ok(value),
+    }
+}
+
+/// A highlight over the coverage of an already-shaped text element.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GlyphSweep {
+    /// Clear a lower style layer.
+    Off,
+    Overlay {
+        ink: ColorValue,
+        half_width: f64,
+        phase: f64,
+    },
+    Replace {
+        ink: ColorValue,
+        half_width: f64,
+        travel: f64,
+        phase: f64,
+    },
+}
+
+impl GlyphSweep {
+    /// Make an overlay sweep. Phase runs from fully left of the text to
+    /// fully right; half width is a fraction of measured text width.
+    ///
+    /// # Errors
+    /// Returns `InvalidGlyphSweep` for invalid width or phase.
+    pub fn overlay(ink: ColorValue, half_width: f64, phase: f64) -> Result<Self, StyleValueError> {
+        if !(0.01..=0.5).contains(&half_width) || !(0.0..=1.0).contains(&phase) {
+            return Err(StyleValueError::InvalidGlyphSweep);
+        }
+        Ok(Self::Overlay {
+            ink,
+            half_width,
+            phase,
+        })
+    }
+
+    /// Interpolate the existing glyph ink toward `ink`, applying coverage once.
+    ///
+    /// # Errors
+    /// Returns an error for invalid width, phase or travel. Travel must keep
+    /// both endpoints fully outside the text.
+    pub fn replace(
+        ink: ColorValue,
+        half_width: f64,
+        travel: f64,
+        phase: f64,
+    ) -> Result<Self, StyleValueError> {
+        if !(0.01..=0.5).contains(&half_width) || !(0.0..=1.0).contains(&phase) {
+            return Err(StyleValueError::InvalidGlyphSweep);
+        }
+        if !(1. + 2. * half_width..=3.).contains(&travel) {
+            return Err(StyleValueError::InvalidGlyphInkTravel);
+        }
+        Ok(Self::Replace {
+            ink,
+            half_width,
+            travel,
+            phase,
+        })
+    }
+
+    pub(crate) fn phase_mut(&mut self) -> Option<&mut f64> {
+        match self {
+            Self::Overlay { phase, .. } | Self::Replace { phase, .. } => Some(phase),
+            Self::Off => None,
+        }
+    }
+
+    pub(crate) fn paint_parameters(&self) -> Option<(&ColorValue, f64, f64, Option<f64>)> {
+        match self {
+            Self::Overlay {
+                ink,
+                half_width,
+                phase,
+            } => Some((ink, *half_width, *phase, None)),
+            Self::Replace {
+                ink,
+                half_width,
+                phase,
+                travel,
+            } => Some((ink, *half_width, *phase, Some(*travel))),
+            Self::Off => None,
+        }
+    }
+}
+
+fn deserialize_glyph_sweep<'de, D: serde::Deserializer<'de>>(
+    value: D,
+) -> Result<Option<GlyphSweep>, D::Error> {
+    match Option::<GlyphSweep>::deserialize(value)? {
+        Some(GlyphSweep::Overlay {
+            ink,
+            half_width,
+            phase,
+        }) => GlyphSweep::overlay(ink, half_width, phase)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        Some(GlyphSweep::Replace {
+            ink,
+            half_width,
+            travel,
+            phase,
+        }) => GlyphSweep::replace(ink, half_width, travel, phase)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        other => Ok(other),
+    }
+}
+
+/// Rounded left-to-right reveal of composed foreground. Paint only.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PaintRevealX {
+    /// Remove a lower-layer reveal.
+    Off,
+    FromLeft {
+        radius: f32,
+        progress: f32,
+    },
+}
+
+impl PaintRevealX {
+    /// Build an authored reveal.
+    ///
+    /// # Errors
+    /// Rejects invalid radius/progress.
+    pub fn from_left(radius: f64, progress: f64) -> Result<Self, StyleValueError> {
+        if !(0. ..=512.).contains(&radius) || !(0. ..=1.).contains(&progress) {
+            return Err(StyleValueError::InvalidPaintReveal);
+        }
+        Ok(Self::FromLeft {
+            radius: crate::renderer::f64_to_f32(radius),
+            progress: crate::renderer::f64_to_f32(progress),
+        })
+    }
+
+    pub(crate) const fn into_native(self) -> crate::presentation_backend::PaintRevealX {
+        match self {
+            Self::Off => crate::presentation_backend::PaintRevealX::Off,
+            Self::FromLeft { radius, progress } => {
+                crate::presentation_backend::PaintRevealX::FromLeft { radius, progress }
+            }
+        }
+    }
+}
+
+fn deserialize_paint_reveal<'de, D: serde::Deserializer<'de>>(
+    input: D,
+) -> Result<Option<PaintRevealX>, D::Error> {
+    match Option::<PaintRevealX>::deserialize(input)? {
+        Some(PaintRevealX::FromLeft { radius, progress }) => {
+            PaintRevealX::from_left(f64::from(radius), f64::from(progress))
+                .map(Some)
+                .map_err(serde::de::Error::custom)
+        }
+        value => Ok(value),
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -1189,13 +1852,22 @@ pub struct StyleProperties {
     pub min_height: Option<LayoutLength>,
     pub max_height: Option<LayoutLength>,
     pub gap: Option<Length>,
+    /// Explicitly remove a lower-layer text color, restoring parent inheritance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inherit_text_color: Option<bool>,
     #[serde(default)]
     pub padding: EdgeLengths,
     #[serde(default)]
     pub margin: LayoutEdgeLengths,
-    pub background: Option<ColorValue>,
+    pub background: Option<Box<BackgroundFill>>,
     pub text_color: Option<ColorValue>,
-    pub border_color: Option<ColorValue>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_glyph_sweep"
+    )]
+    pub glyph_sweep: Option<GlyphSweep>,
+    pub border_color: Option<PaintColor>,
     pub border_style: Option<BorderLineStyle>,
     #[serde(default)]
     pub border_widths: EdgeLengths,
@@ -1203,12 +1875,14 @@ pub struct StyleProperties {
     pub radii: CornerLengths,
     pub typography: Option<String>,
     pub font_size: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter_spacing: Option<LetterSpacing>,
     pub flex_grow: Option<bool>,
     pub flex_grow_weight: Option<f64>,
     pub flex_shrink: Option<bool>,
     pub flex_basis: Option<LayoutLength>,
     pub grid_columns: Option<u16>,
-    /// Optional intrinsic constraints stay off the common style's inline
+    /// Optional layout constraints and grid placement stay off the common style's inline
     /// footprint, including its eight pseudo-state copies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_constraints: Option<Box<LayoutConstraints>>,
@@ -1224,6 +1898,44 @@ pub struct StyleProperties {
     pub bottom: Option<LayoutLength>,
     pub left: Option<LayoutLength>,
     pub opacity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolated_opacity: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_bottom_fade"
+    )]
+    pub bottom_fade: Option<BottomFade>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_paint_reveal"
+    )]
+    pub paint_reveal_x: Option<PaintRevealX>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_blur_sigma"
+    )]
+    pub foreground_blur: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_foreground_grayscale"
+    )]
+    pub foreground_grayscale: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_blur_sigma"
+    )]
+    pub backdrop_blur: Option<f64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_element_transform"
+    )]
+    pub transform: Option<crate::ElementTransform>,
     pub inset_start: Option<LayoutLength>,
     pub inset_end: Option<LayoutLength>,
     pub visible: Option<bool>,
@@ -1240,12 +1952,73 @@ pub struct StyleProperties {
     pub text_ellipsis: Option<bool>,
     pub line_clamp: Option<usize>,
     pub shadows: Option<Vec<ShadowSpec>>,
-    pub gradient: Option<LinearGradientSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_ring: Option<Box<FocusRingSpec>>,
     pub translate_x: Option<f64>,
     pub translate_y: Option<f64>,
 }
 
 impl StyleProperties {
+    pub(crate) fn overflow_row(&self) -> bool {
+        self.layout_constraints
+            .as_ref()
+            .is_some_and(|layout| layout.overflow_row == Some(true))
+            && self.display == Some(DisplayMode::Flex)
+            && self.direction == Some(FlexDirection::Row)
+            && !matches!(
+                self.flex_wrap,
+                Some(FlexWrapMode::Wrap | FlexWrapMode::WrapReverse)
+            )
+            && !matches!(self.align, Some(Align::Baseline | Align::Stretch))
+            && self.grid_columns.is_none()
+            && self.auto_grid_columns().is_none()
+    }
+
+    pub(crate) fn overflow_priority(&self) -> Option<u16> {
+        match self
+            .layout_constraints
+            .as_ref()
+            .and_then(|layout| layout.overflow_priority)
+        {
+            Some(OverflowPriority::Optional(priority)) => Some(priority),
+            Some(OverflowPriority::Required) | None => None,
+        }
+    }
+    /// Horizontal inter-item spacing, falling back to the two-axis shorthand.
+    #[must_use]
+    pub fn gap_x(&self) -> Option<Length> {
+        self.layout_constraints
+            .as_ref()
+            .and_then(|layout| layout.gap_x)
+            .or(self.gap)
+    }
+
+    /// Vertical inter-item spacing, falling back to the two-axis shorthand.
+    #[must_use]
+    pub fn gap_y(&self) -> Option<Length> {
+        self.layout_constraints
+            .as_ref()
+            .and_then(|layout| layout.gap_y)
+            .or(self.gap)
+    }
+
+    pub(crate) fn grid_columns_max_content(&self) -> bool {
+        self.layout_constraints
+            .as_ref()
+            .is_some_and(|layout| layout.grid_max_content == Some(true))
+    }
+
+    pub(crate) fn grid_rows_are_intrinsic(&self) -> bool {
+        self.layout_constraints
+            .as_ref()
+            .is_some_and(|layout| layout.grid_intrinsic_rows == Some(true))
+    }
+
+    fn clear_intrinsic_grid_rows(&mut self) {
+        if let Some(layout) = &mut self.layout_constraints {
+            layout.grid_intrinsic_rows = None;
+        }
+    }
     pub fn auto_grid_columns(&self) -> Option<crate::AutoGridColumns> {
         self.layout_constraints
             .as_deref()
@@ -1258,13 +2031,103 @@ impl StyleProperties {
             .and_then(|layout| layout.aspect_ratio)
     }
 
+    #[must_use]
+    pub fn grid_cell(&self) -> Option<(u16, u16)> {
+        let layout = self.layout_constraints.as_ref()?;
+        layout.grid_cell
+    }
+
     fn constraints_mut(&mut self) -> &mut LayoutConstraints {
         self.layout_constraints.get_or_insert_with(Box::default)
+    }
+
+    #[must_use]
+    pub fn flex_shrink_weight(&self) -> Option<f64> {
+        self.layout_constraints
+            .as_deref()
+            .and_then(|layout| layout.flex_shrink_weight)
+    }
+
+    pub(crate) fn effective_flex_shrink(&self) -> Option<f64> {
+        self.flex_shrink_weight().or_else(|| {
+            self.flex_shrink
+                .map(|enabled| if enabled { 1.0 } else { 0.0 })
+        })
+    }
+
+    pub(crate) fn set_flex_shrink(&mut self, shrink: Option<bool>) {
+        self.flex_shrink = shrink;
+        if let Some(layout) = &mut self.layout_constraints {
+            layout.flex_shrink_weight = None;
+            if **layout == LayoutConstraints::default() {
+                self.layout_constraints = None;
+            }
+        }
+    }
+
+    fn merge_flex(&mut self, overlay: &Self) {
+        if let Some(weight) = overlay.flex_grow_weight {
+            self.flex_grow = None;
+            self.flex_grow_weight = Some(weight);
+        } else if let Some(grow) = overlay.flex_grow {
+            self.flex_grow = Some(grow);
+            self.flex_grow_weight = None;
+        }
+        if let Some(weight) = overlay.flex_shrink_weight() {
+            self.flex_shrink = None;
+            self.constraints_mut().flex_shrink_weight = Some(weight);
+        } else if overlay.flex_shrink.is_some() {
+            self.set_flex_shrink(overlay.flex_shrink);
+        }
+        merge_option(&mut self.flex_basis, overlay.flex_basis);
+    }
+
+    fn clear_axis_gaps(&mut self) {
+        if let Some(layout) = &mut self.layout_constraints {
+            layout.gap_x = None;
+            layout.gap_y = None;
+            if **layout == LayoutConstraints::default() {
+                self.layout_constraints = None;
+            }
+        }
     }
 
     fn clear_auto_grid_columns(&mut self) {
         if let Some(layout) = &mut self.layout_constraints {
             layout.auto_grid_columns = None;
+        }
+    }
+
+    fn merge_gaps(&mut self, overlay: &Self) {
+        if let Some(gap) = overlay.gap {
+            self.gap = Some(gap);
+            self.clear_axis_gaps();
+        }
+        if let Some(layout) = &overlay.layout_constraints {
+            if let Some(gap) = layout.gap_x {
+                self.constraints_mut().gap_x = Some(gap);
+            }
+            if let Some(gap) = layout.gap_y {
+                self.constraints_mut().gap_y = Some(gap);
+            }
+        }
+    }
+
+    fn merge_overflow(&mut self, overlay: &Self) {
+        if let Some(layout) = &overlay.layout_constraints {
+            if let Some(enabled) = layout.overflow_row {
+                self.constraints_mut().overflow_row = Some(enabled);
+                if enabled {
+                    self.grid_columns = None;
+                    self.grid_rows = None;
+                    self.clear_intrinsic_grid_rows();
+                    self.clear_auto_grid_columns();
+                    self.constraints_mut().grid_max_content = None;
+                }
+            }
+            if let Some(priority) = layout.overflow_priority {
+                self.constraints_mut().overflow_priority = Some(priority);
+            }
         }
     }
 
@@ -1281,46 +2144,56 @@ impl StyleProperties {
         merge_option(&mut self.max_width, overlay.max_width);
         merge_option(&mut self.min_height, overlay.min_height);
         merge_option(&mut self.max_height, overlay.max_height);
-        merge_option(&mut self.gap, overlay.gap);
+        self.merge_gaps(overlay);
         self.padding.merge(&overlay.padding);
         self.margin.merge(&overlay.margin);
         // A background and a gradient replace each other, as their setters do.
-        if let Some(gradient) = &overlay.gradient {
-            self.gradient = Some(gradient.clone());
-            self.background = None;
-        } else if let Some(background) = &overlay.background {
-            self.background = Some(background.clone());
-            self.gradient = None;
+        merge_option(&mut self.background, overlay.background.clone());
+        if overlay.inherit_text_color == Some(true) {
+            self.text_color = None;
+            self.inherit_text_color = Some(true);
+        } else if let Some(color) = &overlay.text_color {
+            self.text_color = Some(color.clone());
+            self.inherit_text_color = None;
         }
-        merge_option(&mut self.text_color, overlay.text_color.clone());
         merge_option(&mut self.border_color, overlay.border_color.clone());
         merge_option(&mut self.border_style, overlay.border_style);
         self.border_widths.merge(&overlay.border_widths);
         self.radii.merge(&overlay.radii);
         merge_option(&mut self.typography, overlay.typography.clone());
         merge_option(&mut self.font_size, overlay.font_size);
-        if let Some(weight) = overlay.flex_grow_weight {
-            self.flex_grow = None;
-            self.flex_grow_weight = Some(weight);
-        } else if let Some(grow) = overlay.flex_grow {
-            self.flex_grow = Some(grow);
-            self.flex_grow_weight = None;
-        }
-        merge_option(&mut self.flex_shrink, overlay.flex_shrink);
-        merge_option(&mut self.flex_basis, overlay.flex_basis);
+        merge_option(&mut self.letter_spacing, overlay.letter_spacing);
+        self.merge_flex(overlay);
+        self.merge_overflow(overlay);
         if let Some(columns) = overlay.auto_grid_columns() {
             self.constraints_mut().auto_grid_columns = Some(columns);
             self.grid_columns = None;
+            self.constraints_mut().grid_max_content = None;
         } else if let Some(columns) = overlay.grid_columns {
             self.grid_columns = Some(columns);
             self.clear_auto_grid_columns();
+            if overlay.grid_columns_max_content() {
+                self.constraints_mut().grid_max_content = Some(true);
+            } else if let Some(layout) = &mut self.layout_constraints {
+                layout.grid_max_content = None;
+            }
         } else if overlay.display == Some(DisplayMode::Grid) {
             self.clear_auto_grid_columns();
         }
         if let Some(ratio) = overlay.aspect_ratio() {
             self.constraints_mut().aspect_ratio = Some(ratio);
         }
-        merge_option(&mut self.grid_rows, overlay.grid_rows);
+        if let Some((column, row)) = overlay.grid_cell() {
+            self.constraints_mut().grid_cell = Some((column, row));
+        }
+        if let Some(rows) = overlay.grid_rows {
+            self.grid_rows = Some(rows);
+            if overlay.grid_rows_are_intrinsic() {
+                self.constraints_mut().grid_intrinsic_rows = Some(true);
+            } else {
+                self.clear_intrinsic_grid_rows();
+            }
+        }
         merge_option(&mut self.column_span, overlay.column_span);
         merge_option(&mut self.row_span, overlay.row_span);
         merge_option(&mut self.clip, overlay.clip);
@@ -1334,6 +2207,14 @@ impl StyleProperties {
         merge_option(&mut self.inset_start, overlay.inset_start);
         merge_option(&mut self.inset_end, overlay.inset_end);
         merge_option(&mut self.opacity, overlay.opacity);
+        merge_option(&mut self.isolated_opacity, overlay.isolated_opacity);
+        merge_option(&mut self.bottom_fade, overlay.bottom_fade);
+        merge_option(&mut self.paint_reveal_x, overlay.paint_reveal_x);
+        merge_option(&mut self.glyph_sweep, overlay.glyph_sweep.clone());
+        merge_option(&mut self.foreground_blur, overlay.foreground_blur);
+        merge_option(&mut self.foreground_grayscale, overlay.foreground_grayscale);
+        merge_option(&mut self.backdrop_blur, overlay.backdrop_blur);
+        merge_option(&mut self.transform, overlay.transform);
         merge_option(&mut self.visible, overlay.visible);
         merge_option(&mut self.cursor, overlay.cursor);
         merge_option(&mut self.hit_test, overlay.hit_test);
@@ -1348,6 +2229,7 @@ impl StyleProperties {
         merge_option(&mut self.text_ellipsis, overlay.text_ellipsis);
         merge_option(&mut self.line_clamp, overlay.line_clamp);
         merge_option(&mut self.shadows, overlay.shadows.clone());
+        merge_option(&mut self.focus_ring, overlay.focus_ring.clone());
         merge_option(&mut self.translate_x, overlay.translate_x);
         merge_option(&mut self.translate_y, overlay.translate_y);
     }
@@ -1444,6 +2326,9 @@ impl Style {
         {
             resolved.merge(disabled);
         }
+        if resolved.inherit_text_color == Some(true) {
+            resolved.text_color = None;
+        }
         resolved
     }
 
@@ -1486,6 +2371,21 @@ impl Style {
     #[must_use]
     pub fn gap(mut self, value: Length) -> Self {
         self.base.gap = Some(value);
+        self.base.clear_axis_gaps();
+        self
+    }
+
+    /// Set only horizontal (column) spacing, regardless of flex direction or RTL.
+    #[must_use]
+    pub fn gap_x(mut self, value: Length) -> Self {
+        self.base.constraints_mut().gap_x = Some(value);
+        self
+    }
+
+    /// Set only vertical (row) spacing, including between wrapped flex lines.
+    #[must_use]
+    pub fn gap_y(mut self, value: Length) -> Self {
+        self.base.constraints_mut().gap_y = Some(value);
         self
     }
 
@@ -1602,15 +2502,23 @@ impl Style {
     }
 
     #[must_use]
-    pub fn background(mut self, value: ColorValue) -> Self {
-        self.base.background = Some(value);
-        self.base.gradient = None;
+    pub fn background(mut self, value: impl Into<PaintColor>) -> Self {
+        self.base.background = Some(Box::new(BackgroundFill::Solid(value.into())));
         self
     }
 
     #[must_use]
     pub fn text_color(mut self, value: ColorValue) -> Self {
         self.base.text_color = Some(value);
+        self.base.inherit_text_color = None;
+        self
+    }
+
+    /// Remove a lower-layer color so this node inherits its parent's text color.
+    #[must_use]
+    pub fn inherit_text_color(mut self) -> Self {
+        self.base.text_color = None;
+        self.base.inherit_text_color = Some(true);
         self
     }
 
@@ -1702,8 +2610,8 @@ impl Style {
     }
 
     #[must_use]
-    pub fn border_color(mut self, value: ColorValue) -> Self {
-        self.base.border_color = Some(value);
+    pub fn border_color(mut self, value: impl Into<PaintColor>) -> Self {
+        self.base.border_color = Some(value.into());
         self
     }
 
@@ -1748,6 +2656,46 @@ impl Style {
     pub fn flex_row(mut self) -> Self {
         self.base.display = Some(DisplayMode::Flex);
         self.base.direction = Some(FlexDirection::Row);
+        self
+    }
+
+    /// An intrinsic one-line row: optional cells are omitted from native
+    /// presentation when they do not fit. Keeps the full intrinsic line height.
+    /// Grid, wrapped, baseline and stretching layouts take precedence.
+    #[must_use]
+    pub fn overflow_row(mut self, enabled: bool) -> Self {
+        if enabled {
+            self = self
+                .flex_row()
+                .flex_wrap(FlexWrapMode::NoWrap)
+                .items_center();
+            self.base.grid_columns = None;
+            self.base.grid_rows = None;
+            self.base.clear_intrinsic_grid_rows();
+            self.base.min_width = Some(Length::Pixels(0.0).into());
+            self.base.clear_auto_grid_columns();
+            self.base.constraints_mut().grid_max_content = None;
+        }
+        self.base.constraints_mut().overflow_row = Some(enabled);
+        self
+    }
+
+    /// Mark a direct, layout-bearing child of an overflow row as optional.
+    /// Lower priorities collapse first; equal priorities collapse together.
+    ///
+    /// # Errors
+    /// Returns [`StyleValueError::InvalidOverflowPriority`] outside 0..=65535.
+    pub fn overflow_priority(mut self, priority: i64) -> Result<Self, StyleValueError> {
+        let priority = u16::try_from(priority)
+            .map_err(|_| StyleValueError::InvalidOverflowPriority(priority))?;
+        self.base.constraints_mut().overflow_priority = Some(OverflowPriority::Optional(priority));
+        Ok(self)
+    }
+
+    /// Clear a lower-layer optional priority; the cell must remain visible.
+    #[must_use]
+    pub fn overflow_required(mut self) -> Self {
+        self.base.constraints_mut().overflow_priority = Some(OverflowPriority::Required);
         self
     }
 
@@ -1860,8 +2808,20 @@ impl Style {
 
     #[must_use]
     pub fn flex_shrink(mut self, shrink: bool) -> Self {
-        self.base.flex_shrink = Some(shrink);
+        self.base.set_flex_shrink(Some(shrink));
         self
+    }
+
+    /// Set the relative rate at which this item gives up its flex basis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for non-finite or out-of-range weights.
+    pub fn flex_shrink_weight(mut self, weight: f64) -> Result<Self, StyleValueError> {
+        validate_flex_shrink_weight(weight)?;
+        self.base.flex_shrink = None;
+        self.base.constraints_mut().flex_shrink_weight = Some(weight);
+        Ok(self)
     }
 
     #[must_use]
@@ -1884,8 +2844,21 @@ impl Style {
     pub fn grid_columns(mut self, columns: i64) -> Result<Self, StyleValueError> {
         self.base.grid_columns = Some(grid_value(columns)?);
         self.base.clear_auto_grid_columns();
+        if let Some(layout) = &mut self.base.layout_constraints {
+            layout.grid_max_content = None;
+        }
         self.base.display = Some(DisplayMode::Grid);
         Ok(self)
+    }
+
+    /// Use independently content-sized columns, not equal fractional tracks.
+    ///
+    /// # Errors
+    /// Returns [`StyleValueError`] outside 1..=1024.
+    pub fn grid_columns_max_content(self, columns: i64) -> Result<Self, StyleValueError> {
+        let mut style = self.grid_columns(columns)?;
+        style.base.constraints_mut().grid_max_content = Some(true);
+        Ok(style)
     }
 
     /// A responsive equal-track grid over ordinary Box children. Widths are
@@ -1926,6 +2899,7 @@ impl Style {
     fn with_auto_grid(mut self, columns: crate::AutoGridColumns) -> Self {
         self.base.constraints_mut().auto_grid_columns = Some(columns);
         self.base.grid_columns = None;
+        self.base.constraints_mut().grid_max_content = None;
         self.base.display = Some(DisplayMode::Block);
         self
     }
@@ -1948,8 +2922,38 @@ impl Style {
     /// Returns [`StyleValueError`] outside 1..=1024.
     pub fn grid_rows(mut self, rows: i64) -> Result<Self, StyleValueError> {
         self.base.clear_auto_grid_columns();
+        self.base.clear_intrinsic_grid_rows();
         self.base.grid_rows = Some(grid_value(rows)?);
         self.base.display = Some(DisplayMode::Grid);
+        Ok(self)
+    }
+
+    /// Set independently content-sized rows, between each row's min-content
+    /// floor and max-content ceiling. A later `grid_rows` restores equal
+    /// fractional tracks.
+    ///
+    /// # Errors
+    ///
+    /// Returns a style value error outside 1..=1024.
+    pub fn grid_rows_intrinsic(self, rows: i64) -> Result<Self, StyleValueError> {
+        let mut style = self.grid_rows(rows)?;
+        style.base.constraints_mut().grid_intrinsic_rows = Some(true);
+        Ok(style)
+    }
+
+    /// Place an item at a one-based grid cell. Items may deliberately share a
+    /// cell; intrinsic track size then includes all of them, even at opacity 0.
+    ///
+    /// # Errors
+    /// Returns [`StyleValueError::InvalidGridCell`] outside 1..=32767.
+    pub fn grid_cell(mut self, column: i64, row: i64) -> Result<Self, StyleValueError> {
+        let line = |value| {
+            u16::try_from(value)
+                .ok()
+                .filter(|value| *value > 0 && *value <= 32767)
+                .ok_or(StyleValueError::InvalidGridCell)
+        };
+        self.base.constraints_mut().grid_cell = Some((line(column)?, line(row)?));
         Ok(self)
     }
 
@@ -2065,6 +3069,164 @@ impl Style {
             return Err(StyleValueError::InvalidOpacity(value));
         }
         self.base.opacity = Some(value);
+        Ok(self)
+    }
+
+    /// Choose isolated subtree compositing for this style's opacity,
+    /// retaining the same layout and native input ownership.
+    #[must_use]
+    pub fn isolated_opacity(mut self, value: bool) -> Self {
+        self.base.isolated_opacity = Some(value);
+        self
+    }
+
+    /// Fade the composed foreground between two border-box y fractions.
+    /// Layout, hits, scrolling and accessibility are unaffected.
+    ///
+    /// # Errors
+    /// Returns `InvalidBottomFade` for invalid or indistinguishable stops.
+    pub fn bottom_fade(mut self, start: f64, end: f64) -> Result<Self, StyleValueError> {
+        self.base.bottom_fade = Some(BottomFade::linear(start, end)?);
+        Ok(self)
+    }
+
+    /// Fade the composed foreground in from the first edge and out to the
+    /// second edge, using physical X or Y and logical-pixel distances.
+    /// A short box proportionally shrinks the ramps. Layout and hit geometry
+    /// are unaffected. This replaces any lower-priority alpha fade.
+    ///
+    /// # Errors
+    /// Returns `InvalidEdgeFade` for invalid distances.
+    pub fn edge_fade(
+        mut self,
+        axis: EdgeFadeAxis,
+        leading: f64,
+        trailing: f64,
+    ) -> Result<Self, StyleValueError> {
+        self.base.bottom_fade = Some(BottomFade::edges(axis, leading, trailing)?);
+        Ok(self)
+    }
+
+    /// Conditionally fade scroll viewport edges when more content is hidden.
+    /// Requires scrolling on the selected physical axis. Does not change
+    /// layout, hit tests, or keyboard navigation.
+    ///
+    /// # Errors
+    /// Returns `InvalidEdgeFade` for invalid distances.
+    pub fn scroll_edge_fade(
+        mut self,
+        axis: EdgeFadeAxis,
+        leading: f64,
+        trailing: f64,
+    ) -> Result<Self, StyleValueError> {
+        self.base.bottom_fade = Some(BottomFade::scroll_edges(axis, leading, trailing)?);
+        Ok(self)
+    }
+
+    /// Overlay a triangular color band on the glyphs of a plain text node.
+    ///
+    /// # Errors
+    /// Returns `InvalidGlyphSweep` for invalid width or phase.
+    pub fn glyph_sweep(
+        mut self,
+        ink: ColorValue,
+        half_width: f64,
+        phase: f64,
+    ) -> Result<Self, StyleValueError> {
+        self.base.glyph_sweep = Some(GlyphSweep::overlay(ink, half_width, phase)?);
+        Ok(self)
+    }
+
+    /// Replace monochrome glyph ink with a traveling premultiplied color band.
+    ///
+    /// # Errors
+    /// Returns an error if width, phase or travel are not valid.
+    pub fn glyph_ink_sweep(
+        mut self,
+        ink: ColorValue,
+        half_width: f64,
+        travel: f64,
+        phase: f64,
+    ) -> Result<Self, StyleValueError> {
+        self.base.glyph_sweep = Some(GlyphSweep::replace(ink, half_width, travel, phase)?);
+        Ok(self)
+    }
+
+    /// Explicitly remove any glyph sweep from a less-specific style.
+    #[must_use]
+    pub fn without_glyph_sweep(mut self) -> Self {
+        self.base.glyph_sweep = Some(GlyphSweep::Off);
+        self
+    }
+
+    /// Clear a fade in a lower-priority base or pseudo-state style.
+    #[must_use]
+    pub fn without_bottom_fade(mut self) -> Self {
+        self.base.bottom_fade = Some(BottomFade::Off);
+        self
+    }
+
+    /// Reveal a rounded portion, starting on the physical left. Progress
+    /// one uses ordinary paint; input and layout never use this mask.
+    ///
+    /// # Errors
+    /// Returns `InvalidPaintReveal` for invalid values.
+    pub fn paint_reveal_x(mut self, radius: f64, progress: f64) -> Result<Self, StyleValueError> {
+        self.base.paint_reveal_x = Some(PaintRevealX::from_left(radius, progress)?);
+        Ok(self)
+    }
+
+    /// Remove an authored reveal while preserving other paint attributes.
+    #[must_use]
+    pub fn without_paint_reveal_x(mut self) -> Self {
+        self.base.paint_reveal_x = Some(PaintRevealX::Off);
+        self
+    }
+
+    /// Blur this node's composed foreground, including its children, before
+    /// placement. Zero removes an inherited filter; hit bounds do not expand.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidBlurSigma` outside 0–64 finite logical pixels.
+    pub fn foreground_blur(mut self, sigma: f64) -> Result<Self, StyleValueError> {
+        self.base.foreground_blur = Some(validate_blur_sigma(sigma)?);
+        Ok(self)
+    }
+
+    /// Desaturate the composed foreground while preserving its alpha. Zero
+    /// clears a lower-priority filter. Layout and input geometry are unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless the amount is finite and within 0..=1.
+    pub fn foreground_grayscale(mut self, amount: f64) -> Result<Self, StyleValueError> {
+        self.base.foreground_grayscale = Some(validate_foreground_grayscale(amount)?);
+        Ok(self)
+    }
+
+    /// Blur the current composition surface behind this element, then draw
+    /// its ordinary fill and contents. Zero clears a lower-priority value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidBlurSigma` outside 0–64 finite logical pixels.
+    pub fn backdrop_blur(mut self, sigma: f64) -> Result<Self, StyleValueError> {
+        self.base.backdrop_blur = Some(validate_blur_sigma(sigma)?);
+        Ok(self)
+    }
+
+    /// Set a visual-only affine transform for this element's subtree.
+    /// Identity explicitly clears a transform in a lower-priority style.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidElementTransform` for out-of-range fields.
+    pub fn transform(
+        mut self,
+        transform: crate::ElementTransform,
+    ) -> Result<Self, StyleValueError> {
+        self.base.transform = Some(transform.validated()?);
         Ok(self)
     }
 
@@ -2194,6 +3356,20 @@ impl Style {
         self
     }
 
+    /// # Errors
+    /// Rejects non-finite or unrepresentable spacing.
+    pub fn letter_spacing_px(mut self, value: f64) -> Result<Self, StyleValueError> {
+        self.base.letter_spacing = Some(LetterSpacing::pixels(value)?);
+        Ok(self)
+    }
+
+    /// # Errors
+    /// Rejects non-finite or unrepresentable spacing.
+    pub fn letter_spacing_em(mut self, value: f64) -> Result<Self, StyleValueError> {
+        self.base.letter_spacing = Some(LetterSpacing::em(value)?);
+        Ok(self)
+    }
+
     #[must_use]
     pub fn text_align(mut self, align: TextAlignMode) -> Self {
         self.base.text_align = Some(align);
@@ -2232,10 +3408,49 @@ impl Style {
         self
     }
 
+    /// Draw a ring while this node owns visible focus, following
+    /// the view's focus-indicator policy. In a `group_focus`/`focus_within`
+    /// refinement, a visual part instead follows that explicit focus scope.
+    /// Zero width clears an inherited ring.
+    /// Positive offsets leave a genuinely transparent gap; signed negative
+    /// offsets inset the same stroke without changing layout.
+    ///
+    /// # Errors
+    /// Returns [`StyleValueError::InvalidFocusRing`] for invalid/relative lengths.
+    pub fn focus_ring(
+        mut self,
+        width: Length,
+        offset: impl Into<LayoutLength>,
+        color: ColorValue,
+    ) -> Result<Self, StyleValueError> {
+        self.base.focus_ring = Some(Box::new(FocusRingSpec::new(width, offset, color)?));
+        Ok(self)
+    }
+
+    /// Replace the ordered shadow stack. The first layer is visually on top,
+    /// matching CSS; an empty stack explicitly clears inherited shadows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::TooManyShadows`] for more than 32 layers.
+    pub fn shadows(mut self, shadows: Vec<ShadowSpec>) -> Result<Self, StyleValueError> {
+        if shadows.len() > 32 {
+            return Err(StyleValueError::TooManyShadows);
+        }
+        self.base.shadows = Some(shadows);
+        Ok(self)
+    }
+
     #[must_use]
     pub fn linear_gradient(mut self, gradient: LinearGradientSpec) -> Self {
-        self.base.gradient = Some(gradient);
-        self.base.background = None;
+        self.base.background = Some(Box::new(BackgroundFill::LegacyLinear(gradient)));
+        self
+    }
+
+    /// Replace the entire background with a stack, topmost layer first.
+    #[must_use]
+    pub fn layered_gradient(mut self, gradient: LayeredGradient) -> Self {
+        self.base.background = Some(Box::new(BackgroundFill::Layers(gradient)));
         self
     }
 
@@ -2264,6 +3479,19 @@ impl Style {
     #[must_use]
     pub fn hover(mut self, style: &Self) -> Self {
         merge_pseudo(&mut self.hover, Some(&style.base));
+        self
+    }
+
+    /// Remove a recipe's hover refinement without changing its idle paint.
+    #[must_use]
+    pub fn without_hover(mut self) -> Self {
+        self.hover = None;
+        self
+    }
+
+    #[must_use]
+    pub fn without_active(mut self) -> Self {
+        self.active = None;
         self
     }
 
@@ -2325,6 +3553,24 @@ fn validate_flex_grow_weight(value: f64) -> Result<(), StyleValueError> {
     } else {
         Err(StyleValueError::InvalidFlexGrowWeight(value))
     }
+}
+
+fn validate_flex_shrink_weight(value: f64) -> Result<(), StyleValueError> {
+    if (0.0..=1000.0).contains(&value) {
+        Ok(())
+    } else {
+        Err(StyleValueError::InvalidFlexShrinkWeight(value))
+    }
+}
+
+fn deserialize_flex_shrink_weight<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    let weight = Option::<f64>::deserialize(deserializer)?;
+    if let Some(weight) = weight {
+        validate_flex_shrink_weight(weight).map_err(serde::de::Error::custom)?;
+    }
+    Ok(weight)
 }
 
 fn merge_pseudo(base: &mut Option<StyleProperties>, overlay: Option<&StyleProperties>) {
@@ -2456,6 +3702,12 @@ impl CustomType for Style {
             .with_fn("gap", |style: &mut Self, value: Length| {
                 style.clone().gap(value)
             })
+            .with_fn("gap_x", |style: &mut Self, value: Length| {
+                style.clone().gap_x(value)
+            })
+            .with_fn("gap_y", |style: &mut Self, value: Length| {
+                style.clone().gap_y(value)
+            })
             .with_fn("padding", |style: &mut Self, value: Length| {
                 style.clone().padding(value)
             })
@@ -2485,6 +3737,9 @@ impl CustomType for Style {
             })
             .with_fn("text_color", |style: &mut Self, value: ColorValue| {
                 style.clone().text_color(value)
+            })
+            .with_fn("inherit_text_color", |style: &mut Self| {
+                style.clone().inherit_text_color()
             });
         register_border_methods(&mut builder);
         builder
@@ -2664,6 +3919,7 @@ fn register_position_methods(builder: &mut TypeBuilder<Style>) {
 }
 
 fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
+    register_overflow_row_methods(builder);
     register_flex_methods(builder);
     builder
         .with_fn("min_width", |style: &mut Style, value: Length| {
@@ -2719,6 +3975,36 @@ fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
         })
         .with_fn("flex_nowrap", |style: &mut Style| {
             style.clone().flex_wrap(FlexWrapMode::NoWrap)
+        });
+    register_grid_methods(builder);
+}
+
+fn register_overflow_row_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("overflow_row", |style: &mut Style| {
+            style.clone().overflow_row(true)
+        })
+        .with_fn("overflow_row", |style: &mut Style, enabled: bool| {
+            style.clone().overflow_row(enabled)
+        })
+        .with_fn("overflow_priority", |style: &mut Style, priority: INT| {
+            style
+                .clone()
+                .overflow_priority(priority)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("overflow_required", |style: &mut Style| {
+            style.clone().overflow_required()
+        });
+}
+
+fn register_grid_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("grid_cols_max_content", |style: &mut Style, value: INT| {
+            style
+                .clone()
+                .grid_columns_max_content(value)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
         })
         .with_fn("grid_cols", |style: &mut Style, value: INT| {
             style
@@ -2749,6 +4035,12 @@ fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
             style
                 .clone()
                 .grid_rows(value)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("grid_rows_intrinsic", |style: &mut Style, value: INT| {
+            style
+                .clone()
+                .grid_rows_intrinsic(value)
                 .map_err(|error| Box::new(style_runtime_error(error.to_string())))
         })
         .with_fn("col_span", |style: &mut Style, value: INT| {
@@ -2789,17 +4081,197 @@ fn register_flex_methods(builder: &mut TypeBuilder<Style>) {
         .with_fn("flex_shrink", |style: &mut Style, value: bool| {
             style.clone().flex_shrink(value)
         })
+        .with_fn(
+            "flex_shrink_weight",
+            |style: &mut Style, value: FLOAT| -> Result<Style, Box<EvalAltResult>> {
+                style
+                    .clone()
+                    .flex_shrink_weight(value)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn(
+            "flex_shrink_weight",
+            |style: &mut Style, value: INT| -> Result<Style, Box<EvalAltResult>> {
+                style
+                    .clone()
+                    .flex_shrink_weight(numeric_to_f64(&value)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
         .with_fn("flex_basis", |style: &mut Style, value: Length| {
             style.clone().flex_basis(value)
         });
 }
 
+fn parse_edge_fade_axis(axis: &str) -> Result<EdgeFadeAxis, Box<EvalAltResult>> {
+    match axis {
+        "x" => Ok(EdgeFadeAxis::Horizontal),
+        "y" => Ok(EdgeFadeAxis::Vertical),
+        _ => Err(Box::new(style_runtime_error(
+            "edge fade axis must be x or y".to_owned(),
+        ))),
+    }
+}
+
+fn register_group_masks(builder: &mut TypeBuilder<Style>) {
+    builder.with_fn("isolated_opacity", |style: &mut Style, value: bool| {
+        style.clone().isolated_opacity(value)
+    });
+    builder
+        .with_fn(
+            "paint_reveal_x",
+            |style: &mut Style, radius: Dynamic, progress: Dynamic| {
+                style
+                    .clone()
+                    .paint_reveal_x(numeric_to_f64(&radius)?, numeric_to_f64(&progress)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn("without_paint_reveal_x", |style: &mut Style| {
+            style.clone().without_paint_reveal_x()
+        });
+    builder
+        .with_fn(
+            "bottom_fade",
+            |style: &mut Style, start: Dynamic, end: Dynamic| {
+                style
+                    .clone()
+                    .bottom_fade(numeric_to_f64(&start)?, numeric_to_f64(&end)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn("without_bottom_fade", |style: &mut Style| {
+            style.clone().without_bottom_fade()
+        })
+        .with_fn(
+            "edge_fade",
+            |style: &mut Style, axis: &str, leading: Dynamic, trailing: Dynamic| {
+                style
+                    .clone()
+                    .edge_fade(
+                        parse_edge_fade_axis(axis)?,
+                        numeric_to_f64(&leading)?,
+                        numeric_to_f64(&trailing)?,
+                    )
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn(
+            "scroll_edge_fade",
+            |style: &mut Style, axis: &str, leading: Dynamic, trailing: Dynamic| {
+                style
+                    .clone()
+                    .scroll_edge_fade(
+                        parse_edge_fade_axis(axis)?,
+                        numeric_to_f64(&leading)?,
+                        numeric_to_f64(&trailing)?,
+                    )
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+}
+
 fn register_visual_methods(builder: &mut TypeBuilder<Style>) {
+    register_group_masks(builder);
+    register_glyph_methods(builder);
+    register_surface_methods(builder);
+    register_effect_methods(builder);
+}
+
+fn register_glyph_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn(
+            "glyph_sweep",
+            |style: &mut Style, ink: ColorValue, half_width: Dynamic, phase: Dynamic| {
+                style
+                    .clone()
+                    .glyph_sweep(ink, numeric_to_f64(&half_width)?, numeric_to_f64(&phase)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn("without_glyph_sweep", |style: &mut Style| {
+            style.clone().without_glyph_sweep()
+        })
+        .with_fn(
+            "glyph_ink_sweep",
+            |style: &mut Style,
+             ink: ColorValue,
+             half_width: Dynamic,
+             travel: Dynamic,
+             phase: Dynamic| {
+                style
+                    .clone()
+                    .glyph_ink_sweep(
+                        ink,
+                        numeric_to_f64(&half_width)?,
+                        numeric_to_f64(&travel)?,
+                        numeric_to_f64(&phase)?,
+                    )
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+}
+
+fn register_surface_methods(builder: &mut TypeBuilder<Style>) {
+    builder.with_fn("transform", |style: &mut Style, value: Map| {
+        style
+            .clone()
+            .transform(element_transform_from_map(value)?)
+            .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+    });
+    builder
+        .with_fn("background", |style: &mut Style, color: PaintColor| {
+            style.clone().background(color)
+        })
+        .with_fn("border_color", |style: &mut Style, color: PaintColor| {
+            style.clone().border_color(color)
+        })
+        .with_fn(
+            "layered_gradient",
+            |style: &mut Style, stack: LayeredGradient| style.clone().layered_gradient(stack),
+        );
     builder
         .with_fn("opacity", |style: &mut Style, value: FLOAT| {
             style
                 .clone()
                 .opacity(value)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("foreground_blur", |style: &mut Style, value: FLOAT| {
+            style
+                .clone()
+                .foreground_blur(value)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("foreground_blur", |style: &mut Style, value: INT| {
+            style
+                .clone()
+                .foreground_blur(numeric_to_f64(&value)?)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("foreground_grayscale", |style: &mut Style, value: FLOAT| {
+            style
+                .clone()
+                .foreground_grayscale(value)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("foreground_grayscale", |style: &mut Style, value: INT| {
+            style
+                .clone()
+                .foreground_grayscale(numeric_to_f64(&value)?)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("backdrop_blur", |style: &mut Style, value: FLOAT| {
+            style
+                .clone()
+                .backdrop_blur(value)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
+        .with_fn("backdrop_blur", |style: &mut Style, value: INT| {
+            style
+                .clone()
+                .backdrop_blur(numeric_to_f64(&value)?)
                 .map_err(|error| Box::new(style_runtime_error(error.to_string())))
         })
         .with_fn("opacity", |style: &mut Style, value: INT| {
@@ -2841,9 +4313,64 @@ fn register_visual_methods(builder: &mut TypeBuilder<Style>) {
         })
         .with_fn("occlude_except_scroll", |style: &mut Style| {
             style.clone().hit_test(HitTestBehavior::BlockExceptScroll)
+        });
+}
+
+fn register_effect_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("grid_cell", |style: &mut Style, column: INT, row: INT| {
+            style
+                .clone()
+                .grid_cell(column, row)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
         })
+        .with_fn(
+            "focus_ring",
+            |style: &mut Style, width: Length, offset: Length, color: ColorValue| {
+                style
+                    .clone()
+                    .focus_ring(width, offset, color)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn(
+            "focus_ring",
+            |style: &mut Style, width: Length, offset: SignedLength, color: ColorValue| {
+                style
+                    .clone()
+                    .focus_ring(width, offset, color)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
         .with_fn("shadow", |style: &mut Style, shadow: ShadowSpec| {
             style.clone().shadow(shadow)
+        })
+        .with_fn("without_hover", |style: &mut Style| {
+            style.clone().without_hover()
+        })
+        .with_fn("without_active", |style: &mut Style| {
+            style.clone().without_active()
+        })
+        .with_fn("shadows", |style: &mut Style, values: Array| {
+            if values.len() > 32 {
+                return Err(Box::new(style_runtime_error(
+                    StyleValueError::TooManyShadows.to_string(),
+                )));
+            }
+            let shadows = values
+                .into_iter()
+                .map(|value| {
+                    value.try_cast::<ShadowSpec>().ok_or_else(|| {
+                        Box::new(style_runtime_error(
+                            "shadows expects an array of shadow(...) values".to_owned(),
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            style
+                .clone()
+                .shadows(shadows)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
         })
         .with_fn(
             "linear_gradient",
@@ -2877,7 +4404,30 @@ fn register_visual_methods(builder: &mut TypeBuilder<Style>) {
         });
 }
 
+fn register_letter_spacing_methods(builder: &mut TypeBuilder<Style>) {
+    for (name, method) in [
+        (
+            "letter_spacing_px",
+            Style::letter_spacing_px as fn(Style, f64) -> Result<Style, StyleValueError>,
+        ),
+        (
+            "letter_spacing_em",
+            Style::letter_spacing_em as fn(Style, f64) -> Result<Style, StyleValueError>,
+        ),
+    ] {
+        builder.with_fn(name, move |style: &mut Style, value: FLOAT| {
+            method(style.clone(), value)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        });
+        builder.with_fn(name, move |style: &mut Style, value: INT| {
+            method(style.clone(), numeric_to_f64(&value)?)
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        });
+    }
+}
+
 fn register_text_methods(builder: &mut TypeBuilder<Style>) {
+    register_letter_spacing_methods(builder);
     builder
         .with_fn("typography", |style: &mut Style, role: ImmutableString| {
             style
@@ -3010,13 +4560,18 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
     engine.build_type::<AutoLength>();
     engine.build_type::<SignedLength>();
     engine.build_type::<ColorValue>();
+    engine.build_type::<PaintColor>();
     engine.build_type::<ShadowSpec>();
     engine.build_type::<LinearGradientSpec>();
+    engine.build_type::<LayeredGradient>();
     engine.build_type::<Style>();
 
     FuncRegistration::new("style")
         .in_global_namespace()
         .register_into_engine(engine, Style::new);
+    FuncRegistration::new("layered_gradient")
+        .in_global_namespace()
+        .register_into_engine(engine, crate::style_fill::layered_gradient);
     FuncRegistration::new("theme_typography")
         .in_global_namespace()
         .register_into_engine(
@@ -3090,6 +4645,9 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
 
 /// Named length tokens, length scaling and environment-variant values.
 fn register_token_api(engine: &mut Engine) {
+    FuncRegistration::new("without_reading_scale")
+        .in_global_namespace()
+        .register_into_engine(engine, |length: Length| length.without_reading_scale());
     FuncRegistration::new("theme_length")
         .in_global_namespace()
         .register_into_engine(
@@ -3140,33 +4698,54 @@ fn register_token_api(engine: &mut Engine) {
         );
 }
 
-/// Color expressions over theme tokens: `mix`, `alpha` and `readable`. Each
-/// numeric argument takes an integer or a float.
+/// Late-bound color expressions. Each numeric argument takes an integer or a float.
 fn register_color_expression_api(engine: &mut Engine) {
-    FuncRegistration::new("mix")
+    FuncRegistration::new("by_mode")
+        .in_global_namespace()
+        .register_into_engine(engine, |light: ColorValue, dark: ColorValue| {
+            ColorValue::by_mode(light, dark)
+        });
+    FuncRegistration::new("by_mode")
         .in_global_namespace()
         .register_into_engine(
             engine,
-            |base: ColorValue,
-             other: ColorValue,
-             weight: FLOAT|
-             -> Result<ColorValue, Box<EvalAltResult>> {
-                base.mix(other, weight)
-                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            |table: Map| -> Result<ColorValue, Box<EvalAltResult>> {
+                let decode = |key: &str| -> Result<ColorValue, Box<EvalAltResult>> {
+                    let value = table.get(key).ok_or_else(|| {
+                        Box::new(style_runtime_error(format!(
+                            "by_mode expects a map with `{key}` color"
+                        )))
+                    })?;
+                    if let Some(color) = value.read_lock::<ColorValue>() {
+                        return Ok(color.clone());
+                    }
+                    if let Ok(hex) = value.as_int() {
+                        let raw = u32::try_from(hex).map_err(|_| {
+                            Box::new(style_runtime_error(
+                                "by_mode color integers must fit 0xRRGGBBAA".to_owned(),
+                            ))
+                        })?;
+                        return Ok(ColorValue::Literal(Rgba8::from_rgba_hex(raw)));
+                    }
+                    Err(Box::new(style_runtime_error(format!(
+                        "by_mode `{key}` must be a ColorValue or 0xRRGGBBAA integer"
+                    ))))
+                };
+                if table.len() != 2 {
+                    return Err(Box::new(style_runtime_error(
+                        "by_mode expects only `light` and `dark` entries".to_owned(),
+                    )));
+                }
+                Ok(ColorValue::by_mode(decode("light")?, decode("dark")?))
             },
         );
-    FuncRegistration::new("mix")
+    FuncRegistration::new("over")
         .in_global_namespace()
-        .register_into_engine(
-            engine,
-            |base: ColorValue,
-             other: ColorValue,
-             weight: INT|
-             -> Result<ColorValue, Box<EvalAltResult>> {
-                base.mix(other, numeric_to_f64(&weight)?)
-                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
-            },
-        );
+        .register_into_engine(engine, |foreground: ColorValue, background: ColorValue| {
+            foreground.over(background)
+        });
+    register_color_mix_overloads(engine, "mix", ColorValue::mix);
+    register_color_mix_overloads(engine, "mix_premultiplied", ColorValue::mix_premultiplied);
     FuncRegistration::new("alpha")
         .in_global_namespace()
         .register_into_engine(
@@ -3212,6 +4791,37 @@ fn register_color_expression_api(engine: &mut Engine) {
              -> Result<ColorValue, Box<EvalAltResult>> {
                 color
                     .readable(toward, background, numeric_to_f64(&ratio)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+}
+
+fn register_color_mix_overloads(
+    engine: &mut Engine,
+    name: &'static str,
+    mix: fn(ColorValue, ColorValue, f64) -> Result<ColorValue, StyleValueError>,
+) {
+    FuncRegistration::new(name)
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |base: ColorValue,
+                  other: ColorValue,
+                  weight: FLOAT|
+                  -> Result<ColorValue, Box<EvalAltResult>> {
+                mix(base, other, weight)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    FuncRegistration::new(name)
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |base: ColorValue,
+                  other: ColorValue,
+                  weight: INT|
+                  -> Result<ColorValue, Box<EvalAltResult>> {
+                mix(base, other, numeric_to_f64(&weight)?)
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         );
@@ -3265,7 +4875,7 @@ fn register_signed_length_constructor(
         );
 }
 
-fn numeric_to_f64(value: &impl ToString) -> Result<f64, Box<EvalAltResult>> {
+pub(crate) fn numeric_to_f64(value: &impl ToString) -> Result<f64, Box<EvalAltResult>> {
     value.to_string().parse::<f64>().map_err(|_| {
         Box::new(style_runtime_error(
             "numeric length is outside the supported range".to_owned(),
@@ -3299,16 +4909,22 @@ fn shadow_from_map(mut value: Map) -> Result<ShadowSpec, Box<EvalAltResult>> {
     let y = optional_map_number(&mut value, "y")?.unwrap_or(0.0);
     let blur = optional_map_number(&mut value, "blur")?.unwrap_or(0.0);
     let spread = optional_map_number(&mut value, "spread")?.unwrap_or(0.0);
-    let color = value
-        .remove("color")
-        .and_then(Dynamic::try_cast::<ColorValue>)
-        .ok_or_else(|| {
+    let inset = match value.remove("inset") {
+        None => false,
+        Some(value) => value.try_cast::<bool>().ok_or_else(|| {
             Box::new(style_runtime_error(
-                "shadow color must be a ColorValue".to_owned(),
+                "shadow inset must be a bool".to_owned(),
             ))
-        })?;
+        })?,
+    };
+    let color = crate::style_fill::paint_color(
+        value
+            .remove("color")
+            .ok_or_else(|| Box::new(style_runtime_error("shadow requires a color".to_owned())))?,
+    )?;
     reject_style_map_unknown(value, "shadow")?;
     ShadowSpec::new(x, y, blur, spread, color)
+        .map(|shadow| shadow.with_inset(inset))
         .map_err(|error| Box::new(style_runtime_error(error.to_string())))
 }
 
@@ -3335,7 +4951,26 @@ fn linear_gradient_from_map(mut value: Map) -> Result<LinearGradientSpec, Box<Ev
         .map_err(|error| Box::new(style_runtime_error(error.to_string())))
 }
 
-fn optional_map_number(value: &mut Map, name: &str) -> Result<Option<f64>, Box<EvalAltResult>> {
+fn element_transform_from_map(
+    mut options: Map,
+) -> Result<crate::ElementTransform, Box<EvalAltResult>> {
+    let transform = crate::ElementTransform {
+        rotate: optional_map_number(&mut options, "rotate")?.unwrap_or(0.),
+        scale_x: optional_map_number(&mut options, "scale_x")?.unwrap_or(1.),
+        scale_y: optional_map_number(&mut options, "scale_y")?.unwrap_or(1.),
+        skew_x: optional_map_number(&mut options, "skew_x")?.unwrap_or(0.),
+        skew_y: optional_map_number(&mut options, "skew_y")?.unwrap_or(0.),
+        origin_x: optional_map_number(&mut options, "origin_x")?.unwrap_or(0.5),
+        origin_y: optional_map_number(&mut options, "origin_y")?.unwrap_or(0.5),
+    };
+    reject_style_map_unknown(options, "element transform")?;
+    Ok(transform)
+}
+
+pub(crate) fn optional_map_number(
+    value: &mut Map,
+    name: &str,
+) -> Result<Option<f64>, Box<EvalAltResult>> {
     value
         .remove(name)
         .map(|value| {
@@ -3388,7 +5023,63 @@ fn deserialize_aspect_ratio<'de, D: serde::Deserializer<'de>>(
         .map_err(serde::de::Error::custom)
 }
 
-fn reject_style_map_unknown(value: Map, context: &str) -> Result<(), Box<EvalAltResult>> {
+fn validate_blur_sigma(sigma: f64) -> Result<f64, StyleValueError> {
+    if (0.0..=64.0).contains(&sigma) {
+        Ok(sigma)
+    } else {
+        Err(StyleValueError::InvalidBlurSigma(sigma))
+    }
+}
+
+fn deserialize_blur_sigma<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    Option::<f64>::deserialize(deserializer)?
+        .map(validate_blur_sigma)
+        .transpose()
+        .map_err(serde::de::Error::custom)
+}
+
+fn validate_foreground_grayscale(amount: f64) -> Result<f64, StyleValueError> {
+    if (0.0..=1.0).contains(&amount) {
+        Ok(amount)
+    } else {
+        Err(StyleValueError::InvalidForegroundGrayscale(amount))
+    }
+}
+
+fn deserialize_foreground_grayscale<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    Option::<f64>::deserialize(deserializer)?
+        .map(validate_foreground_grayscale)
+        .transpose()
+        .map_err(serde::de::Error::custom)
+}
+
+fn deserialize_element_transform<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<crate::ElementTransform>, D::Error> {
+    Option::<crate::ElementTransform>::deserialize(deserializer)?
+        .map(crate::ElementTransform::validated)
+        .transpose()
+        .map_err(serde::de::Error::custom)
+}
+
+fn deserialize_grid_cell<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<(u16, u16)>, D::Error> {
+    let value = Option::<(u16, u16)>::deserialize(deserializer)?;
+    if value.is_some_and(|(column, row)| column == 0 || column > 32767 || row == 0 || row > 32767) {
+        return Err(serde::de::Error::custom(StyleValueError::InvalidGridCell));
+    }
+    Ok(value)
+}
+
+pub(crate) fn reject_style_map_unknown(
+    value: Map,
+    context: &str,
+) -> Result<(), Box<EvalAltResult>> {
     if let Some((name, _)) = value.into_iter().next() {
         Err(Box::new(style_runtime_error(format!(
             "unknown {context} field `{name}`"
@@ -3398,13 +5089,444 @@ fn reject_style_map_unknown(value: Map, context: &str) -> Result<(), Box<EvalAlt
     }
 }
 
-fn style_runtime_error(error: String) -> EvalAltResult {
+pub(crate) fn style_runtime_error(error: String) -> EvalAltResult {
     EvalAltResult::ErrorRuntime(error.into(), Position::NONE)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bottom_fade_rejects_invalid_stops_and_clears_in_cascade() {
+        use super::{BottomFade, Style, StyleProperties};
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        let mask: Style = engine.eval("style().bottom_fade(0, 0.875)").unwrap();
+        assert_eq!(
+            mask.base.bottom_fade,
+            Some(BottomFade::Linear {
+                start: 0.,
+                end: 0.875
+            })
+        );
+        assert_eq!(
+            mask.clone()
+                .merged(&Style::new().without_bottom_fade())
+                .base
+                .bottom_fade,
+            Some(BottomFade::Off)
+        );
+        assert!(
+            engine
+                .eval::<Style>("style().bottom_fade(0.5,0.500000001)")
+                .is_err()
+        );
+        let malformed = serde_json::json!({"bottom_fade":{"kind":"linear","start":0.9,"end":0.2}});
+        assert!(serde_json::from_value::<StyleProperties>(malformed).is_err());
+        let encoded = serde_json::to_string(&mask.base).unwrap();
+        assert_eq!(
+            serde_json::from_str::<StyleProperties>(&encoded).unwrap(),
+            mask.base
+        );
+    }
+
+    #[test]
+    fn edge_fade_handles_axis_numeric_bounds_and_the_existing_cascade() {
+        use super::{BottomFade, EdgeFadeAxis, Style, StyleProperties};
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        let result: Style = engine
+            .eval(r#"style().bottom_fade(0, 1).edge_fade("x", 8, 12.5)"#)
+            .unwrap();
+        assert_eq!(
+            result.base.bottom_fade,
+            Some(BottomFade::Edges {
+                horizontal: true,
+                leading: 8.,
+                trailing: 12.5,
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<StyleProperties>(serde_json::to_value(&result.base).unwrap())
+                .unwrap(),
+            result.base
+        );
+        let top: Style = engine.eval(r#"style().edge_fade("y", 0, 0)"#).unwrap();
+        assert_eq!(result.merged(&top).base.bottom_fade, Some(BottomFade::Off));
+        for source in [
+            r#"style().edge_fade("vertical", 0, 12)"#,
+            r#"style().edge_fade("x", -1, 8)"#,
+            r#"style().edge_fade("y", 0, 0.0000001)"#,
+            r#"style().edge_fade("y", 4097, 0)"#,
+        ] {
+            assert!(engine.eval::<Style>(source).is_err(), "{source}");
+        }
+        assert!(BottomFade::edges(EdgeFadeAxis::Horizontal, f64::NAN, 1.).is_err());
+        assert!(
+            serde_json::from_value::<StyleProperties>(serde_json::json!({
+                "bottom_fade":{"kind":"edges","horizontal":false,"leading":1,"trailing":-1}
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn glyph_sweep_rejects_unbounded_or_invalid_authored_specs() {
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        for source in [
+            "style().glyph_sweep(rgb(0xffffff),0,0.4)",
+            "style().glyph_sweep(rgb(0xffffff),0.51,0.4)",
+            "style().glyph_sweep(rgb(0xffffff),0.2,-1)",
+            "style().glyph_sweep(rgb(0xffffff),0.2,1.001)",
+        ] {
+            assert!(engine.eval::<super::Style>(source).is_err(), "{source}");
+        }
+        assert!(serde_json::from_value::<super::StyleProperties>(serde_json::json!({
+            "glyph_sweep":{"kind":"overlay","ink":{"kind":"token","value":"shine"},"phase":1.5,"half_width":0.2}
+        })).is_err());
+    }
+
+    #[test]
+    fn overflow_layout_and_priorities_preserve_cascade_and_serde() {
+        use super::{FlexWrapMode, Style};
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        let optional: Style = engine
+            .eval("style().overflow_row().overflow_priority(0)")
+            .unwrap();
+        assert!(optional.base.overflow_row());
+        assert_eq!(optional.base.overflow_priority(), Some(0));
+        assert!(
+            !optional
+                .clone()
+                .merged(&Style::new().overflow_row(false))
+                .base
+                .overflow_row()
+        );
+        assert_eq!(
+            optional
+                .clone()
+                .merged(&Style::new().overflow_required())
+                .base
+                .overflow_priority(),
+            None
+        );
+        assert!(!optional.clone().flex_col().base.overflow_row());
+        assert!(
+            !optional
+                .clone()
+                .grid_columns(2)
+                .unwrap()
+                .base
+                .overflow_row()
+        );
+        assert!(
+            !optional
+                .clone()
+                .flex_wrap(FlexWrapMode::Wrap)
+                .base
+                .overflow_row()
+        );
+        assert!(
+            Style::new()
+                .grid_columns(2)
+                .unwrap()
+                .merged(&optional)
+                .base
+                .overflow_row()
+        );
+        assert_eq!(
+            serde_json::from_str::<Style>(&serde_json::to_string(&optional).unwrap()).unwrap(),
+            optional
+        );
+        assert!(Style::new().overflow_priority(-1).is_err());
+        assert!(Style::new().overflow_priority(65536).is_err());
+        assert!(Style::new().base.layout_constraints.is_none());
+    }
+
+    #[test]
+    fn axis_gaps_keep_cascade_shorthand_and_serde_semantics() {
+        use super::{InteractionState, Length, PseudoState, Style};
+        let px = Length::Pixels;
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        let split: Style = engine
+            .eval("style().gap(px(10)).gap_x(px(3)).gap_y(px(7))")
+            .unwrap();
+        assert_eq!(split.base.gap_x(), Some(px(3.0)));
+        assert_eq!(split.base.gap_y(), Some(px(7.0)));
+        let vertical: Style = engine.eval("style().gap_y(px(5))").unwrap();
+        let merged = split.clone().merged(&vertical);
+        assert_eq!(merged.base.gap_x(), Some(px(3.0)));
+        assert_eq!(merged.base.gap_y(), Some(px(5.0)));
+        let shorthand = Style::new().gap(px(12.0));
+        for through_merge in [false, true] {
+            let reset = if through_merge {
+                split.clone().merged(&shorthand)
+            } else {
+                split.clone().gap(px(12.0))
+            };
+            assert_eq!(reset.base.gap_x(), Some(px(12.0)));
+            assert_eq!(reset.base.gap_y(), Some(px(12.0)));
+            assert_eq!(reset.base.layout_constraints, None);
+        }
+        let restored =
+            serde_json::from_str::<Style>(&serde_json::to_string(&merged).unwrap()).unwrap();
+        assert_eq!(restored, merged);
+        let active = split
+            .hover(&shorthand)
+            .resolve(&InteractionState::default().with(PseudoState::Hovered));
+        assert_eq!(active.gap_x(), Some(px(12.0)));
+        assert_eq!(active.gap_y(), Some(px(12.0)));
+        assert!(Style::new().base.layout_constraints.is_none());
+    }
+
+    #[test]
+    fn native_text_colors_round_trip_to_the_original_bytes() {
+        for red in 0_u32..=255 {
+            for alpha in [0, 1, 127, 128, 254, 255] {
+                let bytes = (red << 24) | ((255 - red) << 16) | (((red * 73) % 256) << 8) | alpha;
+                let native = gpui::rgba(bytes).into();
+                assert_eq!(super::Rgba8::from_native_color(native).as_rgba_hex(), bytes);
+            }
+        }
+    }
+
+    #[test]
+    fn content_grid_columns_keep_mode_through_merge_and_serde() {
+        let content = super::Style::new().grid_columns_max_content(3).unwrap();
+        assert!(content.base.grid_columns_max_content());
+        assert!(
+            serde_json::from_str::<super::Style>(&serde_json::to_string(&content).unwrap())
+                .unwrap()
+                .base
+                .grid_columns_max_content()
+        );
+        let equal = super::Style::new().grid_columns(2).unwrap();
+        assert!(
+            !content
+                .clone()
+                .merged(&equal)
+                .base
+                .grid_columns_max_content()
+        );
+        assert!(equal.merged(&content).base.grid_columns_max_content());
+        assert!(
+            !content
+                .clone()
+                .auto_grid_columns(40.0, 80.0, 100.0)
+                .unwrap()
+                .base
+                .grid_columns_max_content()
+        );
+        assert!(super::Style::new().grid_columns_max_content(0).is_err());
+        assert!(super::Style::new().grid_columns_max_content(1025).is_err());
+    }
+
+    #[test]
+    fn intrinsic_rows_keep_their_policy_until_rows_are_explicitly_replaced() {
+        let natural = Style::new().grid_rows_intrinsic(3).unwrap();
+        let equal = Style::new().grid_rows(2).unwrap();
+        let neutral = Style::new().grid_columns(4).unwrap();
+        let from_json: Style =
+            serde_json::from_str(&serde_json::to_string(&natural).unwrap()).unwrap();
+        assert_eq!(from_json.base.grid_rows, Some(3));
+        assert!(from_json.base.grid_rows_are_intrinsic());
+        assert!(
+            natural
+                .clone()
+                .merged(&neutral)
+                .base
+                .grid_rows_are_intrinsic()
+        );
+        let reset = natural.clone().merged(&equal);
+        assert_eq!(reset.base.grid_rows, Some(2));
+        assert!(!reset.base.grid_rows_are_intrinsic());
+        assert!(equal.merged(&natural).base.grid_rows_are_intrinsic());
+        let overflow = natural.clone().overflow_row(true);
+        assert_eq!(overflow.base.grid_rows, None);
+        assert!(!overflow.base.grid_rows_are_intrinsic());
+        assert!(!natural.grid_rows(5).unwrap().base.grid_rows_are_intrinsic());
+        assert!(Style::new().grid_rows_intrinsic(0).is_err());
+        assert!(Style::new().grid_rows_intrinsic(1025).is_err());
+    }
+
+    #[test]
+    fn text_color_inheritance_resets_survive_merge_state_and_serde() {
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        let colored: super::Style = engine.eval("style().text_color(rgb(0x123456))").unwrap();
+        let inherit: super::Style = engine.eval("style().inherit_text_color()").unwrap();
+        let reset = colored.clone().merged(&inherit);
+        assert_eq!(reset.base.text_color, None);
+        assert_eq!(reset.base.inherit_text_color, Some(true));
+        assert_eq!(
+            reset.clone().merged(&colored).base.text_color,
+            colored.base.text_color
+        );
+        assert_eq!(reset.clone().merged(&colored).base.inherit_text_color, None);
+        let hovered = colored
+            .clone()
+            .hover(&inherit)
+            .resolve(&super::InteractionState::default().with(super::PseudoState::Hovered));
+        assert_eq!(hovered.text_color, None);
+        assert_eq!(hovered.inherit_text_color, Some(true));
+        assert_eq!(
+            serde_json::from_str::<super::Style>(&serde_json::to_string(&reset).unwrap()).unwrap(),
+            reset
+        );
+    }
+
+    #[test]
+    fn grid_cells_validate_merge_and_serialize_without_expanding_default_styles() {
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        let style: super::Style = engine.eval("style().grid_cell(2,3).col_span(2)").unwrap();
+        assert_eq!(style.base.grid_cell(), Some((2, 3)));
+        assert_eq!(
+            serde_json::from_str::<super::Style>(&serde_json::to_string(&style).unwrap()).unwrap(),
+            style
+        );
+        assert_eq!(
+            style
+                .clone()
+                .merged(&engine.eval("style().grid_cell(1,1)").unwrap())
+                .base
+                .grid_cell(),
+            Some((1, 1))
+        );
+        for source in [
+            "style().grid_cell(0,1)",
+            "style().grid_cell(1,-1)",
+            "style().grid_cell(32768,1)",
+        ] {
+            assert!(engine.eval::<super::Style>(source).is_err());
+        }
+        let invalid = serde_json::to_string(&style)
+            .unwrap()
+            .replace("\"grid_cell\":[2,3]", "\"grid_cell\":[0,3]");
+        assert!(serde_json::from_str::<super::Style>(&invalid).is_err());
+    }
+    #[test]
+    fn focus_rings_validate_lengths_clear_and_round_trip() {
+        let mut engine = rhai::Engine::new();
+        super::register_style_api(&mut engine);
+        let style: super::Style = engine
+            .eval(r#"style().focus_ring(theme_spacing("xs"),rem(0.125),theme_color("focus_ring"))"#)
+            .unwrap();
+        let json = serde_json::to_string(&style).unwrap();
+        assert_eq!(serde_json::from_str::<super::Style>(&json).unwrap(), style);
+        let clear: super::Style = engine
+            .eval("style().focus_ring(px(0),px(0),rgba(0))")
+            .unwrap();
+        assert_eq!(
+            style.merged(&clear).base.focus_ring.unwrap().width,
+            super::Length::Pixels(0.0)
+        );
+        assert!(
+            engine
+                .eval::<super::Style>("style().focus_ring(relative(0.5),px(0),rgba(0))")
+                .is_err()
+        );
+        assert!(
+            engine
+                .eval::<super::Style>("style().focus_ring(px(2),relative(0.5),rgba(0))")
+                .is_err()
+        );
+        let invalid = json.replace(
+            "\"unit\":\"rems\",\"value\":0.125",
+            "\"unit\":\"relative\",\"value\":0.125",
+        );
+        assert_ne!(invalid, json);
+        assert!(serde_json::from_str::<super::Style>(&invalid).is_err());
+        let inset: super::Style = engine
+            .eval("style().focus_ring(px(2),offset_px(-2),rgba(0xff))")
+            .unwrap();
+        assert_eq!(
+            inset.base.focus_ring.as_ref().unwrap().offset,
+            super::LayoutLength::Signed(super::SignedLength::Pixels(-2.0))
+        );
+        assert_eq!(
+            serde_json::from_str::<super::Style>(&serde_json::to_string(&inset).unwrap()).unwrap(),
+            inset
+        );
+        assert!(
+            super::FocusRingSpec::new(
+                super::Length::Pixels(2.0),
+                super::LayoutLength::Auto,
+                super::ColorValue::Literal(super::Rgba8::from_rgb_hex(0))
+            )
+            .is_err()
+        );
+    }
     use super::*;
+
+    #[test]
+    fn ordered_shadow_stacks_support_inset_signed_spread_and_explicit_clear() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let style: Style = engine
+            .eval(
+                r"style().shadows([
+            shadow(#{spread:0.5,color:rgba(0x0000000f)}),
+            shadow(#{y:1,blur:1,spread:-1,color:rgba(0x00000019)}),
+            shadow(#{blur:2,spread:1,color:rgb(0xffffff),inset:true})
+        ])",
+            )
+            .unwrap();
+        let layers = style.base.shadows.as_ref().unwrap();
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[0].spread, 0.5);
+        assert_eq!(layers[1].spread, -1.0);
+        assert!(layers[2].inset);
+        assert_eq!(
+            serde_json::from_str::<Style>(&serde_json::to_string(&style).unwrap()).unwrap(),
+            style
+        );
+        let clear: Style = engine.eval("style().shadows([])").unwrap();
+        assert_eq!(style.merged(&clear).base.shadows, Some(Vec::new()));
+        assert!(engine.eval::<Style>("style().shadows([1])").is_err());
+        assert!(
+            engine
+                .eval::<ShadowSpec>("shadow(#{blur:-1,color:rgb(0)})")
+                .is_err()
+        );
+        assert!(
+            engine
+                .eval::<ShadowSpec>("shadow(#{inset:1,color:rgb(0)})")
+                .is_err()
+        );
+        assert!(
+            ShadowSpec::new(
+                0.0,
+                0.0,
+                0.0,
+                f64::INFINITY,
+                ColorValue::Literal(Rgba8::from_rgb_hex(0))
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<ShadowSpec>(
+                r#"{"x":0,"y":0,"blur":-1,"spread":0,"color":{"literal":0}}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn removing_recipe_interactions_preserves_base_and_other_states() {
+        let base = Style::new()
+            .background(ColorValue::Token("surface".into()))
+            .hover(&Style::new().background(ColorValue::Token("surface_hover".into())))
+            .active(&Style::new().opacity(0.5).unwrap())
+            .focus(&Style::new().text_color(ColorValue::Token("focus_ring".into())));
+        let quiet = base.clone().without_hover().without_active();
+        assert_eq!(quiet.base, base.base);
+        assert_eq!(quiet.focus, base.focus);
+        assert!(quiet.hover.is_none());
+        assert!(quiet.active.is_none());
+    }
 
     #[test]
     fn caller_overlay_wins_deterministically() {
@@ -3418,8 +5540,12 @@ mod tests {
 
         assert_eq!(merged.base.width, Some(Length::Pixels(240.0).into()));
         assert_eq!(
-            merged.base.background,
-            Some(ColorValue::Literal(Rgba8::from_rgb_hex(0x0011_1111)))
+            merged
+                .base
+                .background
+                .as_deref()
+                .and_then(BackgroundFill::as_solid_value),
+            Some(&ColorValue::Literal(Rgba8::from_rgb_hex(0x0011_1111)))
         );
         assert_eq!(
             merged.base.text_color,
@@ -3439,8 +5565,11 @@ mod tests {
                 .with(PseudoState::Disabled),
         );
         assert_eq!(
-            resolved.background,
-            Some(ColorValue::Token("button_disabled".to_owned()))
+            resolved
+                .background
+                .as_deref()
+                .and_then(BackgroundFill::as_solid_value),
+            Some(&ColorValue::Token("button_disabled".to_owned()))
         );
     }
 
@@ -3545,13 +5674,21 @@ mod tests {
         let merged = Style::new()
             .linear_gradient(gradient.clone())
             .merged(&Style::new().background(solid.clone()));
-        assert_eq!(merged.base.gradient, None);
-        assert_eq!(merged.base.background, Some(solid.clone()));
+        assert_eq!(
+            merged
+                .base
+                .background
+                .as_deref()
+                .and_then(BackgroundFill::as_solid_value),
+            Some(&solid)
+        );
         let merged = Style::new()
             .background(solid)
             .merged(&Style::new().linear_gradient(gradient.clone()));
-        assert_eq!(merged.base.gradient, Some(gradient));
-        assert_eq!(merged.base.background, None);
+        assert_eq!(
+            merged.base.background.as_deref(),
+            Some(&BackgroundFill::LegacyLinear(gradient))
+        );
     }
 
     #[test]
@@ -3609,7 +5746,10 @@ mod tests {
         );
         assert_eq!(style.base.font_weight, Some(650));
         assert_eq!(style.base.line_clamp, Some(2));
-        assert!(style.base.gradient.is_some());
+        assert!(matches!(
+            style.base.background.as_deref(),
+            Some(BackgroundFill::LegacyLinear(_))
+        ));
         assert_eq!(style.base.shadows.as_ref().map(Vec::len), Some(1));
         assert!(
             Style::new()
@@ -3659,6 +5799,14 @@ mod tests {
         let surface = || ColorValue::Token("surface".to_owned());
         for (script, expected) in [
             (
+                r#"over(theme_color("accent"), theme_color("surface"))"#,
+                accent().over(surface()),
+            ),
+            (
+                r#"theme_color("accent").over(theme_color("surface"))"#,
+                accent().over(surface()),
+            ),
+            (
                 r#"alpha(theme_color("accent"), 1)"#,
                 accent().alpha(1.0).unwrap(),
             ),
@@ -3696,6 +5844,104 @@ mod tests {
             let error = engine.eval::<ColorValue>(script).unwrap_err().to_string();
             assert!(error.contains(message), "{script}: {error}");
         }
+    }
+
+    #[test]
+    fn premultiplied_mix_does_not_import_hidden_rgb_or_resolve_tokens_eagerly() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let red = Rgba8::from_rgba_hex(0xff00_00ff);
+        let hidden_blue = Rgba8::from_rgba_hex(0x0000_ff00);
+        let source = r#"mix_premultiplied(theme_color("lane"), rgba(0x0000ff00), 0.5)"#;
+        let color: ColorValue = engine.eval(source).unwrap();
+        assert_eq!(
+            color
+                .resolve_with(&mut |_| Some(red))
+                .unwrap()
+                .as_rgba_hex(),
+            0xff00_0080
+        );
+        let green = Rgba8::from_rgba_hex(0x00ff_00ff);
+        assert_eq!(
+            color
+                .resolve_with(&mut |_| Some(green))
+                .unwrap()
+                .as_rgba_hex(),
+            0x00ff_0080
+        );
+        assert_eq!(red.mix(hidden_blue, 0.5).as_rgba_hex(), 0x8000_8080);
+        assert_eq!(
+            hidden_blue
+                .mix_premultiplied(hidden_blue, 0.5)
+                .as_rgba_hex(),
+            0
+        );
+        assert!(
+            engine
+                .eval::<ColorValue>("mix_premultiplied(rgb(0), rgb(0), 2)")
+                .is_err()
+        );
+        assert_eq!(
+            engine
+                .eval::<ColorValue>("rgb(0xff0000).mix_premultiplied(rgb(0x00ff00), 1)")
+                .unwrap()
+                .resolve_with(&mut |_| None),
+            Some(green)
+        );
+    }
+
+    #[test]
+    fn source_over_preserves_alpha_and_late_bound_color_leaves() {
+        let foreground = Rgba8::from_rgba_hex(0xff00_0080);
+        let background = Rgba8::from_rgba_hex(0x0000_ff80);
+        assert_eq!(foreground.over(background).as_rgba_hex(), 0xaa00_55c0);
+        assert_eq!(
+            Rgba8::from_rgba_hex(0x1234_5600).over(background),
+            background
+        );
+        assert_eq!(
+            Rgba8::from_rgb_hex(0x0012_3456)
+                .over(background)
+                .as_rgba_hex(),
+            0x1234_56ff
+        );
+        assert_eq!(
+            Rgba8::from_rgba_hex(0)
+                .over(Rgba8::from_rgba_hex(0))
+                .as_rgba_hex(),
+            0
+        );
+        for alpha in 0..=255 {
+            assert_eq!(
+                Rgba8::from_rgba_hex(alpha)
+                    .over(Rgba8::from_rgb_hex(0x00ff_ffff))
+                    .as_rgba_hex(),
+                ((255 - alpha) * 0x0101_0100) | 255
+            );
+        }
+        let expression = ColorValue::token("foreground")
+            .unwrap()
+            .over(ColorValue::token("background").unwrap());
+        let resolve = |fg, bg| {
+            expression
+                .resolve_with(&mut |name| match name {
+                    "foreground" => Some(fg),
+                    "background" => Some(bg),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        assert_eq!(resolve(foreground, background), foreground.over(background));
+        assert_ne!(
+            resolve(background, foreground),
+            resolve(foreground, background)
+        );
+        assert!(expression.resolve_with(&mut |_| None).is_none());
+        let json = serde_json::to_string(&expression).unwrap();
+        assert_eq!(
+            serde_json::from_str::<ColorValue>(&json).unwrap(),
+            expression
+        );
     }
 
     #[test]
@@ -3802,6 +6048,37 @@ mod tests {
         );
         assert!(serde_json::from_str::<Length>(r#"{"unit":"pixels","value":-1}"#).is_err());
         assert!(serde_json::from_str::<SignedLength>(r#"{"unit":"relative","value":11}"#).is_err());
+    }
+
+    #[test]
+    fn hairline_token_references_keep_their_resolution_mode_through_script_and_json() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let token: Length = engine
+            .eval("theme_length(\"metrics.grid\").without_reading_scale().times(2)")
+            .unwrap();
+        let ordinary = Length::token("metrics.grid").unwrap().scaled(2.0).unwrap();
+        assert_eq!(token, ordinary.without_reading_scale());
+        assert_ne!(token, ordinary);
+        assert_eq!(
+            serde_json::from_str::<Length>(&serde_json::to_string(&token).unwrap()).unwrap(),
+            token
+        );
+        let plain = serde_json::from_str::<Length>(
+            r#"{"unit":"token","value":{"path":"metrics.grid","scale":2}}"#,
+        )
+        .unwrap();
+        assert_eq!(plain, ordinary);
+        assert!(
+            serde_json::from_str::<Length>(
+                r#"{"unit":"token","value":{"path":"metrics.grid","reading_scale":"no"}}"#
+            )
+            .is_err()
+        );
+        assert_eq!(
+            Length::Pixels(1.0).without_reading_scale(),
+            Length::Pixels(1.0)
+        );
     }
 
     #[test]

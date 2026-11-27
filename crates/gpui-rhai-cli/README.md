@@ -6,6 +6,10 @@ copies editable first-party components/themes/locales/assets, validates the
 result with the real runtime, performs baseline-aware updates, takes offscreen
 screenshots, and bundles macOS applications.
 
+Requires Rust 1.99 or newer. Check `rustc --version` in the application
+directory as well as when installing the CLI; a toolchain configured only
+inside the SDK checkout does not select the compiler for another project.
+
 ```text
 cargo install gpui-rhai-cli --locked
 

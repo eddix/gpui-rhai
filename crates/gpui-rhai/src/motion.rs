@@ -19,17 +19,29 @@ use crate::{
 #[serde(rename_all = "snake_case")]
 pub enum MotionProperty {
     Opacity,
+    ForegroundBlur,
+    ForegroundGrayscale,
+    GlyphSweep,
+    BackgroundPositionX,
+    PaintRevealX,
+    OverlayReveal,
     TranslateX,
     TranslateY,
+    TranslateXFraction,
+    TranslateYFraction,
     Rotate,
     ScaleX,
     ScaleY,
     SkewX,
     SkewY,
     Width,
+    WidthFraction,
+    NumberValue,
+    NumberWeight,
     Height,
     ClipHeight,
     PathProgress,
+    PrimitiveProgress,
 }
 
 impl MotionProperty {
@@ -37,34 +49,58 @@ impl MotionProperty {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Opacity => "opacity",
+            Self::ForegroundBlur => "foreground_blur",
+            Self::ForegroundGrayscale => "foreground_grayscale",
+            Self::GlyphSweep => "glyph_sweep",
+            Self::BackgroundPositionX => "background_position_x",
+            Self::PaintRevealX => "paint_reveal_x",
+            Self::OverlayReveal => "overlay_reveal",
             Self::TranslateX => "translate_x",
             Self::TranslateY => "translate_y",
+            Self::TranslateXFraction => "translate_x_fraction",
+            Self::TranslateYFraction => "translate_y_fraction",
             Self::Rotate => "rotate",
             Self::ScaleX => "scale_x",
             Self::ScaleY => "scale_y",
             Self::SkewX => "skew_x",
             Self::SkewY => "skew_y",
             Self::Width => "width",
+            Self::WidthFraction => "width_fraction",
+            Self::NumberValue => "number_value",
+            Self::NumberWeight => "number_weight",
             Self::Height => "height",
             Self::ClipHeight => "clip_height",
             Self::PathProgress => "path_progress",
+            Self::PrimitiveProgress => "primitive_progress",
         }
     }
 
     fn parse(value: &str) -> Result<Self, MotionError> {
         match value {
             "opacity" => Ok(Self::Opacity),
+            "foreground_blur" => Ok(Self::ForegroundBlur),
+            "foreground_grayscale" => Ok(Self::ForegroundGrayscale),
+            "glyph_sweep" => Ok(Self::GlyphSweep),
+            "background_position_x" => Ok(Self::BackgroundPositionX),
+            "paint_reveal_x" => Ok(Self::PaintRevealX),
+            "overlay_reveal" => Ok(Self::OverlayReveal),
             "translate_x" => Ok(Self::TranslateX),
             "translate_y" => Ok(Self::TranslateY),
+            "translate_x_fraction" => Ok(Self::TranslateXFraction),
+            "translate_y_fraction" => Ok(Self::TranslateYFraction),
             "rotate" => Ok(Self::Rotate),
             "scale_x" => Ok(Self::ScaleX),
             "scale_y" => Ok(Self::ScaleY),
             "skew_x" => Ok(Self::SkewX),
             "skew_y" => Ok(Self::SkewY),
             "width" => Ok(Self::Width),
+            "width_fraction" => Ok(Self::WidthFraction),
+            "number_value" => Ok(Self::NumberValue),
+            "number_weight" => Ok(Self::NumberWeight),
             "height" => Ok(Self::Height),
             "clip_height" => Ok(Self::ClipHeight),
             "path_progress" => Ok(Self::PathProgress),
+            "primitive_progress" => Ok(Self::PrimitiveProgress),
             _ => Err(MotionError::UnknownProperty(value.to_owned())),
         }
     }
@@ -681,6 +717,14 @@ pub(crate) fn retained_node_path(path: &str, node: crate::NodeId) -> String {
     format!("{}/node:{}", motion_domain_from_path(path), node.get())
 }
 
+pub(crate) const INLINE_UNDERLINE_LANE: &str = "/inline-underline";
+
+pub(crate) enum PaintOwnerKind {
+    ElementPaint,
+    InlineUnderline,
+    IntrinsicSize,
+}
+
 pub(crate) fn virtual_item_path(path: &str, key: &str) -> String {
     format!("{path}/{}", encode_path_segment("item", key))
 }
@@ -827,6 +871,14 @@ enum MotionRetention {
     Exit,
 }
 
+#[derive(Clone, Debug)]
+struct LayoutSizeTrack {
+    owner: crate::NodeId,
+    axis: crate::LayoutSizeAxis,
+    content: String,
+    from: Option<f64>,
+}
+
 #[derive(Debug)]
 pub struct MotionRuntime {
     runtime_id: u64,
@@ -835,6 +887,9 @@ pub struct MotionRuntime {
     settled: BTreeMap<MotionKey, f64>,
     settled_declaration: BTreeMap<MotionKey, (MotionSource, Option<String>)>,
     settled_retention: BTreeMap<MotionKey, MotionRetention>,
+    paint_endpoints: BTreeMap<MotionKey, (crate::NodeId, crate::paint_motion::PaintEndpoints)>,
+    layout_sizes: BTreeMap<MotionKey, LayoutSizeTrack>,
+    native_progress: BTreeMap<MotionKey, (crate::NodeId, u64)>,
     timelines: BTreeMap<MotionHandle, ActiveTimeline>,
     timeline_index: BTreeMap<TimelineLogicalKey, MotionHandle>,
     timeline_events: Vec<MotionTimelineEvent>,
@@ -857,6 +912,9 @@ impl Default for MotionRuntime {
             settled: BTreeMap::new(),
             settled_declaration: BTreeMap::new(),
             settled_retention: BTreeMap::new(),
+            paint_endpoints: BTreeMap::new(),
+            layout_sizes: BTreeMap::new(),
+            native_progress: BTreeMap::new(),
             timelines: BTreeMap::new(),
             timeline_index: BTreeMap::new(),
             timeline_events: Vec::new(),
@@ -904,6 +962,9 @@ impl MotionRuntime {
             settled: self.settled.clone(),
             settled_declaration: self.settled_declaration.clone(),
             settled_retention: self.settled_retention.clone(),
+            paint_endpoints: self.paint_endpoints.clone(),
+            layout_sizes: self.layout_sizes.clone(),
+            native_progress: self.native_progress.clone(),
             timelines: self.timelines.clone(),
             timeline_index: self.timeline_index.clone(),
             timeline_events: self.timeline_events.clone(),
@@ -1162,11 +1223,336 @@ impl MotionRuntime {
         Ok(key)
     }
 
+    fn start_on_change_retained(
+        &mut self,
+        component: ComponentInstancePath,
+        declaration: MotionSource,
+        replay_key: String,
+        now: Instant,
+        retention: MotionRetention,
+    ) -> Result<MotionKey, MotionError> {
+        let key = MotionKey {
+            component: component.clone(),
+            property: declaration.property(),
+        };
+        let previous = self
+            .active
+            .get(&key)
+            .map(|motion| (&motion.declaration, &motion.replay_key))
+            .or_else(|| {
+                self.settled_declaration
+                    .get(&key)
+                    .map(|(source, key)| (source, key))
+            });
+        // A new native identity initializes at rest. Updating a recipe without
+        // a content change must not invent an entrance (e.g. a theme switch).
+        let initialize = previous.is_none_or(|(source, key)| {
+            key.as_deref() == Some(replay_key.as_str()) && source != &declaration
+        });
+        if initialize {
+            self.active.remove(&key);
+            self.settled
+                .insert(key.clone(), source_terminal_value(&declaration));
+            self.settled_declaration
+                .insert(key.clone(), (declaration, Some(replay_key)));
+            self.settled_retention.insert(key.clone(), retention);
+            Ok(key)
+        } else {
+            self.start_with_replay_retained(
+                component,
+                declaration,
+                Some(replay_key),
+                now,
+                retention,
+            )
+        }
+    }
+
+    fn start_enter_retained(
+        &mut self,
+        component: ComponentInstancePath,
+        declaration: MotionSource,
+        replay_key: Option<String>,
+        now: Instant,
+        retention: MotionRetention,
+    ) -> Result<MotionKey, MotionError> {
+        let key = MotionKey {
+            component: component.clone(),
+            property: declaration.property(),
+        };
+        // An entry recipe belongs to this mount, not the latest render.
+        // Remember clearing a key, but only a new explicit key can play again.
+        if let Some(active) = self.active.get_mut(&key) {
+            if replay_key.is_none() || active.replay_key == replay_key {
+                active.replay_key = replay_key;
+                active.retention = retention;
+                return Ok(key);
+            }
+        } else if let Some((_, previous_key)) = self.settled_declaration.get_mut(&key)
+            && (replay_key.is_none() || *previous_key == replay_key)
+        {
+            *previous_key = replay_key;
+            self.settled_retention.insert(key.clone(), retention);
+            return Ok(key);
+        }
+        self.start_with_replay_retained(component, declaration, replay_key, now, retention)
+    }
+
     pub fn cancel(&mut self, key: &MotionKey) {
+        self.paint_endpoints.remove(key);
+        self.layout_sizes.remove(key);
+        self.native_progress.remove(key);
         self.active.remove(key);
         self.settled.remove(key);
         self.settled_declaration.remove(key);
         self.settled_retention.remove(key);
+    }
+
+    pub(crate) fn retain_native_progress(
+        &mut self,
+        domain: &str,
+        retain: impl Fn(crate::NodeId) -> bool,
+    ) {
+        let removed = self
+            .native_progress
+            .iter()
+            .filter(|(key, (owner, _))| key.in_node_scope(domain) && !retain(*owner))
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in removed {
+            self.cancel(&key);
+        }
+    }
+
+    /// A bounded native painter lane. Its revision is presentation identity,
+    /// not a label or user data. It consumes ordinary budget and lifecycle.
+    pub(crate) fn present_native_progress(
+        &mut self,
+        scope: &NativeProgressScope,
+        lane: u8,
+        request: Option<NativeProgressRequest>,
+    ) -> (f64, bool) {
+        let key = MotionKey::for_node(
+            &format!("{}/native:{lane}", scope.path),
+            MotionProperty::PrimitiveProgress,
+        );
+        let Some(request) = request.filter(|_| self.preference() == MotionPreference::Normal)
+        else {
+            self.cancel(&key);
+            return (1., false);
+        };
+        if self.native_progress.get(&key) == Some(&(scope.owner, request.revision)) {
+            return (self.sample(&key, scope.now).unwrap_or(1.), false);
+        }
+        self.cancel(&key);
+        let started = !self.key_suspended(&key) && {
+            let mut spec = MotionTransition::new(key.property, 0., 1., request.duration_ms);
+            spec.easing = request.easing;
+            spec.delay_ms = request.delay_ms;
+            if request.looping {
+                spec.iterations = None;
+            }
+            self.start(
+                key.component.clone(),
+                MotionSource::Transition(spec),
+                scope.now,
+            )
+            .is_ok()
+        };
+        self.native_progress
+            .insert(key, (scope.owner, request.revision));
+        (if started { 0. } else { 1. }, started)
+    }
+
+    /// Drop paint tracks before sampling a committed view frame. Keyed
+    /// controls keep their prior value; removed or opted-out owners do not.
+    pub(crate) fn retain_paint_owners(
+        &mut self,
+        domain: &str,
+        retain: impl Fn(crate::NodeId, PaintOwnerKind) -> bool,
+    ) {
+        let removed = self
+            .paint_endpoints
+            .iter()
+            .filter(|(key, (owner, _))| {
+                key.in_node_scope(domain)
+                    && !retain(
+                        *owner,
+                        if key
+                            .component
+                            .single_root_key("UiNode")
+                            .and_then(|path| path.strip_suffix("/paint"))
+                            .is_some_and(|path| path.ends_with(INLINE_UNDERLINE_LANE))
+                        {
+                            PaintOwnerKind::InlineUnderline
+                        } else {
+                            PaintOwnerKind::ElementPaint
+                        },
+                    )
+            })
+            .map(|(key, _)| key.clone())
+            .chain(
+                self.layout_sizes
+                    .iter()
+                    .filter(|(key, track)| {
+                        key.in_node_scope(domain)
+                            && !retain(track.owner, PaintOwnerKind::IntrinsicSize)
+                    })
+                    .map(|(key, _)| key.clone()),
+            )
+            .collect::<Vec<_>>();
+        for key in removed {
+            self.cancel(&key);
+        }
+    }
+
+    /// The sampler owns a normalized progress track. The actual destination
+    /// is resolved by the real, constrained layout tree, not measured via a
+    /// second interactive element or an unconstrained guess.
+    pub(crate) fn present_layout_size(
+        &mut self,
+        path: &str,
+        owner: crate::NodeId,
+        committed_size: Option<f64>,
+        transition: crate::paint_motion::LayoutSizeTransition<'_>,
+        now: Instant,
+    ) -> (Option<(f64, f64)>, bool) {
+        let key = MotionKey::for_node(&format!("{path}/layout-size"), MotionProperty::Width);
+        let axis = transition.axis();
+        let previous = self
+            .layout_sizes
+            .get(&key)
+            .filter(|track| track.owner == owner && track.axis == axis);
+        if let Some(previous) = previous
+            && previous.content == transition.key
+        {
+            return (
+                previous
+                    .from
+                    .zip(self.sample(&key, now))
+                    .filter(|(_, t)| *t < 1.),
+                false,
+            );
+        }
+        let from = previous.and(committed_size);
+        self.cancel(&key);
+        let started = from.is_some()
+            && transition.timing.duration_ms != 0
+            && self.preference() == MotionPreference::Normal
+            && !self.key_suspended(&key)
+            && {
+                let mut spec = MotionTransition::new(
+                    MotionProperty::Width,
+                    0.,
+                    1.,
+                    transition.timing.duration_ms,
+                );
+                spec.easing = transition.timing.easing;
+                self.start(key.component.clone(), MotionSource::Transition(spec), now)
+                    .is_ok()
+            };
+        self.layout_sizes.insert(
+            key,
+            LayoutSizeTrack {
+                owner,
+                axis,
+                content: transition.key.to_owned(),
+                from: from.filter(|_| started),
+            },
+        );
+        (from.filter(|_| started).map(|from| (from, 0.)), started)
+    }
+
+    /// Public GPUI captures text ink when building native runs, before paint.
+    /// Read the already committed endpoints without retargeting on provisional
+    /// pre-layout hover or focus state.
+    #[cfg(not(feature = "vendor-gpui"))]
+    pub(crate) fn sample_paint_text(
+        &self,
+        path: &str,
+        parent: gpui::Hsla,
+        now: Instant,
+    ) -> Option<crate::paint_motion::TextPaintSample> {
+        if self.preference() != MotionPreference::Normal {
+            return None;
+        }
+        let key = MotionKey::for_node(&format!("{path}/paint"), MotionProperty::Opacity);
+        let (_, endpoints) = self.paint_endpoints.get(&key)?;
+        Some(crate::paint_motion::TextPaintSample(
+            endpoints.text_color(self.sample(&key, now).unwrap_or(1.), parent),
+        ))
+    }
+
+    /// Observe the actual winning native paint after hover/focus resolution.
+    /// The internal scalar progress uses the ordinary active slot, pause,
+    /// budget and policy paths. The reserved `/paint` lane is not a `UiNode`
+    /// path or a script-owned timeline channel.
+    pub(crate) fn present_paint(
+        &mut self,
+        path: &str,
+        owner: crate::NodeId,
+        paint: &mut crate::presentation_backend::ComputedPaint,
+        parent: gpui::Hsla,
+        transition: crate::paint_motion::PaintTransition,
+        now: Instant,
+    ) -> bool {
+        let key = MotionKey::for_node(&format!("{path}/paint"), MotionProperty::Opacity);
+        let mut target = paint.clone();
+        let passthrough = (!transition.group_effects).then_some((
+            target.opacity,
+            target.isolated_opacity,
+            target.foreground_grayscale,
+        ));
+        if passthrough.is_some() {
+            target.opacity = None;
+            target.isolated_opacity = false;
+            target.foreground_grayscale = 0.;
+        }
+        let restore_group = |sample: &mut crate::presentation_backend::ComputedPaint| {
+            if let Some((opacity, isolated, grayscale)) = passthrough {
+                sample.opacity = opacity;
+                sample.isolated_opacity = isolated;
+                sample.foreground_grayscale = grayscale;
+            }
+        };
+        let previous = self
+            .paint_endpoints
+            .get(&key)
+            .filter(|(_, endpoints)| endpoints.group_effects == transition.group_effects);
+        let progress = || self.sample(&key, now).unwrap_or(1.);
+        if let Some((_, previous)) = previous
+            && previous.to == target
+            && transition.duration_ms != 0
+        {
+            *paint = previous.sample(progress(), parent);
+            restore_group(paint);
+            return false;
+        }
+        let from = previous.map_or_else(|| target.clone(), |(_, p)| p.sample(progress(), parent));
+        self.cancel(&key);
+        let started = from != target
+            && transition.duration_ms != 0
+            && self.preference() == MotionPreference::Normal
+            && !self.key_suspended(&key)
+            && {
+                let mut spec =
+                    MotionTransition::new(MotionProperty::Opacity, 0., 1., transition.duration_ms);
+                spec.easing = transition.easing;
+                spec.delay_ms = transition.delay_ms;
+                self.start(key.component.clone(), MotionSource::Transition(spec), now)
+                    .is_ok()
+            };
+        let endpoints = crate::paint_motion::PaintEndpoints {
+            from,
+            to: target,
+            group_effects: transition.group_effects,
+        };
+        if started {
+            *paint = endpoints.sample(0., parent);
+            restore_group(paint);
+        }
+        self.paint_endpoints.insert(key, (owner, endpoints));
+        started
     }
 
     /// Register or replace a named timeline in one retained node scope.
@@ -1794,6 +2180,11 @@ impl MotionRuntime {
     }
 
     pub fn cancel_node_scope(&mut self, path: &str) {
+        self.paint_endpoints
+            .retain(|key, _| !key.in_node_scope(path));
+        self.layout_sizes.retain(|key, _| !key.in_node_scope(path));
+        self.native_progress
+            .retain(|key, _| !key.in_node_scope(path));
         self.active.retain(|key, _| !key.in_node_scope(path));
         self.settled.retain(|key, _| !key.in_node_scope(path));
         self.settled_declaration
@@ -2144,6 +2535,22 @@ impl MotionRuntime {
             }),
         }
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct NativeProgressRequest {
+    pub(crate) revision: u64,
+    pub(crate) duration_ms: u64,
+    pub(crate) delay_ms: u64,
+    pub(crate) easing: MotionEasing,
+    pub(crate) looping: bool,
+}
+
+#[derive(Clone)]
+pub(crate) struct NativeProgressScope {
+    pub(crate) path: String,
+    pub(crate) owner: crate::NodeId,
+    pub(crate) now: Instant,
 }
 
 fn timeline_compatible(previous: &MotionTimeline, next: &MotionTimeline) -> bool {
@@ -2668,7 +3075,7 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
     context: MotionReconcileContext<'_>,
 ) -> Result<BTreeMap<MotionKey, f64>, MotionError> {
     validate_shared_layout_ids(root)?;
-    let mut declarations = Vec::<(String, MotionSource, Option<String>)>::new();
+    let mut declarations = Vec::<NodeMotionDeclaration>::new();
     let mut timelines = Vec::<(String, ComponentInstancePath, MotionTimeline)>::new();
     collect_node_motion(
         root,
@@ -2678,8 +3085,8 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
         &mut timelines,
     )?;
     validate_motion_plan(root, root_path, &declarations, &timelines)?;
-    for (_, spec, _) in &declarations {
-        validate_source(spec)?;
+    for declaration in &declarations {
+        validate_source(&declaration.source)?;
     }
     let mut candidate = runtime.transaction_snapshot();
     let active_limit = candidate.active_limit;
@@ -2703,13 +3110,14 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
     }
     let keys = declarations
         .iter()
-        .map(|(path, source, _)| {
+        .map(|declaration| {
+            let path = &declaration.path;
             MotionKey::for_node(
                 context
                     .identities
                     .and_then(|identities| identities.get(path))
                     .map_or(path.as_str(), String::as_str),
-                source.property(),
+                declaration.source.property(),
             )
         })
         .collect::<BTreeSet<_>>();
@@ -2755,19 +3163,34 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
             )?,
         );
     }
-    for (path, spec, replay_key) in declarations {
+    for declaration in declarations {
+        let NodeMotionDeclaration {
+            path,
+            source,
+            replay_key,
+            on_change,
+            on_enter,
+        } = declaration;
         let identity = context
             .identities
             .and_then(|identities| identities.get(&path))
             .cloned()
             .unwrap_or(path);
-        candidate.start_with_replay_retained(
-            ComponentInstancePath::root("UiNode", identity),
-            spec,
-            replay_key,
-            now,
-            MotionRetention::Live(context.domain.to_owned()),
-        )?;
+        let component = ComponentInstancePath::root("UiNode", identity);
+        let retention = MotionRetention::Live(context.domain.to_owned());
+        if on_change {
+            candidate.start_on_change_retained(
+                component,
+                source,
+                replay_key.expect("validated change key"),
+                now,
+                retention,
+            )?;
+        } else if on_enter {
+            candidate.start_enter_retained(component, source, replay_key, now, retention)?;
+        } else {
+            candidate.start_with_replay_retained(component, source, replay_key, now, retention)?;
+        }
     }
     candidate.retain_timeline_scope(root_path, &handles);
     let usage = candidate.resource_usage();
@@ -3045,6 +3468,18 @@ pub(crate) fn retained_motion_identities(
     Ok(identities)
 }
 
+fn count_node_declarations(node: &UiNode) -> usize {
+    let presentation_motions = ["paint_transition_duration_ms", "intrinsic_width_motion_key"]
+        .into_iter()
+        .filter(|key| node.attributes().contains_key(*key))
+        .count();
+    node.motions()
+        .len()
+        .saturating_add(node.exit_motions().len())
+        .saturating_add(node.progress_motions().len())
+        .saturating_add(presentation_motions)
+}
+
 #[must_use]
 pub fn node_motion_resource_usage(root: &UiNode) -> MotionResourceUsage {
     fn visit(node: &UiNode, usage: &mut MotionResourceUsage) {
@@ -3064,11 +3499,9 @@ pub fn node_motion_resource_usage(root: &UiNode) -> MotionResourceUsage {
         usage.geometry_slots = usage
             .geometry_slots
             .saturating_add(node.progress_motions().len());
-        usage.declarations = usage.declarations.saturating_add(node.motions().len());
-        usage.declarations = usage.declarations.saturating_add(node.exit_motions().len());
         usage.declarations = usage
             .declarations
-            .saturating_add(node.progress_motions().len());
+            .saturating_add(count_node_declarations(node));
         usage.keyframes = usage.keyframes.saturating_add(
             node.motions()
                 .iter()
@@ -3176,12 +3609,29 @@ fn visit_timeline_sources(step: &MotionTimelineStep, visit: &mut impl FnMut(&Mot
     }
 }
 
+struct NodeMotionDeclaration {
+    path: String,
+    source: MotionSource,
+    replay_key: Option<String>,
+    on_change: bool,
+    on_enter: bool,
+}
+
+fn validate_change_source(source: &MotionSource, path: &str) -> Result<(), MotionError> {
+    if source_duration_ms(source).is_err() {
+        return Err(MotionError::InvalidChangeMotion(format!(
+            "`{path}` requires a finite source"
+        )));
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 fn collect_node_motion(
     node: &UiNode,
     path: &str,
     inherited_owner: &ComponentInstancePath,
-    output: &mut Vec<(String, MotionSource, Option<String>)>,
+    output: &mut Vec<NodeMotionDeclaration>,
     timelines: &mut Vec<(String, ComponentInstancePath, MotionTimeline)>,
 ) -> Result<(), MotionError> {
     let owner = node.component_root().unwrap_or(inherited_owner);
@@ -3224,11 +3674,28 @@ fn collect_node_motion(
         Some(crate::UiValue::String(key)) => Some(key.clone()),
         _ => None,
     };
+    let on_change = node.attributes().get("motion_on_change") == Some(&crate::UiValue::Bool(true));
+    if on_change {
+        if replay_key.is_none() {
+            return Err(MotionError::InvalidChangeMotion(format!(
+                "`{path}` requires a replay key"
+            )));
+        }
+        for source in node.motions() {
+            validate_change_source(source, path)?;
+        }
+    }
     output.extend(
         node.motions()
             .iter()
             .cloned()
-            .map(|animation| (path.to_owned(), animation, replay_key.clone())),
+            .map(|source| NodeMotionDeclaration {
+                path: path.to_owned(),
+                on_enter: node.is_enter_motion(source.property()),
+                source,
+                replay_key: replay_key.clone(),
+                on_change,
+            }),
     );
     timelines.extend(
         node.timelines()
@@ -3329,8 +3796,19 @@ fn collect_node_motion(
                     span.motions()
                         .iter()
                         .cloned()
-                        .map(|source| (span_path.clone(), source, replay_key.clone())),
+                        .map(|source| NodeMotionDeclaration {
+                            path: span_path.clone(),
+                            source,
+                            replay_key: replay_key.clone(),
+                            on_change,
+                            on_enter: false,
+                        }),
                 );
+                if on_change {
+                    for source in span.motions() {
+                        validate_change_source(source, &span_path)?;
+                    }
+                }
             }
         }
         UiNodeKind::Text { .. }
@@ -3351,14 +3829,19 @@ enum MotionSceneTarget<'a> {
 fn validate_motion_plan(
     root: &UiNode,
     root_path: &str,
-    declarations: &[(String, MotionSource, Option<String>)],
+    declarations: &[NodeMotionDeclaration],
     timelines: &[(String, ComponentInstancePath, MotionTimeline)],
 ) -> Result<(), MotionError> {
     let mut scene = BTreeMap::new();
     collect_motion_scene(root, root_path, &mut scene)?;
     let mut owners = BTreeMap::<(String, MotionProperty), String>::new();
-    for (path, source, _) in declarations {
-        insert_property_owner(&mut owners, path, source.property(), "motion declaration")?;
+    for declaration in declarations {
+        insert_property_owner(
+            &mut owners,
+            &declaration.path,
+            declaration.source.property(),
+            "motion declaration",
+        )?;
     }
     collect_non_timeline_owners(root, root_path, &mut owners)?;
     for (base, _, timeline) in timelines {
@@ -3554,15 +4037,45 @@ fn validate_node_property(
     property: MotionProperty,
     path: &str,
 ) -> Result<(), MotionError> {
-    if matches!(
-        property,
-        MotionProperty::Rotate
-            | MotionProperty::ScaleX
-            | MotionProperty::ScaleY
-            | MotionProperty::SkewX
-            | MotionProperty::SkewY
-            | MotionProperty::PathProgress
-    ) && !matches!(node.kind(), UiNodeKind::Canvas { .. })
+    let numeric_source = node.element_ref().is_some()
+        && node.attributes().get("motion_number_source") == Some(&crate::UiValue::Bool(true));
+    let numeric_text = matches!(node.kind(), UiNodeKind::Text { .. })
+        && crate::locale::NumberTextFormat::from_attributes(node.attributes()).is_some();
+    if (property == MotionProperty::NumberValue && !numeric_text && !numeric_source)
+        || (property == MotionProperty::NumberWeight && !numeric_source)
+    {
+        Err(MotionError::UnsupportedProperty {
+            path: path.to_owned(),
+            property,
+            node: "no_compatible_numeric_motion_target",
+        })
+    } else if property == MotionProperty::GlyphSweep
+        && !matches!(node.kind(), UiNodeKind::Text { .. })
+    {
+        Err(MotionError::UnsupportedProperty {
+            path: path.to_owned(),
+            property,
+            node: "not_plain_text",
+        })
+    } else if property == MotionProperty::OverlayReveal
+        && !matches!(node.kind(),UiNodeKind::Overlay {spec,..} if !spec.modal)
+    {
+        Err(MotionError::UnsupportedProperty {
+            path: path.to_owned(),
+            property,
+            node: "not_a_non_modal_overlay",
+        })
+    } else if property == MotionProperty::PrimitiveProgress
+        && !matches!(node.kind(), UiNodeKind::Custom { .. })
+    {
+        Err(MotionError::UnsupportedProperty {
+            path: path.to_owned(),
+            property,
+            node: "non_primitive",
+        })
+    } else if property == MotionProperty::PathProgress
+        && !matches!(node.kind(), UiNodeKind::Canvas { .. })
+        && node.canvas_peak_binding().is_none()
     {
         Err(MotionError::UnsupportedProperty {
             path: path.to_owned(),
@@ -3581,6 +4094,7 @@ fn validate_node_property(
             command,
             crate::CanvasCommand::Path { clip: Some(_), .. }
                 | crate::CanvasCommand::MorphPath { clip: Some(_), .. }
+                | crate::CanvasCommand::MorphFillPath { clip: Some(_), .. }
         )
     })) {
         Err(MotionError::UnsupportedProperty {
@@ -3931,6 +4445,7 @@ fn nearest_snap(value: f64, points: &[f64]) -> Option<f64> {
 }
 
 pub(crate) fn register_motion_api(engine: &mut Engine) {
+    crate::number_motion::register_number_motion_api(engine);
     engine.build_type::<MotionSource>();
     engine.build_type::<MotionTimelineStep>();
     engine.build_type::<MotionTimeline>();
@@ -4116,6 +4631,59 @@ fn motion_number(name: &str, value: &Dynamic) -> Result<f64, Box<EvalAltResult>>
 }
 
 fn motion_text_spans_from_script(text: &str, mut config: Map) -> Result<Array, Box<EvalAltResult>> {
+    let profile = take_string(&mut config, "profile")?;
+    if profile.as_deref() == Some("sweep") {
+        let duration_ms = take_u64(&mut config, "duration_ms")?.unwrap_or(1450);
+        reject_unknown_config(&config)?;
+        let clusters = text.graphemes(true).take(49).collect::<Vec<_>>();
+        if clusters.len() > 48 {
+            return Err(script_boxed_error(
+                "text sweep accepts at most 48 graphemes",
+            ));
+        }
+        let denominator = f64::from(
+            u32::try_from(clusters.len().saturating_sub(1).max(1)).expect("bounded sweep length"),
+        );
+        return clusters
+            .into_iter()
+            .enumerate()
+            .map(|(index, grapheme)| {
+                let position = f64::from(u32::try_from(index).expect("bounded sweep length"));
+                let center = 0.15 + position / denominator * 0.70;
+                let frames = [
+                    (0.0, 0.0),
+                    (center - 0.14, 0.0),
+                    (center, 1.0),
+                    (center + 0.14, 0.0),
+                    (1.0, 0.0),
+                ]
+                .into_iter()
+                .map(|(offset, value)| MotionKeyframe {
+                    offset,
+                    value,
+                    easing: MotionEasing::EaseInOut,
+                })
+                .collect();
+                let source = checked_source(MotionSource::Keyframes(MotionKeyframes {
+                    property: MotionProperty::Opacity,
+                    frames,
+                    delay_ms: 0,
+                    duration_ms,
+                    iterations: None,
+                    autoreverse: false,
+                    intent: MotionIntent::Decorative,
+                }))?;
+                Ok(Dynamic::from(
+                    crate::Span::new(grapheme)
+                        .with_key(format!("sweep-{index}"))
+                        .motion(source),
+                ))
+            })
+            .collect();
+    }
+    if profile.as_deref().is_some_and(|p| p != "reveal") {
+        return Err(script_boxed_error("unknown motion text span profile"));
+    }
     let duration_ms = take_u64(&mut config, "duration_ms")?.unwrap_or(180);
     let stagger_ms = take_u64(&mut config, "stagger_ms")?.unwrap_or(24);
     let easing = take_string(&mut config, "easing")?
@@ -4539,6 +5107,8 @@ pub enum MotionError {
     UnknownIntent(String),
     #[error("motion parameters must be finite and physically valid")]
     InvalidSpec,
+    #[error("invalid change-triggered motion: {0}")]
+    InvalidChangeMotion(String),
     #[error("motion node `{0}` requires a stable key")]
     MissingKey(String),
     #[error("invalid motion timeline: {0}")]
@@ -4612,8 +5182,120 @@ pub struct MotionResourceUsage {
 mod tests {
     use super::*;
 
+    #[test]
+    fn paint_group_retargets_from_its_displayed_pair_and_respects_delay() {
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        let original = crate::presentation_backend::ComputedPaint::default();
+        let muted = crate::presentation_backend::ComputedPaint {
+            opacity: Some(0.4),
+            foreground_grayscale: 0.8,
+            isolated_opacity: true,
+            ..Default::default()
+        };
+        let mut timing = crate::paint_motion::PaintTransition {
+            duration_ms: 200,
+            easing: MotionEasing::Linear,
+            delay_ms: 110,
+            group_effects: true,
+        };
+        let display = |runtime: &mut MotionRuntime,
+                       target: &crate::presentation_backend::ComputedPaint,
+                       ms,
+                       timing| {
+            let mut paint = target.clone();
+            let active = runtime.present_paint(
+                "window/editor/icon",
+                crate::NodeId::from_raw(1),
+                &mut paint,
+                gpui::Hsla::default(),
+                timing,
+                at(ms),
+            );
+            (active, paint)
+        };
+        let close =
+            |paint: &crate::presentation_backend::ComputedPaint, opacity: f32, grayscale: f32| {
+                assert!(
+                    (paint.opacity.unwrap_or(1.) - opacity).abs() < 1e-5,
+                    "{paint:?}"
+                );
+                assert!(
+                    (paint.foreground_grayscale - grayscale).abs() < 1e-5,
+                    "{paint:?}"
+                );
+            };
+        assert_eq!(
+            display(&mut runtime, &original, 0, timing),
+            (false, original.clone())
+        );
+        let (active, sample) = display(&mut runtime, &muted, 20, timing);
+        assert!(active);
+        assert!(
+            !sample.isolated_opacity,
+            "a delayed mark keeps its original paint scope"
+        );
+        close(&sample, 1., 0.);
+        close(&display(&mut runtime, &muted, 129, timing).1, 1., 0.);
+        close(&display(&mut runtime, &muted, 230, timing).1, 0.7, 0.4);
+        timing.delay_ms = 0;
+        let (active, sample) = display(&mut runtime, &original, 230, timing);
+        assert!(active && sample.isolated_opacity);
+        close(&sample, 0.7, 0.4);
+        close(&display(&mut runtime, &original, 330, timing).1, 0.85, 0.2);
+        assert_eq!(
+            display(&mut runtime, &original, 430, timing),
+            (false, original.clone())
+        );
+
+        for preference in [MotionPreference::Reduced, MotionPreference::None] {
+            runtime.set_preference(preference);
+            assert_eq!(
+                display(&mut runtime, &muted, 440, timing),
+                (false, muted.clone())
+            );
+            assert_eq!(
+                display(&mut runtime, &original, 441, timing),
+                (false, original.clone())
+            );
+        }
+        runtime.set_preference(MotionPreference::Normal);
+        // The default color mode must not claim either compositing field.
+        timing.group_effects = false;
+        assert_eq!(
+            display(&mut runtime, &original, 450, timing),
+            (false, original)
+        );
+        assert_eq!(display(&mut runtime, &muted, 451, timing), (false, muted));
+    }
+
     fn key_path() -> ComponentInstancePath {
         ComponentInstancePath::root("Accordion", "settings")
+    }
+
+    #[test]
+    fn repeating_text_sweep_keeps_clusters_and_phases_separate() {
+        let options = Map::from_iter([
+            ("profile".into(), Dynamic::from("sweep")),
+            ("duration_ms".into(), Dynamic::from(1_000_i64)),
+        ]);
+        let spans = motion_text_spans_from_script("A🧑🏻‍💻", options.clone())
+            .unwrap()
+            .into_iter()
+            .map(Dynamic::cast::<crate::Span>)
+            .collect::<Vec<_>>();
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[1].text(), "🧑🏻‍💻");
+        let opacity = |index: usize, millis| {
+            sample_source(&spans[index].motions()[0], Duration::from_millis(millis)).value
+        };
+        assert!((opacity(0, 150) - 1.0).abs() < 0.001);
+        assert!(opacity(1, 150).abs() < 0.001);
+        assert!((opacity(1, 850) - 1.0).abs() < 0.001);
+        assert!(opacity(0, 850).abs() < 0.001);
+        assert!((opacity(0, 1150) - opacity(0, 150)).abs() < 0.001);
+        assert!(motion_text_spans_from_script(&"x".repeat(49), options).is_err());
     }
 
     #[test]
@@ -4835,6 +5517,51 @@ mod tests {
     }
 
     #[test]
+    fn native_lanes_obey_budget_pause_and_retained_owner_cleanup() {
+        let now = Instant::now();
+        let domain = "window:w/view:v/root";
+        let owner = crate::NodeId::from_raw(1);
+        let mut scope = NativeProgressScope {
+            path: format!("{domain}/node:1"),
+            owner,
+            now,
+        };
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        runtime.set_active_limit(1);
+        let request = NativeProgressRequest {
+            revision: 1,
+            duration_ms: 100,
+            delay_ms: 0,
+            easing: MotionEasing::Linear,
+            looping: false,
+        };
+        assert_eq!(
+            runtime.present_native_progress(&scope, 0, Some(request)),
+            (0., true)
+        );
+        assert_eq!(
+            runtime.present_native_progress(&scope, 1, Some(request)),
+            (1., false)
+        );
+        let sample = |runtime: &mut MotionRuntime, scope: &NativeProgressScope, expected: f64| {
+            let (actual, restarted) = runtime.present_native_progress(scope, 0, Some(request));
+            assert!((actual - expected).abs() < 1.0e-9);
+            assert!(!restarted);
+        };
+        scope.now = now + Duration::from_millis(20);
+        sample(&mut runtime, &scope, 0.2);
+        runtime.suspend_node_scope(domain, scope.now);
+        scope.now = now + Duration::from_millis(990);
+        sample(&mut runtime, &scope, 0.2);
+        runtime.resume_node_scope(domain, scope.now);
+        scope.now += Duration::from_millis(20);
+        sample(&mut runtime, &scope, 0.4);
+        runtime.retain_native_progress(domain, |current| current != owner);
+        assert_eq!(runtime.resource_usage().active, 0);
+        assert!(runtime.native_progress.is_empty());
+    }
+
+    #[test]
     fn transition_retargets_from_current_sample() {
         let start = Instant::now();
         let mut runtime = MotionRuntime::new(MotionPreference::Normal);
@@ -4920,6 +5647,184 @@ mod tests {
         let values = reconcile_node_motion(&node, &mut runtime, halfway).unwrap();
         let key = MotionKey::for_node("root", MotionProperty::Opacity);
         assert!((values[&key] - 0.5).abs() < 0.01);
+    }
+
+    fn change_node(content: &str) -> UiNode {
+        UiNode::text(content)
+            .with_key("content")
+            .with_motion(transition(MotionProperty::Opacity, 0.0, 1.0, 100))
+            .with_motion_on_change(content)
+    }
+
+    #[test]
+    fn change_motion_initializes_idle_and_replays_only_a_new_content_key() {
+        let start = Instant::now();
+        let key = MotionKey::for_node("root", MotionProperty::Opacity);
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        reconcile_node_motion(&change_node("A"), &mut runtime, start).unwrap();
+        let frame = runtime.tick(start);
+        assert_eq!(runtime.sample(&key, start), Some(1.0));
+        assert!(!frame.needs_frame);
+        assert_eq!(runtime.resource_usage().active, 0);
+
+        reconcile_node_motion(&change_node("B"), &mut runtime, start).unwrap();
+        assert_eq!(runtime.sample(&key, start), Some(0.0));
+        let halfway = start + Duration::from_millis(50);
+        reconcile_node_motion(&change_node("B"), &mut runtime, halfway).unwrap();
+        assert_eq!(runtime.sample(&key, halfway), Some(0.5));
+        // New content restarts from its own declared entry, not old content's alpha.
+        reconcile_node_motion(&change_node("C"), &mut runtime, halfway).unwrap();
+        assert_eq!(runtime.sample(&key, halfway), Some(0.0));
+        let end = halfway + Duration::from_millis(100);
+        assert!(!runtime.tick(end).needs_frame);
+        reconcile_node_motion(&change_node("C"), &mut runtime, end).unwrap();
+        assert_eq!(runtime.sample(&key, end), Some(1.0));
+
+        let recipe =
+            change_node("C").with_motion(transition(MotionProperty::Opacity, 0.0, 0.7, 300));
+        reconcile_node_motion(&recipe, &mut runtime, end).unwrap();
+        assert_eq!(runtime.sample(&key, end), Some(0.7));
+        assert!(!runtime.tick(end).needs_frame);
+    }
+
+    #[test]
+    fn change_motion_budget_and_invalid_loop_failures_leave_last_good_key_intact() {
+        let start = Instant::now();
+        let key = MotionKey::for_node("root", MotionProperty::Opacity);
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        runtime.set_active_limit(0);
+        reconcile_node_motion(&change_node("A"), &mut runtime, start).unwrap();
+        assert!(matches!(
+            reconcile_node_motion(&change_node("B"), &mut runtime, start),
+            Err(MotionError::ActiveBudget {
+                actual: 1,
+                limit: 0
+            })
+        ));
+        assert_eq!(runtime.sample(&key, start), Some(1.0));
+        assert!(!runtime.tick(start).needs_frame);
+        runtime.set_active_limit(1);
+        let infinite = change_node("B").with_motion(repeating_transition(
+            MotionProperty::Opacity,
+            0.0,
+            1.0,
+            100,
+        ));
+        assert!(matches!(
+            reconcile_node_motion(&infinite, &mut runtime, start),
+            Err(MotionError::InvalidChangeMotion(_))
+        ));
+        assert_eq!(runtime.sample(&key, start), Some(1.0));
+        reconcile_node_motion(&change_node("B"), &mut runtime, start).unwrap();
+        assert_eq!(
+            runtime.sample(&key, start),
+            Some(0.0),
+            "failed candidates must not consume B"
+        );
+    }
+
+    #[test]
+    fn change_motion_uses_existing_policy_scope_clock_and_unmount_cleanup() {
+        let start = Instant::now();
+        for preference in [
+            MotionPreference::Normal,
+            MotionPreference::Reduced,
+            MotionPreference::None,
+        ] {
+            let mut runtime = MotionRuntime::new(preference);
+            let root = "window:main/root";
+            let key = MotionKey::for_node(root, MotionProperty::Opacity);
+            reconcile_node_motion_scoped(&change_node("A"), &mut runtime, start, root).unwrap();
+            reconcile_node_motion_scoped(&change_node("B"), &mut runtime, start, root).unwrap();
+            let pause = start + Duration::from_millis(30);
+            runtime.suspend_node_scope(root, pause);
+            let later = start + Duration::from_secs(60);
+            let expected = if preference == MotionPreference::Normal {
+                0.3
+            } else {
+                1.0
+            };
+            assert!((runtime.sample(&key, later).unwrap() - expected).abs() < 0.001);
+            assert!(!runtime.tick(later).needs_frame);
+            runtime.resume_node_scope(root, later);
+            let resumed = later + Duration::from_millis(20);
+            let expected = if preference == MotionPreference::Normal {
+                0.5
+            } else {
+                1.0
+            };
+            assert!((runtime.sample(&key, resumed).unwrap() - expected).abs() < 0.001);
+            runtime.release_node_scope(root);
+            assert!(runtime.snapshot(resumed).is_empty());
+            reconcile_node_motion_scoped(&change_node("C"), &mut runtime, resumed, root).unwrap();
+            assert_eq!(runtime.sample(&key, resumed), Some(1.0));
+            assert!(
+                !runtime.tick(resumed).needs_frame,
+                "a remount is not another change"
+            );
+        }
+    }
+
+    #[test]
+    fn change_motion_waiting_for_first_change_does_not_cross_window_or_property_owners() {
+        let now = Instant::now();
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        for root in ["window:w/root", "window:w2/root"] {
+            reconcile_node_motion_scoped(&change_node("A"), &mut runtime, now, root).unwrap();
+        }
+        reconcile_node_motion_scoped(&change_node("B"), &mut runtime, now, "window:w/root")
+            .unwrap();
+        assert_eq!(
+            runtime.sample(
+                &MotionKey::for_node("window:w/root", MotionProperty::Opacity),
+                now
+            ),
+            Some(0.0)
+        );
+        assert_eq!(
+            runtime.sample(
+                &MotionKey::for_node("window:w2/root", MotionProperty::Opacity),
+                now
+            ),
+            Some(1.0)
+        );
+        let conflict = change_node("B").with_timeline(MotionTimeline::new(
+            "conflict",
+            MotionTimelineStep::Track(MotionTrack {
+                target: ".".to_owned(),
+                source: transition(MotionProperty::Opacity, 0.0, 1.0, 100),
+            }),
+        ));
+        assert!(matches!(
+            reconcile_node_motion_scoped(&conflict, &mut runtime, now, "window:w/root"),
+            Err(MotionError::PropertyOwnerConflict { .. })
+        ));
+        assert!(runtime.tick(now).needs_frame);
+        assert_eq!(runtime.resource_usage().active, 1);
+    }
+
+    #[test]
+    fn change_motion_modifiers_have_explicit_last_writer_semantics_in_rhai() {
+        let mut engine = Engine::new();
+        engine.build_type::<UiNode>();
+        register_motion_api(&mut engine);
+        engine.register_fn("probe", || UiNode::text("Value").with_key("value"));
+        let now = Instant::now();
+        for (modifier, plays) in [
+            (r#".motion_on_change("A")"#, false),
+            (r#".motion_on_change("A").motion_replay_key("B")"#, true),
+            (r#".motion_replay_key("A").motion_on_change("B")"#, false),
+        ] {
+            let node = engine.eval::<UiNode>(&format!(r#"probe().motion(motion_transition("opacity", 0.0, 1.0, #{{duration_ms:100}})){modifier}"#)).unwrap();
+            let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+            reconcile_node_motion(&node, &mut runtime, now).unwrap();
+            let frame = runtime.tick(now);
+            assert_eq!(frame.needs_frame, plays, "{modifier}");
+            assert_eq!(
+                runtime.sample(&MotionKey::for_node("root", MotionProperty::Opacity), now),
+                Some(if plays { 0.0 } else { 1.0 })
+            );
+        }
     }
 
     #[test]
@@ -5084,6 +5989,60 @@ mod tests {
                 .to_string()
                 .contains("unknown motion option `typo`")
         );
+    }
+
+    #[test]
+    fn entry_ignores_recipe_updates_but_replays_a_new_explicit_key() {
+        let start = Instant::now();
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        let key = MotionKey::for_node("root", MotionProperty::Opacity);
+        let build = |duration, replay: Option<&str>| {
+            let node = UiNode::text("badge")
+                .with_key("best")
+                .with_enter_motion(transition(MotionProperty::Opacity, 0.0, 1.0, duration));
+            match replay {
+                Some(replay) => node.with_motion_replay_key(replay),
+                None => node,
+            }
+        };
+        let initial = build(100, Some("first"));
+        let changed = build(300, Some("first"));
+        reconcile_node_motion(&initial, &mut runtime, start).unwrap();
+        let mid = start + Duration::from_millis(50);
+        assert!(
+            (reconcile_node_motion(&changed, &mut runtime, mid).unwrap()[&key] - 0.5).abs() < 0.01
+        );
+        let rest = start + Duration::from_millis(110);
+        assert!(
+            !runtime.tick(rest).needs_frame,
+            "recipe must not prolong this mount"
+        );
+        assert_eq!(
+            reconcile_node_motion(&changed, &mut runtime, rest).unwrap()[&key],
+            1.
+        );
+        assert!(
+            !runtime.tick(rest).needs_frame,
+            "finished mount must not replay"
+        );
+
+        let cleared = build(300, None);
+        assert_eq!(
+            reconcile_node_motion(&cleared, &mut runtime, rest).unwrap()[&key],
+            1.
+        );
+        assert_eq!(
+            reconcile_node_motion(&changed, &mut runtime, rest).unwrap()[&key],
+            0.
+        );
+
+        // An ordinary live track replacing this property still updates its
+        // source rather than inheriting the entry policy.
+        let ordinary = changed.with_motion(transition(MotionProperty::Opacity, 0., 1., 100));
+        reconcile_node_motion(&ordinary, &mut runtime, rest).unwrap();
+        let settled = rest + Duration::from_millis(110);
+        assert!(!runtime.tick(settled).needs_frame);
+        assert_eq!(runtime.sample(&key, settled), Some(1.0));
     }
 
     #[test]
@@ -5859,9 +6818,10 @@ mod tests {
             ],
             fill: None,
             stroke: Some((
-                crate::ColorValue::Literal(crate::Rgba8::from_rgb_hex(0x00ff_ffff)),
+                crate::ColorValue::Literal(crate::Rgba8::from_rgb_hex(0x00ff_ffff)).into(),
                 1.0,
             )),
+            stroke_style: crate::CanvasStrokeStyle::default(),
             transform: crate::CanvasTransform::default(),
             clip: Some(crate::CanvasClipRect {
                 x: 0.0,

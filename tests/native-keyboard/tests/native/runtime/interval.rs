@@ -17,7 +17,9 @@ fn view(ctx){
 }"#;
 
 fn advance(visual: &mut gpui::VisualTestContext, millis: u64) {
-    visual.executor().advance_clock(Duration::from_millis(millis));
+    visual
+        .executor()
+        .advance_clock(Duration::from_millis(millis));
     visual.run_until_parked();
     visual.update(|window, cx| window.simulate_next_frame(cx));
     visual.run_until_parked();

@@ -141,6 +141,7 @@ fn table_1000_view_with_resizable(resizable: bool) -> ScriptView {
         module("components/selectable_list", SELECTABLE_LIST),
         module("components/badge", BADGE),
         module("components/button", BUTTON),
+        module("components/spinner", gpui_rhai_registry::SPINNER_SOURCE),
     ]));
     ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, THEME)
         .token_base(include_str!("../../../../../registry/tokens.rhai"))

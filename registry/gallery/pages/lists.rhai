@@ -79,20 +79,41 @@ fn context_menu_page(h, v) {
 
 fn command_items() {
     [
-        #{ value: "deploy", label: "Deploy service", group: "Release", shortcut: "⌘D" },
-        #{ value: "rollback", label: "Roll back", group: "Release" },
-        #{ value: "logs", label: "Open logs", group: "Observe", shortcut: "⌘L" },
+        #{ value: "deploy", label: "Deploy service", hint:"Production", group: "Release", shortcut: "cmd-d",
+            logo:svg("<svg width='24' height='24' viewBox='0 0 24 24'><path fill='#0190fe' d='M12 2 22 7v10l-10 5L2 17V7z'/><path fill='white' d='M7 8h10v2H7zm0 4h10v2H7zm0 4h6v2H7z'/></svg>") },
+        #{ value: "rollback", label: "Roll back", hint:"Previous release", group: "Release", icon:"app/icons/chevron_left" },
+        #{ value: "logs", label: "Open logs", hint:"Live stream", group: "Observe", shortcut: "cmd-l", icon:"app/icons/search" },
         #{ value: "metrics", label: "查看指标", group: "Observe", keywords: ["metrics"] },
     ]
 }
 
 fn command_page(h, v) {
-    kit::page(h, v, "command", "Command", "Fuzzy search over commands with group labels and key legends.", [
-        kit::sec("Embedded", command::Command(#{ key: "command-embedded", label: "Commands",
+    kit::page(h, v, "command", "Command", "Fuzzy search with group labels, icons, logo tiles, hints and key legends.", [
+        row([
+            button::Button(#{key:"command-wide",text:"Wide panel",variant:"secondary",on_click:kit::put(h,"command.panel_width",560)}),
+            button::Button(#{key:"command-narrow",text:"Narrow panel",variant:"secondary",on_click:kit::put(h,"command.panel_width",360)}),
+        ]).with_style(style().gap(theme_spacing("sm")).flex_wrap()),
+        kit::sec("Panel", command::Command(#{ key: "command-embedded", label: "Commands",
             query: kit::val(v, "command.query", ""), active_value: kit::val(v, "command.active", "deploy"),
             items: command_items(), max_visible: 6, on_query_change: kit::store(h, "command.query"),
-            on_active_change: kit::store(h, "command.active"), on_action: h.noop })
-            .with_style(style().width(px(360)))),
+            on_active_change: kit::store(h, "command.active"), on_action: kit::store(h,"command.last_action") })
+            .test_id("command-panel-demo").with_style(style().width(px(kit::val(v,"command.panel_width",560))).max_width(relative(1.0)))),
+        text(`Last action: ${kit::val(v,"command.last_action","none")}`).test_id("command-last-action")
+            .accessibility_role("status").with_style(style().typography("caption").text_color(theme_color("collection.metadata"))),
+        kit::sec("Host-owned frame and footer",column([
+            command::Command(#{key:"command-host",label:"Host commands",appearance:"embedded",
+                query:kit::val(v,"command.host_query",""),active_value:kit::val(v,"command.host_active","inspect"),
+                items:[#{value:"inspect",label:"Inspect current theme"}],max_visible:2,
+                on_query_change:kit::store(h,"command.host_query"),on_active_change:kit::store(h,"command.host_active"),
+                on_action:kit::store(h,"command.host_action"),
+                footer:button::Button(#{key:"command-footer-clear",text:"Clear command feedback",variant:"secondary",
+                    on_click:kit::put(h,"command.last_action","none")})
+            }),
+            text(`Host action: ${kit::val(v,"command.host_action","none")}`).test_id("command-host-action")
+                .with_style(style().typography("caption").text_color(theme_color("collection.metadata"))),
+        ]).with_style(style().width(px(560)).max_width(relative(1.0)).padding(theme_spacing("md"))
+            .gap(theme_spacing("sm")).radius(theme_radius("lg")).border(px(1)).border_color(theme_color("border"))
+            .background(theme_color("surface_raised")))),
     ])
 }
 
@@ -159,10 +180,11 @@ fn play_album(key, ctx, payload) {
 // selection, the keys and the rows' accessibility; Play calls back into the Gallery.
 fn album_row(playing, ctx, row) {
     let album = row.item;
+    let tone = if album.tone == "accent" {"info"}else{album.tone};
     let cover = column([text(album.title.sub_string(0, 1)).with_style(style().typography("title")
-        .text_color(theme_color(`on_${album.tone}`)))])
+        .text_color(theme_color(`badge.${tone}_strong_fg`)))])
         .with_style(style().width(px(40)).height(px(40)).flex_shrink(false).items_center().justify_center()
-            .radius(theme_radius("md")).background(theme_color(album.tone)));
+            .radius(theme_radius("md")).background(theme_color(`badge.${tone}_strong_bg`)));
     let lines = column([
         text(album.title).with_style(style().typography("body").whitespace_nowrap().text_ellipsis()),
         text(`${album.artist} · ${album.year}`).with_style(style().typography("caption")
@@ -171,6 +193,7 @@ fn album_row(playing, ctx, row) {
     ]).with_style(style().flex_col().flex_grow().min_width(px(0)));
     row([cover, lines, button::Button(#{ key: `album-play-${row.key}`, size: "sm", variant: "ghost",
         text: if playing == row.key { "Playing" } else { "Play" },
+        part_styles:#{root:if row.selected {style().text_color(theme_color("text_primary"))}else{style()}},
         on_click: Fn("play_album").curry(row.key) })])
         .with_style(style().items_center().gap(theme_spacing("sm")).flex_grow().min_width(px(0)))
         // The cover's initial is artwork, not text set beside the title.
@@ -194,7 +217,7 @@ fn person_row(ctx, row) {
     let lines = row([
         text(person.name).with_style(style().typography("body").flex_grow().min_width(px(0))
             .font_weight(if row.selected { 600 } else { 400 }).whitespace_nowrap().text_ellipsis()),
-        text(person.role).with_style(style().typography("body").text_color(theme_color("text_muted"))),
+        text(person.role).with_style(style().typography("body").text_color(if row.selected {theme_color("text_primary")}else{theme_color("collection.metadata")})),
     ]).with_style(style().flex_grow().min_width(px(0)).gap(theme_spacing("sm")).items_center()
         .padding_x(theme_length("metrics.inset")));
     row([mark, lines]).with_style(style().flex_grow().min_width(px(0)).height(theme_length("metrics.row"))
@@ -305,8 +328,30 @@ fn page_change(h) { kit::store(h, "pagination.state") }
 
 fn pagination_page(h, v) {
     let current = kit::val(v, "pagination.state", #{ current_page: 3, page_size: 10 });
+    let compact = kit::val(v,"pagination.compact",false);
+    let disabled = kit::val(v,"pagination.disabled",false);
     kit::page(h, v, "pagination", "Pagination", "Ghost page targets; the current page is a selection block, not a primary action.", [
+        kit::sec("Presentation", kit::line([
+            button::Button(#{key:"pagination-numbers",text:if compact{"Show page numbers"}else{"Hide page numbers"},
+                variant:"secondary",on_click:kit::put(h,"pagination.compact",!compact)}),
+            button::Button(#{key:"pagination-enabled",text:if disabled{"Enable main pager"}else{"Disable main pager"},
+                variant:"secondary",on_click:kit::put(h,"pagination.disabled",!disabled)})
+        ])),
         kit::sec("Pages", pagination::Pagination(#{ key: "pagination-hosts", label: "Hosts pages", total_items: 128,
-            current_page: current.current_page, page_size: current.page_size, on_change: page_change(h) })),
+            current_page: current.current_page, page_size: current.page_size, page_size_options: [10,20,50],
+            compact:compact,disabled:disabled,
+            on_change: page_change(h) })),
+        kit::sec("Wrapped info and controls", pagination::Pagination(#{key:"pagination-wrapped",label:"Wrapped pages",total_items:128,
+            current_page:current.current_page,page_size:current.page_size,page_size_options:[10,20,50],
+            on_change:page_change(h)}).with_style(style().width(px(400)))),
+        kit::sec("Compact", pagination::Pagination(#{key:"pagination-compact",label:"Compact pages",total_items:128,
+            current_page:current.current_page,page_size:current.page_size,compact:true,on_change:page_change(h)})),
+        kit::sec("Automatic narrow layout", pagination::Pagination(#{key:"pagination-narrow",label:"Automatic narrow pages",total_items:128,
+            current_page:current.current_page,page_size:current.page_size,show_summary:false,on_change:page_change(h)})
+            .with_style(style().width(px(160)))),
+        kit::sec("Disabled", pagination::Pagination(#{key:"pagination-disabled",label:"Disabled pages",total_items:128,
+            current_page:current.current_page,page_size:current.page_size,page_size_options:[10,20,50],disabled:true,on_change:page_change(h)})),
+        kit::sec("Empty collection", pagination::Pagination(#{key:"pagination-empty",label:"Empty collection pages",total_items:0,
+            current_page:1,page_size:20})),
     ])
 }

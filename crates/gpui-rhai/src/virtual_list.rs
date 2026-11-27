@@ -101,9 +101,19 @@ pub struct VirtualCollectionNodeSpec {
     pub data: crate::VirtualCollectionData,
     pub realized: BTreeMap<usize, UiNode>,
     pub estimated_height: f64,
-    /// Fixed logical-pixel viewport height, or `None` to fill the resolved
-    /// height offered by the parent flex layout.
+    /// Optional exact uniform row height, resolved in the native list's
+    /// inherited theme/environment. `estimated_height` remains the initial
+    /// realization estimate before native geometry is available.
+    pub item_height: Option<crate::Length>,
+    /// Fixed logical-pixel viewport height, or `None` for fill/bounded-content
+    /// sizing. Mutually exclusive with `max_height`.
     pub height: Option<f64>,
+    /// Fit the measured content up to this absolute, late-bound maximum.
+    /// With neither height field set the list fills its parent as before.
+    pub max_height: Option<crate::Length>,
+    /// Logical pixels before the first and after the last item, inside the
+    /// native scroll content. These are not rows or item identities.
+    pub content_padding: [f64; 2],
     pub overdraw_pixels: f64,
     pub bottom_align: bool,
     pub follow_tail: bool,
@@ -973,7 +983,10 @@ mod tests {
             data: (0..5).map(|index| item(&format!("row-{index}"))).collect(),
             realized: BTreeMap::from([(1, UiNode::text("one")), (2, UiNode::text("two"))]),
             estimated_height: 24.0,
+            item_height: None,
             height: Some(120.0),
+            max_height: None,
+            content_padding: [0.; 2],
             overdraw_pixels: 48.0,
             bottom_align: true,
             follow_tail: true,

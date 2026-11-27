@@ -25,8 +25,8 @@ code_viewer::CodeViewer(#{
 
 The Viewer supports virtualized rows, horizontal scrolling, viewport/fixed
 column wrapping, syntax highlighting, continuous cross-line selection, copying
-the original source, and component-local search. `Cmd+F` opens search;
-`Cmd+G`/`Shift+Cmd+G` moves between matches. Search supports case, whole-word,
+the original source, and component-local search. `Cmd/Ctrl+F` opens search;
+`Cmd/Ctrl+G`/`Shift+Cmd/Ctrl+G` moves between matches. Search supports case, whole-word,
 and regular-expression policies.
 
 By default (`height: "fill"`) the Viewer fills the box its parent gives it, so

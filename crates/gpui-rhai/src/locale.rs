@@ -93,6 +93,19 @@ pub struct NumberMetadata {
     pub minus_sign: String,
 }
 
+impl Default for NumberMetadata {
+    fn default() -> Self {
+        Self {
+            digits: ('0'..='9').map(|digit| digit.to_string()).collect(),
+            decimal_separator: ".".to_owned(),
+            grouping_separator: ",".to_owned(),
+            primary_group_size: 3,
+            secondary_group_size: 3,
+            minus_sign: "-".to_owned(),
+        }
+    }
+}
+
 impl NumberMetadata {
     fn validate(&self) -> Result<(), LocaleError> {
         validate_names("number.digits", &self.digits, 10).map_err(|error| match error {
@@ -779,6 +792,239 @@ pub fn format_number_with_metadata(
         number,
         options,
     ))
+}
+
+pub(crate) struct NumberTextFormat<'a> {
+    pub digits: u8,
+    pub prefix: &'a str,
+    pub suffix: &'a str,
+    pub share: bool,
+}
+
+impl<'a> NumberTextFormat<'a> {
+    const ATTRIBUTE: &'static str = "number_text_format";
+
+    pub fn attach(&self, node: crate::UiNode) -> crate::UiNode {
+        use crate::UiValue;
+        node.with_attribute(
+            Self::ATTRIBUTE,
+            UiValue::Array(vec![
+                UiValue::Integer(i64::from(self.digits)),
+                UiValue::String(self.prefix.into()),
+                UiValue::String(self.suffix.into()),
+                UiValue::Bool(self.share),
+            ]),
+        )
+    }
+
+    pub fn from_attributes(
+        attributes: &'a std::collections::BTreeMap<String, crate::UiValue>,
+    ) -> Option<Self> {
+        use crate::UiValue;
+        let UiValue::Array(fields) = attributes.get(Self::ATTRIBUTE)? else {
+            return None;
+        };
+        let [
+            UiValue::Integer(digits),
+            UiValue::String(prefix),
+            UiValue::String(suffix),
+            UiValue::Bool(share),
+        ] = fields.as_slice()
+        else {
+            return None;
+        };
+        Some(Self {
+            digits: u8::try_from(*digits).ok()?,
+            prefix,
+            suffix,
+            share: *share,
+        })
+    }
+
+    pub fn format(&self, value: f64, number: &NumberMetadata) -> Result<String, LocaleError> {
+        let (threshold, value) = if self.share && value > 0.0 && value < 1.0 {
+            ("<", 1.0)
+        } else if self.share && value > 99.0 && value < 100.0 {
+            (">", 99.0)
+        } else {
+            ("", value)
+        };
+        let rendered = format_number_with_metadata(
+            value,
+            NumberFormatOptions {
+                max_fraction_digits: self.digits,
+                ..NumberFormatOptions::default()
+            },
+            number,
+        )?;
+        Ok(format!(
+            "{threshold}{}{rendered}{}",
+            self.prefix, self.suffix
+        ))
+    }
+}
+
+/// Parse a decimal written in the same locale as the formatter.
+///
+/// Plain ASCII digits are accepted in addition to the active digit set, but
+/// separator interpretation is never guessed. Grouping is optional; when
+/// present it must match the locale. An empty or invalid string has no value.
+#[must_use]
+pub fn parse_number_with_metadata(value: &str, number: &NumberMetadata) -> Option<f64> {
+    if value.len() > 4096 {
+        return None;
+    }
+    let mut text = value.trim();
+    let sign = [number.minus_sign.as_str(), "-", "−"]
+        .into_iter()
+        .filter(|sign| !sign.is_empty() && text.starts_with(sign))
+        .max_by_key(|sign| sign.len());
+    let mut ascii = String::with_capacity(text.len());
+    if let Some(sign) = sign {
+        text = &text[sign.len()..];
+        ascii.push('-');
+    } else if let Some(rest) = text.strip_prefix('+') {
+        text = rest;
+    }
+    let integer_group = text
+        .split_once(number.decimal_separator.as_str())
+        .map_or(text, |(integer, _)| integer);
+    let groups = integer_group.split(number.grouping_separator.as_str());
+    let grouped = integer_group.contains(number.grouping_separator.as_str());
+    let group_count = groups.clone().count();
+    let mut total_digits = 0;
+    for (index, group) in groups.enumerate() {
+        let digits = append_number_digits(group, number, &mut ascii)?;
+        total_digits += digits;
+        if grouped {
+            let expected = usize::from(if index + 1 == group_count {
+                number.primary_group_size
+            } else {
+                number.secondary_group_size
+            });
+            if digits == 0 || digits > expected || (index != 0 && digits != expected) {
+                return None;
+            }
+        }
+    }
+    if let Some((_, fraction)) = text.split_once(number.decimal_separator.as_str()) {
+        ascii.push('.');
+        total_digits += append_number_digits(fraction, number, &mut ascii)?;
+    }
+    (total_digits != 0)
+        .then(|| ascii.parse::<f64>().ok())
+        .flatten()
+        .filter(|parsed| parsed.is_finite())
+}
+
+fn append_number_digits(
+    mut text: &str,
+    number: &NumberMetadata,
+    ascii: &mut String,
+) -> Option<usize> {
+    let mut count = 0;
+    while !text.is_empty() {
+        let digit = number
+            .digits
+            .iter()
+            .enumerate()
+            .filter(|(_, repr)| !repr.is_empty() && text.starts_with(repr.as_str()))
+            .max_by_key(|(_, repr)| repr.len())
+            .and_then(|(index, repr)| {
+                u8::try_from(index)
+                    .ok()
+                    .filter(|i| *i < 10)
+                    .map(|i| (i, repr.len()))
+            });
+        let (digit, length) = match digit {
+            Some(digit) => digit,
+            None if text.as_bytes()[0].is_ascii_digit() => (text.as_bytes()[0] - b'0', 1),
+            None => return None,
+        };
+        ascii.push(char::from(b'0' + digit));
+        text = &text[length..];
+        count += 1;
+    }
+    Some(count)
+}
+
+#[cfg(test)]
+mod number_parsing_tests {
+    use super::*;
+
+    #[test]
+    fn sampled_number_affixes_and_share_thresholds_keep_localized_digits() {
+        let locale = NumberMetadata {
+            digits: ('٠'..='٩').map(|digit| digit.to_string()).collect(),
+            grouping_separator: "٬".into(),
+            ..NumberMetadata::default()
+        };
+        let share = NumberTextFormat {
+            digits: 0,
+            prefix: "",
+            suffix: "%",
+            share: true,
+        };
+        for (value, expected) in [(0., "٠%"), (0.2, "<١%"), (99.5, ">٩٩%"), (100., "١٠٠%")] {
+            assert_eq!(share.format(value, &locale).unwrap(), expected);
+        }
+        let amount = NumberTextFormat {
+            prefix: "$",
+            suffix: " USD",
+            share: false,
+            ..share
+        };
+        let node = amount.attach(crate::UiNode::text("accepted"));
+        let decoded = NumberTextFormat::from_attributes(node.attributes()).unwrap();
+        assert_eq!(decoded.format(1_024., &locale).unwrap(), "$١٬٠٢٤ USD");
+    }
+
+    #[test]
+    fn decimals_round_trip_with_localized_grouping_and_digits() {
+        let locale = NumberMetadata {
+            digits: ('٠'..='٩').map(|digit| digit.to_string()).collect(),
+            decimal_separator: "٫".into(),
+            grouping_separator: "٬".into(),
+            secondary_group_size: 2,
+            minus_sign: "−".into(),
+            ..NumberMetadata::default()
+        };
+        for value in [0., 0.5, -0.125, 123_456.75, -12_345_678.125] {
+            let formatted =
+                format_number_with_metadata(value, NumberFormatOptions::default(), &locale)
+                    .unwrap();
+            assert_eq!(
+                parse_number_with_metadata(&formatted, &locale),
+                Some(value),
+                "{formatted}"
+            );
+        }
+        assert_eq!(
+            parse_number_with_metadata("-1٬23٬456٫5", &locale),
+            Some(-123_456.5)
+        );
+        assert_eq!(parse_number_with_metadata("٫٥", &locale), Some(0.5));
+        assert_eq!(parse_number_with_metadata("١٢٣٫", &locale), Some(123.));
+        for invalid in [
+            "",
+            ".",
+            "−",
+            "12two",
+            "1٫2٫3",
+            "1٬٬234",
+            "12٬34",
+            "123٬456",
+            "12٫345٬678",
+            "8.9",
+        ] {
+            assert_eq!(
+                parse_number_with_metadata(invalid, &locale),
+                None,
+                "{invalid}"
+            );
+        }
+        assert_eq!(parse_number_with_metadata(&"9".repeat(400), &locale), None);
+    }
 }
 
 /// Compile and evaluate `locale() -> map` from Rhai source.

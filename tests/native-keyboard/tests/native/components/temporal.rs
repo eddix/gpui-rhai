@@ -37,7 +37,7 @@ fn range_native_draft_apply_and_escape_cancel(cx: &mut TestAppContext) {
     );
     let end = bounds(&mut visual, &view, "text_field", "End");
     click_center(&mut visual, end);
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("05:30 AM");
     settle(&mut visual, Step::Frame, 3);
     assert_eq!(node_by_test_id(&mut visual, &view, "changes").name, "0");
@@ -48,7 +48,7 @@ fn range_native_draft_apply_and_escape_cancel(cx: &mut TestAppContext) {
     settle(&mut visual, Step::Frame, 3);
     let end = bounds(&mut visual, &view, "text_field", "End");
     click_center(&mut visual, end);
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("05:30 AM");
     settle(&mut visual, Step::Frame, 3);
     let apply = bounds(&mut visual, &view, "button", "Apply");
@@ -184,7 +184,7 @@ fn range_fold_requires_a_real_explicit_instant_choice(cx: &mut TestAppContext) {
     settle(&mut visual, Step::Frame, 2);
     let field = bounds(&mut visual, &view, "text_field", "Start");
     click_center(&mut visual, field);
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("01:30 AM");
     settle(&mut visual, Step::Frame, 3);
     let ax = snapshot(&mut visual, &view);
@@ -252,7 +252,7 @@ fn external_range_and_zone_replacement_rebases_the_open_draft(cx: &mut TestAppCo
     settle(&mut visual, Step::Frame, 2);
     let end = bounds(&mut visual, &view, "text_field", "End");
     click_center(&mut visual, end);
-    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_keystrokes(&crate::support::primary_keys("secondary-a"));
     visual.simulate_input("06:30 AM");
     settle(&mut visual, Step::Frame, 2);
     dispatch(&mut visual, &view, by_test_id("replace"), "click").unwrap();

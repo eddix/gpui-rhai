@@ -6,37 +6,25 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/close.svg"],
-  "tokens": [
-    "surface_hover", "text_primary", "disabled", "focus_ring", "tag.facet", "control.hover",
-    "text.accent", "text.success", "text.warning", "text.danger", "accent", "on_accent",
-    "success", "on_success", "warning", "on_warning", "danger", "on_danger",
-    "metrics.marker", "spacing.xs", "spacing.sm", "radius.pill",
-    "typography.caption", "typography.label"
-  ],
+  "assets": [],
+  "tokens": ["metrics.tag_h", "metrics.tag_radius", "metrics.tag_pad", "metrics.tag_end", "metrics.tag_gap", "metrics.tag_close", "metrics.tag_icon", "tag.normal", "tag.text_accent", "tag.text_success", "tag.text_warning", "tag.text_danger", "tag.facet_neutral", "tag.facet_accent", "tag.facet_success", "tag.facet_warning", "tag.facet_danger", "typography.tag"],
   "environment": []
 }
 */
-// Tag labels a category: a flat tonal tape with an optional facet segment.
+// Tag labels a category with a removable-chip surface and an optional facet segment.
 //
 // State: stateless and controlled by caller props.
 // Example: Tag(#{ facet: "env", text: "prod", variant: "danger" })
 //
 // Variants mark a category, not a status. Without a facet they color the text;
-// with a facet they fill the facet segment. Markers keep their size in both densities.
+// with a facet they use a paired soft fill and ink. Markers keep their size in both densities.
 
 define_component(#{
     metadata: #{
         id: "components/tag", "export": "Tag", version: "0.4.3",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: [], capabilities: #{}, assets: ["icons/close.svg"],
-        tokens: [
-            "surface_hover", "text_primary", "disabled", "focus_ring", "tag.facet", "control.hover",
-            "text.accent", "text.success", "text.warning", "text.danger", "accent", "on_accent",
-            "success", "on_success", "warning", "on_warning", "danger", "on_danger",
-            "metrics.marker", "spacing.xs", "spacing.sm", "radius.pill",
-            "typography.caption", "typography.label"
-        ],
+        dependencies: [], capabilities: #{}, assets: [],
+        tokens: ["metrics.tag_h", "metrics.tag_radius", "metrics.tag_pad", "metrics.tag_end", "metrics.tag_gap", "metrics.tag_close", "metrics.tag_icon", "tag.normal", "tag.text_accent", "tag.text_success", "tag.text_warning", "tag.text_danger", "tag.facet_neutral", "tag.facet_accent", "tag.facet_success", "tag.facet_warning", "tag.facet_danger", "typography.tag"],
         environment: [],
     },
     schema: #{
@@ -45,25 +33,30 @@ define_component(#{
                 doc: "The value shown; it is also the payload of `close`." },
             facet: #{ schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false, sensitive: false,
-                doc: "Key drawn uppercase in a segment before the text, as in `ENV prod`; empty means none." },
+                doc: "Key drawn as written in a segment before the text, as in `env prod`; empty means none." },
             variant: #{
                 schema: #{ type: "string", allowed: ["neutral", "accent", "success", "warning", "danger"] },
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "neutral" },
-                doc: "Category color: it colors the text, or fills the facet segment when there is a `facet`.",
+                doc: "Category tone: it colors the text, or supplies a paired soft fill/foreground for a facet segment.",
             },
             closable: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
                 doc: "Adds a close button after the text.",
             },
+            prefix: #{ schema: #{ type: "optional", value: #{ type: "node" } },
+                required: false, sensitive: false, doc: "An optional avatar or icon before the label, inside the value segment." },
+            close_tab_stop: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true },
+                doc: "Whether the close button owns a Tab stop; use false for an editor that navigates its chip rows itself." },
             close_label: #{ schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false, sensitive: false,
                 doc: "Accessible name of the close button; defaults to the localized `tag.remove` message, `Remove <text>` in English." },
             disabled: #{
                 schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false },
-                doc: "Draws the tag in the `disabled` color and makes the close button inert.",
+                doc: "Dims the complete chip to 55% opacity and makes the close button inert.",
             },
             on_close: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
@@ -74,14 +67,10 @@ define_component(#{
         state: #{ fields: #{} },
         events: #{ close: #{ payload: #{ type: "string" },
             doc: "Emitted when the close button is clicked; the payload is the tag's `text`." } },
-        slots: #{}, parts: ["root", "facet", "label", "close"],
+        slots: #{}, parts: ["root", "facet", "value", "label", "close", "close_icon", "prefix"],
     },
     render: Fn("render_Tag")
 });
-
-fn tag_text_color(variant) {
-    if variant == "neutral" { theme_color("text_primary") } else { theme_color(`text.${variant}`) }
-}
 
 fn Tag(props) { render_component("components/tag", props) }
 fn render_Tag(ctx, props) {
@@ -91,33 +80,34 @@ fn render_Tag(ctx, props) {
     let facet = if "facet" in props && props.facet != () && props.facet != "" { props.facet } else { () };
     let children = [];
     if facet != () {
-        let facet_fill = if variant == "neutral" { theme_color("tag.facet") } else { theme_color(variant) };
-        let facet_text = if variant == "neutral" { theme_color("text_primary") }
-            else { theme_color(`on_${variant}`) };
-        // The facet carries the tag's start corners: clipping is rectangular.
-        children.push(row([text(facet.to_upper())]).with_style(ctx.component_style("facet", style()
-            .flex_row().items_center().self_stretch().radius_start(theme_radius("pill"))
-            .padding_x(theme_spacing("sm"))
-            .background(if disabled { theme_color("surface_hover") } else { facet_fill })
-            .text_color(if disabled { theme_color("disabled") } else { facet_text })
-            .typography("label"))));
+        children.push(row([text(facet)]).with_key("facet")
+            .with_style(ctx.component_style("facet", style()
+                .flex_row().items_center().self_stretch().flex_shrink(false)
+                .min_height(theme_length("metrics.tag_h"))
+                .radius_start(theme_length("metrics.tag_radius")).radius_end(px(0))
+                .padding_x(theme_length("metrics.tag_pad")),
+                ctx.theme_style(`tag.facet_${variant}`))));
     }
-    let value_color = if disabled { theme_color("disabled") }
-        else if facet != () { theme_color("text_primary") }
-        else { tag_text_color(variant) };
-    let value = [text(props.text).with_style(ctx.component_style("label", style()))];
+    let value = [];
+    if "prefix" in props && props.prefix != () {
+        value.push(row([props.prefix]).with_key("prefix")
+            .with_style(ctx.component_style("prefix",style().flex_shrink(false).items_center())));
+    }
+    value.push(text(props.text).with_key("label").with_style(ctx.component_style("label", style()
+        .min_width(px(0)).whitespace_nowrap().text_ellipsis())));
     if closable {
         let label = if "close_label" in props && props.close_label != () { props.close_label }
             else { ctx.t_or("tag.remove", "Remove {name}", #{ name: props.text }) };
-        // The 12px close glyph and 2px focus frame are structural constants.
-        let close = row([image_source(asset("app/icons/close"))
-                .with_style(style().width(px(12)).height(px(12)))])
+        let glyph = svg(`<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg>`)
+            .with_style(ctx.component_style("close_icon", style()
+                .width(theme_length("metrics.tag_icon")).height(theme_length("metrics.tag_icon"))))
+            .accessibility_role("presentation");
+        let close = row([glyph]).with_key("close")
             .with_style(ctx.component_style("close", style()
-                .items_center().justify_center().radius(theme_radius("pill"))
-                .border(px(1)).border_color(rgba(0x00000000))
-                .text_color(value_color)
-                .hover(style().background(theme_color("control.hover")))
-                .focus(style().border_color(theme_color("focus_ring")))))
+                .width(theme_length("metrics.tag_close")).height(theme_length("metrics.tag_close"))
+                .flex_shrink(false).items_center().justify_center().focus(style())))
+            .disabled(disabled)
+            .tab_stop(!disabled && props.close_tab_stop && "on_close" in props && props.on_close != ())
             .accessibility_role("button")
             .accessibility_label(label);
         if !disabled && "on_close" in props && props.on_close != () {
@@ -125,16 +115,16 @@ fn render_Tag(ctx, props) {
         }
         value.push(close);
     }
-    children.push(row(value).with_style(style()
-        .flex_row().items_center().gap(theme_spacing("xs")).padding_x(theme_spacing("sm"))));
+    children.push(row(value).with_key("value").with_style(ctx.component_style("value", style()
+        .flex_row().min_width(px(0)).items_center().gap(theme_length("metrics.tag_gap"))
+        .padding_start(theme_length("metrics.tag_pad")),
+        style().padding_end(theme_length(if closable {"metrics.tag_end"} else {"metrics.tag_pad"})))));
     row(children)
         .with_style(ctx.component_style("root", style()
-            .flex_row().items_center()
-            .min_height(theme_length("metrics.marker"))
-            .radius(theme_radius("pill"))
-            .background(theme_color("surface_hover"))
-            .text_color(value_color)
-            .typography("caption")))
+            .flex_row().min_width(px(0)).items_center()
+            .min_height(theme_length("metrics.tag_h"))
+            .radius(theme_length("metrics.tag_radius")).typography("tag"),
+            ctx.theme_style(if facet != () || variant == "neutral" {"tag.normal"} else {`tag.text_${variant}`})))
         .disabled(disabled)
         .accessibility_role("status")
         .accessibility_label(if facet != () { `${facet}: ${props.text}` } else { props.text })

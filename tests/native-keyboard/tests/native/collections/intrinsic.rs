@@ -25,6 +25,7 @@ struct NativeSize {
 
 struct NativeHeight(Rc<NativeSize>);
 
+#[cfg(feature = "vendor-gpui")]
 impl IntoElement for NativeHeight {
     type Element = Self;
     fn into_element(self) -> Self {
@@ -154,14 +155,32 @@ fn view(ctx){column([
     text("Replace").accessibility_role("button").accessibility_label("Replace").on_click(Fn("replace")),
     virtual_collection(#{key:"intrinsic",data:[#{key:"native",epoch:ctx.get_state("epoch")},#{key:"after"}],
         height:240,estimated_height:30,overdraw_pixels:0},Fn("item"))
+        .accessibility_role("list").accessibility_label("Native content")
 ])}
 "#;
 
 #[gpui::test]
 fn native_async_size_commit_remeasures_only_its_live_row_without_rhai(cx: &mut TestAppContext) {
+    verify_native_async_size(cx, false);
+}
+
+#[gpui::test]
+fn bounded_content_follows_native_async_growth_without_rhai(cx: &mut TestAppContext) {
+    verify_native_async_size(cx, true);
+}
+
+fn verify_native_async_size(cx: &mut TestAppContext, bounded: bool) {
     let instances = Rc::new(RefCell::new(Vec::new()));
     let captured = Rc::clone(&instances);
-    let (mut visual, view) = Mount::new(SOURCE)
+    let source = SOURCE.replace(
+        "height:240",
+        if bounded {
+            "max_height:px(240)"
+        } else {
+            "height:240"
+        },
+    );
+    let (mut visual, view) = Mount::new(source)
         .with(move |view| view.extension(Extension(captured)))
         .mount(cx);
     settle(&mut visual, Step::Tick, 8);
@@ -195,6 +214,11 @@ fn native_async_size_commit_remeasures_only_its_live_row_without_rhai(cx: &mut T
     assert!(
         (after.y - before.y - 120.0).abs() < 1.0,
         "following row must move by committed native growth: {before:?} -> {after:?}"
+    );
+    let list = bounds(&mut visual, &view, "list", "Native content");
+    assert!(
+        (list.height - if bounded { 150.0 } else { 240.0 }).abs() < 1.0,
+        "only bounded content follows the native measured total: {list:?}"
     );
     let performance = visual
         .update(|_, cx| view.take_performance_snapshot(cx))

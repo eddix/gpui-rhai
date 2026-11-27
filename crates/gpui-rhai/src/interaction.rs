@@ -17,6 +17,7 @@ pub(crate) struct InteractionOwner {
     view: String,
     retained: Option<crate::NodeId>,
     key: String,
+    live_click_payload: bool,
 }
 
 impl InteractionOwner {
@@ -25,12 +26,22 @@ impl InteractionOwner {
             view: view.into(),
             retained: None,
             key: key.into(),
+            live_click_payload: false,
         }
     }
 
     pub(crate) fn with_retained(mut self, retained: crate::NodeId) -> Self {
         self.retained = Some(retained);
         self
+    }
+
+    pub(crate) fn with_live_click_payload(mut self) -> Self {
+        self.live_click_payload = true;
+        self
+    }
+
+    pub(crate) const fn is_repeat_press(&self) -> bool {
+        self.live_click_payload
     }
 
     fn belongs_to(&self, view: &str) -> bool {
@@ -42,6 +53,7 @@ impl InteractionOwner {
             view: self.view.clone(),
             retained: self.retained,
             key: format!("{}:{}", self.key, key.as_ref()),
+            live_click_payload: self.live_click_payload,
         }
     }
 
@@ -156,12 +168,26 @@ impl InteractionContract {
                 routes.insert(key, handler);
             }
         }
+        let mut handlers = node.handlers().clone();
+        let mut payloads = node.handler_payloads().clone();
+        if owner.live_click_payload {
+            // A held button reads the current committed payload on every
+            // activation. The callback and its forwarding route still have
+            // to belong to the same interaction. Only the click data is live.
+            if let Some(click) = handlers.get_mut("click") {
+                for binding in click {
+                    binding.clear_value();
+                }
+            }
+            payloads.remove("click");
+            available &= node.repeats_press();
+        }
         Some(Self {
             generation,
             direction,
             primitive,
-            handlers: node.handlers().clone(),
-            payloads: node.handler_payloads().clone(),
+            handlers,
+            payloads,
             available,
             routes,
         })
@@ -186,6 +212,7 @@ pub(crate) struct GestureUpdate {
 }
 
 impl GestureUpdate {
+    #[cfg(feature = "charts")]
     pub(crate) fn start(self) -> Point<Pixels> {
         self.start
     }
@@ -211,6 +238,44 @@ impl GestureUpdate {
 
     pub(crate) fn moved(self) -> bool {
         self.moved
+    }
+}
+
+/// Coordinate lease for a layout resize. Keep the common gesture in visual
+/// window coordinates (including the activation threshold), then map its
+/// displacement into the owning boundary, not the moving handle.
+#[derive(Clone, Copy)]
+pub(crate) struct ResizeGestureSpace {
+    pub(crate) size: (f64, f64),
+    local_to_window: crate::Affine2D,
+    window_to_local: crate::Affine2D,
+}
+
+impl ResizeGestureSpace {
+    pub(crate) fn new(boundary: crate::PresentedGeometry) -> Option<Self> {
+        Some(Self {
+            size: (boundary.layout.width, boundary.layout.height),
+            local_to_window: boundary.local_to_window,
+            window_to_local: boundary.window_to_local?,
+        })
+    }
+
+    /// A changed position, transform or constraint extent invalidates the
+    /// start snapshot. Do not reinterpret an old pointer in a new plane.
+    pub(crate) fn displacement(
+        self,
+        boundary: Option<crate::PresentedGeometry>,
+        gesture: GestureUpdate,
+    ) -> Option<(f64, f64)> {
+        let boundary = boundary?;
+        if boundary.local_to_window != self.local_to_window
+            || (boundary.layout.width - self.size.0).abs() > 0.5
+            || (boundary.layout.height - self.size.1).abs() > 0.5
+        {
+            return None;
+        }
+        let delta = self.window_to_local.map_vector(gesture.delta());
+        (delta.0.is_finite() && delta.1.is_finite()).then_some(delta)
     }
 }
 
@@ -297,6 +362,8 @@ pub(crate) struct NativeGesture {
     update: Rc<UpdateHandler>,
     finish: Rc<FinishHandler>,
     cancel: Rc<CancelHandler>,
+    // One cancellable foreground cadence, owned by the pointer lease.
+    repeat: Option<RepeatPressTask>,
 }
 
 impl NativeGesture {
@@ -316,6 +383,7 @@ impl NativeGesture {
             update: Rc::new(update),
             finish: Rc::new(finish),
             cancel: Rc::new(cancel),
+            repeat: None,
         }
     }
 
@@ -328,6 +396,17 @@ impl NativeGesture {
         self.session.threshold_squared = threshold.max(0.0).powi(2);
         self
     }
+}
+
+struct RepeatPressTask {
+    serial: Rc<()>,
+    _task: gpui::Task<()>,
+}
+
+pub(crate) struct RepeatPressStart {
+    pub(crate) owner: InteractionOwner,
+    pub(crate) origin: Point<Pixels>,
+    pub(crate) notify: EntityId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -430,8 +509,15 @@ pub(crate) struct ApplicationDropResult {
 
 type ApplicationDragEndHandler = dyn Fn(ApplicationDropResult, bool, &mut Window, &mut App);
 
-/// Runs when a press is released before it became a drag.
-pub(crate) type TapHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+pub(crate) type DragPhaseHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+#[derive(Default)]
+pub(crate) struct ApplicationDragPhases {
+    /// Once after the coordinator installs an active native drag.
+    pub(crate) start: Option<DragPhaseHandler>,
+    /// Release before the drag crosses the threshold.
+    pub(crate) tap: Option<DragPhaseHandler>,
+}
 
 pub(crate) fn application_drag_gesture(
     coordinator: WindowInteractionCoordinator,
@@ -440,19 +526,27 @@ pub(crate) fn application_drag_gesture(
     spec: ApplicationDragSpec,
     threshold: f64,
     on_end: impl Fn(ApplicationDropResult, bool, &mut Window, &mut App) + 'static,
-    on_tap: Option<TapHandler>,
+    phases: ApplicationDragPhases,
 ) -> NativeGesture {
     let owner = spec.source.clone();
     let started = Rc::new(std::cell::Cell::new(false));
     let update_started = Rc::clone(&started);
     let update_coordinator = coordinator.clone();
     let update_spec = spec;
+    let ApplicationDragPhases {
+        start: on_start,
+        tap: on_tap,
+    } = phases;
     let update = move |gesture: GestureUpdate, window: &mut Window, cx: &mut App| {
-        if gesture.moved() && !update_started.replace(true) {
+        let became_active = gesture.moved() && !update_started.replace(true);
+        if became_active {
             update_coordinator.start_app_drag(update_spec.clone(), gesture.current(), window, cx);
         }
         if update_started.get() {
             update_coordinator.update_app_drag(gesture.current(), window, cx);
+        }
+        if became_active && let Some(start) = &on_start {
+            start(window, cx);
         }
         InteractionFlow::Continue
     };
@@ -589,19 +683,18 @@ struct InteractionState {
         ),
     >,
     scroll_tick_queued: bool,
-    wheel_regions: BTreeMap<InteractionOwner, NativeWheelRegion>,
+    wheel_regions: BTreeMap<InteractionOwner, (u64, NativeWheelRegion)>,
 }
 
 #[derive(Clone)]
-struct NativeWheelRegion {
-    source: usize,
-    ancestors: Vec<usize>,
-    hitbox: Hitbox,
-    order: u64,
-    handler: Rc<NativeWheelHandler>,
+pub(crate) struct NativeWheelRegion {
+    pub(crate) source: Option<usize>,
+    pub(crate) ancestors: Vec<usize>,
+    /// A hit viewport may accept residual input without initiating it.
+    pub(crate) start: Option<Rc<NativeWheelHandler>>,
 }
 
-pub(crate) type NativeWheelHandler = dyn Fn(&ScrollEvent, &mut Window, &mut App);
+pub(crate) type NativeWheelHandler = dyn Fn(&ScrollEvent, &BTreeSet<usize>, &mut Window, &mut App);
 
 #[derive(Default)]
 struct NativeWheelCaptures {
@@ -685,14 +778,10 @@ impl WindowInteractionCoordinator {
         state.wheel_regions.clear();
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn register_wheel_region(
         &self,
         owner: InteractionOwner,
-        source: usize,
-        ancestors: Vec<usize>,
-        hitbox: Hitbox,
-        handler: Rc<NativeWheelHandler>,
+        region: NativeWheelRegion,
         window: &Window,
         cx: &mut App,
     ) {
@@ -705,22 +794,12 @@ impl WindowInteractionCoordinator {
         let order = capture.next_order;
         capture.next_order = order.wrapping_add(1);
         let mut state = self.0.borrow_mut();
-        state.wheel_regions.insert(
-            owner,
-            NativeWheelRegion {
-                source,
-                ancestors,
-                hitbox,
-                order,
-                handler,
-            },
-        );
+        state.wheel_regions.insert(owner, (order, region));
     }
 
     fn wheel_region_handler(
         capture: &NativeWheelCapture,
-        window: &Window,
-    ) -> Option<Rc<NativeWheelHandler>> {
+    ) -> Option<(Rc<NativeWheelHandler>, BTreeSet<usize>)> {
         let candidates = capture
             .participants
             .iter()
@@ -733,19 +812,30 @@ impl WindowInteractionCoordinator {
                     .cloned()
                     .collect::<Vec<_>>()
             })
-            .filter(|region| region.hitbox.should_handle_scroll(window))
             .collect::<Vec<_>>();
         // Explicit native ancestry wins over overlay paint order. An outer
         // document overlay painted last must not preempt its table/cell.
-        candidates
+        let handler = candidates
             .iter()
-            .filter(|candidate| {
-                !candidates.iter().any(|other| {
-                    other.source != candidate.source && other.ancestors.contains(&candidate.source)
+            .filter(|(_, candidate)| candidate.start.is_some())
+            .filter(|(_, candidate)| {
+                candidate.source.is_none_or(|source| {
+                    !candidates.iter().any(|(_, other)| {
+                        other.start.is_some()
+                            && other.source != Some(source)
+                            && other.ancestors.contains(&source)
+                    })
                 })
             })
-            .max_by_key(|region| region.order)
-            .map(|region| Rc::clone(&region.handler))
+            .max_by_key(|(order, _)| *order)?
+            .1
+            .start
+            .clone()?;
+        let admitted = candidates
+            .iter()
+            .filter_map(|(_, region)| region.source)
+            .collect();
+        Some((handler, admitted))
     }
 
     fn begin_wheel_capture(&self, window: &Window, cx: &mut App) {
@@ -1169,6 +1259,85 @@ impl WindowInteractionCoordinator {
         cx.notify(notify);
     }
 
+    /// Press immediately, then repeat only while the same pointer lease is
+    /// live and its current activation source is still available.
+    pub(crate) fn begin_repeat_press(
+        &self,
+        start: RepeatPressStart,
+        active_hit: impl Fn(&Window) -> bool + 'static,
+        fire: impl Fn(&InteractionOwner, &mut Window, &mut App) -> bool + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let RepeatPressStart {
+            owner,
+            origin,
+            notify,
+        } = start;
+        let serial = Rc::new(());
+        let lease = Rc::downgrade(&serial);
+        let mut gesture = NativeGesture::new(
+            owner.clone(),
+            origin,
+            notify,
+            move |_, window, _| {
+                if active_hit(window) {
+                    InteractionFlow::Continue
+                } else {
+                    InteractionFlow::Cancel
+                }
+            },
+            |_, _, _| {},
+            |_, _| {},
+        );
+        let fire = Rc::new(fire);
+        let repeat = Rc::clone(&fire);
+        let repeat_owner = owner.clone();
+        let coordinator = Rc::downgrade(&self.0);
+        let task = window.spawn(cx, async move |cx| {
+            let mut delay_ms = 400;
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(delay_ms))
+                    .await;
+                let alive = cx
+                    .update(|window, cx| {
+                        let Some(state) = coordinator.upgrade() else {
+                            return false;
+                        };
+                        let is_current = || {
+                            state.borrow().active.as_ref().is_some_and(|gesture| {
+                                gesture.repeat.as_ref().is_some_and(|running| {
+                                    lease.as_ptr() == Rc::as_ptr(&running.serial)
+                                })
+                            })
+                        };
+                        if !is_current() {
+                            return false;
+                        }
+                        if window.is_window_active() && repeat(&repeat_owner, window, cx) {
+                            return is_current();
+                        }
+                        WindowInteractionCoordinator(state).cancel_owner(&repeat_owner, window, cx);
+                        false
+                    })
+                    .unwrap_or(false);
+                if !alive {
+                    break;
+                }
+                delay_ms = repeat_press_delay(delay_ms);
+            }
+        });
+        gesture.repeat = Some(RepeatPressTask {
+            serial,
+            _task: task,
+        });
+        self.begin(gesture, window, cx);
+        if !fire(&owner, window, cx) {
+            self.cancel_owner(&owner, window, cx);
+        }
+    }
+
     pub(crate) fn is_active(&self, owner: &InteractionOwner) -> bool {
         self.0
             .borrow()
@@ -1401,10 +1570,10 @@ impl WindowInteractionCoordinator {
             let Some(capture) = capture else {
                 return;
             };
-            let handler = Self::wheel_region_handler(&capture, window);
+            let handler = Self::wheel_region_handler(&capture);
             capture.clear();
-            if let Some(handler) = handler {
-                handler(event, window, cx);
+            if let Some((handler, admitted)) = handler {
+                handler(event, &admitted, window, cx);
             }
         });
         let move_coordinator = self.clone();
@@ -1483,6 +1652,16 @@ fn cancel_active(mut active: NativeGesture, window: &mut Window, cx: &mut App) {
     active.session.cancel();
     (active.cancel)(window, cx);
     cx.notify(active.notify);
+}
+
+const fn repeat_press_delay(delay_ms: u64) -> u64 {
+    if delay_ms == 400 {
+        120
+    } else if delay_ms <= 44 {
+        40
+    } else {
+        delay_ms * 9 / 10
+    }
 }
 
 fn resolve_drop_target(
@@ -1621,7 +1800,42 @@ fn f64_to_f32(value: f64) -> f32 {
 mod tests {
     use gpui::{point, px};
 
-    use super::{GestureSession, InteractionContract, InteractionOwner};
+    use super::{GestureSession, InteractionContract, InteractionOwner, ResizeGestureSpace};
+
+    #[test]
+    fn resize_space_uses_only_the_inverse_linear_part_and_checks_the_boundary() {
+        let layout = crate::GeometryBounds::new(38., 52., 200., 100.).unwrap();
+        // Point translation and orientation differ. Motion uses just the
+        // inverse linear part, with physical-axis reflection intact.
+        let pose = crate::Affine2D::new(0., -2., -0.5, 0., 320., 600.).unwrap();
+        let geometry = crate::PresentedGeometry {
+            local: crate::GeometryBounds::new(0., 0., 200., 100.).unwrap(),
+            layout,
+            visual: layout,
+            local_to_window: pose,
+            window_to_local: pose.inverse(),
+            clip: None,
+        };
+        let space = ResizeGestureSpace::new(geometry).unwrap();
+        let sample =
+            GestureSession::new(point(px(400.), px(300.))).update(point(px(391.), px(336.)));
+        assert_eq!(
+            space.displacement(Some(geometry), sample),
+            Some((-18., 18.))
+        );
+        assert!(space.displacement(None, sample).is_none());
+        let mut changed = geometry;
+        changed.layout.width += 1.;
+        assert!(space.displacement(Some(changed), sample).is_none());
+        changed = geometry;
+        changed.local_to_window = pose
+            .then(crate::Affine2D::translation(1., 0.).unwrap())
+            .unwrap();
+        changed.window_to_local = changed.local_to_window.inverse();
+        assert!(space.displacement(Some(changed), sample).is_none());
+        changed.window_to_local = None;
+        assert!(ResizeGestureSpace::new(changed).is_none());
+    }
 
     #[test]
     fn gesture_session_owns_activation_and_total_delta() {

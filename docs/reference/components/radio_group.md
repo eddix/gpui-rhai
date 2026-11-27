@@ -15,6 +15,7 @@ radio_group::RadioGroup(#{ value: "one", label: "Choice", options: options, on_c
 
 | Prop | Type | Required or default | Description |
 |---|---|---|---|
+| `appearance` | `"indicator"` or `"chip"` | `"indicator"` | Renders circle indicators or chips without a separate mark, with the same native keyboard group behavior. |
 | `disabled` | bool | `false` | Disables every option and takes the group out of the tab order. |
 | `key` | string | — | Stable identity of this instance among its siblings; keeps its state across renders. |
 | `label` | string | required | Accessible name of the group. |
@@ -31,6 +32,7 @@ radio_group::RadioGroup(#{ value: "one", label: "Choice", options: options, on_c
 |---|---|---|---|
 | `disabled` | bool | `false` | Blocks clicks on this option; arrow keys skip it. |
 | `label` | string | required | Text beside the option's circle; also its accessible name. |
+| `leading` | node or `()` | — | Decorative element before the option label. |
 | `value` | string | required | Value that `change` reports when this option is chosen. |
 
 ## Events
@@ -41,7 +43,7 @@ radio_group::RadioGroup(#{ value: "one", label: "Choice", options: options, on_c
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `option`, `root`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `option`, `option_selected`, `root`.
 
 ## Theme
 

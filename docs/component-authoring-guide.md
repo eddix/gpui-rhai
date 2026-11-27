@@ -595,6 +595,9 @@ not an authorization mechanism or a replacement for modal Overlay policy.
 `on_hover_value(callback, value)` variant emits
 `#{ hovered: bool, value: UiValue }`, which lets source components pause keyed
 timers without retaining closures.
+Return `propagate()` from passive hover observers. If a node also listens
+for `pointer_move`, consuming the hover transition can suppress the raw
+mouse move that produced it, including the first move into the node.
 
 `on_focus_within_change(callback)` and `on_focus_within_value(callback, value)`
 do the same for keyboard focus: `true` when focus enters the node or anything

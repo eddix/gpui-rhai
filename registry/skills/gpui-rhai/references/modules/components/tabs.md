@@ -80,11 +80,11 @@ tabs::Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("c
 
 ## Parts
 
-Style a part with `part_styles` or in `ui/styles.rhai`: `add`, `close`, `counter`, `dirty`, `end`, `focus_frame`, `icon`, `indicator`, `label`, `lamp`, `line`, `list`, `menu`, `panel`, `root`, `slot`, `start`, `strip`, `tab`, `tab_selected`.
+Style a part with `part_styles` or in `ui/styles.rhai`: `add`, `close`, `counter`, `counter_selected`, `dirty`, `end`, `focus_frame`, `icon`, `icon_selected`, `indicator`, `label`, `lamp`, `line`, `list`, `menu`, `menu_trigger`, `panel`, `root`, `slot`, `start`, `strip`, `tab`, `tab_selected`.
 
 ## Theme
 
-- Tokens: `accent`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.counter`, `metrics.icon`, `metrics.inset`, `metrics.label_column`, `on_accent`, `on_danger`, `on_warning`, `radius.md`, `radius.pill`, `radius.xs`, `space.group`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabbar.active`, `tabbar.background`, `tabs.counter`, `tabs.foreground`, `text_primary`, `typography.body`, `typography.control`, `typography.counter`, `warning`
+- Tokens: `accent`, `border`, `control.hover`, `danger`, `disabled`, `focus_ring`, `metrics.control`, `metrics.control_pad`, `metrics.counter`, `metrics.icon`, `metrics.inset`, `metrics.label_column`, `metrics.tabs_bar_h`, `metrics.tabs_content_gap`, `metrics.tabs_track_h`, `on_accent`, `on_danger`, `on_warning`, `radius.md`, `radius.pill`, `radius.xs`, `space.group`, `space.related`, `spacing.sm`, `spacing.xs`, `spacing.xxs`, `surface_hover`, `surface_raised`, `tabbar.active`, `tabbar.background`, `tabs.bar_addon`, `tabs.bar_list`, `tabs.bar_tab`, `tabs.chip_addon`, `tabs.chip_indicator`, `tabs.chip_list`, `tabs.chip_tab`, `tabs.counter`, `tabs.foreground`, `tabs.hover`, `tabs.track_addon`, `tabs.track_indicator`, `tabs.track_list`, `tabs.track_tab`, `tabs.underline_addon`, `tabs.underline_indicator`, `tabs.underline_list`, `tabs.underline_tab`, `text_primary`, `typography.body`, `typography.control`, `typography.counter`, `warning`
 - Environment: `density`, `size`
 
 ## Dependencies

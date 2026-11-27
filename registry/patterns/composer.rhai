@@ -84,9 +84,10 @@ fn render_Composer(ctx, props) {
         min_rows: props.min_rows, max_rows: props.max_rows, max_length: optional(props, "max_length"),
         disabled: props.disabled, read_only: props.read_only, autofocus: props.autofocus,
         submit_key: props.submit_key, on_change: Fn("draft_changed"), on_submit: Fn("send_draft").curry(enabled),
-        // The editor shows the Composer's surface, so a `root` background covers it too.
+        // The shell owns the surface and focus outline. A transparent editor
+        // must also clear Textarea's normal and focused shadow stacks.
         part_styles: #{ editor: ctx.component_style("editor", style().border(px(0)).padding(px(0))
-            .background(rgba(0x00000000))) } });
+            .background(rgba(0x00000000)).shadows([]).focus(style().shadows([]))) } });
     let actions = [];
     if optional(props, "leading") != () {
         actions.push(props.leading.with_style(ctx.component_style("leading", style())));

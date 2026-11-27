@@ -6,7 +6,8 @@
 mod differential;
 mod host;
 mod mount;
-mod paint;
+pub(crate) mod paint;
+mod preset_risks;
 mod query;
 mod settle;
 
@@ -16,12 +17,30 @@ pub(crate) use host::{
     wait_for_view_text,
 };
 pub(crate) use mount::{ActiveHost, Host, Mount, bundled_assets, registry_source};
-pub(crate) use paint::{PaintedQuad, filled, painted_quads};
+pub(crate) use paint::{
+    PaintedQuad, Rect, filled, filled_including_rounded_clips, glyph_rects_with_ink,
+    glyphs_with_ink, live_fills, logical_paint_rect, painted_quads,
+    painted_quads_including_rounded_clips, walk_live_paint,
+};
+pub(crate) use preset_risks::PresetRisks;
 pub(crate) use query::{
     bounds, by_role, by_test_id, center, click_center, dispatch, last_error, node_by_test_id,
     nodes, snapshot, text_of,
 };
 pub(crate) use settle::{Step, settle};
+
+/// Translate GPUI's platform-neutral spelling before passing explicit
+/// keystrokes to the native test context.
+pub(crate) fn primary_keys(chords: &str) -> String {
+    chords.replace(
+        "secondary-",
+        if cfg!(target_os = "macos") {
+            "cmd-"
+        } else {
+            "ctrl-"
+        },
+    )
+}
 
 /// Builds fixture variants by replacing exact places in the source.
 ///

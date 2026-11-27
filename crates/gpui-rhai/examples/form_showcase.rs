@@ -1,3 +1,8 @@
+#[path = "support/fonts.rs"]
+mod shared_fonts;
+#[path = "support/themes.rs"]
+mod shared_themes;
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
@@ -101,7 +106,11 @@ fn dismiss_toast(ctx, id) { ctx.set_state("toast_visible", false); }
 
 fn init(ctx) {
     let theme = "__VISUAL_THEME__";
-    if theme == "default-light" { ctx.set_theme("Default", "Light"); }
+    if theme == "modern-light" { ctx.set_theme("Modern", "Light"); }
+    else if theme == "modern-dark" { ctx.set_theme("Modern", "Dark"); }
+    else if theme == "clean-light" { ctx.set_theme("Clean", "Light"); }
+    else if theme == "clean-dark" { ctx.set_theme("Clean", "Dark"); }
+    else if theme == "default-light" { ctx.set_theme("Default", "Light"); }
     else if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
     else if theme == "tokyo-night" { ctx.set_theme("Tokyo Night", "Night"); }
     else if theme == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }
@@ -246,7 +255,11 @@ pub const WINDOW: (f32, f32) = (760.0, 720.0);
 pub fn view(theme: &str, locale: &str, state: &str) -> ScriptView {
     let theme = if matches!(
         theme,
-        "default-light"
+        "modern-light"
+            | "modern-dark"
+            | "clean-light"
+            | "clean-dark"
+            | "default-light"
             | "default-dark"
             | "tokyo-night"
             | "tokyo-storm"
@@ -255,7 +268,7 @@ pub fn view(theme: &str, locale: &str, state: &str) -> ScriptView {
     ) {
         theme
     } else {
-        "default-light"
+        "modern-dark"
     };
     let locale = if matches!(locale, "en" | "zh-CN" | "ar") {
         locale
@@ -290,33 +303,40 @@ pub fn view(theme: &str, locale: &str, state: &str) -> ScriptView {
         module("components/switch", SWITCH),
         module("components/toggle_group", TOGGLE_GROUP),
         module("components/button", BUTTON),
+        module("components/spinner", gpui_rhai_registry::SPINNER_SOURCE),
         module("components/dialog", DIALOG),
         module("components/toast", TOAST),
     ]));
-    ScriptView::sources(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
-        .token_base(include_str!("../../../registry/tokens.rhai"))
-        .theme_sources([
-            ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),
-            ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
-            ("tokyo_storm.rhai".to_owned(), TOKYO_STORM.to_owned()),
-            (
-                "catppuccin_latte.rhai".to_owned(),
-                CATPPUCCIN_LATTE.to_owned(),
-            ),
-            (
-                "catppuccin_mocha.rhai".to_owned(),
-                CATPPUCCIN_MOCHA.to_owned(),
-            ),
-        ])
-        .locale_sources([
-            ("en.rhai".to_owned(), EN.to_owned()),
-            ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
-            ("ar.rhai".to_owned(), AR.to_owned()),
-        ])
-        .asset_sources(registry_icons())
-        .calendar_clock(CalendarClock::fixed(
-            GregorianDate::parse_iso("2026-08-30").expect("fixed visual date"),
-        ))
+    ScriptView::sources(
+        ModuleId::parse("main").unwrap(),
+        scripts,
+        shared_themes::PRIMARY,
+    )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
+    .font_sources(shared_fonts::sources())
+    .theme_sources(shared_themes::additional().chain([
+        ("default_light.rhai".to_owned(), DEFAULT_LIGHT.to_owned()),
+        ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),
+        ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
+        ("tokyo_storm.rhai".to_owned(), TOKYO_STORM.to_owned()),
+        (
+            "catppuccin_latte.rhai".to_owned(),
+            CATPPUCCIN_LATTE.to_owned(),
+        ),
+        (
+            "catppuccin_mocha.rhai".to_owned(),
+            CATPPUCCIN_MOCHA.to_owned(),
+        ),
+    ]))
+    .locale_sources([
+        ("en.rhai".to_owned(), EN.to_owned()),
+        ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
+        ("ar.rhai".to_owned(), AR.to_owned()),
+    ])
+    .asset_sources(registry_icons())
+    .calendar_clock(CalendarClock::fixed(
+        GregorianDate::parse_iso("2026-08-30").expect("fixed visual date"),
+    ))
 }
 
 #[allow(dead_code)]

@@ -15,6 +15,8 @@ include = ["src/**/*.rs", "README.md", "LICENSE-*", "Cargo.toml"]
 
 [features]
 default = ["gpui-pre"]
+# Activated only with the repository's vendor build profile.
+vendor-gpui = []
 gpui-pre = ["dep:gpui", "dep:gpui_platform"]
 gpui-fast = ["dep:gpui-fast", "dep:gpui-fast-platform"]
 charts = []
@@ -40,16 +42,20 @@ semver.workspace = true
 thiserror.workspace = true
 toml.workspace = true
 unicode-segmentation.workspace = true
+unicode-bidi.workspace = true
 image.workspace = true
 jiff.workspace = true
 usvg.workspace = true
 resvg.workspace = true
 roxmltree.workspace = true
+lyon.workspace = true
+tiny-skia-path = "0.11.4"
 event-listener.workspace = true
 similar.workspace = true
 syntect.workspace = true
 regex.workspace = true
 pulldown-cmark.workspace = true
+idna = "=1.1.0"
 
 # The Dock badge and the bundle check in `system`; the calls used are safe.
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -76,7 +76,17 @@ fn bordered(visual: &mut VisualTestContext, color: u32) -> usize {
     let color: gpui::Hsla = rgba(color).into();
     painted_quads(visual)
         .iter()
-        .filter(|quad| quad.border_widths[3] > 0.0 && quad.border_color == color)
+        .filter(|quad| {
+            quad.border_widths[3] > 0.0 && quad.border_color == color
+                // A public GPUI packet can paint a very small grip border as
+                // the whole solid quad (no interior remains to split).
+                || !gpui_rhai::EXTENDED_RENDERING
+                    && quad.background.as_solid() == Some(color)
+                    && quad.visible().width > 0.0
+                    && quad.visible().height > 0.0
+                    && quad.bounds.width < 60.0
+                    && quad.bounds.height < 60.0
+        })
         .count()
 }
 
@@ -179,7 +189,7 @@ fn assert_lane_states(
     // in `grip_hover`) and the drag moved the separator.
     assert!(
         grip_hover > 0,
-        "hover did not reach the handle: no grip_hover border"
+        "hover did not reach the handle: no grip_hover ink"
     );
     let moved = if horizontal {
         dragged_x - x

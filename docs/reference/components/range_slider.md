@@ -50,7 +50,7 @@ Style a part with `part_styles` or in `ui/styles.rhai`: `control`, `fill`, `head
 
 ## Theme
 
-- Tokens: `accent`, `metrics.control`, `spacing.sm`, `spacing.xs`, `surface_hover`, `text_muted`, `text_primary`, `typography.body`
+- Tokens: `accent`, `metrics.control`, `metrics.slider_track`, `spacing.sm`, `spacing.xs`, `surface_hover`, `text_muted`, `text_primary`, `typography.body`
 - Environment: `density`, `size`
 
 ## Dependencies

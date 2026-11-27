@@ -1,626 +1,232 @@
 # Component contracts (L1)
 
-For authors of official and application components. Read
-[principles.md](principles.md) first. This document defines what every
-component must guarantee so that applications can compose them into aligned,
-keyboard-friendly screens without fine tuning, and so that every opinionated
-default can still be turned off.
-
-Numbers below are the default values of the L0 token base
-(`registry/tokens.rhai`, installed as `ui/tokens.rhai`). Components never
-repeat these numbers: they reference the token role, so a Host or profile
-override changes every component together.
+**Target: modern / clean.** Read [principles](principles.md) and the
+[extracted reference](modern-clean-spec.md). This document replaces the old
+visual atom rules; it does not change the current Rust/Rhai API or assert the
+new looks already ship. Actual props/events/parts remain in the generated
+[module reference](../../gpui-rhai/references/modules/README.md).
 
 ## 1. Composition contracts
 
-Every component in `components/` satisfies these contracts. The checklist in
-section 9 repeats them for reviews.
-
-| # | Contract | Requirement |
-|---|---|---|
-| C1 | **Size** | Every interactive component accepts `size` (`xs` `sm` `md` `lg`, default inherited, then `md`). An explicit prop is applied by setting the `size` environment value on the component's own root, so the nearest value wins and descendants follow. |
-| C2 | **Density** | Heights, insets and spacing come from environment-variant tokens (`metrics.*`, `space.*`). No literal control or row height. Density never changes font size. |
-| C3 | **Content inset** | In list-like rows (Menu, Command, Select options, Combobox options, Tree, Table cells, Accordion headers, StatusBar fields, navigation lists) text starts at the container edge plus `metrics.inset`. Panels pad with `metrics.inset`. Tree depth indentation is added after the inset. |
-| C4 | **Intrinsic width** | Components size to their content and never stretch themselves. Stretching is the parent layout's decision. |
-| C5 | **No outer margin** | Components never add space outside their own root. Spacing between components belongs to the parent. |
-| C6 | **Shared line box** | Controls of the same size use the same typography role, so text in a row of mixed controls shares one baseline when centered. Minimum heights are lower bounds; larger type grows the control. |
-| C7 | **Declared consumption** | Component metadata lists the tokens (`tokens`) and environment values (`environment`) it reads. Preparation validates the active theme against the union of mounted components. |
-| C8 | **Removable signatures** | Each structural signature is a declared part (`lamp`, `facet`, `shortcut`, `label`, `cursor`, `focus_frame`), so `ui/styles.rhai` can restyle or hide it. |
-| C9 | **States without layout shift** | State priority is `active > focus > hover/cursor > selected > idle`; `disabled` suppresses interaction and wins over pointer states. Borders are reserved in idle geometry. Selection stays visible under focus. |
-| C10 | **Visible focus** | Focus is always a 2px `focus_ring` frame (the ink color by default) and never moves layout. A control frames itself with a reserved 2px border that idles in its fill or, for outline treatments, in `border`. A compound control frames its mark instead of the whole row (`group_focus`), a list frames its cursor row with an overlay, and a field group frames itself while its input has focus (`focus_within`). The one exception is the embedded search line that heads a panel and holds focus while it is open: its caret shows focus (section 7). By default the frame shows after a navigation key, not after a pointer press (`focus_indicators`); a focused text field always shows its frame. See section 10. |
-| C11 | **Inherited disabled** | A disabled container disables every descendant natively: input, focus, pseudo styles and accessibility semantics. Components do not need to forward `disabled` to children. |
-| C12 | **Action binding** | Components that trigger commands (Button, IconButton, Menu items, Command items, ContextMenu items, Tooltip hints) accept `action: "id"`. The displayed shortcut, enabled state and dispatch derive from that action. A free-text `shortcut` remains for commands without an action. |
-| C13 | **Data defaults** | When a component knows a value is numeric (a Table column with `numeric: true`, Stat, DescriptionList numeric values), it aligns to the end and enables tabular figures by default. |
-| C14 | **Text safety** | Text never clips CJK fallback glyphs. Truncated text keeps its full accessible name. Components do not invent copy or functional emoji. |
+| Contract | Target |
+|---|---|
+| Identity | Styling never remounts a native entity or changes component/callback ownership. |
+| Size | Use each family's source sizes, usually sm/md/lg, not a universal height. An SDK-only xs needs an explicit derived recipe. |
+| Preset | modern/clean changes geometry/type/effects; light/dark changes color recipes. Do not implement clean as compact density. |
+| Tokens | Declare consumed tokens/environment. Component-specific aliases preserve source distinctions; shared roles are shared only when actually equivalent. |
+| Layout | Size to content or fill according to the component contract. Keep parent arrangement separate from internal insets. |
+| Parts | Expose meaningful subparts and state styling without requiring private core APIs. |
+| Interaction | Existing controlled state, semantic events, native input and disable propagation remain authoritative. |
+| Text | Correct font, weight, tracking and line box; no CJK clipping; ellipsis retains the accessible name. |
+| States | Preserve source combinations and paint layers; no accidental layout shift. |
+| Focus | Style the real owner, including the inner native editor. Never decorate a wrapper that does not track focus. |
+| Commands | Keep action-derived shortcut/enabled/dispatch behavior; appearance does not create a second command model. |
+| Motion | Use native sampling, honor None/Reduced, and keep paint/hit geometry synchronized. |
 
 ## 2. Geometry
 
 ### Metrics
 
-| Token | comfortable | compact | Use |
-|---|---:|---:|---|
-| `metrics.control` by size `xs` / `sm` / `md` / `lg` | 24 / 28 / 32 / 36 | 20 / 24 / 28 / 32 | Button, inputs, Select, Toggle, Tabs slots |
-| `metrics.control_pad` by size | 8 / 12 / 16 / 20 | 8 / 8 / 12 / 16 | horizontal padding of pressed controls: Button, Tabs, ToggleGroup |
-| `metrics.field_pad` by size | 5 / 7 / 10 / 12 | 3 / 4 / 6 / 10 | horizontal padding of fields (section 7) |
-| `metrics.multiline_pad` by size | 2 / 3 / 6 / 8 | 0 / 0 / 2 / 6 | vertical padding of Textarea (section 7) |
-| `metrics.row` | 32 | 28 | Menu, Command, option lists, Table, Tree, navigation rows |
-| `metrics.inset` | 12 | 8 | text start in rows, panel padding |
-| `metrics.marker` | 20 | 20 | Badge, Tag, Kbd height (`metrics.marker_small` 18) |
-| `metrics.mark` | 16 | 16 | Checkbox box, Radio ring, Switch track height, slider cap |
-| `metrics.icon` by size | 12 / 14 / 16 / 16 | 12 / 14 / 14 / 16 | control icon box |
-| `metrics.titlebar` | 36 | 32 | TitleBar |
-| `metrics.statusbar` | 24 | 22 | StatusBar |
+All values are logical pixels at scale100, not device pixels. Exact matrices
+are in the [core metric matrix](modern-clean-spec.md#core-metrics).
 
-Structural constants that stay literal in component source, with a comment:
-the 1px hairline, the 2px focus border, the 6px lamp,
-the 4px slider track, the 8px splitter grab zone, the 12px close glyph, zero
-offsets, semantic circles. The registry lint
-(`components_declare_what_they_read_and_keep_geometry_in_tokens`) rejects any
-other literal height or font size, and any token a component reads without
-declaring it.
+| Family | modern sm / md / lg | clean sm / md / lg |
+|---|---|---|
+| Button height | 32 / 40 / 48 | 24 / 28 / 32 |
+| Button horizontal padding | 12 / 16 / 20 | 8 / 10 / 12 |
+| Button icon box | 16 / 18 / 20 | 14 / 16 / 16 |
+| TextField/Select/DatePicker/TimePicker height | 32 / 36 / 40 | 28 / 32 / 36 |
+| Field base inset (`--px`; parts adjust each side) | 10 / 12 / 14 | 8 / 10 / 12 |
+
+IconButton is a square: modern sm32/md40 with icons16/18; clean sm24/md28 with
+icons14/15. It never inherits the intrinsic width of a text button. In clean
+Button, a leading/trailing icon reduces that side's padding by2, matching the
+source's optical correction.
+
+Do not force Button md and Input md to be equal-height. Align the control
+centers or the appropriate baseline; verify their measured geometry. Enlarge
+for text scaling without clipping, but do not use scaling to erase the
+baseline source differences.
 
 ### Radius roles
 
-Radius follows what a shape is; it is not a preference and no environment
-value changes it. Square rectangles alone could only tell a button from a tag
-by size, and a toolbar holding both at different heights read as a jagged row.
-Each component takes the role of its kind:
+No old global kind-to-radius table survives. The baseline values are:
 
-| Kind | Role | Value | Used by |
-|---|---|---:|---|
-| Layout | none | 0 | Region, Table rows and List rows between dividers, Tabs `underline` and `bar`, Sheet, SplitPane, TitleBar, StatusBar |
-| Control | `radius.md` | 4 / 6 | Button, IconButton, Input, Textarea, Select, Combobox and DatePicker triggers, InputGroup, ToggleGroup, ButtonGroup and the Tabs `track` in either orientation, calendar day cells, Composer, DatePicker presets; rows that float: Menu items, Select and Combobox options, Command rows, Tree, Timeline and undivided List rows |
-| Box in a control | `radius.xs` | half of md | Checkbox box, Kbd keycap, the Tabs thumb and close button, a field's clear button, Toast close and Clear all |
-| Marker | `radius.pill` | capsule | Tag (and its facet and close target), Badge, Combobox chips, Switch track and thumb, the Tabs count, the Toast count, Carousel dots, the SplitPane grip |
-| Surface | `radius.lg` | 8 | Card, Alert, SelectableCardGroup cards; floating: Menu, Popover, Dialog, Toast, Command, CommandDialog and field panels |
-| Small box | `radius.sm` | 4 | No built-in component; an application's small rounded rectangle outside a control, such as a thumbnail or a color swatch |
+| Shape | modern | clean |
+|---|---|---|
+| Button sm/md/lg | 10 / 12 / 14 | 6 / 6 / 6 |
+| Field sm/md/lg | 9 / 10 / 12 | 6 / 7 / 8 |
+| Checkbox | 5 | 4.5 |
+| Card | outer20 / inner16 | single10 |
+| Popover | 16 | 12 |
+| Tooltip | 8 | 6 |
+| ordinary Badge | pill | 4 |
 
-A control's radius follows its height: 4px at 24px or less (comfortable xs,
-compact xs and sm) and 6px from 28px. Its 2px frame leaves 2px or 4px inside,
-so the shape reads as a rounded rectangle rather than a blunted square, and a
-20px compact control stays clearly apart from a 20px Tag capsule. A box inside
-a control takes half that (2px or 3px). "Capsule" is 999px: radii clamp to
-half the shorter side, so a marker is a capsule and a round thumb a circle.
-A one-line Tooltip is about 22px tall and rounds like a control of that
-height, at half of `radius.lg` (4px); at 8px it would read as a capsule.
+Count Badge, person/workspace/agent Avatar, Switch track/thumb and segmented
+thumb have their own formulas. Preserve concentric relationships where the
+source uses them; do not round every marker or every row by kind. For Tag,
+Radio, Slider, Tree and other components without independent source targets,
+derive and document a recipe rather than silently keeping the old signature.
 
-Surfaces are 8px: a card holds rounded controls, so it rounds too. Transient
-list panels inset their rows by half of that on every side, so a highlighted
-first or last row stays inside the curve (clipping is rectangular).
+### Borders, insets and shadows
 
-A row you press is a control: a rounded block with no bar at its start, its
-selection a fill. Rows that float (menus, options, palettes, Tree, Timeline,
-an undivided List) take `radius.md` and sit `spacing.xs` in from a bare
-container's sides, or inside a panel's padding, so the corners never touch an
-edge. Rows bounded by dividers (Table, a List with `dividers: true`) fill the
-band between the lines edge to edge and stay square. The keyboard cursor frame
-takes its row's corners. Joined groups round only their outer
-corners: the first and last items use `radius_start` / `radius_end`, so a
-pressed segment or a Tag facet never pokes past the frame. The Tabs thumb sits
-2px inside the track and takes the box role, close to the concentric radius.
+Preserve 0.5px/1px hairlines, transparent border space, shadow outlines and
+paint order. A shadow outline takes no layout space. A source focus shadow
+cannot be replaced by an added layout border. Keep source padding separate
+from borders: text-start is not always a universal `metrics.inset`.
 
-Some shapes keep their own form, on purpose:
-
-- Checkbox stays a box: a round checkbox reads as a Radio.
-- Status lamps stay square: they are a recognizability signature (G2).
-- Slider and RangeSlider caps stay rectangular faders on square tracks, and
-  Progress stays a square bar.
-
-Semantic circles (Radio, Avatar, presence) use half their size.
+modern Card has an outer tray and inner card; clean has a single surface.
+modern Dialog also has a layered surface, while clean uses its own panel and
+footer recipe. An outer/inner surface is not a second independent component
+instance: it must preserve one public owner and a coherent parts boundary.
 
 ## 3. Typography
 
-Roles are named freely at the runtime level; the design language declares:
+Both designs use the bundled Inter 400/500/600 faces. Code uses its own mono family;
+ordinary labels and headers are not globally mono or uppercase. Use fractional
+sizes and source tracking rather than rounding to the legacy body/caption
+roles. The exact resource/format requirements are in the reference.
 
-| Role | Size / line | Weight | Family | Use |
-|---|---:|---:|---|---|
-| `caption` | 12 / 18 | 400 | UI | descriptions, helper text, summary rows; smallest text |
-| `body_small` | 13 / 20 | 400 | UI | compact-mode cells, xs controls |
-| `body` | 14 / 22 | 400 | UI | content, controls, table cells |
-| `subtitle` | 16 / 24 | 600 | UI | section titles |
-| `title` | 18 / 26 | 600 | UI | panel and page titles |
-| `heading` | 20 / 28 | 600 | UI | prominent titles |
-| `display` | 24 / 32 | 600 | UI | stat figures |
-| `display_large` | 32 / 40 | 600 | UI | hero figures |
-| `label` | 12 / 16 | 400 | mono | label voice (uppercase Latin) |
-| `code` | 13 / 20 | 400 | mono | code, commands |
-| `control_small` | 13 / 16 | 400 | UI | single-line text in `xs` controls |
-| `control_regular` | 14 / 20 | 400 | UI | single-line text in `sm` to `lg` controls |
-| `control` by size | `control_small` for `xs`, `control_regular` otherwise | — | UI | text inside controls |
+| Role | modern | clean |
+|---|---|---|
+| Button md | 14, 500, tracking-.01em | 13/20, 500, tracking0 |
+| Field md value | 13.5/20 | 13/20 |
+| common field label | 13/20, 500 | 13/20, 500 |
+| small description | commonly12.5/17 | commonly12/16 |
+| Card title | 14/20, 500 | 13/20, 500 |
+| Card body | 13/20 | 13/20 |
+| Dialog title | 15/22, 500 | 15/22, 500 |
 
-Control text keeps the body sizes on a tighter line box: a single line needs no
-reading leading, and the reserved 2px focus border must fit every compact height
-(20 = 16 + 2 × 2). Density still never changes font size. Multi-line fields
-(Textarea) keep `body`.
-
-The reading scale (`scale` environment: 100, 110, 125, 150, 175 or 200 percent)
-is the one thing that changes font size. It multiplies every role's size and
-line height together with every length token, so a control keeps its
-proportions around larger text: at 150% a 32px md control holds 21 / 30 body
-text in 48px. Borders, focus frames and literal widths do not scale. A Host
-sets it for every view, a script for a subtree; components neither declare nor
-read it (D80).
-
-Only weights 400 and 600 are used. 600 marks titles and the label of a filled
-Button; data in lists is never bold. The UI family is the platform font; the
-mono family defaults to `Menlo`, then `DejaVu Sans Mono`. Identifiers and
-numbers stay in the UI family with `tnum` (tabular figures) and `cv08`
-(slashed zero) features; the mono family is for code and the label voice.
-
-The label voice uppercases Latin text in the component (`to_upper`); CJK text
-is unaffected. GPUI 0.3.11 has no letter spacing, which is why the label voice
-uses the monospace family: its built-in advance keeps uppercase legible.
+These are component roles, not one global text role applied everywhere.
+Keep source use of tabular numbers. Some source declarations use other
+weights; record the actual loaded-font resolution before adding or
+synthesizing a different face. Platform UI fonts and compressed webfont bytes
+are not a substitute for the matching native font resources.
 
 ## 4. Color roles in components
 
-| Role | Component use |
-|---|---|
-| `surface` | window, panel and overlay canvas |
-| `surface_raised` | input and field wells, raised panels, Tabs thumb |
-| `surface_hover` | tonal blocks: secondary Button, Tag, Tabs track, hover and cursor rows |
-| `selection` | persistent selection and the current item block |
-| `accent` | primary Button fill, checked controls, caret, progress |
-| `accent_hover` | primary Button hover |
-| `on_accent`, `on_danger`, `on_warning`, `on_success` | text and marks on the matching fill |
-| `danger`, `warning`, `success` | status lamps, strong Badges, status Buttons, invalid frames |
-| `text_primary` | content and data |
-| `text_muted` | secondary data, descriptions, unselected tab labels, label voice |
-| `disabled` | disabled text and marks |
-| `border` | hairlines, field frames, outline treatments, Kbd frames |
-| `focus_ring` | the 2px focus border |
+Use the local role: title/body/secondary/subtle/placeholder/icon, surface/tray,
+hairline/strong edge, selected/hover, semantic fg/bg, focus, gradient stop and
+shadow layer. Preserve alpha and sRGB mixes. Do not collapse all weak text
+into one muted color or all surfaces into one fill.
 
-Derived roles from the token base: `text.accent`, `text.danger`,
-`text.warning`, `text.success` (the status color adjusted to reach 4.5:1 on
-tonal blocks, used whenever a status or accent color is text), `control.hover`
-(tonal block hover step), `tag.facet` (the darker tonal step of a Tag facet),
-`table.selection`, `tabs.foreground`, `scrollbar.thumb`,
-`scrollbar.thumb_hover`, and `surface.chrome` (halfway from `surface` to
-`surface_raised`: a third surface for an application's sidebars and title
-bars, between the window canvas and raised cards; no built-in component takes
-it, and a palette may set it outright). `tag.facet` and `table.selection` carry
-`text_primary`, so each backs off toward its base just enough to keep 4.5:1.
-See [themes.md](themes.md).
+Primary means ink/reverse ink in this source, not a cobalt fill. Info,
+success, warning, danger and purple badges keep paired subtle backgrounds
+and foregrounds. Do not remove a source green normal-status badge merely to
+enforce the superseded "normal is quiet" rule.
 
-## 5. Marker system: Button, Tag, Badge, Kbd
+## 5. Actions and markers
 
-The four rectangle-and-text components are distinguished by silhouette, not by
-color alone; the distinction survives grayscale.
+- **Button:** source primary/secondary/ghost/destructive recipes; active
+  scale0.97, disabled opacity0.4, loading shimmer plus conditional spinner.
+  Preserve width/content morph and source icon-side padding. Existing SDK
+  extra variants require derived styles, not deletion or a false source match.
+- **IconButton:** independent square, centered SVG paint and slot, label
+  accessibility. Ordinary actions omit `selected`; an explicit `false`/`true`
+  declares a controlled toggle and its accessible pressed state. A tiny glyph centered inside a
+  too-large SVG viewBox is not accepted as a correctly sized icon.
+- **Badge:** modern soft pill, clean small rounded rectangle; optional dot or
+  icon, live-dot motion, count circle/pill. No compulsory old square lamp.
+- **Kbd:** use source keycap treatment and actual platform key binding.
+- **Tag:** a derived removable chip: 24px high, radius7 modern / radius5 clean,
+  13px /12.5px type on a 20px line; 18px close target with a 10px glyph. The
+  optional facet uses a paired soft fill/ink rather than a solid-action inverse
+  foreground. The outer frame is an inset shadow, not extra layout thickness.
 
-| Component | Silhouette | Height | Text | Fill and line |
-|---|---|---|---|---|
-| **Button** | large block, centered label | `metrics.control` | `control`, 600 | solid or tonal block; outline uses a frame; ghost has no fill |
-| **Tag** | small flat tape, optional facet segment | `metrics.marker` | `caption`, 400 | tonal block, no frame |
-| **Badge** | lamp plus text, no container by default | `metrics.marker` | `caption`, 400 | none; `strong` emphasis is a solid status block |
-| **Kbd** | keycap | `metrics.marker` | `code` at 12px | 1px `border` frame, no fill; inline legend has no frame |
+## 6. Lists, tables and selection
 
-### Button
+Menus, options and commands use their own row height/inset/corner/highlight
+recipes. Keep hover, keyboard active item, selection and disabled distinct.
+Do not impose one global row-height or outline style on every list family.
 
-Seven variants remain. Selection guidance lives in [composition.md](composition.md).
+Source DataTable body rows are44 (modern) /40 (clean); clean header36. Its
+editing, rectangular cell/range selection, clipboard and undo are not the
+current SDK Table row-selection model. Style the existing Table without
+silently introducing a second spreadsheet model; record functional gaps.
 
-| Variant | Idle | Hover | Text |
-|---|---|---|---|
-| `primary` | `accent` fill | `accent_hover` | `on_accent` |
-| `secondary` | `surface_hover` fill | `control.hover` | `text_primary` |
-| `outline` | transparent, 2px `border` frame | `surface_hover` fill | `text_primary` |
-| `ghost` | transparent | `surface_hover` fill | `text_primary` |
-| `danger` / `warning` / `success` | status fill | the status color mixed 12% toward `text_primary` | matching `on_*` |
-
-- Padding `metrics.control_pad`; gap between icon and label `spacing.xs`.
-- Focus: the reserved 2px border turns `focus_ring`.
-- Active: opacity 0.86. Disabled keeps the variant's silhouette and its size:
-  block variants become a neutral `surface_hover` block, `outline` keeps its
-  `border` frame, `ghost` stays bare; the text turns `disabled`.
-- Loading looks disabled and draws a turning spinner in the label's color, in
-  an icon-sized slot: in place of the prefix icon, else before the label, which
-  widens the button by that slot and its gap (0.4.3, feedback #34). The label
-  keeps the width of the wider of the idle and loading texts and announces the
-  loading text. IconButton swaps its icon for the spinner. Reduced or no motion
-  holds the spinner still.
-- Optional `shortcut` part shows the action's key legend after the label in
-  the `code` role at 70% opacity. It shows at every size: a component cannot
-  read the resolved size, so an `xs` caller omits the legend itself.
-- IconButton is the square variant (`metrics.control` on both axes, icon
-  `metrics.icon`); `selected` fills it with `selection`.
-- Toggle is a ghost Button whose pressed state fills with `selection`; its label
-  stays at 400 so pressing never changes width.
-- ButtonGroup joins blocks with a 2px seam (`space.xxs`), so each button keeps
-  its own focus frame and outline frames never double.
-
-### Tag
-
-- Tonal `surface_hover` block, horizontal padding `spacing.sm` in both
-  densities (markers do not change with density), `radius.pill`: a capsule, so
-  a tag never reads as a button beside one.
-- Color variants (`accent`, `success`, `warning`, `danger`) mark a
-  **category**, not a status: without a facet they color the text with the
-  derived `text.*` role; with a facet they fill the facet segment with the color
-  and use the matching `on_*` text.
-- `facet` prop: a leading segment in the label voice (mono, uppercase) on a
-  darker tonal step (`tag.facet`), joined to the value with no gap
-  (`Tag(#{ facet: "env", text: "prod" })`). The prop is not called `key`
-  because `key` is the component instance key.
-- `closable`: a 12px close glyph at the end with its own hover block and a
-  2px focus frame; announces `close_label`, default "Remove <text>".
-
-### Badge
-
-- Default (`emphasis: "subtle"`): a 6px square lamp in the variant color
-  (neutral uses `text_muted`) followed by the label in `text_primary`. No
-  container, no frame.
-- `emphasis: "strong"`: a solid block in the status color with `on_*` text,
-  weight 600, padding `spacing.sm`. Use only for states that require action.
-- `dot: false` removes the lamp (text-only status), `size: "sm"` uses 18px.
-- Read-only: no tab stop, `status` semantics.
-
-### Kbd
-
-- Default: 1px `border` frame, transparent fill, `text_muted`, the `label`
-  role (mono 12/16, not uppercased), minimum width equal to its height,
-  padding `spacing.xs`.
-- `appearance: "inline"`: no frame, used inside menus and buttons.
-- `keys: ["⌘", "K"]` renders one keycap per key with `spacing.xxs` between
-  them.
-
-### Related: ToggleGroup and Tabs
-
-- **ToggleGroup** expresses pressed tool state. Equal-height segments joined
-  without gaps inside one 2px `border` frame; segments overlap the frame by
-  2px, so a pressed `selection` fill and a focus frame sit flush with the outer
-  edge and the group is exactly `metrics.control` high. Unpressed labels are
-  `text_muted`. Keyboard: roving focus, one tab stop on the active segment,
-  arrows move focus, Enter or Space toggles.
-- **Tabs** is one component in four looks that share every capability.
-  Every look is `metrics.control` high with labels in `tabs.foreground` /
-  `text_primary`, `control` type, weight 400 in both states so widths do not
-  jitter. The strip is one tab stop and the arrows select; content-width tabs
-  keep their width (at most two label columns, then an ellipsis) and the strip
-  scrolls when they do not fit, a vertical wheel included, keeping the
-  selected tab revealed. Choose by what the tabs switch:
-  - **track** (default), a compact switcher among other controls (a toolbar,
-    a header): a continuous `surface_hover` track and one `surface_raised`
-    thumb inset by `spacing.xxs`; the list's focus frames the thumb
-    (`group_focus`). Without a panel (`panel: false`) it is a view switcher;
-    the panel itself is unframed. A vertical track is a column beside its
-    panel.
-  - **chip**, tabs that stand apart (a title bar, a toolbar of workspaces):
-    no track; each tab is a separate chip, `metrics.control` high with
-    `radius.md`, `spacing.xxs` apart, transparent until hovered
-    (`surface_hover`). The selected chip sits on a `surface_raised` thumb with
-    a 1px `border`, which the list's focus turns into a 2px `focus_ring` frame
-    (0.4.3, feedback #6). Horizontal only.
-  - **underline**, the sections a panel or a card is divided into: no track;
-    the labels sit on a 1px `border` hairline that spans the panel, and the
-    selected one has a 2px `text_primary` bar under it that covers the
-    hairline. Ink, not accent: tabs often share a screen with the primary
-    action. Slots have `spacing.xs` beside the label, which is just room for
-    the 2px focus frame the list's focus draws over the selected slot, so the
-    first label sits `spacing.xs` off the content edge; labels are about
-    `metrics.control_pad` apart. The hairline already separates the panel, so
-    it sits `space.related` below (and nests inside a card's `group` spacing).
-    Horizontal only: a vertical choice of sections is a track or a list.
-  - **bar**, the region itself (open documents, a workspace's panels, a
-    collection the user manages), where the panel's extent says what the tabs
-    switch: the strip is `tabbar.background` with a 1px `border` line along
-    its bottom; the selected tab takes `tabbar.active` (the panel's surface)
-    and 1px side hairlines and covers the line, so it and the panel are one
-    surface. The strip is a rectangle with no margin and the tabs are layout,
-    so the selected tab stays square like the panel; a first tab on the strip's start edge
-    draws no start hairline, so it never doubles a separator beside the bar.
-    Tabs start their text on `metrics.inset`; the 2px focus frame lies over
-    the selected tab. Horizontal only.
-- **What a tab carries.** Only what the component draws, none of it a tab
-  stop: an icon, the label, a count capsule or a tone lamp, the dirty mark and
-  a close button, each reached from the list (Delete closes the selected tab,
-  Alt+Arrow moves it, Shift+F10 asks for its context menu). A tab never holds
-  a caller's button: a tab may not contain another control, and the one tab
-  stop could not reach it. Actions that are not about one tab go in the
-  strip's `start` and `end` slots and keep their own tab stops; on an unfilled
-  strip a slot's space faces the list only, so its first control sits on the
-  content edge, while the filled bar insets its slots like a toolbar. The "+"
-  of `on_add` follows the last tab and is pinned at the strip's end when the
-  tabs overflow.
-- **A head of the caller's own.** A tab's `head` node replaces its icon,
-  label and count with content the application draws, such as a title over a
-  muted count; the selection marks, close button, dirty mark and the keys stay
-  the tab's, and `label` still names it. Track and underline strips grow to a
-  taller head; a `bar` keeps the control height.
-- **Count capsule.** A marker after the label, exactly as tall as the label:
-  `metrics.counter` is the control line height (16 at `xs`, 20 otherwise) and
-  also its minimum width, so one digit is a circle. Its
-  figures are the `counter` type (11/14 at `xs`, 12/16 otherwise: digits are
-  about 0.72em tall, leaving about 4px and 5.7px above and below them) with
-  tabular figures, `99+` past 99. Its corners are `radius.pill`, the markers'
-  role: a capsule. The neutral
-  fill is `tabs.counter`, a step from the track toward ink that holds
-  `text_primary` at 5.2:1 and shows on the track, the thumb, the page and the
-  bar alike; a `tone` fills it with `accent`, `warning` or `danger` and its
-  `on_*` text. A tone without a count is the 6px square lamp. The close slot
-  is reserved even while its button is hidden, so the close button never
-  moves the tab's width when it appears; a count that appears does, since it
-  is content.
-- **Panel slide.** Off by default. With `panel_motion: "slide"` a newly
-  selected panel comes in from the side of the tab it replaces (from above or
-  below in a vertical list), `motion_distance("moderate")` away, fading in,
-  in `fast` with the `entrance` easing; the panel it replaces is gone at once.
-
-### Carousel
-
-A pager for a compact place that steps through items of one kind. It never
-turns by itself.
-
-- **header** (default): one row, `space.related` above the item, with the
-  label as the title in `control` type and `text_primary` (it truncates), and
-  the controls at the end: ghost IconButtons around the position. The row's
-  space below is its padding, since it leads the item as a heading does.
-- **overlay**: outline IconButtons on `surface_raised` over the item's sides,
-  `spacing.xs` in and vertically centred, shown while the item is hovered or
-  the controls hold focus; an arrow at an end is left out rather than drawn
-  disabled over content. The position sits under the item, centred in a
-  `metrics.control` row.
-- **Position.** A count is `2 / 5` in `control` type, tabular figures and
-  `text_muted`, in a box as wide as the widest position (`5 / 5`), so the
-  arrows beside it never move.
-  Dots are the 6px lamp squares in `control.border` (`text_muted` under the
-  pointer), the selected one stretched to `metrics.icon` wide in
-  `text_primary`, so the position never rests on color alone; their corners
-  are `radius.pill`, so they are circles and the selected one a pill. Each dot
-  sits in a touching `metrics.icon` square target.
-- **Focus.** The controls are one tab stop beside the item, framed by the 2px
-  `focus_ring` frame (`radius.md`) when focused; the arrows and dots inside are
-  not tab stops. A disabled arrow takes `disabled` ink.
-- **Motion.** A new item slides in like a Tabs panel, from the side it comes
-  from, the shorter way round when the items wrap.
-
-## 6. List-like components
-
-Menu, Command, Select and Combobox option lists, ContextMenu, Tree, List,
-navigation lists and Table rows share one row grammar:
-
-| State | Treatment |
-|---|---|
-| idle | transparent |
-| hover | `surface_hover` block |
-| keyboard cursor in a persistent list (Tree, Accordion, Collapsible) | a 2px `focus_ring` frame drawn over the row (part `cursor` / `focus_frame`), only while the list has focus |
-| current item, or the cursor in a transient list (menus, palettes, options) | `selection` block with the row's corners (see [radius roles](#radius-roles)) |
-| checked | check mark in a fixed leading column; the column is reserved for every row of a checkable list |
-| disabled | `disabled` text, no hover |
-
-- Row height `metrics.row`, text start `metrics.inset`, trailing shortcut in
-  the inline Kbd legend aligned to the end.
-- Section headers inside lists use the label voice and align with item text
-  after the reserved check column.
-- Menu and Command items accept `action`; Menu items also accept
-  `kind: "label"` for section headers.
-- Virtual option lists size their viewport in whole rows
-  (`metrics.row * visible`) with `fill_height`, so both densities show the
-  same number of rows.
-
-### List
-
-- Keyed rows without columns, for tickets, recent items or plugins: an
-  optional leading status Badge, the title, a muted secondary text beside the
-  title (`body`, one line box) or below it (`caption`, `secondary_layout:
-  "below"`, rows grow to two lines) and trailing `meta` in `text_muted` with
-  tabular figures; on a selected row the secondary text and `meta` take
-  `text_primary`, as `text_muted` is tuned for the surfaces, not for the
-  selection tint. Rows carry `metrics.inset`, so in a bled DataView or Region
-  body their text starts on the title's edge; `dividers: true` adds hairlines.
-  Badges of different widths push titles apart: `badge_width` (pixels or a
-  Length) reserves one leading slot on every row so the titles share an edge.
-- `height` takes pixels or a Length (`theme_length("metrics.row") * n` for n
-  rows in either density). While `loading` the list shows `loading_content`
-  (a muted "Loading…" line by default) in its place, as Table does.
-- Selection follows Table: `table.selection` filling the row, the focus
-  frame on the selected row while the list has focus, one tab stop whose
-  arrows move the selection, Enter for `row_click`, `on_context_request` for
-  a caller menu. Without a selection mode `on_context_request` makes the list
-  a tab stop for the keyboard request, framed while it holds focus
-  (`focus_frame`). Roles are `listbox` / `option` with a selection mode and
-  `list` / `listitem` without.
-
-### SelectableList
-
-- List's row grammar with content the application draws (a cover, two lines,
-  a control of its own): the selection tint, hover fill, cursor and focus
-  frame are the list's, drawn on a `radius.md` block `spacing.xs` in from the
-  list's sides with the content on `metrics.inset`, as an undivided List row.
-  Rows take their content's height. `row_chrome: false` hands the whole row
-  to the application, which then paints the selected state itself.
-- A control inside a row keeps its own tab stop; the list is still one tab
-  stop whose arrows move the selection.
-
-### Table
-
-- No outer frame: the region around the table provides its edges.
-- Header row in the label voice on `surface`, hairline bottom border; sticky
-  copy indistinguishable from the natural row. Only sortable headers react to
-  hover.
-- Group headers (`group_by`) set the group value and row count in the label
-  type (mono 12/16, `text_muted`) on `surface_raised`, but keep the value's
-  case: it is a cell value, often a case-sensitive identifier, not a label the
-  author wrote, so it is not uppercased.
-- Body rows `metrics.row`, cell text at `metrics.inset`, hairline separators in
-  `border`, no zebra striping by default (`striped` remains opt-in).
-- Selected rows fill the band between their dividers with `table.selection`.
-- `numeric: true` columns align to the end with tabular figures unless an
-  `align` is given.
-- Adornments (Badges) follow the cell text; a column whose row has no value of
-  its own shows only its adornments, which is how a status column is written.
-- With a selection mode the table is a tab stop: Up/Down/Home/End move the
-  selection and keep it revealed, Enter emits `row_click`, and while the table
-  has focus the selected row carries the focus frame (`cursor` part,
-  `group_focus`). Shift+F10 or the menu key asks for a context menu for that
-  row. Without a selection mode, `on_context_request` alone makes the table a
-  tab stop whose keyboard request is for the whole table. A focused table with
-  no current row (no selection mode, or nothing selected) shows the container
-  frame over its edge (`focus_frame` part).
+Native data sources, virtualization, stable row keys, sorting, grouping,
+sticky behavior and keyboard ownership remain SDK contracts. Derive a target
+for standalone List/Tree/SelectableList/ColumnBrowser rather than treating a
+business Agent Inbox as the same generic component.
 
 ## 7. Fields
 
-Things you type into have a frame; things you press are blocks.
+TextField's combined API decomposes into SDK Input/InputGroup/FormField;
+native editing, IME, caret, selection and undo remain native. Implement the
+whole source frame, label/hint/error/count and affix geometry, not just the
+input's background. Do not draw a double frame around InputGroup's editor.
 
-- Input, Textarea, Select trigger, Combobox trigger and DatePicker share:
-  height `metrics.control` by size, `surface_raised` well, 2px `border` frame,
-  padding `metrics.field_pad`, `control` text. Text therefore starts at the
-  same x in every field. Textarea keeps `body` for multi-line reading.
-- Field text starts about 1.4 times the vertical gap between the frame and
-  the text from the frame (`field_pad`), so the side space never reads as a
-  typed space; md text starts on `metrics.inset` like row text, compact xs
-  keeps room for the caret and lg sits on the spacing scale. Fields are
-  rounded rectangles, never capsules, so no corner pushes the text in.
-
-  | Size | comfortable height → text start (`field_pad`) | compact |
-  |---|---|---|
-  | xs | 24 → 7 (5) | 20 → 5 (3) |
-  | sm | 28 → 9 (7) | 24 → 6 (4) |
-  | md | 32 → 12 (10) | 28 → 8 (6) |
-  | lg | 36 → 14 (12) | 32 → 12 (10) |
-
-- Textarea keeps the same text column and pads evenly: its vertical padding
-  `metrics.multiline_pad` is `field_pad` less the half-leading of its text
-  (comfortable 2 / 3 / 6 / 8, compact 0 / 0 / 2 / 6), so the first line's
-  type sits as far below the frame as the text column sits inside it.
-- InputGroup pads its prefix and suffix by `field_pad` on the frame side; the
-  inner control keeps its own `field_pad` toward the affix.
-- Pressed controls keep `metrics.control_pad`: a label you did not type cannot
-  be mistaken for a leading space, and the wider block is part of what reads
-  as a button.
-- InputGroup owns the frame for a prefix/suffix and its inner control; the
-  frame takes `focus_ring` while the inner input has focus (`focus_within`).
-- Exception, the embedded field (Input `appearance: "embedded"`): a search or
-  filter line that heads a panel or list and keeps focus while it is open
-  (Command, CommandDialog, a searchable Combobox panel). The container's edges
-  frame it: no well, no frame, full width, a 1px `border` line under it
-  (`danger` while invalid), text on `metrics.inset` like the rows below. Its
-  caret shows focus; the line keeps its color, because a focus color on a
-  field that never loses focus would never turn off and says nothing. A field
-  in a form, a toolbar or anywhere focus moves in and out keeps the frame.
-- Focus: frame turns `focus_ring`. Invalid: frame turns `danger`; while focused
-  the focus color owns the frame and danger returns on blur. Read-only: no
-  frame change on hover, muted caret area. Disabled: `disabled` text, frame
-  keeps its color at reduced opacity.
-- Checkbox: `metrics.mark` box with a 2px `border` frame on the well; checked
-  fills `accent` with an `on_accent` mark. Radio: the same frame as a circle
-  with a 6px accent dot. Switch: a 32×16 capsule track (`metrics.mark` × 2),
-  `surface_hover` off and `accent` on, a 12px round thumb, ink off and
-  `on_accent` on. In all three the row is the target and the mark shows focus,
-  so the mark stays on the content edge. Rows are `metrics.control` high.
-- Slider and RangeSlider: a 4px track, `accent` fill and a fader cap (a 12×20
-  cobalt block with a 2px `surface` frame that turns ink while focused),
-  `metrics.control` high. A horizontal slider is a 240-wide unit whose label
-  and value span exactly the track (the `root` part takes another width).
-- Labels are `body` at 400 in `text_primary`; descriptions and errors are
-  `caption`, errors in `text.danger`.
+- modern Textarea uses padding8×12, radius10, content line21; clean uses
+  padding7×10, radius8, line20. Its expand/count/send behavior is separately
+  mapped to supported APIs.
+- A normal focused field strengthens its neutral edge/shadow; an invalid
+  field has its error recipe. Use the source selector combinations, not the
+  old global rule that focus always replaces error with ink.
+- Checkbox16×16 has rounded box5/4.5 and an animated mark, not a Radio.
+- Switch tracks32×20 /26×16 and round thumbs stretch while pressed.
+- Source-only NumberInput, OTPInput, DateRangePicker and TagInput are explicit
+  gaps, not aliases for Input, Slider or TimeRangePicker.
 
 ## 8. Overlays and containers
 
-- Overlay panels (Menu, Combobox/Select/DatePicker panels, Popover, Dialog,
-  Toast, Command) are `surface_raised` blocks with a 1px `border` hairline and
-  `radius.lg`; no shadow. A Sheet is attached to the window edge and stays
-  square. Menus and field panels align to their
-  trigger's start edge (`align: "start"`, RTL-aware); Tooltips center.
-- Panels of transient lists (Menu and ContextMenu, Select and Combobox
-  options, Command, CommandDialog) pad every side by half of `radius.lg` (4px),
-  so the square row blocks clear the rounded corner. CommandDialog pads its
-  dialog panel, so its
-  title and the Command inside share one text edge.
-- Dialog and Sheet pad with `spacing.xl`; actions are separated by space, not
-  a rule. Sheets draw their hairline only on the edge facing the window. A
-  Dialog is 420 wide unless given a `width`, and at most 90% of the window on
-  both axes: a taller panel stops there and its body scrolls, the title and
-  the actions staying in view (0.4.3, feedback #7). `title_visible: false`
-  hides its title, which still names it (a command palette's search field is
-  its header).
-- Tooltip inverts ink and paper (`text_primary` block, `surface` text, caption)
-  and can show an action's key legend (`action` or `shortcut`).
-- Card is a `surface_raised` block (`variant: "outline"` for cards placed on a
-  raised surface); parts are separated by `space.group`.
-- GroupBox is a hairline rule with a label-voice heading, on the parent's
-  content edge.
-- Alert and Toast mark status with the 6px square lamp; the block itself stays
-  neutral ("normal is quiet").
-- Accordion and Collapsible are Swiss lists: hairlines between sections, no
-  enclosing box, headers as list rows.
-- Empty states are quiet: centered type on the region's surface, no frame.
-- ScrollArea, CodeViewer and DiffViewer draw no frame; the layout does.
-- TitleBar shows title and subtitle on one line at one size (weight and color
-  tell them apart); start and end share the free width, the start truncates
-  first and the end never shrinks below its controls. StatusBar uses the same
-  three regions.
+Preserve the surface, radius, insets, max-size and fixed header/body/footer
+organization. Standard nonmodal overlays use a distinct surface and a fine edge
+for separation. Built-in cast shadows use at most 3px of blur and 2px of
+offset per axis. Modal panels and sheets keep their backdrop wash and use a
+stronger short shadow for emphasis, without extending its reach. Paint-only
+edges, inset shadows, and focus outlines are separate from elevation and take
+no layout space. The SDK still allows applications to define custom shadows.
+Clean Tooltip includes a translucent blur; omitting it remains an explicit
+paint gap.
+
+Keep the SDK overlay owner, focus trap/return, Escape routing, clipping,
+parent-child overlay relationships and outside press behavior. Browser
+z-index integers are evidence of relative stacking, not permission to bypass
+native Host/window domains. HoverCard has a separate interactive hover/focus
+protocol; it is not merely a larger text Tooltip.
 
 ## 9. Motion in components
 
-Allowed: Tabs thumb movement (`fast`, `standard`), the opt-in Tabs panel slide
-and the Carousel item slide (`fast`, `entrance`, `motion_distance("moderate")`
-with a fade, the incoming content only), overlay enter/exit (`fast`),
-Toast enter/exit, Progress indeterminate stripe, Skeleton shimmer, Spinner.
-Everything follows the Host motion policy; `None` places final states directly.
-Decorative motion lives in `motion/*` and is never used by `components/`.
+Use source timing, curves and shape continuity. Button content/width morph
+can take480–520ms; a rule limiting every core animation to the old fast
+duration is no longer valid. Preserve reduced-motion and Host None/Reduced.
+Do not run per-frame Rhai to imitate React timers or RAF.
+
+Motion must update presentation and hit geometry consistently, follow keyed
+owners, and stop/clean up on lifecycle transitions. Missing glyph mask, blur
+or multi-stop gradient support is not fixed by a different easing curve.
 
 ## 10. Focus mechanics
 
-Three style hooks keep the single focus metaphor (a 2px ink frame) without
-layout shift:
+The current public hooks remain `.focus`, `.group_focus`, `.focus_within`
+and `.group_hover`. Use them with the actual focus/hover owner; a field frame
+follows the inner native editor. Paint an indicator without changing the
+source's reserved geometry. Source button outlines often use2px blue with
+offset2, but field focus is not the same recipe.
 
-| Hook | Applies when | Used by |
-|---|---|---|
-| `.focus(style)` | the node itself has focus | Button, fields, Tag close, segments, day cells |
-| `.group_focus(style)` | the nearest focusable ancestor-or-self with a `.focus` style has focus; a `tab_stop(false)` child passes ownership up | Checkbox box, Radio ring, Switch track, Tabs thumb, list cursor frames, the focused RadioGroup option |
-| `.focus_within(style)` | the node or a descendant has focus | InputGroup frame |
-| `.group_hover(style)` | the nearest ancestor declaring a `.hover` style is hovered (paint only: background, border, text, opacity) | Tabs close button and dirty mark |
+`Style.focus_ring(width, offset, color)` is the shared non-layout outline.
+Place it in `group_focus` to outline a Checkbox's box or Switch's track from
+the actual row owner; do not add a second focus stop. The same decoration is
+available on native Slider/RangeSlider thumb parts. View focus-indicator
+policy, transparent gap, clipping and controlled values remain authoritative.
 
-A focus owner that needs no visual of its own declares `.focus(style())`. Every
-focused node's border takes `focus_ring` unless its focus style sets a border
-color, which shows only where the node has a border width: a focus owner that
-draws a border keeps its color with `.focus(style().border_color(<idle color>))`.
-The one field without a focus frame is the embedded search line (section 7):
-it holds focus for as long as its panel is open, so its caret shows focus.
-
-**Containers that hold focus.** A container that can hold focus itself (an
-overlay panel of Dialog, Sheet, Popover, Menu, DatePicker or Combobox; an
-AppShell region; a Table or List with no current row) shows the same 2px `focus_ring` frame over its edge (part
-`focus_frame`; a panel's hairline takes the focus color and the frame adds the
-inner pixel, since a border paints over its children), only while it holds
-focus itself. Once a
-control inside has focus, that control shows its frame and the container shows
-none. Where keys move a cursor (Table and Tree rows, a Menu's active item, a
-DatePicker's focused day), the cursor shows where they act; a Menu opened from
-the keyboard shows its active item, not a frame. An overlay panel's own focus
-is visible to `group_focus` styles in its content, so the frame is an ordinary
-node.
-
-**When focus shows.** The Host decides with `ScriptViewConfig::focus_indicators`.
-By default (`Navigation`) the hooks above paint after a navigation key (Tab,
-Shift+Tab, an arrow, Home, End, Page Up, Page Down, F6) and stop at the next
-pointer press, as a browser's `:focus-visible`: a click on a row or a button
-shows no frame, and a key with Command, Control or Alt, a shortcut, does not
-bring one back. `Always` paints whenever a node holds focus; `Never` suits an
-application driven by shortcuts rather than focus movement. A text field that
-holds focus shows its frame, and the `focus_within` frame around it, in every
-mode, since typing goes there. Native handles and sliders follow the same rule.
-
-**One tab stop per control.** Tab reaches every interactive component exactly
-once (sets of independent targets such as Accordion headers, Pagination or a
-closable Tag's close button excepted). The runtime keeps wrappers out of the
-order: an overlay's trigger wrapper takes focus only when its trigger has no
-focusable content of its own, a container with key handlers (a roving group, an
-overlay root) is a stop only when it holds no focusable child, and tooltip panels
-are never stops. `tests/native-keyboard/tests/native/input/tab_stops.rs` counts
-the stops of each interactive component.
+Keep one roving tab stop for a compound control where appropriate; Tab moves
+between controls, arrows within a group, and overlay close returns focus.
+Do not copy `aria-*` strings as a substitute for the SDK's native semantic
+tree. Existing `focus_indicators` policy and text-input focus behavior remain
+runtime features, not grounds to invent new style APIs.
 
 ## 11. New component checklist
 
-- [ ] Declares `size` if interactive; reads every height from `metrics.*`.
-- [ ] Declares the tokens and environment values it reads (C7), and the assets
-      it draws with `asset(...)`: only declared assets are preloaded.
-- [ ] Rows use `metrics.row` and `metrics.inset`; pressable rows take their
-      corners from the radius roles.
-- [ ] No literal color, font size, line height, control height or spacing;
-      structural constants commented.
-- [ ] Sizes to content; no outer margin.
-- [ ] Reserves a 2px focus border if focusable; no layout shift between states.
-- [ ] Works inside a disabled container without forwarding props.
-- [ ] Commands accept `action`.
-- [ ] Every signature is a declared part.
-- [ ] Spec page in Gallery: sizes × densities × states × light/dark.
-- [ ] Keyboard, accessibility and logic tests; composition audit clean.
+- [ ] Identify source family, preset, appearance and applicable states; for
+      source-absent components, document a derived target.
+- [ ] Use its actual geometry/font/radius/effect recipe, not legacy defaults.
+- [ ] Declare consumed tokens/environment/assets; expose public parts.
+- [ ] Preserve controlled state, callback scope, native editing and identity.
+- [ ] Confirm actual bounds, SVG paint bounds, text baseline and focus owner.
+- [ ] Verify idle/hover/active/focus/selected/disabled/loading/invalid together.
+- [ ] Use shared paint/motion mechanisms, not a private component renderer.
+- [ ] Honor motion/reading preferences, RTL and long/CJK text.
+- [ ] Test keyboard, semantics, failure/reload/lifecycle and native data paths.
+- [ ] Capture four-configuration GPUI comparisons only after paint gaps close;
+      source screenshots alone do not accept a port.

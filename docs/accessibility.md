@@ -57,6 +57,12 @@ Accessibility and keyboard operation are release requirements.
   descendant with a label gives its label, and overlay or layer content is
   left out. A row drawn as a button with `accessibility_role("button")` reads
   as its text without a separate label.
+- `accessibility_description(text)` supplies auxiliary plain text without
+  replacing that name. A declared `accessibility_described_by` relationship
+  takes precedence even if its referenced text resolves empty. Virtual row
+  renderers can use direct descriptions without declaring formal-component
+  ElementRefs or manufacturing global IDs. This does not change reference
+  ownership, focus, native actions, or visible content.
 - The gpui-pre adapter projects role, localized name/description, author ID,
   selected/expanded/toggled/current state, scalar and numeric values, ranges,
   orientation, required/invalid/disabled/read-only state, placeholders,

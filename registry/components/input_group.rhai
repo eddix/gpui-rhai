@@ -6,10 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": [
-    "control.border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
-    "metrics.field_pad", "radius.md", "typography.control"
-  ],
+  "tokens": ["control.border","focus_ring","metrics.control","metrics.field_h","metrics.field_pad","metrics.field_radius","radius.md","surface_raised","text_muted","typography.control"],
   "environment": ["size", "density"]
 }
 */
@@ -19,10 +16,7 @@
 define_component(#{
     metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.4.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: [
-            "control.border", "surface_raised", "focus_ring", "text_muted", "metrics.control",
-            "metrics.field_pad", "radius.md", "typography.control"
-        ],
+        tokens: ["control.border","focus_ring","metrics.control","metrics.field_h","metrics.field_pad","metrics.field_radius","radius.md","surface_raised","text_muted","typography.control"],
         environment: ["size", "density"] },
     schema: #{
         props: #{
@@ -57,24 +51,23 @@ fn render_InputGroup(ctx, props) {
     let children = [];
     if "prefix" in props && props.prefix != () {
         children.push(props.prefix.with_style(ctx.component_style("prefix", style()
-            .padding_start(theme_length("metrics.field_pad")).items_center().justify_center()
+            .items_center().justify_center()
             .text_color(theme_color("text_muted")))));
     }
     children.push(props.control.with_style(ctx.component_style("control", style()
         .flex_grow().min_width(px(0)).self_stretch().min_height(px(0))
-        .border(px(0)).radius(px(0)).background(rgba(0x00000000)))));
+        .padding(px(0)).border(px(0)).radius(px(0)).background(rgba(0x00000000)).shadows([])
+        .focus(style().shadows([])))));
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(ctx.component_style("suffix", style()
-            .padding_end(theme_length("metrics.field_pad")).items_center().justify_center()
+            .items_center().justify_center()
             .text_color(theme_color("text_muted")))));
     }
     let root = row(children).with_style(ctx.component_style("root", style()
-        .min_height(theme_length("metrics.control")).items_center().clip().radius(theme_radius("md"))
-        .border(px(2)).border_color(theme_color("control.border"))
-        .background(theme_color("surface_raised"))
+        .min_height(theme_length("metrics.field_h")).items_center().radius(theme_length("metrics.field_radius"))
         .typography("control")
         .focus_within(style().border_color(theme_color("focus_ring")))
-        .disabled(style().opacity(0.72))))
+        .disabled(style().opacity(0.55))))
         .disabled("disabled" in props && props.disabled)
         .accessibility_role("group").accessibility_label(props.label);
     if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }

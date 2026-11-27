@@ -6,7 +6,10 @@ const MAX_INLINE_SVG_BYTES: usize = 64 * 1024;
 const MAX_INLINE_SVG_ELEMENTS: usize = 2_048;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InlineSvg(Arc<str>);
+pub struct InlineSvg {
+    source: Arc<str>,
+    inherits_text_color: bool,
+}
 
 impl InlineSvg {
     /// Validate bounded self-contained SVG markup.
@@ -61,26 +64,34 @@ impl InlineSvg {
         }
         usvg::Tree::from_str(trimmed, &usvg::Options::default())
             .map_err(|error| InlineSvgError::InvalidMarkup(error.to_string()))?;
-        Ok(Self(Arc::from(source)))
+        let inherits_text_color = crate::svg_context::svg_uses_external_current_color(&source);
+        Ok(Self {
+            source: Arc::from(source),
+            inherits_text_color,
+        })
     }
 
     #[must_use]
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.source
     }
 
     pub(crate) fn shared_source(&self) -> Arc<str> {
-        Arc::clone(&self.0)
+        Arc::clone(&self.source)
     }
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.source.len()
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.source.is_empty()
+    }
+
+    pub(crate) fn inherits_text_color(&self) -> bool {
+        self.inherits_text_color
     }
 }
 
@@ -168,6 +179,8 @@ mod tests {
     fn inline_svg_accepts_local_gradients_and_current_color() {
         let source = r#"<svg viewBox="0 0 10 10"><defs><linearGradient id="g"/></defs><path fill="url(#g)" stroke="currentColor" d="M0 0L10 10"/></svg>"#;
         assert_eq!(InlineSvg::new(source).unwrap().as_str(), source);
+        assert!(InlineSvg::new(source).unwrap().inherits_text_color());
+        assert!(!InlineSvg::new(r##"<svg width="1" height="1" color="#ff0000"><rect width="1" height="1" fill="currentColor"/></svg>"##).unwrap().inherits_text_color());
     }
 
     #[test]

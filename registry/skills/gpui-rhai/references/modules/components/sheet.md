@@ -25,7 +25,7 @@ sheet::Sheet(#{ key: "inspector", open: true, side: "end", title: "Inspector", c
 | `open` | bool | required | Whether the sheet is open; the caller stores the `open_change` payload and passes it back. |
 | `part_styles` | map of style | — | Styles merged over named parts, keyed by part name. |
 | `side` | `"start"` or `"end"` or `"top"` or `"bottom"` | `"end"` | Window edge the sheet attaches to; `start` and `end` follow the layout direction. |
-| `size` | integer 160–960 | `360` | Width of a `start` or `end` sheet, or height of a `top` or `bottom` one, in logical pixels. |
+| `size` | integer 160–960 | `360` | Preferred width of a `start` or `end` sheet, or height of a `top` or `bottom` one, in logical pixels; bounded by the viewport. |
 | `style` | style | — | Style merged over the root part. |
 | `title` | string | required | Heading of the panel and the sheet's accessible name. |
 

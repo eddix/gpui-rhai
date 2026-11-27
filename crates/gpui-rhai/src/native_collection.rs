@@ -960,6 +960,7 @@ struct FuzzyOrderSpec {
     query: String,
     label_field: String,
     keywords_field: String,
+    hint_field: Option<String>,
     group_field: String,
 }
 
@@ -969,6 +970,7 @@ impl From<&FuzzyProjection> for FuzzyOrderSpec {
             query: projection.query.clone(),
             label_field: projection.label_field.clone(),
             keywords_field: projection.keywords_field.clone(),
+            hint_field: projection.hint_field.clone(),
             group_field: projection.group_field.clone(),
         }
     }
@@ -982,6 +984,9 @@ struct FuzzyProjection {
     group_field: String,
     shortcut_field: String,
     disabled_field: String,
+    hint_field: Option<String>,
+    icon_field: Option<String>,
+    logo_field: Option<String>,
     active: String,
     row_height: f64,
 }
@@ -1001,6 +1006,9 @@ impl FuzzyProjection {
         let group_field = fuzzy_take_string(&mut config, "group_field")?;
         let shortcut_field = fuzzy_take_string(&mut config, "shortcut_field")?;
         let disabled_field = fuzzy_take_string(&mut config, "disabled_field")?;
+        let hint_field = fuzzy_optional_field(&mut config, "hint_field")?;
+        let icon_field = fuzzy_optional_field(&mut config, "icon_field")?;
+        let logo_field = fuzzy_optional_field(&mut config, "logo_field")?;
         let active = fuzzy_take_string(&mut config, "active")?;
         let row_height = fuzzy_take_number(&mut config, "row_height")?;
         if !row_height.is_finite() || row_height <= 0.0 {
@@ -1030,6 +1038,9 @@ impl FuzzyProjection {
             group_field,
             shortcut_field,
             disabled_field,
+            hint_field,
+            icon_field,
+            logo_field,
             active,
             row_height,
         })
@@ -1042,7 +1053,13 @@ impl FuzzyProjection {
         let mut grouped = Vec::new();
         for (index, row) in source.rows.iter().enumerate() {
             let label = Self::row_string(row, index, &self.label_field, true)?;
-            let keywords = self.row_keywords(row, index)?;
+            let mut keywords = self.row_keywords(row, index)?;
+            if let Some(field) = &self.hint_field {
+                let hint = Self::row_string(row, index, field, false)?;
+                if !hint.is_empty() {
+                    keywords.push(hint);
+                }
+            }
             let score = fuzzy_score(&label, &keywords, &self.query);
             if score < 0 {
                 continue;
@@ -1090,12 +1107,21 @@ impl FuzzyProjection {
         let key = key.ok_or(NativeCollectionError::CorruptOrder(index))?;
         let label = Self::row_string(row, index, &self.label_field, true)?;
         let shortcut = Self::row_string(row, index, &self.shortcut_field, false)?;
+        let hint = self.hint_field.as_ref().map_or_else(
+            || Ok(String::new()),
+            |field| Self::row_string(row, index, field, false),
+        )?;
+        let icon = fuzzy_asset(row, index, self.icon_field.as_deref())?;
+        let logo = fuzzy_asset(row, index, self.logo_field.as_deref())?;
         let disabled = self.row_disabled_value(row, index)?;
         Ok(UiValue::Map(BTreeMap::from([
             ("kind".to_owned(), UiValue::String("item".to_owned())),
             ("key".to_owned(), UiValue::String(format!("item:{key}"))),
             ("value".to_owned(), UiValue::String(key.to_owned())),
             ("label".to_owned(), UiValue::String(label)),
+            ("hint".to_owned(), UiValue::String(hint)),
+            ("icon".to_owned(), UiValue::String(icon)),
+            ("logo".to_owned(), UiValue::String(logo)),
             ("shortcut".to_owned(), UiValue::String(shortcut)),
             ("disabled".to_owned(), UiValue::Bool(disabled)),
             ("active".to_owned(), UiValue::Bool(self.active == key)),
@@ -1219,6 +1245,41 @@ fn fuzzy_candidate_score(candidate: &str, query: &str) -> i64 {
         position = position.saturating_add(found).saturating_add(1);
     }
     4_000 - gaps.saturating_mul(12) - length
+}
+
+fn fuzzy_optional_field(
+    config: &mut BTreeMap<String, UiValue>,
+    key: &'static str,
+) -> Result<Option<String>, NativeCollectionError> {
+    match config.remove(key) {
+        None | Some(UiValue::Null) => Ok(None),
+        Some(UiValue::String(field)) => {
+            validate_name(&field, key)?;
+            Ok(Some(field))
+        }
+        _ => Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+            "{key} must be a field name when present"
+        ))),
+    }
+}
+
+fn fuzzy_asset(
+    row: &UiValue,
+    index: usize,
+    field: Option<&str>,
+) -> Result<String, NativeCollectionError> {
+    let Some(field) = field else {
+        return Ok(String::new());
+    };
+    let value = FuzzyProjection::row_string(row, index, field, false)?;
+    if !value.is_empty() {
+        crate::AssetId::parse(&value).map_err(|error| {
+            NativeCollectionError::InvalidFuzzyConfig(format!(
+                "row {index} field `{field}`: {error}"
+            ))
+        })?;
+    }
+    Ok(value)
 }
 
 fn fuzzy_take_string(
@@ -2546,6 +2607,94 @@ mod tests {
         assert_eq!(all.fuzzy_edge(true).unwrap(), "open");
         assert_eq!(all.fuzzy_adjacent("new", 1).unwrap(), "open");
         assert_eq!(all.fuzzy_adjacent("open", 1).unwrap(), "new");
+    }
+
+    fn decorated_commands() -> NativeCollection {
+        NativeCollection::new(
+            "id",
+            [
+                BTreeMap::from([
+                    ("id".into(), UiValue::String("alpha".into())),
+                    ("label".into(), UiValue::String("Alpha".into())),
+                    ("hint".into(), UiValue::String("Remote host".into())),
+                    ("icon".into(), UiValue::String("app/icons/search".into())),
+                    ("logo".into(), UiValue::String("app/logos/service".into())),
+                ]),
+                BTreeMap::from([
+                    ("id".into(), UiValue::String("remote".into())),
+                    ("label".into(), UiValue::String("Remote host".into())),
+                ]),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn fuzzy_hint_participates_in_order_identity_but_icon_and_logo_do_not() {
+        let source = decorated_commands();
+        let config = fuzzy_config("remote", "");
+        let label_only = source.fuzzy_view(config.clone()).unwrap();
+        assert_eq!(label_only.len(), 1);
+        let mut config = config;
+        config.insert("hint_field".into(), Dynamic::from("hint"));
+        config.insert("icon_field".into(), Dynamic::from("icon"));
+        config.insert("logo_field".into(), Dynamic::from("logo"));
+        let decorated = source.fuzzy_view(config.clone()).unwrap();
+        assert_eq!(decorated.len(), 2);
+        assert!(!Arc::ptr_eq(&label_only.order, &decorated.order));
+        assert_eq!(
+            decorated.key(0),
+            Some("remote"),
+            "a label match ranks above an equally good hint match"
+        );
+        let UiValue::Map(row) = decorated.item(1).unwrap().unwrap() else {
+            panic!("projected item")
+        };
+        assert_eq!(row["hint"], UiValue::String("Remote host".into()));
+        assert_eq!(row["icon"], UiValue::String("app/icons/search".into()));
+        assert_eq!(row["logo"], UiValue::String("app/logos/service".into()));
+        config.insert("icon_field".into(), Dynamic::from("logo"));
+        let other_icon = source.fuzzy_view(config).unwrap();
+        assert!(
+            Arc::ptr_eq(&decorated.order, &other_icon.order),
+            "presentation-only field choices reuse ranking"
+        );
+        let UiValue::Map(row) = other_icon.item(1).unwrap().unwrap() else {
+            panic!("projected item")
+        };
+        assert_eq!(row["icon"], UiValue::String("app/logos/service".into()));
+    }
+
+    #[test]
+    fn fuzzy_presentation_fields_reject_nontext_and_nonlogical_assets_without_loading_them() {
+        for (field, value) in [
+            (
+                "icon",
+                UiValue::String("https://example.invalid/image.svg".into()),
+            ),
+            ("logo", UiValue::String("../private/logo.svg".into())),
+            ("icon", UiValue::Integer(42)),
+        ] {
+            let source = NativeCollection::new(
+                "id",
+                [BTreeMap::from([
+                    ("id".into(), UiValue::String("one".into())),
+                    ("label".into(), UiValue::String("One".into())),
+                    (field.into(), value),
+                ])],
+            )
+            .unwrap();
+            let mut config = fuzzy_config("", "");
+            config.insert(format!("{field}_field").into(), Dynamic::from(field));
+            let view = source.fuzzy_view(config).unwrap();
+            assert!(
+                view.item(0).is_err(),
+                "invalid {field} must not become a UI asset request"
+            );
+        }
+        let mut config = fuzzy_config("", "");
+        config.insert("hint_field".into(), Dynamic::from(""));
+        assert!(decorated_commands().fuzzy_view(config).is_err());
     }
 
     #[test]

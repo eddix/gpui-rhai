@@ -3,6 +3,11 @@
 Agreed 2026-10-01 (design interview on top of three codebase surveys:
 tobi/disktree, remorses/gpuix disktree clone, eddix/gpui-rhai).
 
+Visual update, 2026-11-16: the maintained application now adopts the SDK's
+Modern design, and its minimal skin adopts Clean. The original workflow and
+disk/treemap semantics below remain relevant; old widget-chrome and palette
+defaults are historical, not exceptions to the current shared design system.
+
 ## Goals
 
 1. Prove gpui-rhai can build a real app of gpuix-disktree's caliber.
@@ -11,8 +16,9 @@ tobi/disktree, remorses/gpuix disktree clone, eddix/gpui-rhai).
 
 ## Ground truths
 
-- **tobi/disktree** defines visual + interaction fidelity (functional,
-  visual, and blind-operable parity; the title/branding says disktree-rhai).
+- **tobi/disktree** defines the disk/treemap workflow and interaction reference;
+  the title/branding says disktree-rhai. Desktop controls use the SDK's current
+  design presets rather than preserving the v1 chrome.
 - **gpuix disktree** defines the v1 feature scope and serves as the
   architecture reference. Its own deviations (frosted light theme, pastel
   palette, WCAG ink) are not copied.
@@ -61,9 +67,11 @@ ui/ (the default skin, embedded via include_str!)
 
 ## Themes
 
-v1 ships Tokyo Night (dark) + Flexoki Light (light) token sets, dark by
-default. System light/dark follow and Omarchy theme reading come after
-(v1.x), with Omarchy strictly degradable (bonus, not a dependency).
+The default skin starts in Modern Dark and the minimal skin in Clean Dark.
+Both include Modern/Clean Light/Dark for live switching. Previous application
+palettes are retained as alternatives; treemap category meaning remains
+application-owned. System appearance follows the selected design family.
+Omarchy reading remains strictly degradable, not a library dependency.
 
 ## Scope
 
@@ -79,8 +87,9 @@ default. System light/dark follow and Omarchy theme reading come after
 
 ## Workflow & acceptance
 
-- Independent repo, path dep on a gpui-rhai working branch; every upstream
-  fix merges through PR before this repo depends on it.
+- Maintained under `apps/`, using local workspace path dependencies. Installed
+  registry copies, full presets and fonts are checked by `tests/skins.rs`;
+  user-exported/custom skins are not silently overwritten.
 - Tests: core.rhai unit tests against tobi's expectations; scanner parity vs
   `du`/tobi measurements; manual visual/interaction checklist derived from
   tobi's 36 harness tests; feature matrix + side-by-side screenshots for the

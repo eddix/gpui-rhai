@@ -161,6 +161,7 @@ pub enum PrimitiveValue {
 pub struct PrimitiveTheme {
     tokens: Option<std::sync::Arc<crate::ThemeTokens>>,
     colors: BTreeMap<String, Rgba8>,
+    mode: crate::ThemeMode,
     environment: crate::Environment,
     inherited_disabled: bool,
     direction: crate::TextDirection,
@@ -169,6 +170,7 @@ pub struct PrimitiveTheme {
     motion: crate::ThemeMotion,
     motion_preference: crate::MotionPreference,
     motion_quality: crate::MotionQuality,
+    motion_progress: Option<f64>,
     clock: crate::RuntimeClock,
 }
 
@@ -177,6 +179,7 @@ impl Default for PrimitiveTheme {
         Self {
             tokens: None,
             colors: BTreeMap::new(),
+            mode: crate::ThemeMode::Light,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
             direction: crate::TextDirection::LeftToRight,
@@ -185,6 +188,7 @@ impl Default for PrimitiveTheme {
             motion: crate::ThemeMotion::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
+            motion_progress: None,
             clock: crate::RuntimeClock::default(),
         }
     }
@@ -262,6 +266,7 @@ impl PrimitiveTheme {
                 colors.color_snapshot()
             },
             tokens,
+            mode: colors.theme_mode(),
             environment: colors.environment(),
             inherited_disabled: false,
             direction,
@@ -270,6 +275,7 @@ impl PrimitiveTheme {
             motion: colors.resolve_motion(),
             motion_preference,
             motion_quality,
+            motion_progress: None,
             clock,
         }
     }
@@ -302,10 +308,14 @@ impl PrimitiveTheme {
         let style = props
             .style(name)?
             .resolve(&crate::InteractionState::default());
+        let solid = style
+            .background
+            .as_deref()
+            .and_then(crate::BackgroundFill::as_solid_value);
         let value = if background {
-            style.background.as_ref().or(style.text_color.as_ref())
+            solid.or(style.text_color.as_ref())
         } else {
-            style.text_color.as_ref().or(style.background.as_ref())
+            style.text_color.as_ref().or(solid)
         }?;
         self.resolve_color(value)
     }
@@ -356,6 +366,19 @@ impl PrimitiveTheme {
         self.motion_quality
     }
 
+    /// This node's current bounded `primitive_progress` `MotionRuntime`
+    /// sample, if it declared one. No separate clock or repaint request is
+    /// needed by a native painter consuming the value.
+    #[must_use]
+    pub const fn motion_progress(&self) -> Option<f64> {
+        self.motion_progress
+    }
+
+    pub(crate) fn with_motion_progress(mut self, progress: Option<f64>) -> Self {
+        self.motion_progress = progress.map(|value| value.clamp(0., 1.));
+        self
+    }
+
     #[must_use]
     pub fn now(&self) -> std::time::Instant {
         self.clock.now()
@@ -377,6 +400,10 @@ impl PrimitiveTheme {
 impl ColorResolver for PrimitiveTheme {
     fn resolve_token(&self, token: &str) -> Option<Rgba8> {
         self.color(token)
+    }
+
+    fn theme_mode(&self) -> crate::ThemeMode {
+        self.mode
     }
 
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
@@ -841,11 +868,14 @@ pub struct PrimitiveContext {
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
+    table_resize_viewport: Option<crate::table_layout::TableResizeViewport>,
     wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
     key_captures: Vec<crate::renderer::KeyCaptureScope>,
     intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
     intrinsic_generation: ScriptGeneration,
     intrinsic_lease: Option<Weak<RefCell<PrimitiveResourceState>>>,
+    native_motion: Option<crate::renderer::NativeNodeMotion>,
+    editor_surface: Option<crate::renderer::NativeEditorSurface>,
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
     retained_node: Option<crate::NodeId>,
@@ -868,7 +898,34 @@ pub struct PrimitiveSemanticProposal {
     pub(crate) handler: Option<UiEventHandler>,
 }
 
+fn mounted_primitive_is_current(
+    registry: &Weak<RefCell<PrimitiveRegistryInner>>,
+    instance: &PrimitiveInstanceId,
+    generation: ScriptGeneration,
+    lease: &Weak<RefCell<PrimitiveResourceState>>,
+) -> bool {
+    let Some(registry) = registry.upgrade() else {
+        return false;
+    };
+    registry.try_borrow().is_ok_and(|inner| {
+        inner.generation == generation
+            && inner.mounted.get(instance).is_some_and(|mounted| {
+                mounted
+                    .resources
+                    .as_ref()
+                    .is_some_and(|resources| lease.ptr_eq(&Rc::downgrade(&resources.inner)))
+            })
+    })
+}
+
 impl PrimitiveContext {
+    pub(crate) fn editor_surface(&self) -> Option<crate::renderer::NativeEditorSurface> {
+        self.editor_surface.clone()
+    }
+
+    pub(crate) fn native_motion(&self) -> Option<crate::renderer::NativeNodeMotion> {
+        self.native_motion.clone()
+    }
     /// Invalidate this retained native primitive's enclosing virtual-row size.
     ///
     /// Call once after committing an intrinsic size change (for example an
@@ -896,18 +953,7 @@ impl PrimitiveContext {
         // The registry is itself borrowed during PrimitiveHandler::render.
         // Validate after that operation has committed, never synchronously.
         invalidator.invalidate_if(cx, move || {
-            let Some(registry) = registry.upgrade() else {
-                return false;
-            };
-            registry.try_borrow().is_ok_and(|inner| {
-                inner.generation == generation
-                    && inner.mounted.get(&instance).is_some_and(|mounted| {
-                        mounted
-                            .resources
-                            .as_ref()
-                            .is_some_and(|resources| lease.ptr_eq(&Rc::downgrade(&resources.inner)))
-                    })
-            })
+            mounted_primitive_is_current(&registry, &instance, generation, &lease)
         });
     }
 
@@ -1052,6 +1098,45 @@ impl PrimitiveContext {
         });
     }
 
+    /// Delivers a deferred native phase only to the same mounted primitive
+    /// incarnation. A successful drop may remove the source before this runs.
+    pub(crate) fn propose_while_mounted(
+        &self,
+        event: &'static str,
+        payload: UiValue,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if !self.observes(event) {
+            return;
+        }
+        let context = self.clone();
+        window.defer(cx, move |window, cx| {
+            let (Some(instance), Some(lease)) =
+                (context.instance.as_ref(), context.intrinsic_lease.as_ref())
+            else {
+                return;
+            };
+            if !mounted_primitive_is_current(
+                &context.registry,
+                instance,
+                context.intrinsic_generation,
+                lease,
+            ) {
+                return;
+            }
+            // A drop can commit a new Rhai tree before the old native
+            // primitive has been removed from the last painted frame.
+            if let (Some(UiEventHandler::Script(callback)), Some(dispatcher)) =
+                (context.callbacks.get(event), context.dispatcher.as_ref())
+                && !dispatcher.script_owner_is_current(callback, cx)
+            {
+                return;
+            }
+            let _ = context.emit(event, payload, window, cx);
+        });
+    }
+
     /// Write one primitive-owned native signal without invoking Rhai.
     ///
     /// # Errors
@@ -1191,7 +1276,7 @@ impl PrimitiveContext {
         threshold: f64,
         on_end: impl Fn(crate::interaction::ApplicationDropResult, bool, &mut Window, &mut App)
         + 'static,
-        on_tap: Option<crate::interaction::TapHandler>,
+        phases: crate::interaction::ApplicationDragPhases,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -1202,7 +1287,7 @@ impl PrimitiveContext {
             spec,
             threshold,
             on_end,
-            on_tap,
+            phases,
         );
         self.interactions.begin(gesture, window, cx);
     }
@@ -1229,6 +1314,12 @@ impl PrimitiveContext {
         self.scroll_handles.clone()
     }
 
+    pub(crate) fn table_resize_viewport(
+        &self,
+    ) -> Option<&crate::table_layout::TableResizeViewport> {
+        self.table_resize_viewport.as_ref()
+    }
+
     /// Whether the node hosting the primitive has keyboard focus.
     #[must_use]
     pub fn is_focused(&self, window: &Window) -> bool {
@@ -1252,9 +1343,22 @@ impl PrimitiveContext {
         reference: &crate::ElementRef,
         cx: &App,
     ) -> Option<crate::GeometryBounds> {
+        self.element_geometry(reference, cx)
+            .map(|geometry| geometry.layout)
+    }
+
+    /// Read the last committed layout, visual bounds, and bidirectional
+    /// coordinate map for a primitive-owned element reference. Read this
+    /// snapshot rather than treating the visual AABB as a transform.
+    #[must_use]
+    pub fn element_geometry(
+        &self,
+        reference: &crate::ElementRef,
+        cx: &App,
+    ) -> Option<crate::PresentedGeometry> {
         self.dispatcher
             .as_ref()
-            .and_then(|dispatcher| dispatcher.element_bounds(reference, cx))
+            .and_then(|dispatcher| dispatcher.element_geometry(reference, cx))
     }
 
     /// This frame's hitbox of the node holding `reference`: hovered only where
@@ -1285,13 +1389,36 @@ impl PrimitiveContext {
         reference: &crate::ElementRef,
         cx: &App,
     ) -> Option<crate::GeometryBounds> {
+        self.canvas_geometry(reference, cx)
+            .map(|geometry| geometry.bounds.layout)
+    }
+
+    pub(crate) fn canvas_geometry(
+        &self,
+        reference: &crate::ElementRef,
+        cx: &App,
+    ) -> Option<crate::geometry::CanvasDrawableGeometry> {
         self.dispatcher
             .as_ref()
-            .and_then(|dispatcher| dispatcher.canvas_bounds(reference, cx))
+            .and_then(|dispatcher| dispatcher.canvas_geometry(reference, cx))
     }
 }
 
 pub trait PrimitiveHandler {
+    /// Pure visual defaults for the hosting `UiNode`, below its authored styles.
+    ///
+    /// Put inheritable typography and state appearance here, rather than
+    /// forcing them again inside a retained Entity. Symbolic theme values are
+    /// resolved in the node's actual scope; this method owns no native state.
+    ///
+    /// # Errors
+    ///
+    /// Return an error when the props cannot produce valid visual defaults.
+    /// Errors and panics use the same boundary fallback as native rendering.
+    fn style_defaults(&self, _props: &PrimitiveProps) -> Result<Style, String> {
+        Ok(Style::new())
+    }
+
     /// Return deterministic work units for this validated effect instance.
     /// Non-effect primitives ignore this value.
     fn effect_cost(&self, _instance: &PrimitiveInstance) -> usize {
@@ -1318,6 +1445,16 @@ pub trait PrimitiveHandler {
         _instance: &PrimitiveInstanceId,
     ) -> Vec<gpui::AccessibleAction> {
         Vec::new()
+    }
+
+    /// Advertise actions against the current declarative props, including
+    /// on the first frame before the native instance has been mounted.
+    fn accessibility_actions_for_props(
+        &self,
+        instance: &PrimitiveInstanceId,
+        _props: &PrimitiveProps,
+    ) -> Vec<gpui::AccessibleAction> {
+        self.accessibility_actions(instance)
     }
 
     /// Whether this primitive owns one primary native focus target.
@@ -1628,6 +1765,7 @@ impl PrimitiveRegistry {
     pub(crate) fn accessibility_actions(
         &self,
         instance: &PrimitiveInstanceId,
+        props: &PrimitiveProps,
     ) -> Vec<gpui::AccessibleAction> {
         let Ok(inner) = self.inner.try_borrow() else {
             return Vec::new();
@@ -1636,7 +1774,9 @@ impl PrimitiveRegistry {
             .entries
             .get(&instance.primitive)
             .map_or_else(Vec::new, |entry| {
-                entry.handler.accessibility_actions(instance)
+                entry
+                    .handler
+                    .accessibility_actions_for_props(instance, props)
             })
     }
 
@@ -1655,6 +1795,11 @@ impl PrimitiveRegistry {
                 .get(primitive)
                 .is_some_and(|entry| entry.handler.uses_primary_focus())
         })
+    }
+
+    pub(crate) fn weak_lookup(&self) -> impl Fn() -> Option<Self> + use<> {
+        let registry = Rc::downgrade(&self.inner);
+        move || registry.upgrade().map(|inner| Self { inner })
     }
 
     pub(crate) fn perform_accessibility_action(
@@ -1846,6 +1991,24 @@ impl PrimitiveRegistry {
             theme,
         }
         .into_any_element()
+    }
+
+    pub(crate) fn style_defaults(&self, node: &PrimitiveNode) -> Result<Style, PrimitiveError> {
+        let inner = self
+            .inner
+            .try_borrow()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        let entry = inner
+            .entries
+            .get(&node.primitive)
+            .ok_or_else(|| PrimitiveError::Unknown(node.primitive.clone()))?;
+        guard_primitive_panic(&node.primitive, "style_defaults", || {
+            entry.handler.style_defaults(&node.props)
+        })?
+        .map_err(|message| PrimitiveError::Handler {
+            primitive: node.primitive.clone(),
+            message,
+        })
     }
 
     #[allow(clippy::too_many_lines)]
@@ -2074,9 +2237,12 @@ pub(crate) struct PrimitiveWindowContext {
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
+    table_resize_viewport: Option<crate::table_layout::TableResizeViewport>,
     wheel_parents: Vec<crate::scrollbar::ScrollWheelSource>,
     key_captures: Vec<crate::renderer::KeyCaptureScope>,
     intrinsic_size: Option<crate::intrinsic::IntrinsicSizeInvalidator>,
+    native_motion: Option<crate::renderer::NativeNodeMotion>,
+    editor_surface: Option<crate::renderer::NativeEditorSurface>,
     view_id: String,
     focus_indicators: bool,
     /// The focus handle of the node that hosts a primitive without a primary
@@ -2100,9 +2266,12 @@ impl PrimitiveWindowContext {
             dispatcher,
             interactions,
             scroll_handles,
+            table_resize_viewport: None,
             wheel_parents: Vec::new(),
             key_captures: Vec::new(),
             intrinsic_size: None,
+            native_motion: None,
+            editor_surface: None,
             view_id: view_id.into(),
             focus_indicators: true,
             host_focus: None,
@@ -2111,6 +2280,30 @@ impl PrimitiveWindowContext {
 
     pub(crate) fn with_focus_indicators(mut self, shown: bool) -> Self {
         self.focus_indicators = shown;
+        self
+    }
+
+    pub(crate) fn with_editor_surface(
+        mut self,
+        surface: Option<crate::renderer::NativeEditorSurface>,
+    ) -> Self {
+        self.editor_surface = surface;
+        self
+    }
+
+    pub(crate) fn with_table_resize_viewport(
+        mut self,
+        viewport: Option<crate::table_layout::TableResizeViewport>,
+    ) -> Self {
+        self.table_resize_viewport = viewport;
+        self
+    }
+
+    pub(crate) fn with_native_progress(
+        mut self,
+        motion: Option<crate::renderer::NativeNodeMotion>,
+    ) -> Self {
+        self.native_motion = motion;
         self
     }
 
@@ -2169,6 +2362,8 @@ impl RenderOnce for RegisteredPrimitiveElement {
             })
             .collect();
         let events = PrimitiveContext {
+            native_motion: self.runtime.native_motion,
+            editor_surface: self.runtime.editor_surface,
             assets: self.runtime.assets,
             registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
@@ -2177,12 +2372,12 @@ impl RenderOnce for RegisteredPrimitiveElement {
                 .borrow()
                 .entries
                 .get(&self.node.primitive)
-                .map(|entry| entry.descriptor.events.clone())
-                .unwrap_or_default(),
+                .map_or_else(Default::default, |entry| entry.descriptor.events.clone()),
             callbacks,
             dispatcher: self.runtime.dispatcher,
             interactions: self.runtime.interactions,
             scroll_handles: self.runtime.scroll_handles,
+            table_resize_viewport: self.runtime.table_resize_viewport,
             wheel_parents: self.runtime.wheel_parents,
             key_captures: self.runtime.key_captures,
             intrinsic_size: self.runtime.intrinsic_size,
@@ -2208,23 +2403,31 @@ impl RenderOnce for RegisteredPrimitiveElement {
             cx,
         ) {
             Ok(element) => element,
-            Err(error) => self.fallback.map_or_else(
-                || {
-                    div()
-                        .child(format!("Custom primitive error: {error}"))
-                        .into_any_element()
-                },
-                |fallback| {
-                    crate::GpuiNodeRenderer::render_with_primitives(
-                        &fallback,
-                        &crate::LiteralColorResolver,
-                        &crate::InteractionState::default(),
-                        &registry,
-                    )
-                },
-            ),
+            Err(error) => primitive_error_element(&error, self.fallback, &registry),
         }
     }
+}
+
+pub(crate) fn primitive_error_element(
+    error: &PrimitiveError,
+    fallback: Option<UiNode>,
+    registry: &PrimitiveRegistry,
+) -> AnyElement {
+    fallback.map_or_else(
+        || {
+            div()
+                .child(format!("Custom primitive error: {error}"))
+                .into_any_element()
+        },
+        |fallback| {
+            crate::GpuiNodeRenderer::render_with_primitives(
+                &fallback,
+                &crate::LiteralColorResolver,
+                &crate::InteractionState::default(),
+                registry,
+            )
+        },
+    )
 }
 
 fn validate_descriptor(descriptor: &PrimitiveDescriptor) -> Result<(), PrimitiveError> {
@@ -2685,6 +2888,65 @@ mod tests {
         ));
     }
 
+    struct StyledHandler;
+
+    impl PrimitiveHandler for StyledHandler {
+        fn style_defaults(&self, props: &PrimitiveProps) -> Result<Style, String> {
+            match props.string("value") {
+                Some("panic") => panic!("invalid native style"),
+                Some("error") => Err("invalid native style".to_owned()),
+                _ => Ok(Style::new().typography("body").unwrap()),
+            }
+        }
+
+        fn render(
+            &mut self,
+            _: &PrimitiveInstance,
+            _: &PrimitiveContext,
+            _: &PrimitiveTheme,
+            _: &mut Window,
+            _: &mut App,
+        ) -> Result<AnyElement, String> {
+            unreachable!("visual defaults do not mount or render native state")
+        }
+    }
+
+    #[test]
+    fn primitive_visual_defaults_are_pure_and_guarded_like_rendering() {
+        let registry = PrimitiveRegistry::new();
+        let descriptor = descriptor();
+        let id = descriptor.id.clone();
+        registry.register(descriptor, StyledHandler).unwrap();
+        let node = |value: &str| PrimitiveNode {
+            primitive: id.clone(),
+            key: Some("editor".to_owned()),
+            props: PrimitiveProps::new().with(
+                "value",
+                PrimitiveValue::Data(UiValue::String(value.to_owned())),
+            ),
+        };
+        assert_eq!(
+            registry.style_defaults(&node("normal")).unwrap(),
+            Style::new().typography("body").unwrap()
+        );
+        assert!(matches!(
+            registry.style_defaults(&node("error")),
+            Err(PrimitiveError::Handler { message, .. }) if message == "invalid native style"
+        ));
+        assert!(matches!(
+            registry.style_defaults(&node("panic")),
+            Err(PrimitiveError::Panic {
+                phase: "style_defaults",
+                ..
+            })
+        ));
+        let _borrowed = registry.inner.borrow_mut();
+        assert!(matches!(
+            registry.style_defaults(&node("normal")),
+            Err(PrimitiveError::Borrowed)
+        ));
+    }
+
     #[test]
     fn primitive_resource_scope_rolls_back_and_continues_after_cleanup_panic() {
         let scope = PrimitiveResourceScope::new();
@@ -2830,6 +3092,8 @@ mod tests {
         let registry = PrimitiveRegistry::new();
         let weak = Rc::downgrade(&registry.inner);
         let emitter = PrimitiveContext {
+            native_motion: None,
+            editor_surface: None,
             assets: None,
             registry: Rc::downgrade(&registry.inner),
             primitive: PrimitiveId::parse("my_app.editor").unwrap(),
@@ -2838,6 +3102,7 @@ mod tests {
             dispatcher: None,
             interactions: crate::interaction::WindowInteractionCoordinator::default(),
             scroll_handles: Vec::new(),
+            table_resize_viewport: None,
             wheel_parents: Vec::new(),
             key_captures: Vec::new(),
             intrinsic_size: None,

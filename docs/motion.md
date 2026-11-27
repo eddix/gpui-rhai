@@ -42,19 +42,121 @@ motion_transition("scale_x", 3.0, 1.0, #{
 })
 ```
 
-Supported properties are `opacity`, `translate_x`, `translate_y`, `rotate`,
-`scale_x`, `scale_y`, `skew_x`, `skew_y`, `width`, `height`, `clip_height`, and
-`path_progress`. Ordinary GPUI nodes support opacity, translation, and
-dimensions. Canvas/path primitives additionally support 2D rotation, scale,
-skew, trim, follow, and compatible-topology morphing. A Canvas command with an
-axis-aligned clip rectangle rejects rotate/scale/skew motion because gpui-pre 0.3.11
-does not expose an equivalent transformed clip; the runtime does not paint and
-hit-test two different shapes. gpui-pre 0.3.11 has no public arbitrary-subtree
-scale/rotate transform, so the generic node API does not claim otherwise.
+Supported properties are `opacity`, `foreground_blur`, `foreground_grayscale`, `translate_x`, `translate_y`,
+`translate_x_fraction`, `translate_y_fraction`, `rotate`,
+`scale_x`, `scale_y`, `skew_x`, `skew_y`, `width`, `width_fraction`, `height`, `clip_height`,
+`number_value`, `number_weight`, `overlay_reveal`, `primitive_progress`, and
+`path_progress`. Ordinary nodes support opacity, foreground Gaussian blur and grayscale,
+translation, rotation, scale, skew and dimensions. Blur samples are standard
+deviations in logical pixels, clamped to 0–64. Grayscale samples desaturate
+the composed foreground in sRGB and are clamped to 0–1. The affine motion samples
+override the corresponding style fields and use the same border-box pivot.
+Fractional translations use the corresponding width or height of the laid-out
+box (e.g. 0.5 = half a box) and do not relayout the subtree. Canvas retains its existing vector-space
+motion, with path trim, follow, and compatible-topology morphing. A Canvas
+command with an axis-aligned clip rectangle still rejects vector rotate/scale/skew
+motion: the runtime does not paint and hit-test two different shapes.
+
+For a node whose accepted style changes, `paint_transition` animates
+solid backgrounds, border ink and text colors on both backend profiles.
+The transition starts from the displayed sample and does not change layout.
+Gradient and shadow interpolation require the vendor profile. The optional argument to
+`paint_transition(300, "ease_out", #{group_effects: true, delay_ms: 110})`
+includes the final opacity and grayscale values on the vendor profile.
+Both values use one MotionRuntime track, start from the displayed pair, and
+preserve explicit group isolation through the transition. The first frame
+and Reduced/None take the final style immediately. Explicit opacity or
+grayscale sources keep compositing ownership even if this option is set.
+
+`width_fraction` sets native layout width to a fraction of the containing
+block (sample clamped to 0–1), rather than a number of logical pixels as
+`width` does. It reflows as the containing block resizes. If both are
+sampled on one node, `width_fraction` wins; use one width driver per node.
+Clipping is explicit with `style().clip()`. Use a positioned child
+retaining its own full width for an undistorted reveal.
+
+`number_value` can sample the visual value of a localized `ctx.number_text`
+node or supply a value to other nodes from a keyed element marked
+`.number_motion_source().with_ref(reference)`. Ordinary nodes that are
+neither numeric text nor marked sources reject the property.
+
+Call `motion_numbers([first_ref, second_ref, ...])` with 1–64 distinct refs
+in a single component. Each ref must belong to a committed value track
+in the same ScriptView. Apply `.sample_numbers(group, projection, index)`
+to a numeric text node (`"amount"`, `"percent"`, `"sum"`, or
+`"weighted_sum"`) or a box (`"width_fraction"`). Indices are zero-based;
+pass 0 for a sum. Set the box's ordinary width or the numeric text's
+value to its accepted state as a fallback. Prefer a constrained flex row
+for contiguous width projections; style clips, gutters and min/max
+constraints still apply after projection.
+
+Use `.sample_flex_share(group, index, cutoff)` for a distribution with
+real flex gaps and minimum lane sizes. Positive lanes above the fractional
+cutoff grow from zero basis; collapsed lanes contribute neither size nor
+gap. This projection divides by the sampled sum, not a quota, so use
+`width_fraction` for capacity meters. Layout, paint and hit testing still
+use the same native frame.
+
+Use `.sample_strip_hint(group, index, fallback)` on a full-width box with
+exactly one child aligned to its logical start. The lane midpoint uses
+the same denominator as `width_fraction`. A fraction of 0 aligns the
+child at the start, and 1 aligns it at the end, after measuring the child.
+Use 0–1 for the accepted fallback before the lane can be sampled or when
+it is empty. The projection changes only position, not focus or popup behavior.
+
+All projections read the same native frame. For example, if the amounts
+are 60 and 140 right now, the first width is 30% and the first percent
+label reads 30, even if the accepted target amounts already changed.
+An optional `number_weight` track on a source (default 1, clamped to 0–1)
+only affects weighted sums. It does not affect the denominator, shares,
+or widths. This supports animated attention without distorting the
+distribution. No Rhai code runs on the sampling path. Missing tracks
+leave all projections of that group at their declared fallback rather
+than partially renormalizing the UI. Zero total projects zero width and
+percent. Retained and accessibility text report accepted values.
+
+For a capacity meter, `group.with_capacity(capacity)` defines a
+nonnegative fixed capacity. Widths divide by `max(capacity, sampled total)`,
+so an under-capacity track leaves unused space and an over-capacity track
+does not overflow. `"remaining"` is `max(0, capacity - sampled total)`;
+`"capacity_percent"` is the sampled total divided by capacity times 100.
+Positive use with zero capacity falls back to the declared text instead
+of formatting infinity. Per-lane `"percent"` still describes the share of
+usage, not of capacity.
+
+`overlay_reveal` attaches to a non-modal overlay, not its trigger or body.
+`primitive_progress` attaches only to a native primitive node. Its current
+normalized sample is exposed to Rust in `PrimitiveTheme::motion_progress()`;
+the adapter can paint with it without owning a second clock or frame loop.
+The native positioner samples it in 0–1 and reveals only the actual panel.
+It fades and scales from the edge of the final (possibly flipped) placement,
+with a short translation from the anchor. The trigger keeps its layout and
+focus. HoverCard uses this path through the same MotionRuntime.
 
 Use `.motion_replay_key(value)` when a semantically new value should replay an
 unchanged declaration. Ordinary rerenders and compatible hot reload preserve
 progress and velocity.
+
+Use `.motion_on_change(value)` instead when a finite entry should **not** play
+on mount or remount. The initial presentation uses its terminal value. A new
+key replays from the declared start; an equal key keeps progress. Changing only
+the source (for example its themed duration) settles at the new terminal value
+without inventing a content change:
+
+```rhai
+text(status).with_key("status")
+    .motion(motion_transition("opacity", 0.0, 1.0, #{duration_ms:480}))
+    .motion_on_change(status)
+```
+
+This modifier controls the node's ordinary motion sources and its animated
+rich-text spans, not descendants, timelines, exit sources or progress bindings.
+Infinite sources are rejected; mount must have a defined resting value. The
+last `motion_on_change` / `motion_replay_key` modifier wins. Both use the same
+retained identity, transactional budget, native clock, suspension and Host
+motion policy; neither adds frame-time script work. Native intrinsic-width,
+arbitrary-subtree scale and text blur are separate rendering capabilities,
+not effects implemented by this trigger.
 
 ## Timelines
 
@@ -92,6 +194,14 @@ drained by an older frame, and one failure cannot discard its neighbors.
 Missing, stale, cross-view, and duplicate handles fail explicitly.
 
 ## Native triggers and progress
+
+Native progress values are qualified by their driver as well as retained node
+and property. A binding removed or changed to another driver cannot read the
+old driver's value or clock. First presentation uses the declared inactive
+value. A mouse release outside a press owner still ends its press; disabling
+returns it to rest. Retained-page hiding, suspension and binding removal revoke transient
+press state, without rewinding unrelated motion sources. Cached visible
+islands keep their active press ownership; an unpresented owner does not.
 
 `motion_hover`, `motion_press`, and `motion_focus` animate between inactive and
 active progress. `motion_in_view`, `motion_viewport`, and

@@ -1,13 +1,13 @@
 ---
 name: gpui-rhai
-description: 'How to build desktop interfaces with GPUI Rhai: Rhai views over a Rust runtime and GPUI. Use when writing or changing a gpui-rhai view, component or Rust host: Rhai syntax and its traps, the view/state/callback contract, the native functions and primitives scripts call, the official components, layouts and patterns (props, events, slots, parts), styles and theme tokens, embedding views in a Rust host, and `gpui-rhai check`. Pairs with the gpui-rhai-design skill, which holds the design rules.'
+description: 'Build or change gpui-rhai scripts, official components and Rust hosts using the matching SDK references, callback/state contracts and CLI checks. Use gpui-rhai-design alongside it for the official Modern/Clean visual system; independent designs retain their own rules.'
 ---
 
 # GPUI Rhai
 
-A gpui-rhai application is Rhai source under `ui/`: an entry `ui/main.rhai` with
+Official starter applications keep Rhai source under `ui/`: an entry `ui/main.rhai` with
 `view(ctx)`, the official components copied into `ui/components/` (and
-`ui/layouts/`, `ui/patterns/`), the palette `ui/theme.rhai`, the token base
+`ui/layouts/`, `ui/patterns/`), the selected full preset `ui/theme.rhai`, the token base
 `ui/tokens.rhai` and part styles `ui/styles.rhai`. A thin Rust host mounts the
 view. The CLI installs, checks and updates that source:
 
@@ -17,6 +17,11 @@ gpui-rhai add button input table         # copy official modules
 gpui-rhai check                          # parse, validate calls, render one headless frame
 gpui-rhai dev                            # run the application
 ```
+
+A Rust Host may instead own the tree and callbacks without a script view.
+Read [embedding.md](references/embedding.md), section "Host-owned interactive
+trees", for `StaticUiView`, optional resolved theme snapshots and `HostCallback`.
+Do not add a Rhai bridge or a second runtime when the Host already owns that UI.
 
 ## Read first
 
@@ -30,8 +35,11 @@ Rhai has little training data and gpui-rhai is a DSL on top of it. Read the
 reference files; do not answer from this page, from a similar file in the
 project, or from memory of other UI frameworks.
 
-This skill describes gpui-rhai 0.2. Check the project's `gpui-rhai` version in
-`Cargo.toml` or `Cargo.lock` first; another line may differ. The runtime is
+These references ship with the SDK; check the project's `gpui-rhai` version,
+actual backend alias and enabled features in `Cargo.toml` / `Cargo.lock` first.
+After upgrading the CLI, refresh both skills with `gpui-rhai skills <directory>`.
+Do not treat historical raw-GPUI helpers or gpui-component conventions as this
+independent SDK's API. The runtime is
 neutral: a project that brings its own design (its own token vocabulary, no
 `ui/tokens.rhai` from the registry, no profile) follows its own rules, and the
 design skill and the token rules below apply to projects on the official
@@ -49,9 +57,12 @@ design system.
   reports a wrong name at run time, not when the script loads.
 - **Run `gpui-rhai check` after every change** and fix its warnings too. It
   validates known calls in every branch and renders one headless first frame.
-- **Callbacks are named functions:** `on_click: Fn("save")`, with
+- **Retained script event callbacks are named functions:** `on_click: Fn("save")`, with
   `Fn("pick").curry(id)` for arguments; the function receives
-  `(curried..., ctx, payload)`. A closure cannot be stored as a callback.
+  `(curried..., ctx, payload)`. The SDK rejects anonymous closures here and
+  converts curry data through `UiValue`; rich node factories and native Rust
+  handlers have different contracts. This is not a limitation of Rhai's
+  general-purpose function pointers.
 - **A function sees only its parameters.** It cannot read a script `let`; use
   `const NAME` and `global::NAME`, or pass values in.
 - **Components are controlled.** Pass the value (`value`, `open`, `selected_keys`)
@@ -66,9 +77,10 @@ design system.
   `filter`, `split`, `text`): it takes over calls inside imported components.
   Reserved words (`default`, `go`, `match`, `new`, `case`, `with`, ...) cannot
   name anything; quote them as map keys (`"default": ...`).
-- **Small functions.** A function body nests only about five `column([...])`
-  levels (fewer with style chains) before Rhai's depth limit: build a screen
-  from one small function per region, each returning a node.
+- **Small functions.** Deeply nested node/style expressions can exceed the
+  configured Rhai expression-depth budget. Build a screen from small region
+  helpers and evaluate the real branches rather than relying on a fixed
+  nesting count or compilation alone.
 - **Official components are your source.** Change the copy in `ui/components/`
   when a component must behave differently; `gpui-rhai update` merges later
   upstream changes without overwriting yours.

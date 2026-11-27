@@ -6,8 +6,7 @@
 //! revealed, and an optional menu lists every tab.
 
 use gpui::{
-    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext,
-    point, px,
+    Modifiers, MouseButton, ScrollDelta, ScrollEvent, TestAppContext, VisualTestContext, point, px,
 };
 use gpui_rhai::{GeometryBounds, MotionPreference, ScriptViewHandle};
 

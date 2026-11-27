@@ -1,7 +1,5 @@
-//! Input `appearance: "embedded"`: the search line that heads Command, CommandDialog and a
-//! searchable Combobox panel. It has no frame or well of its own, spans its container inside
-//! the panel's padding, keeps a 1px `border` line under it while focused, and starts its text
-//! on metrics.inset like the rows below.
+//! Frameless native Input geometry, plus compound owners that assign it only
+//! part of a search row. The editor is not the entire Command search chrome.
 
 use std::collections::BTreeMap;
 
@@ -62,38 +60,41 @@ fn caret_x(visual: &mut VisualTestContext) -> Option<f64> {
         .map(|quad| f64::from(quad.bounds.x))
 }
 
-/// A list panel's 1px hairline plus its padding, half of `radius.lg` (8), on every side.
-const PAD: f64 = 5.0;
+/// Standalone Modern list panels use a 4px inset, with a non-layout shadow edge.
+const PAD: f64 = 4.0;
 
 fn near(left: f64, right: f64) -> bool {
     (left - right).abs() < 0.5
 }
 
-fn command_script(density: &str) -> String {
+fn embedded_script(density: &str) -> String {
     format!(
-        r#"import "components/command" as command;
+        r#"import "components/input" as input;
 fn view(ctx) {{ column([
-    command::Command(#{{ key: "palette", label: "Commands", query: "", active_value: "",
-        autofocus: true, items: [#{{ value: "open", label: "Open" }}, #{{ value: "save", label: "Save" }}] }})
-]).with_style(style().width(px(320)).padding(px(10))).env(#{{ density: "{density}" }}) }}"#
+    input::Input(#{{ key: "search", label: "Search", value: "", appearance: "embedded", autofocus: true }})
+        .with_style(style().width(relative(1.0)))
+]).accessibility_role("group").accessibility_label("Search panel")
+    .with_style(style().width(px(320)).padding(px(10))).env(#{{ density: "{density}" }}) }}"#
     )
 }
 
 #[gpui::test]
-fn the_command_search_spans_the_panel_on_the_rows_inset(cx: &mut TestAppContext) {
+fn a_standalone_embedded_editor_fills_its_assigned_width_without_a_focus_frame(
+    cx: &mut TestAppContext,
+) {
     let border: gpui::Hsla = gpui::rgba(BORDER).into();
     let focus: gpui::Hsla = gpui::rgba(FOCUS).into();
     for (density, inset, height) in [("comfortable", 12.0, 36.0), ("compact", 8.0, 32.0)] {
-        let (mut visual, view) = mount(cx, command_script(density));
-        let panel = layout(&mut visual, &view, "listbox", "Commands");
-        let search = layout(&mut visual, &view, "text_field", "Commands");
-        // Full width inside the panel's hairline and padding, at its top, one size up.
+        let (mut visual, view) = mount(cx, embedded_script(density));
+        let panel = layout(&mut visual, &view, "group", "Search panel");
+        let search = layout(&mut visual, &view, "text_field", "Search");
+        let pad = 10.0;
         assert!(
-            near(search.x, panel.x + PAD) && near(search.width, panel.width - 2.0 * PAD),
+            near(search.x, panel.x + pad) && near(search.width, panel.width - 2.0 * pad),
             "{density}: search {search:?} in panel {panel:?}"
         );
         assert!(
-            near(search.y, panel.y + PAD),
+            near(search.y, panel.y + pad),
             "{density}: search {search:?} in panel {panel:?}"
         );
         assert!(
@@ -132,18 +133,44 @@ fn the_command_search_spans_the_panel_on_the_rows_inset(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
-fn the_dialog_panel_gives_the_command_its_whole_width(cx: &mut TestAppContext) {
+fn the_dialog_panel_assigns_the_whole_width_to_command_chrome_not_only_the_editor(
+    cx: &mut TestAppContext,
+) {
     let script = r#"import "components/command_dialog" as command_dialog;
 fn view(ctx) { command_dialog::CommandDialog(#{ key: "palette", open: true, query: "", active_value: "",
     label: "Commands", title_visible: false, items: [#{ value: "open", label: "Open" }] }) }"#;
     let (mut visual, view) = mount(cx, script.to_owned());
     let dialog = layout(&mut visual, &view, "dialog", "Commands");
     let search = layout(&mut visual, &view, "text_field", "Commands");
+    let tree = snapshot(&mut visual, &view);
+    let editor = tree
+        .find_by_role_and_name("text_field", "Commands")
+        .next()
+        .unwrap();
+    let chrome = tree
+        .node(editor.parent.unwrap())
+        .unwrap()
+        .geometry
+        .unwrap()
+        .layout;
+    let dialog_pad = 8.0;
     assert!(
-        near(search.x, dialog.x + PAD)
-            && near(search.y, dialog.y + PAD)
-            && near(search.width, dialog.width - 2.0 * PAD),
-        "search {search:?} in dialog {dialog:?}"
+        near(chrome.x, dialog.x + dialog_pad)
+            && near(chrome.y, dialog.y + dialog_pad)
+            && near(chrome.width, dialog.width - 2.0 * dialog_pad),
+        "chrome {chrome:?} in dialog {dialog:?}"
+    );
+    assert!(near(search.height, 20.0) && near(chrome.height, 52.0));
+    assert!(
+        near(search.x - chrome.x, 44.0),
+        "search icon and gap reserve their own width"
+    );
+    assert!(
+        near(
+            search.y + search.height / 2.0,
+            chrome.y + (chrome.height - 1.0) / 2.0
+        ),
+        "the editor centers inside the chrome above its bottom hairline"
     );
 }
 

@@ -59,11 +59,13 @@ fn region_items(h, prefix) {
             tag::Tag(#{ text: "v2.8.1" }).with_style(style().self_start()), text("12 instances · healthy"), kit::note("Deployed 12 minutes ago"),
         ]).with_style(style().gap(theme_length("space.unit"))),
             actions: button::Button(#{ key: `${prefix}-sg-inspect`, text: "Inspect Singapore", variant: "ghost",
+                part_styles:#{root:style().text_color(theme_color("collection.metadata"))},
                 on_click: h.inspect_region.curry("Singapore") }) },
         #{ value: "va", label: "Virginia", content: column([
             tag::Tag(#{ text: "v2.8.0" }).with_style(style().self_start()), text("8 instances · healthy"), kit::note("Deployed 1 hour ago"),
         ]).with_style(style().gap(theme_length("space.unit"))),
             actions: button::Button(#{ key: `${prefix}-va-inspect`, text: "Inspect Virginia", variant: "ghost",
+                part_styles:#{root:style().text_color(theme_color("collection.metadata"))},
                 on_click: h.inspect_region.curry("Virginia") }) },
         #{ value: "fr", label: "Frankfurt", disabled: true, content: kit::note("Maintenance · selection unavailable") },
     ]

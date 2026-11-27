@@ -252,6 +252,43 @@ pub struct KeyChord {
     pub modifiers: Vec<String>,
 }
 
+impl KeyChord {
+    /// Individual, ordered keycaps for this already-parsed chord. Display text
+    /// is never reparsed to infer key boundaries or shortcut semantics.
+    #[must_use]
+    pub fn display_keys(&self, platform: crate::KeyLegendPlatform) -> Vec<crate::KeyLegend> {
+        let mac = platform == crate::KeyLegendPlatform::Mac;
+        let mut keys = self
+            .modifiers
+            .iter()
+            .map(|modifier| {
+                let (label, spoken) = match (modifier.as_str(), mac) {
+                    ("ctrl", true) => ("⌃", "Control"),
+                    ("alt", true) => ("⌥", "Option"),
+                    ("shift", true) => ("⇧", "Shift"),
+                    ("cmd", true) => ("⌘", "Command"),
+                    ("ctrl", false) => ("Ctrl", "Control"),
+                    ("alt", false) => ("Alt", "Alt"),
+                    ("shift", false) => ("Shift", "Shift"),
+                    ("cmd", false) => ("Super", "Super"),
+                    (_, true) => ("fn", "Function"),
+                    (_, false) => ("Fn", "Function"),
+                };
+                crate::KeyLegend {
+                    label: label.to_owned(),
+                    spoken: spoken.to_owned(),
+                    glyph: mac && modifier != "fn",
+                    platform,
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut key = crate::KeyLegend::new(&self.key, platform);
+        key.label = format_key(&self.key, mac);
+        keys.push(key);
+        keys
+    }
+}
+
 /// A displayable shortcut derived from a declared key binding.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ActionShortcut {
@@ -261,6 +298,8 @@ pub struct ActionShortcut {
     pub chords: Vec<KeyChord>,
     /// The original binding text, such as `cmd-shift-k`.
     pub keystrokes: String,
+    /// Naming convention shared by the text legend and individual keycaps.
+    pub platform: crate::KeyLegendPlatform,
 }
 
 impl ActionShortcut {
@@ -301,6 +340,11 @@ impl ActionShortcut {
             label,
             chords,
             keystrokes: keystrokes.to_owned(),
+            platform: if mac {
+                crate::KeyLegendPlatform::Mac
+            } else {
+                crate::KeyLegendPlatform::Other
+            },
         }
     }
 
@@ -324,11 +368,13 @@ impl ActionShortcut {
                 label: text.to_owned(),
                 chords: Vec::new(),
                 keystrokes: text.to_owned(),
+                platform: crate::KeyLegendPlatform::default(),
             }
         }
     }
 
-    /// The shortcut as a script value: `#{ label, keystrokes, chords }`.
+    /// The shortcut as `#{ label, keystrokes, chords }`; each chord includes
+    /// `key`, `modifiers` and ordered `keys` display/spoken descriptors.
     #[must_use]
     pub fn to_ui_value(&self) -> UiValue {
         UiValue::Map(BTreeMap::from([
@@ -345,6 +391,16 @@ impl ActionShortcut {
                         .map(|chord| {
                             UiValue::Map(BTreeMap::from([
                                 ("key".to_owned(), UiValue::String(chord.key.clone())),
+                                (
+                                    "keys".to_owned(),
+                                    UiValue::Array(
+                                        chord
+                                            .display_keys(self.platform)
+                                            .iter()
+                                            .map(crate::KeyLegend::to_ui_value)
+                                            .collect(),
+                                    ),
+                                ),
                                 (
                                     "modifiers".to_owned(),
                                     UiValue::Array(
@@ -366,56 +422,35 @@ impl ActionShortcut {
 }
 
 fn format_chord(chord: &KeyChord, mac: bool) -> String {
-    let key = format_key(&chord.key, mac);
+    let keys = chord.display_keys(if mac {
+        crate::KeyLegendPlatform::Mac
+    } else {
+        crate::KeyLegendPlatform::Other
+    });
     if mac {
         let mut label = String::new();
-        for modifier in &chord.modifiers {
-            label.push_str(match modifier.as_str() {
-                "ctrl" => "⌃",
-                "alt" => "⌥",
-                "shift" => "⇧",
-                "cmd" => "⌘",
-                _ => "fn ",
-            });
+        for key in keys {
+            label.push_str(&key.label);
+            if key.spoken == "Function" {
+                label.push(' ');
+            }
         }
-        label.push_str(&key);
         label
     } else {
-        let mut parts = chord
-            .modifiers
-            .iter()
-            .map(|modifier| match modifier.as_str() {
-                "ctrl" => "Ctrl",
-                "alt" => "Alt",
-                "shift" => "Shift",
-                "cmd" => "Super",
-                _ => "Fn",
-            })
-            .map(ToOwned::to_owned)
-            .collect::<Vec<_>>();
-        parts.push(key);
-        parts.join("+")
+        keys.into_iter()
+            .map(|key| key.label)
+            .collect::<Vec<_>>()
+            .join("+")
     }
 }
 
 fn format_key(key: &str, mac: bool) -> String {
-    let named = match key {
-        "enter" => Some(if mac { "↩" } else { "Enter" }),
-        "escape" => Some(if mac { "⎋" } else { "Esc" }),
-        "backspace" => Some(if mac { "⌫" } else { "Backspace" }),
-        "delete" => Some(if mac { "⌦" } else { "Delete" }),
-        "tab" => Some(if mac { "⇥" } else { "Tab" }),
-        "space" => Some("Space"),
-        "up" => Some("↑"),
-        "down" => Some("↓"),
-        "left" => Some("←"),
-        "right" => Some("→"),
-        "home" => Some("Home"),
-        "end" => Some("End"),
-        "pageup" => Some("PgUp"),
-        "pagedown" => Some("PgDn"),
-        _ => None,
+    let platform = if mac {
+        crate::KeyLegendPlatform::Mac
+    } else {
+        crate::KeyLegendPlatform::Other
     };
+    let named = crate::KeyLegend::named(key, platform);
     named.map_or_else(
         || {
             let mut characters = key.chars();
@@ -429,7 +464,7 @@ fn format_key(key: &str, mac: bool) -> String {
                 text
             }
         },
-        ToOwned::to_owned,
+        |item| item.label,
     )
 }
 
@@ -476,6 +511,75 @@ mod shortcut_tests {
         assert_eq!(chord.label, "⌘K ⌘S");
         assert_eq!(chord.chords.len(), 2);
         assert_eq!(ActionShortcut::from_keystrokes("f6", true).label, "F6");
+        assert_eq!(
+            ActionShortcut::from_keystrokes("cmd-enter", true).label,
+            "⌘↵"
+        );
+        assert_eq!(
+            ActionShortcut::from_keystrokes("ctrl-escape", false).label,
+            "Ctrl+Esc"
+        );
+    }
+
+    #[test]
+    fn structured_keycaps_and_flat_legends_share_platform_names_without_reparsing() {
+        for (binding, mac, labels, spoken) in [
+            (
+                "cmd-shift-k",
+                true,
+                vec!["⇧", "⌘", "K"],
+                vec!["Shift", "Command", "K"],
+            ),
+            ("cmd-k", false, vec!["Super", "K"], vec!["Super", "K"]),
+            (
+                "ctrl-alt-enter",
+                false,
+                vec!["Ctrl", "Alt", "Enter"],
+                vec!["Control", "Alt", "Enter"],
+            ),
+        ] {
+            let shortcut = ActionShortcut::from_keystrokes(binding, mac);
+            let keys = shortcut.chords[0].display_keys(shortcut.platform);
+            assert_eq!(
+                keys.iter()
+                    .map(|key| key.label.as_str())
+                    .collect::<Vec<_>>(),
+                labels
+            );
+            assert_eq!(
+                keys.iter()
+                    .map(|key| key.spoken.as_str())
+                    .collect::<Vec<_>>(),
+                spoken
+            );
+            let UiValue::Map(value) = shortcut.to_ui_value() else {
+                panic!("shortcut map")
+            };
+            let UiValue::Array(chords) = &value["chords"] else {
+                panic!("chord list")
+            };
+            let UiValue::Map(chord) = &chords[0] else {
+                panic!("chord map")
+            };
+            assert_eq!(
+                chord["keys"],
+                UiValue::Array(keys.iter().map(crate::KeyLegend::to_ui_value).collect())
+            );
+        }
+        let sequence = ActionShortcut::from_keystrokes("cmd-k cmd-s", true);
+        assert_eq!(
+            sequence
+                .chords
+                .iter()
+                .map(|chord| chord.display_keys(sequence.platform).len())
+                .collect::<Vec<_>>(),
+            [2, 2]
+        );
+        for literal in ["Ctrl+K", "⌘K", "⇧ G"] {
+            let shortcut = ActionShortcut::from_text(literal);
+            assert_eq!(shortcut.chords, [] as [KeyChord; 0]);
+            assert_eq!(shortcut.label, literal);
+        }
     }
 }
 

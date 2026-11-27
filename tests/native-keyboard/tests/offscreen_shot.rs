@@ -17,6 +17,28 @@ const COUNTER: &str = r#"
         column([
             text(`Count: ${ctx.get_state("count")}`),
             text("Increment").on_click(Fn("increment")),
+            text("Hover target").accessibility_label("Hover target").with_style(style()
+                .width(px(100)).height(px(32)).background(rgb(0xff0000))
+                .hover(style().background(rgb(0x0000ff)))),
+            row([svg("<svg width='40' height='40'><rect width='40' height='40' fill='currentColor'/></svg>")
+                .with_style(style().width(px(40)).height(px(40)))])
+                .accessibility_role("button").accessibility_label("Tint")
+                .with_style(style().width(px(40)).height(px(40)).text_color(rgb(0xff0000))
+                    .hover(style().text_color(rgb(0x0000ff)))),
+            wrapped_link("wrapped", "Wrapped link"),
+            wrapped_link("rotated", "Rotated link").with_style(style().width(px(250))
+                .margin(px(20)).transform(#{rotate:19})),
+        ])
+    }
+    fn wrapped_link(key, name) {
+        // The center of the union falls in blank space on the second line.
+        let label = "Long first line of this link\nX\nLong final line of this link";
+        let word = span(label).color(rgb(0x222222))
+            .underline(1.0, rgba(0x22222244)).underline_hover(0, "linear");
+        inline_prose(text([word]).with_style(style().font_size(px(16)).line_height(px(24))), [
+            #{ start: 0, end: grapheme_count(label), node: box([]).with_key(key)
+                .accessibility_role("link").accessibility_label(name)
+                .on_click(Fn("increment")) }
         ])
     }
 "#;
@@ -86,6 +108,97 @@ fn main() {
     let before = image::open(directory.join("before.png")).unwrap();
     let after = image::open(directory.join("after.png")).unwrap();
     assert_ne!(before.as_bytes(), after.as_bytes(), "the count changed");
+
+    run_plan(
+        &plan(&format!(
+            "--size 320x200 --out {} --hover Hover --out {}",
+            path("rest.png"),
+            path("hover.png")
+        )),
+        counter,
+    )
+    .unwrap();
+    let rest = image::open(directory.join("rest.png")).unwrap();
+    let hover = image::open(directory.join("hover.png")).unwrap();
+    assert_ne!(
+        rest.as_bytes(),
+        hover.as_bytes(),
+        "hover changes real native paint without clicking"
+    );
+
+    // The JSONL hover path must reach the real native foreground inherited by
+    // inline SVG, not only change a script's recorded hover flag.
+    std::fs::write(&steps, format!(concat!(
+        "{{\"command\":\"hover\",\"locator\":{{\"kind\":\"role_name\",\"role\":\"button\",\"name\":\"Tint\"}}}}\n",
+        "{{\"command\":\"capture\",\"path\":\"{}\"}}\n",
+        "{{\"command\":\"hover\",\"name\":\"Increment\"}}\n",
+        "{{\"command\":\"capture\",\"path\":\"{}\"}}\n",
+    ), path("tint-blue.png"), path("tint-restored.png"))).unwrap();
+    run_plan(
+        &plan(&format!(
+            "--size 320x200 --hover Increment --out {} --steps {steps}",
+            path("tint-red.png")
+        )),
+        counter,
+    )
+    .unwrap();
+    let red = image::open(directory.join("tint-red.png"))
+        .unwrap()
+        .to_rgba8();
+    let blue = image::open(directory.join("tint-blue.png"))
+        .unwrap()
+        .to_rgba8();
+    let changed = red
+        .pixels()
+        .zip(blue.pixels())
+        .filter(|(left, right)| left.0 == [255, 0, 0, 255] && right.0 == [0, 0, 255, 255])
+        .count();
+    assert!(
+        changed > 400,
+        "the inline SVG must actually change from red to blue: {changed} pixels"
+    );
+    let restored = image::open(directory.join("tint-restored.png"))
+        .unwrap()
+        .to_rgba8();
+    let differences = red
+        .pixels()
+        .zip(restored.pixels())
+        .filter(|(left, right)| left != right)
+        .count();
+    assert_eq!(differences, 0, "leaving restores the original frame");
+
+    // A locating pointer action must use a shaped link fragment, not the
+    // bounding union's empty middle line. This is real hover/click input.
+    std::fs::write(
+        &steps,
+        format!(
+            concat!(
+                "{{\"command\":\"hover\",\"locator\":{{\"kind\":\"role_name\",\"role\":\"link\",\"name\":\"Wrapped link\"}}}}\n",
+                "{{\"command\":\"capture\",\"path\":\"{}\"}}\n",
+                "{{\"command\":\"click\",\"name\":\"Wrapped link\"}}\n",
+                "{{\"command\":\"query\",\"locator\":{{\"kind\":\"text\",\"text\":\"Count: 1\"}}}}\n",
+                "{{\"command\":\"click\",\"locator\":{{\"kind\":\"role_name\",\"role\":\"link\",\"name\":\"Rotated link\"}}}}\n",
+                "{{\"command\":\"query\",\"locator\":{{\"kind\":\"text\",\"text\":\"Count: 2\"}}}}\n",
+            ),
+            path("wrapped-hover.png"),
+        ),
+    )
+    .unwrap();
+    run_plan(
+        &plan(&format!(
+            "--size 320x360 --out {} --steps {steps}",
+            path("wrapped-idle.png")
+        )),
+        counter,
+    )
+    .unwrap();
+    let idle = image::open(directory.join("wrapped-idle.png")).unwrap();
+    let hover = image::open(directory.join("wrapped-hover.png")).unwrap();
+    assert_ne!(
+        idle.as_bytes(),
+        hover.as_bytes(),
+        "the wrapped link hovered"
+    );
 
     // The first failing line stops the run and names itself.
     std::fs::write(

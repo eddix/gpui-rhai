@@ -1,6 +1,8 @@
 //! Mount the embedded skin in a real offscreen window and save a PNG of the
-//! frame — the visual companion to key_harness. usage:
-//! `cargo run --example screenshot [PATH] [--keys "t t e"] [out.png]`
+//! frame — the visual companion to key_harness. Usage:
+//! `SHOT_KEYS="t t e" SHOT_OUT=/tmp/tree.png cargo run --example screenshot -- PATH`.
+//! SHOT_PRESET=Family/Variant selects a complete preset. SHOT_PROBE verifies
+//! all four required presets on the same view; SHOT_PROBE_OUT_DIR saves them.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -38,6 +40,17 @@ fn draw(cx: &mut VisualTestAppContext, window: AnyWindowHandle) -> Result<(), St
     })
     .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn settle(cx: &mut VisualTestAppContext, window: AnyWindowHandle) {
+    // Refreshing frames alone does not advance the Host's 16ms foreground
+    // controller or a filesystem subscription's external delivery.
+    for _ in 0..4 {
+        let step = std::time::Duration::from_millis(16);
+        std::thread::sleep(step);
+        cx.advance_clock(step);
+        draw(cx, window).expect("settle committed work");
+    }
 }
 
 pub fn main() {
@@ -82,10 +95,11 @@ pub fn main() {
         &theme_mode,
     );
     let skin = std::env::var("SHOT_SKIN").unwrap_or_else(|_| "ui/main.rhai".to_owned());
+    let skin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(skin);
     let builder: Box<dyn FnOnce() -> Result<PreparedScriptView, gpui_rhai::ScriptViewError>> =
         if std::env::var_os("SHOT_FILE").is_some() || std::env::var_os("SHOT_SKIN").is_some() {
             Box::new(move || {
-                gpui_rhai::ScriptView::files(std::path::PathBuf::from(skin))
+                gpui_rhai::ScriptView::files(skin)
                     .extension(extension)
                     .operation_limit(10_000_000)
                     .expression_depth_limits(64, 128)
@@ -138,6 +152,12 @@ pub fn main() {
     std::thread::sleep(std::time::Duration::from_millis(wait_ms));
     for _ in 0..6 {
         draw(&mut cx, window).expect("draw");
+    }
+    if let Ok(preset) = std::env::var("SHOT_PRESET") {
+        let (family, name) = preset.split_once('/').expect("SHOT_PRESET=Family/Variant");
+        cx.update(|cx| view.select_theme(family, name, cx))
+            .expect("select SHOT_PRESET");
+        settle(&mut cx, window);
     }
     // Optional: SHOT_FRAMES="0,80,160" saves a frame that many ms after the
     // last key (out-0ms.png, ...), to see motion mid-flight.
@@ -209,35 +229,40 @@ pub fn main() {
             draw(&mut cx, window).expect("draw");
         }
     }
-    let error = cx.update(|cx| view.last_error(cx)).expect("view alive");
-
-    // Optional: probe every expected palette through the handle.
+    // Optional: validate rendered full presets, not legacy palette names
+    // or a successful theme selection without a frame.
     if std::env::var_os("SHOT_PROBE").is_some() {
         let pairs = [
-            ("Disktree", "Tokyo Night"),
-            ("Disktree", "Flexoki Light"),
-            ("Default", "Dark"),
-            ("Default", "Light"),
-            ("Nord", "Dark"),
-            ("Gruvbox", "Dark"),
-            ("Catppuccin", "Latte"),
-            ("Catppuccin", "Mocha"),
-            ("Everforest", "Dark"),
-            ("TokyoNight", "Night"),
-            ("TokyoNight", "Storm"),
-            ("Aetheria", "Dark"),
-            ("Ethereal", "Dark"),
-            ("Futurism", "Dark"),
-            ("Hackerman", "Dark"),
-            ("Hermarchy", "Dark"),
-            ("Retro82", "Dark"),
+            ("Modern", "Dark"),
+            ("Modern", "Light"),
+            ("Clean", "Light"),
+            ("Clean", "Dark"),
         ];
+        let output = std::env::var_os("SHOT_PROBE_OUT_DIR").map(std::path::PathBuf::from);
+        if let Some(output) = &output {
+            std::fs::create_dir_all(output).expect("probe output");
+        }
         for (family, name) in pairs {
-            let result = cx.update(|cx| view.select_theme(family, name, cx));
-            match result {
-                Ok(_) => println!("theme ok: {family}/{name}"),
-                Err(error) => println!("theme MISSING: {family}/{name}: {error}"),
+            cx.update(|cx| view.select_theme(family, name, cx))
+                .expect("required preset");
+            settle(&mut cx, window);
+            if let Some(error) = cx.update(|cx| view.last_error(cx)).expect("view alive") {
+                eprintln!("{family}/{name}: {error}");
+                std::process::exit(1);
             }
+            if let Some(output) = &output {
+                let image = cx
+                    .capture_screenshot(window)
+                    .expect("capture required preset");
+                image
+                    .save(output.join(format!(
+                        "{}-{}.png",
+                        family.to_lowercase(),
+                        name.to_lowercase()
+                    )))
+                    .expect("save required preset");
+            }
+            println!("theme rendered: {family}/{name}");
         }
         std::mem::forget(cx);
         return;
@@ -248,13 +273,12 @@ pub fn main() {
     for _ in 0..4 {
         draw(&mut cx, window).expect("draw");
     }
+    if let Some(error) = cx.update(|cx| view.last_error(cx)).expect("view alive") {
+        eprintln!("script error: {error}");
+        std::process::exit(1);
+    }
     let image = cx.capture_screenshot(window).expect("capture settled");
     image.save(&out).expect("save png");
-    println!(
-        "saved {out} ({}x{}){}",
-        image.width(),
-        image.height(),
-        error.map_or_else(String::new, |e| format!(" — SCRIPT ERROR: {e}"))
-    );
+    println!("saved {out} ({}x{})", image.width(), image.height(),);
     std::mem::forget(cx);
 }

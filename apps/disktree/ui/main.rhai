@@ -133,7 +133,7 @@ define_component(#{
         events: #{},
         slots: #{},
         parts: ["root"],
-        effects: ["scan", "layout"],
+        effects: ["scan", "layout", "paint_theme"],
     },
     render: Fn("render_ScanRoot"),
 });
@@ -1761,7 +1761,7 @@ fn theme_current(ctx) {
 
 /// The theme picker in the controls row; the current value follows the
 /// resolved variant, so a system appearance flip moves it too.
-fn theme_select(ctx) {
+fn theme_select(ctx, width) {
     select::Select(#{
         key: "theme",
         label: "Theme",
@@ -1769,13 +1769,7 @@ fn theme_select(ctx) {
         value: theme_current(ctx),
         open: ctx.get_state("theme_open"),
         query: ctx.get_state("theme_query"),
-        width: px(180.0),
-        part_styles: #{
-            trigger: style()
-                .background(rgba(0x00000000))
-                .border_color(rgba(0x00000000))
-                .hover(style().background(theme_color("surface_hover")))
-        },
+        width: width,
         on_change: Fn("theme_selected"),
         on_open_change: Fn("theme_open_changed"),
         on_query_change: Fn("theme_query_changed"),
@@ -1789,7 +1783,6 @@ fn theme_selected(ctx, value) {
     for variant in theme_variants_list(ctx) {
         if theme_key(variant.family, variant.name) == value {
             ctx.set_theme(variant.family, variant.name);
-            repaint_after_theme(ctx);
             break;
         }
     }
@@ -1816,9 +1809,12 @@ fn theme_query_changed(ctx, query) {
 
 /// A theme switch re-colours the mosaic: the paint rows carry resolved
 /// colours, so the on-screen mode's paint is rebuilt for the new palette.
-fn repaint_after_theme(ctx) {
+fn repaint_after_theme(ctx, deps) {
     let layout = ctx.get_app_store("disktree", "layout");
     if layout.valid {
+        // Every mode caches literal fills. Invalidate inactive slots too,
+        // then rebuild only the mode currently visible.
+        reset_paint(ctx);
         let mode_now = ctx.get_state("mode");
         ctx.set_app_store(
             "disktree",
@@ -1827,6 +1823,8 @@ fn repaint_after_theme(ctx) {
         );
     }
 }
+
+fn paint_theme_stop(ctx, deps) { () }
 
 /// `e`: the next palette, wrapping — the quick way to try them all.
 fn cycle_theme(ctx) {
@@ -1846,7 +1844,6 @@ fn cycle_theme(ctx) {
     }
     let pick = entries[next];
     ctx.set_theme(pick.family, pick.name);
-    repaint_after_theme(ctx);
 }
 
 // -- toolbar actions -------------------------------------------------------------
@@ -1951,6 +1948,10 @@ fn render_ScanRoot(ctx, props) {
     // The resolved variant drives the canvas palette; the read is a tracked
     // theme dependency, so a system appearance flip re-renders the mosaic.
     let light = is_light(ctx);
+    // Track paint's palette input independently from geometry. Host selection
+    // and system appearance changes must use the same invalidation path as
+    // the skin's own controls; a render read alone does not restart an effect.
+    effect("paint_theme", [light], Fn("repaint_after_theme"), Fn("paint_theme_stop"));
     // The active mode's paint, from its own store value (G9). `()` until the
     // layout effect fills it; mosaic_nodes renders an empty mosaic then.
     let paint = ctx.get_app_store("disktree", `paint${mode}`);
@@ -1997,6 +1998,8 @@ fn render_ScanRoot(ctx, props) {
                 ctx.component_style(
                     "root",
                     style()
+                        .typography("body")
+                        .text_color(theme_color("text_primary"))
                         .flex_col()
                         .width(relative(1.0))
                         .height(relative(1.0))
@@ -2059,6 +2062,7 @@ fn header(ctx, metric, apparent, no_hidden, depth, mode, layout, find_open, find
     // the controls toolbar (always its own row, wraps freely), and the
     // info row (totals, find field, legend).
     let control_items = view_controls(metric, apparent, no_hidden, depth, mode, layout);
+    let theme_width = px(180.0);
     let controls_row = toolbar::Toolbar(#{
         label: "View controls",
         context: control_items,
@@ -2074,9 +2078,15 @@ fn header(ctx, metric, apparent, no_hidden, depth, mode, layout, find_open, find
             label: "disktree-rhai",
             title: breadcrumbs(ctx, layout),
             start: [logo()],
-            end: [theme_select(ctx)],
+            end: [theme_select(ctx, theme_width)],
             inset_start: 72,
             window_drag: true,
+            part_styles: #{
+                title: style().min_width(px(0)).flex_shrink(true),
+                // This bar has no centered controls to balance. Reserve only
+                // the theme picker's content width so the path can use the rest.
+                end: style().width(theme_width).max_width(theme_width).flex_shrink(false),
+            },
         }),
         controls_row,
         row([info_row(scan, layout, find_open, find, mode, light)])
@@ -2243,28 +2253,44 @@ fn hatch_swatch(light) {
 /// switch in the controls, like tobi's.
 fn breadcrumbs(ctx, layout) {
     let nodes = [];
+    let current = [];
+    let prefix = [];
+    let gap = theme_spacing("xxs");
     let parts = split_path(layout.root);
     let part_index = 0;
     for part in parts {
         let is_root = part_index == parts.len() - 1;
         if is_root {
+            // The absolute prefix is display-only. Give it the lowest
+            // priority among the earlier segments.
+            if !prefix.is_empty() {
+                nodes.push(row(prefix).with_style(
+                    style().items_center().justify_end().gap(gap)
+                        .min_width(px(0)).flex_shrink_weight(12.0).overflow_hidden()
+                ));
+            }
             // The scan root: clicking it resets to the root view.
-            nodes.push(crumb_segment(part, layout.crumbs.len() == 0, -1));
+            let active = layout.crumbs.len() == 0;
+            let segment = crumb_segment(part, active, -1);
+            if active {
+                current.push(segment);
+            } else {
+                nodes.push(segment);
+                if layout.names.len() > 0 {
+                    nodes.push(crumb_separator());
+                }
+            }
         } else {
-            nodes.push(
+            prefix.push(
                 text(part).with_style(
                     style()
-                        .font_size(px(12.0))
+                        .typography("body_small")
                         .text_color(theme_color("text_muted"))
-                        .whitespace_nowrap().text_ellipsis()
+                        .whitespace_nowrap().flex_shrink(false)
                 )
             );
+            prefix.push(crumb_separator());
         }
-        nodes.push(
-            text("/").with_style(
-                style().typography("body_small").text_color(theme_color("border"))
-            )
-        );
         part_index += 1;
     }
     let i = 0;
@@ -2274,30 +2300,53 @@ fn breadcrumbs(ctx, layout) {
         if label == "" {
             label = "?";
         }
-        nodes.push(crumb_segment(label, active, i));
+        let segment = [crumb_segment(label, active, i)];
         // Every crumb but the scanned root lists its siblings: largest
         // first, share bar and size in each row, arrows and Enter work.
         if i >= 1 {
-            nodes.push(crumb_menu_toggle(ctx, i));
+            segment.push(crumb_menu_toggle(ctx, i));
         }
-        if !active {
-            nodes.push(
-                text("/").with_style(
-                    style().font_size(px(12.0)).text_color(theme_color("border"))
-                )
-            );
+        if active {
+            current = segment;
+        } else {
+            for node in segment {
+                nodes.push(node);
+            }
+            nodes.push(crumb_separator());
         }
         i += 1;
     }
-    row(nodes)
+    // A display-only prefix cannot compete with the current directory's
+    // natural width. Shrink the earlier lane as a unit. The current lane
+    // itself can still ellipsize if it alone exceeds the available width.
+    let lanes = [];
+    if !nodes.is_empty() {
+        lanes.push(row(nodes).with_style(
+            style().items_center().gap(gap).min_width(px(0)).overflow_hidden()
+        ));
+    }
+    if !current.is_empty() {
+        lanes.push(row(current).with_style(
+            style().items_center().gap(gap).flex_shrink(false).min_width(px(0))
+                .max_width(relative(1.0)).overflow_hidden()
+        ));
+    }
+    row(lanes)
         .with_style(
             style()
                 .flex_row()
                 .items_center()
-                .gap(theme_spacing("xxs"))
+                .gap(gap)
                 .flex_grow()
+                .min_width(px(0))
                 .overflow_hidden()
         )
+}
+
+fn crumb_separator() {
+    text("/").with_style(
+        style().typography("body_small").text_color(theme_color("border")).flex_shrink(false)
+    ).accessibility_hidden(true)
 }
 
 fn crumb_segment(label, active, index) {
@@ -2305,12 +2354,13 @@ fn crumb_segment(label, active, index) {
     if active {
         weight = 700;
     }
-    box([text(label).with_style(
+    let segment = box([text(label).with_style(
         style()
             .typography("body_small")
             .font_weight(weight)
             .text_color(theme_color("text_primary"))
             .whitespace_nowrap().text_ellipsis()
+            .min_width(px(0))
             .max_width(px(180.0))
     )])
     .on_click_value(Fn("crumb_clicked"), index)
@@ -2320,9 +2370,13 @@ fn crumb_segment(label, active, index) {
         style()
             .padding_x(theme_spacing("sm"))
             .padding_y(theme_spacing("xxs"))
-            .flex_shrink(false)
+            .min_width(px(0))
+            .overflow_hidden()
             .hover(style().background(theme_color("surface_hover")))
-    )
+    );
+    // Keep the jump action, but expose the current directory exactly once,
+    // independently of its visual weight or the selected theme.
+    if active { segment.accessibility_current("page") } else { segment }
 }
 
 /// Split a display path into its visible segments. A `~` home shortening
@@ -3654,11 +3708,11 @@ fn init(ctx) {
     // theme, else dark. "system" follows the window appearance; the skin
     // reads the resolved variant back at render (ctx.theme_variant).
     if args.theme_mode == "light" {
-        ctx.set_theme("Disktree", "Flexoki Light");
+        ctx.set_theme("Modern", "Light");
     } else if args.theme_mode == "system" {
-        ctx.set_theme_system("Disktree");
+        ctx.set_theme_system("Modern");
     } else {
-        ctx.set_theme("Disktree", "Tokyo Night");
+        ctx.set_theme("Modern", "Dark");
     }
     ctx.set_app_store("disktree", "args", #{ path: args.path, home: home });
     ctx.set_app_store("disktree", "scan", #{

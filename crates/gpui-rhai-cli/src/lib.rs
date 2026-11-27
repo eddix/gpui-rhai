@@ -7,6 +7,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui_rhai::{
     AppManifest, ComponentDefinition, ComponentInstancePath, ComponentMetadata, ComponentRegistry,
@@ -18,6 +19,7 @@ use gpui_rhai::{
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use similar::{Algorithm, DiffTag, capture_diff_slices_deadline};
 use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
@@ -32,9 +34,10 @@ pub mod theme_studio;
 
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
-    BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID,
-    BUNDLED_PROFILES, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, LUCIDE_LICENSE,
-    LUCIDE_VERSION, STUDIO_SOURCE, TOKEN_BASE_SOURCE, ZH_CN_LOCALE, lucide_icon,
+    BUNDLED_FONT_SOURCES, BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID,
+    BUNDLED_PATTERN_SOURCES_BY_ID, BUNDLED_PROFILES, BUNDLED_THEME_SOURCES, EN_LOCALE,
+    LUCIDE_LICENSE, LUCIDE_VERSION, MODERN_DARK_THEME, STUDIO_SOURCE, TOKEN_BASE_SOURCE,
+    ZH_CN_LOCALE, lucide_icon,
 };
 
 /// Where `add lucide/<name>` writes Lucide's license, which `bundle` copies
@@ -121,11 +124,9 @@ fn shipped_sources() -> Vec<ShippedSource> {
         }
     };
     let mut sources = vec![shipped("tokens.rhai".to_owned(), TOKEN_BASE_SOURCE)];
-    // `default_dark` is the starter `theme.rhai`, not a bundled palette.
     sources.extend(
         BUNDLED_THEME_SOURCES
             .iter()
-            .filter(|(name, _)| *name != "default_dark.rhai")
             .map(|&(name, source)| shipped(format!("themes/{name}"), source)),
     );
     sources
@@ -411,7 +412,17 @@ impl Project {
             plan.create(shot_path, shot_source())?;
         }
         plan.create(self.root.join("ui/main.rhai"), starter_ui())?;
-        plan.create(self.root.join("ui/theme.rhai"), DEFAULT_THEME.to_owned())?;
+        plan.create(
+            self.root.join("ui/theme.rhai"),
+            MODERN_DARK_THEME.to_owned(),
+        )?;
+        for &(name, bytes) in BUNDLED_FONT_SOURCES {
+            plan.create_bytes(self.root.join("ui/fonts").join(name), bytes.to_vec())?;
+        }
+        plan.create(
+            self.root.join("ui/licenses/Inter-OFL-1.1.txt"),
+            gpui_rhai_registry::INTER_FONT_LICENSE.to_owned(),
+        )?;
         plan.create(
             self.root.join("ui/tokens.rhai"),
             TOKEN_BASE_SOURCE.to_owned(),
@@ -425,7 +436,7 @@ impl Project {
         )?;
         for &(name, source) in BUNDLED_THEME_SOURCES
             .iter()
-            .filter(|(name, _)| *name != "default_dark.rhai")
+            .filter(|(name, _)| *name != "modern_dark.rhai")
         {
             plan.create(self.root.join("ui/themes").join(name), source.to_owned())?;
         }
@@ -437,7 +448,10 @@ impl Project {
         plan.create(self.root.join("ui/locales/ar.rhai"), AR_LOCALE.to_owned())?;
         // The token base and palettes are registry copies: their baselines
         // let `update` merge later registry changes into them.
-        for shipped in shipped_sources() {
+        for shipped in shipped_sources()
+            .into_iter()
+            .filter(|source| source.path != "themes/modern_dark.rhai")
+        {
             plan.create(
                 self.root.join(".gpui-rhai/baselines").join(&shipped.path),
                 shipped.source.to_owned(),
@@ -974,9 +988,8 @@ impl Project {
                 },
             );
         }
-        for shipped in &registry.shipped {
-            self.plan_shipped_update(&mut plan, shipped)?;
-        }
+        self.plan_shipped_sources_update(&mut plan, registry)?;
+        self.plan_ui_font_install(&mut plan)?;
         self.plan_lucide_update(&mut plan, &mut manifest)?;
         let styles = self.root.join("ui/styles.rhai");
         if !styles.exists() {
@@ -988,6 +1001,77 @@ impl Project {
             manifest_source,
         );
         Ok(plan)
+    }
+
+    fn plan_shipped_sources_update(
+        &self,
+        plan: &mut ProjectPlan,
+        registry: &BundledRegistry,
+    ) -> Result<(), ProjectError> {
+        let primary = self.primary_theme_identity()?;
+        let theme_engine = RuntimeEngine::new();
+        for shipped in &registry.shipped {
+            // The application owns theme.rhai. Upgrading an older project must
+            // not install a second copy of its active family/name, nor omit the
+            // current starter preset just because its filename is special.
+            if shipped.path.starts_with("themes/")
+                && !self.root.join("ui").join(&shipped.path).exists()
+                && gpui_rhai::load_theme_source(
+                    theme_engine.engine(),
+                    &shipped.path,
+                    shipped.source,
+                )
+                .map(|theme| (theme.family, theme.name) == primary)
+                .map_err(|error| ProjectError::Theme(error.to_string()))?
+            {
+                continue;
+            }
+            self.plan_shipped_update(plan, shipped)?;
+        }
+        Ok(())
+    }
+
+    fn primary_theme_identity(&self) -> Result<(String, String), ProjectError> {
+        let runtime = RuntimeEngine::new();
+        let base = read_existing(&self.root.join("ui/tokens.rhai"))?
+            .map(|source| {
+                load_token_base(runtime.engine(), "ui/tokens.rhai", &source)
+                    .map_err(|error| ProjectError::Theme(error.to_string()))
+            })
+            .transpose()?;
+        let theme = load_theme_with_layers(
+            runtime.engine(),
+            base.as_ref(),
+            "ui/theme.rhai",
+            &read(&self.root.join("ui/theme.rhai"))?,
+            &ThemeTokenOverrides::default(),
+        )
+        .map_err(|error| ProjectError::Theme(error.to_string()))?;
+        Ok((theme.family, theme.name))
+    }
+
+    fn plan_ui_font_install(&self, plan: &mut ProjectPlan) -> Result<(), ProjectError> {
+        // Fonts are binary source assets too. Never overwrite an application
+        // replacement; the normal plan's byte-level race checks still apply.
+        for &(name, bytes) in BUNDLED_FONT_SOURCES {
+            let path = self.root.join("ui/fonts").join(name);
+            match fs::read(&path) {
+                Ok(existing) if existing != bytes => plan.notes.push(format!(
+                    "{} differs from the bundled UI font; update leaves it to the application",
+                    path.display()
+                )),
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    plan.create_bytes(path, bytes.to_vec())?;
+                }
+                Err(source) => return Err(ProjectError::Io { path, source }),
+            }
+        }
+        let license = self.root.join("ui/licenses/Inter-OFL-1.1.txt");
+        if !license.exists() {
+            plan.create(license, gpui_rhai_registry::INTER_FONT_LICENSE.to_owned())?;
+        }
+        Ok(())
     }
 
     /// Plan the update of one shipped source (#183). With a baseline it merges
@@ -1176,12 +1260,21 @@ struct DependencySpec {
     features: Vec<String>,
 }
 
+const GPUI_PRE_VERSION: &str = if gpui_rhai::EXTENDED_RENDERING {
+    "=0.3.11"
+} else {
+    "=0.3.14"
+};
+const GPUI_FAST_VERSION: &str = if gpui_rhai::EXTENDED_RENDERING {
+    "=0.1.13"
+} else {
+    "=0.1.19"
+};
+
 /// Checks the GPUI packages of the application manifest at `path` against the
 /// backend its gpui-rhai dependency selects, and returns warnings for the
 /// lockfile beside it.
 fn validate_gpui_dependency_family(path: &Path) -> Result<Vec<String>, ProjectError> {
-    const GPUI_PRE_VERSION: &str = "=0.3.11";
-    const GPUI_FAST_VERSION: &str = "=0.1.13";
     // `check` run inside a workspace member sees `./Cargo.toml`; the walks up
     // to the workspace manifest and lockfile need the real directories.
     let path = fs::canonicalize(path).map_err(|source| ProjectError::Io {
@@ -1957,9 +2050,9 @@ fn load_check_locales(root: &Path) -> Result<Option<LocaleManager>, ProjectError
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LineChange {
+struct LineChange<'a> {
     base: Range<usize>,
-    replacement: Vec<String>,
+    replacement: &'a [&'a str],
 }
 
 fn three_way_merge(base: &str, local: &str, upstream: &str) -> Result<String, ()> {
@@ -1969,104 +2062,89 @@ fn three_way_merge(base: &str, local: &str, upstream: &str) -> Result<String, ()
     if upstream == base || local == upstream {
         return Ok(local.to_owned());
     }
-    let base_lines = split_lines(base);
-    let local_changes = line_changes(&base_lines, &split_lines(local))?;
-    let upstream_changes = line_changes(&base_lines, &split_lines(upstream))?;
-    for local in &local_changes {
-        for upstream in &upstream_changes {
-            if changes_overlap(local, upstream) && local != upstream {
-                return Err(());
-            }
-        }
-    }
-    let mut changes = local_changes;
-    for change in upstream_changes {
-        if !changes.contains(&change) {
-            changes.push(change);
-        }
-    }
-    changes.sort_by_key(|change| (change.base.start, change.base.end));
+    let base_lines = split_merge_lines(base)?;
+    let local_lines = split_merge_lines(local)?;
+    let upstream_lines = split_merge_lines(upstream)?;
+    let deadline = Instant::now() + Duration::from_millis(500);
+    let mut local_changes = line_changes(&base_lines, &local_lines, deadline)?
+        .into_iter()
+        .peekable();
+    let mut upstream_changes = line_changes(&base_lines, &upstream_lines, deadline)?
+        .into_iter()
+        .peekable();
     let mut output = String::new();
     let mut cursor = 0;
-    for change in changes {
+    loop {
+        // Diff operations are ordered and do not overlap within one side.
+        // Examine just the next hunk on each side, preserving the previous
+        // ordering of insertions at either boundary of a replacement.
+        let next = match (local_changes.peek(), upstream_changes.peek()) {
+            (Some(a), Some(b)) if changes_overlap(a, b) => {
+                if a != b {
+                    return Err(());
+                }
+                upstream_changes.next();
+                local_changes.next()
+            }
+            (Some(a), Some(b)) if (a.base.start, a.base.end) <= (b.base.start, b.base.end) => {
+                local_changes.next()
+            }
+            (_, Some(_)) => upstream_changes.next(),
+            (Some(_), None) => local_changes.next(),
+            (None, None) => break,
+        };
+        let change = next.ok_or(())?;
         if change.base.start < cursor {
             return Err(());
         }
-        output.extend(
-            base_lines[cursor..change.base.start]
-                .iter()
-                .map(String::as_str),
-        );
-        output.extend(change.replacement.iter().map(String::as_str));
+        output.extend(base_lines[cursor..change.base.start].iter().copied());
+        output.extend(change.replacement.iter().copied());
         cursor = change.base.end;
     }
-    output.extend(base_lines[cursor..].iter().map(String::as_str));
+    output.extend(base_lines[cursor..].iter().copied());
     Ok(output)
 }
 
-fn split_lines(source: &str) -> Vec<String> {
-    source
-        .split_inclusive('\n')
-        .map(ToOwned::to_owned)
-        .collect()
-}
-
-fn line_changes(base: &[String], target: &[String]) -> Result<Vec<LineChange>, ()> {
-    const MAX_LCS_CELLS: usize = 4_000_000;
-    if base.len().saturating_mul(target.len()) > MAX_LCS_CELLS {
+fn split_merge_lines(source: &str) -> Result<Vec<&str>, ()> {
+    const MAX_BYTES: usize = 16 * 1024 * 1024;
+    const MAX_LINES: usize = 64 * 1024;
+    if source.len() > MAX_BYTES {
         return Err(());
     }
-    let mut lcs = vec![vec![0_u32; target.len().saturating_add(1)]; base.len().saturating_add(1)];
-    for base_index in (0..base.len()).rev() {
-        for target_index in (0..target.len()).rev() {
-            lcs[base_index][target_index] = if base[base_index] == target[target_index] {
-                lcs[base_index + 1][target_index + 1].saturating_add(1)
-            } else {
-                lcs[base_index + 1][target_index].max(lcs[base_index][target_index + 1])
-            };
-        }
+    let lines: Vec<_> = source.split_inclusive('\n').take(MAX_LINES + 1).collect();
+    if lines.len() > MAX_LINES {
+        return Err(());
     }
-    let mut changes = Vec::new();
-    let mut current: Option<LineChange> = None;
-    let (mut base_index, mut target_index) = (0, 0);
-    while base_index < base.len() || target_index < target.len() {
-        if base_index < base.len()
-            && target_index < target.len()
-            && base[base_index] == target[target_index]
-        {
-            if let Some(change) = current.take() {
-                changes.push(change);
-            }
-            base_index += 1;
-            target_index += 1;
-        } else if target_index < target.len()
-            && (base_index == base.len()
-                || lcs[base_index][target_index + 1] > lcs[base_index + 1][target_index])
-        {
-            current
-                .get_or_insert_with(|| LineChange {
-                    base: base_index..base_index,
-                    replacement: Vec::new(),
-                })
-                .replacement
-                .push(target[target_index].clone());
-            target_index += 1;
-        } else {
-            let change = current.get_or_insert_with(|| LineChange {
-                base: base_index..base_index,
-                replacement: Vec::new(),
-            });
-            base_index += 1;
-            change.base.end = base_index;
-        }
-    }
-    if let Some(change) = current {
-        changes.push(change);
-    }
-    Ok(changes)
+    Ok(lines)
 }
 
-fn changes_overlap(left: &LineChange, right: &LineChange) -> bool {
+fn line_changes<'a>(
+    base: &[&str],
+    target: &'a [&'a str],
+    deadline: Instant,
+) -> Result<Vec<LineChange<'a>>, ()> {
+    // Reuse the bounded diff algorithm used by the native document viewer.
+    // Patience uses unique lines to orient repeated style blocks; it doesn't
+    // allocate a matrix proportional to the square of a generated theme.
+    let ops = capture_diff_slices_deadline(Algorithm::Patience, base, target, Some(deadline));
+    if Instant::now() >= deadline {
+        // The library can synthesize a coarse fallback on timeout. Never
+        // apply that approximation as a successful application update.
+        return Err(());
+    }
+    Ok(ops
+        .iter()
+        .filter_map(|op| {
+            let (tag, base, replacement) = op.as_tag_tuple();
+            (tag != DiffTag::Equal).then(|| LineChange {
+                base,
+                replacement: &target[replacement],
+            })
+        })
+        .collect())
+}
+
+fn changes_overlap(left: &LineChange<'_>, right: &LineChange<'_>) -> bool {
     if left.base.is_empty() && right.base.is_empty() {
         left.base.start == right.base.start
     } else if left.base.is_empty() {
@@ -2303,20 +2381,18 @@ fn starter_ui() -> String {
     column([
         text("GPUI Rhai"),
         text("Run `gpui-rhai add button label` to install source components.")
-    ]).with_style(style().gap(theme_length("space.related")).padding(theme_length("metrics.inset")))
+    ]).with_style(style().typography("body").text_color(theme_color("text_primary"))
+        .gap(theme_length("space.related")).padding(theme_length("metrics.inset")))
 }
 "#
     .to_owned()
 }
 
-/// The runtime line a generated project depends on: the CLI's own major and
-/// minor version, since the CLI, runtime and registry are released together.
+/// Generated sources may use APIs added in this patch release. Keep that
+/// complete version as the minimum, not just the major/minor line; Cargo's
+/// ordinary caret semantics still admit subsequent compatible patches.
 fn runtime_requirement() -> String {
-    format!(
-        "{}.{}",
-        env!("CARGO_PKG_VERSION_MAJOR"),
-        env!("CARGO_PKG_VERSION_MINOR")
-    )
+    env!("CARGO_PKG_VERSION").to_owned()
 }
 
 fn app_manifest_source() -> Result<String, ProjectError> {
@@ -2349,13 +2425,13 @@ fn read_existing(path: &Path) -> Result<Option<String>, ProjectError> {
 #[derive(Clone, Debug)]
 enum ExpectedFile {
     Missing,
-    Exact(String),
+    Exact(Vec<u8>),
 }
 
 #[derive(Clone, Debug)]
 struct PlannedWrite {
     path: PathBuf,
-    content: String,
+    content: Vec<u8>,
     expected: ExpectedFile,
 }
 
@@ -2421,7 +2497,11 @@ impl ProjectPlan {
     }
 
     fn create(&mut self, path: PathBuf, content: String) -> Result<(), ProjectError> {
-        match fs::read_to_string(&path) {
+        self.create_bytes(path, content.into_bytes())
+    }
+
+    fn create_bytes(&mut self, path: PathBuf, content: Vec<u8>) -> Result<(), ProjectError> {
+        match fs::read(&path) {
             Ok(existing) if existing == content => Ok(()),
             Ok(_) => Err(ProjectError::WouldOverwrite(path)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -2440,8 +2520,8 @@ impl ProjectPlan {
         if content != existing {
             self.writes.push(PlannedWrite {
                 path,
-                content,
-                expected: ExpectedFile::Exact(existing),
+                content: content.into_bytes(),
+                expected: ExpectedFile::Exact(existing.into_bytes()),
             });
         }
     }
@@ -2535,7 +2615,7 @@ impl ProjectPlan {
     pub fn apply(self) -> Result<(), ProjectError> {
         let _lock = ProjectApplyLock::acquire(&self.root)?;
         for write in &self.writes {
-            match (&write.expected, fs::read_to_string(&write.path)) {
+            match (&write.expected, fs::read(&write.path)) {
                 (ExpectedFile::Missing, Err(error))
                     if error.kind() == std::io::ErrorKind::NotFound => {}
                 (ExpectedFile::Exact(expected), Ok(actual)) if expected == &actual => {}
@@ -2582,7 +2662,7 @@ impl ProjectPlan {
                     });
                 }
             };
-            if let Err(source) = file.write_all(write.content.as_bytes()) {
+            if let Err(source) = file.write_all(&write.content) {
                 let _ = fs::remove_file(&temporary);
                 cleanup_staged_files(&staged);
                 return Err(ProjectError::Io {
@@ -2649,7 +2729,7 @@ impl ProjectPlan {
 }
 
 fn expectation_matches(write: &PlannedWrite) -> bool {
-    match (&write.expected, fs::read_to_string(&write.path)) {
+    match (&write.expected, fs::read(&write.path)) {
         (ExpectedFile::Missing, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => true,
         (ExpectedFile::Exact(expected), Ok(actual)) => expected == &actual,
         _ => false,
@@ -3100,7 +3180,7 @@ mod tests {
     }
 
     #[test]
-    fn init_depends_on_the_runtime_line_of_this_cli() {
+    fn init_requires_the_runtime_apis_of_this_cli_patch() {
         let directory = fixture();
         Project::new(directory.path())
             .plan_init()
@@ -3110,16 +3190,16 @@ mod tests {
         let cargo: toml::Value =
             toml::from_str(&std::fs::read_to_string(directory.path().join("Cargo.toml")).unwrap())
                 .unwrap();
-        // A 0.2 CLI copies Runtime API 3 components; a 0.1 runtime cannot load them.
-        let minor = env!("CARGO_PKG_VERSION").rsplit_once('.').unwrap().0;
+        // Added script APIs need the current patch, not just its Runtime API epoch.
+        let required = env!("CARGO_PKG_VERSION");
         assert_eq!(
             cargo["dependencies"]["gpui-rhai"]["version"].as_str(),
-            Some(minor)
+            Some(required)
         );
         // A release build of script_view!() reads what build.rs embeds.
         assert_eq!(
             cargo["build-dependencies"]["gpui-rhai-build"].as_str(),
-            Some(minor)
+            Some(required)
         );
         let manifest = std::fs::read_to_string(directory.path().join("Cargo.toml")).unwrap();
         assert!(manifest.contains("\n[build-dependencies]\n"), "{manifest}");
@@ -3133,7 +3213,7 @@ mod tests {
         // `gpui-rhai shot` runs examples/shot.rs; only the dev-dependency
         // turns on the offscreen feature of the backend.
         let shot = &cargo["dev-dependencies"]["gpui-rhai"];
-        assert_eq!(shot["version"].as_str(), Some(minor));
+        assert_eq!(shot["version"].as_str(), Some(required));
         assert_eq!(shot["default-features"].as_bool(), Some(false));
         assert_eq!(
             shot["features"].as_array().unwrap(),
@@ -3144,6 +3224,24 @@ mod tests {
         assert!(
             example.contains("gpui_rhai::offscreen::run(|| gpui_rhai::script_view!().prepare())"),
             "{example}"
+        );
+
+        let current = semver::Version::parse(required).unwrap();
+        let requirement = semver::VersionReq::parse(required).unwrap();
+        assert!(requirement.matches(&current));
+        if current.patch > 0 {
+            let mut older = current.clone();
+            older.patch -= 1;
+            assert!(
+                !requirement.matches(&older),
+                "older patch accepted: {older}"
+            );
+        }
+        let mut next = current.clone();
+        next.patch += 1;
+        assert!(
+            requirement.matches(&next),
+            "this is a minimum, not an exact pin"
         );
     }
 
@@ -3161,7 +3259,9 @@ mod tests {
             .apply()
             .unwrap();
         let report = project.check().unwrap();
-        assert_eq!(report.components, 2);
+        // Button installs the shared activity geometry through Spinner.
+        assert_eq!(report.components, 3);
+        assert!(directory.path().join("ui/components/spinner.rhai").exists());
         assert!(
             directory
                 .path()
@@ -3236,14 +3336,14 @@ mod tests {
 
         fs::write(
             &cargo,
-            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.11\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.11\", default-features = false }\n",
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.14\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.14\", default-features = false }\n",
         )
         .unwrap();
         validate_gpui_dependency_family(&cargo).unwrap();
 
         fs::write(
             &cargo,
-            "[workspace]\nmembers = []\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.11\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.11\", default-features = false }\n\n[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\ngpui_platform.workspace = true\n",
+            "[workspace]\nmembers = []\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.14\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.14\", default-features = false }\n\n[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\ngpui_platform.workspace = true\n",
         )
         .unwrap();
         validate_gpui_dependency_family(&cargo).unwrap();
@@ -3260,7 +3360,7 @@ mod tests {
 
         // gpui-fast, with a renamed pin of the same version (as nsh needs), passes.
         write(&format!(
-            "{fast}gpui-fast-pin = {{ package = \"gpui-fast\", version = \"=0.1.13\", default-features = false }}\n"
+            "{fast}gpui-fast-pin = {{ package = \"gpui-fast\", version = \"=0.1.19\", default-features = false }}\n"
         ));
         assert_eq!(
             validate_gpui_dependency_family(&cargo).unwrap(),
@@ -3272,7 +3372,7 @@ mod tests {
                 "default-features = false",
             ),
             (
-                format!("{fast}gpui = {{ package = \"gpui-pre\", version = \"=0.3.11\" }}\n"),
+                format!("{fast}gpui = {{ package = \"gpui-pre\", version = \"=0.3.14\" }}\n"),
                 "use `gpui_rhai::gpui`",
             ),
             (
@@ -3280,7 +3380,7 @@ mod tests {
                 "a binary holds one version",
             ),
             (
-                "gpui-rhai = \"0.4\"\ngpui-fast = \"=0.1.13\"\n".to_owned(),
+                "gpui-rhai = \"0.4\"\ngpui-fast = \"=0.1.19\"\n".to_owned(),
                 "enable gpui-rhai's `gpui-fast` feature",
             ),
         ] {
@@ -3357,7 +3457,7 @@ mod tests {
         let directory = fixture();
         fs::write(
             directory.path().join("Cargo.toml"),
-            "[workspace]\nmembers = [\"app\"]\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.11\", default-features = false }\n",
+            "[workspace]\nmembers = [\"app\"]\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.14\", default-features = false }\n",
         )
         .unwrap();
         let member = directory.path().join("app");
@@ -3737,7 +3837,7 @@ mod tests {
         .unwrap();
 
         let report = project.check().unwrap();
-        assert_eq!(report.components, 1);
+        assert_eq!(report.components, 2);
     }
 
     /// An entry that calls into two of the application's own modules.
@@ -3869,7 +3969,7 @@ mod tests {
         );
         plan.writes.push(PlannedWrite {
             path: blocked.join("child.rhai"),
-            content: "fn view() {}".to_owned(),
+            content: b"fn view() {}".to_vec(),
             expected: ExpectedFile::Missing,
         });
         assert!(plan.apply().is_err());
@@ -4055,6 +4155,91 @@ mod tests {
     }
 
     #[test]
+    fn adding_breadcrumb_installs_the_public_component_and_its_transitive_assets() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(
+                &BundledRegistry::load().unwrap(),
+                &["breadcrumb".to_owned()],
+            )
+            .unwrap()
+            .apply()
+            .unwrap();
+        for path in [
+            "components/breadcrumb.rhai",
+            "components/menu.rhai",
+            "components/tooltip.rhai",
+            "components/divider.rhai",
+            "components/kbd.rhai",
+            "assets/icons/more.svg",
+            "assets/icons/branch.svg",
+            "assets/icons/slash.svg",
+            "assets/icons/chevron_left.svg",
+            "assets/icons/chevron_right.svg",
+            "assets/icons/check.svg",
+        ] {
+            let installed = directory.path().join("ui").join(path);
+            let baseline = directory.path().join(".gpui-rhai/baselines").join(path);
+            assert_eq!(
+                read(&installed).unwrap(),
+                read(&baseline).unwrap(),
+                "{path}"
+            );
+        }
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"
+            import "components/breadcrumb" as breadcrumb;
+            fn select(ctx,value){}
+            fn view(ctx){breadcrumb::Breadcrumb(#{key:"route",
+                items:[#{value:"root",label:"Workspace"},#{value:"page",label:"Current"}],
+                on_navigate:Fn("select")})}
+        "#,
+        )
+        .unwrap();
+        project.check().unwrap();
+    }
+
+    #[test]
+    fn usage_meter_installs_its_dependency_graph_and_evaluates_in_a_clean_app() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(
+                &BundledRegistry::load().unwrap(),
+                &["usage_meter".to_owned()],
+            )
+            .unwrap()
+            .apply()
+            .unwrap();
+        for module in [
+            "patterns/usage_meter.rhai",
+            "patterns/compact_breakdown.rhai",
+            "patterns/agent_tree.rhai",
+            "patterns/approval_card.rhai",
+            "components/button.rhai",
+        ] {
+            assert!(
+                directory.path().join("ui").join(module).is_file(),
+                "{module}"
+            );
+        }
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"
+                import "patterns/usage_meter" as quota;
+                fn view(ctx){quota::UsageMeter(#{key:"meter",series:"sdk-example",revision:0,total:100,
+                    used:[#{id:"api",label:"Requests",value:80}],limits:[#{id:"workspaces",label:"Workspaces",used:2}]})}
+            "#,
+        )
+        .unwrap();
+        project.check().unwrap();
+    }
+
+    #[test]
     fn adding_chart_installs_source_and_enables_the_runtime_feature() {
         let directory = fixture();
         let project = Project::new(directory.path());
@@ -4099,11 +4284,12 @@ mod tests {
             .apply()
             .unwrap();
         let report = project.check().unwrap();
-        assert_eq!(report.components, 12);
-        for component in [
+        let expected = [
             "badge.rhai",
             "button.rhai",
+            "spinner.rhai",
             "icon.rhai",
+            "icon_button.rhai",
             "input.rhai",
             "combobox.rhai",
             "select.rhai",
@@ -4113,7 +4299,9 @@ mod tests {
             "textarea.rhai",
             "date_picker.rhai",
             "calendar.rhai",
-        ] {
+        ];
+        assert_eq!(report.components, expected.len());
+        for component in expected {
             assert!(
                 directory
                     .path()
@@ -4147,8 +4335,8 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        // 74 components, 10 motion, 5 charts, 4 layouts, 10 patterns.
-        assert_eq!(registry.entries.len(), 74 + 10 + 5 + 4 + 10);
+        // 90 components, 10 motion, 5 charts, 4 layouts, 77 patterns.
+        assert_eq!(registry.entries.len(), 90 + 10 + 5 + 4 + 77);
         let requested = registry
             .entries
             .keys()
@@ -4373,6 +4561,13 @@ mod tests {
     /// Shipped sources added after 0.2.2: every release that installs them records a
     /// baseline, so they have no released hashes.
     const ADDED_WITH_BASELINES: &[&str] = &[
+        "themes/default_dark.rhai",
+        "themes/neutral_light.rhai",
+        "themes/neutral_dark.rhai",
+        "themes/modern_light.rhai",
+        "themes/modern_dark.rhai",
+        "themes/clean_light.rhai",
+        "themes/clean_dark.rhai",
         "themes/dracula.rhai",
         "themes/molokai.rhai",
         "themes/absolutely_light.rhai",
@@ -4401,7 +4596,10 @@ mod tests {
         let directory = fixture();
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
-        for shipped in shipped_sources() {
+        for shipped in shipped_sources()
+            .into_iter()
+            .filter(|source| source.path != "themes/modern_dark.rhai")
+        {
             let baseline = directory
                 .path()
                 .join(".gpui-rhai/baselines")
@@ -4420,6 +4618,92 @@ mod tests {
                 .diff()
                 .unwrap()
                 .contains(&"ui/tokens.rhai: unchanged".to_owned())
+        );
+    }
+
+    #[test]
+    fn updating_an_older_primary_theme_installs_full_presets_without_duplicate_identity() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        fs::write(
+            directory.path().join("ui/theme.rhai"),
+            gpui_rhai_registry::DEFAULT_THEME,
+        )
+        .unwrap();
+        fs::remove_file(directory.path().join("ui/themes/default_dark.rhai")).unwrap();
+        fs::remove_file(
+            directory
+                .path()
+                .join(".gpui-rhai/baselines/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        project
+            .plan_update(&BundledRegistry::load().unwrap())
+            .unwrap()
+            .apply()
+            .unwrap();
+        assert!(
+            !directory
+                .path()
+                .join("ui/themes/default_dark.rhai")
+                .exists()
+        );
+        assert!(directory.path().join("ui/themes/modern_dark.rhai").exists());
+        assert_eq!(
+            read(&directory.path().join("ui/theme.rhai")).unwrap(),
+            gpui_rhai_registry::DEFAULT_THEME
+        );
+        let runtime = RuntimeEngine::new();
+        let themes = load_project_themes(directory.path(), &runtime).unwrap();
+        let identities = themes
+            .iter()
+            .map(|theme| (&theme.family, &theme.name))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(themes.len(), identities.len());
+        for family in ["Modern", "Clean"] {
+            for name in ["Light", "Dark"] {
+                let theme = themes
+                    .iter()
+                    .find(|theme| theme.family == family && theme.name == name)
+                    .unwrap();
+                assert!(!theme.tokens.component_styles.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn updates_install_missing_ui_fonts_but_preserve_application_replacements() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        let replaced = directory
+            .path()
+            .join("ui/fonts")
+            .join(BUNDLED_FONT_SOURCES[0].0);
+        let missing = directory
+            .path()
+            .join("ui/fonts")
+            .join(BUNDLED_FONT_SOURCES[1].0);
+        fs::write(&replaced, b"application-owned font").unwrap();
+        fs::remove_file(&missing).unwrap();
+        let plan = project
+            .plan_update(&BundledRegistry::load().unwrap())
+            .unwrap();
+        assert!(
+            plan.notes()
+                .iter()
+                .any(|note| note.contains("leaves it to the application"))
+        );
+        plan.apply().unwrap();
+        assert_eq!(fs::read(replaced).unwrap(), b"application-owned font");
+        assert_eq!(fs::read(missing).unwrap(), BUNDLED_FONT_SOURCES[1].1);
+        assert!(
+            project
+                .plan_update(&BundledRegistry::load().unwrap())
+                .unwrap()
+                .writes
+                .is_empty()
         );
     }
 
@@ -4568,10 +4852,13 @@ mod tests {
         let source = entry
             .source
             .replace(&installed_version, "0.9.0")
-            .replace("dependencies: []", "dependencies: [\"components/badge\"]")
             .replace(
-                "\"dependencies\": []",
-                "\"dependencies\": [\"components/badge\"]",
+                "dependencies: [\"components/spinner\"]",
+                "dependencies: [\"components/spinner\", \"components/badge\"]",
+            )
+            .replace(
+                "\"dependencies\": [\"components/spinner\"]",
+                "\"dependencies\": [\"components/spinner\", \"components/badge\"]",
             );
         let source: &'static str = Box::leak(source.into_boxed_str());
         entry.metadata = parse_component_header(source).unwrap();
@@ -4585,7 +4872,7 @@ mod tests {
         assert!(manifest.components.contains_key("components/badge"));
         assert_eq!(
             manifest.components["components/button"].dependencies,
-            vec!["components/badge"]
+            vec!["components/badge", "components/spinner"]
         );
     }
 
@@ -4665,6 +4952,50 @@ mod tests {
     }
 
     #[test]
+    fn line_merge_combines_scattered_edits_in_large_generated_files() {
+        use std::fmt::Write as _;
+
+        let mut base = String::new();
+        let mut local = String::new();
+        let mut upstream = String::new();
+        let mut expected = String::new();
+        for i in 0..12_000 {
+            let line = format!("token-{i}: original\r\n");
+            base.push_str(&line);
+            if [20, 3400, 11_100].contains(&i) {
+                writeln!(local, "token-{i}: local\r").unwrap();
+                writeln!(expected, "token-{i}: local\r").unwrap();
+                upstream.push_str(&line);
+            } else if [12, 5300, 11_550].contains(&i) {
+                writeln!(upstream, "token-{i}: upstream\r").unwrap();
+                writeln!(expected, "token-{i}: upstream\r").unwrap();
+                local.push_str(&line);
+            } else {
+                local.push_str(&line);
+                upstream.push_str(&line);
+                expected.push_str(&line);
+            }
+        }
+        assert_eq!(three_way_merge(&base, &local, &upstream).unwrap(), expected);
+        let overlapping = upstream.replacen("token-3400: original", "token-3400: competing", 1);
+        assert!(three_way_merge(&base, &local, &overlapping).is_err());
+    }
+
+    #[test]
+    fn line_merge_preserves_a_boundary_insertion_but_reports_competing_insertions() {
+        assert_eq!(
+            three_way_merge(
+                "one\ntwo\nthree",
+                "one\nlocal\ntwo\nthree",
+                "one\nTWO\nthree"
+            )
+            .unwrap(),
+            "one\nlocal\nTWO\nthree"
+        );
+        assert!(three_way_merge("one\n", "one\nlocal\n", "one\nupstream\n").is_err());
+    }
+
+    #[test]
     fn editor_metadata_comes_from_installed_component_schemas() {
         let directory = fixture();
         let project = Project::new(directory.path());
@@ -4696,6 +5027,7 @@ mod tests {
                 "components/button",
                 "components/combobox",
                 "components/input",
+                "components/spinner",
             ])
         );
         assert!(components.iter().any(|component| {
